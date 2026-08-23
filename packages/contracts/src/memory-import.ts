@@ -165,7 +165,7 @@ export const memoryImportResultSchema = z.discriminatedUnion("status", [
       status: z.literal("materialized"),
       ...acceptedEvidence,
       materializedAt: isoDateTimeSchema,
-      verificationKind: z.enum(["read_by_id_and_search", "l0_and_session_l1"]),
+      verificationKind: z.enum(["read_by_id", "read_by_id_and_search", "l0_and_session_l1"]),
       verificationSha256: sha256Schema,
     })
     .strict(),

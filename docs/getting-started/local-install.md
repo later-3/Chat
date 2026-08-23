@@ -1,7 +1,7 @@
 # Chat 本地安装
 
 本文是全新克隆后的唯一安装入口。当前产品前端是固定DeepSeek Harness Web，后端由
-Chat API、Vercel Workflow与可选Code Workbench组成；Memory Provider代码暂时保留但默认关闭。不要再安装
+Chat API、Vercel Workflow、显式可选Memory Sidecar与可选Code Workbench组成；Memory默认关闭且不会牵绊普通安装。不要再安装
 旧`apps/web`或Agent Canvas。当前开发阶段必须同时检出Later维护的Pi与DSH Fork稳定分支；不要检出官方上游替代它们。
 
 Code Workbench当前为Beta：本地实现与固定工件继续保留，但不进入通用CI/CD，也不进入远程部署。
@@ -19,8 +19,8 @@ Code Workbench当前为Beta：本地实现与固定工件继续保留，但不�
 | 网络 | 首次准备需要访问GitHub和npm registry |
 
 Windows与其他CPU架构目前不属于本地一键安装范围，`pnpm run setup`会在写入运行缓存前
-失败关闭。首次默认准备会下载约211–239MB的固定code-server压缩包，不再拉取两套Memory
-源码及其npm依赖；请预留至少1GB可用空间。工件缓存、运行数据和私有配置都位于Git忽略
+失败关闭。首次默认准备会下载约211–239MB的固定code-server压缩包；`--memory=off`不拉取两套Memory
+源码及其npm依赖，显式Memory模式才准备所选固定工件。请预留至少1GB可用空间。工件缓存、运行数据和私有配置都位于Git忽略
 的`.data`或`.env`中。
 
 ## 2. 克隆与工具链
@@ -72,10 +72,16 @@ pnpm run setup --workbench=off
 2. 下载并校验固定`code-server@4.132.0`工件；
 3. 校验[DSH插件登记表](../../config/dsh-plugins.json)、Fork分支、运行标记和许可证，构建Workflow
    Bundle与LifeOS Bridge，再准备固定DSH Web Profile；
-4. 只生成可重建缓存，不启动任何服务。
+4. `--memory=off`不触碰Memory工件；显式`memorycore / memmy / compare`只准备所选固定工件；
+5. 只生成可重建缓存，不启动任何服务。
 
-当前不准备Memory；统一setup没有启用参数。固定commit/tree、lock和原生工件Hash代码继续
-保留，未来决定恢复Memory时再重新接入组合根与启动图。
+Memory专项首次准备示例：
+
+```bash
+pnpm run setup --instance=debug --memory=compare --workbench=off
+```
+
+该命令复用Git Common Directory下的固定源码缓存；不启动Sidecar，也不读取或修改production数据。
 
 如果同一仓库已有本地服务或Workbench在运行，setup只报告占用并失败，不会替用户停止
 进程，也不会修改活动Product Run；先显式运行`pnpm dev:stop`后再准备。
@@ -199,8 +205,18 @@ pnpm dev --memory=off --workbench=code-server
 这会增加code-server wrapper和child，基线共7个OS进程；每个Terminal另有子进程。
 当前只使用Chat/PWA时保持前文的`--workbench=off`。
 
-当前不启动或装配Memory。`18960`与`18970`在整个运行期间都应保持空闲；统一启动器
-拒绝`--memory=all|memmy|memorycore`，避免环境变量或历史命令静默恢复Memory。
+Memory默认关闭。显式启用示例：
+
+```bash
+pnpm dev:debug --memory=memorycore
+pnpm dev:debug --memory=memmy
+pnpm dev:debug --memory=compare
+```
+
+`off`不检查Memory端口、不准备工件、不启动Sidecar且API/Workflow Registry为空；显式模式才使用
+production的`18960/18970`或debug的`19960/19970`以及对应实例私有数据根。未知端口占用仍失败关闭。
+本地固定memmy使用Chat实例私有数据库并绑定`usr_debug`；远程memmy也必须为该Principal提供专属
+物理数据库。当前固定版本不能安全共享给多个Principal，不能把`namespace.userId`当成真实租户隔离。
 
 `431xx`只属于production；分支worktree、VS Code F5和测试不得占用。CLI/VS Code debug固定
 使用`441xx`，Playwright真实浏览器门固定使用`451xx/452xx/453xx`。测试专属端口被占用时
@@ -208,7 +224,7 @@ pnpm dev --memory=off --workbench=code-server
 
 `dev:stop`完成后，production的43110、43111、43112、43114、43115与43119都应释放；
 `dev:debug:stop`只释放debug的44110、44111、44112、44114、44115、44119、44120、44121、44122与44123，不影响production。
-18960/18970与19960/19970应始终未被默认服务图占用，
+18960/18970与19960/19970在`off`时不属于活动服务图；显式启用后也必须由停止命令回收，
 code-server的Unix socket和Terminal子进程也应被受管回收。不要用`killall`、`pkill`或
 直接删除`.data`替代停止命令；`.data`还可能包含产品数据和运行证据。
 

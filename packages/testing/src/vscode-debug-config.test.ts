@@ -78,8 +78,10 @@ describe("VS Code应用级调试配置", () => {
       scripts: Record<string, string>;
     };
     expect(packageJson.scripts.dev).toBe("node scripts/dev/start.mjs");
+    // package script依赖launcher的安全缺省off，但不冻结显式Memory选择；因此命令行仍可
+    // 使用`pnpm dev:debug --memory=compare`启动隔离的双Provider调试纵向。
     expect(packageJson.scripts["dev:debug"]).toBe(
-      "node scripts/dev/start.mjs --debug --instance=debug --memory=off --workbench=off",
+      "node scripts/dev/start.mjs --debug --instance=debug --workbench=off",
     );
     expect(packageJson.scripts["dev:debug:status"]).toBe(
       "node scripts/dev/status.mjs --instance=debug",

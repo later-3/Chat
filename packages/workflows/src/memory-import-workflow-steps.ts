@@ -266,7 +266,7 @@ export async function commitMemoryImportMaterializedStep(input: {
   intentId: string;
   result: MemoryImportResult;
   accepted: MemoryImportAccepted;
-  verificationKind: "read_by_id_and_search" | "l0_and_session_l1";
+  verificationKind: "read_by_id" | "read_by_id_and_search" | "l0_and_session_l1";
   verificationSha256: string;
   reconciled?: boolean;
 }): Promise<MemoryImportResult> {

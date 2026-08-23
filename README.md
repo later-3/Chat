@@ -12,7 +12,7 @@ Chat 是一个以对话为入口、以耐久Workflow为执行骨架、由用户�
 - HTTP：Node.js + TypeScript + Hono。
 - 耐久执行：Vercel Workflow。
 - Agent Runtime：`pi-agent-core`与`pi-ai`。
-- Memory：历史合同、迁移、Adapter与独立Workflow代码保留；统一启动不准备或启动第三方服务，当前不作为产品能力交付。
+- Memory：固定memmy与Tencent MemoryCore Sidecar；默认`off`不准备、不占端口、不装配，显式`memorycore / memmy / compare`才启动并通过统一Query/Write/Reconcile Port接入。memmy当前限定单Principal专属数据库；本地无模型MemoryCore只承诺`accepted_only`。
 - 开发工作台：固定版本code-server，以独立Hosted Workbench接入。
 
 ```text
@@ -95,7 +95,7 @@ Trace、DSH状态、PID与浏览器Profile均位于当前worktree的隔离边界
 | `431xx` | LaunchAgent/手动production | 固定保留；分支、worktree、VS Code F5与测试禁止占用 |
 | `441xx` | 交互式CLI/VS Code debug | 与production并行；一次只允许一个debug worktree |
 | `451xx/452xx/453xx` | Playwright真实浏览器门 | 测试专属；占用时失败关闭，不清理production进程 |
-| `18960/18970`、`19960/19970` | 历史Memory production/debug保留位 | 当前必须空闲；启动器只接受`--memory=off` |
+| `18960/18970`、`19960/19970` | 显式Memory production/debug Sidecar | `off`不检查也不占用；`memmy / memorycore / compare`只检查并启动所选端口 |
 | `8088/8443` | 独立Plane CE Docker入口 | 不属于Chat启动器或上述三组实例 |
 
 production服务固定为：`43110` Gateway、`43114` DSH内部Host、`43111` API、`43112`
@@ -108,9 +108,11 @@ Inspector保留且production不监听，退役的`43113`必须始终空闲。deb
 | 命令/参数 | 结果 |
 |---|---|
 | `pnpm dev --memory=off --workbench=off` | 推荐；1个Supervisor + Pi/Workflow/API/Web 4个子进程，共5个OS进程 |
+| `pnpm dev --memory=memorycore|memmy --workbench=off` | 显式增加1个固定Memory Sidecar wrapper及其child；API/Workflow冻结同一Provider |
+| `pnpm dev --memory=compare --workbench=off` | 同时启动memmy与MemoryCore，只建立双Provider运行基础，不自动合并查询结果 |
 | `pnpm dev --memory=off --workbench=code-server` | 显式启用Beta Workbench；基线增加wrapper和code-server child，共7个OS进程；每个Terminal另有子进程 |
 | `pnpm dev` | 兼容默认值，等价于Memory关闭、Workbench开启；日常体验建议显式写出参数 |
-| `pnpm dev:debug` | 固定`instance=debug`、Memory关闭、Workbench关闭；占用`441xx`而非`431xx` |
+| `pnpm dev:debug [--memory=off|memorycore|memmy|compare]` | 固定`instance=debug`和Workbench关闭；Memory缺省off，显式启用时使用`19960/19970` |
 
 Web Gateway与DSH内部Host由同一个Web子进程监听两个端口，所以不是两套前端。Pi Executor、
 Workflow与API是3个职责独立的后端子进程，也不是重复后端。`pnpm dev:status`显示的PID和
@@ -119,15 +121,14 @@ Workflow与API是3个职责独立的后端子进程，也不是重复后端。`p
 `pnpm run setup`会按仓库固定证据自动准备DSH Profile、Workflow Bundle和code-server；Pi与DSH
 定制源码分别直接来自`later-3/pi@codex/later-custom`和
 `later-3/deepseek-harness-chat@codex/chat-trajectory-location-rc6`，不使用下游package patch。
-当前默认不下载或准备Memory工件。以后显式恢复Memory专项调试时，也不需要另外克隆
+当前默认不下载或准备Memory工件；显式Memory模式才从固定commit/tree准备所选Sidecar，也不需要另外克隆
 官方DeepSeek Harness、memmy、Tencent MemoryCore或code-server。没有配置
 `DASHSCOPE_API_KEY`时服务仍可启动和浏览，但真实规划/执行会明确显示Provider not ready。
 支持平台、工具链、首次下载、配置与故障处理以[本地安装指南](./docs/getting-started/local-install.md)为唯一入口。
 
-统一启动器始终启动Pi Executor、Workflow、API和DSH/Gateway；不会启动memmy/MemoryCore。
-Memory合同与Adapter仍为历史事实和后续重新接入保留，但当前运行图没有可用Provider；显式触达
-Memory Workflow会安全失败，不会因为历史环境变量静默恢复Memory。启动器拒绝
-`--memory=memmy|memorycore|all`。debug实例同时固定关闭Beta Workbench。code-server只监听
+统一启动器始终启动Pi Executor、Workflow、API和DSH/Gateway；Memory缺省`off`，此时即使存在遗留
+endpoint或凭据也返回空Registry。显式`--memory=memorycore|memmy|compare`才准备并启动对应Sidecar，
+API与Workflow在Store/恢复前冻结同一Provider描述集合。debug实例同时固定关闭Beta Workbench。code-server只监听
 受管0600 Unix socket，浏览器只能经Gateway访问；扩展市场默认离线，不连接Open VSX或自动
 查询Copilot。
 

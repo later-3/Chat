@@ -6,10 +6,14 @@ import {
   terminateRecorded,
 } from "./lib.mjs";
 import { cleanupOwnedDebugBrowser } from "../dev/browser-lifecycle.mjs";
+import {
+  parseStopArgs,
+  reconcileSelectedMemoryRuntime,
+  runtimePortListForMemoryMode,
+} from "../dev/app-runtime.mjs";
 import { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
 import {
   installRuntimeInstanceEnvironment,
-  parseRuntimeInstanceArgs,
   resolveRuntimeInstance,
 } from "../dev/runtime-instance.mjs";
 
@@ -21,12 +25,25 @@ import {
  */
 
 const root = repoRoot();
-const instance = parseRuntimeInstanceArgs(process.argv.slice(2));
+const { instance, memory } = parseStopArgs(process.argv.slice(2));
 const runtime = resolveRuntimeInstance(root, instance, process.env);
 installRuntimeInstanceEnvironment(process.env, runtime);
 
 const entries = loadPidEntries();
 const results = terminateRecorded(entries);
+let memoryRecoveries = [];
+try {
+  memoryRecoveries = reconcileSelectedMemoryRuntime(root, {
+    instance,
+    memory,
+    environment: process.env,
+  });
+} catch (error) {
+  console.error(
+    `[stop] Memory进程组回收失败：${error instanceof Error ? error.message : String(error)}`,
+  );
+  process.exitCode = 1;
+}
 let workbenchRecovery;
 try {
   workbenchRecovery = await reconcileManagedWorkbench(root);
@@ -44,6 +61,11 @@ for (const result of results) {
   console.log(`[stop] ${result.role} pid=${result.pid}: ${result.action}`);
   if (result.action === "kill-failed") failed = true;
 }
+for (const result of memoryRecoveries) {
+  if (result.action !== "no-evidence") {
+    console.log(`[stop] 固定${result.provider}进程组: ${result.action}`);
+  }
+}
 if (workbenchRecovery !== undefined && workbenchRecovery.action !== "no-evidence") {
   console.log(`[stop] Workbench transport=unix-socket: ${workbenchRecovery.action}`);
 }
@@ -53,7 +75,8 @@ if (browserCleanup.terminatedPids.length > 0 || browserCleanup.removedLocks.leng
   );
 }
 
-let occupied = checkPorts();
+const activePorts = runtimePortListForMemoryMode(runtime, memory);
+let occupied = checkPorts(activePorts);
 const recovered = terminateOwnedChatPortProcesses(root, occupied);
 for (const result of recovered) {
   console.log(`[stop] 同仓库遗留 ${result.role} pid=${result.pid}: ${result.action}`);
@@ -61,7 +84,7 @@ for (const result of recovered) {
 }
 if (recovered.length > 0) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
-  occupied = checkPorts();
+  occupied = checkPorts(activePorts);
 }
 
 for (const item of occupied) {

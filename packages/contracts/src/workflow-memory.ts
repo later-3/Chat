@@ -40,7 +40,13 @@ const memoryProviderQueryCapabilitySchema = z
 const memoryProviderWriteCapabilitySchema = z
   .object({
     maxContentCharacters: z.number().int().min(1).max(200_000),
-    materialization: z.enum(["synchronous", "asynchronous"]),
+    /**
+     * synchronous：写响应即可证明已形成可查询Memory；
+     * asynchronous：Provider承诺接收后会异步物化；
+     * accepted_only：当前Profile只承诺耐久接收，调用方不得等待或暗示必然物化。
+     * accepted_only并不禁止只读对账在未来发现真实Memory对象后报告materialized。
+     */
+    materialization: z.enum(["synchronous", "asynchronous", "accepted_only"]),
     idempotency: z.enum(["provider_key", "chat_reconcile"]),
   })
   .strict();

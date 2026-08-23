@@ -203,16 +203,16 @@ function addBody(): Record<string, unknown> {
   };
 }
 
-function detailBody(): Record<string, unknown> {
+function detailBody(id = "memory_import_1"): Record<string, unknown> {
   const detail = {
-    id: "memory_import_1",
+    id,
     kind: "policy",
     memoryLayer: "L2",
     status: "activated",
     title: "M2 验收规则",
     summary: "M2 canary",
     tags: ["manual", "m2", "release"],
-    metadata: {},
+    metadata: { info: { turn_id: "msg_importtest" } },
     createdAt: TEST_TIME,
     updatedAt: TEST_TIME,
     version: 1,
@@ -220,38 +220,39 @@ function detailBody(): Record<string, unknown> {
     sourceMemoryIds: [],
     policy: { evidenceMemoryIds: [], repairHints: [] },
   };
-  return { ...detail, item: { ...detail, refs: {} }, refs: {}, etag: "etag-import-1" };
+  return { ...detail, item: { ...detail, refs: {} }, refs: {}, etag: `etag-${id}` };
 }
 
-function importSearchBody(): Record<string, unknown> {
+function importPanelBody(items = 1): Record<string, unknown> {
+  const detail = detailBody() as { item: Record<string, unknown> };
+  const source = detail.item;
+  const item = Object.fromEntries(
+    [
+      "id",
+      "kind",
+      "memoryLayer",
+      "status",
+      "title",
+      "summary",
+      "tags",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+      "version",
+      "processing",
+    ].flatMap((key) => (source[key] === undefined ? [] : [[key, source[key]]])),
+  );
   return {
-    injectedContext: "<memmy_memory_context>M2 canary</memmy_memory_context>",
-    debug: {
-      searchEventId: "search_import_1",
-      hits: [
-        hit({
-          id: "memory_import_1",
-          title: "M2 验收规则",
-          tags: ["manual", "m2", "release"],
-          score: 1,
-        }),
-      ],
-      sourceMemoryIds: ["memory_import_1"],
-      status: ["ok"],
-      sections: [
-        {
-          id: "memory-memory_import_1",
-          title: "M2 验收规则",
-          kind: "policy",
-          memoryLayer: "L2",
-          memoryIds: ["memory_import_1"],
-          content: "M2 canary：发布前必须完成真实浏览器验收。",
-          tokenEstimate: 20,
-        },
-      ],
-      tokenEstimate: 20,
-      serverTime: TEST_TIME,
-    },
+    items: Array.from({ length: items }, (_, index) =>
+      index === 0 ? item : { ...item, id: `memory_import_${String(index + 1)}` },
+    ),
+    page: 1,
+    pageSize: 20,
+    total: items,
+    totalPages: 1,
+    hasNext: false,
+    hasPrev: false,
+    serverTime: TEST_TIME,
   };
 }
 
@@ -289,7 +290,12 @@ describe("MemmyMemoryAdapter", () => {
     expect(captured).toEqual({
       requestId: "mii_importtest",
       adapterId: "chat",
-      namespace: { source: "chat", profileId: "chat-debug", sessionKey: "psn_importtest" },
+      namespace: {
+        source: "chat",
+        profileId: "chat-debug",
+        sessionKey: "psn_importtest",
+        userId: "usr_debug",
+      },
       content: "M2 canary：发布前必须完成真实浏览器验收。",
       layer: "L2",
       title: "M2 验收规则",
@@ -366,14 +372,15 @@ describe("MemmyMemoryAdapter", () => {
     });
   });
 
-  it("使用已知外部ID执行GET+Search双重验证后才返回materialized", async () => {
+  it("已知外部ID只用GET严格验证L2后返回materialized", async () => {
     const calls: string[] = [];
     const memory = adapter(
       fetchStub(async (input) => {
         const url = String(input);
         calls.push(url);
-        if (url.endsWith("/api/v1/memory/memory_import_1")) return jsonResponse(detailBody());
-        if (url.endsWith("/api/v1/memory/search")) return jsonResponse(importSearchBody());
+        if (new URL(url).pathname === "/api/v1/memory/memory_import_1") {
+          return jsonResponse(detailBody());
+        }
         throw new Error("unexpected URL");
       }),
     );
@@ -384,31 +391,51 @@ describe("MemmyMemoryAdapter", () => {
     expect(result).toMatchObject({
       status: "materialized",
       accepted: { externalObjectId: "memory_import_1", externalObjectVersion: "1" },
+      verificationKind: "read_by_id",
     });
-    expect(calls).toEqual([
-      "http://127.0.0.1:18960/api/v1/memory/memory_import_1",
-      "http://127.0.0.1:18960/api/v1/memory/search",
-    ]);
+    expect(calls).toEqual(["http://127.0.0.1:18960/api/v1/memory/memory_import_1?source=chat"]);
   });
 
-  it("结果未知且没有外部ID时只用相同requestId做一次memmy原生幂等对账", async () => {
-    const requestIds: string[] = [];
+  it("结果未知且没有外部ID时只用panel GET定位并以detail GET证明", async () => {
+    let addCalls = 0;
     const memory = adapter(
       fetchStub(async (input, init) => {
-        const url = String(input);
-        if (url.endsWith("/api/v1/memory/add")) {
-          requestIds.push((JSON.parse(String(init?.body)) as { requestId: string }).requestId);
-          return jsonResponse({ ...addBody(), duplicate: true });
+        const url = new URL(String(input));
+        if (url.pathname === "/api/v1/memory/add") addCalls += 1;
+        if (url.pathname === "/api/v1/panel/items") {
+          expect(url.searchParams.get("q")).toBe("mii_importtest");
+          expect(init?.method).toBe("GET");
+          return jsonResponse(importPanelBody());
         }
-        if (url.endsWith("/api/v1/memory/memory_import_1")) return jsonResponse(detailBody());
-        if (url.endsWith("/api/v1/memory/search")) return jsonResponse(importSearchBody());
-        throw new Error("unexpected URL");
+        if (url.pathname === "/api/v1/memory/memory_import_1") {
+          return jsonResponse(detailBody());
+        }
+        throw new Error(`unexpected URL ${url.pathname}`);
       }),
     );
     await expect(memory.reconcile(importInput())).resolves.toMatchObject({
       status: "materialized",
+      verificationKind: "read_by_id",
     });
-    expect(requestIds).toEqual(["mii_importtest"]);
+    expect(addCalls).toBe(0);
+  });
+
+  it("未知结果定位到零个或多个严格匹配对象时都失败关闭且不写入", async () => {
+    for (const candidateCount of [0, 2]) {
+      const fetchImpl = fetchStub(async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/api/v1/panel/items") {
+          return jsonResponse(importPanelBody(candidateCount));
+        }
+        const id = url.pathname.split("/").at(-1);
+        if (url.pathname.startsWith("/api/v1/memory/") && id) {
+          return jsonResponse(detailBody(id));
+        }
+        throw new Error(`unexpected URL ${url.pathname}`);
+      });
+      const result = await adapter(fetchImpl).reconcile(importInput());
+      expect(result.status).toBe(candidateCount === 0 ? "outcome_unknown" : "failed");
+    }
   });
   it("发送固定 verbose query，并用去重 sourceMemoryIds 计算来源数", async () => {
     let capturedUrl = "";
@@ -432,6 +459,7 @@ describe("MemmyMemoryAdapter", () => {
         source: "chat",
         profileId: "chat-debug",
         sessionKey: "psn_memmytest",
+        userId: "usr_debug",
       },
       query: "Which historical fact applies?",
       layers: ["L2"],
@@ -589,6 +617,7 @@ describe("MemmyMemoryAdapter", () => {
     let capturedAuthorization: string | undefined;
     const registry = createMemoryBackendRegistry(
       {
+        CHAT_MEMORY_MODE: "memmy",
         CHAT_MEMMY_BASE_URL: "http://127.0.0.1:18960///",
         CHAT_MEMMY_TOKEN: `  ${privateToken}  `,
         CHAT_MEMMY_CREDENTIAL_REVISION: "memmy-key-2026-08",
@@ -633,6 +662,7 @@ describe("MemmyMemoryAdapter", () => {
     let missingRevisionError: unknown;
     try {
       createMemoryBackendRegistry({
+        CHAT_MEMORY_MODE: "memmy",
         CHAT_MEMMY_BASE_URL: "http://127.0.0.1:18960",
         CHAT_MEMMY_TOKEN: missingRevisionToken,
       });
@@ -661,16 +691,29 @@ describe("MemmyMemoryAdapter", () => {
       fetchStub(async () => jsonResponse(verboseSearchBody())),
       { token: "private-token-rotated-but-not-declared", credentialRevision: "memmy-key-1" },
     ).describe();
+    const otherPrincipal = adapter(
+      fetchStub(async () => jsonResponse(verboseSearchBody())),
+      {
+        expectedPrincipalId: "usr_other",
+      },
+    ).describe();
 
     expect(noAuth).toMatchObject({ authMode: "none", credentialRevision: "none" });
     expect(keyOne).toMatchObject({ authMode: "bearer", credentialRevision: "memmy-key-1" });
     expect(noAuth.configurationFingerprint).not.toBe(keyOne.configurationFingerprint);
     expect(keyOne.configurationFingerprint).not.toBe(keyTwo.configurationFingerprint);
+    expect(otherPrincipal.configurationFingerprint).not.toBe(noAuth.configurationFingerprint);
     // 指纹只依赖显式keyId/revision，绝不哈希Token；轮换凭据必须同步提升revision。
     expect(sameRevisionDifferentToken.configurationFingerprint).toBe(
       keyOne.configurationFingerprint,
     );
-    const serialized = JSON.stringify([noAuth, keyOne, keyTwo, sameRevisionDifferentToken]);
+    const serialized = JSON.stringify([
+      noAuth,
+      keyOne,
+      keyTwo,
+      sameRevisionDifferentToken,
+      otherPrincipal,
+    ]);
     expect(serialized).not.toContain("private-token-one");
     expect(serialized).not.toContain("private-token-two");
   });

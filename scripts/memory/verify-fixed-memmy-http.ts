@@ -5,6 +5,9 @@ import {
   productRunIdSchema,
   productSessionIdSchema,
   memoryImportIntentIdSchema,
+  memoryWriteIntentIdSchema,
+  principalIdSchema,
+  workflowMemoryQueryIdSchema,
   type MemoryLayer,
 } from "../../packages/contracts/src/index.ts";
 import { MEMMY_BACKEND_ID, MemmyMemoryAdapter } from "../../packages/memory-runtime/src/index.ts";
@@ -181,13 +184,15 @@ try {
     title?: unknown;
     tags?: unknown;
   };
+  const detailTags = Array.isArray(detail.tags)
+    ? detail.tags.filter((tag): tag is string => typeof tag === "string")
+    : [];
   if (
     !detailResponse.ok ||
     detail.body !== importShape.content ||
     detail.memoryLayer !== "L2" ||
     detail.title !== importShape.title ||
-    !Array.isArray(detail.tags) ||
-    !["manual", ...importShape.tags].every((tag) => detail.tags?.includes(tag))
+    !["manual", ...importShape.tags].every((tag) => detailTags.includes(tag))
   ) {
     throw new Error("真实memmy GET未保留正文、L2、标题与固定manual+用户标签");
   }
@@ -204,7 +209,65 @@ try {
   ).trim();
   if (objectCount !== "1") throw new Error(`真实memmy幂等对象数不是1，而是${objectCount}`);
 
-  console.log("[memmy-real-http] 固定源码、真实add/幂等冲突、GET+Search、SQLite唯一对象门通过");
+  const workflowContent =
+    "WF-MEMMY-REAL-4927：Memory Workflow写入后只能通过只读GET对账，禁止二次POST。";
+  const workflowWriteInput = {
+    operationId: memoryWriteIntentIdSchema.parse("mwi_memmyworkflowreal"),
+    requestSha256: "e".repeat(64),
+    content: workflowContent,
+    contentType: "conversation_turn" as const,
+    productSessionId: productSessionIdSchema.parse("psn_memmyworkflowreal"),
+    principalId: principalIdSchema.parse("usr_debug"),
+    sourceMessageId: "msg_memmyworkflowreal",
+  };
+  const workflowAccepted = await adapter.writeMemory(workflowWriteInput);
+  const knownIdReconcile = await adapter.reconcileMemoryWrite({
+    ...workflowWriteInput,
+    externalObjectId: workflowAccepted.externalObjectId,
+  });
+  const lostIdReconcile = await adapter.reconcileMemoryWrite(workflowWriteInput);
+  if (
+    knownIdReconcile.status !== "materialized" ||
+    lostIdReconcile.status !== "materialized" ||
+    lostIdReconcile.accepted.externalObjectId !== workflowAccepted.externalObjectId ||
+    knownIdReconcile.verificationKind !== "read_by_id" ||
+    lostIdReconcile.verificationKind !== "read_by_id"
+  ) {
+    throw new Error("真实memmy Workflow写入未能通过已知ID与丢失ID两条只读对账路径");
+  }
+  const workflowQuery = await adapter.queryMemory({
+    operationId: workflowMemoryQueryIdSchema.parse("wmq_memmyworkflowreal"),
+    productRunId: productRunIdSchema.parse("run_memmyworkflowreal"),
+    productSessionId: workflowWriteInput.productSessionId,
+    principalId: workflowWriteInput.principalId,
+    query: "WF-MEMMY-REAL-4927 只读GET对账",
+    maxResults: 5,
+    maxContextCharacters: 8_000,
+  });
+  if (
+    workflowQuery.hitCount < 1 ||
+    !workflowQuery.sections.some((section) => section.content.includes("WF-MEMMY-REAL-4927"))
+  ) {
+    throw new Error("真实memmy Workflow Query未召回刚写入的L2对象");
+  }
+  if (!/^[A-Za-z0-9_-]+$/u.test(workflowAccepted.externalObjectId)) {
+    throw new Error("真实memmy Workflow external ID包含不安全字符");
+  }
+  const workflowObjectCount = execFileSync(
+    "/usr/bin/sqlite3",
+    [
+      resolve(runRoot, "memory.sqlite"),
+      `SELECT COUNT(*) FROM memories WHERE id='${workflowAccepted.externalObjectId}';`,
+    ],
+    { encoding: "utf8" },
+  ).trim();
+  if (workflowObjectCount !== "1") {
+    throw new Error(`只读对账后Workflow对象数不是1，而是${workflowObjectCount}`);
+  }
+
+  console.log(
+    "[memmy-real-http] 固定源码、Legacy Import、Workflow Query/Write、已知/丢失ID只读对账与SQLite唯一对象门通过",
+  );
 } finally {
   await stopService();
 }

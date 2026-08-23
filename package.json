@@ -9,7 +9,7 @@
   "scripts": {
     "setup": "node scripts/dev/setup.mjs",
     "dev": "node scripts/dev/start.mjs",
-    "dev:debug": "node scripts/dev/start.mjs --debug --instance=debug --memory=off --workbench=off",
+    "dev:debug": "node scripts/dev/start.mjs --debug --instance=debug --workbench=off",
     "dev:debug:status": "node scripts/dev/status.mjs --instance=debug",
     "dev:debug:stop": "node scripts/debug/stop.mjs --instance=debug",
     "dev:status": "node scripts/dev/status.mjs",
@@ -46,6 +46,7 @@
     "test:memory:memmy-real-import": "pnpm test:memory:memmy-real-http",
     "test:memory:memmy-response-drop": "pnpm --filter @chat/workflows build:bundles && pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-response-drop.ts",
     "test:memory:memorycore-real-http": "pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-fixed-memorycore-http.ts",
+    "test:memory:orphan-recovery-real": "node scripts/memory/verify-orphan-recovery-real.mjs",
     "test:e2e:planning-execution:real": "pnpm test:e2e:dsh-real",
     "plane-ce:prepare": "node scripts/plane-ce/manage.mjs prepare",
     "plane-ce:config": "node scripts/plane-ce/manage.mjs config",

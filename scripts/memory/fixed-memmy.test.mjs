@@ -293,6 +293,15 @@ describe("fixed memmy script contracts", () => {
     const source = readFileSync(resolve(repoRoot, "scripts/memory/start-fixed-memmy.mjs"), "utf8");
     assert.match(source, /env: createSafeChildProcessEnvironment\(/u);
     assert.doesNotMatch(source, /\.\.\.process\.env/u);
+
+    const memoryCoreSource = readFileSync(
+      resolve(repoRoot, "scripts/memory/start-fixed-memorycore.mjs"),
+      "utf8",
+    );
+    assert.match(memoryCoreSource, /env: createSafeChildProcessEnvironment\(/u);
+    assert.match(memoryCoreSource, /LOG_PATH: disabledProviderLogPath/u);
+    assert.match(memoryCoreSource, /provider-file-logging-disabled/u);
+    assert.doesNotMatch(memoryCoreSource, /\.\.\.process\.env/u);
   });
 
   it("installs memmy without third-party lifecycle scripts or optional CUDA downloads", () => {
@@ -367,5 +376,47 @@ describe("fixed memmy script contracts", () => {
       if (dummy.exitCode === null && dummy.signalCode === null) dummy.kill("SIGTERM");
       await waitForExit(dummy);
     }
+  });
+
+  it("pins both Memory wrappers to the selected runtime-instance port", () => {
+    const memmy = spawnSync(
+      process.execPath,
+      [resolve(repoRoot, "scripts/memory/start-fixed-memmy.mjs")],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CHAT_REPO_ROOT: repoRoot,
+          CHAT_RUNTIME_INSTANCE: "debug",
+          CHAT_MEMMY_PORT: "18960",
+          CHAT_MEMMY_RUN_ROOT: resolve(repoRoot, ".data/tests/fixed-memmy-debug-port"),
+        },
+      },
+    );
+    assert.equal(memmy.status, 1);
+    assert.match(memmy.stderr, /debug实例.*19960/u);
+
+    const memoryCore = spawnSync(
+      process.execPath,
+      [resolve(repoRoot, "scripts/memory/start-fixed-memorycore.mjs")],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CHAT_REPO_ROOT: repoRoot,
+          CHAT_RUNTIME_INSTANCE: "debug",
+          CHAT_TENCENT_MEMORYCORE_PORT: "18970",
+          CHAT_TENCENT_MEMORYCORE_TOKEN: "local-test-token",
+          CHAT_TENCENT_MEMORYCORE_RUN_ROOT: resolve(
+            repoRoot,
+            ".data/tests/fixed-memorycore-debug-port",
+          ),
+        },
+      },
+    );
+    assert.equal(memoryCore.status, 1);
+    assert.match(memoryCore.stderr, /debug实例.*19970/u);
   });
 });

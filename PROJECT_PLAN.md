@@ -20,13 +20,21 @@
 
 首期纵向已经完成，但当前产品不依赖它，暂按Beta保留且不进入通用CI/CD。需要单独启用、修改或提升为稳定能力时，完成门仍是：真实Workspace可读写；Terminal、Git状态与Diff可见；DSH返回后保留原会话；停止应用后Terminal子进程与端口全部回收。当前本地纵向不是OS沙箱，远程/多用户部署前必须换成容器或独立UID Provider。
 
-### F3 · Browser Provider（下一步）
+### F3 · Memory纵向（进行中）
+
+把固定memmy与Tencent MemoryCore作为可替换Sidecar，通过同一Provider中立Port接入Chat。普通开发默认`off`且不受Memory端口、工件或服务牵绊；显式启用后，API与Workflow冻结同一Provider集合。
+
+交付顺序：运行基础与真实Provider门 → 独立Memory增强Direct Workflow → Chat/Codex Session预览、去重与导入 → 双Provider对比 → Retrieval/Write Agent与可选人工门 → DSH Memory管理表面。旧Memory Planning只作为实现证据，不能决定当前目标形态。
+
+完成门：查询结果真实进入Direct Provider输入；同一Session导入重跑零新增；Write响应丢失不会产生第二个外部对象；刷新后可从Product Store重建来源、采用、决定、写入与对账；真实DSH浏览器能配置、查看并管理本轮Memory使用。
+
+### F4 · Browser Provider（候选）
 
 选择带实时人机共用视图的独立Browser Provider；Agent工具与用户界面必须绑定同一浏览器Session。浏览器运行在Local Host或远程Sandbox，DSH只挂载表面。
 
 这是阶段目标，不是已批准实现任务。开工前仍要先完成候选上游源码/许可证/接缝/安全审核，形成用户确认的选型、最小Port、失败语义和真实验收任务书；任务书本身不能替代当前用户授权。
 
-### F4 · 长期个人系统
+### F5 · 长期个人系统
 
 在现有Product Store、Project与Memory基础事实之上，继续交付Stage/Milestone/Iteration/Work、规则、日历、提醒、Artifact/Evidence、多个Agent角色和跨设备恢复。当前已交付范围以`PROJECT_STATE.md`和源码为准，不能把本阶段标题当成“全部尚未实现”或“全部已经实现”。
 

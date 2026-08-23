@@ -33,6 +33,7 @@ const IMPORT_CONTENT = "M3-MEMORYCORE-REAL-7319：服务器只接收在本地编
 const QUERY_CONTENT = "M3-MEMORYCORE-BM25-4821：发布前必须完成真实模型与浏览器端到端测试。";
 const WORKFLOW_WRITE_CONTENT =
   "WORKFLOW-MEMORY-REAL-9184：Memory Provider保持独立服务，Chat只冻结产品事实。";
+const QUERY_FIXTURE_SESSION_ID = "fixture:memorycore-query-only";
 
 const repoRoot = chatRepoRoot();
 const runRoot = fixedMemoryCoreRunRoot(repoRoot);
@@ -145,7 +146,11 @@ async function countImportSession(sessionId: string): Promise<number> {
   return envelope.data.total;
 }
 
-async function seedL1(sessionId: string): Promise<void> {
+/**
+ * 固定本地Profile没有模型/抽取Worker，因此这里只为验证已有L1的Query Port直接准备查询
+ * fixture。它使用与Write完全不同的session，不能作为conversation/add会自动物化的证据。
+ */
+async function seedQueryFixtureL1(): Promise<void> {
   const moduleUrl = pathToFileURL(
     resolve(fixedMemoryCoreRoot(repoRoot), "src/core/store/sqlite.ts"),
   ).href;
@@ -176,8 +181,8 @@ async function seedL1(sessionId: string): Promise<void> {
       createdAt: now,
       updatedAt: now,
       version: 1,
-      sessionKey: sessionId,
-      sessionId,
+      sessionKey: QUERY_FIXTURE_SESSION_ID,
+      sessionId: QUERY_FIXTURE_SESSION_ID,
       teamId: TEAM_ID,
       userId: USER_ID,
       agentId: AGENT_ID,
@@ -195,6 +200,9 @@ try {
   if (health.status !== "ready") throw new Error(`MemoryCore Adapter健康失败：${health.status}`);
   if (memory.describe().backendId !== TENCENT_MEMORYCORE_BACKEND_ID) {
     throw new Error("MemoryCore backendId漂移");
+  }
+  if (memory.describeProvider().capabilities.write?.materialization !== "accepted_only") {
+    throw new Error("本地无模型MemoryCore必须声明accepted_only写入能力");
   }
 
   const shape = {
@@ -232,7 +240,7 @@ try {
     throw new Error("真实MemoryCore导入后L0对象数不是1");
   }
 
-  await seedL1(accepted.externalObjectId);
+  await seedQueryFixtureL1();
   const query = await memory.query({
     operationId: "mqy_m3memorycorereal",
     productRunId: productRunIdSchema.parse("run_m3memorycorereal"),
@@ -267,15 +275,14 @@ try {
   ) {
     throw new Error("Workflow Memory通用Query Port未归一化真实MemoryCore L1");
   }
-  const materialized = await memory.reconcile({
+  const afterQueryFixture = await memory.reconcile({
     ...input,
     externalObjectId: accepted.externalObjectId,
   });
-  if (
-    materialized.status !== "materialized" ||
-    materialized.verificationKind !== "l0_and_session_l1"
-  ) {
-    throw new Error("真实MemoryCore同session L1未升级materialized");
+  if (afterQueryFixture.status !== "accepted") {
+    throw new Error(
+      `仅查询fixture不得把L0 Write伪装成materialized，实际=${afterQueryFixture.status}`,
+    );
   }
   if ((await countImportSession(accepted.externalObjectId)) !== 1) {
     throw new Error("重复对账产生了第二条L0");
@@ -343,7 +350,7 @@ try {
   }
 
   console.log(
-    "[memorycore-real-http] 固定源码、Workflow Query/Write Port、真实L0 accepted、只读对账、BM25 L1查询、materialized与隔离门通过",
+    "[memorycore-real-http] 固定源码、accepted_only描述、Workflow Query/Write Port、真实L0 accepted、只读对账、独立BM25 L1查询fixture与隔离门通过",
   );
 } finally {
   await stopService();

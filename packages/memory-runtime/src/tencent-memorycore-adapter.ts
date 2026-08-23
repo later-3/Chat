@@ -472,7 +472,9 @@ export class TencentMemoryCoreAdapter
         query: { maxResults: 20, maxContextCharacters: 32_000 },
         write: {
           maxContentCharacters: 8_192,
-          materialization: "asynchronous",
+          // 固定本地Profile没有模型或抽取Worker，只承诺L0耐久接收。该声明禁止
+          // Workflow/UI把accepted描述成“物化中”；未来只读发现真实L1仍可提交materialized。
+          materialization: "accepted_only",
           // 固定版本没有调用方幂等Key；Chat用稳定session做只读对账。
           idempotency: "chat_reconcile",
         },
@@ -756,8 +758,9 @@ export class TencentMemoryCoreAdapter
 
   /**
    * 对账严格只读：先证明稳定session中存在完全一致的L0，再检查同session的L1。
-   * L0存在只能证明accepted；只有L1真实存在才返回materialized。任何查询故障保持
-   * outcome_unknown，既不补造成功，也不调用atomic/update或再次add。
+   * 当前本地无模型Profile是accepted_only，L0存在只能证明accepted；只有Provider数据面
+   * 已经真实存在L1才返回materialized。任何查询故障保持outcome_unknown，既不补造成功，
+   * 也不调用atomic/update或再次add。
    */
   async reconcile(input: MemoryImportReconcileInput): Promise<MemoryImportReconcileOutput> {
     const config = this.requireImportConfiguration();

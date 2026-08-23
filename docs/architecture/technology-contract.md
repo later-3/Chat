@@ -13,7 +13,7 @@
 | Product Store | 当前版本化JSON Adapter | 权威产品事实；未来可替换生产Store |
 | Durable Workflow | Vercel Workflow | 耐久步骤、暂停、恢复、重放和Checkpoint |
 | Agent Runtime | `pi-agent-core` + `pi-coding-agent AgentSession` | Planner仍是Workflow内受限节点；完整Executor运行在独立服务中 |
-| Memory | 暂停；保留`WorkflowMemoryProviderPort`、Adapter与历史合同 | 当前统一启动没有可用Provider；历史事实仍可读取，后续重新接入时复用窄Port而不自研Memory引擎 |
+| Memory | 固定memmy与Tencent MemoryCore Sidecar + `WorkflowMemoryProviderPort` | 默认`off`；显式`memorycore / memmy / compare`才准备、启动并在API/Workflow装配同一Query/Write/Reconcile Provider集合；Chat不自研Memory引擎 |
 | Hosted Workbench | code-server（固定版本） | Files、Editor、Terminal、Git、Diff和VS Code扩展 |
 | 验证 | Vitest/Node Test + Playwright | 单元、合同、集成和真实浏览器纵向 |
 
@@ -106,6 +106,10 @@ Query读取资源并返回revision/ETag/cursor；Command表达一次用户意图
 - Memory Planning的`memory.write`节点保存本次用户输入，Application先提交`MemoryWriteIntent + Result`，由当前父Workflow唯一执行；不创建竞争的start Outbox。直接Write Command才提交`Intent + Result + Outbox`并启动独立`MemoryWriteWorkflow`。两者的外部write Step都固定`maxRetries=0`，未知结果只允许用同一`mwi_*`派生身份做只读对账。
 - Memory读写Node状态进入Run Activity Journal并投影到公开Execution Trace，由DSH Bridge显示为`Memory · 查询/写入`Trajectory；不复制Memory正文或Provider Payload，Debug Trace不参与。
 - DSH、Pi Extension与Workflow Memory均不直接依赖腾讯L0/L1模型；这些层级、Bearer、service/team/user/agent映射只存在于Adapter进程。未来HTTP、SDK或MCP项目必须实现同一窄Port，不能把Provider对象写回Domain。
+- Write能力必须诚实声明`materialization`：memmy当前为`synchronous`；固定本地Tencent MemoryCore没有模型/抽取Worker，只能声明`accepted_only`。`accepted_only`是合法成功能力，不表示“物化中”；只有只读对账真实发现同一写入身份的L1对象时，Application才允许提交`materialized`。
+- 固定memmy不具备可信的库内多Principal过滤。当前Profile必须绑定唯一`CHAT_MEMMY_PRINCIPAL_ID`并使用Chat专属物理数据库；动态请求Principal不一致时Adapter在HTTP调用前失败关闭。多用户部署必须采用一Principal一Sidecar/数据库，或先在上游增加真实`user_id`过滤与合同测试，不能只靠namespace字段宣称隔离。
+- `CHAT_MEMORY_MODE`是Provider装配的唯一运行开关：缺省等于`off`，显式空值/未知值启动失败；`off`必须在解析任何遗留endpoint或凭据前返回空Registry。统一launcher只为选中模式准备工件、检查端口和启动Sidecar，production/debug分别使用`18960/18970`与`19960/19970`及独立数据根/身份。
+- 受管launcher不转发第三方Memory stdout/stderr，也显式关闭MemoryCore文件日志；Provider可能输出的Memory正文不得进入Chat终端、Trace或日志。健康、退出、产品对象引用与严格错误码是Chat可观察边界。
 
 完整执行服务、身份、Trace和恢复语义见[Pi Coding Executor Service As-built](./pi-coding-executor-service.md)。
 

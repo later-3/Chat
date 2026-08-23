@@ -296,7 +296,7 @@ async function testApp(): Promise<{ app: ApiApp; deps: ApplicationDeps }> {
         query: { maxResults: 20, maxContextCharacters: 32_000 },
         write: {
           maxContentCharacters: 8_192,
-          materialization: "asynchronous" as const,
+          materialization: "accepted_only" as const,
           idempotency: "chat_reconcile" as const,
         },
         reconcile: true,
@@ -1485,7 +1485,7 @@ describe("公开产品API", () => {
       providerKind: "tencent_memorycore",
       transport: "http",
       configured: true,
-      capabilities: { query: { maxResults: 20 }, write: { materialization: "asynchronous" } },
+      capabilities: { query: { maxResults: 20 }, write: { materialization: "accepted_only" } },
     });
     expect(JSON.stringify(providers)).not.toMatch(/token|serviceId|teamId|baseUrl|L0|L1/u);
     expect((await app.request("/api/memory/providers?debug=1")).status).toBe(400);

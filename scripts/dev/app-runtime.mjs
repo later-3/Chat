@@ -13,7 +13,14 @@ import {
   terminateOwnedChatPortProcesses,
   terminateRecorded,
 } from "../debug/lib.mjs";
-import { assertSupportedRuntimeLibc, detectRuntimeLibc } from "../memory/fixed-memmy.mjs";
+import {
+  FIXED_MEMMY_COMMIT,
+  assertSupportedRuntimeLibc,
+  detectRuntimeLibc,
+  ensureFixedMemmy,
+} from "../memory/fixed-memmy.mjs";
+import { ensureFixedMemoryCore } from "../memory/fixed-memorycore.mjs";
+import { reconcileSelectedMemorySidecars } from "../memory/process-lifecycle.mjs";
 import { assertDshCliRuntimeClosure, dshWebEnvironment } from "../dsh/profile-runtime.mjs";
 import {
   codeServerRunRoot,
@@ -28,8 +35,11 @@ export { reconcileManagedWorkbench } from "../workbench/process-lifecycle.mjs";
 import { cleanupOwnedDebugBrowser } from "./browser-lifecycle.mjs";
 import { resolveRuntimeInstance } from "./runtime-instance.mjs";
 
-/** Memory当前冻结关闭；保留字段只为旧命令给出明确失败，而不是保留隐式启用入口。 */
-export const MEMORY_PROFILES = Object.freeze(["off"]);
+/**
+ * Memory是显式的本地运行能力：默认off不准备工件、不占端口、不启动Sidecar。
+ * compare仅表示同时运行两个已固定Provider，不在launcher内实现查询或写入策略。
+ */
+export const MEMORY_PROFILES = Object.freeze(["off", "memorycore", "memmy", "compare"]);
 export const WORKBENCH_PROFILES = Object.freeze(["off", "code-server"]);
 export const LOCAL_SETUP_NODE_MAJOR = 24;
 export const LOCAL_SETUP_NODE_ABI = "137";
@@ -132,7 +142,7 @@ export function parseDevArgs(argv) {
     if (argument.startsWith("--memory=")) {
       const value = argument.slice("--memory=".length);
       if (!MEMORY_PROFILES.includes(value)) {
-        throw new Error("Memory当前冻结关闭；统一启动器只接受--memory=off");
+        throw new Error(`--memory只支持 ${MEMORY_PROFILES.join("、")}`);
       }
       options.memory = value;
       continue;
@@ -160,22 +170,48 @@ export function parseDevArgs(argv) {
   return options;
 }
 
+/** 独立stop默认收敛本实例两家Memory orphan；显式mode只用于缩小维护范围。 */
+export function parseStopArgs(argv) {
+  let instance = "production";
+  let memory = "compare";
+  for (const argument of argv) {
+    if (argument.startsWith("--instance=")) {
+      const value = argument.slice("--instance=".length);
+      if (!["production", "debug"].includes(value)) {
+        throw new Error("--instance只支持 production、debug");
+      }
+      instance = value;
+      continue;
+    }
+    if (argument.startsWith("--memory=")) {
+      const value = argument.slice("--memory=".length);
+      if (!MEMORY_PROFILES.includes(value)) {
+        throw new Error(`--memory只支持 ${MEMORY_PROFILES.join("、")}`);
+      }
+      memory = value;
+      continue;
+    }
+    throw new Error(`未知参数：${argument}`);
+  }
+  return Object.freeze({ instance, memory });
+}
+
 export function devUsage() {
   return [
-    "用法: pnpm dev [--memory=off] [--workbench=off|code-server]",
-    "      pnpm dev:debug",
+    "用法: pnpm dev [--memory=off|memorycore|memmy|compare] [--workbench=off|code-server]",
+    "      pnpm dev:debug [--memory=off|memorycore|memmy|compare]",
     "",
     "pnpm dev使用production实例；pnpm dev:debug使用隔离端口与独立数据的debug实例。",
-    "默认不启动或装配Memory；debug实例固定关闭Beta Code Workbench。",
-    "Memory代码与独立测试保留；当前统一启动器不提供启用入口。",
+    "Memory默认off；只有显式选择时才准备并启动对应的本地Sidecar。",
+    "production与debug使用隔离端口、运行数据和Memory身份；debug实例固定关闭Beta Code Workbench。",
   ].join("\n");
 }
 
 export function setupUsage() {
   return [
-    "用法: pnpm run setup [--memory=off] [--workbench=off|code-server] [--instance=production|debug]",
+    "用法: pnpm run setup [--memory=off|memorycore|memmy|compare] [--workbench=off|code-server] [--instance=production|debug]",
     "",
-    "默认只准备Workflow Bundle、DSH Profile与code-server工件，不准备或启动Memory。",
+    "Memory默认off；setup只准备显式选中的固定工件，不启动任何服务。",
   ].join("\n");
 }
 
@@ -213,6 +249,23 @@ export function resolveLocalWorkbenchRuntimeContract(root, environment = process
     CHAT_FIXED_SOURCE_CACHE_ROOT: resolveSharedFixedCacheRoot(repoRoot, environment),
     CHAT_CODE_WORKBENCH_LEASE_PORT: String(resolveCodeServerPrepareLeasePort(environment)),
   });
+}
+
+export function reconcileSelectedMemoryRuntime(
+  root,
+  { instance = "production", memory = "off", environment = process.env } = {},
+  dependencies = {},
+) {
+  const runtime = resolveRuntimeInstance(root, instance, environment);
+  const managedEnvironment = {
+    ...environment,
+    ...runtime.environment,
+    CHAT_FIXED_SOURCE_CACHE_ROOT: resolveSharedFixedCacheRoot(root, environment),
+  };
+  return reconcileSelectedMemorySidecars(
+    { root, runtime, memory, environment: managedEnvironment },
+    dependencies,
+  );
 }
 
 function withoutVsCodeAutoAttach(environment) {
@@ -262,6 +315,35 @@ function assertRuntimeProfile(instance, workbench, debug = false) {
   }
 }
 
+function memoryModeIncludes(memory, provider) {
+  if (!MEMORY_PROFILES.includes(memory)) throw new Error(`未知Memory Profile：${memory}`);
+  return memory === "compare" || memory === provider;
+}
+
+/**
+ * `off`不应被未启用Memory的端口占用所阻断。启动与setup都从同一mode
+ * 投影得到端口门；选中的端口未知占用时仍必须失败关闭。
+ */
+export function runtimePortListForMemoryMode(runtime, memory = "off") {
+  if (!MEMORY_PROFILES.includes(memory)) throw new Error(`未知Memory Profile：${memory}`);
+  const omitted = new Set();
+  if (!memoryModeIncludes(memory, "memmy")) omitted.add(runtime.ports.memory);
+  if (!memoryModeIncludes(memory, "memorycore")) omitted.add(runtime.ports.memoryCore);
+  return runtime.portList.filter((port) => !omitted.has(port));
+}
+
+function memmyConsumerEnvironment(runtime) {
+  return {
+    CHAT_MEMMY_BASE_URL: `http://127.0.0.1:${String(runtime.ports.memory)}`,
+    // 本地固定memmy无鉴权；空值同时阻止load-env回退到远程Bearer凭据。
+    CHAT_MEMMY_TOKEN: "",
+    CHAT_MEMMY_CONFIG_REVISION: `fixed-${FIXED_MEMMY_COMMIT.slice(0, 12)}-local-${runtime.name}`,
+    CHAT_MEMMY_CREDENTIAL_REVISION: "none",
+    // 当前API认证固定映射到单调试用户；固定memmy只允许专属物理DB的同一Principal。
+    CHAT_MEMMY_PRINCIPAL_ID: "usr_debug",
+  };
+}
+
 export function createServiceDefinitions({
   root,
   debug = false,
@@ -280,6 +362,7 @@ export function createServiceDefinitions({
   const managedEnvironment = { ...environment, ...runtime.environment };
   const ports = runtime.ports;
   const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(repoRoot, managedEnvironment);
+  const memoryCoreEnvironment = join(repoRoot, "scripts/memory/load-local-memorycore-env.mjs");
   const providerEnvironment = join(repoRoot, "scripts/debug/load-provider-env.mjs");
   const services = [];
 
@@ -309,11 +392,66 @@ export function createServiceDefinitions({
     stopTimeoutMs: 10_000,
   });
 
+  // Sidecar必须在Workflow/API之前ready；compare也只是两个独立进程的显式组合。
+  if (memoryModeIncludes(memory, "memmy")) {
+    const runRoot = join(runtime.dataRoot, "memory", "memmy");
+    services.push({
+      id: "memmy",
+      role: "memory",
+      // 第三方服务可能把Memory正文写入debug日志；统一launcher只消费健康与退出证据，
+      // 不把其原始stdout/stderr复制到Chat终端或Trace。需要诊断上游时单独运行受管wrapper。
+      outputPolicy: "suppress_third_party_payloads",
+      port: ports.memory,
+      command: process.execPath,
+      args: [join(repoRoot, "scripts/memory/start-fixed-memmy.mjs")],
+      cwd: repoRoot,
+      env: {
+        ...commonEnvironment(repoRoot, withoutVsCodeAutoAttach(managedEnvironment)),
+        CHAT_FIXED_SOURCE_CACHE_ROOT: workbenchRuntime.CHAT_FIXED_SOURCE_CACHE_ROOT,
+        CHAT_MEMMY_RUN_ROOT: runRoot,
+        CHAT_MEMMY_DB_PATH: join(runRoot, "memory.sqlite"),
+        CHAT_MEMMY_PORT: String(ports.memory),
+      },
+      readyUrl: `http://127.0.0.1:${String(ports.memory)}/api/v1/health`,
+      timeoutMs: 180_000,
+      stopTimeoutMs: 7_000,
+    });
+  }
+
+  if (memoryModeIncludes(memory, "memorycore")) {
+    const runRoot = join(runtime.dataRoot, "memory", "memorycore");
+    services.push({
+      id: "memorycore",
+      role: "memoryCore",
+      outputPolicy: "suppress_third_party_payloads",
+      port: ports.memoryCore,
+      command: process.execPath,
+      args: [
+        "--import",
+        memoryCoreEnvironment,
+        join(repoRoot, "scripts/memory/start-fixed-memorycore.mjs"),
+      ],
+      cwd: repoRoot,
+      env: {
+        ...commonEnvironment(repoRoot, withoutVsCodeAutoAttach(managedEnvironment)),
+        CHAT_FIXED_SOURCE_CACHE_ROOT: workbenchRuntime.CHAT_FIXED_SOURCE_CACHE_ROOT,
+        CHAT_TENCENT_MEMORYCORE_RUN_ROOT: runRoot,
+        CHAT_TENCENT_MEMORYCORE_PORT: String(ports.memoryCore),
+      },
+      readyUrl: `http://127.0.0.1:${String(ports.memoryCore)}/health`,
+      timeoutMs: 180_000,
+      stopTimeoutMs: 7_000,
+    });
+  }
+
   const workflowArgs = [];
   if (debug) {
     workflowArgs.push("--enable-source-maps", `--inspect=127.0.0.1:${ports.workflowInspector}`);
   }
   workflowArgs.push("--import", providerEnvironment);
+  if (memoryModeIncludes(memory, "memorycore")) {
+    workflowArgs.push("--import", memoryCoreEnvironment);
+  }
   workflowArgs.push(
     "--import",
     join(repoRoot, "packages/workflows/node_modules/tsx/dist/loader.mjs"),
@@ -328,7 +466,8 @@ export function createServiceDefinitions({
     cwd: repoRoot,
     env: {
       ...commonEnvironment(repoRoot, managedEnvironment),
-      CHAT_MEMORY_ENABLED: "0",
+      CHAT_MEMORY_MODE: memory,
+      ...(memoryModeIncludes(memory, "memmy") ? memmyConsumerEnvironment(runtime) : {}),
       CHAT_WORKFLOW_PORT: String(ports.workflow),
       CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${ports.piExecutor}`,
     },
@@ -342,6 +481,9 @@ export function createServiceDefinitions({
     apiArgs.push("--enable-source-maps", `--inspect=127.0.0.1:${ports.apiInspector}`);
   }
   apiArgs.push("--import", join(repoRoot, "scripts/load-env.mjs"));
+  if (memoryModeIncludes(memory, "memorycore")) {
+    apiArgs.push("--import", memoryCoreEnvironment);
+  }
   apiArgs.push(
     "--import",
     join(repoRoot, "apps/api/node_modules/tsx/dist/loader.mjs"),
@@ -356,7 +498,8 @@ export function createServiceDefinitions({
     cwd: join(repoRoot, "apps/api"),
     env: {
       ...commonEnvironment(repoRoot, managedEnvironment),
-      CHAT_MEMORY_ENABLED: "0",
+      CHAT_MEMORY_MODE: memory,
+      ...(memoryModeIncludes(memory, "memmy") ? memmyConsumerEnvironment(runtime) : {}),
       CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${ports.piExecutor}`,
       PORT: String(ports.api),
     },
@@ -570,9 +713,18 @@ export function reclaimOwnedPortOccupants(root, occupied, dependencies) {
 
 export async function preflightLocalRuntime(
   root,
-  { instance = "production", workbench = "code-server", environment = process.env } = {},
-  { retiredPortGuard = assertRetiredPortsEmpty } = {},
+  {
+    instance = "production",
+    memory = "off",
+    workbench = "code-server",
+    environment = process.env,
+  } = {},
+  {
+    retiredPortGuard = assertRetiredPortsEmpty,
+    reconcileMemoryRuntime = reconcileSelectedMemoryRuntime,
+  } = {},
 ) {
+  if (!MEMORY_PROFILES.includes(memory)) throw new Error(`未知Memory Profile：${memory}`);
   if (!WORKBENCH_PROFILES.includes(workbench)) {
     throw new Error(`未知Workbench Profile：${workbench}`);
   }
@@ -580,12 +732,17 @@ export async function preflightLocalRuntime(
   const runtime = resolveRuntimeInstance(root, instance, environment);
   // 退役43113永远只检查不回收，且必须发生在PID登记/legacy evidence清理之前。
   await retiredPortGuard();
-  const activePorts = runtime.portList;
+  const activePorts = runtimePortListForMemoryMode(runtime, memory);
   const entries = loadPidEntries();
   for (const result of terminateRecorded(entries)) {
     console.log(`[chat] 清理 ${result.role} pid=${result.pid}: ${result.action}`);
   }
   if (entries.length > 0) await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+  for (const result of reconcileMemoryRuntime(root, { instance, memory, environment })) {
+    if (!["no-evidence", "already-stopped"].includes(result.action)) {
+      console.log(`[chat] 清理固定${result.provider}进程组：${result.action}`);
+    }
+  }
   const workbenchRecovery = await reconcileManagedWorkbench(root);
   if (
     workbenchRecovery.action !== "no-evidence" &&
@@ -630,15 +787,18 @@ export async function assertLocalSetupIdle(
   root,
   {
     instance = "production",
+    memory = "off",
     environment = process.env,
     probePort = probeRetiredPort,
     readWorkbenchEvidence = readCodeServerProcessEvidence,
   } = {},
 ) {
+  if (!MEMORY_PROFILES.includes(memory)) throw new Error(`未知Memory Profile：${memory}`);
   const runtime = resolveRuntimeInstance(root, instance, environment);
   const managedEnvironment = { ...environment, ...runtime.environment };
   const stopCommand = runtime.name === "debug" ? "pnpm dev:debug:stop" : "pnpm dev:stop";
-  const results = await Promise.all(runtime.portList.map((port) => probePort(port)));
+  const activePorts = runtimePortListForMemoryMode(runtime, memory);
+  const results = await Promise.all(activePorts.map((port) => probePort(port)));
   const unavailable = results.filter((result) => result.state !== "free");
   if (unavailable.length > 0) {
     const details = unavailable
@@ -661,7 +821,33 @@ export async function assertLocalSetupIdle(
       `Workbench仍处于${evidence.status}；setup不会回收进程，请先运行 ${stopCommand}`,
     );
   }
-  console.log(`[setup] ${runtime.name}实例固定端口空闲：${runtime.portList.join(", ")}`);
+  console.log(`[setup] ${runtime.name}实例固定端口空闲：${activePorts.join(", ")}`);
+}
+
+/**
+ * 固定源码准备是setup/dev的可重建前置，不是服务启动。这里严格按mode选择
+ * 工件，off零触碰，compare才准备两者。注入点只供确定性合同测试。
+ */
+export async function prepareSelectedMemoryArtifacts({
+  root,
+  memory = "off",
+  signal,
+  environment = process.env,
+  ensureMemmy = ensureFixedMemmy,
+  ensureMemoryCore = ensureFixedMemoryCore,
+}) {
+  if (!MEMORY_PROFILES.includes(memory)) throw new Error(`未知Memory Profile：${memory}`);
+  if (signal?.aborted) throw signal.reason ?? new Error("准备已取消");
+  if (memoryModeIncludes(memory, "memmy")) {
+    console.log("[chat] 准备固定memmy工件…");
+    await ensureMemmy(root, environment);
+  }
+  if (signal?.aborted) throw signal.reason ?? new Error("准备已取消");
+  if (memoryModeIncludes(memory, "memorycore")) {
+    console.log("[chat] 准备固定Tencent MemoryCore工件…");
+    await ensureMemoryCore(root, environment);
+  }
+  if (signal?.aborted) throw signal.reason ?? new Error("准备已取消");
 }
 
 async function preparePinnedRuntimeArtifacts({
@@ -681,6 +867,13 @@ async function preparePinnedRuntimeArtifacts({
   const managedEnvironment = { ...environment, ...runtime.environment };
   const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(root, managedEnvironment);
   console.log(`[chat] 固定源码缓存：${workbenchRuntime.CHAT_FIXED_SOURCE_CACHE_ROOT}`);
+  await prepareSelectedMemoryArtifacts({
+    root,
+    memory,
+    signal,
+    environment: { ...managedEnvironment, ...workbenchRuntime },
+  });
+  if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   if (workbench === "code-server") {
     console.log("[chat] 准备固定code-server Workbench…");
     await ensureFixedCodeServer(root, { environment: workbenchRuntime });
@@ -724,7 +917,12 @@ export async function prepareLocalRuntime({
 }) {
   const runtime = resolveRuntimeInstance(root, instance, environment);
   const managedEnvironment = { ...environment, ...runtime.environment };
-  await preflightLocalRuntime(root, { instance, workbench, environment: managedEnvironment });
+  await preflightLocalRuntime(root, {
+    instance,
+    memory,
+    workbench,
+    environment: managedEnvironment,
+  });
   if (signal?.aborted) throw signal.reason ?? new Error("启动已取消");
   await preparePinnedRuntimeArtifacts({
     root,
@@ -856,8 +1054,14 @@ export class AppSupervisor {
       state.resolveExit = resolveExit;
     });
     this.states.push(state);
-    forwardLines(child.stdout, definition.id, process.stdout);
-    forwardLines(child.stderr, definition.id, process.stderr);
+    if (definition.outputPolicy === "suppress_third_party_payloads") {
+      // 必须持续消费pipe避免第三方进程因缓冲区写满而阻塞；正文既不显示也不落入Chat日志。
+      child.stdout.resume();
+      child.stderr.resume();
+    } else {
+      forwardLines(child.stdout, definition.id, process.stdout);
+      forwardLines(child.stderr, definition.id, process.stderr);
+    }
     child.once("error", (error) => {
       state.spawnError = error;
     });

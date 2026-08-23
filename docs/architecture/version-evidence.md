@@ -103,12 +103,16 @@ Trajectory窄派生的源码位于Public仓库<https://github.com/later-3/deepse
 3. 两套源码的默认来源都是固定HTTPS URL；本地mirror只有通过显式环境变量选择后才可用，
    但仍必须通过同一commit/tree门。缓存证据记录来源模式、源码清单Hash与运行工件或安装lock
    Hash，漂移时原子重建。
-4. Memory固定证据与准备代码继续保留；普通setup/dev/debug不下载或自动启动第三方服务，
-   当前产品完成门也不包含Memory。API与Workflow保留同一Provider合同以读取历史事实并允许
-   后续重新接入；没有显式专项配置时Provider不可用，触达历史Memory Workflow会在Planner前
-   安全失败。未来重新启用时，显式真实门使用
-   `CHAT_FIXED_SOURCE_CACHE_ROOT`复用审核缓存，验证通用Query/Write Port、BM25 L1、L0
-   accepted、只读对账、materialized与租户隔离，不改写或Fork上游源码。
+4. Memory默认模式为`off`：普通setup/dev/debug不下载、检查端口、启动Sidecar或实例化Adapter。
+   只有显式`--memory=memorycore|memmy|compare`才从`CHAT_FIXED_SOURCE_CACHE_ROOT`准备上述固定工件，
+   并由统一launcher启动对应本地HTTP Sidecar。API与Workflow在任何Store/恢复动作前严格解析同一
+   `CHAT_MEMORY_MODE`并冻结相同Provider描述集合；遗留endpoint或凭据不能绕过`off`。
+5. memmy与Tencent MemoryCore都实现同一Workflow Query/Write/Reconcile Port，仍不引入上游SDK
+   或MCP运行依赖。memmy声明`synchronous`；固定本地MemoryCore没有模型/抽取Worker，明确声明
+   `accepted_only`。memmy固定Profile仅支持绑定单Principal的Chat专属物理数据库；显式真实门验证
+   通用Query/Write、memmy materialized、MemoryCore真实L0 accepted与只读对账、独立BM25 L1查询fixture
+   及MemoryCore租户隔离；查询fixture使用不同session，不能被当成
+   conversation/add自动物化的生产证据。第三方原始日志不进入Chat日志或Trace，不改写或Fork上游源码。
 
 ## 构建与测试依赖
 

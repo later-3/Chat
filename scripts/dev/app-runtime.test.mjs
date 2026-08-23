@@ -21,12 +21,15 @@ import {
   createServiceDefinitions,
   devUsage,
   parseDevArgs,
+  parseStopArgs,
   preflightLocalRuntime,
+  prepareSelectedMemoryArtifacts,
   reclaimOwnedPortOccupants,
   resolveLocalWorkbenchRuntimeContract,
   runDshPreparationCommand,
   runPreparationCommand,
   runVersionRecoveryCommand,
+  runtimePortListForMemoryMode,
   sharedCacheRootFromGitCommonDir,
   setupUsage,
   waitForServiceReady,
@@ -37,7 +40,6 @@ import {
   findOwnedChatPortProcesses,
   findOwnedChatProcessForPort,
   formatRetiredPortStatus,
-  frozenPortList,
   probeRetiredPort,
   roleForFrozenPort,
   sharedDebugDirFromGitCommonDir,
@@ -50,11 +52,15 @@ import {
   ownedDebugBrowserPidsFromPsOutput,
 } from "./browser-lifecycle.mjs";
 import { collectLocalRuntimeStatus } from "./status.mjs";
-import { DEBUG_RUNTIME_PORTS, resolveRuntimeInstance } from "./runtime-instance.mjs";
+import {
+  DEBUG_RUNTIME_PORTS,
+  PRODUCTION_RUNTIME_PORTS,
+  resolveRuntimeInstance,
+} from "./runtime-instance.mjs";
 
 const ROOT = "/workspace/chat";
 
-test("统一启动器固定关闭Memory且拒绝重新启用", () => {
+test("统一启动器默认关闭Memory但接受四种显式mode", () => {
   assert.deepEqual(parseDevArgs([]), {
     debug: false,
     help: false,
@@ -79,16 +85,36 @@ test("统一启动器固定关闭Memory且拒绝重新启用", () => {
     memory: "off",
     workbench: "off",
   });
+  for (const memory of ["memorycore", "memmy", "compare"]) {
+    assert.equal(parseDevArgs([`--memory=${memory}`]).memory, memory);
+  }
   assert.throws(() => parseDevArgs(["--debug"]), /必须配合--instance=debug/u);
   assert.throws(
     () => parseDevArgs(["--instance=debug", "--workbench=code-server"]),
     /debug实例当前只支持/u,
   );
-  assert.throws(() => parseDevArgs(["--memory=memmy"]), /冻结关闭/u);
-  assert.throws(() => parseDevArgs(["--memory=all"]), /冻结关闭/u);
+  assert.throws(() => parseDevArgs(["--memory=all"]), /--memory只支持/u);
   assert.throws(() => parseDevArgs(["--workbench=unknown"]), /只支持/u);
-  assert.match(devUsage(), /pnpm dev \[--memory=off\] \[--workbench=off\|code-server\]/u);
+  assert.match(devUsage(), /--memory=off\|memorycore\|memmy\|compare/u);
   assert.doesNotMatch(devUsage(), /pnpm dev \[-- --/u);
+});
+
+test("独立stop默认回收本实例两家Memory且显式mode只能缩小范围", () => {
+  assert.deepEqual(parseStopArgs([]), { instance: "production", memory: "compare" });
+  assert.deepEqual(parseStopArgs(["--instance=debug"]), {
+    instance: "debug",
+    memory: "compare",
+  });
+  assert.deepEqual(parseStopArgs(["--instance=debug", "--memory=memmy"]), {
+    instance: "debug",
+    memory: "memmy",
+  });
+  assert.throws(() => parseStopArgs(["--memory=all"]), /--memory只支持/u);
+
+  const stopSource = readFileSync(new URL("../debug/stop.mjs", import.meta.url), "utf8");
+  assert.match(stopSource, /const activePorts = runtimePortListForMemoryMode\(runtime, memory\)/u);
+  assert.equal((stopSource.match(/checkPorts\(activePorts\)/gu) ?? []).length, 2);
+  assert.doesNotMatch(stopSource, /occupied = checkPorts\(\);/u);
 });
 
 test("本地setup在写入运行缓存前锁定平台、Node、pnpm与系统工具", () => {
@@ -116,7 +142,7 @@ test("本地setup在写入运行缓存前锁定平台、Node、pnpm与系统工�
     calls.map(([command]) => command),
     ["pnpm", "git", "tar", "npm"],
   );
-  assert.match(setupUsage(), /pnpm run setup \[--memory=off\]/u);
+  assert.match(setupUsage(), /--memory=off\|memorycore\|memmy\|compare/u);
 
   assert.throws(
     () =>
@@ -166,6 +192,47 @@ test("本地setup在写入运行缓存前锁定平台、Node、pnpm与系统工�
   );
 });
 
+test("setup只准备mode选中的固定Memory工件", async () => {
+  for (const [memory, expected] of [
+    ["off", []],
+    ["memmy", ["memmy"]],
+    ["memorycore", ["memorycore"]],
+    ["compare", ["memmy", "memorycore"]],
+  ]) {
+    const prepared = [];
+    const environment = { CHAT_FIXED_SOURCE_CACHE_ROOT: "/workspace/shared-cache" };
+    await prepareSelectedMemoryArtifacts({
+      root: ROOT,
+      memory,
+      environment,
+      ensureMemmy(root, receivedEnvironment) {
+        assert.equal(root, ROOT);
+        assert.equal(receivedEnvironment, environment);
+        prepared.push("memmy");
+      },
+      ensureMemoryCore(root, receivedEnvironment) {
+        assert.equal(root, ROOT);
+        assert.equal(receivedEnvironment, environment);
+        prepared.push("memorycore");
+      },
+    });
+    assert.deepEqual(prepared, expected);
+  }
+
+  const abortController = new AbortController();
+  abortController.abort(new Error("cancel-memory-prepare"));
+  await assert.rejects(
+    prepareSelectedMemoryArtifacts({
+      root: ROOT,
+      memory: "compare",
+      signal: abortController.signal,
+      ensureMemmy: () => assert.fail("取消后不应准备memmy"),
+      ensureMemoryCore: () => assert.fail("取消后不应准备MemoryCore"),
+    }),
+    /cancel-memory-prepare/u,
+  );
+});
+
 test("本地setup只读检查活动运行，任何占用都失败且不调用回收逻辑", async () => {
   const probed = [];
   let evidenceEnvironment;
@@ -182,8 +249,46 @@ test("本地setup只读检查活动运行，任何占用都失败且不调用回
       },
     }),
   );
-  assert.deepEqual(probed, frozenPortList());
+
+  await assert.rejects(
+    assertLocalSetupIdle(ROOT, {
+      memory: "memmy",
+      probePort: async (port) =>
+        port === PRODUCTION_RUNTIME_PORTS.memory
+          ? { port, state: "occupied", errorCode: "EADDRINUSE" }
+          : { port, state: "free" },
+      readWorkbenchEvidence: () => undefined,
+    }),
+    /18960.*EADDRINUSE/u,
+  );
+  assert.deepEqual(probed, runtimePortListForMemoryMode(resolveRuntimeInstance(ROOT), "off"));
   assert.equal(evidenceEnvironment.CHAT_FIXED_SOURCE_CACHE_ROOT, "/workspace/shared-cache");
+
+  const selectedMemoryPorts = [];
+  await assert.doesNotReject(
+    assertLocalSetupIdle(ROOT, {
+      memory: "memmy",
+      async probePort(port) {
+        selectedMemoryPorts.push(port);
+        return { port, state: "free" };
+      },
+      readWorkbenchEvidence: () => undefined,
+    }),
+  );
+  assert.equal(selectedMemoryPorts.includes(PRODUCTION_RUNTIME_PORTS.memory), true);
+  assert.equal(selectedMemoryPorts.includes(PRODUCTION_RUNTIME_PORTS.memoryCore), false);
+
+  // off时未选中的Memory端口不应牵绊普通setup。
+  await assert.doesNotReject(
+    assertLocalSetupIdle(ROOT, {
+      memory: "off",
+      probePort: async (port) => ({
+        port,
+        state: port === PRODUCTION_RUNTIME_PORTS.memory ? "occupied" : "free",
+      }),
+      readWorkbenchEvidence: () => undefined,
+    }),
+  );
 
   let evidenceRead = false;
   await assert.rejects(
@@ -225,17 +330,80 @@ test("本地setup只读检查活动运行，任何占用都失败且不调用回
   assert.doesNotMatch(setupSource, /prepareLocalRuntime|preflightLocalRuntime/u);
 });
 
-test("服务图永远不启动或装配Memory", () => {
+test("服务图只启动mode选中的Sidecar并向API/Workflow冻结同一mode", () => {
   const disabled = createServiceDefinitions({ root: ROOT, environment: {} });
   assert.deepEqual(
     disabled.map((service) => service.id),
     ["piExecutor", "workflow", "api", "workbench", "web"],
   );
   const disabledById = Object.fromEntries(disabled.map((service) => [service.id, service]));
-  assert.equal(disabledById.workflow.env.CHAT_MEMORY_ENABLED, "0");
-  assert.equal(disabledById.api.env.CHAT_MEMORY_ENABLED, "0");
-  assert.doesNotMatch(disabledById.workflow.args.join(" "), /load-memorycore-debug-env/u);
-  assert.doesNotMatch(disabledById.api.args.join(" "), /load-memorycore-debug-env/u);
+  assert.equal(disabledById.workflow.env.CHAT_MEMORY_MODE, "off");
+  assert.equal(disabledById.api.env.CHAT_MEMORY_MODE, "off");
+  assert.doesNotMatch(disabledById.workflow.args.join(" "), /load-local-memorycore-env/u);
+  assert.doesNotMatch(disabledById.api.args.join(" "), /load-local-memorycore-env/u);
+
+  const expectedSidecars = {
+    memorycore: ["memorycore"],
+    memmy: ["memmy"],
+    compare: ["memmy", "memorycore"],
+  };
+  for (const [memory, sidecars] of Object.entries(expectedSidecars)) {
+    const services = createServiceDefinitions({
+      root: ROOT,
+      memory,
+      workbench: "off",
+      environment: {
+        VSCODE_INSPECTOR_OPTIONS: "private-attach-options",
+        NODE_OPTIONS: "--require /vscode/bootloader.js",
+      },
+    });
+    const byId = Object.fromEntries(services.map((service) => [service.id, service]));
+    assert.deepEqual(
+      services.filter((service) => ["memmy", "memorycore"].includes(service.id)).map((s) => s.id),
+      sidecars,
+    );
+    assert.equal(byId.workflow.env.CHAT_MEMORY_MODE, memory);
+    assert.equal(byId.api.env.CHAT_MEMORY_MODE, memory);
+    for (const sidecar of sidecars) {
+      assert.equal(byId[sidecar].env.VSCODE_INSPECTOR_OPTIONS, undefined);
+      assert.equal(byId[sidecar].env.NODE_OPTIONS, undefined);
+      assert.equal(byId[sidecar].outputPolicy, "suppress_third_party_payloads");
+    }
+    const expectsMemoryCore = sidecars.includes("memorycore");
+    assert.equal(
+      /load-local-memorycore-env/u.test(byId.workflow.args.join(" ")),
+      expectsMemoryCore,
+    );
+    assert.equal(/load-local-memorycore-env/u.test(byId.api.args.join(" ")), expectsMemoryCore);
+  }
+
+  const memmy = createServiceDefinitions({
+    root: ROOT,
+    memory: "memmy",
+    workbench: "off",
+    environment: {},
+  });
+  const memmyById = Object.fromEntries(memmy.map((service) => [service.id, service]));
+  assert.equal(memmyById.memmy.port, 18_960);
+  assert.equal(memmyById.memmy.env.CHAT_MEMMY_RUN_ROOT, "/workspace/chat/.data/memory/memmy");
+  assert.equal(memmyById.api.env.CHAT_MEMMY_BASE_URL, "http://127.0.0.1:18960");
+  assert.equal(memmyById.workflow.env.CHAT_MEMMY_BASE_URL, "http://127.0.0.1:18960");
+  assert.equal(memmyById.api.env.CHAT_MEMMY_TOKEN, "");
+
+  const memorycore = createServiceDefinitions({
+    root: ROOT,
+    memory: "memorycore",
+    workbench: "off",
+    environment: {},
+  });
+  const memoryCoreById = Object.fromEntries(memorycore.map((service) => [service.id, service]));
+  assert.equal(memoryCoreById.memorycore.port, 18_970);
+  assert.equal(
+    memoryCoreById.memorycore.env.CHAT_TENCENT_MEMORYCORE_RUN_ROOT,
+    "/workspace/chat/.data/memory/memorycore",
+  );
+  assert.equal(memoryCoreById.memorycore.env.CHAT_TENCENT_MEMORYCORE_PORT, "18970");
+  assert.doesNotMatch(memoryCoreById.memorycore.args.join(" "), /chat-debug-[0-9a-f]/u);
 
   assert.throws(
     () => createServiceDefinitions({ root: ROOT, memory: "all", environment: {} }),
@@ -585,6 +753,67 @@ test("debug实例同时隔离端口、产品事实、Workflow、Runtime、Trace�
     assert.ok(byId[id].args.includes("--enable-source-maps"));
   }
   assert.equal(byId.web.readyUrl, "http://127.0.0.1:44110/healthz");
+});
+
+test("Memory Sidecar在production/debug之间隔离端口、数据与消费者配置", () => {
+  const productionRuntime = resolveRuntimeInstance(ROOT, "production", {});
+  const debugRuntime = resolveRuntimeInstance(ROOT, "debug", {});
+  assert.equal(
+    runtimePortListForMemoryMode(productionRuntime, "off").includes(
+      PRODUCTION_RUNTIME_PORTS.memory,
+    ),
+    false,
+  );
+  assert.equal(
+    runtimePortListForMemoryMode(productionRuntime, "memorycore").includes(
+      PRODUCTION_RUNTIME_PORTS.memoryCore,
+    ),
+    true,
+  );
+  assert.equal(
+    runtimePortListForMemoryMode(productionRuntime, "memorycore").includes(
+      PRODUCTION_RUNTIME_PORTS.memory,
+    ),
+    false,
+  );
+  assert.equal(
+    runtimePortListForMemoryMode(productionRuntime, "compare").includes(
+      PRODUCTION_RUNTIME_PORTS.memory,
+    ),
+    true,
+  );
+
+  const services = createServiceDefinitions({
+    root: ROOT,
+    debug: true,
+    instance: "debug",
+    memory: "compare",
+    workbench: "off",
+    environment: {},
+  });
+  const byId = Object.fromEntries(services.map((service) => [service.id, service]));
+  assert.deepEqual(
+    services.map((service) => service.id),
+    ["piExecutor", "memmy", "memorycore", "workflow", "api", "web"],
+  );
+  assert.equal(byId.memmy.port, 19_960);
+  assert.equal(byId.memmy.env.CHAT_MEMMY_PORT, "19960");
+  assert.equal(
+    byId.memmy.env.CHAT_MEMMY_RUN_ROOT,
+    "/workspace/chat/.data/instances/vscode-debug/memory/memmy",
+  );
+  assert.equal(byId.memorycore.port, 19_970);
+  assert.equal(byId.memorycore.env.CHAT_TENCENT_MEMORYCORE_PORT, "19970");
+  assert.equal(
+    byId.memorycore.env.CHAT_TENCENT_MEMORYCORE_RUN_ROOT,
+    "/workspace/chat/.data/instances/vscode-debug/memory/memorycore",
+  );
+  assert.equal(byId.workflow.env.CHAT_MEMORY_MODE, "compare");
+  assert.equal(byId.api.env.CHAT_MEMORY_MODE, "compare");
+  assert.equal(byId.workflow.env.CHAT_MEMMY_BASE_URL, "http://127.0.0.1:19960");
+  assert.equal(byId.api.env.CHAT_MEMMY_BASE_URL, "http://127.0.0.1:19960");
+  assert.equal(debugRuntime.ports.memory, 19_960);
+  assert.notEqual(productionRuntime.dataRoot, debugRuntime.dataRoot);
 });
 
 test("Web角色使用受管DSH Node Host且私有Bridge状态不进入命令与探针", () => {
