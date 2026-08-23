@@ -21,6 +21,7 @@ import {
 import { createPiExecutorServiceClient } from "./executor-service-client.js";
 import {
   PiExecutorOperationConflictError,
+  PiExecutorJournalIntegrityError,
   PiExecutorOperationNotFoundError,
   PiExecutorOperationOutcomeUnknownError,
   PiExecutorOperationStore,
@@ -311,7 +312,6 @@ describe("PiExecutorOperationStore", () => {
       resultDisplayTruncated: false,
       durationMs: 1,
     });
-
     await expect(store.append("pio_test1", { ...intent, turnIndex: 1 })).rejects.toBeInstanceOf(
       PiExecutorToolCallConflictError,
     );
@@ -397,6 +397,18 @@ describe("PiExecutorOperationStore", () => {
       resultDisplayTruncated: false,
       durationMs: 1,
     });
+    await store.complete(
+      "pio_test1",
+      {
+        stepId: "step-1",
+        output: "legacy success",
+        sections: [{ heading: "结果", body: "legacy success" }],
+        successCriteriaEvidence: ["结果存在｜legacy success"],
+        criteriaEvidence: ["完成测试｜legacy success"],
+        warnings: [],
+      },
+      2,
+    );
     const recordPath = join(directory, "pio_test1.json");
     const legacyRecord = JSON.parse(await readFile(recordPath, "utf8")) as {
       events: Array<Record<string, unknown>>;
@@ -411,7 +423,81 @@ describe("PiExecutorOperationStore", () => {
     expect(
       recovered.getEvents("pio_test1").find((event) => event.type === "tool.completed"),
     ).not.toHaveProperty("inputSha256");
+    expect(recovered.getSnapshot("pio_test1").status).toBe("succeeded");
   });
+
+  it.each(["duplicate_intent", "result_before_intent", "cross_session"] as const)(
+    "旧v1 succeeded Journal拒绝语义矛盾：%s",
+    async (contradiction) => {
+      const root = await temporaryRoot();
+      const directory = join(root, "operations");
+      const store = await PiExecutorOperationStore.open(directory);
+      await store.createOrGet(request());
+      await store.markRunning("pio_test1");
+      await store.setSession("pio_test1", "pis_test1", ["read"]);
+      const inputSha256 = hashExecutorValue({ path: "README.md" });
+      await store.append("pio_test1", {
+        operationId: "pio_test1",
+        type: "tool.intent_persisted",
+        sessionId: "pis_test1",
+        turnIndex: 0,
+        toolCallId: "call_legacy_contradiction",
+        toolName: "read",
+        inputSha256,
+        inputDisplay: JSON.stringify({ path: "README.md" }),
+        inputDisplayTruncated: false,
+      });
+      await store.append("pio_test1", {
+        operationId: "pio_test1",
+        type: "tool.completed",
+        sessionId: "pis_test1",
+        turnIndex: 0,
+        toolCallId: "call_legacy_contradiction",
+        toolName: "read",
+        inputSha256,
+        resultSha256: hashExecutorValue({ output: "ok" }),
+        resultDisplay: "ok",
+        resultDisplayTruncated: false,
+        durationMs: 1,
+      });
+      await store.complete(
+        "pio_test1",
+        {
+          stepId: "step-1",
+          output: "legacy contradiction",
+          sections: [{ heading: "结果", body: "legacy contradiction" }],
+          successCriteriaEvidence: ["结果存在｜legacy contradiction"],
+          criteriaEvidence: ["完成测试｜legacy contradiction"],
+          warnings: [],
+        },
+        2,
+      );
+      const recordPath = join(directory, "pio_test1.json");
+      const record = JSON.parse(await readFile(recordPath, "utf8")) as {
+        events: Array<Record<string, unknown>>;
+      };
+      const intentIndex = record.events.findIndex(
+        (event) => event["type"] === "tool.intent_persisted",
+      );
+      const resultIndex = record.events.findIndex((event) => event["type"] === "tool.completed");
+      if (intentIndex < 0 || resultIndex < 0) throw new Error("测试Journal缺少Tool事件");
+      if (contradiction === "duplicate_intent") {
+        record.events.splice(resultIndex, 0, { ...record.events[intentIndex]! });
+      } else if (contradiction === "result_before_intent") {
+        const [result] = record.events.splice(resultIndex, 1);
+        if (result === undefined) throw new Error("测试Journal缺少Result");
+        record.events.splice(intentIndex, 0, result);
+      } else {
+        record.events[resultIndex]!["sessionId"] = "pis_other1";
+      }
+      for (const [index, event] of record.events.entries()) event["sequence"] = index + 1;
+      await writeFile(recordPath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+
+      await expect(PiExecutorOperationStore.open(directory)).rejects.toBeInstanceOf(
+        PiExecutorJournalIntegrityError,
+      );
+    },
+  );
 
   it("晚到complete不能把已收敛的outcome_unknown反转为成功", async () => {
     const root = await temporaryRoot();

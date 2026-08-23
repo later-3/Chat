@@ -93,6 +93,13 @@ export interface NodeCatalogDescriptor {
   readonly supportedBlueprints: readonly ("planning" | "note" | "direct")[];
 }
 
+/** Version与本次Run临时配置是互斥事实；两者并存时不能用优先级静默选一套能力。 */
+export function hasAmbiguousAgentConfiguration(config: Readonly<Record<string, unknown>>): boolean {
+  const hasVersion =
+    config["agentVersionId"] !== undefined || config["agentVersionSha256"] !== undefined;
+  return hasVersion && config["agentTemporaryConfiguration"] !== undefined;
+}
+
 export function nodeExecutorKey(nodeType: WorkflowNodeTypeKey, schemaVersion: number): string {
   return `${nodeType}@${String(schemaVersion)}`;
 }
@@ -481,6 +488,13 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
             code: "custom",
             path: ["enabledToolNames"],
             message: "Custom Agent能力必须由Agent Version或显式Tool清单冻结",
+          });
+        }
+        if (hasAmbiguousAgentConfiguration(value)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["agentTemporaryConfiguration"],
+            message: "Agent Version与临时Agent配置不能同时存在",
           });
         }
       }),

@@ -42,6 +42,7 @@ import {
 } from "./workflow-definition-schema.js";
 import {
   DEFAULT_NODE_CATALOG,
+  hasAmbiguousAgentConfiguration,
   nodeExecutorKey,
   type NodeCatalog,
 } from "./workflow-node-catalog.js";
@@ -135,6 +136,21 @@ export function compileWorkflowRunSpec(
     return {
       success: false,
       diagnostics: sortWorkflowDiagnostics([...structure.diagnostics, ...blueprintDiagnostics]),
+    };
+  }
+
+  const ambiguousAgentNodes = [...indexNodes(context.definition.semanticRoot).values()].filter(
+    (node) => node.nodeType === "agent.direct" && hasAmbiguousAgentConfiguration(node.config),
+  );
+  if (ambiguousAgentNodes.length > 0) {
+    return {
+      success: false,
+      diagnostics: ambiguousAgentNodes.map((node) => ({
+        family: "definition_invalid" as const,
+        code: "agent.configuration_ambiguous",
+        path: `${node.path}.config.agentTemporaryConfiguration`,
+        params: { definitionNodeId: node.definitionNodeId },
+      })),
     };
   }
 
@@ -250,6 +266,22 @@ export function validateWorkflowRunSpecIntegrity(
       success: false,
       diagnostics: [
         { family: "resource_stale", code: "run_spec.hash_mismatch", path: "$.sha256", params: {} },
+      ],
+    };
+  }
+  const ambiguous = parsed.data.nodeResolutions.find(
+    (node) => node.nodeType === "agent.direct" && hasAmbiguousAgentConfiguration(node.config),
+  );
+  if (ambiguous !== undefined) {
+    return {
+      success: false,
+      diagnostics: [
+        {
+          family: "definition_invalid",
+          code: "agent.configuration_ambiguous",
+          path: `$.nodeResolutions.${ambiguous.definitionNodeId}.config.agentTemporaryConfiguration`,
+          params: {},
+        },
       ],
     };
   }

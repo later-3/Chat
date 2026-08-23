@@ -389,6 +389,24 @@ export function assertPromptFragments(snapshot: ProductSnapshot, fail: Fail): vo
  * 还必须从Run、原始User Message和精确Prompt Revision反向重建投影，防止攻击者同时
  * 篡改正文与Hash，或把其他Session/Workspace的Prompt资产挂到当前Run。
  */
+function workflowNodePromptOverrideBody(
+  config: Readonly<Record<string, unknown>> | undefined,
+): string | undefined {
+  const temporary = config?.["agentTemporaryConfiguration"];
+  if (typeof temporary === "object" && temporary !== null) {
+    const systemPrompt = (temporary as Readonly<Record<string, unknown>>)["systemPrompt"];
+    if (typeof systemPrompt === "object" && systemPrompt !== null) {
+      const prompt = systemPrompt as Readonly<Record<string, unknown>>;
+      if (prompt["mode"] === "replace" && typeof prompt["bodyMarkdown"] === "string") {
+        return prompt["bodyMarkdown"];
+      }
+    }
+  }
+  return typeof config?.["agentPromptOverride"] === "string"
+    ? config["agentPromptOverride"]
+    : undefined;
+}
+
 export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): void {
   const { entities } = snapshot;
   const assembliesByRun = new Map<string, (typeof entities.promptAssemblies)[string][]>();
@@ -536,7 +554,7 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
                   (node) => node.nodeType === "agent.direct" && node.activation === "enabled",
                 )
               : undefined;
-          const bodyMarkdown = runNode?.config["agentPromptOverride"];
+          const bodyMarkdown = workflowNodePromptOverrideBody(runNode?.config);
           const definitionNodeId = assemblyNode?.definitionNodeId ?? runNode?.definitionNodeId;
           const nodeType = assemblyNode?.nodeType ?? runNode?.nodeType;
           const expectedIdentity =

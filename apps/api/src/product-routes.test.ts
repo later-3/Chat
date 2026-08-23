@@ -1903,6 +1903,78 @@ describe("公开产品API", () => {
     expect(res.status).toBe(404);
   });
 
+  it("标准submitUserMessage可原子提交Temporary Replace System Prompt", async () => {
+    const { app, deps } = await testApp();
+    const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const directRevision =
+      before.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
+    if (directRevision === undefined) throw new Error("缺少Direct Workflow Revision");
+    const created = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: { title: "Temporary Prompt" },
+    });
+    const session = sessionDtoSchema.parse(
+      ((await created.json()) as { session: unknown }).session,
+    );
+    const temporaryBody = "你是只在本次Run生效的Temporary Direct Agent。";
+
+    const sent = await postJson(app, `/api/sessions/${session.sessionId}/messages`, {
+      commandId: nextCmd(),
+      payload: {
+        text: "验证合法Temporary System Prompt可以提交",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
+          definitionSha256: directRevision.definitionSha256,
+          runConfiguration: {
+            schemaVersion: "workflow-run-configuration.v1",
+            overrides: [
+              {
+                kind: "agent_configuration",
+                definitionNodeId: "direct.agent",
+                configurationMode: "temporary",
+                runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+                systemPrompt: { mode: "replace", bodyMarkdown: temporaryBody },
+                enabledToolNames: ["read"],
+                resources: {
+                  contextFiles: "disabled",
+                  skills: "disabled",
+                  promptTemplates: "disabled",
+                  extensions: "disabled",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(sent.status, await sent.clone().text()).toBe(201);
+    const submitted = z
+      .object({ message: messageDtoSchema, run: runDtoSchema })
+      .strict()
+      .parse(await sent.json());
+    const after = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const assembly = Object.values(after.entities.promptAssemblies).find(
+      (candidate) => candidate.productRunId === submitted.run.productRunId,
+    );
+    const run = after.entities.runs[submitted.run.productRunId];
+    const runSpec =
+      run?.workflowRunSpecId === undefined
+        ? undefined
+        : after.entities.workflowRunSpecs[run.workflowRunSpecId];
+    expect(assembly).toMatchObject({
+      schemaVersion: "prompt-assembly.v2",
+      piSystemPrompt: { mode: "replace", bodyMarkdown: temporaryBody },
+      tools: { names: ["read"] },
+    });
+    expect(runSpec?.nodeResolutions[0]?.config).toMatchObject({
+      agentTemporaryConfiguration: {
+        systemPrompt: { mode: "replace", bodyMarkdown: temporaryBody },
+      },
+    });
+  });
+
   it("Agent Version API创建全局/Workspace不可变版本并把精确版本发布为新Workflow Revision", async () => {
     const { app, deps, controls } = await testApp();
     const inheritedResources = {
@@ -2103,6 +2175,7 @@ describe("公开产品API", () => {
       readonly workspaceRootId?: string | undefined;
       readonly beforeAuthorize?: (() => void) | undefined;
       readonly assemblyTamper?: "tools" | "piSystemPrompt" | "requestOptions" | undefined;
+      readonly ambiguousOperationAuthorization?: boolean | undefined;
       readonly expectAuthorizationFailure?: boolean | undefined;
       readonly expectedAgentVersionId?: typeof derived.agentVersionId | undefined;
       readonly expectedAgentVersionSha256?: string | undefined;
@@ -2247,11 +2320,60 @@ describe("公开产品API", () => {
         workflowAttemptId: workflowAttempt.attemptId,
       });
       input.beforeAuthorize?.();
-      const authorization = authorizeDirectAgentOperation(deps, {
+      let authorizationDeps = deps;
+      let authorizationRunSpecSha256 = runSpec.sha256;
+      if (input.ambiguousOperationAuthorization === true) {
+        const current = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+        const tamperedSnapshot = structuredClone(current);
+        const tamperedRunSpec =
+          tamperedSnapshot.entities.workflowRunSpecs[runSpec.workflowRunSpecId];
+        const tamperedNode = tamperedRunSpec?.nodeResolutions.find(
+          (node) => node.nodeType === "agent.direct" && node.activation === "enabled",
+        );
+        if (tamperedRunSpec === undefined || tamperedNode === undefined) {
+          throw new Error("测试缺少Direct RunSpec");
+        }
+        tamperedNode.config = {
+          ...tamperedNode.config,
+          agentTemporaryConfiguration: {
+            runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+            systemPrompt: { mode: "inherit_runtime" },
+            enabledToolNames: ["read", "bash", "edit", "write"],
+            resources: {
+              contextFiles: "inherit_runtime_default",
+              skills: "inherit_runtime_default",
+              promptTemplates: "inherit_runtime_default",
+              extensions: "inherit_runtime_default",
+            },
+          },
+        };
+        authorizationRunSpecSha256 = hashCanonical("workflow-run-spec.v1", {
+          definitionRef: tamperedRunSpec.definitionRef,
+          runner: tamperedRunSpec.runner,
+          semanticRoot: tamperedRunSpec.semanticRoot,
+          nodeResolutions: tamperedRunSpec.nodeResolutions,
+          resourceResolutions: tamperedRunSpec.resourceResolutions,
+          reviewResolutions: tamperedRunSpec.reviewResolutions,
+          ...(tamperedRunSpec.businessInput === undefined
+            ? {}
+            : { businessInput: tamperedRunSpec.businessInput }),
+          limits: tamperedRunSpec.limits,
+          executorManifest: tamperedRunSpec.executorManifest,
+        });
+        tamperedRunSpec.sha256 = authorizationRunSpecSha256;
+        authorizationDeps = {
+          ...deps,
+          store: {
+            read: async () => ({ snapshot: tamperedSnapshot }),
+            transact: (command) => deps.store.transact(command),
+          },
+        };
+      }
+      const authorization = authorizeDirectAgentOperation(authorizationDeps, {
         productRunId: run.productRunId,
         directAgentAttemptId: begun.directAgentAttemptId,
         workflowRunSpecId: runSpec.workflowRunSpecId,
-        workflowRunSpecSha256: runSpec.sha256,
+        workflowRunSpecSha256: authorizationRunSpecSha256,
         inputManifestSha256: begun.inputManifestSha256,
       });
       if (input.expectAuthorizationFailure === true) {
@@ -2279,6 +2401,14 @@ describe("公开产品API", () => {
         expectAuthorizationFailure: true,
       });
     }
+
+    await exerciseVersionRun({
+      suffix: "Operation双重Agent配置",
+      workflowDefinitionRevisionId: published.workflowDefinitionRevisionId,
+      definitionSha256: published.definitionSha256,
+      ambiguousOperationAuthorization: true,
+      expectAuthorizationFailure: true,
+    });
 
     await exerciseVersionRun({
       suffix: "Run创建后的Runtime Profile漂移",

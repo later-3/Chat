@@ -69,6 +69,25 @@ describe("Node Catalog与Blueprint一致性", () => {
         ).toBe(true);
       }
     }
+    expect(
+      DEFAULT_NODE_CATALOG.parseConfig("agent.direct", 1, {
+        capabilityMode: "custom",
+        promptReviewMode: "manual",
+        agentVersionId: "avn_catalogambiguous1",
+        agentVersionSha256: "a".repeat(64),
+        agentTemporaryConfiguration: {
+          runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+          systemPrompt: { mode: "inherit_runtime" },
+          enabledToolNames: ["read", "bash", "edit", "write"],
+          resources: {
+            contextFiles: "inherit_runtime_default",
+            skills: "inherit_runtime_default",
+            promptTemplates: "inherit_runtime_default",
+            extensions: "inherit_runtime_default",
+          },
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("重复Catalog键和Blueprint降低风险在启动阶段失败关闭", () => {
@@ -360,6 +379,44 @@ describe("Node Catalog与Blueprint一致性", () => {
       resourcePolicy: temporaryConfiguration.resources,
       agentTemporaryConfiguration: temporaryConfiguration,
     });
+
+    const ambiguousRoot = structuredClone(direct.revision.semanticRoot);
+    const ambiguousNode = ambiguousRoot.elements[0];
+    if (ambiguousNode?.kind !== "composite") throw new Error("Direct fixture缺少Agent节点");
+    ambiguousNode.config = {
+      ...ambiguousNode.config,
+      capabilityMode: "custom",
+      agentVersionId: "avn_agentversionfreeze1",
+      agentVersionSha256,
+      agentTemporaryConfiguration: temporaryConfiguration,
+    };
+    const ambiguous = compileWorkflowRunSpec({
+      workflowRunSpecId: "wrs_agentambiguous1",
+      productRunId: "run_agentambiguous1",
+      createdAt,
+      definition: {
+        schemaVersion: "workflow-definition-revision-input.v1",
+        workflowDefinitionRevisionId: direct.revision.workflowDefinitionRevisionId,
+        definitionRevision: direct.revision.definitionRevision,
+        blueprintKey: direct.revision.blueprintKey,
+        blueprintVersion: direct.revision.blueprintVersion,
+        semanticRoot: ambiguousRoot,
+      },
+      runConfiguration: { schemaVersion: "workflow-run-configuration.v1", overrides: [] },
+      principal: { principalId: "usr_agentconfiguration", capabilities: [] },
+      availableResources: [],
+      executorManifest: BUILTIN_WORKFLOW_EXECUTOR_MANIFEST,
+      runner: {
+        runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
+        runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+      },
+      businessInput: { kind: "direct_agent_message" },
+    });
+    expect(ambiguous.success).toBe(false);
+    if (ambiguous.success) return;
+    expect(ambiguous.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "agent.configuration_ambiguous",
+    );
 
     const invalidTarget = compileWorkflowRunSpec(
       kernelCompilerInputFixture("composite", {

@@ -112,6 +112,78 @@ export class PiExecutorToolResultConflictError extends Error {
   }
 }
 
+export class PiExecutorJournalIntegrityError extends Error {
+  readonly code = "executor.journal_integrity_invalid";
+  constructor() {
+    super("Pi Executor Journal语义完整性校验失败");
+    this.name = "PiExecutorJournalIntegrityError";
+  }
+}
+
+type ToolIntentEvent = Extract<PiExecutorEvent, { type: "tool.intent_persisted" }>;
+
+/** v1文件加载时重放Tool身份状态机，结构合法但时序/身份矛盾的成功记录必须失败关闭。 */
+function scanToolJournal(record: OperationRecord): readonly ToolIntentEvent[] {
+  const intents = new Map<string, ToolIntentEvent>();
+  const closed = new Set<string>();
+  let hasUnknownToolResult = false;
+  for (const [index, event] of record.events.entries()) {
+    if (event.sequence !== index + 1 || event.operationId !== record.operationId) {
+      throw new PiExecutorJournalIntegrityError();
+    }
+    if (event.type === "tool.intent_persisted") {
+      if (intents.has(event.toolCallId) || event.sessionId !== record.sessionId) {
+        throw new PiExecutorJournalIntegrityError();
+      }
+      intents.set(event.toolCallId, event);
+      continue;
+    }
+    if (
+      event.type !== "tool.completed" &&
+      event.type !== "tool.failed" &&
+      event.type !== "tool.outcome_unknown"
+    ) {
+      continue;
+    }
+    const intent = intents.get(event.toolCallId);
+    if (
+      intent === undefined ||
+      closed.has(event.toolCallId) ||
+      intent.sessionId !== event.sessionId ||
+      intent.turnIndex !== event.turnIndex ||
+      intent.toolName !== event.toolName ||
+      (event.inputSha256 !== undefined && intent.inputSha256 !== event.inputSha256)
+    ) {
+      throw new PiExecutorJournalIntegrityError();
+    }
+    closed.add(event.toolCallId);
+    if (event.type === "tool.outcome_unknown") hasUnknownToolResult = true;
+  }
+  const open = [...intents.values()].filter((intent) => !closed.has(intent.toolCallId));
+  if (record.request.operationId !== record.operationId) {
+    throw new PiExecutorJournalIntegrityError();
+  }
+  if (hashExecutorValue(record.request) !== record.requestSha256) {
+    throw new PiExecutorJournalIntegrityError();
+  }
+  if (record.status === "succeeded") {
+    const completed = record.events.filter((event) => event.type === "operation.completed");
+    if (
+      open.length > 0 ||
+      hasUnknownToolResult ||
+      completed.length !== 1 ||
+      record.events.at(-1)?.type !== "operation.completed" ||
+      record.sessionId === undefined ||
+      record.result === undefined ||
+      record.resultSha256 !== hashExecutorValue(record.result) ||
+      record.errorCode !== undefined
+    ) {
+      throw new PiExecutorJournalIntegrityError();
+    }
+  }
+  return open;
+}
+
 interface PersistBoundaryEvidence {
   readonly operationId: string;
   readonly status: OperationRecord["status"];
@@ -156,6 +228,7 @@ export class PiExecutorOperationStore {
       if (`${record.operationId}.json` !== entry.name) {
         throw new Error("Pi Executor Operation文件名与内容身份不一致");
       }
+      scanToolJournal(record);
       store.records.set(record.operationId, record);
     }
     await store.reconcileInterruptedOperations();
@@ -456,19 +529,7 @@ export class PiExecutorOperationStore {
   private openToolIntents(
     record: OperationRecord,
   ): Array<Extract<PiExecutorEvent, { type: "tool.intent_persisted" }>> {
-    const closed = new Set(
-      record.events.flatMap((event) =>
-        event.type === "tool.completed" ||
-        event.type === "tool.failed" ||
-        event.type === "tool.outcome_unknown"
-          ? [event.toolCallId]
-          : [],
-      ),
-    );
-    return record.events.filter(
-      (event): event is Extract<PiExecutorEvent, { type: "tool.intent_persisted" }> =>
-        event.type === "tool.intent_persisted" && !closed.has(event.toolCallId),
-    );
+    return [...scanToolJournal(record)];
   }
 
   private closeOpenToolIntentsAsUnknown(record: OperationRecord): OperationRecord {

@@ -561,7 +561,12 @@ export function createCodingExecutorJournalExtension(input: {
     });
     pi.on("tool_result", async (event: ToolResultEvent) => {
       const tool = input.state.tools.get(event.toolCallId);
-      if (tool === undefined || event.toolName !== tool.toolName) {
+      const resultInputSha256 = hashExecutorValue(event.input);
+      if (
+        tool === undefined ||
+        event.toolName !== tool.toolName ||
+        resultInputSha256 !== tool.inputSha256
+      ) {
         throw latchFatalJournalError(
           input.state,
           new PiCodingAgentExecutionError("executor.tool_result_intent_mismatch"),
@@ -575,7 +580,7 @@ export function createCodingExecutorJournalExtension(input: {
         turnIndex: tool.turnIndex,
         toolCallId: event.toolCallId,
         toolName: tool.toolName,
-        inputSha256: tool.inputSha256,
+        inputSha256: resultInputSha256,
         resultSha256: toolResultHash(event),
         resultDisplay: resultDisplay.text,
         resultDisplayTruncated: resultDisplay.truncated,

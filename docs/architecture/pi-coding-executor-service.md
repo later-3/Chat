@@ -89,7 +89,9 @@ Operation终态提交仍会重新读取耐久Journal。发现任一`tool.intent_
 `succeeded / failed / outcome_unknown`任一终态就保持单调；迟到的`complete()`只能幂等读取既有成功，或以稳定冲突拒绝，
 不能把未知/失败改写为成功。重启扫描复用同一闭合逻辑，重复启动不会追加第二组未知事件。
 
-早期v1已经闭合的Tool Result没有复制`inputSha256`，继续作为只读历史兼容；所有新追加Result都必须携带该字段并通过上述精确匹配，兼容读取不能放宽写入门。
+早期v1已经闭合的Tool Result没有复制`inputSha256`，继续作为只读历史兼容；加载每个Operation文件时仍按事件顺序重放Tool身份状态机，重复Intent、Result先于Intent、跨Session/Turn/Tool闭合、多次闭合或成功记录残留开放/未知Intent都会以`executor.journal_integrity_invalid`拒绝整个Store启动，旧Candidate不能继续作为成功返回。所有新追加Result都必须携带该字段并通过上述精确匹配，兼容读取不能放宽写入门。
+
+新Result的第五字段来自固定Pi `tool_result`事件携带的真实`input`重新Canonical Hash，而不是复制内存Intent Hash；真实输入与Intent不等时先触发fatal latch，再把Operation耐久收敛为`executor.tool_result_intent_mismatch / outcome_unknown`。
 
 只有耐久状态为`succeeded`且Workflow客户端已经连续读取全部事件时才返回Candidate。`outcome_unknown`没有Candidate，
 因而不能进入Validation或Product Commit。正式fail-closed保证由Provider Gate、执行前Tool Intent栅栏以及上述终态耐久

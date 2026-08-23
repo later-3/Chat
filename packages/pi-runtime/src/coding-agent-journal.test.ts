@@ -22,7 +22,7 @@ import {
   createCodingExecutorJournalState,
   settleCodingExecutorFatal,
 } from "./coding-agent-executor.js";
-import { PiExecutorOperationStore } from "./executor-operation-store.js";
+import { PiExecutorOperationStore, hashExecutorValue } from "./executor-operation-store.js";
 import {
   PI_EXECUTOR_PROTOCOL_VERSION,
   startPiExecutorOperationRequestSchema,
@@ -149,7 +149,7 @@ async function harness(operationId: string) {
     thinkingLevel: "off",
     tools: ["read"],
   });
-  return { faux, operationId, session, state, store };
+  return { faux, operationId, operationRequest, session, sessionId, state, store, workspace };
 }
 
 async function assertFatal(
@@ -215,6 +215,69 @@ describe("Coding Executor真实Pi AgentSession Tool Journal", () => {
       ]);
       await value.session.prompt("第二轮复用ID");
       await assertFatal(value, 1);
+    } finally {
+      value.session.dispose();
+    }
+  });
+
+  it("Tool Result携带的真实input漂移时触发fatal latch", async () => {
+    const value = await harness("pio_journalinput1");
+    const handlers = new Map<string, (event: never) => Promise<unknown>>();
+    const extension = createCodingExecutorJournalExtension({
+      request: value.operationRequest,
+      sessionId: value.sessionId,
+      workspaceRoot: value.workspace,
+      endpointHost: "faux.local",
+      store: value.store,
+      state: value.state,
+    });
+    await extension({
+      on: (event: string, handler: (value: never) => Promise<unknown>) => {
+        handlers.set(event, handler);
+      },
+    } as never);
+    const toolCall = handlers.get("tool_call");
+    const toolResult = handlers.get("tool_result");
+    if (toolCall === undefined || toolResult === undefined) {
+      throw new Error("测试Extension缺少Tool handler");
+    }
+    try {
+      await toolCall({
+        type: "tool_call",
+        toolName: "read",
+        toolCallId: "call_input_drift",
+        input: { path: "probe.txt" },
+      } as never);
+      await expect(
+        toolResult({
+          type: "tool_result",
+          toolName: "read",
+          toolCallId: "call_input_drift",
+          input: { path: "different.txt" },
+          content: [],
+          details: undefined,
+          isError: false,
+        } as never),
+      ).rejects.toMatchObject({ code: "executor.tool_result_intent_mismatch" });
+      expect(value.state.fatalError).toMatchObject({
+        code: "executor.tool_result_intent_mismatch",
+      });
+      expect(
+        value.store
+          .getEvents(value.operationId)
+          .find((event) => event.type === "tool.intent_persisted"),
+      ).toMatchObject({ inputSha256: hashExecutorValue({ path: "probe.txt" }) });
+      await expect(
+        settleCodingExecutorFatal({
+          operationId: value.operationId,
+          store: value.store,
+          state: value.state,
+        }),
+      ).rejects.toMatchObject({ code: "executor.tool_result_intent_mismatch" });
+      expect(value.store.getSnapshot(value.operationId)).toMatchObject({
+        status: "outcome_unknown",
+        errorCode: "executor.tool_result_intent_mismatch",
+      });
     } finally {
       value.session.dispose();
     }

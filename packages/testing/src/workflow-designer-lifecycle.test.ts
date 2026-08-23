@@ -14,6 +14,7 @@ import {
   type IdFactory,
 } from "@chat/application";
 import {
+  SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
@@ -24,6 +25,7 @@ import {
   type WorkflowDefinitionId,
   type WorkflowDefinitionSequence,
 } from "@chat/contracts";
+import { hashCanonical } from "@chat/domain";
 import { JsonProductStore } from "@chat/product-store-json";
 import { createApiApp } from "@chat/api";
 
@@ -66,9 +68,12 @@ async function fixture() {
     snapshot.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID];
   const memorySystem =
     snapshot.entities.workflowDefinitionRevisions[SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID];
+  const directSystem =
+    snapshot.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
   if (system === undefined) throw new Error("system seed missing");
   if (memorySystem === undefined) throw new Error("memory system seed missing");
-  return { deps, store, filePath, system, memorySystem, app };
+  if (directSystem === undefined) throw new Error("direct system seed missing");
+  return { deps, store, filePath, system, memorySystem, directSystem, app };
 }
 
 const command = (value: string) => value as CommandId;
@@ -362,6 +367,103 @@ describe("S6 Workflow Definition生命周期", () => {
     });
     expect(validation.valid).toBe(false);
     expect(validation.diagnostics.some((item) => item.code.includes("terminal"))).toBe(true);
+  });
+
+  it("Draft保存与Publish都拒绝Version和Temporary双重Agent配置", async () => {
+    const { deps, store, directSystem } = await fixture();
+    const copied = await createWorkflowDefinitionCopy(deps, {
+      principalId: OWNER,
+      commandId: command("cmd_designerambiguouscopy1"),
+      payload: {
+        sourceWorkflowDefinitionRevisionId: directSystem.workflowDefinitionRevisionId,
+        sourceDefinitionSha256: directSystem.definitionSha256,
+        title: "双重Agent配置反例",
+        description: "保存和发布都必须失败关闭",
+      },
+    });
+    if (copied.definition.compatibility !== "editable") throw new Error("copy不可编辑");
+    const ambiguousRoot = structuredClone(copied.definition.semanticRoot);
+    const directNode = ambiguousRoot.elements[0];
+    if (directNode?.kind !== "composite") throw new Error("Direct副本缺少Agent节点");
+    directNode.config = {
+      ...directNode.config,
+      capabilityMode: "custom",
+      agentVersionId: "avn_designerambiguous1",
+      agentVersionSha256: "a".repeat(64),
+      agentTemporaryConfiguration: {
+        runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
+        systemPrompt: { mode: "inherit_runtime" },
+        enabledToolNames: ["read", "bash", "edit", "write"],
+        resources: {
+          contextFiles: "inherit_runtime_default",
+          skills: "inherit_runtime_default",
+          promptTemplates: "inherit_runtime_default",
+          extensions: "inherit_runtime_default",
+        },
+      },
+    };
+    const validation = await validateWorkflowDefinition(deps, {
+      principalId: OWNER,
+      payload: {
+        workflowDefinitionId: copied.definition.workflowDefinitionId,
+        baseRevisionId: copied.definition.baseRevisionId,
+        baseDefinitionSha256: copied.definition.baseDefinitionSha256,
+        blueprintKey: copied.definition.blueprintKey,
+        blueprintVersion: copied.definition.blueprintVersion,
+        semanticRoot: ambiguousRoot,
+      },
+    });
+    expect(validation.valid).toBe(false);
+    const beforeSave = (await store.read({ kind: "committedSnapshot" })).snapshot.storeRevision;
+    await expect(
+      saveWorkflowDefinitionDraft(deps, {
+        principalId: OWNER,
+        commandId: command("cmd_designerambiguoussave1"),
+        workflowDefinitionId: copied.definition.workflowDefinitionId,
+        expectedRevision: copied.definition.revision,
+        payload: {
+          baseRevisionId: copied.definition.baseRevisionId,
+          baseDefinitionSha256: copied.definition.baseDefinitionSha256,
+          semanticRoot: ambiguousRoot,
+        },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    expect((await store.read({ kind: "committedSnapshot" })).snapshot.storeRevision).toBe(
+      beforeSave,
+    );
+
+    const copiedDraftRevisionId = copied.definition.baseRevisionId;
+    const ambiguousSha256 = hashCanonical("workflow-definition.v1", ambiguousRoot);
+    await store.transact({
+      commandId: command("cmd_designerambiguouslegacydraft1"),
+      commandType: "UpdateOutboxStatus",
+      requestSha256: hashCanonical("test.legacy-ambiguous-draft.v1", {
+        workflowDefinitionRevisionId: copiedDraftRevisionId,
+      }),
+      mutate: (draft) => {
+        const revision = draft.entities.workflowDefinitionRevisions[copiedDraftRevisionId];
+        if (revision === undefined) throw new Error("测试Draft不存在");
+        draft.entities.workflowDefinitionRevisions[revision.workflowDefinitionRevisionId] = {
+          ...revision,
+          semanticRoot: ambiguousRoot,
+          definitionSha256: ambiguousSha256,
+          updatedAt: deps.now(),
+        };
+        return { resultRefs: {} };
+      },
+    });
+    await expect(
+      publishWorkflowDefinition(deps, {
+        principalId: OWNER,
+        commandId: command("cmd_designerambiguouspublish1"),
+        workflowDefinitionId: copied.definition.workflowDefinitionId,
+        expectedRevision: copied.definition.revision,
+        payload: {
+          draftRevisionId: copiedDraftRevisionId,
+          draftDefinitionSha256: ambiguousSha256,
+        },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
   });
 
   it("system Definition只允许copy，不可直接编辑", async () => {

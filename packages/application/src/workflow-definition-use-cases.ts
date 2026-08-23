@@ -32,7 +32,7 @@ import {
   deriveWorkflowDesignerPolicy,
   toWorkflowDesignerSlotDto,
 } from "./workflow-designer-policy.js";
-import { DEFAULT_NODE_CATALOG } from "./workflow-node-catalog.js";
+import { DEFAULT_NODE_CATALOG, hasAmbiguousAgentConfiguration } from "./workflow-node-catalog.js";
 import { validateDesignerRoot } from "./workflow-structure-operations.js";
 import { createPublishedWorkflowView } from "./workflow-view-builder.js";
 import { agentNodeBindingDescriptor } from "./prompt-assembly-use-cases.js";
@@ -165,6 +165,7 @@ export async function saveWorkflowAgentNodeConfiguration(
       if (source.state !== "published") {
         throw revisionConflict("只能配置已发布Workflow Definition");
       }
+      assertNoAmbiguousAgentConfigurations(source.semanticRoot);
       const sourceDefinition = draft.entities.workflowDefinitions[source.workflowDefinitionId];
       if (sourceDefinition === undefined) throw notFound("Workflow Definition不存在");
       if (input.payload.agentVersionId !== undefined) {
@@ -318,6 +319,9 @@ function configureAgentNode(
       } else {
         config["agentVersionId"] = payload.agentVersionId;
         config["agentVersionSha256"] = payload.agentVersionSha256;
+        delete config["agentTemporaryConfiguration"];
+        delete config["enabledToolNames"];
+        delete config["resourcePolicy"];
         // Agent Version冻结精确Tool与资源政策；新Revision不能继续声明继承Pi默认能力。
         // 旧Revision由RunSpec Compiler在创建新Run时做同样的归一，历史事实保持不变。
         if (element.nodeType === "agent.direct") config["capabilityMode"] = "custom";
@@ -358,6 +362,32 @@ const AGENT_NODE_SUPPORT: Readonly<Record<string, readonly string[]>> = {
   "note.extract": ["note_extractor"],
 };
 
+/** Draft/Publish边界不能依赖运行时优先级解释两套Agent能力。 */
+function assertNoAmbiguousAgentConfigurations(
+  root: WorkflowDefinitionRevision["semanticRoot"],
+): void {
+  const stack: WorkflowDefinitionElement[] = [root];
+  while (stack.length > 0) {
+    const element = stack.pop();
+    if (element === undefined) break;
+    if (element.kind === "task" || element.kind === "composite") {
+      if (element.nodeType === "agent.direct" && hasAmbiguousAgentConfiguration(element.config)) {
+        throw revisionConflict(
+          `Workflow节点${element.definitionNodeId}不能同时保存Agent Version与临时配置`,
+        );
+      }
+      continue;
+    }
+    if (element.kind === "sequence") {
+      stack.push(...element.elements);
+    } else if (element.kind === "choice") {
+      stack.push(...element.branches.map((branch) => branch.body));
+    } else {
+      stack.push(element.body);
+    }
+  }
+}
+
 export async function saveWorkflowDefinitionDraft(
   deps: ApplicationDeps,
   input: {
@@ -392,6 +422,7 @@ export async function saveWorkflowDefinitionDraft(
         input.payload.baseRevisionId,
         input.payload.baseDefinitionSha256,
       );
+      assertNoAmbiguousAgentConfigurations(input.payload.semanticRoot);
       const validated = validateDesignerRootFor(input.payload.semanticRoot, base);
       if (!validated.success) throw invalidDefinition(validated.diagnostics);
       const existingDraft =
@@ -483,6 +514,7 @@ export async function publishWorkflowDefinition(
       ) {
         throw revisionConflict("Draft Revision或Hash已变化");
       }
+      assertNoAmbiguousAgentConfigurations(draftRevision.semanticRoot);
       const validated = validateDesignerRootFor(draftRevision.semanticRoot, draftRevision);
       if (!validated.success || validated.definitionSha256 !== draftRevision.definitionSha256) {
         throw invalidDefinition(validated.success ? [] : validated.diagnostics);

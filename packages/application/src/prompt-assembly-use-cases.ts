@@ -60,6 +60,7 @@ import type {
   PromptCatalogSnapshot,
 } from "./prompt-catalog-port.js";
 import { resolveCurrentAgentRuntimeBinding } from "./agent-version-runtime-validation.js";
+import { hasAmbiguousAgentConfiguration } from "./workflow-node-catalog.js";
 
 /**
  * V2先使用保守统一Meter；它用于确定性预算而不是冒充Provider精确Tokenizer。
@@ -812,6 +813,9 @@ export function resolveDirectAgentExecutionEnvelope(input: {
   readonly requestOptions: PromptAssemblyV2["requestOptions"];
   readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
 } {
+  if (hasAmbiguousAgentConfiguration(input.directNodeConfig)) {
+    throw revisionConflict("Agent Version与临时Agent配置不能同时进入能力解析");
+  }
   const rawTemporaryConfiguration = input.directNodeConfig["agentTemporaryConfiguration"];
   const parsedTemporaryConfiguration =
     rawTemporaryConfiguration === undefined
