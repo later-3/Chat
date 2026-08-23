@@ -216,9 +216,9 @@ try {
     requestSha256: "e".repeat(64),
     content: workflowContent,
     contentType: "conversation_turn" as const,
-    productSessionId: productSessionIdSchema.parse("psn_memmyworkflowreal"),
     principalId: principalIdSchema.parse("usr_debug"),
-    sourceMessageId: "msg_memmyworkflowreal",
+    sessionKey: productSessionIdSchema.parse("psn_memmyworkflowreal"),
+    turnKey: "msg_memmyworkflowreal",
   };
   const workflowAccepted = await adapter.writeMemory(workflowWriteInput);
   const knownIdReconcile = await adapter.reconcileMemoryWrite({
@@ -238,7 +238,7 @@ try {
   const workflowQuery = await adapter.queryMemory({
     operationId: workflowMemoryQueryIdSchema.parse("wmq_memmyworkflowreal"),
     productRunId: productRunIdSchema.parse("run_memmyworkflowreal"),
-    productSessionId: workflowWriteInput.productSessionId,
+    productSessionId: workflowWriteInput.sessionKey,
     principalId: workflowWriteInput.principalId,
     query: "WF-MEMMY-REAL-4927 只读GET对账",
     maxResults: 5,

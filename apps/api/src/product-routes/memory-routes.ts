@@ -10,6 +10,15 @@ import {
   reconcileMemoryWritePayloadSchema,
   memoryWriteIntentIdSchema,
   listMemoryProvidersResponseSchema,
+  createMemorySessionImportPayloadSchema,
+  listMemorySessionImportsQuerySchema,
+  listMemorySessionImportsResponseSchema,
+  listMemorySessionSourcesResponseSchema,
+  memorySessionImportIdSchema,
+  memorySessionImportResponseSchema,
+  memorySessionSourceListQuerySchema,
+  previewMemorySessionImportPayloadSchema,
+  previewMemorySessionImportResponseSchema,
 } from "@chat/contracts";
 import {
   ApplicationError,
@@ -19,6 +28,11 @@ import {
   createMemoryWrite,
   getMemoryWrite,
   requestMemoryWriteReconciliation,
+  createMemorySessionImport,
+  getMemorySessionImport,
+  listMemorySessionImports,
+  listMemorySessionSources,
+  previewMemorySessionImport,
 } from "@chat/application";
 import {
   type ProductRouteContext,
@@ -30,6 +44,106 @@ import {
 } from "./shared.js";
 
 export function registerMemoryRoutes(router: ProductRouter, ctx: ProductRouteContext): void {
+  router.get("/memory/session-sources", async (c) => {
+    try {
+      const params = strictMemoryQuery(c.req.url, ["kind", "limit"]);
+      const query = memorySessionSourceListQuerySchema.parse({
+        kind: params.get("kind"),
+        limit: params.get("limit") ?? undefined,
+      });
+      return c.json(
+        listMemorySessionSourcesResponseSchema.parse(
+          await listMemorySessionSources(ctx.deps, {
+            principalId: ctx.principalId,
+            kind: query.kind,
+            limit: query.limit,
+          }),
+        ),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/memory/session-import-previews", async (c) => {
+    try {
+      const payload = previewMemorySessionImportPayloadSchema.parse(await parseJsonBody(c));
+      return c.json(
+        previewMemorySessionImportResponseSchema.parse(
+          await previewMemorySessionImport(ctx.deps, {
+            principalId: ctx.principalId,
+            source: payload.source,
+            providerId: payload.providerId,
+          }),
+        ),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/memory/session-imports", async (c) => {
+    try {
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const payload = createMemorySessionImportPayloadSchema.parse(envelope.payload);
+      const result = await createMemorySessionImport(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/memory/session-imports",
+        statusCode: 201,
+      });
+      return c.json(memorySessionImportResponseSchema.parse(result), 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/memory/session-imports", async (c) => {
+    try {
+      const params = strictMemoryQuery(c.req.url, ["limit"]);
+      const query = listMemorySessionImportsQuerySchema.parse({
+        limit: params.get("limit") ?? undefined,
+      });
+      return c.json(
+        listMemorySessionImportsResponseSchema.parse(
+          await listMemorySessionImports(ctx.deps, {
+            principalId: ctx.principalId,
+            limit: query.limit,
+          }),
+        ),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/memory/session-imports/:memorySessionImportId", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const memorySessionImportId = memorySessionImportIdSchema.parse(
+        c.req.param("memorySessionImportId"),
+      );
+      return c.json(
+        memorySessionImportResponseSchema.parse(
+          await getMemorySessionImport(ctx.deps, {
+            principalId: ctx.principalId,
+            memorySessionImportId,
+          }),
+        ),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.post("/memory-imports", async (c) => {
     try {
       const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
@@ -177,4 +291,19 @@ export function registerMemoryRoutes(router: ProductRouter, ctx: ProductRouteCon
       return mapError(c, error);
     }
   });
+}
+
+function strictMemoryQuery(url: string, allowedKeys: readonly string[]): URLSearchParams {
+  const params = new URL(url).searchParams;
+  const allowed = new Set(allowedKeys);
+  for (const key of params.keys()) {
+    if (!allowed.has(key) || params.getAll(key).length !== 1) {
+      throw new ApplicationError({
+        code: "validation_failed",
+        httpStatus: 400,
+        message: "Memory查询参数未知或重复",
+      });
+    }
+  }
+  return params;
 }

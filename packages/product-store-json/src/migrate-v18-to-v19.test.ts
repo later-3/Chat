@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { JsonProductStore } from "./json-product-store.js";
 import { productSnapshotV18Schema, type ProductSnapshotV18 } from "./legacy-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
+import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-24T08:00:00.000Z";
@@ -21,7 +22,10 @@ async function seededV18(): Promise<ProductSnapshotV18> {
     now: () => NOW,
   });
   const { snapshot } = await store.read({ kind: "committedSnapshot" });
-  const entities = structuredClone(snapshot.entities);
+  const { memorySessionImports: _memorySessionImports, ...entities } = structuredClone(
+    snapshot.entities,
+  );
+  void _memorySessionImports;
   delete entities.workflowDefinitions[SYSTEM_MEMORY_DIRECT_WORKFLOW_DEFINITION_ID];
   delete entities.workflowDefinitionRevisions[SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID];
   delete entities.workflowViewDefinitions[SYSTEM_MEMORY_DIRECT_WORKFLOW_VIEW_ID];
@@ -78,7 +82,7 @@ describe("Product Store v18到v19 Memory Direct迁移", () => {
         }),
       }),
     });
-    expect(() => assertSnapshotIntegrity(migrated)).not.toThrow();
+    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV19ToV20(migrated))).not.toThrow();
   });
 
   it("固定ID被异语义对象占用时失败关闭，不静默覆盖", async () => {

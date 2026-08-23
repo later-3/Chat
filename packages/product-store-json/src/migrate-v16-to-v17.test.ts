@@ -17,6 +17,7 @@ function mainV16() {
   const current = createEmptySnapshot(NOW);
   const entities = structuredClone(current.entities) as Record<string, unknown>;
   delete entities["agentVersions"];
+  delete entities["memorySessionImports"];
   delete entities["projectBootstrapCandidates"];
   delete entities["projectBootstrapDecisions"];
   delete entities["projectBootstrapOperations"];
@@ -37,6 +38,7 @@ async function seededMainV16() {
   const { snapshot } = await store.read({ kind: "committedSnapshot" });
   const entities = structuredClone(snapshot.entities) as Record<string, unknown>;
   delete entities["agentVersions"];
+  delete entities["memorySessionImports"];
   delete entities["projectBootstrapCandidates"];
   delete entities["projectBootstrapDecisions"];
   delete entities["projectBootstrapOperations"];
@@ -123,6 +125,7 @@ function planeV16WithFacts() {
   };
   const entities = structuredClone(current.entities) as Record<string, unknown>;
   delete entities["agentVersions"];
+  delete entities["memorySessionImports"];
   return productSnapshotV16PlaneSchema.parse({
     ...current,
     schemaVersion: "chat-product-store.v16",

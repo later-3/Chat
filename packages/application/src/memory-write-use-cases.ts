@@ -16,17 +16,21 @@ import {
   type MemoryWriteIntentId,
   type MemoryWriteResult,
   type MemoryWriteResultId,
+  type MessageId,
   type OutboxEntryId,
   type PrincipalId,
+  type ProductSessionId,
 } from "@chat/contracts";
 import {
   assertMemoryWriteTransition,
   computeMemoryProviderDescriptorSha256,
   computeMemoryWriteRequestSha256,
   computeMemoryWriteSemanticDedupeSha256,
+  computeMemoryWriteImportRequestSha256,
   computeWorkflowMemoryMessageSha256,
   hashCanonical,
   resolveMemoryWriteContent,
+  resolveMemoryWriteImportContent,
   sha256Hex,
   WorkflowMemoryInvariantError,
 } from "@chat/domain";
@@ -79,12 +83,10 @@ function toDto(
   if (result.memoryWriteIntentId !== intent.memoryWriteIntentId) {
     throw revisionConflict("Memory Write Intent/Result绑定无效");
   }
-  return {
+  const base = {
     memoryWriteIntentId: intent.memoryWriteIntentId,
     memoryWriteResultId: result.memoryWriteResultId,
-    productSessionId: intent.productSessionId,
     providerId: intent.providerId,
-    sourceSelection: intent.sourceSelection,
     result,
     canReconcile:
       intent.providerDescriptor.capabilities.reconcile &&
@@ -96,6 +98,13 @@ function toDto(
           ["pending", "dispatched", "outcome_unknown"].includes(entry.status),
       ),
   };
+  return intent.schemaVersion === "memory-write-intent.v1"
+    ? {
+        ...base,
+        productSessionId: intent.productSessionId,
+        sourceSelection: intent.sourceSelection,
+      }
+    : { ...base, sourceSelection: intent.sourceSelection };
 }
 
 /** 创建写入意图、初始Result与Outbox的唯一产品事务；此处绝不调用Provider。 */
@@ -363,7 +372,11 @@ export async function listMemoryWrites(
   if (session === undefined) throw notFound("Session不存在");
   if (session.ownerPrincipalId !== input.principalId) throw forbidden("无权读取该Session");
   const ordered = Object.values(snapshot.entities.memoryWriteIntents)
-    .filter((intent) => intent.productSessionId === input.productSessionId)
+    .filter(
+      (intent) =>
+        intent.schemaVersion === "memory-write-intent.v1" &&
+        intent.productSessionId === input.productSessionId,
+    )
     .sort(
       (left, right) =>
         right.createdAt.localeCompare(left.createdAt) ||
@@ -417,21 +430,49 @@ export async function loadMemoryWriteForRuntime(
   if (result.memoryWriteIntentId !== intent.memoryWriteIntentId) {
     throw revisionConflict("Memory Write Intent/Result不一致");
   }
-  const message = snapshot.entities.messages[intent.sourceSelection.sourceMessageId];
   const capability = intent.providerDescriptor.capabilities.write;
-  if (message === undefined || capability === null) throw revisionConflict("Memory Write来源损坏");
-  const content = resolveMemoryWriteContent({
-    message,
-    selection: intent.sourceSelection,
-    maxContentCharacters: capability.maxContentCharacters,
-  });
-  const requestSha256 = computeMemoryWriteRequestSha256({
-    operationId: intent.operationId,
-    providerDescriptorSha256: intent.providerDescriptorSha256,
-    contentType: intent.contentType,
-    sourceSelection: intent.sourceSelection,
-    contentSha256: sha256Hex(content),
-  });
+  if (capability === null) throw revisionConflict("Memory Write来源损坏");
+  let content: string;
+  let requestSha256: string;
+  let adapterSource:
+    | { readonly productSessionId: ProductSessionId; readonly sourceMessageId: MessageId }
+    | { readonly sessionKey: string; readonly turnKey: string };
+  if (intent.schemaVersion === "memory-write-intent.v1") {
+    const message = snapshot.entities.messages[intent.sourceSelection.sourceMessageId];
+    if (message === undefined) throw revisionConflict("Memory Write来源损坏");
+    content = resolveMemoryWriteContent({
+      message,
+      selection: intent.sourceSelection,
+      maxContentCharacters: capability.maxContentCharacters,
+    });
+    requestSha256 = computeMemoryWriteRequestSha256({
+      operationId: intent.operationId,
+      providerDescriptorSha256: intent.providerDescriptorSha256,
+      contentType: intent.contentType,
+      sourceSelection: intent.sourceSelection,
+      contentSha256: sha256Hex(content),
+    });
+    adapterSource = {
+      productSessionId: intent.productSessionId,
+      sourceMessageId: message.messageId,
+    };
+  } else {
+    content = resolveMemoryWriteImportContent({
+      contentSnapshot: intent.contentSnapshot,
+      selection: intent.sourceSelection,
+      maxContentCharacters: capability.maxContentCharacters,
+    });
+    requestSha256 = computeMemoryWriteImportRequestSha256({
+      operationId: intent.operationId,
+      providerDescriptorSha256: intent.providerDescriptorSha256,
+      contentType: intent.contentType,
+      sourceSelection: intent.sourceSelection,
+      sourceSessionKey: intent.sourceSessionKey,
+      sourceTurnKey: intent.sourceTurnKey,
+      contentSha256: sha256Hex(content),
+    });
+    adapterSource = { sessionKey: intent.sourceSessionKey, turnKey: intent.sourceTurnKey };
+  }
   if (requestSha256 !== intent.requestSha256) throw revisionConflict("Memory Write请求Hash不一致");
   return {
     intent,
@@ -441,9 +482,8 @@ export async function loadMemoryWriteForRuntime(
       requestSha256: intent.requestSha256,
       content,
       contentType: intent.contentType,
-      productSessionId: intent.productSessionId,
       principalId: intent.requestedByPrincipalId,
-      sourceMessageId: message.messageId,
+      ...adapterSource,
     },
   };
 }

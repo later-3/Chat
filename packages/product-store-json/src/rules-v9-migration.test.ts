@@ -45,6 +45,7 @@ describe("Product Store v8→v9", () => {
               "projectBootstrapDecisions",
               "projectBootstrapOperations",
               "projectWorkspaceBindings",
+              "memorySessionImports",
             ].includes(key),
         ),
       ),
@@ -61,7 +62,7 @@ describe("Product Store v8→v9", () => {
     await writeFile(filePath, JSON.stringify(legacy), "utf8");
     await JsonProductStore.open({ filePath, now: () => NOW });
     const onDisk = JSON.parse(await readFile(filePath, "utf8")) as { schemaVersion?: unknown };
-    expect(onDisk.schemaVersion).toBe("chat-product-store.v19");
+    expect(onDisk.schemaVersion).toBe("chat-product-store.v20");
     await JsonProductStore.open({ filePath, now: () => NOW });
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual(onDisk);
   });

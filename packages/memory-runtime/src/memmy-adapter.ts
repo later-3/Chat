@@ -595,12 +595,14 @@ function assertWithinBudget(
 function legacyWorkflowWriteInput(
   input: WorkflowMemoryWriteInput | WorkflowMemoryWriteReconcileInput,
 ): MemoryImportInput {
+  const sessionKey = "sessionKey" in input ? input.sessionKey : input.productSessionId;
+  const turnKey = "turnKey" in input ? input.turnKey : input.sourceMessageId;
   const shape = {
     content: input.content,
     layer: "L2" as const,
     title: "conversation_turn",
     tags: [] as const,
-    turnId: input.sourceMessageId,
+    turnId: turnKey,
   };
   return {
     // 固定requestId就是Chat持久化的mwi_*；对账只能重用该身份，不能生成第二次写入。
@@ -611,8 +613,9 @@ function legacyWorkflowWriteInput(
     title: shape.title,
     tags: shape.tags,
     source: "chat.explicit_import",
-    sessionId: input.productSessionId,
-    turnId: input.sourceMessageId,
+    // 旧Import Port仍带ProductSession品牌；网络协议只需要已冻结的稳定namespace key。
+    sessionId: sessionKey as never,
+    turnId: turnKey,
   };
 }
 

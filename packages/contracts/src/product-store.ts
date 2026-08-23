@@ -80,6 +80,7 @@ import {
   projectWorkspaceBindingSchema,
 } from "./project-bootstrap.js";
 import { agentVersionSchema } from "./agent-configuration.js";
+import { memorySessionImportSchema } from "./memory-session-import.js";
 
 /**
  * Product Snapshot顶层合同（任务书§8.3）。
@@ -91,7 +92,7 @@ import { agentVersionSchema } from "./agent-configuration.js";
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v19";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v20";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -162,6 +163,7 @@ const productEntitiesSchema = z
     workflowMemoryContexts: z.record(idKeySchema, workflowMemoryContextSchema),
     memoryWriteIntents: z.record(idKeySchema, memoryWriteIntentSchema),
     memoryWriteResults: z.record(idKeySchema, memoryWriteResultSchema),
+    memorySessionImports: z.record(idKeySchema, memorySessionImportSchema),
   })
   .strict();
 
@@ -257,6 +259,7 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       workflowMemoryContexts: {},
       memoryWriteIntents: {},
       memoryWriteResults: {},
+      memorySessionImports: {},
       projectBootstrapCandidates: {},
       projectBootstrapDecisions: {},
       projectBootstrapOperations: {},

@@ -297,6 +297,7 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
       "workflowNodeRunId",
     ],
     CreateMemoryWrite: ["memoryWriteIntentId", "memoryWriteResultId"],
+    CreateMemorySessionImport: ["memorySessionImportId"],
     MarkMemoryWriteDispatching: ["memoryWriteResultId"],
     CommitMemoryWriteAccepted: ["memoryWriteResultId"],
     CommitMemoryWriteMaterialized: ["memoryWriteResultId"],
@@ -682,7 +683,14 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
                                                                                                                                   "expired" ||
                                                                                                                                 value ===
                                                                                                                                   "already_decided"
-                                                                                                                              : false;
+                                                                                                                              : key ===
+                                                                                                                                  "memorySessionImportId"
+                                                                                                                                ? entities
+                                                                                                                                    .memorySessionImports[
+                                                                                                                                    value
+                                                                                                                                  ] !==
+                                                                                                                                  undefined
+                                                                                                                                : false;
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
     }
     const receiptDefinitionId = receipt.resultRefs["workflowDefinitionId"];

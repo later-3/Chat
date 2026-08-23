@@ -26,7 +26,7 @@
 
 交付顺序：运行基础与真实Provider门 → 独立Memory增强Direct Workflow → Chat/Codex Session预览、去重与导入 → 双Provider对比 → Retrieval/Write Agent与可选人工门 → DSH Memory管理表面。旧Memory Planning只作为实现证据，不能决定当前目标形态。
 
-截至2026-08-24，前两项已经完成确定性纵向与真实Provider基础门；当前下一交付项是Chat/Codex Session预览、去重和增量导入。Memory Direct的真实DSH浏览器E2E与本轮采用详情仍计入后续管理表面完成门。
+截至2026-08-24，前三项已经完成：Chat/Codex Session共享只读预览、确定性`conversation-turns.v1`转换、条目级去重和增量导入；Codex来源按请求扫描，不新增常驻服务。当前下一交付项是双Provider对比。Memory Direct的真实DSH浏览器E2E与本轮采用详情仍计入后续管理表面完成门。
 
 完成门：查询结果真实进入Direct Provider输入；同一Session导入重跑零新增；Write响应丢失不会产生第二个外部对象；刷新后可从Product Store重建来源、采用、决定、写入与对账；真实DSH浏览器能配置、查看并管理本轮Memory使用。
 

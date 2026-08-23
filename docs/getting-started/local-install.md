@@ -218,6 +218,13 @@ production的`18960/18970`或debug的`19960/19970`以及对应实例私有数据
 本地固定memmy使用Chat实例私有数据库并绑定`usr_debug`；远程memmy也必须为该Principal提供专属
 物理数据库。当前固定版本不能安全共享给多个Principal，不能把`namespace.userId`当成真实租户隔离。
 
+Chat Session来源直接读取Product Store；Codex Session来源默认按需读取`$CODEX_HOME`，未设置时使用
+当前OS用户的`.codex`目录。该来源Adapter不启动服务，也不会在普通启动或请求期间预扫描；只有调用
+`GET /api/memory/session-sources`、`POST /api/memory/session-import-previews`或确认
+`POST /api/memory/session-imports`时才读取。需要导入另一个受管Codex根时，在启动API前显式设置绝对
+`CODEX_HOME`；浏览器不能提交文件路径。Preview不写Product Store或Provider，确认导入才创建统一
+Memory Write Outbox，因此必须同时启用支持写入的Memory模式。
+
 `431xx`只属于production；分支worktree、VS Code F5和测试不得占用。CLI/VS Code debug固定
 使用`441xx`，Playwright真实浏览器门固定使用`451xx/452xx/453xx`。测试专属端口被占用时
 失败关闭，不调用production的`debug:preclean`，也不停止LaunchAgent。
