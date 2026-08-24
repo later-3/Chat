@@ -15,6 +15,7 @@ import {
 import { Type, type Model } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { hashCanonical } from "@chat/domain";
 import {
   PI_DIRECT_EXECUTOR_PROTOCOL_VERSION,
   type DirectPromptReviewDecisionRef,
@@ -33,6 +34,66 @@ import {
 
 const PRIVATE_PROMPT = "PRIVATE_DIRECT_PROMPT_MUST_NOT_ENTER_OPERATION_STORE";
 const roots: string[] = [];
+
+function readCapability() {
+  const sourceRef = {
+    sourceKind: "builtin" as const,
+    package: "@earendil-works/pi-coding-agent",
+    repository: "later-3/pi",
+    revision: "d".repeat(40),
+    resourcePath: "pi/packages/coding-agent/src/core/tools/read.ts",
+  };
+  const inputSchemaSha256 = hashExecutorValue({ tool: "read", schema: "test" });
+  const descriptorInput = {
+    schemaVersion: "capability-descriptor.v1" as const,
+    capabilityId: "pi_direct:tool:builtin:read",
+    kind: "executable_tool" as const,
+    runtimeOwner: "pi_direct" as const,
+    localName: "read",
+    sourceRef,
+    inputSchemaSha256,
+    effect: "read" as const,
+    scopePolicy: "global" as const,
+    approvalPolicy: "run_policy" as const,
+    evidencePolicy: "runtime_journal" as const,
+    readiness: "available" as const,
+  };
+  const descriptorSha256 = hashCanonical("capability-descriptor.v1", descriptorInput);
+  return {
+    ref: {
+      capabilityId: descriptorInput.capabilityId,
+      descriptorSha256,
+      inputSchemaSha256,
+      resolvedImplementationSha256: hashExecutorValue({ sourceRef, descriptorSha256 }),
+      scopeRef: { kind: "global" as const },
+    },
+    localName: "read",
+    kind: descriptorInput.kind,
+    runtimeOwner: descriptorInput.runtimeOwner,
+    sourceRef,
+    effect: descriptorInput.effect,
+    scopePolicy: descriptorInput.scopePolicy,
+    approvalPolicy: descriptorInput.approvalPolicy,
+    evidencePolicy: descriptorInput.evidencePolicy,
+  };
+}
+
+function journalManifest(capabilities: readonly ReturnType<typeof readCapability>[], seed = "f") {
+  const resolvedRuntimeManifest = {
+    schemaVersion: "pi-direct-resolved-runtime-manifest.v1" as const,
+    systemPromptSha256: seed.repeat(64).slice(0, 64),
+    resourceInventorySha256: seed.repeat(64).slice(0, 64),
+  };
+  return {
+    resolvedRuntimeManifest,
+    resolvedCapabilities: [...capabilities],
+    resolvedRuntimeManifestSha256: hashExecutorValue({
+      systemPromptSha256: resolvedRuntimeManifest.systemPromptSha256,
+      capabilities,
+      resourceInventorySha256: resolvedRuntimeManifest.resourceInventorySha256,
+    }),
+  };
+}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -395,18 +456,18 @@ async function createHarness(input: {
       input.sessionManager ?? SessionManager.create(cwd, sessionsDir, { id: "pis_directtest1" }),
     settingsManager,
   });
-  const snapshot = input.store.getSnapshot(input.operationId);
+  const activePromptReview =
+    input.sessionManager === undefined
+      ? undefined
+      : input.store.getActivePromptReview(input.operationId);
   await input.store.setSession({
     operationId: input.operationId,
     sessionId: session.sessionId,
     enabledTools: [],
-    resolvedRuntimeManifestSha256: "f".repeat(64),
-    ...(input.sessionManager !== undefined && snapshot.activeReview !== undefined
-      ? {
-          resumedFromCheckpointSha256: input.store.getActivePromptReview(input.operationId)!
-            .checkpoint.fileSha256,
-        }
-      : {}),
+    ...journalManifest([]),
+    ...(activePromptReview === undefined
+      ? {}
+      : { resumedFromCheckpointSha256: activePromptReview.checkpoint.fileSha256 }),
   });
   const abortController = new AbortController();
   session.agent.getApiKey = () => "direct-test-key";
@@ -1038,7 +1099,7 @@ describe("Direct Prompt Review Gate P1", () => {
       operationId: "pio_directtest1",
       sessionId: "pis_directtest1",
       enabledTools: ["read"],
-      resolvedRuntimeManifestSha256: "f".repeat(64),
+      ...journalManifest([readCapability()]),
     });
     const checkpoint = {
       fileName: "checkpoint.jsonl",
@@ -1088,12 +1149,22 @@ describe("Direct Prompt Review Gate P1", () => {
     const secondStore = await PiDirectExecutorOperationStore.open(join(root, "operations-2"));
     await secondStore.createOrGet(request("pio_directtest2"), authorizedProfile);
     await secondStore.markRunning("pio_directtest2");
+    const readCapabilitySnapshot = readCapability();
+    await secondStore.setSession({
+      operationId: "pio_directtest2",
+      sessionId: "pis_directtest2",
+      enabledTools: ["read"],
+      ...journalManifest([readCapabilitySnapshot]),
+    });
     await secondStore.appendToolIntent({
       operationId: "pio_directtest2",
       sessionId: "pis_directtest2",
       toolCallId: "call-open",
       toolName: "read",
       inputSha256: "e".repeat(64),
+      inputDisplay: "{}",
+      inputDisplayTruncated: false,
+      capability: readCapabilitySnapshot,
     });
     expect(() => secondStore.assertNoOpenSideEffects("pio_directtest2")).toThrow(
       "存在未闭合Tool Intent",

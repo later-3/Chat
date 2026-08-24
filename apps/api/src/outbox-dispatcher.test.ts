@@ -50,6 +50,7 @@ import {
 import { JsonProductStore } from "@chat/product-store-json";
 import { OutboxDispatcher } from "./outbox-dispatcher.js";
 import { createFilePromptCatalog } from "./prompt-catalog.js";
+import { runtimeToolFixture } from "./runtime-profile-test-fixture.js";
 
 function ids(): IdFactory {
   let value = 0;
@@ -152,17 +153,21 @@ function runtimeProfile(agentKey: AgentKey) {
   if (agentKey !== "direct" && agentKey !== "project_bootstrap" && agentKey !== "coding_executor")
     return undefined;
   const variantKey =
-    agentKey === "direct"
-      ? "pi_cli_default"
+    agentKey === "coding_executor"
+      ? "workspace_write_shell"
       : agentKey === "project_bootstrap"
         ? "read_only"
-        : "workspace_write_shell";
+        : "pi_cli_default";
   const tools =
-    agentKey === "direct"
-      ? ["read", "bash", "edit", "write"]
-      : agentKey === "project_bootstrap"
-        ? ["read", "grep", "find", "ls"]
-        : ["read", "bash", "edit", "write", "grep", "find", "ls"];
+    agentKey === "coding_executor"
+      ? ["read", "bash", "edit", "write", "grep", "find", "ls"]
+      : ["read", "bash", "edit", "write"];
+  const variants = [
+    { variantKey, tools },
+    ...(agentKey === "direct" || agentKey === "project_bootstrap"
+      ? [{ variantKey: "project_bootstrap", tools: ["project_bootstrap_prepare"] }]
+      : []),
+  ];
   return agentRuntimeBaselineDtoSchema.parse({
     kind: "pi_coding_agent",
     title: "Pi Coding Agent",
@@ -176,29 +181,29 @@ function runtimeProfile(agentKey: AgentKey) {
       bodyMarkdown: "Chat Runtime Contract",
       sha256: "a".repeat(64),
       sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
-      appliesToVariantKeys: [variantKey],
+      appliesToVariantKeys: variants.map((variant) => variant.variantKey),
     },
-    variants: [
-      {
-        variantKey,
-        title: variantKey,
-        description: "测试Pi能力",
-        capabilityCatalogSha256: "2".repeat(64),
-        enabledToolNames: tools,
-        piSystemPrompt: {
-          bodyMarkdown: `Pi runtime ${variantKey}`,
-          sha256: "b".repeat(64),
-          dynamicPlaceholders: ["WORKSPACE_ROOT"],
-          sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
-        },
-        tools: tools.map((name) => ({
-          name,
-          description: `${name} tool`,
-          parametersJson: "{}",
-          sourceRelativePath: `pi/packages/coding-agent/src/core/tools/${name}.ts`,
-        })),
+    variants: variants.map((variant) => ({
+      variantKey: variant.variantKey,
+      title: variant.variantKey,
+      description: "测试Pi能力",
+      capabilityCatalogSha256: "2".repeat(64),
+      readiness: "available",
+      diagnostics: [],
+      enabledToolNames: variant.tools,
+      piSystemPrompt: {
+        bodyMarkdown: `Pi runtime ${variant.variantKey}`,
+        sha256: "b".repeat(64),
+        dynamicPlaceholders: ["WORKSPACE_ROOT"],
+        sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
       },
-    ],
+      tools: variant.tools.map((name) =>
+        runtimeToolFixture(
+          name,
+          name === "project_bootstrap_prepare" ? {} : { workspaceRootId: "root_code" },
+        ),
+      ),
+    })),
     finalReviewNote: "发送前复核。",
   });
 }

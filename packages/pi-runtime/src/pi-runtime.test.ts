@@ -40,7 +40,7 @@ it("Pi Coding Agent配置投影直接来自真实AgentSession的System Prompt与
   const direct = await reader.read("direct");
   expect(direct?.title).toBe("Pi Coding Agent");
   expect(direct?.packageVersion).toBe("0.84.2");
-  expect(direct?.variants).toHaveLength(2);
+  expect(direct?.variants).toHaveLength(3);
   const piDefault = direct?.variants.find((variant) => variant.variantKey === "pi_cli_default");
   expect(piDefault?.piSystemPrompt.bodyMarkdown).toContain(
     "You are an expert coding assistant operating inside pi",

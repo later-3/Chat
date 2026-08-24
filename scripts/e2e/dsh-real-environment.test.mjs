@@ -7,6 +7,7 @@ import {
   DSH_PROMPT_STUDIO_E2E_PORTS,
   DSH_PROMPT_THREE_GATES_E2E_PORTS,
   DSH_PROJECT_BOOTSTRAP_E2E_PORTS,
+  DSH_CAPABILITY_GOVERNANCE_E2E_PORTS,
   DSH_REAL_E2E_PORTS,
   dshRealWebEnvironment,
   dshRealWorkbenchEnvironment,
@@ -25,6 +26,7 @@ test("真实浏览器门的45xxx端口族不与production或VS Code debug重叠"
     DSH_PROMPT_STUDIO_E2E_PORTS,
     DSH_PROMPT_THREE_GATES_E2E_PORTS,
     DSH_PROJECT_BOOTSTRAP_E2E_PORTS,
+    DSH_CAPABILITY_GOVERNANCE_E2E_PORTS,
     DSH_REAL_E2E_PORTS,
   ]) {
     for (const port of Object.values(ports)) assert.equal(applicationPorts.has(port), false);

@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync } from "node:fs";
-import { readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   piDirectExecutorEventSchema,
+  legacyStartPiDirectExecutorOperationRequestSchema,
   startPiDirectExecutorOperationRequestSchema,
   type PiDirectExecutorEvent,
 } from "@chat/pi-runtime";
@@ -11,41 +11,33 @@ import type { RunActivitySink } from "@chat/realtime";
 import { z } from "zod";
 import { piDirectExecutorActivities } from "./pi-direct-executor-activity.js";
 
-const MARKER_FILE = ".pi-direct-journal-to-run-activity.v1.json";
 const directRecordProjectionSchema = z
   .object({
-    request: startPiDirectExecutorOperationRequestSchema,
+    request: z.union([
+      legacyStartPiDirectExecutorOperationRequestSchema,
+      startPiDirectExecutorOperationRequestSchema,
+    ]),
     events: z.array(piDirectExecutorEventSchema).max(100_000),
     createdAt: z.iso.datetime(),
   })
   .passthrough();
 
 export interface PiDirectActivityMigrationResult {
-  readonly status: "completed" | "already_completed";
+  readonly status: "completed";
   readonly operations: number;
   readonly sourceEvents: number;
   readonly migratedActivities: number;
 }
 
 /**
- * Pi Direct Operation Journal是原生执行证据；启动时一次性把历史ID/状态/工具投影接回
- * Chat Run Activity。正文仍由Pi Session和Product Message各自拥有，不复制到此迁移层。
+ * Pi Direct Operation Journal是原生执行证据；每次启动都幂等扫描全部source sequence。
+ * Activity Sink耐久保存sourceKey/payload，高水位之后的新事件会补齐，冲突payload失败关闭。
  */
 export async function migratePiDirectJournalToRunActivity(input: {
   readonly operationsDir: string;
   readonly activitySink: RunActivitySink;
-  readonly now?: () => Date;
 }): Promise<PiDirectActivityMigrationResult> {
   mkdirSync(input.activitySink.dir, { recursive: true });
-  const marker = join(input.activitySink.dir, MARKER_FILE);
-  if (existsSync(marker)) {
-    return {
-      status: "already_completed",
-      operations: 0,
-      sourceEvents: 0,
-      migratedActivities: 0,
-    };
-  }
 
   let names: string[] = [];
   try {
@@ -105,16 +97,5 @@ export async function migratePiDirectJournalToRunActivity(input: {
     sourceEvents,
     migratedActivities,
   };
-  const temporary = `${marker}.${randomUUID()}.tmp`;
-  await writeFile(
-    temporary,
-    `${JSON.stringify({
-      migrationVersion: "pi-direct-journal-to-run-activity.v1",
-      completedAt: (input.now ?? (() => new Date()))().toISOString(),
-      ...result,
-    })}\n`,
-    { encoding: "utf8", mode: 0o600, flag: "wx" },
-  );
-  await rename(temporary, marker);
   return result;
 }

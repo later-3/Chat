@@ -466,6 +466,9 @@ export async function executeAndPersistApprovedPlanStep(input: {
       sections: candidate.sections,
       successCriteriaEvidence: candidate.successCriteriaEvidence,
       criteriaEvidence: candidate.criteriaEvidence,
+      ...(candidate.executionEvidenceRefs === undefined
+        ? {}
+        : { executionEvidenceRefs: candidate.executionEvidenceRefs }),
       warnings: candidate.warnings,
       sha256: candidate.sha256,
     }));
@@ -478,6 +481,7 @@ export async function executeAndPersistApprovedPlanStep(input: {
         ) as never,
         productRunId: input.productRunId as never,
         executionContractId: contract.executionContractId as never,
+        evidencePolicyVersion: "structured-tool-result.v1",
         stepResults: stepResults as never,
         finalOutput: {
           format: "markdown_sections",

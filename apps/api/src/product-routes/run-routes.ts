@@ -7,6 +7,8 @@ import {
   workflowNodeRunIdSchema,
   submitDecisionPayloadSchema,
   submitPromptReviewDecisionPayloadSchema,
+  submitToolExecutionDecisionPayloadSchema,
+  toolExecutionsResponseSchema,
 } from "@chat/contracts";
 import {
   ApplicationError,
@@ -22,6 +24,8 @@ import {
   getWorkflowExecutionTrace,
   getWorkflowNodeDetail,
   getWorkflowRunConfigSummary,
+  getToolExecutions,
+  submitToolExecutionDecision,
 } from "@chat/application";
 import {
   type ProductRouteContext,
@@ -205,6 +209,55 @@ export function registerRunRoutes(router: ProductRouter, ctx: ProductRouteContex
         }),
         200,
       );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/runs/:productRunId/tool-executions", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      c.header("Cache-Control", "private, no-store");
+      return c.json(
+        toolExecutionsResponseSchema.parse(
+          await getToolExecutions(ctx.deps, { principalId: ctx.principalId, productRunId }),
+        ),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  /** Tool决定绑定Intent revision、Capability描述、精确参数Hash与Scope。 */
+  router.post("/runs/:productRunId/tool-execution-decisions", async (c) => {
+    try {
+      assertNoQuery(c.req.url);
+      const productRunId = productRunIdSchema.parse(c.req.param("productRunId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      if (envelope.expectedRevision === undefined) {
+        throw new ApplicationError({
+          code: "validation_failed",
+          httpStatus: 400,
+          message: "Tool Execution Decision必须携带Intent expectedRevision",
+        });
+      }
+      const payload = submitToolExecutionDecisionPayloadSchema.parse(envelope.payload);
+      const result = await submitToolExecutionDecision(ctx.deps, {
+        principalId: ctx.principalId,
+        productRunId,
+        commandId: envelope.commandId,
+        expectedIntentRevision: envelope.expectedRevision,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/runs/:productRunId/tool-execution-decisions",
+        statusCode: 201,
+        productRunId,
+      });
+      return c.json(result, 201);
     } catch (error) {
       return mapError(c, error);
     }

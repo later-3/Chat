@@ -283,7 +283,10 @@ function runtimeVariantFor(agent: AgentProfileDto) {
  */
 function PromptTurnPreviewDetails({ preview }: { preview: PromptTurnPreviewDto }) {
   const directAssembly =
-    preview.assembly.schemaVersion === "prompt-assembly.v2" ? preview.assembly : undefined;
+    preview.assembly.schemaVersion === "prompt-assembly.v2" ||
+    preview.assembly.schemaVersion === "prompt-assembly.v4"
+      ? preview.assembly
+      : undefined;
   return (
     <section className="lifeos-prompt-section" data-testid="lifeos-prompt-turn-preview">
       <header>
@@ -296,7 +299,8 @@ function PromptTurnPreviewDetails({ preview }: { preview: PromptTurnPreviewDto }
       <div className="lifeos-prompt-preview-regions">
         {preview.nodes.map((node) => {
           const assembly =
-            preview.assembly.schemaVersion === "prompt-assembly.v2"
+            preview.assembly.schemaVersion === "prompt-assembly.v2" ||
+            preview.assembly.schemaVersion === "prompt-assembly.v4"
               ? preview.assembly
               : preview.assembly.nodes.find(
                   (candidate) => candidate.definitionNodeId === node.definitionNodeId,
@@ -324,7 +328,8 @@ function PromptTurnPreviewDetails({ preview }: { preview: PromptTurnPreviewDto }
                   .filter((part) => part.trim() !== "")
                   .join("\n\n");
           const toolNames =
-            preview.assembly.schemaVersion === "prompt-assembly.v2"
+            preview.assembly.schemaVersion === "prompt-assembly.v2" ||
+            preview.assembly.schemaVersion === "prompt-assembly.v4"
               ? preview.assembly.tools.names
               : node.agent.tools.map((tool) => tool.name);
           const exactDirect =

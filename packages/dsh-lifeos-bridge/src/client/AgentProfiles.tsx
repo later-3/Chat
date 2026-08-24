@@ -245,6 +245,13 @@ export function AgentProfiles({ usePromptStudio, openSourceFile }: AgentProfiles
                   ? { mode: "inherit_runtime" }
                   : { mode: "replace", bodyMarkdown: versionPrompt },
               enabledToolNames: versionTools,
+              enabledCapabilityRefs: runtimeVariant.tools
+                .filter((tool) => versionTools.includes(tool.name))
+                .map((tool) => ({
+                  localName: tool.name,
+                  capabilityId: tool.capability.capabilityId,
+                  descriptorSha256: tool.capability.descriptorSha256,
+                })),
               resources: versionResources,
               ...(base === undefined
                 ? {}
@@ -505,11 +512,26 @@ export function AgentProfiles({ usePromptStudio, openSourceFile }: AgentProfiles
                         openers={promptStudio.sourceOpeners}
                         openSourceFile={openSourceFile}
                       />
+                      <p>
+                        <code>{tool.capability.capabilityId}</code> · {tool.capability.effect} ·{" "}
+                        {tool.capability.sourceRef.sourceKind} · descriptor{" "}
+                        {tool.capability.descriptorSha256.slice(0, 12)}
+                      </p>
                       <pre>{tool.parametersJson}</pre>
                     </details>
                   ))
                 )}
               </section>
+              {runtimeVariant.diagnostics.length === 0 ? null : (
+                <div className="lifeos-warning" data-testid="lifeos-capability-diagnostics">
+                  <strong>Runtime目录不可用</strong>
+                  {runtimeVariant.diagnostics.map((diagnostic) => (
+                    <p key={`${diagnostic.code}:${diagnostic.sourcePath ?? ""}`}>
+                      {diagnostic.code}：{diagnostic.message}
+                    </p>
+                  ))}
+                </div>
+              )}
               <RuntimeResourceInventory inventory={runtimeVariant.resourceInventory} />
               <p className="lifeos-agent-runtime-note">
                 {selected.runtimeBaseline.finalReviewNote}

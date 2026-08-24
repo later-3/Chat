@@ -543,6 +543,8 @@ export function createCodingExecutorJournalExtension(input: {
         turnIndex: input.state.turnIndex,
       };
       try {
+        const capabilityId = `pi_planning:tool:builtin:${toolName}`;
+        const capabilityRefSha256 = hashExecutorValue({ capabilityId, localName: toolName });
         await append({
           operationId,
           type: "tool.intent_persisted",
@@ -550,6 +552,8 @@ export function createCodingExecutorJournalExtension(input: {
           turnIndex: tool.turnIndex,
           toolCallId: event.toolCallId,
           toolName,
+          capabilityId,
+          capabilityRefSha256,
           inputSha256: tool.inputSha256,
           inputDisplay: tool.inputDisplay,
           inputDisplayTruncated: tool.inputDisplayTruncated,
@@ -581,6 +585,11 @@ export function createCodingExecutorJournalExtension(input: {
         turnIndex: tool.turnIndex,
         toolCallId: event.toolCallId,
         toolName: tool.toolName,
+        capabilityId: `pi_planning:tool:builtin:${tool.toolName}`,
+        capabilityRefSha256: hashExecutorValue({
+          capabilityId: `pi_planning:tool:builtin:${tool.toolName}`,
+          localName: tool.toolName,
+        }),
         inputSha256: resultInputSha256,
         resultSha256: toolResultHash(event),
         resultDisplay: resultDisplay.text,

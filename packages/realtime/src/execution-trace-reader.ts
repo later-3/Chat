@@ -31,6 +31,7 @@ function project(event: RunActivityEvent): ExecutionTraceItem | undefined {
         type: "tool_call",
         toolCallId: event.toolCallId,
         toolName: event.toolName,
+        ...(event.capability === undefined ? {} : { capability: event.capability }),
         input: event.inputDisplay ?? "工具输入只保留在原生 Agent Session 中",
         inputTruncated: event.inputDisplayTruncated ?? false,
       };
@@ -41,6 +42,7 @@ function project(event: RunActivityEvent): ExecutionTraceItem | undefined {
       type: "tool_result",
       toolCallId: event.toolCallId,
       toolName: event.toolName,
+      ...(event.capability === undefined ? {} : { capability: event.capability }),
       outcome:
         event.phase === "completed"
           ? "success"

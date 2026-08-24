@@ -59,6 +59,7 @@ function waiting(requestIndex: number) {
   return {
     kind: "waiting_prompt_review" as const,
     operationId: "pio_directoperation1",
+    requestSha256: SHA_C,
     review: review(requestIndex),
   };
 }
@@ -124,6 +125,7 @@ describe("Direct Agent耐久Workflow", () => {
     mocked.submitDecision.mockResolvedValueOnce(waiting(2)).mockResolvedValueOnce({
       kind: "succeeded",
       operationId: "pio_directoperation1",
+      requestSha256: SHA_C,
       result: { directAgentCandidateId: "drc_directcandidate1", sha256: SHA_C },
     });
 
@@ -172,6 +174,7 @@ describe("Direct Agent耐久Workflow", () => {
     mocked.submitDecision.mockResolvedValue({
       kind: "cancelled",
       operationId: "pio_directoperation1",
+      requestSha256: SHA_C,
       errorCode: "direct_executor.user_rejected",
     });
 
@@ -267,6 +270,7 @@ describe("Direct Agent耐久Workflow", () => {
         ? {
             kind: "succeeded" as const,
             operationId: "pio_directoperation1",
+            requestSha256: SHA_C,
             result: { directAgentCandidateId: "drc_directcandidate16", sha256: SHA_C },
           }
         : waiting(currentReview.requestIndex + 1),

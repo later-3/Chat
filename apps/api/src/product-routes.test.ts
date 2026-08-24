@@ -73,7 +73,7 @@ import {
 } from "@chat/application/workflow-system-definitions";
 import {
   canonicalJsonStringify,
-  computePromptAssemblyV2Sha256,
+  computePromptAssemblyV4Sha256,
   computePromptReviewPayloadSha256,
   hashCanonical,
 } from "@chat/domain";
@@ -82,6 +82,7 @@ import { z } from "zod";
 import { createApiApp, type ApiApp } from "./app.js";
 import { DEBUG_PRINCIPAL_ID } from "./composition.js";
 import { createFilePromptCatalog } from "./prompt-catalog.js";
+import { runtimeToolFixture } from "./runtime-profile-test-fixture.js";
 
 /**
  * 公开产品API合同测试。
@@ -103,9 +104,16 @@ function testPiRuntimeBaseline(agentKey: AgentKey, workspaceRootId?: string) {
           variantKey: "pi_cli_default",
           tools: ["read", "bash", "edit", "write"],
         },
+        {
+          variantKey: "project_bootstrap",
+          tools: ["project_bootstrap_prepare"],
+        },
       ]
     : bootstrap
-      ? [{ variantKey: "read_only", tools: ["read", "grep", "find", "ls"] }]
+      ? [
+          { variantKey: "read_only", tools: ["read", "grep", "find", "ls"] },
+          { variantKey: "project_bootstrap", tools: ["project_bootstrap_prepare"] },
+        ]
       : agentKey === "coding_executor"
         ? [
             { variantKey: "markdown_text_compose", tools: [] },
@@ -136,6 +144,8 @@ function testPiRuntimeBaseline(agentKey: AgentKey, workspaceRootId?: string) {
       title: variant.variantKey,
       description: `测试能力 ${variant.variantKey}`,
       capabilityCatalogSha256: "2".repeat(64),
+      readiness: "available",
+      diagnostics: [],
       enabledToolNames: variant.tools,
       piSystemPrompt: {
         bodyMarkdown: `You are an expert coding assistant operating inside pi. ${variant.variantKey}`,
@@ -143,12 +153,9 @@ function testPiRuntimeBaseline(agentKey: AgentKey, workspaceRootId?: string) {
         dynamicPlaceholders: ["WORKSPACE_ROOT"],
         sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
       },
-      tools: variant.tools.map((name) => ({
-        name,
-        description: `${name} tool`,
-        parametersJson: "{}",
-        sourceRelativePath: `pi/packages/coding-agent/src/core/tools/${name}.ts`,
-      })),
+      tools: variant.tools.map((name) =>
+        runtimeToolFixture(name, workspaceRootId === undefined ? {} : { workspaceRootId }),
+      ),
     })),
     finalReviewNote: "最终内容以发送前审核为准。",
   });
@@ -161,12 +168,10 @@ function testPiRuntimeBaseline(agentKey: AgentKey, workspaceRootId?: string) {
       enabledToolNames: [...variant.enabledToolNames, "runtime_probe"],
       tools: [
         ...variant.tools,
-        {
-          name: "runtime_probe",
-          description: "Workspace extension tool",
-          parametersJson: "{}",
-          sourceRelativePath: "<WORKSPACE_ROOT>/.pi/extensions/runtime-probe.ts",
-        },
+        runtimeToolFixture("runtime_probe", {
+          workspaceRootId: "root_chat",
+          workspaceExtension: true,
+        }),
       ],
     })),
   });
@@ -775,7 +780,7 @@ describe("公开产品API", () => {
       },
     };
     const firstResponse = await postJson(app, "/api/project-bootstrap/messages", body);
-    expect(firstResponse.status).toBe(201);
+    expect(firstResponse.status, await firstResponse.clone().text()).toBe(201);
     const first = z
       .object({ session: sessionDtoSchema, message: messageDtoSchema, run: runDtoSchema })
       .strict()
@@ -902,7 +907,7 @@ describe("公开产品API", () => {
       commandId: nextCmd(),
       payload,
     });
-    expect(seededResponse.status).toBe(201);
+    expect(seededResponse.status, await seededResponse.clone().text()).toBe(201);
     const seeded = z
       .object({ session: sessionDtoSchema, message: messageDtoSchema, run: runDtoSchema })
       .strict()
@@ -972,7 +977,7 @@ describe("公开产品API", () => {
       commandId,
       payload,
     });
-    expect(submittedResponse.status).toBe(201);
+    expect(submittedResponse.status, await submittedResponse.clone().text()).toBe(201);
     const submitted = z
       .object({ session: sessionDtoSchema, message: messageDtoSchema, run: runDtoSchema })
       .strict()
@@ -1048,7 +1053,7 @@ describe("公开产品API", () => {
         },
       },
     );
-    expect(sent.status).toBe(201);
+    expect(sent.status, await sent.clone().text()).toBe(201);
     const submitted = z
       .object({ message: messageDtoSchema, run: runDtoSchema })
       .strict()
@@ -1257,6 +1262,11 @@ describe("公开产品API", () => {
       commandId: nextCmd(),
       payload: {
         text: "只读检查项目并报告结论",
+        promptSelection: {
+          schemaVersion: "prompt-turn-selection-input.v1",
+          workspaceRootId: "root_chat",
+          regions: [],
+        },
         workflowSelection: {
           kind: "published_revision",
           workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
@@ -1276,9 +1286,9 @@ describe("公开产品API", () => {
     const assembly = Object.values(snapshot.entities.promptAssemblies).find(
       (candidate) => candidate.productRunId === submitted.run.productRunId,
     );
-    expect(assembly?.schemaVersion).toBe("prompt-assembly.v2");
-    if (assembly?.schemaVersion !== "prompt-assembly.v2") {
-      throw new Error("Direct新Run必须冻结Prompt Assembly V2");
+    expect(assembly?.schemaVersion).toBe("prompt-assembly.v4");
+    if (assembly?.schemaVersion !== "prompt-assembly.v4") {
+      throw new Error("Direct新Run必须冻结Prompt Assembly V4");
     }
     expect(assembly.regions).toEqual(
       expect.arrayContaining([
@@ -2318,6 +2328,11 @@ describe("公开产品API", () => {
     const messageCommandId = nextCmd();
     const messagePayload = {
       text: "验证合法Temporary System Prompt可以提交",
+      promptSelection: {
+        schemaVersion: "prompt-turn-selection-input.v1" as const,
+        workspaceRootId: "root_chat",
+        regions: [],
+      },
       workflowSelection: {
         kind: "published_revision" as const,
         workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
@@ -2332,6 +2347,10 @@ describe("公开产品API", () => {
               runtime: { kind: "pi_coding_agent" as const, baseVariantKey: "pi_cli_default" },
               systemPrompt: { mode: "replace" as const, bodyMarkdown: temporaryBody },
               enabledToolNames: ["read"] as const,
+              enabledCapabilityRefs: [runtimeToolFixture("read").capability].map((capability) => ({
+                capabilityId: capability.capabilityId,
+                descriptorSha256: capability.descriptorSha256,
+              })),
               resources: {
                 contextFiles: "disabled" as const,
                 skills: "disabled" as const,
@@ -2392,7 +2411,7 @@ describe("公开产品API", () => {
         ? undefined
         : afterReplay.entities.workflowRunSpecs[run.workflowRunSpecId];
     expect(assembly).toMatchObject({
-      schemaVersion: "prompt-assembly.v2",
+      schemaVersion: "prompt-assembly.v4",
       piSystemPrompt: { mode: "replace", bodyMarkdown: temporaryBody },
       tools: { names: ["read"] },
     });
@@ -2421,6 +2440,11 @@ describe("公开产品API", () => {
     const commandId = nextCmd();
     const payload = {
       text: "同一命令在Prompt编译竞争中只能提交一次",
+      promptSelection: {
+        schemaVersion: "prompt-turn-selection-input.v1" as const,
+        workspaceRootId: "root_chat",
+        regions: [],
+      },
       workflowSelection: {
         kind: "published_revision" as const,
         workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
@@ -2517,7 +2541,7 @@ describe("公开产品API", () => {
       enabledToolNames: ["read", "bash", "edit", "write"],
       resources: inheritedResources,
     });
-    expect(first.sha256).toBe(hashCanonical("agent-version.v1", toAgentVersionHashInput(first)));
+    expect(first.sha256).toBe(hashCanonical("agent-version.v2", toAgentVersionHashInput(first)));
 
     const replayResponse = await postJson(app, "/api/agent-profiles/direct/versions", {
       commandId: firstCommandId,
@@ -2558,7 +2582,7 @@ describe("公开产品API", () => {
       hashCanonical("agent-system-prompt.v1", { bodyMarkdown: workspaceBody }),
     );
     expect(workspace.sha256).toBe(
-      hashCanonical("agent-version.v1", toAgentVersionHashInput(workspace)),
+      hashCanonical("agent-version.v2", toAgentVersionHashInput(workspace)),
     );
     expect(
       workspaceProfile.runtimeBaseline?.variants
@@ -2621,7 +2645,7 @@ describe("公开产品API", () => {
       enabledToolNames: ["read", "bash"],
     });
     expect(derived.sha256).toBe(
-      hashCanonical("agent-version.v1", toAgentVersionHashInput(derived)),
+      hashCanonical("agent-version.v2", toAgentVersionHashInput(derived)),
     );
 
     const beforeBinding = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
@@ -2770,15 +2794,11 @@ describe("公开产品API", () => {
         commandId: nextCmd(),
         payload: {
           text: `验证${input.suffix} Agent Version运行语义`,
-          ...(input.workspaceRootId === undefined
-            ? {}
-            : {
-                promptSelection: {
-                  schemaVersion: "prompt-turn-selection-input.v1",
-                  workspaceRootId: input.workspaceRootId,
-                  regions: [],
-                },
-              }),
+          promptSelection: {
+            schemaVersion: "prompt-turn-selection-input.v1",
+            workspaceRootId: input.workspaceRootId ?? "root_chat",
+            regions: [],
+          },
           workflowSelection: {
             kind: "published_revision",
             workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
@@ -2810,7 +2830,7 @@ describe("公开产品API", () => {
       if (
         run?.runKind !== "direct_agent" ||
         runSpec === undefined ||
-        assembly?.schemaVersion !== "prompt-assembly.v2" ||
+        assembly?.schemaVersion !== "prompt-assembly.v4" ||
         workflowAttempt === undefined
       ) {
         throw new Error("Agent Version纵向没有冻结完整Direct运行输入");
@@ -2836,8 +2856,8 @@ describe("公开产品API", () => {
           traceContext: { productRunId: run.productRunId },
           mutate: (draft) => {
             const stored = draft.entities.promptAssemblies[assembly.promptAssemblyId];
-            if (stored?.schemaVersion !== "prompt-assembly.v2") {
-              throw new Error("测试缺少Prompt Assembly v2");
+            if (stored?.schemaVersion !== "prompt-assembly.v4") {
+              throw new Error("测试缺少Prompt Assembly v4");
             }
             const tampered =
               input.assemblyTamper === "tools"
@@ -2874,7 +2894,7 @@ describe("公开产品API", () => {
             void createdAt;
             draft.entities.promptAssemblies[assembly.promptAssemblyId] = {
               ...tampered,
-              sha256: computePromptAssemblyV2Sha256(hashInput),
+              sha256: computePromptAssemblyV4Sha256(hashInput),
             };
             return { resultRefs: {} };
           },
@@ -3404,9 +3424,9 @@ describe("公开产品API", () => {
         agent: expect.objectContaining({ agentKey: "direct" }),
       }),
     ]);
-    expect(turnPreview.assembly.schemaVersion).toBe("prompt-assembly.v2");
-    if (turnPreview.assembly.schemaVersion !== "prompt-assembly.v2") {
-      throw new Error("Direct发送前预览没有形成V2 Assembly");
+    expect(turnPreview.assembly.schemaVersion).toBe("prompt-assembly.v4");
+    if (turnPreview.assembly.schemaVersion !== "prompt-assembly.v4") {
+      throw new Error("Direct发送前预览没有形成V4 Assembly");
     }
     expect(turnPreview.assembly.piSystemPrompt).toMatchObject({
       kind: "pi_coding_agent",
@@ -3425,9 +3445,9 @@ describe("公开产品API", () => {
     const assembly = Object.values(afterSend.entities.promptAssemblies).find(
       (candidate) => candidate.productSessionId === session.sessionId,
     );
-    expect(assembly?.schemaVersion).toBe("prompt-assembly.v2");
-    if (assembly?.schemaVersion !== "prompt-assembly.v2") {
-      throw new Error("Direct提交没有形成V2 Assembly");
+    expect(assembly?.schemaVersion).toBe("prompt-assembly.v4");
+    if (assembly?.schemaVersion !== "prompt-assembly.v4") {
+      throw new Error("Direct提交没有形成V4 Assembly");
     }
     expect(assembly.messages.at(-1)).toMatchObject({
       role: "user",

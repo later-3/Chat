@@ -41,6 +41,7 @@ import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
 import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
+import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-19T12:00:00.000Z";
@@ -305,6 +306,9 @@ describe("Prompt Review Product Snapshot完整性", () => {
       delete legacyEntities["projectBootstrapDecisions"];
       delete legacyEntities["projectBootstrapOperations"];
       delete legacyEntities["projectWorkspaceBindings"];
+      delete legacyEntities["toolExecutionIntents"];
+      delete legacyEntities["toolExecutionDecisions"];
+      delete legacyEntities["toolExecutionResults"];
       const legacy = productSnapshotV14Schema.parse({
         ...snapshot,
         schemaVersion: "chat-product-store.v14",
@@ -331,9 +335,11 @@ describe("Prompt Review Product Snapshot完整性", () => {
       );
       expect(() =>
         assertSnapshotIntegrity(
-          migrateProductSnapshotV18ToV19(
-            migrateProductSnapshotV17ToV18(
-              migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16(migrated)),
+          migrateProductSnapshotV19ToV20(
+            migrateProductSnapshotV18ToV19(
+              migrateProductSnapshotV17ToV18(
+                migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16(migrated)),
+              ),
             ),
           ),
         ),
@@ -350,6 +356,9 @@ describe("Prompt Review Product Snapshot完整性", () => {
     delete legacyEntities["projectBootstrapDecisions"];
     delete legacyEntities["projectBootstrapOperations"];
     delete legacyEntities["projectWorkspaceBindings"];
+    delete legacyEntities["toolExecutionIntents"];
+    delete legacyEntities["toolExecutionDecisions"];
+    delete legacyEntities["toolExecutionResults"];
     const legacy = productSnapshotV14Schema.parse({
       ...snapshot,
       schemaVersion: "chat-product-store.v14",

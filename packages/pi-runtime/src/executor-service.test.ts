@@ -680,6 +680,71 @@ describe("PiExecutorOperationStore", () => {
     );
   });
 
+  it("full-operation.v3强制Intent/Result携带一致Capability Ref且损坏时open失败关闭", async () => {
+    const root = await temporaryRoot();
+    const directory = join(root, "operations");
+    const store = await PiExecutorOperationStore.open(directory);
+    await store.createOrGet(request());
+    await store.markRunning("pio_test1");
+    await store.setSession("pio_test1", "pis_test1", ["read"]);
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "turn.started",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+    });
+    const inputSha256 = hashExecutorValue({ path: "README.md" });
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "tool.intent_persisted",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+      toolCallId: "call_v3_capability",
+      toolName: "read",
+      inputSha256,
+      inputDisplay: '{"path":"README.md"}',
+      inputDisplayTruncated: false,
+    });
+    await store.append("pio_test1", {
+      operationId: "pio_test1",
+      type: "tool.completed",
+      sessionId: "pis_test1",
+      turnIndex: 0,
+      toolCallId: "call_v3_capability",
+      toolName: "read",
+      inputSha256,
+      resultSha256: hashExecutorValue({ output: "ok" }),
+      resultDisplay: "ok",
+      resultDisplayTruncated: false,
+      durationMs: 1,
+    });
+    const toolEvents = store
+      .getEvents("pio_test1")
+      .filter((event) => event.type === "tool.intent_persisted" || event.type === "tool.completed");
+    expect(toolEvents).toEqual([
+      expect.objectContaining({
+        capabilityId: "pi_planning:tool:builtin:read",
+        capabilityRefSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      }),
+      expect.objectContaining({
+        capabilityId: "pi_planning:tool:builtin:read",
+        capabilityRefSha256: toolEvents[0]?.capabilityRefSha256,
+      }),
+    ]);
+    await settleAndComplete(store, "v3 capability", { turnAlreadyStarted: true });
+    const recordPath = join(directory, "pio_test1.json");
+    const record = JSON.parse(await readFile(recordPath, "utf8")) as {
+      events: Array<Record<string, unknown>>;
+    };
+    const result = record.events.find((event) => event["type"] === "tool.completed");
+    if (result === undefined) throw new Error("测试缺少v3 Tool Result");
+    result["capabilityRefSha256"] = "0".repeat(64);
+    await writeFile(recordPath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+    await expect(PiExecutorOperationStore.open(directory)).rejects.toBeInstanceOf(
+      PiExecutorJournalIntegrityError,
+    );
+  });
+
   it("full-operation.v2 tool.failed缺少inputSha256时persist与open均失败关闭", async () => {
     const root = await temporaryRoot();
     const directory = join(root, "operations");
@@ -847,9 +912,11 @@ describe("PiExecutorOperationStore", () => {
     });
     const recordPath = join(directory, "pio_test1.json");
     const legacyRecord = JSON.parse(await readFile(recordPath, "utf8")) as {
+      schemaVersion: string;
       integrityVersion?: string;
       events: Array<Record<string, unknown>>;
     };
+    legacyRecord.schemaVersion = "pi-executor-operation-store.v1";
     delete legacyRecord.integrityVersion;
     const legacyResult = legacyRecord.events.find((event) => event["type"] === "tool.failed");
     if (legacyResult === undefined) throw new Error("测试缺少Tool Result");
@@ -887,6 +954,80 @@ describe("PiExecutorOperationStore", () => {
     );
     expect(recovered.getSnapshot("pio_test1").status).toBe("succeeded");
   });
+
+  it.each(["integrity_version", "session_settled", "visible_text_sha", "capability"] as const)(
+    "新外层Store v2删除full-operation.v3耐久证据不得降级：%s",
+    async (removed) => {
+      const root = await temporaryRoot();
+      const directory = join(root, "operations");
+      const store = await PiExecutorOperationStore.open(directory);
+      await store.createOrGet(request());
+      await store.markRunning("pio_test1");
+      await store.setSession("pio_test1", "pis_test1", ["bash"]);
+      await store.append("pio_test1", {
+        operationId: "pio_test1",
+        type: "turn.started",
+        sessionId: "pis_test1",
+        turnIndex: 0,
+      });
+      const inputSha256 = hashExecutorValue({ command: "pnpm test" });
+      await store.append("pio_test1", {
+        operationId: "pio_test1",
+        type: "tool.intent_persisted",
+        sessionId: "pis_test1",
+        turnIndex: 0,
+        toolCallId: "call_v3_durable",
+        toolName: "bash",
+        inputSha256,
+        inputDisplay: '{"command":"pnpm test"}',
+        inputDisplayTruncated: false,
+      });
+      await store.append("pio_test1", {
+        operationId: "pio_test1",
+        type: "tool.completed",
+        sessionId: "pis_test1",
+        turnIndex: 0,
+        toolCallId: "call_v3_durable",
+        toolName: "bash",
+        inputSha256,
+        resultSha256: hashExecutorValue({ output: "ok" }),
+        resultDisplay: "ok",
+        resultDisplayTruncated: false,
+        durationMs: 1,
+      });
+      await settleAndComplete(store, "v3 durable", { turnAlreadyStarted: true });
+      const path = join(directory, "pio_test1.json");
+      const record = JSON.parse(await readFile(path, "utf8")) as {
+        integrityVersion?: string;
+        events: Array<Record<string, unknown>>;
+      };
+      if (removed === "integrity_version") delete record.integrityVersion;
+      if (removed === "session_settled") {
+        record.events.splice(
+          record.events.findIndex((event) => event["type"] === "session.settled"),
+          1,
+        );
+      }
+      if (removed === "visible_text_sha") {
+        const message = record.events.find(
+          (event) => event["type"] === "message.completed" && event["role"] === "assistant",
+        );
+        if (message === undefined) throw new Error("测试缺少Assistant Message证据");
+        delete message["visibleTextSha256"];
+      }
+      if (removed === "capability") {
+        for (const event of record.events) {
+          if (String(event["type"]).startsWith("tool.")) {
+            delete event["capabilityId"];
+            delete event["capabilityRefSha256"];
+          }
+        }
+      }
+      for (const [index, event] of record.events.entries()) event["sequence"] = index + 1;
+      await writeFile(path, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+      await expect(PiExecutorOperationStore.open(directory)).rejects.toThrow();
+    },
+  );
 
   it.each(["duplicate_intent", "result_before_intent", "cross_session"] as const)(
     "旧v1 succeeded Journal拒绝语义矛盾：%s",
@@ -931,9 +1072,11 @@ describe("PiExecutorOperationStore", () => {
       await settleAndComplete(store, "legacy contradiction", { turnAlreadyStarted: true });
       const recordPath = join(directory, "pio_test1.json");
       const record = JSON.parse(await readFile(recordPath, "utf8")) as {
+        schemaVersion: string;
         integrityVersion?: string;
         events: Array<Record<string, unknown>>;
       };
+      record.schemaVersion = "pi-executor-operation-store.v1";
       delete record.integrityVersion;
       const intentIndex = record.events.findIndex(
         (event) => event["type"] === "tool.intent_persisted",
@@ -976,10 +1119,12 @@ describe("PiExecutorOperationStore", () => {
     await settleAndComplete(store, "operation lifecycle");
     const recordPath = join(directory, "pio_test1.json");
     const record = JSON.parse(await readFile(recordPath, "utf8")) as {
+      schemaVersion: string;
       integrityVersion?: string;
       requestSha256: string;
       events: Array<Record<string, unknown>>;
     };
+    record.schemaVersion = "pi-executor-operation-store.v1";
     delete record.integrityVersion;
     const eventOfType = (type: string) => {
       const event = record.events.find((candidate) => candidate["type"] === type);
@@ -1400,6 +1545,51 @@ describe("Pi Executor完整Operation Journal状态机", () => {
     });
   });
 
+  it("Client钉住首次full-operation.v3后拒绝终态降级为v2", async () => {
+    let terminalJournal: MutableJournalFixture | undefined;
+    const fetchFn: typeof fetch = async (url, init) => {
+      const href = String(url);
+      if (init?.method === "POST") {
+        const submitted = startPiExecutorOperationRequestSchema.parse(
+          JSON.parse(String(init.body)),
+        );
+        const startJournal = validJournalForStatus("running", submitted);
+        startJournal.snapshot["integrityVersion"] = "full-operation.v3";
+        terminalJournal = validJournalForStatus("succeeded", submitted);
+        return Response.json(startJournal.snapshot, { status: 202 });
+      }
+      if (terminalJournal === undefined) throw new Error("测试Client尚未提交Operation");
+      if (href.includes("/events?")) {
+        return Response.json({
+          schemaVersion: PI_EXECUTOR_PROTOCOL_VERSION,
+          operationId: terminalJournal.request.operationId,
+          events: terminalJournal.events,
+          lastEventSequence: terminalJournal.events.length,
+        });
+      }
+      return Response.json(terminalJournal.snapshot);
+    };
+    const executionContract = contract();
+    const error = await createPiExecutorServiceClient({
+      baseUrl: "http://executor-v3-downgrade.test",
+      credential: "rtk_v3_downgrade_test",
+      pollIntervalMs: 1,
+      fetchFn,
+    })({
+      contract: executionContract,
+      stepId: "step-1",
+      executionAttemptId: "att_test1",
+      inputManifestSha256: inputManifest(executionContract),
+      contextItems: [],
+      dependencyResults: [],
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(PiExecutorRemoteError);
+    expect(error).toMatchObject({
+      code: "executor.journal_integrity_invalid",
+      outcomeUnknown: true,
+    });
+  });
+
   it("新Client只读兼容缺少v2标记、settled与可见正文Hash的合法旧v1 succeeded", async () => {
     let journal: MutableJournalFixture | undefined;
     const fetchFn: typeof fetch = async (url, init) => {
@@ -1598,6 +1788,8 @@ describe("Pi Executor Service + Client", () => {
           title: "只读执行",
           description: "只读能力",
           capabilityCatalogSha256: "c".repeat(64),
+          readiness: "available",
+          diagnostics: [],
           enabledToolNames: ["read"],
           piSystemPrompt: {
             bodyMarkdown: "Pi runtime system prompt",
@@ -1611,6 +1803,25 @@ describe("Pi Executor Service + Client", () => {
               description: "Read a file",
               parametersJson: "{}",
               sourceRelativePath: "pi/packages/coding-agent/src/core/tools/read.ts",
+              capability: {
+                schemaVersion: "capability-descriptor.v1",
+                capabilityId: "pi_direct:tool:builtin:read",
+                kind: "executable_tool",
+                runtimeOwner: "pi_direct",
+                localName: "read",
+                sourceRef: {
+                  sourceKind: "builtin",
+                  package: "@earendil-works/pi-coding-agent",
+                  revision: "1".repeat(40),
+                },
+                inputSchemaSha256: "2".repeat(64),
+                effect: "read",
+                scopePolicy: "workspace_required",
+                approvalPolicy: "run_policy",
+                evidencePolicy: "runtime_journal",
+                readiness: "available",
+                descriptorSha256: "3".repeat(64),
+              },
             },
           ],
         },

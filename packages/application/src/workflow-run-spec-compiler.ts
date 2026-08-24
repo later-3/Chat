@@ -619,6 +619,9 @@ function resolvePolicyAndNodes(
         runtime: agentConfiguration.runtime,
         systemPrompt: agentConfiguration.systemPrompt,
         enabledToolNames: agentConfiguration.enabledToolNames,
+        ...(agentConfiguration.enabledCapabilityRefs === undefined
+          ? {}
+          : { enabledCapabilityRefs: agentConfiguration.enabledCapabilityRefs }),
         resources: agentConfiguration.resources,
         ...(agentConfiguration.basedOnVersionId === undefined
           ? {}

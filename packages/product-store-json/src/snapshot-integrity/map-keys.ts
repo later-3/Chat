@@ -96,6 +96,9 @@ export function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
     ],
     ["promptAssembly", snapshot.entities.promptAssemblies, "promptAssemblyId"],
     ["agentVersion", snapshot.entities.agentVersions, "agentVersionId"],
+    ["toolExecutionIntent", snapshot.entities.toolExecutionIntents, "toolExecutionIntentId"],
+    ["toolExecutionDecision", snapshot.entities.toolExecutionDecisions, "toolExecutionDecisionId"],
+    ["toolExecutionResult", snapshot.entities.toolExecutionResults, "toolExecutionResultId"],
     [
       "planningProjectContext",
       snapshot.entities.planningProjectContexts,

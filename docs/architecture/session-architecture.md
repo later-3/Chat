@@ -106,7 +106,7 @@ DSH原生会话继续负责可发送的对话体验。Client插件额外在对�
 ## 8. Workflow选择与一次性建项能力
 
 Bridge v13把两个经常被混淆的作用域拆开，v14为每条Request持久化首次/既有Session提交目标，
-v15再为每条Request记录Product Message写边界的耐久状态：
+v15再为每条Request记录Product Message写边界的耐久状态；当前v16完整保留这些语义，只增加Tool Decision本地重试投影：
 `sessionWorkflowSelection`是当前DSH Session草稿，
 `newSessionWorkflowPreference`只在另一个会话首次物化时冻结。创建绑定的唯一原语覆盖Prompt、审核开关、请求和
 Workflow等所有first-write顺序；当前会话切换不会默认改写以后会话。v1-v7旧状态没有可证明的全局偏好，迁移时
@@ -137,7 +137,7 @@ Request提交状态只允许以下转换：
 浏览器关闭/刷新不取消它；Bridge页面恢复与下一次发送都会先查询Product事实，因此页面内存、轮询间隔和当前
 全局偏好都不能决定恢复结果。Product Store v18升级到v19只扩展Outbox合同；迁移不会替历史queued Operation
 补造执行Outbox，也不会在启动迁移时调用Provider；历史`queued/dispatching`由用户在DSH显式触发
-“检查并恢复”，Application只创建先对账的新Outbox；健康v19后台执行和活跃lease由Product Query明确投影为
+“检查并恢复”，Application只创建先对账的新Outbox；当前健康v20中的后台执行和活跃lease由Product Query明确投影为
 不可恢复，Client不能仅按Operation status猜测，Retry也不得制造第二条活动Outbox。多Dispatcher以单调fencing
 token隔离每个tick的新attempt；当前单API进程再用共享协调器把同一Operation从claim到finalize互斥，token进入
 Provider Port并在每个Plane POST与Workspace写边界前重新验证。这样旧执行者在校验后暂停也不能与新attempt并发；

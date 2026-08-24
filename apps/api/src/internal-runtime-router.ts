@@ -78,6 +78,12 @@ import {
   prepareProjectBootstrapRuntimeResponseSchema,
   commitDirectAgentResultRuntimeRequestSchema,
   commitDirectAgentResultRuntimeResponseSchema,
+  publishToolExecutionIntentRuntimeRequestSchema,
+  publishToolExecutionIntentRuntimeResponseSchema,
+  claimToolExecutionDecisionRuntimeRequestSchema,
+  claimToolExecutionDecisionRuntimeResponseSchema,
+  commitToolExecutionResultRuntimeRequestSchema,
+  commitToolExecutionResultRuntimeResponseSchema,
   type ProblemDetail,
   type RequestId,
 } from "@chat/contracts";
@@ -137,6 +143,9 @@ import {
   persistDirectAgentCandidate,
   prepareProjectBootstrapCandidateForRuntime,
   commitDirectAgentResult,
+  publishToolExecutionIntent,
+  claimToolExecutionDecision,
+  commitToolExecutionResult,
   type ApplicationDeps,
 } from "@chat/application";
 
@@ -379,6 +388,47 @@ export function createInternalRuntimeRouter(
         productRunId: result.promptReview.productRunId,
         status: result.promptReview.status,
         revision: result.promptReview.revision,
+      });
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.publishToolExecutionIntent,
+    handle(201, async (c) => {
+      const request = publishToolExecutionIntentRuntimeRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      const intent = await publishToolExecutionIntent(options.deps, request);
+      return publishToolExecutionIntentRuntimeResponseSchema.parse({
+        schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+        toolExecutionIntentId: intent.toolExecutionIntentId,
+        revision: intent.revision,
+        status: intent.status,
+      });
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.claimToolExecutionDecision,
+    handle(200, async (c) => {
+      const request = claimToolExecutionDecisionRuntimeRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      return claimToolExecutionDecisionRuntimeResponseSchema.parse(
+        await claimToolExecutionDecision(options.deps, request),
+      );
+    }),
+  );
+
+  router.post(
+    DIRECT_AGENT_RUNTIME_PATHS.commitToolExecutionResult,
+    handle(200, async (c) => {
+      const request = commitToolExecutionResultRuntimeRequestSchema.parse(
+        await parseInternalBody(c),
+      );
+      return commitToolExecutionResultRuntimeResponseSchema.parse({
+        schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+        ...(await commitToolExecutionResult(options.deps, request)),
       });
     }),
   );

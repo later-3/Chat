@@ -22,6 +22,7 @@ export interface AssembledExecutionCandidate {
     sections: { heading: string; body: string }[];
     successCriteriaEvidence: string[];
     criteriaEvidence: string[];
+    executionEvidenceRefs?: import("@chat/contracts").ExecutionEvidenceRef[];
     warnings: string[];
     sha256: string;
   }[];
@@ -51,6 +52,7 @@ export async function persistExecutionCandidateStep(input: {
         ) as never,
         productRunId: input.productRunId as never,
         executionContractId: input.executionContractId as never,
+        evidencePolicyVersion: "structured-tool-result.v1",
         stepResults: input.candidate.stepResults as never,
         finalOutput: input.candidate.finalOutput,
         completionCriteriaEvidence: input.candidate.completionCriteriaEvidence,

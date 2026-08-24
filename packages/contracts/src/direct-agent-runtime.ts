@@ -11,7 +11,14 @@ import {
   promptAssemblyIdSchema,
   runAttemptIdSchema,
   workflowRunSpecIdSchema,
+  toolExecutionIntentIdSchema,
+  toolExecutionDecisionIdSchema,
 } from "./ids.js";
+import {
+  capabilityEffectSchema,
+  capabilityScopeRefSchema,
+  resolvedCapabilitySnapshotSchema,
+} from "./capability.js";
 import {
   promptReviewCanonicalPayloadJsonSchema,
   promptReviewDecisionKindSchema,
@@ -32,6 +39,7 @@ import {
   promptEnvelopeMessageSchema,
   promptEnvelopeRequestOptionsSchema,
   promptEnvelopeToolsSchema,
+  promptEnvelopeToolsV4Schema,
   piSystemPromptResolutionSchema,
 } from "./prompt-assembly.js";
 import {
@@ -57,6 +65,9 @@ export const DIRECT_AGENT_RUNTIME_PATHS = {
   persistCandidate: "/persist-direct-agent-candidate",
   prepareProjectBootstrap: "/prepare-project-bootstrap",
   commitResult: "/commit-direct-agent-result",
+  publishToolExecutionIntent: "/publish-tool-execution-intent",
+  claimToolExecutionDecision: "/claim-tool-execution-decision",
+  commitToolExecutionResult: "/commit-tool-execution-result",
 } as const;
 
 const versioned = {
@@ -126,6 +137,22 @@ export const authorizeDirectAgentOperationRuntimeResponseSchema = z
           systemPromptAppend: z.string().max(512_000),
           userPrompt: z.string().min(1).max(1_000_000),
           workspaceRootId: promptWorkspaceRootIdSchema.optional(),
+        })
+        .strict(),
+      z
+        .object({
+          schemaVersion: z.literal("prompt-assembly.v4"),
+          promptAssemblyId: promptAssemblyIdSchema,
+          sha256: sha256Schema,
+          systemPromptAppend: z.string().max(512_000),
+          piSystemPrompt: piSystemPromptResolutionSchema.optional(),
+          messages: z.array(promptEnvelopeMessageSchema).min(1).max(1_000),
+          tools: promptEnvelopeToolsV4Schema,
+          requestOptions: promptEnvelopeRequestOptionsSchema,
+          budget: promptAssemblyBudgetSchema,
+          workspaceRootId: promptWorkspaceRootIdSchema.optional(),
+          runtimeProfileSha256: sha256Schema,
+          workspaceGrantSha256: sha256Schema.optional(),
         })
         .strict(),
       z
@@ -398,6 +425,105 @@ export const commitDirectAgentResultRuntimeResponseSchema = z
   })
   .strict();
 
+/** ---------- 高影响Tool动作：Product Intent → 一次性Decision permit → Result ---------- */
+
+export const publishToolExecutionIntentRuntimeRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    directAgentAttemptId: runAttemptIdSchema,
+    runtimeOperationRefSha256: sha256Schema,
+    capability: resolvedCapabilitySnapshotSchema,
+    toolCallId: z.string().min(1).max(160),
+    inputDisplay: z.string().max(32_000),
+    inputDisplayTruncated: z.boolean(),
+    inputSha256: sha256Schema,
+    scopeRef: capabilityScopeRefSchema,
+    effect: capabilityEffectSchema.exclude(["read"]),
+  })
+  .strict();
+
+export const publishToolExecutionIntentRuntimeResponseSchema = z
+  .object({
+    ...versioned,
+    toolExecutionIntentId: toolExecutionIntentIdSchema,
+    revision: z.number().int().positive(),
+    status: z.enum(["waiting_decision", "approved", "rejected", "dispatching"]),
+  })
+  .strict();
+
+export const claimToolExecutionDecisionRuntimeRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    directAgentAttemptId: runAttemptIdSchema,
+    toolExecutionIntentId: toolExecutionIntentIdSchema,
+    intentRevision: z.number().int().positive(),
+    capabilityDescriptorSha256: sha256Schema,
+    inputSha256: sha256Schema,
+    scopeRef: capabilityScopeRefSchema,
+  })
+  .strict();
+
+const claimedToolExecutionBase = {
+  ...versioned,
+  toolExecutionIntentId: toolExecutionIntentIdSchema,
+  revision: z.number().int().positive(),
+};
+
+const claimedToolExecutionDecisionBinding = {
+  toolExecutionDecisionId: toolExecutionDecisionIdSchema,
+  decisionIntentRevision: z.number().int().positive(),
+  capabilityDescriptorSha256: sha256Schema,
+  inputSha256: sha256Schema,
+  scopeRef: capabilityScopeRefSchema,
+};
+
+export const claimToolExecutionDecisionRuntimeResponseSchema = z.discriminatedUnion("status", [
+  z.object({ ...claimedToolExecutionBase, status: z.literal("waiting_decision") }).strict(),
+  z
+    .object({
+      ...claimedToolExecutionBase,
+      status: z.literal("authorized"),
+      ...claimedToolExecutionDecisionBinding,
+    })
+    .strict(),
+  z
+    .object({
+      ...claimedToolExecutionBase,
+      status: z.literal("rejected"),
+      ...claimedToolExecutionDecisionBinding,
+      explanation: z.string().min(1).max(2_000).optional(),
+    })
+    .strict(),
+  z.object({ ...claimedToolExecutionBase, status: z.literal("already_claimed") }).strict(),
+]);
+
+export const commitToolExecutionResultRuntimeRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    directAgentAttemptId: runAttemptIdSchema,
+    toolExecutionIntentId: toolExecutionIntentIdSchema,
+    outcome: z.enum(["completed", "failed", "outcome_unknown"]),
+    resultSha256: sha256Schema.optional(),
+    journalResultSha256: sha256Schema.optional(),
+    errorCode: stableDirectRuntimeErrorCodeSchema.optional(),
+  })
+  .strict();
+
+export const commitToolExecutionResultRuntimeResponseSchema = z
+  .object({
+    ...versioned,
+    toolExecutionIntentId: toolExecutionIntentIdSchema,
+    status: z.enum(["completed", "failed", "outcome_unknown"]),
+    revision: z.number().int().positive(),
+  })
+  .strict();
+
 export type BeginDirectAgentAttemptRuntimeRequest = z.infer<
   typeof beginDirectAgentAttemptRuntimeRequestSchema
 >;
@@ -454,4 +580,22 @@ export type CommitDirectAgentResultRuntimeRequest = z.infer<
 >;
 export type CommitDirectAgentResultRuntimeResponse = z.infer<
   typeof commitDirectAgentResultRuntimeResponseSchema
+>;
+export type PublishToolExecutionIntentRuntimeRequest = z.infer<
+  typeof publishToolExecutionIntentRuntimeRequestSchema
+>;
+export type PublishToolExecutionIntentRuntimeResponse = z.infer<
+  typeof publishToolExecutionIntentRuntimeResponseSchema
+>;
+export type ClaimToolExecutionDecisionRuntimeRequest = z.infer<
+  typeof claimToolExecutionDecisionRuntimeRequestSchema
+>;
+export type ClaimToolExecutionDecisionRuntimeResponse = z.infer<
+  typeof claimToolExecutionDecisionRuntimeResponseSchema
+>;
+export type CommitToolExecutionResultRuntimeRequest = z.infer<
+  typeof commitToolExecutionResultRuntimeRequestSchema
+>;
+export type CommitToolExecutionResultRuntimeResponse = z.infer<
+  typeof commitToolExecutionResultRuntimeResponseSchema
 >;

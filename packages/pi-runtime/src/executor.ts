@@ -5,6 +5,7 @@ import {
   EXECUTOR_PROMPT_TEMPLATE_VERSION,
   type ExecutionContextItemDto,
   type ExecutionContract,
+  executionEvidenceRefSchema,
 } from "@chat/contracts";
 import { z } from "zod";
 import { runAgentWithTool, type AgentRunResult } from "./agent-runner.js";
@@ -63,6 +64,7 @@ export const executorStepCandidateSchema = z
       .max(20),
     successCriteriaEvidence: z.array(z.string().min(1).max(1000)).min(1).max(20),
     criteriaEvidence: z.array(z.string().min(1).max(1000)).max(20),
+    executionEvidenceRefs: z.array(executionEvidenceRefSchema).max(200).optional(),
     warnings: z.array(z.string().min(1).max(500)).max(50),
   })
   .strict();

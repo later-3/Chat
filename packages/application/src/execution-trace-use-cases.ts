@@ -583,6 +583,7 @@ export function projectPiActivities(
           status: "running",
           nodeKind: parent.nodeKind,
           toolName: event.toolName,
+          ...(event.capability === undefined ? {} : { capability: event.capability }),
           ...(event.inputDisplay === undefined ? {} : { inputDisplay: event.inputDisplay }),
           ...(event.inputDisplayTruncated === undefined
             ? {}

@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { productRunIdSchema } from "@chat/contracts";
@@ -9,7 +9,7 @@ import { migratePiDirectJournalToRunActivity } from "./pi-direct-activity-migrat
 const SHA = "a".repeat(64);
 
 describe("migratePiDirectJournalToRunActivity", () => {
-  it("把历史Direct Operation的Agent终态接回所属Product Run且只执行一次", async () => {
+  it("每次启动幂等扫描并补齐上次Journal已写、Activity未写的sequence", async () => {
     const root = mkdtempSync(join(tmpdir(), "chat-direct-activity-migration-"));
     const operationsDir = join(root, "direct-operations");
     const activityDir = join(root, "run-activity");
@@ -73,6 +73,22 @@ describe("migratePiDirectJournalToRunActivity", () => {
     ]);
     expect(
       await migratePiDirectJournalToRunActivity({ operationsDir, activitySink }),
-    ).toMatchObject({ status: "already_completed", migratedActivities: 0 });
+    ).toMatchObject({ status: "completed", sourceEvents: 3, migratedActivities: 0 });
+
+    const recordPath = join(operationsDir, `${operationId}.json`);
+    const record = JSON.parse(readFileSync(recordPath, "utf8")) as {
+      events: Array<Record<string, unknown>>;
+    };
+    record.events.push({
+      sequence: 4,
+      timestamp: "2026-08-21T00:00:03.000Z",
+      operationId,
+      type: "operation.outcome_unknown",
+      errorCode: "direct_executor.activity_projection_recovery",
+    });
+    writeFileSync(recordPath, JSON.stringify(record), "utf8");
+    expect(
+      await migratePiDirectJournalToRunActivity({ operationsDir, activitySink }),
+    ).toMatchObject({ status: "completed", sourceEvents: 4, migratedActivities: 2 });
   });
 });

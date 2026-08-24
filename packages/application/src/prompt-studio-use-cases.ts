@@ -1093,15 +1093,30 @@ export async function createAgentVersion(
   if (runtimeVariant === undefined) {
     throw revisionConflict("Agent Version引用的Pi运行基线不存在或已经变化");
   }
+  if (runtimeVariant.readiness !== "available" || runtimeVariant.diagnostics.length > 0) {
+    throw revisionConflict("Agent Version引用的Pi运行目录当前不可用，请先修复Capability诊断");
+  }
   const selectedToolNames = new Set(input.payload.enabledToolNames);
-  const orderedSelectedTools = runtimeVariant.tools
-    .map((tool) => tool.name)
-    .filter((toolName) => selectedToolNames.has(toolName));
+  const orderedSelectedTools = runtimeVariant.tools.filter((tool) =>
+    selectedToolNames.has(tool.name),
+  );
+  const orderedSelectedToolNames = orderedSelectedTools.map((tool) => tool.name);
   if (
-    orderedSelectedTools.length !== input.payload.enabledToolNames.length ||
-    JSON.stringify(orderedSelectedTools) !== JSON.stringify(input.payload.enabledToolNames)
+    orderedSelectedToolNames.length !== input.payload.enabledToolNames.length ||
+    JSON.stringify(orderedSelectedToolNames) !== JSON.stringify(input.payload.enabledToolNames)
   ) {
     throw revisionConflict("Agent Version包含当前Pi目录不存在的Tool，或Tool顺序已经变化");
+  }
+  const enabledCapabilityRefs = orderedSelectedTools.map((tool) => ({
+    localName: tool.name,
+    capabilityId: tool.capability.capabilityId,
+    descriptorSha256: tool.capability.descriptorSha256,
+  }));
+  if (
+    input.payload.enabledCapabilityRefs !== undefined &&
+    JSON.stringify(input.payload.enabledCapabilityRefs) !== JSON.stringify(enabledCapabilityRefs)
+  ) {
+    throw revisionConflict("Agent Version提交的Capability身份与当前Pi目录不一致");
   }
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const base =
@@ -1122,7 +1137,7 @@ export async function createAgentVersion(
   }
   const now = deps.now();
   const agentVersionId = agentVersionIdSchema.parse(
-    `avn_${hashCanonical("id.agent-version.v1", {
+    `avn_${hashCanonical("id.agent-version.v2", {
       commandId: input.commandId,
       agentKey: input.agentKey,
     }).slice(0, 32)}`,
@@ -1167,13 +1182,14 @@ export async function createAgentVersion(
     },
     systemPrompt,
     enabledToolNames: input.payload.enabledToolNames,
+    enabledCapabilityRefs,
     resources: input.payload.resources,
     ...(base === undefined ? {} : { basedOnVersionId: base.agentVersionId }),
     createdAt: now,
   });
   const version = agentVersionSchema.parse({
     ...hashInput,
-    sha256: hashCanonical("agent-version.v1", hashInput),
+    sha256: hashCanonical(AGENT_VERSION_SCHEMA_VERSION, hashInput),
   });
   await deps.store.transact({
     commandId: input.commandId,

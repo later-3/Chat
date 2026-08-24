@@ -8,10 +8,12 @@ import {
   PROMPT_SELECTION_SCHEMA_VERSION,
   promptSelectionProjectionSchema,
   promptReviewDecisionRequestSchema,
+  toolExecutionDecisionRequestSchema,
   type ChatApproval,
   type ChatNoteCandidate,
   type ChatPlan,
   type ChatPromptReview,
+  type ChatToolExecutions,
   type ChatRun,
   type DecisionRequest,
   type DshSendReviewDecisionRequest,
@@ -20,6 +22,7 @@ import {
   type PromptSelection,
   type PromptSelectionProjection,
   type PromptReviewDecisionRequest,
+  type ToolExecutionDecisionRequest,
   type ProjectBootstrapDecisionRequest,
   type ProjectBootstrapPreset,
   type LifeosExecutionTrace,
@@ -44,6 +47,7 @@ import {
   type PendingDecision,
   type PendingNoteDecision,
   type PendingPromptReviewDecision,
+  type PendingToolExecutionDecision,
   type SessionBinding,
 } from "./state-store.ts";
 import type { DshSessionHistoryPort } from "./dsh-session-history.ts";
@@ -57,7 +61,7 @@ import {
 } from "./prompt-workspace-resolver.ts";
 import { exactSectionsFromJson, lastDshUserInputMapping } from "./dsh-bridge-readable.ts";
 import { bridgeChatSubmitPayload } from "./bridge-chat-dispatch.ts";
-import { productSessionIdSchema } from "@chat/contracts/public";
+import { productSessionIdSchema, type ResolvedCapabilitySnapshot } from "@chat/contracts/public";
 import { resolveProjectBootstrapLifecycleTerminalStatus } from "./project-bootstrap-lifecycle.ts";
 
 export class BridgeRequestError extends Error {
@@ -204,6 +208,40 @@ function pendingPromptReviewFrom(
     requestRevision: observed.requestRevision,
     reviewSha256: observed.reviewSha256,
     payloadSha256: observed.payloadSha256,
+    request,
+  };
+}
+
+function toolExecutionDecisionBodySha256(request: ToolExecutionDecisionRequest): string {
+  return sha256(JSON.stringify(request));
+}
+
+function pendingToolExecutionFrom(
+  dshSessionId: string,
+  request: ToolExecutionDecisionRequest,
+  capability: ResolvedCapabilitySnapshot,
+): PendingToolExecutionDecision {
+  const bodySha256 = toolExecutionDecisionBodySha256(request);
+  const observed = request.binding;
+  return {
+    bodySha256,
+    commandId: stableCommandId(
+      "submit-tool-execution-decision",
+      dshSessionId,
+      observed.toolExecutionIntentId,
+      request.kind,
+      bodySha256,
+    ),
+    productRunId: observed.productRunId,
+    expectedRunRevision: observed.runRevision,
+    toolExecutionIntentId: observed.toolExecutionIntentId,
+    intentRevision: observed.intentRevision,
+    capabilityDescriptorSha256: observed.capabilityDescriptorSha256,
+    inputSha256: observed.inputSha256,
+    scopeRef: observed.scopeRef,
+    capability,
+    kind: request.kind,
+    ...(request.explanation === undefined ? {} : { explanation: request.explanation }),
     request,
   };
 }
@@ -612,6 +650,8 @@ export class LifeosBridgeService {
         pendingNoteDecision: current?.pendingNoteDecision?.request ?? null,
         promptReview: null,
         pendingPromptReviewDecision: current?.pendingPromptReviewDecision?.request ?? null,
+        toolExecutions: { intents: [], decisions: [], results: [] },
+        pendingToolExecutionDecision: current?.pendingToolExecutionDecision?.request ?? null,
         dshSendReviewEnabled,
         dshSendReview,
         bridgeDispatchReviewEnabled,
@@ -633,7 +673,10 @@ export class LifeosBridgeService {
     let approval: ChatApproval | null = null;
     let noteCandidate: ChatNoteCandidate | null = null;
     let promptReview: ChatPromptReview | null = null;
-    if (run.phase === "prompt_review" || current.pendingPromptReviewDecision !== undefined) {
+    let toolExecutions: ChatToolExecutions = { intents: [], decisions: [], results: [] };
+    if (run.phase === "tool_review" || current.pendingToolExecutionDecision !== undefined) {
+      toolExecutions = await this.chat.getToolExecutions(current.productRunId, signal);
+    } else if (run.phase === "prompt_review" || current.pendingPromptReviewDecision !== undefined) {
       promptReview = await this.chat.getCurrentPromptReview(current.productRunId, signal);
     } else if (run.phase === "note_review" || current.pendingNoteDecision !== undefined) {
       noteCandidate = await this.chat.getNoteCandidate(current.productRunId, signal);
@@ -670,6 +713,8 @@ export class LifeosBridgeService {
       pendingNoteDecision: current.pendingNoteDecision?.request ?? null,
       promptReview,
       pendingPromptReviewDecision: current.pendingPromptReviewDecision?.request ?? null,
+      toolExecutions,
+      pendingToolExecutionDecision: current.pendingToolExecutionDecision?.request ?? null,
       dshSendReviewEnabled,
       dshSendReview,
       bridgeDispatchReviewEnabled,
@@ -1079,6 +1124,17 @@ export class LifeosBridgeService {
       );
     }
     const bodySha256 = decisionBodySha256(normalizedRequest);
+    if (
+      requestBinding.pendingNoteDecision !== undefined ||
+      requestBinding.pendingPromptReviewDecision !== undefined ||
+      requestBinding.pendingToolExecutionDecision !== undefined
+    ) {
+      throw new BridgeRequestError(
+        409,
+        "lifeos_decision_outcome_unknown",
+        "上一产品决定结果仍未知，不能提交计划决定",
+      );
+    }
     let pending = requestBinding.pendingDecision;
     if (pending !== undefined && pending.bodySha256 !== bodySha256) {
       throw new BridgeRequestError(
@@ -1129,6 +1185,17 @@ export class LifeosBridgeService {
             );
           }
           return structuredClone(target.pendingDecision);
+        }
+        if (
+          target.pendingNoteDecision !== undefined ||
+          target.pendingPromptReviewDecision !== undefined ||
+          target.pendingToolExecutionDecision !== undefined
+        ) {
+          throw new BridgeRequestError(
+            409,
+            "lifeos_decision_outcome_unknown",
+            "上一产品决定结果仍未知，不能提交计划决定",
+          );
         }
         target.pendingDecision = candidate;
         return structuredClone(candidate);
@@ -1187,7 +1254,11 @@ export class LifeosBridgeService {
         "Run 已变化，请查看当前笔记候选后重试",
       );
     }
-    if (requestBinding.pendingDecision !== undefined) {
+    if (
+      requestBinding.pendingDecision !== undefined ||
+      requestBinding.pendingPromptReviewDecision !== undefined ||
+      requestBinding.pendingToolExecutionDecision !== undefined
+    ) {
       throw new BridgeRequestError(
         409,
         "lifeos_decision_outcome_unknown",
@@ -1245,7 +1316,11 @@ export class LifeosBridgeService {
         if (target?.productRunId === undefined) {
           throw new BridgeRequestError(409, "lifeos_run_changed", "当前 Run 已变化，请刷新后重试");
         }
-        if (target.pendingDecision !== undefined) {
+        if (
+          target.pendingDecision !== undefined ||
+          target.pendingPromptReviewDecision !== undefined ||
+          target.pendingToolExecutionDecision !== undefined
+        ) {
           throw new BridgeRequestError(
             409,
             "lifeos_decision_outcome_unknown",
@@ -1313,7 +1388,8 @@ export class LifeosBridgeService {
     }
     if (
       requestBinding.pendingDecision !== undefined ||
-      requestBinding.pendingNoteDecision !== undefined
+      requestBinding.pendingNoteDecision !== undefined ||
+      requestBinding.pendingToolExecutionDecision !== undefined
     ) {
       throw new BridgeRequestError(
         409,
@@ -1368,7 +1444,11 @@ export class LifeosBridgeService {
         if (target?.productRunId === undefined) {
           throw new BridgeRequestError(409, "lifeos_run_changed", "当前 Run 已变化，请刷新后重试");
         }
-        if (target.pendingDecision !== undefined || target.pendingNoteDecision !== undefined) {
+        if (
+          target.pendingDecision !== undefined ||
+          target.pendingNoteDecision !== undefined ||
+          target.pendingToolExecutionDecision !== undefined
+        ) {
           throw new BridgeRequestError(
             409,
             "lifeos_decision_outcome_unknown",
@@ -1413,6 +1493,136 @@ export class LifeosBridgeService {
       const target = binding.requests[requestKey];
       if (target?.pendingPromptReviewDecision?.commandId === pending?.commandId) {
         delete target.pendingPromptReviewDecision;
+      }
+    });
+    return await this.projection(dshSessionId, signal);
+  }
+
+  async decideToolExecution(
+    dshSessionId: string,
+    request: ToolExecutionDecisionRequest,
+    signal?: AbortSignal,
+  ): Promise<LifeosProjection> {
+    const normalizedRequest = toolExecutionDecisionRequestSchema.parse(request);
+    const createCommandId = stableCommandId("create-session", dshSessionId);
+    const existing = await this.state.readSession(dshSessionId);
+    const requestKey = existing?.currentRequestKey;
+    if (existing === undefined || requestKey === undefined) {
+      throw new BridgeRequestError(404, "lifeos_run_not_found", "当前 DSH 会话没有 LifeOS Run");
+    }
+    const requestBinding = existing.requests[requestKey];
+    if (requestBinding?.productRunId === undefined) {
+      throw new BridgeRequestError(409, "lifeos_run_not_ready", "LifeOS Run 尚未建立");
+    }
+    if (requestBinding.productRunId !== normalizedRequest.binding.productRunId) {
+      throw new BridgeRequestError(409, "lifeos_tool_review_stale", "Run 已变化，请刷新后重试");
+    }
+    if (
+      requestBinding.pendingDecision !== undefined ||
+      requestBinding.pendingNoteDecision !== undefined ||
+      requestBinding.pendingPromptReviewDecision !== undefined
+    ) {
+      throw new BridgeRequestError(
+        409,
+        "lifeos_decision_outcome_unknown",
+        "上一产品决定结果仍未知，不能提交Tool决定",
+      );
+    }
+    const bodySha256 = toolExecutionDecisionBodySha256(normalizedRequest);
+    let pending = requestBinding.pendingToolExecutionDecision;
+    if (pending !== undefined && pending.bodySha256 !== bodySha256) {
+      throw new BridgeRequestError(
+        409,
+        "lifeos_tool_decision_outcome_unknown",
+        "上一Tool决定结果仍未知；只能用相同内容重试",
+      );
+    }
+    if (pending === undefined) {
+      const [run, executions] = await Promise.all([
+        this.chat.getRun(requestBinding.productRunId, signal),
+        this.chat.getToolExecutions(requestBinding.productRunId, signal),
+      ]);
+      const observed = normalizedRequest.binding;
+      const intent = executions.intents.find(
+        (candidate) => candidate.toolExecutionIntentId === observed.toolExecutionIntentId,
+      );
+      if (
+        intent === undefined ||
+        intent.status !== "waiting_decision" ||
+        run.productRunId !== observed.productRunId ||
+        run.revision !== observed.runRevision ||
+        run.status !== "waiting_human" ||
+        run.phase !== "tool_review" ||
+        intent.productRunId !== observed.productRunId ||
+        intent.revision !== observed.intentRevision ||
+        intent.capability.ref.descriptorSha256 !== observed.capabilityDescriptorSha256 ||
+        intent.inputSha256 !== observed.inputSha256 ||
+        JSON.stringify(intent.scopeRef) !== JSON.stringify(observed.scopeRef)
+      ) {
+        throw new BridgeRequestError(
+          409,
+          "lifeos_tool_review_stale",
+          "Run 或Tool动作已经变化，请查看当前版本后重试",
+        );
+      }
+      if (!intent.allowedActions.includes(normalizedRequest.kind)) {
+        throw new BridgeRequestError(
+          409,
+          "lifeos_tool_decision_not_allowed",
+          "当前Tool动作不允许该决定",
+        );
+      }
+      const next = pendingToolExecutionFrom(dshSessionId, normalizedRequest, intent.capability);
+      pending = await this.state.mutateSession(dshSessionId, createCommandId, (binding) => {
+        const target = binding.requests[requestKey];
+        if (target?.productRunId === undefined) {
+          throw new BridgeRequestError(409, "lifeos_run_changed", "当前 Run 已变化，请刷新后重试");
+        }
+        if (
+          target.pendingDecision !== undefined ||
+          target.pendingNoteDecision !== undefined ||
+          target.pendingPromptReviewDecision !== undefined
+        ) {
+          throw new BridgeRequestError(
+            409,
+            "lifeos_decision_outcome_unknown",
+            "上一产品决定结果仍未知，不能提交Tool决定",
+          );
+        }
+        if (target.pendingToolExecutionDecision !== undefined) {
+          if (target.pendingToolExecutionDecision.bodySha256 !== bodySha256) {
+            throw new BridgeRequestError(
+              409,
+              "lifeos_tool_decision_outcome_unknown",
+              "上一Tool决定结果仍未知；只能用相同内容重试",
+            );
+          }
+          return structuredClone(target.pendingToolExecutionDecision);
+        }
+        target.pendingToolExecutionDecision = next;
+        return structuredClone(next);
+      });
+    }
+    if (pending === undefined) {
+      throw new BridgeRequestError(409, "lifeos_tool_decision_missing", "Tool决定绑定未建立");
+    }
+    try {
+      await this.chat.submitToolExecutionDecision(pending, pending.request, signal);
+    } catch (error) {
+      if (isDeterministicDecisionRejection(error)) {
+        await this.state.mutateSession(dshSessionId, createCommandId, (binding) => {
+          const target = binding.requests[requestKey];
+          if (target?.pendingToolExecutionDecision?.commandId === pending?.commandId) {
+            delete target.pendingToolExecutionDecision;
+          }
+        });
+      }
+      throw error;
+    }
+    await this.state.mutateSession(dshSessionId, createCommandId, (binding) => {
+      const target = binding.requests[requestKey];
+      if (target?.pendingToolExecutionDecision?.commandId === pending?.commandId) {
+        delete target.pendingToolExecutionDecision;
       }
     });
     return await this.projection(dshSessionId, signal);

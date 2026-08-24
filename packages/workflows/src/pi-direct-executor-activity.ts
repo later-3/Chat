@@ -95,24 +95,29 @@ export function piDirectExecutorActivities(
         nodeKind: "direct_agent",
         toolCallId: event.toolCallId,
         toolName: event.toolName,
+        ...(event.capability === undefined ? {} : { capability: event.capability }),
         inputDisplay: JSON.stringify({ sha256: event.inputSha256 }),
         inputDisplayTruncated: false,
       });
       break;
     case "tool.completed":
     case "tool.failed":
+    case "tool.blocked":
     case "tool.outcome_unknown":
       emit("tool", {
         activityType: "tool",
         phase:
           event.type === "tool.completed"
             ? "completed"
-            : event.type === "tool.outcome_unknown"
-              ? "outcome_unknown"
-              : "failed",
+            : event.type === "tool.blocked"
+              ? "blocked"
+              : event.type === "tool.outcome_unknown"
+                ? "outcome_unknown"
+                : "failed",
         nodeKind: "direct_agent",
         toolCallId: event.toolCallId,
         toolName: event.toolName,
+        ...(event.capability === undefined ? {} : { capability: event.capability }),
         ...(event.resultSha256 === undefined
           ? {}
           : {
@@ -121,9 +126,11 @@ export function piDirectExecutorActivities(
             }),
         ...(event.type === "tool.failed"
           ? { errorCode: "direct_executor.tool_failed" }
-          : event.type === "tool.outcome_unknown"
-            ? { errorCode: "direct_executor.tool_outcome_unknown" }
-            : {}),
+          : event.type === "tool.blocked"
+            ? { errorCode: "tool_execution.rejected" }
+            : event.type === "tool.outcome_unknown"
+              ? { errorCode: "direct_executor.tool_outcome_unknown" }
+              : {}),
       });
       break;
     case "operation.completed":
@@ -170,9 +177,11 @@ export function piDirectExecutorActivities(
 export function emitPiDirectExecutorActivity(
   scope: DirectActivityScope,
   event: PiDirectExecutorEvent,
-): void {
+): boolean {
   const ctx = getWorkflowRuntimeContext();
+  let projected = true;
   for (const activity of piDirectExecutorActivities(scope, event)) {
-    ctx.activity?.(activity);
+    if (ctx.activity?.(activity) === false) projected = false;
   }
+  return projected;
 }

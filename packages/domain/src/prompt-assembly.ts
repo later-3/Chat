@@ -79,6 +79,15 @@ export interface PromptAssemblyV2Shape {
   readonly sha256: string;
 }
 
+export interface PromptAssemblyV4Shape extends Omit<
+  PromptAssemblyV2Shape,
+  "schemaVersion" | "compilerVersion" | "runtimeProfileSha256"
+> {
+  readonly schemaVersion: "prompt-assembly.v4";
+  readonly compilerVersion: "direct-agent-prompt-compiler.v4";
+  readonly runtimeProfileSha256: string;
+}
+
 export interface PromptNodeAssemblyShape {
   readonly definitionNodeId: string;
   readonly nodeType: "agent.plan" | "agent.direct" | "execute.plan" | "note.extract";
@@ -204,6 +213,12 @@ export function computePromptAssemblyV3Sha256(
   return hashCanonical("prompt-assembly.v3", input);
 }
 
+export function computePromptAssemblyV4Sha256(
+  input: Omit<PromptAssemblyV4Shape, "sha256">,
+): string {
+  return hashCanonical("prompt-assembly.v4", input);
+}
+
 function assertRegions(regions: readonly PromptAssemblyRegionShape[]): void {
   const regionKeys = new Set<string>();
   for (const region of regions) {
@@ -231,7 +246,8 @@ function assertRegions(regions: readonly PromptAssemblyRegionShape[]): void {
 }
 
 export function assertPromptAssembly(
-  assembly: PromptAssemblyShape | PromptAssemblyV2Shape | PromptAssemblyV3Shape,
+  assembly:
+    PromptAssemblyShape | PromptAssemblyV2Shape | PromptAssemblyV3Shape | PromptAssemblyV4Shape,
 ): void {
   if (assembly.schemaVersion === "prompt-assembly.v3") {
     assertRegions(assembly.sharedRegions);
@@ -312,6 +328,20 @@ export function assertPromptAssembly(
           requestOptions: assembly.requestOptions,
           budget: assembly.budget,
         })
-      : computePromptAssemblySha256({ ...common, userPrompt: assembly.userPrompt });
+      : assembly.schemaVersion === "prompt-assembly.v4"
+        ? computePromptAssemblyV4Sha256({
+            schemaVersion: assembly.schemaVersion,
+            ...common,
+            compilerVersion: assembly.compilerVersion,
+            runtimeProfileSha256: assembly.runtimeProfileSha256,
+            ...(assembly.piSystemPrompt === undefined
+              ? {}
+              : { piSystemPrompt: assembly.piSystemPrompt }),
+            messages: assembly.messages,
+            tools: assembly.tools,
+            requestOptions: assembly.requestOptions,
+            budget: assembly.budget,
+          })
+        : computePromptAssemblySha256({ ...common, userPrompt: assembly.userPrompt });
   if (expected !== assembly.sha256) throw new Error("Prompt Assembly Hash不一致");
 }

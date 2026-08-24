@@ -531,23 +531,22 @@ export async function previewPromptTurn(
   const nodes = await Promise.all(
     promptBearingNodes(prepared.compiled.runSpec.nodeResolutions).map(async (node) => {
       const binding = agentBindingForNode(node.nodeType, node.config);
-      const nodeAssembly =
-        promptAssembly.schemaVersion === "prompt-assembly.v2"
-          ? promptAssembly
-          : promptAssembly.schemaVersion === "prompt-assembly.v3"
-            ? promptAssembly.nodes.find(
-                (candidate) => candidate.definitionNodeId === node.definitionNodeId,
-              )
-            : undefined;
+      const directAssembly = promptAssembly.schemaVersion === "prompt-assembly.v4";
+      const nodeAssembly = directAssembly
+        ? promptAssembly
+        : promptAssembly.schemaVersion === "prompt-assembly.v3"
+          ? promptAssembly.nodes.find(
+              (candidate) => candidate.definitionNodeId === node.definitionNodeId,
+            )
+          : undefined;
       if (nodeAssembly === undefined) throw new Error("Prompt节点Assembly不存在");
-      const stage =
-        promptAssembly.schemaVersion === "prompt-assembly.v2"
-          ? promptAssembly.tools.capabilityMode === "project_bootstrap"
-            ? ("direct_pre_send_dynamic_extension" as const)
-            : ("direct_pre_send" as const)
-          : node.nodeType === "execute.plan"
-            ? ("deferred_step_runtime" as const)
-            : ("workflow_node_template" as const);
+      const stage = directAssembly
+        ? promptAssembly.tools.capabilityMode === "project_bootstrap"
+          ? ("direct_pre_send_dynamic_extension" as const)
+          : ("direct_pre_send" as const)
+        : node.nodeType === "execute.plan"
+          ? ("deferred_step_runtime" as const)
+          : ("workflow_node_template" as const);
       return {
         definitionNodeId: node.definitionNodeId,
         nodeType: node.nodeType,
@@ -562,10 +561,7 @@ export async function previewPromptTurn(
           stage,
           governedSystemPromptAppend:
             governedUserPromptLayer(nodeAssembly.systemPromptAppend) ?? "",
-          toolResolution:
-            promptAssembly.schemaVersion === "prompt-assembly.v2"
-              ? ("frozen" as const)
-              : ("runtime_deferred" as const),
+          toolResolution: directAssembly ? ("frozen" as const) : ("runtime_deferred" as const),
           note:
             stage === "direct_pre_send"
               ? "Direct节点的能力与Chat层已经冻结；Workspace占位符会在Pi运行时填充，逐字节Provider请求以Prompt Review为准。"

@@ -10,6 +10,8 @@ import {
   type DirectAgentCandidateId,
   type Message,
   type PromptAssembly,
+  type PromptAssemblyV2,
+  type PromptAssemblyV4,
   type ProductRunId,
   type RunAttemptId,
   type WorkflowRunSpecId,
@@ -20,6 +22,7 @@ import {
   computeDirectAgentInputManifestSha256,
   computeMessageSha256,
   hashCanonical,
+  assertHighImpactToolExecutionsClosed,
   transitionDirectAgentRunLifecycle,
 } from "@chat/domain";
 import type { ApplicationDeps, DirectAgentIdFactory } from "./deps.js";
@@ -30,6 +33,7 @@ import {
   agentBindingForNode,
   resolveAgentPiSystemPrompt,
   resolveDirectAgentExecutionEnvelope,
+  resolveDirectAgentExecutionEnvelopeV4,
 } from "./prompt-assembly-use-cases.js";
 import { resolveCurrentAgentRuntimeBinding } from "./agent-version-runtime-validation.js";
 
@@ -229,25 +233,18 @@ export async function authorizeDirectAgentOperation(
     readonly sha256: string;
   };
   readonly promptAssembly: {
-    readonly schemaVersion: "prompt-assembly.v1" | "prompt-assembly.v2";
+    readonly schemaVersion: "prompt-assembly.v1" | "prompt-assembly.v2" | "prompt-assembly.v4";
     readonly promptAssemblyId: PromptAssembly["promptAssemblyId"];
     readonly sha256: string;
     readonly systemPromptAppend: string;
-    readonly piSystemPrompt?: Extract<
-      PromptAssembly,
-      { schemaVersion: "prompt-assembly.v2" }
-    >["piSystemPrompt"];
+    readonly piSystemPrompt?:
+      PromptAssemblyV2["piSystemPrompt"] | PromptAssemblyV4["piSystemPrompt"];
     readonly userPrompt?: string | undefined;
-    readonly messages?: Extract<
-      PromptAssembly,
-      { schemaVersion: "prompt-assembly.v2" }
-    >["messages"];
-    readonly tools?: Extract<PromptAssembly, { schemaVersion: "prompt-assembly.v2" }>["tools"];
-    readonly requestOptions?: Extract<
-      PromptAssembly,
-      { schemaVersion: "prompt-assembly.v2" }
-    >["requestOptions"];
-    readonly budget?: Extract<PromptAssembly, { schemaVersion: "prompt-assembly.v2" }>["budget"];
+    readonly messages?: PromptAssemblyV2["messages"] | PromptAssemblyV4["messages"];
+    readonly tools?: PromptAssemblyV2["tools"] | PromptAssemblyV4["tools"];
+    readonly requestOptions?:
+      PromptAssemblyV2["requestOptions"] | PromptAssemblyV4["requestOptions"];
+    readonly budget?: PromptAssemblyV2["budget"] | PromptAssemblyV4["budget"];
     readonly workspaceRootId?: string | undefined;
     readonly runtimeProfileSha256?: string | undefined;
     readonly workspaceGrantSha256?: string | undefined;
@@ -328,7 +325,10 @@ export async function authorizeDirectAgentOperation(
   });
   const requiresNewRuntimeEvidence = agentBinding.agentVersionId !== undefined;
   const runtimeEvidence =
-    promptAssembly.schemaVersion === "prompt-assembly.v2" ? promptAssembly : undefined;
+    promptAssembly.schemaVersion === "prompt-assembly.v2" ||
+    promptAssembly.schemaVersion === "prompt-assembly.v4"
+      ? promptAssembly
+      : undefined;
   if (
     (runtimeEvidence?.runtimeProfileSha256 === undefined && requiresNewRuntimeEvidence) ||
     (runtimeEvidence?.runtimeProfileSha256 !== undefined &&
@@ -354,7 +354,7 @@ export async function authorizeDirectAgentOperation(
         ? {}
         : { promptOverrideMarkdown: agentBinding.promptOverrideMarkdown }),
     });
-    const expectedEnvelope = resolveDirectAgentExecutionEnvelope({
+    const envelopeInput = {
       profile: currentRuntime.profile,
       ...(currentRuntime.agentVersion === undefined
         ? {}
@@ -366,7 +366,11 @@ export async function authorizeDirectAgentOperation(
       ...(expectedPrompt.piSystemPrompt === undefined
         ? {}
         : { piSystemPrompt: expectedPrompt.piSystemPrompt }),
-    });
+    };
+    const expectedEnvelope =
+      runtimeEvidence.schemaVersion === "prompt-assembly.v4"
+        ? resolveDirectAgentExecutionEnvelopeV4(envelopeInput)
+        : resolveDirectAgentExecutionEnvelope(envelopeInput);
     const expectedSha256 = hashCanonical("direct-agent-execution-envelope.v1", expectedEnvelope);
     const actualSha256 = hashCanonical("direct-agent-execution-envelope.v1", {
       tools: runtimeEvidence.tools,
@@ -519,6 +523,17 @@ export async function persistDirectAgentCandidate(
       ) {
         throw revisionConflict("仍有未闭合Prompt Review，不能提交Direct Agent Candidate");
       }
+      try {
+        assertHighImpactToolExecutionsClosed(
+          Object.values(draft.entities.toolExecutionIntents).filter(
+            (intent) =>
+              intent.productRunId === input.productRunId &&
+              intent.attemptId === input.directAgentAttemptId,
+          ),
+        );
+      } catch {
+        throw revisionConflict("仍有等待、执行中或结果未知的高影响Tool，不能提交Candidate");
+      }
       const candidate: DirectAgentCandidate = {
         schemaVersion: "direct-agent-candidate.v1",
         directAgentCandidateId,
@@ -592,6 +607,17 @@ export async function commitDirectAgentResult(
         attempt.outcome !== "success"
       ) {
         throw revisionConflict("Direct Agent Product Commit绑定不完整或已变化");
+      }
+      try {
+        assertHighImpactToolExecutionsClosed(
+          Object.values(draft.entities.toolExecutionIntents).filter(
+            (intent) =>
+              intent.productRunId === input.productRunId &&
+              intent.attemptId === input.directAgentAttemptId,
+          ),
+        );
+      } catch {
+        throw revisionConflict("仍有未闭合或结果未知的高影响Tool动作，不能Product Commit");
       }
       const recomputed = computeDirectAgentCandidateSha256({
         directAgentCandidateId: candidate.directAgentCandidateId,

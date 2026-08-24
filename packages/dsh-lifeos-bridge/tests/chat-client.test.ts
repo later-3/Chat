@@ -9,8 +9,13 @@ import {
   createAgentVersionPayloadSchema,
   productSessionIdSchema,
 } from "@chat/contracts/public";
-import { promptSelectionRequestSchema, workflowSelectionSchema } from "../src/contracts.ts";
+import {
+  promptSelectionRequestSchema,
+  toolExecutionDecisionRequestSchema,
+  workflowSelectionSchema,
+} from "../src/contracts.ts";
 import { promptTurnPreviewFixture } from "./prompt-turn-preview-fixture.ts";
+import { readRuntimeToolFixture } from "./runtime-tool-fixture.ts";
 
 const finalMessage = {
   schemaVersion: "chat-product-api.v1",
@@ -59,7 +64,7 @@ const agentVersion = agentVersionSchema.parse({
 });
 
 const agentProfile = agentProfileDtoSchema.parse({
-  schemaVersion: "chat-agent-profile-api.v2",
+  schemaVersion: "chat-agent-profile-api.v3",
   agentKey: "direct",
   title: "执行 Agent",
   description: "用于客户端版本合同测试。",
@@ -96,20 +101,15 @@ const agentProfile = agentProfileDtoSchema.parse({
         title: "Read only",
         description: "只读",
         enabledToolNames: ["read"],
+        readiness: "available",
+        diagnostics: [],
         piSystemPrompt: {
           bodyMarkdown: "You are an expert coding assistant operating inside pi.",
           sha256: "e".repeat(64),
           dynamicPlaceholders: ["WORKSPACE_ROOT"],
           sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
         },
-        tools: [
-          {
-            name: "read",
-            description: "读取文件",
-            parametersJson: "{}",
-            sourceRelativePath: "pi/packages/coding-agent/src/core/tools/read.ts",
-          },
-        ],
+        tools: [readRuntimeToolFixture()],
       },
     ],
     finalReviewNote: "最终内容以发送前审核为准。",
@@ -138,6 +138,99 @@ const createdAgentVersion = agentVersionSchema.parse({
 const createdAgentProfile = agentProfileDtoSchema.parse({
   ...agentProfile,
   versions: [agentVersion, createdAgentVersion],
+});
+
+test("Tool Decision 2xx must bind both Decision and Intent to the exact pending request", async () => {
+  const capability = {
+    ref: {
+      capabilityId: "pi_direct:tool:builtin:write",
+      descriptorSha256: "1".repeat(64),
+      inputSchemaSha256: "2".repeat(64),
+      resolvedImplementationSha256: "3".repeat(64),
+      scopeRef: { kind: "workspace" as const, rootId: "root_chat" },
+    },
+    localName: "write",
+    kind: "executable_tool" as const,
+    runtimeOwner: "pi_direct" as const,
+    sourceRef: {
+      sourceKind: "builtin" as const,
+      package: "@earendil-works/pi-coding-agent",
+      revision: "4".repeat(40),
+    },
+    effect: "local_write" as const,
+    scopePolicy: "workspace_required" as const,
+    approvalPolicy: "product_decision_required" as const,
+    evidencePolicy: "product_intent_result" as const,
+  };
+  const request = toolExecutionDecisionRequestSchema.parse({
+    kind: "approve",
+    binding: {
+      productRunId: "run_toolclient1",
+      runRevision: 5,
+      toolExecutionIntentId: "tei_toolclient1",
+      intentRevision: 1,
+      capabilityDescriptorSha256: capability.ref.descriptorSha256,
+      inputSha256: "5".repeat(64),
+      scopeRef: capability.ref.scopeRef,
+    },
+  });
+  const pending = {
+    bodySha256: "6".repeat(64),
+    commandId: `cmd_${"7".repeat(48)}`,
+    productRunId: request.binding.productRunId,
+    expectedRunRevision: request.binding.runRevision,
+    toolExecutionIntentId: request.binding.toolExecutionIntentId,
+    intentRevision: request.binding.intentRevision,
+    capabilityDescriptorSha256: request.binding.capabilityDescriptorSha256,
+    inputSha256: request.binding.inputSha256,
+    scopeRef: request.binding.scopeRef,
+    capability,
+    kind: request.kind,
+    request,
+  };
+  const decision = {
+    schemaVersion: "chat-product-api.v1",
+    toolExecutionDecisionId: "ted_toolclient1",
+    toolExecutionIntentId: request.binding.toolExecutionIntentId,
+    productRunId: request.binding.productRunId,
+    intentRevision: request.binding.intentRevision,
+    capabilityDescriptorSha256: request.binding.capabilityDescriptorSha256,
+    inputSha256: request.binding.inputSha256,
+    scopeRef: request.binding.scopeRef,
+    kind: request.kind,
+    createdAt: "2026-08-24T00:00:00.000Z",
+  };
+  const intent = {
+    schemaVersion: "chat-product-api.v1",
+    toolExecutionIntentId: request.binding.toolExecutionIntentId,
+    productRunId: request.binding.productRunId,
+    capability,
+    toolCallId: "call_toolclient1",
+    inputDisplay: "{}",
+    inputDisplayTruncated: false,
+    inputSha256: request.binding.inputSha256,
+    scopeRef: request.binding.scopeRef,
+    effect: "local_write",
+    status: "approved",
+    revision: request.binding.intentRevision + 1,
+    allowedActions: [],
+    createdAt: "2026-08-24T00:00:00.000Z",
+    updatedAt: "2026-08-24T00:00:00.000Z",
+  };
+
+  for (const response of [
+    { decision: { ...decision, toolExecutionIntentId: "tei_otherdecision1" }, intent },
+    { decision, intent: { ...intent, toolExecutionIntentId: "tei_otherintent1" } },
+  ]) {
+    const client = new ChatProductClient(
+      new URL("http://127.0.0.1:1"),
+      async () => new Response(JSON.stringify(response), { status: 200 }),
+    );
+    await assert.rejects(
+      client.submitToolExecutionDecision(pending as never, request),
+      /lifeos_tool_decision_response_binding_mismatch/u,
+    );
+  }
 });
 
 test("final message lookup uses the public exact query without scanning history", async () => {
@@ -208,7 +301,7 @@ test("Agent profile queries and version creation preserve the immutable versions
       return new Response(
         JSON.stringify(
           agentProfilesDtoSchema.parse({
-            schemaVersion: "chat-agent-profile-api.v2",
+            schemaVersion: "chat-agent-profile-api.v3",
             items: [agentProfile],
           }),
         ),

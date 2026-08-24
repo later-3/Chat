@@ -173,11 +173,13 @@ describe("Direct Agent Workflow Steps", () => {
     const start = vi.fn(async () => ({
       kind: "waiting_prompt_review" as const,
       operationId: "pio_directstep1",
+      requestSha256: SHA_C,
       review,
     }));
     const submitDecision = vi.fn(async () => ({
       kind: "succeeded" as const,
       operationId: "pio_directstep1",
+      requestSha256: SHA_C,
       result: { directAgentCandidateId: "drc_directstep1", sha256: SHA_C },
     }));
     const commitDirectAgentResult = vi.fn(async () => ({
@@ -202,6 +204,7 @@ describe("Direct Agent Workflow Steps", () => {
       productRunId: "run_directstep1",
       workflowAttemptId: "att_directworkflowstep1",
       operationId: started.operationId,
+      requestSha256: started.requestSha256,
       directAgentAttemptId: "att_directagentstep1",
       review,
       promptReviewDecisionId: "prd_directstep1",
@@ -217,7 +220,7 @@ describe("Direct Agent Workflow Steps", () => {
     expect(resumed.kind).toBe("succeeded");
     expect(start).toHaveBeenCalledTimes(1);
     expect(submitDecision).toHaveBeenCalledWith(
-      expect.objectContaining({ operationId: "pio_directstep1", review }),
+      expect.objectContaining({ operationId: "pio_directstep1", requestSha256: SHA_C, review }),
     );
     expect(commitDirectAgentResult).toHaveBeenCalledTimes(1);
 

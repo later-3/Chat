@@ -76,7 +76,7 @@ function minimalSnapshot(
     sourceMessageSha256,
   } as const;
   return productSnapshotSchema.parse({
-    schemaVersion: "chat-product-store.v19",
+    schemaVersion: "chat-product-store.v20",
     storeRevision: 1,
     committedAt: NOW,
     entities: {
@@ -145,6 +145,9 @@ function minimalSnapshot(
       directAgentCandidates: {},
       promptReviewRequests: {},
       promptReviewDecisions: {},
+      toolExecutionIntents: {},
+      toolExecutionDecisions: {},
+      toolExecutionResults: {},
       promptFragments: {},
       promptFragmentRevisions: {},
       promptAssemblies: {},

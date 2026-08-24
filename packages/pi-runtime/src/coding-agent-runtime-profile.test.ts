@@ -98,6 +98,27 @@ describe("Pi CLI default Agent runtime profile", () => {
       expect(scopedVariant?.tools.map((tool) => tool.name)).toContain("workspace_probe");
       expect(scopedVariant?.enabledToolNames).toEqual(["grep", "workspace_probe"]);
 
+      const scopedProbe = scopedVariant?.tools.find((tool) => tool.name === "workspace_probe");
+      writeFileSync(
+        join(extensionDir, "workspace-probe.ts"),
+        [
+          "export default function (pi) {",
+          '  pi.registerTool({ name: "workspace_probe", label: "Workspace probe", description: "Workspace-only tool v2", parameters: { type: "object", properties: {}, additionalProperties: false }, execute: async () => ({ content: [{ type: "text", text: "v2" }], details: {} }) });',
+          "}",
+        ].join("\n"),
+      );
+      const codeChanged = await reader.read("direct", "root_chat");
+      const changedVariant = codeChanged?.variants.find(
+        (variant) => variant.variantKey === "pi_cli_default",
+      );
+      const changedProbe = changedVariant?.tools.find((tool) => tool.name === "workspace_probe");
+      expect(changedProbe?.resolvedRef?.resolvedImplementationSha256).not.toBe(
+        scopedProbe?.resolvedRef?.resolvedImplementationSha256,
+      );
+      expect(changedVariant?.capabilityCatalogSha256).not.toBe(
+        scopedVariant?.capabilityCatalogSha256,
+      );
+
       writeFileSync(
         join(projectPiDir, "settings.json"),
         JSON.stringify({ defaultTools: ["find"] }),
@@ -110,6 +131,35 @@ describe("Pi CLI default Agent runtime profile", () => {
       expect(refreshedVariant?.capabilityCatalogSha256).not.toBe(
         scopedVariant?.capabilityCatalogSha256,
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("Extension加载diagnostic使Profile unavailable且不伪装完整目录", async () => {
+    const root = mkdtempSync(join(tmpdir(), "chat-pi-profile-diagnostic-"));
+    const workspace = join(root, "workspace");
+    const agentDir = join(root, "agent");
+    const extensionDir = join(workspace, ".pi", "extensions");
+    mkdirSync(extensionDir, { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(extensionDir, "broken.ts"), "export default function (pi) { !!! }\n");
+    try {
+      const profile = await createPiAgentRuntimeProfileReader({
+        previewCwd: workspace,
+        agentDir,
+        workspaceRoots: new Map([["root_chat", { canonicalPath: workspace }]]),
+      }).read("direct", "root_chat");
+      const runtimeDefault = profile?.variants.find(
+        (variant) => variant.variantKey === "pi_cli_default",
+      );
+      expect(runtimeDefault?.readiness).toBe("unavailable");
+      expect(runtimeDefault?.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "pi_runtime.extension_diagnostic" }),
+        ]),
+      );
+      expect(runtimeDefault?.tools.map((tool) => tool.name)).not.toContain("broken");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -257,7 +307,8 @@ describe("Pi CLI default Agent runtime profile", () => {
       const profile = await createPiAgentRuntimeProfileReader({
         previewCwd: workspace,
         agentDir,
-      }).read("direct");
+        workspaceRoots: new Map([["root_chat", { canonicalPath: workspace }]]),
+      }).read("direct", "root_chat");
       const runtimeDefault = profile?.variants.find(
         (variant) => variant.variantKey === "pi_cli_default",
       );
@@ -281,7 +332,12 @@ describe("Pi CLI default Agent runtime profile", () => {
         ]),
       );
       expect(
-        Object.values(runtimeDefault?.resourceInventory ?? {})
+        [
+          ...(runtimeDefault?.resourceInventory?.extensions ?? []),
+          ...(runtimeDefault?.resourceInventory?.skills ?? []),
+          ...(runtimeDefault?.resourceInventory?.promptTemplates ?? []),
+          ...(runtimeDefault?.resourceInventory?.contextFiles ?? []),
+        ]
           .flat()
           .every((path) => path.startsWith("<")),
       ).toBe(true);
@@ -309,6 +365,7 @@ describe("Pi CLI default Agent runtime profile", () => {
           },
           journalAllowedTools,
           operationId: "pio_runtimeparity",
+          workspaceRootId: "root_chat",
           store: { setSession },
         });
         expect(resolved.enabledToolNames).toEqual(["grep", "runtime_probe"]);
@@ -342,10 +399,24 @@ describe("Pi CLI default Agent runtime profile", () => {
             capabilityMode: "custom",
             selectionMode: "explicit",
             names: explicitAllowedTools,
+            capabilities: runtimeDefault!.tools
+              .filter((tool) => explicitAllowedTools.includes(tool.name))
+              .map((tool) => ({
+                ref: tool.resolvedRef!,
+                localName: tool.name,
+                kind: tool.capability.kind,
+                runtimeOwner: tool.capability.runtimeOwner,
+                sourceRef: tool.capability.sourceRef,
+                effect: tool.capability.effect,
+                scopePolicy: tool.capability.scopePolicy,
+                approvalPolicy: tool.capability.approvalPolicy,
+                evidencePolicy: tool.capability.evidencePolicy,
+              })),
             estimatedTokens: 8_000,
           },
           journalAllowedTools: explicitAllowedTools,
           operationId: "pio_runtimeparityexplicit",
+          workspaceRootId: "root_chat",
           store: { setSession: vi.fn(async () => undefined) },
         });
         expect(explicitResolved.enabledToolNames).toEqual(["grep", "runtime_probe"]);

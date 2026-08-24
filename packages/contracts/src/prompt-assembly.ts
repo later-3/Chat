@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { directAgentToolNameSchema } from "./agent-runtime-capabilities.js";
+import { resolvedCapabilitySnapshotSchema } from "./capability.js";
 export {
   directAgentToolNameSchema,
   piBuiltinToolNameSchema,
@@ -24,6 +25,7 @@ import {
 export const PROMPT_ASSEMBLY_SCHEMA_VERSION = "prompt-assembly.v1";
 export const PROMPT_ASSEMBLY_V2_SCHEMA_VERSION = "prompt-assembly.v2";
 export const PROMPT_ASSEMBLY_V3_SCHEMA_VERSION = "prompt-assembly.v3";
+export const PROMPT_ASSEMBLY_V4_SCHEMA_VERSION = "prompt-assembly.v4";
 export const WORKFLOW_PROMPT_PROFILE_VERSION = "workflow-agent-prompt-profile.v1";
 export const WORKFLOW_PROMPT_COMPILER_VERSION = "workflow-agent-prompt-compiler.v1";
 export const DIRECT_PROMPT_PROFILE_VERSION = "direct-agent-prompt-profile.v1";
@@ -31,6 +33,7 @@ export const DIRECT_PROMPT_COMPILER_VERSION = "direct-agent-prompt-compiler.v1";
 export const DIRECT_PROMPT_PROFILE_V2_VERSION = "direct-agent-prompt-profile.v2";
 export const DIRECT_PROMPT_COMPILER_V2_VERSION = "direct-agent-prompt-compiler.v2";
 export const DIRECT_PROMPT_COMPILER_V3_VERSION = "direct-agent-prompt-compiler.v3";
+export const DIRECT_PROMPT_COMPILER_V4_VERSION = "direct-agent-prompt-compiler.v4";
 export const DIRECT_PROMPT_INPUT_TOKEN_LIMIT = 64_000;
 export const DIRECT_PROMPT_TOOL_TOKEN_RESERVE = 8_000;
 export const DIRECT_PROMPT_METER_VERSION = "utf8-bytes-div-3.v1";
@@ -243,13 +246,15 @@ export const agentRuntimeResourcePolicySchema = z
   })
   .strict();
 
+/**
+ * prompt-assembly.v2已经落盘，必须按真实发布过的字面量读取。v2包含Runtime默认、
+ * 显式选择和资源类别策略，但从未包含qualified Capability快照。
+ */
 export const promptEnvelopeToolsSchema = z
   .object({
     capabilityMode: directAgentCapabilityModeSchema,
-    /** Pi默认值直到真实AgentSession完成Extension绑定后才能解析；受限配置必须显式冻结。 */
     selectionMode: z.enum(["inherit_runtime_default", "explicit"]).optional(),
     names: z.array(directAgentToolNameSchema).max(32),
-    /** v2历史Assembly没有该字段；新编译结果必须显式冻结，Runtime兼容旧值。 */
     resources: agentRuntimeResourcePolicySchema.optional(),
     estimatedTokens: z.literal(DIRECT_PROMPT_TOOL_TOKEN_RESERVE),
   })
@@ -280,17 +285,83 @@ export const promptEnvelopeToolsSchema = z
         message: "自定义或受限Agent必须显式冻结Tool清单",
       });
     }
-    const expected =
-      value.capabilityMode === "read_only"
-        ? ["read", "grep", "find", "ls"]
-        : value.capabilityMode === "project_bootstrap"
-          ? ["read", "grep", "find", "ls", "project_bootstrap_prepare"]
-          : undefined;
-    if (expected !== undefined && JSON.stringify(value.names) !== JSON.stringify(expected)) {
+    if (
+      value.capabilityMode !== "project_bootstrap" &&
+      value.names.includes("project_bootstrap_prepare")
+    ) {
       ctx.addIssue({
         code: "custom",
         path: ["names"],
-        message: "预设Capability Mode的Tool清单必须与其冻结定义完全一致",
+        message: "项目初始化Tool只能由project_bootstrap模式启用",
+      });
+    }
+    assertPresetToolNames(value, ["read", "grep", "find", "ls", "project_bootstrap_prepare"], ctx);
+  });
+
+function assertPresetToolNames(
+  value: { readonly capabilityMode: string; readonly names: readonly string[] },
+  expectedProjectBootstrapTools: readonly string[],
+  ctx: z.RefinementCtx,
+): void {
+  const expected =
+    value.capabilityMode === "read_only"
+      ? ["read", "grep", "find", "ls"]
+      : value.capabilityMode === "project_bootstrap"
+        ? expectedProjectBootstrapTools
+        : undefined;
+  if (expected !== undefined && JSON.stringify(value.names) !== JSON.stringify(expected)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["names"],
+      message: "预设Capability Mode的Tool清单必须与其冻结代际完全一致",
+    });
+  }
+}
+
+/**
+ * v4新Run必须冻结qualified Capability和资源政策。合法零Tool Agent仍是显式空集合；
+ * 只有project_bootstrap预设在v4收窄为单一候选准备能力。
+ */
+export const promptEnvelopeToolsV4Schema = z
+  .object({
+    capabilityMode: directAgentCapabilityModeSchema,
+    selectionMode: z.enum(["inherit_runtime_default", "explicit"]),
+    names: z.array(directAgentToolNameSchema).max(32),
+    capabilities: z.array(resolvedCapabilitySnapshotSchema).max(32),
+    resources: agentRuntimeResourcePolicySchema,
+    estimatedTokens: z.literal(DIRECT_PROMPT_TOOL_TOKEN_RESERVE),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (new Set(value.names).size !== value.names.length) {
+      ctx.addIssue({ code: "custom", path: ["names"], message: "Tool清单不能包含重复项" });
+    }
+    if (
+      value.selectionMode === "explicit" &&
+      (value.capabilities.length !== value.names.length ||
+        value.capabilities.some((capability, index) => capability.localName !== value.names[index]))
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["capabilities"],
+        message: "Resolved Capability顺序必须与Pi本地Tool投影一致",
+      });
+    }
+    if (
+      value.capabilityMode === "pi_cli_default" &&
+      (value.selectionMode !== "inherit_runtime_default" || value.names.length !== 0)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["selectionMode"],
+        message: "Pi默认能力必须由真实Runtime解析，不能手写冻结Tool名字",
+      });
+    }
+    if (value.capabilityMode !== "pi_cli_default" && value.selectionMode !== "explicit") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["selectionMode"],
+        message: "自定义或受限Agent必须显式冻结Tool清单",
       });
     }
     if (
@@ -303,6 +374,7 @@ export const promptEnvelopeToolsSchema = z
         message: "项目初始化Tool只能由project_bootstrap模式启用",
       });
     }
+    assertPresetToolNames(value, ["project_bootstrap_prepare"], ctx);
   });
 
 export const promptEnvelopeRequestOptionsSchema = z
@@ -455,6 +527,71 @@ export const promptAssemblyV2Schema = z
     }
   });
 
+/**
+ * Direct Prompt Assembly v4把Capability Manifest从v2可选兼容字段提升为新Run强制事实。
+ * 历史v1/v2不猜测来源，也不会在读取时被原地升级。
+ */
+export const promptAssemblyV4Schema = z
+  .object({
+    schemaVersion: z.literal(PROMPT_ASSEMBLY_V4_SCHEMA_VERSION),
+    promptAssemblyId: promptAssemblyIdSchema,
+    productSessionId: productSessionIdSchema,
+    productRunId: productRunIdSchema,
+    sourceMessageId: messageIdSchema,
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    profileVersion: z.literal(DIRECT_PROMPT_PROFILE_V2_VERSION),
+    compilerVersion: z.literal(DIRECT_PROMPT_COMPILER_V4_VERSION),
+    workspaceRootId: promptWorkspaceRootIdSchema.optional(),
+    runtimeProfileSha256: sha256Schema,
+    workspaceGrantSha256: sha256Schema.optional(),
+    regions: z.array(promptAssemblyRegionSchema).max(32),
+    systemPromptAppend: z.string().max(512_000),
+    piSystemPrompt: piSystemPromptResolutionSchema.optional(),
+    messages: z.array(promptEnvelopeMessageSchema).min(1).max(1_000),
+    tools: promptEnvelopeToolsV4Schema,
+    requestOptions: promptEnvelopeRequestOptionsSchema,
+    budget: promptAssemblyBudgetSchema,
+    sha256: sha256Schema,
+    createdAt: z.iso.datetime(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.workspaceRootId === undefined) !== (value.workspaceGrantSha256 === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["workspaceGrantSha256"],
+        message: "Workspace Root与Grant Hash必须成对冻结",
+      });
+    }
+    const current = value.messages.at(-1);
+    if (
+      current?.role !== "user" ||
+      current.source.kind !== "current_input" ||
+      current.source.messageId !== value.sourceMessageId
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["messages"],
+        message: "Prompt Assembly V4最后一条Message必须是当前真实User输入",
+      });
+    }
+    if (
+      value.budget.totalEstimatedTokens !==
+      value.budget.instructionsEstimatedTokens +
+        value.budget.messagesEstimatedTokens +
+        value.budget.toolsEstimatedTokens
+    ) {
+      ctx.addIssue({ code: "custom", path: ["budget"], message: "Prompt预算分项与总量不一致" });
+    }
+    if (value.budget.totalEstimatedTokens > value.budget.inputTokenLimit) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["budget", "totalEstimatedTokens"],
+        message: "Prompt Assembly V4超过输入Token预算",
+      });
+    }
+  });
+
 export const promptBearingNodeTypeSchema = z.enum([
   "agent.plan",
   "agent.direct",
@@ -525,6 +662,7 @@ export const promptAssemblySchema = z.union([
   promptAssemblyV1Schema,
   promptAssemblyV2Schema,
   promptAssemblyV3Schema,
+  promptAssemblyV4Schema,
 ]);
 
 export type PromptCompositionMode = z.infer<typeof promptCompositionModeSchema>;
@@ -543,3 +681,4 @@ export type PromptBearingNodeType = z.infer<typeof promptBearingNodeTypeSchema>;
 export type PromptNodeAssembly = z.infer<typeof promptNodeAssemblySchema>;
 export type PiSystemPromptResolution = z.infer<typeof piSystemPromptResolutionSchema>;
 export type PromptAssemblyV3 = z.infer<typeof promptAssemblyV3Schema>;
+export type PromptAssemblyV4 = z.infer<typeof promptAssemblyV4Schema>;

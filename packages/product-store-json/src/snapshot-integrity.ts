@@ -37,6 +37,7 @@ import {
   assertDirectAgentCandidates,
 } from "./snapshot-integrity/runs-plans.js";
 import { assertExecution, assertReceiptsAndOutbox } from "./snapshot-integrity/execution.js";
+import { assertToolExecutions } from "./snapshot-integrity/tool-executions.js";
 
 /**
  * 完整快照的关系与生命周期校验。
@@ -74,6 +75,7 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
   assertNotes(snapshot, fail);
   assertWorkflowPolicyResolutions(snapshot, fail);
   assertExecution(snapshot, fail);
+  assertToolExecutions(snapshot, fail);
   assertDirectAgentCandidates(snapshot, fail);
   assertReceiptsAndOutbox(snapshot, fail);
 

@@ -14,6 +14,11 @@ import {
   promptReviewDecisionDtoSchema,
   promptReviewRequestDtoSchema,
   promptReviewRequestIdSchema,
+  toolExecutionIntentIdSchema,
+  toolExecutionIntentDtoSchema,
+  toolExecutionDecisionDtoSchema,
+  toolExecutionsResponseSchema,
+  capabilityScopeRefSchema,
   promptConfigurationPreviewDtoSchema,
   promptTurnPreviewDtoSchema,
   publicConfigFieldSchema,
@@ -42,6 +47,8 @@ import {
   type NoteDecisionDto,
   type PromptReviewDecisionDto,
   type PromptReviewRequestDto,
+  type ToolExecutionIntentDto,
+  type ToolExecutionsResponse,
   type PromptTurnSelectionInput,
   type PlanDto,
   type RunDto,
@@ -106,6 +113,12 @@ export const currentPromptReviewResponseSchema = z
 export const promptReviewDecisionResponseSchema = z
   .object({ decision: promptReviewDecisionDtoSchema, run: runDtoSchema })
   .strict();
+export const toolExecutionDecisionResponseSchema = z
+  .object({
+    decision: toolExecutionDecisionDtoSchema,
+    intent: toolExecutionIntentDtoSchema,
+  })
+  .strict();
 
 /** Browser-to-bridge command. Product binding fields are resolved Host-side. */
 export const decisionRequestSchema = z
@@ -143,6 +156,8 @@ export type ChatNoteCandidate = NoteCandidateReviewDto;
 export type ChatNoteDecision = NoteDecisionDto;
 export type ChatPromptReview = PromptReviewRequestDto;
 export type ChatPromptReviewDecision = PromptReviewDecisionDto;
+export type ChatToolExecution = ToolExecutionIntentDto;
+export type ChatToolExecutions = ToolExecutionsResponse;
 export type DecisionKind = z.infer<typeof decisionKindSchema>;
 export type DecisionRequest = z.infer<typeof decisionRequestSchema>;
 
@@ -197,6 +212,32 @@ export const promptReviewDecisionRequestSchema = z
   });
 
 export type PromptReviewDecisionRequest = z.infer<typeof promptReviewDecisionRequestSchema>;
+
+/** Tool审核与Prompt审核是两套独立命令；这里绑定用户实际看到的来源、参数与Scope。 */
+export const toolExecutionDecisionRequestSchema = z
+  .object({
+    kind: z.enum(["approve", "reject"]),
+    explanation: z.string().trim().min(1).max(2_000).optional(),
+    binding: z
+      .object({
+        productRunId: productRunIdSchema,
+        runRevision: z.number().int().positive(),
+        toolExecutionIntentId: toolExecutionIntentIdSchema,
+        intentRevision: z.number().int().positive(),
+        capabilityDescriptorSha256: sha256Schema,
+        inputSha256: sha256Schema,
+        scopeRef: capabilityScopeRefSchema,
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.kind === "approve" && value.explanation !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["explanation"], message: "批准不接受额外说明" });
+    }
+  });
+
+export type ToolExecutionDecisionRequest = z.infer<typeof toolExecutionDecisionRequestSchema>;
 
 /**
  * 选择表面可见的已发布Workflow投影。只暴露选择所需的字段；
@@ -831,6 +872,12 @@ export const lifeosProjectionSchema = z
     pendingNoteDecision: noteDecisionRequestSchema.nullable(),
     promptReview: promptReviewRequestDtoSchema.nullable().default(null),
     pendingPromptReviewDecision: promptReviewDecisionRequestSchema.nullable().default(null),
+    toolExecutions: toolExecutionsResponseSchema.default({
+      intents: [],
+      decisions: [],
+      results: [],
+    }),
+    pendingToolExecutionDecision: toolExecutionDecisionRequestSchema.nullable().default(null),
     dshSendReviewEnabled: z.boolean().default(false),
     dshSendReview: dshSendReviewSchema.nullable().default(null),
     bridgeDispatchReviewEnabled: z.boolean().default(false),

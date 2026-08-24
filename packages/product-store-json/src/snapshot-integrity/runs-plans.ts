@@ -61,6 +61,7 @@ export function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
     "pending/queued",
     "running/executing",
     "waiting_human/prompt_review",
+    "waiting_human/tool_review",
     "succeeded/completed",
     "failed/queued",
     "failed/executing",
@@ -107,13 +108,26 @@ export function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
           ? undefined
           : entities.promptReviewRequests[run.currentPromptReviewRequestId];
       if (run.status === "waiting_human") {
-        if (
-          run.phase !== "prompt_review" ||
-          currentReview === undefined ||
-          currentReview.productRunId !== run.productRunId ||
-          currentReview.status !== "open"
-        ) {
-          fail(`run ${run.productRunId} waiting_human缺少open Prompt Review`);
+        if (run.phase === "prompt_review") {
+          if (
+            currentReview === undefined ||
+            currentReview.productRunId !== run.productRunId ||
+            currentReview.status !== "open"
+          ) {
+            fail(`run ${run.productRunId} waiting_human缺少open Prompt Review`);
+          }
+        } else if (run.phase === "tool_review") {
+          if (
+            currentReview !== undefined ||
+            !Object.values(entities.toolExecutionIntents).some(
+              (intent) =>
+                intent.productRunId === run.productRunId && intent.status === "waiting_decision",
+            )
+          ) {
+            fail(`run ${run.productRunId} tool_review缺少等待决定的Tool Intent`);
+          }
+        } else {
+          fail(`run ${run.productRunId} waiting_human阶段非法`);
         }
       } else if (run.currentPromptReviewRequestId !== undefined) {
         fail(`run ${run.productRunId} 非waiting_human仍保留活动Prompt Review引用`);

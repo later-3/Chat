@@ -37,8 +37,13 @@ import {
 } from "./prompt-review-gate.js";
 import { hashExecutorValue } from "./executor-operation-store.js";
 import type { PiExecutorWorkspaceRoot } from "./executor-service.js";
-import type { ProjectBootstrapCandidate, ProjectBootstrapProposal } from "@chat/contracts";
-import { computeWorkspaceGrantSha256 } from "@chat/domain";
+import type {
+  ProjectBootstrapCandidate,
+  ProjectBootstrapProposal,
+  ResolvedCapabilitySnapshot,
+} from "@chat/contracts";
+import { computeWorkspaceGrantSha256, hashCanonical } from "@chat/domain";
+import { toolExecutionCommandId, type ToolExecutionProductPort } from "./tool-execution-gate.js";
 
 export interface AuthorizedDirectAgentInput {
   readonly productRunId: string;
@@ -59,7 +64,7 @@ export interface AuthorizedDirectAgentInput {
         readonly workspaceRootId?: string | undefined;
       }
     | {
-        readonly schemaVersion: "prompt-assembly.v2";
+        readonly schemaVersion: "prompt-assembly.v2" | "prompt-assembly.v4";
         readonly promptAssemblyId: string;
         readonly sha256: string;
         readonly systemPromptAppend: string;
@@ -82,6 +87,7 @@ export interface AuthorizedDirectAgentInput {
           readonly selectionMode?: "inherit_runtime_default" | "explicit" | undefined;
           /** Extension Tool也是Pi运行时能力，不能把私有协议收窄为内置枚举。 */
           readonly names: string[];
+          readonly capabilities?: ResolvedCapabilitySnapshot[] | undefined;
           readonly resources?:
             | {
                 readonly contextFiles: "inherit_runtime_default" | "disabled";
@@ -121,7 +127,7 @@ export function assertDirectExecutorWorkspaceGrant(
   configuredRoot: PiExecutorWorkspaceRoot | undefined,
 ): void {
   if (
-    promptAssembly.schemaVersion !== "prompt-assembly.v2" ||
+    promptAssembly.schemaVersion === "prompt-assembly.v1" ||
     promptAssembly.workspaceGrantSha256 === undefined
   ) {
     return;
@@ -162,6 +168,7 @@ export interface PiDirectExecutorServiceOptions {
     request: StartPiDirectExecutorOperationRequest,
   ) => Promise<AuthorizedDirectAgentInput>;
   readonly promptReviewProduct: DirectPromptReviewProductPort;
+  readonly toolExecutionProduct?: ToolExecutionProductPort;
   readonly publishResult: (input: PublishDirectAgentResultInput) => Promise<DirectAgentResultRef>;
   readonly projectBootstrapProduct?: ProjectBootstrapProductPort;
   readonly runner?: DirectAgentRunner;
@@ -267,7 +274,7 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
     await next();
   });
 
-  app.post("/internal/pi-direct-executor/v1/operations", async (c) => {
+  app.post("/internal/pi-direct-executor/v2/operations", async (c) => {
     try {
       const request = startPiDirectExecutorOperationRequestSchema.parse(await c.req.json());
       if (request.operationId !== operationIdForDirectAgentAttempt(request.directAgentAttemptId)) {
@@ -286,7 +293,7 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
     }
   });
 
-  app.get("/internal/pi-direct-executor/v1/operations/:operationId", (c) => {
+  app.get("/internal/pi-direct-executor/v2/operations/:operationId", (c) => {
     try {
       const operationId = piOperationIdSchema.parse(c.req.param("operationId"));
       return c.json(
@@ -297,7 +304,7 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
     }
   });
 
-  app.get("/internal/pi-direct-executor/v1/operations/:operationId/events", (c) => {
+  app.get("/internal/pi-direct-executor/v2/operations/:operationId/events", (c) => {
     try {
       const operationId = piOperationIdSchema.parse(c.req.param("operationId"));
       const rawAfter = c.req.query("afterSequence") ?? "0";
@@ -318,7 +325,7 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
   });
 
   app.post(
-    "/internal/pi-direct-executor/v1/operations/:operationId/prompt-review-decisions",
+    "/internal/pi-direct-executor/v2/operations/:operationId/prompt-review-decisions",
     async (c) => {
       try {
         const operationId = piOperationIdSchema.parse(c.req.param("operationId"));
@@ -411,7 +418,7 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
       let prompt = "";
       let history: DirectAgentRunInput["history"] = [];
       const tools =
-        authorizedInput.promptAssembly.schemaVersion === "prompt-assembly.v2"
+        authorizedInput.promptAssembly.schemaVersion !== "prompt-assembly.v1"
           ? authorizedInput.promptAssembly.tools
           : {
               capabilityMode: "read_only" as const,
@@ -419,7 +426,7 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
               estimatedTokens: 8_000 as const,
             };
       const requestOptions =
-        authorizedInput.promptAssembly.schemaVersion === "prompt-assembly.v2"
+        authorizedInput.promptAssembly.schemaVersion !== "prompt-assembly.v1"
           ? authorizedInput.promptAssembly.requestOptions
           : {
               providerId: P1_DIRECT_AGENT_PROFILE.providerId,
@@ -468,13 +475,16 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
         prompt,
         history,
         systemPromptAppend: authorizedInput.promptAssembly.systemPromptAppend,
-        ...(authorizedInput.promptAssembly.schemaVersion === "prompt-assembly.v2" &&
+        ...(authorizedInput.promptAssembly.schemaVersion !== "prompt-assembly.v1" &&
         authorizedInput.promptAssembly.piSystemPrompt !== undefined
           ? { piSystemPrompt: authorizedInput.promptAssembly.piSystemPrompt }
           : {}),
         tools,
         requestOptions,
         cwd,
+        ...(authorizedInput.promptAssembly.workspaceRootId === undefined
+          ? {}
+          : { workspaceRootId: authorizedInput.promptAssembly.workspaceRootId }),
         agentDir: options.agentDir,
         sessionsDir: options.sessionsDir,
         store: options.store,
@@ -486,6 +496,9 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
           ? {}
           : { projectBootstrapProduct: options.projectBootstrapProduct }),
         promptReview,
+        ...(options.toolExecutionProduct === undefined
+          ? {}
+          : { toolExecutionProduct: options.toolExecutionProduct }),
         promptReviewMode: authorizedInput.promptReviewMode,
         signal: controller.signal,
         resume,
@@ -561,6 +574,63 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
   }
 
   const recover = async (): Promise<void> => {
+    if (options.toolExecutionProduct !== undefined) {
+      for (const recovery of options.store.getToolResultCommitRecoveries()) {
+        const capability = recovery.intent.capability;
+        if (capability?.approvalPolicy !== "product_decision_required") continue;
+        const toolExecutionIntentId = `tei_${hashCanonical("id.tool-execution-intent.v1", {
+          productRunId: recovery.request.productRunId,
+          directAgentAttemptId: recovery.request.directAgentAttemptId,
+          toolCallId: recovery.intent.toolCallId,
+          capabilityId: capability.ref.capabilityId,
+          inputSha256: recovery.intent.inputSha256,
+        }).slice(0, 40)}`;
+        await options.toolExecutionProduct
+          .commitResult({
+            commandId: toolExecutionCommandId(
+              "commit-tool-execution-result",
+              recovery.request.operationId,
+              recovery.intent.toolCallId,
+            ),
+            productRunId: recovery.request.productRunId,
+            directAgentAttemptId: recovery.request.directAgentAttemptId,
+            toolExecutionIntentId,
+            outcome: recovery.result.type === "tool.completed" ? "completed" : "failed",
+            resultSha256: recovery.result.resultSha256,
+            journalResultSha256: recovery.journalResultSha256,
+          })
+          // 已提交Receipt、Intent尚未dispatching或产品暂不可用都不会触发handler；
+          // 后续重启继续用完全相同的Command重放。
+          .catch(() => undefined);
+      }
+      for (const recovery of options.store.getToolOutcomeUnknownRecoveries()) {
+        const capability = recovery.intent.capability;
+        if (capability?.approvalPolicy !== "product_decision_required") continue;
+        const toolExecutionIntentId = `tei_${hashCanonical("id.tool-execution-intent.v1", {
+          productRunId: recovery.request.productRunId,
+          directAgentAttemptId: recovery.request.directAgentAttemptId,
+          toolCallId: recovery.intent.toolCallId,
+          capabilityId: capability.ref.capabilityId,
+          inputSha256: recovery.intent.inputSha256,
+        }).slice(0, 40)}`;
+        // Product Intent若尚未越过claim会拒绝unknown提交；只有已dispatching的旧许可
+        // 能以同一确定性身份收敛，绝不在恢复中重新claim或执行handler。
+        await options.toolExecutionProduct
+          .commitResult({
+            commandId: toolExecutionCommandId(
+              "unknown-tool-execution",
+              recovery.request.operationId,
+              recovery.intent.toolCallId,
+            ),
+            productRunId: recovery.request.productRunId,
+            directAgentAttemptId: recovery.request.directAgentAttemptId,
+            toolExecutionIntentId,
+            outcome: "outcome_unknown",
+            errorCode: "tool_execution.process_restart_unknown",
+          })
+          .catch(() => undefined);
+      }
+    }
     for (const operationId of options.store.getOperationIds()) {
       const snapshot = options.store.getSnapshot(operationId);
       if (snapshot.status === "waiting_prompt_review" && snapshot.decision?.kind === "approve") {

@@ -414,6 +414,16 @@ describe("Node Catalog与Blueprint一致性", () => {
       runtime: { kind: "pi_coding_agent", baseVariantKey: "pi_cli_default" },
       systemPrompt: { mode: "replace", bodyMarkdown: "只对本次Run生效的Agent身份。" },
       enabledToolNames: ["read", "bash"],
+      enabledCapabilityRefs: [
+        {
+          capabilityId: "pi_direct:tool:builtin:read",
+          descriptorSha256: "a".repeat(64),
+        },
+        {
+          capabilityId: "pi_direct:tool:builtin:bash",
+          descriptorSha256: "b".repeat(64),
+        },
+      ],
       resources: {
         contextFiles: "disabled",
         skills: "inherit_runtime_default",

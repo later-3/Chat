@@ -4,6 +4,7 @@ import {
   agentResourcesSchema,
   agentRuntimeSchema,
 } from "./agent-configuration.js";
+import { capabilitySelectionRefSchema } from "./capability.js";
 import { sha256Schema } from "./hash.js";
 import { noteKindSchema, noteSourceRefSchema, noteTagsSchema } from "./note.js";
 import {
@@ -410,6 +411,8 @@ const agentTemporaryConfigurationFields = {
   runtime: agentRuntimeSchema,
   systemPrompt: temporaryAgentSystemPromptSchema,
   enabledToolNames: agentEnabledToolNamesSchema,
+  /** 临时配置同样绑定qualified identity；省略只兼容既有草稿。 */
+  enabledCapabilityRefs: z.array(capabilitySelectionRefSchema).max(32).optional(),
   resources: agentResourcesSchema,
   basedOnVersionId: agentVersionIdSchema.optional(),
   basedOnVersionSha256: sha256Schema.optional(),

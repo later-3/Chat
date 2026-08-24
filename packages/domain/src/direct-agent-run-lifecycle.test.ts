@@ -42,4 +42,23 @@ describe("Direct Agent Run生命周期", () => {
       ),
     ).toThrow(DomainInvariantError);
   });
+
+  it("Tool Review是合法等待态，并能恢复执行或保守收敛unknown", () => {
+    const waiting = transitionDirectAgentRunLifecycle(
+      { status: "running", phase: "executing" },
+      { status: "waiting_human", phase: "tool_review" },
+    );
+    expect(
+      transitionDirectAgentRunLifecycle(waiting, {
+        status: "running",
+        phase: "executing",
+      }),
+    ).toEqual({ status: "running", phase: "executing" });
+    expect(
+      transitionDirectAgentRunLifecycle(waiting, {
+        status: "outcome_unknown",
+        phase: "tool_review",
+      }),
+    ).toEqual({ status: "outcome_unknown", phase: "tool_review" });
+  });
 });

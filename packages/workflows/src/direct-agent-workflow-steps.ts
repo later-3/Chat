@@ -200,6 +200,7 @@ export async function loadPromptReviewDecisionStep(
 export async function submitPromptReviewDecisionStep(
   input: DirectWorkflowStepIdentity & {
     readonly operationId: string;
+    readonly requestSha256: string;
     readonly directAgentAttemptId: string;
     readonly review: DirectPromptReviewRef;
     readonly promptReviewDecisionId: string;
@@ -213,6 +214,7 @@ export async function submitPromptReviewDecisionStep(
     async () =>
       requireDirectExecutor().submitDecision({
         operationId: input.operationId,
+        requestSha256: input.requestSha256,
         review: input.review,
         promptReviewDecisionId: input.promptReviewDecisionId,
         onEvent: (event) =>

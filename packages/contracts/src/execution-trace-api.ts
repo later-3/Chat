@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { productRunIdSchema } from "./ids.js";
+import { agentRuntimeToolNameSchema } from "./agent-runtime-capabilities.js";
+import { resolvedCapabilitySnapshotSchema } from "./capability.js";
 
 /**
  * 浏览器可见的执行轨迹不是内部Trace原文，而是经过白名单裁剪的只读投影。
@@ -13,17 +15,7 @@ export const executionTraceCursorSchema = z
   .int()
   .nonnegative()
   .max(Number.MAX_SAFE_INTEGER);
-export const executionTraceToolNameSchema = z.enum([
-  "read",
-  "grep",
-  "find",
-  "ls",
-  "edit",
-  "write",
-  "bash",
-  "memory_query",
-  "memory_write",
-]);
+export const executionTraceToolNameSchema = agentRuntimeToolNameSchema;
 const displaySchema = z.string().max(32_000);
 const sequenceSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const timestampSchema = z.iso.datetime();
@@ -80,6 +72,7 @@ const toolCallItemSchema = z
     type: z.literal("tool_call"),
     toolCallId: z.string().min(1).max(160),
     toolName: executionTraceToolNameSchema,
+    capability: resolvedCapabilitySnapshotSchema.optional(),
     input: displaySchema,
     inputTruncated: z.boolean(),
   })
@@ -92,6 +85,7 @@ const toolResultItemSchema = z
     type: z.literal("tool_result"),
     toolCallId: z.string().min(1).max(160),
     toolName: executionTraceToolNameSchema,
+    capability: resolvedCapabilitySnapshotSchema.optional(),
     outcome: z.enum(["success", "failure", "rejected", "unknown"]),
     output: displaySchema,
     outputTruncated: z.boolean(),

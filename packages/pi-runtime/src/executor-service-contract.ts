@@ -147,6 +147,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       turnIndex: z.number().int().nonnegative().max(1000),
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
+      capabilityId: z.string().min(8).max(240).optional(),
+      capabilityRefSha256: sha256Schema.optional(),
       inputSha256: sha256Schema,
       inputDisplay: observableDisplaySchema,
       inputDisplayTruncated: z.boolean(),
@@ -214,6 +216,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       turnIndex: z.number().int().nonnegative().max(1000),
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
+      capabilityId: z.string().min(8).max(240).optional(),
+      capabilityRefSha256: sha256Schema.optional(),
       inputSha256: sha256Schema,
       inputDisplay: observableDisplaySchema,
       inputDisplayTruncated: z.boolean(),
@@ -228,6 +232,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       turnIndex: z.number().int().nonnegative().max(1000),
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
+      capabilityId: z.string().min(8).max(240).optional(),
+      capabilityRefSha256: sha256Schema.optional(),
       // v1早期已落盘Result没有复制Intent Hash；读取继续兼容，但Store拒绝新追加缺失/不匹配值。
       inputSha256: sha256Schema.optional(),
       resultSha256: sha256Schema,
@@ -245,6 +251,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       turnIndex: z.number().int().nonnegative().max(1000),
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
+      capabilityId: z.string().min(8).max(240).optional(),
+      capabilityRefSha256: sha256Schema.optional(),
       // v1早期已落盘Result没有复制Intent Hash；读取继续兼容，但Store拒绝新追加缺失/不匹配值。
       inputSha256: sha256Schema.optional(),
       resultSha256: sha256Schema,
@@ -263,6 +271,8 @@ export const piExecutorEventSchema = z.discriminatedUnion("type", [
       turnIndex: z.number().int().nonnegative().max(1000),
       toolCallId: z.string().min(1).max(160),
       toolName: piToolNameSchema,
+      capabilityId: z.string().min(8).max(240).optional(),
+      capabilityRefSha256: sha256Schema.optional(),
       inputSha256: sha256Schema,
       inputDisplay: observableDisplaySchema,
       inputDisplayTruncated: z.boolean(),
@@ -355,7 +365,7 @@ export const piExecutorOperationSnapshotSchema = z
   .object({
     schemaVersion: z.literal(PI_EXECUTOR_PROTOCOL_VERSION),
     /** 缺省表示只读兼容旧v1；新Operation必须使用完整状态机证据。 */
-    integrityVersion: z.literal("full-operation.v2").optional(),
+    integrityVersion: z.enum(["full-operation.v2", "full-operation.v3"]).optional(),
     operationId: piOperationIdSchema,
     requestSha256: sha256Schema,
     /** v2私有响应携带完整耐久请求，Client据此重算Hash；旧v1快照可缺省。 */

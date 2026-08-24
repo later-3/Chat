@@ -117,6 +117,7 @@ export const persistExecutionCandidateRequestSchema = z
     commandId: commandIdSchema,
     productRunId: productRunIdSchema,
     executionContractId: executionContractIdSchema,
+    evidencePolicyVersion: z.literal("structured-tool-result.v1"),
     stepResults: executionCandidateSchema.shape.stepResults,
     finalOutput: z
       .object({

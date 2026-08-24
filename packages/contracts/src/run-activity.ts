@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { productRunIdSchema, runAttemptIdSchema } from "./ids.js";
+import { agentRuntimeToolNameSchema } from "./agent-runtime-capabilities.js";
+import { resolvedCapabilitySnapshotSchema } from "./capability.js";
 
 /**
  * Chat Session 中由 Workflow / Agent Runtime 产生的可展示活动。
@@ -21,17 +23,6 @@ const stableErrorCodeSchema = z
   .regex(/^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*$/u)
   .max(80);
 const nodeKindSchema = z.enum(["planner", "executor", "direct_agent", "note_capture"]);
-const toolNameSchema = z.enum([
-  "read",
-  "grep",
-  "find",
-  "ls",
-  "edit",
-  "write",
-  "bash",
-  "memory_query",
-  "memory_write",
-]);
 const displaySchema = z.string().max(32_000);
 const providerSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/u);
 const modelSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u);
@@ -91,7 +82,9 @@ const runActivityEventShapeSchema = z.discriminatedUnion("activityType", [
         .regex(/^wnr_[A-Za-z0-9]+$/u)
         .optional(),
       toolCallId: z.string().min(1).max(160),
-      toolName: toolNameSchema,
+      toolName: agentRuntimeToolNameSchema,
+      /** v1早期Journal没有qualified identity；新Pi事件必须写入。 */
+      capability: resolvedCapabilitySnapshotSchema.optional(),
       inputDisplay: displaySchema.optional(),
       inputDisplayTruncated: z.boolean().optional(),
       resultDisplay: displaySchema.optional(),

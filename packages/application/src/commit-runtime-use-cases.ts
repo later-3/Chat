@@ -23,6 +23,7 @@ import type {
 } from "@chat/contracts";
 import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
+import { readExactCommandReceipt } from "./product-store-port.js";
 import { emitProductRunTransition, settleRunWithoutSuccess } from "./run-settlement.js";
 import { emitRunEvent, safeErrorType } from "./trace-helpers.js";
 import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
@@ -36,11 +37,67 @@ export async function persistExecutionCandidate(
   deps: ApplicationDeps,
   input: Omit<PersistExecutionCandidateRequest, "schemaVersion">,
 ): Promise<{ executionCandidateId: ExecutionCandidateId; sha256: string }> {
+  const requestSha256 = hashCanonical("command.persist-execution-candidate.v1", input);
+  const exact = await readExactCommandReceipt(deps.store, () => ({
+    commandId: input.commandId,
+    commandType: "PersistExecutionCandidate",
+    requestSha256,
+  }));
+  if (exact.receipt !== undefined) {
+    const executionCandidateId = exact.receipt.resultRefs[
+      "executionCandidateId"
+    ] as ExecutionCandidateId;
+    const candidate = exact.snapshot.entities.executionCandidates[executionCandidateId];
+    if (
+      candidate === undefined ||
+      candidate.productRunId !== input.productRunId ||
+      candidate.executionContractId !== input.executionContractId
+    ) {
+      throw revisionConflict("Execution Candidate Receipt缺少不可变命令结果");
+    }
+    return { executionCandidateId: candidate.executionCandidateId, sha256: candidate.sha256 };
+  }
+  const preflight = await deps.store.read({ kind: "committedSnapshot" });
+  const preflightContract =
+    preflight.snapshot.entities.executionContracts[input.executionContractId];
+  if (preflightContract === undefined || preflightContract.productRunId !== input.productRunId) {
+    throw notFound("Execution Contract不存在");
+  }
+  for (const stepResult of input.stepResults) {
+    const contractStep = preflightContract.steps.find((step) => step.stepId === stepResult.stepId);
+    if (contractStep === undefined) throw revisionConflict("Execution Step不在合同中");
+    const evidenceRefs = stepResult.executionEvidenceRefs ?? [];
+    const requiresRuntimeEvidence = contractStep.capabilityRefs.some(
+      (capability) => capability !== "markdown_text_compose",
+    );
+    if (evidenceRefs.some((ref) => ref.outcome !== "completed")) {
+      throw revisionConflict(`步骤${stepResult.stepId}包含非成功Tool Evidence`);
+    }
+    if (
+      (requiresRuntimeEvidence || evidenceRefs.length > 0) &&
+      deps.executionEvidenceVerifier === undefined
+    ) {
+      throw revisionConflict(`步骤${stepResult.stepId}缺少权威Runtime Evidence Port`);
+    }
+    if (
+      deps.executionEvidenceVerifier !== undefined &&
+      (requiresRuntimeEvidence || evidenceRefs.length > 0)
+    ) {
+      try {
+        await deps.executionEvidenceVerifier.verify({
+          executionAttemptId: stepResult.executionAttemptId,
+          evidenceRefs,
+        });
+      } catch {
+        throw revisionConflict(`步骤${stepResult.stepId}的Pi Journal Evidence不存在或发生漂移`);
+      }
+    }
+  }
   const now = deps.now();
   const executionCandidateId = deps.ids.executionCandidate();
-  const requestSha256 = hashCanonical("command.persist-execution-candidate.v1", input);
   const sha256 = hashCanonical("execution-candidate.v1", {
     executionContractId: input.executionContractId,
+    evidencePolicyVersion: input.evidencePolicyVersion,
     stepResults: input.stepResults,
     finalOutput: input.finalOutput,
     completionCriteriaEvidence: input.completionCriteriaEvidence,
@@ -74,6 +131,17 @@ export async function persistExecutionCandidate(
         }
         const contractStep = contract.steps.find((step) => step.stepId === stepResult.stepId);
         if (contractStep === undefined) throw revisionConflict("Execution Step不在合同中");
+        const evidenceRefs = stepResult.executionEvidenceRefs ?? [];
+        if (
+          new Set(evidenceRefs.map((ref) => ref.toolCallId)).size !== evidenceRefs.length ||
+          evidenceRefs.some(
+            (ref) =>
+              ref.executionAttemptId !== stepResult.executionAttemptId ||
+              ref.capabilityId !== `pi_planning:tool:builtin:${ref.localName}`,
+          )
+        ) {
+          throw revisionConflict(`步骤${stepResult.stepId}的Tool Evidence Ref血缘不合法`);
+        }
         if (
           stepResult.dependencyRefs.length !== contractStep.dependsOn.length ||
           stepResult.dependencyRefs.some((ref, index) => {
@@ -110,6 +178,9 @@ export async function persistExecutionCandidate(
           sections: stepResult.sections,
           successCriteriaEvidence: stepResult.successCriteriaEvidence,
           criteriaEvidence: stepResult.criteriaEvidence,
+          ...(stepResult.executionEvidenceRefs === undefined
+            ? {}
+            : { executionEvidenceRefs: stepResult.executionEvidenceRefs }),
           warnings: stepResult.warnings,
         });
         if (expectedStepSha256 !== stepResult.sha256) {
@@ -122,6 +193,7 @@ export async function persistExecutionCandidate(
         executionCandidateId,
         productRunId: input.productRunId,
         executionContractId: input.executionContractId,
+        evidencePolicyVersion: input.evidencePolicyVersion,
         stepResults: input.stepResults,
         finalOutput: input.finalOutput,
         completionCriteriaEvidence: input.completionCriteriaEvidence,
@@ -435,6 +507,7 @@ function validatePersistedCandidate(
       stepResults: candidate.stepResults,
       finalOutputSections: candidate.finalOutput.sections,
       completionCriteriaEvidence: candidate.completionCriteriaEvidence,
+      structuredEvidenceRequired: candidate.evidencePolicyVersion === "structured-tool-result.v1",
     },
     { strictEvidence },
   );

@@ -15,6 +15,7 @@ import {
 import type { LifeosBridgeService } from "../src/bridge-service.ts";
 import type { PromptSourceFileOpener } from "../src/prompt-source-file-opener.ts";
 import type { PromptStudioBridgeService } from "../src/prompt-studio-bridge-service.ts";
+import { readRuntimeToolFixture } from "./runtime-tool-fixture.ts";
 
 function request(headers: IncomingMessage["headers"]): IncomingMessage {
   return { headers } as IncomingMessage;
@@ -344,7 +345,7 @@ test("same-origin Agent Version routes forward typed create requests and immutab
     createdAt: "2026-08-22T00:00:00.000Z",
   });
   const profile = agentProfileDtoSchema.parse({
-    schemaVersion: "chat-agent-profile-api.v2",
+    schemaVersion: "chat-agent-profile-api.v3",
     agentKey: "direct",
     title: "执行 Agent",
     description: "HTTP路由合同测试。",
@@ -381,20 +382,15 @@ test("same-origin Agent Version routes forward typed create requests and immutab
           title: "Read only",
           description: "只读",
           enabledToolNames: ["read"],
+          readiness: "available",
+          diagnostics: [],
           piSystemPrompt: {
             bodyMarkdown: "You are an expert coding assistant operating inside pi.",
             sha256: "e".repeat(64),
             dynamicPlaceholders: ["WORKSPACE_ROOT"],
             sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
           },
-          tools: [
-            {
-              name: "read",
-              description: "读取文件",
-              parametersJson: "{}",
-              sourceRelativePath: "pi/packages/coding-agent/src/core/tools/read.ts",
-            },
-          ],
+          tools: [readRuntimeToolFixture()],
         },
       ],
       finalReviewNote: "最终内容以发送前审核为准。",
@@ -563,7 +559,7 @@ test("same-origin Agent Profile route forwards only validated workspace scopes",
   const studio = {
     agents: async (query: unknown) => {
       calls.push(query);
-      return { schemaVersion: "chat-agent-profile-api.v2", items: [] };
+      return { schemaVersion: "chat-agent-profile-api.v3", items: [] };
     },
   } as unknown as PromptStudioBridgeService;
   const server = createServer(

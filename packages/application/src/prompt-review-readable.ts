@@ -141,7 +141,10 @@ function messageSources(
     const compiled = assemblySource(assembly, "system");
     return compiled === undefined ? SYSTEM_SOURCES : [...SYSTEM_SOURCES, compiled];
   }
-  if (assembly?.schemaVersion === "prompt-assembly.v2") {
+  if (
+    assembly?.schemaVersion === "prompt-assembly.v2" ||
+    assembly?.schemaVersion === "prompt-assembly.v4"
+  ) {
     const text = payloadContentText(content);
     const index =
       text === undefined

@@ -13,6 +13,12 @@ import {
   publishPromptReviewRuntimeResponseSchema,
   prepareProjectBootstrapRuntimeRequestSchema,
   prepareProjectBootstrapRuntimeResponseSchema,
+  publishToolExecutionIntentRuntimeRequestSchema,
+  publishToolExecutionIntentRuntimeResponseSchema,
+  claimToolExecutionDecisionRuntimeRequestSchema,
+  claimToolExecutionDecisionRuntimeResponseSchema,
+  commitToolExecutionResultRuntimeRequestSchema,
+  commitToolExecutionResultRuntimeResponseSchema,
 } from "@chat/contracts";
 import { z, type ZodType } from "zod";
 import {
@@ -31,6 +37,8 @@ import type {
   DirectPromptReviewProductPort,
   LoadedDirectPromptReviewDecision,
 } from "./prompt-review-gate.js";
+import type { ToolExecutionProductPort } from "./tool-execution-gate.js";
+import { hashCanonical } from "@chat/domain";
 
 const INTERNAL_RUNTIME_BASE_PATH = "/internal/runtime/v1";
 
@@ -94,7 +102,11 @@ export function createDirectAgentRuntimeApiCallbacks(
   options: DirectAgentRuntimeApiCallbacksOptions,
 ): Pick<
   PiDirectExecutorServiceOptions,
-  "authorizeOperation" | "promptReviewProduct" | "publishResult" | "projectBootstrapProduct"
+  | "authorizeOperation"
+  | "promptReviewProduct"
+  | "toolExecutionProduct"
+  | "publishResult"
+  | "projectBootstrapProduct"
 > {
   const authorizeOperation = async (
     request: StartPiDirectExecutorOperationRequest,
@@ -295,6 +307,89 @@ export function createDirectAgentRuntimeApiCallbacks(
     });
   };
 
+  const toolExecutionProduct: ToolExecutionProductPort = {
+    async publish(input) {
+      const response = await postRuntime({
+        options,
+        path: DIRECT_AGENT_RUNTIME_PATHS.publishToolExecutionIntent,
+        body: publishToolExecutionIntentRuntimeRequestSchema.parse({
+          schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+          scopeRef: input.capability.ref.scopeRef,
+          effect: input.capability.effect,
+        }),
+        responseSchema: publishToolExecutionIntentRuntimeResponseSchema,
+      });
+      const expectedIntentId = `tei_${hashCanonical("id.tool-execution-intent.v1", {
+        productRunId: input.productRunId,
+        directAgentAttemptId: input.directAgentAttemptId,
+        toolCallId: input.toolCallId,
+        capabilityId: input.capability.ref.capabilityId,
+        inputSha256: input.inputSha256,
+      }).slice(0, 40)}`;
+      if (
+        response.toolExecutionIntentId !== expectedIntentId ||
+        response.revision !== 1 ||
+        response.status !== "waiting_decision"
+      ) {
+        throw new DirectAgentRuntimeCallbackError(
+          "direct_runtime.tool_intent_binding_mismatch",
+          true,
+        );
+      }
+      return {
+        toolExecutionIntentId: response.toolExecutionIntentId,
+        revision: response.revision,
+      };
+    },
+    async claim(input) {
+      const response = await postRuntime({
+        options,
+        path: DIRECT_AGENT_RUNTIME_PATHS.claimToolExecutionDecision,
+        body: claimToolExecutionDecisionRuntimeRequestSchema.parse({
+          schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        responseSchema: claimToolExecutionDecisionRuntimeResponseSchema,
+      });
+      if (
+        response.toolExecutionIntentId !== input.toolExecutionIntentId ||
+        (response.status === "waiting_decision" && response.revision !== input.intentRevision) ||
+        ((response.status === "authorized" || response.status === "rejected") &&
+          (response.decisionIntentRevision !== input.intentRevision ||
+            response.capabilityDescriptorSha256 !== input.capabilityDescriptorSha256 ||
+            response.inputSha256 !== input.inputSha256 ||
+            JSON.stringify(response.scopeRef) !== JSON.stringify(input.scopeRef)))
+      ) {
+        throw new DirectAgentRuntimeCallbackError(
+          "direct_runtime.tool_decision_binding_mismatch",
+          true,
+        );
+      }
+      return response;
+    },
+    async commitResult(input) {
+      const response = await postRuntime({
+        options,
+        path: DIRECT_AGENT_RUNTIME_PATHS.commitToolExecutionResult,
+        body: commitToolExecutionResultRuntimeRequestSchema.parse({
+          schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        responseSchema: commitToolExecutionResultRuntimeResponseSchema,
+      });
+      if (
+        response.toolExecutionIntentId !== input.toolExecutionIntentId ||
+        response.status !== input.outcome
+      ) {
+        throw new DirectAgentRuntimeCallbackError(
+          "direct_runtime.tool_result_binding_mismatch",
+          true,
+        );
+      }
+    },
+  };
+
   const projectBootstrapProduct: ProjectBootstrapProductPort = {
     async prepare(input) {
       const response = await postRuntime({
@@ -318,5 +413,11 @@ export function createDirectAgentRuntimeApiCallbacks(
     },
   };
 
-  return { authorizeOperation, promptReviewProduct, publishResult, projectBootstrapProduct };
+  return {
+    authorizeOperation,
+    promptReviewProduct,
+    toolExecutionProduct,
+    publishResult,
+    projectBootstrapProduct,
+  };
 }

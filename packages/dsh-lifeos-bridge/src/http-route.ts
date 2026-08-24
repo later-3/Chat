@@ -10,6 +10,7 @@ import {
   noteDecisionRequestSchema,
   promptSelectionRequestSchema,
   promptReviewDecisionRequestSchema,
+  toolExecutionDecisionRequestSchema,
   projectBootstrapDecisionRequestSchema,
   workflowSelectionRequestSchema,
   saveWorkflowAgentNodeConfigurationRequestSchema,
@@ -51,6 +52,7 @@ const BRIDGE_DISPATCH_REVIEW_DECISIONS_PATH =
 const DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/decisions$/;
 const NOTE_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/note-decisions$/;
 const PROMPT_REVIEW_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/prompt-review-decisions$/;
+const TOOL_EXECUTION_DECISION_PATH = /^\/lifeos\/sessions\/([^/]+)\/tool-execution-decisions$/;
 const PROJECT_BOOTSTRAP_DECISION_PATH =
   /^\/lifeos\/sessions\/([^/]+)\/project-bootstrap-decisions$/;
 const WORKFLOW_SELECTION_PATH = /^\/lifeos\/sessions\/([^/]+)\/workflow-selection$/;
@@ -980,6 +982,23 @@ export function createLifeosRouteHandler(
           res,
           200,
           await service.decidePromptReview(sessionIdFrom(promptReviewDecisionMatch), parsed.data),
+        );
+        return;
+      }
+      const toolExecutionDecisionMatch = TOOL_EXECUTION_DECISION_PATH.exec(url.pathname);
+      if (req.method === "POST" && toolExecutionDecisionMatch !== null) {
+        const parsed = toolExecutionDecisionRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_tool_execution_decision_invalid",
+            "Tool Execution Decision body is invalid",
+          );
+        }
+        sendJson(
+          res,
+          200,
+          await service.decideToolExecution(sessionIdFrom(toolExecutionDecisionMatch), parsed.data),
         );
         return;
       }

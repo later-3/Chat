@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import type { ExecutionEvidenceRef } from "@chat/contracts";
 import { executorStepCandidateSchema, projectExecutorStepCandidate } from "./executor.js";
 import {
   PI_EXECUTOR_PROTOCOL_VERSION,
@@ -16,32 +17,49 @@ import {
   type StartPiExecutorOperationRequest,
 } from "./executor-service-contract.js";
 
-const STORE_SCHEMA_VERSION = "pi-executor-operation-store.v1";
+const STORE_SCHEMA_VERSION = "pi-executor-operation-store.v2";
+const LEGACY_STORE_SCHEMA_VERSION = "pi-executor-operation-store.v1";
 const stableErrorCodeSchema = z
   .string()
   .regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/u)
   .max(80);
 
-const operationRecordSchema = z
+const operationRecordFields = {
+  operationId: piOperationIdSchema,
+  requestSha256: z.string().regex(/^[0-9a-f]{64}$/u),
+  request: startPiExecutorOperationRequestSchema,
+  status: piExecutorOperationStatusSchema,
+  sessionId: piRuntimeSessionIdSchema.optional(),
+  events: z.array(piExecutorEventSchema).max(100_000),
+  result: executorStepCandidateSchema.optional(),
+  resultSha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/u)
+    .optional(),
+  errorCode: stableErrorCodeSchema.optional(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+} as const;
+
+/** 新外层代际使v3完整性字段不可通过删除discriminator降级成历史记录。 */
+const currentOperationRecordSchema = z
   .object({
     schemaVersion: z.literal(STORE_SCHEMA_VERSION),
-    integrityVersion: z.literal("full-operation.v2").optional(),
-    operationId: piOperationIdSchema,
-    requestSha256: z.string().regex(/^[0-9a-f]{64}$/u),
-    request: startPiExecutorOperationRequestSchema,
-    status: piExecutorOperationStatusSchema,
-    sessionId: piRuntimeSessionIdSchema.optional(),
-    events: z.array(piExecutorEventSchema).max(100_000),
-    result: executorStepCandidateSchema.optional(),
-    resultSha256: z
-      .string()
-      .regex(/^[0-9a-f]{64}$/u)
-      .optional(),
-    errorCode: stableErrorCodeSchema.optional(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
+    integrityVersion: z.literal("full-operation.v3"),
+    ...operationRecordFields,
   })
   .strict();
+
+/** 真正历史v1只允许缺失integrityVersion或已发布的full-operation.v2。 */
+const legacyOperationRecordSchema = z
+  .object({
+    schemaVersion: z.literal(LEGACY_STORE_SCHEMA_VERSION),
+    integrityVersion: z.literal("full-operation.v2").optional(),
+    ...operationRecordFields,
+  })
+  .strict();
+
+const operationRecordSchema = z.union([currentOperationRecordSchema, legacyOperationRecordSchema]);
 
 type OperationRecord = z.infer<typeof operationRecordSchema>;
 export type PiExecutorEventPayload = PiExecutorEvent extends infer Event
@@ -129,6 +147,42 @@ export interface PiExecutorOperationJournalInput {
   readonly events: readonly PiExecutorEvent[];
 }
 
+export function executionEvidenceRefsFromPiJournal(input: {
+  readonly executionAttemptId: string;
+  readonly events: readonly PiExecutorEvent[];
+}): readonly ExecutionEvidenceRef[] {
+  const intents = new Map(
+    input.events.flatMap((event) =>
+      event.type === "tool.intent_persisted" ? [[event.toolCallId, event] as const] : [],
+    ),
+  );
+  return input.events.flatMap((event) => {
+    if (event.type !== "tool.completed" && event.type !== "tool.failed") return [];
+    const intent = intents.get(event.toolCallId);
+    if (
+      intent === undefined ||
+      event.inputSha256 === undefined ||
+      event.capabilityId === undefined ||
+      event.capabilityId !== intent.capabilityId ||
+      event.toolName !== intent.toolName
+    ) {
+      throw new PiExecutorJournalIntegrityError();
+    }
+    return [
+      {
+        kind: "pi_tool_result" as const,
+        executionAttemptId: input.executionAttemptId as never,
+        capabilityId: event.capabilityId,
+        localName: event.toolName,
+        toolCallId: event.toolCallId,
+        inputSha256: event.inputSha256,
+        resultSha256: event.resultSha256,
+        outcome: event.type === "tool.completed" ? ("completed" as const) : ("failed" as const),
+      },
+    ];
+  });
+}
+
 /**
  * Store持久化/open与Client共用的完整状态机。协议optional字段只为真正旧v1读取保留；
  * 声明full-operation.v2后，任何Result/Provider证据缺失或生命周期降级都失败关闭。
@@ -142,13 +196,16 @@ export function validatePiExecutorOperationJournal(
   const failJournal = (): never => {
     throw new PiExecutorJournalIntegrityError();
   };
-  const requiresFullOperationV2 = snapshot.integrityVersion === "full-operation.v2";
+  const requiresFullOperationV2 =
+    snapshot.integrityVersion === "full-operation.v2" ||
+    snapshot.integrityVersion === "full-operation.v3";
+  const requiresCapabilityRef = snapshot.integrityVersion === "full-operation.v3";
   if (
     request.operationId !== snapshot.operationId ||
     hashExecutorValue(request) !== snapshot.requestSha256 ||
     (snapshot.request !== undefined &&
       hashExecutorValue(snapshot.request) !== snapshot.requestSha256) ||
-    (snapshot.integrityVersion === "full-operation.v2" && snapshot.request === undefined) ||
+    (requiresFullOperationV2 && snapshot.request === undefined) ||
     snapshot.lastEventSequence !== events.length
   ) {
     failJournal();
@@ -280,7 +337,14 @@ export function validatePiExecutorOperationJournal(
       if (
         activeTurn !== event.turnIndex ||
         intents.has(event.toolCallId) ||
-        seenToolCallIds.has(event.toolCallId)
+        seenToolCallIds.has(event.toolCallId) ||
+        (requiresCapabilityRef &&
+          (event.capabilityId !== `pi_planning:tool:builtin:${event.toolName}` ||
+            event.capabilityRefSha256 !==
+              hashExecutorValue({
+                capabilityId: event.capabilityId,
+                localName: event.toolName,
+              })))
       )
         failJournal();
       intents.set(event.toolCallId, event);
@@ -302,6 +366,9 @@ export function validatePiExecutorOperationJournal(
       intent.sessionId !== event.sessionId ||
       intent.turnIndex !== event.turnIndex ||
       intent.toolName !== event.toolName ||
+      (requiresCapabilityRef &&
+        (event.capabilityId !== intent.capabilityId ||
+          event.capabilityRefSha256 !== intent.capabilityRefSha256)) ||
       (requiresFullOperationV2 &&
         (event.type === "tool.completed" || event.type === "tool.failed") &&
         event.inputSha256 === undefined) ||
@@ -416,7 +483,19 @@ export function validatePiExecutorOperationJournal(
       request.contract.completionCriteria,
       request.contract.steps.at(-1)?.stepId === request.stepId,
     );
-    if (JSON.stringify(expectedCandidate) !== JSON.stringify(result)) failJournal();
+    const { executionEvidenceRefs: _expectedEvidence, ...candidateWithoutEvidence } = result;
+    void _expectedEvidence;
+    if (JSON.stringify(expectedCandidate) !== JSON.stringify(candidateWithoutEvidence))
+      failJournal();
+    if (requiresCapabilityRef) {
+      const expectedEvidence = executionEvidenceRefsFromPiJournal({
+        executionAttemptId: request.executionAttemptId,
+        events,
+      });
+      if (JSON.stringify(result.executionEvidenceRefs ?? []) !== JSON.stringify(expectedEvidence)) {
+        failJournal();
+      }
+    }
     const assistantEvidence = [...events]
       .reverse()
       .find((event) => event.type === "message.completed" && event.role === "assistant");
@@ -503,6 +582,7 @@ interface PersistBoundaryEvidence {
  */
 export class PiExecutorOperationStore {
   private readonly records = new Map<string, OperationRecord>();
+  private readonly legacyReadOnlyOperationIds = new Set<string>();
   private readonly mutationTails = new Map<string, Promise<void>>();
 
   private constructor(
@@ -536,6 +616,9 @@ export class PiExecutorOperationStore {
       }
       validateOperationRecord(record);
       store.records.set(record.operationId, record);
+      if (record.schemaVersion === LEGACY_STORE_SCHEMA_VERSION) {
+        store.legacyReadOnlyOperationIds.add(record.operationId);
+      }
     }
     await store.reconcileInterruptedOperations();
     return store;
@@ -570,7 +653,7 @@ export class PiExecutorOperationStore {
       });
       const record = operationRecordSchema.parse({
         schemaVersion: STORE_SCHEMA_VERSION,
-        integrityVersion: "full-operation.v2",
+        integrityVersion: "full-operation.v3",
         operationId: request.operationId,
         requestSha256,
         request,
@@ -631,17 +714,40 @@ export class PiExecutorOperationStore {
       return await this.mutate(operationId, async (record) => {
         const current = this.requireMutableRecord(record);
         if (current.status !== "running") throw new Error("只有running Operation能追加运行事件");
+        const planningToolEvent =
+          payload.type === "tool.intent_persisted" ||
+          payload.type === "tool.completed" ||
+          payload.type === "tool.failed" ||
+          payload.type === "tool.outcome_unknown";
+        const capabilityId = planningToolEvent
+          ? `pi_planning:tool:builtin:${payload.toolName}`
+          : undefined;
+        const normalizedPayload: PiExecutorEventPayload =
+          current.integrityVersion === "full-operation.v3" &&
+          planningToolEvent &&
+          payload.capabilityId === undefined &&
+          capabilityId !== undefined
+            ? ({
+                ...payload,
+                capabilityId,
+                capabilityRefSha256: hashExecutorValue({
+                  capabilityId,
+                  localName: payload.toolName,
+                }),
+              } as PiExecutorEventPayload)
+            : payload;
         if (
-          payload.type === "tool.intent_persisted" &&
+          normalizedPayload.type === "tool.intent_persisted" &&
           current.events.some(
             (event) =>
-              event.type === "tool.intent_persisted" && event.toolCallId === payload.toolCallId,
+              event.type === "tool.intent_persisted" &&
+              event.toolCallId === normalizedPayload.toolCallId,
           )
         ) {
           // Tool Call ID是一次Operation内不可复用的Intent身份；否则旧Result会误闭合新Intent。
           throw new PiExecutorToolCallConflictError();
         }
-        const next = this.appendToRecord(current, payload);
+        const next = this.appendToRecord(current, normalizedPayload);
         const event = next.events.at(-1);
         if (event === undefined) throw new Error("Pi Executor事件追加失败");
         return { record: next, value: structuredClone(event) };
@@ -693,7 +799,15 @@ export class PiExecutorOperationStore {
           value: "outcome_unknown" as const,
         };
       }
-      const parsedResult = executorStepCandidateSchema.parse(result);
+      const providerResult = executorStepCandidateSchema.parse(result);
+      const executionEvidenceRefs = executionEvidenceRefsFromPiJournal({
+        executionAttemptId: current.request.executionAttemptId,
+        events: current.events,
+      });
+      const parsedResult = executorStepCandidateSchema.parse({
+        ...providerResult,
+        ...(executionEvidenceRefs.length === 0 ? {} : { executionEvidenceRefs }),
+      });
       const resultSha256 = hashExecutorValue(parsedResult);
       const next = this.appendToRecord(current, {
         operationId: current.operationId,
@@ -787,6 +901,7 @@ export class PiExecutorOperationStore {
 
   private async reconcileInterruptedOperations(): Promise<void> {
     for (const record of [...this.records.values()]) {
+      if (this.legacyReadOnlyOperationIds.has(record.operationId)) continue;
       if (record.status !== "queued" && record.status !== "running") continue;
       await this.mutate(record.operationId, async (loaded) => {
         let current = this.requireMutableRecord(loaded);
@@ -848,6 +963,10 @@ export class PiExecutorOperationStore {
         turnIndex: intent.turnIndex,
         toolCallId: intent.toolCallId,
         toolName: intent.toolName,
+        ...(intent.capabilityId === undefined ? {} : { capabilityId: intent.capabilityId }),
+        ...(intent.capabilityRefSha256 === undefined
+          ? {}
+          : { capabilityRefSha256: intent.capabilityRefSha256 }),
         inputSha256: intent.inputSha256,
         inputDisplay: intent.inputDisplay,
         inputDisplayTruncated: intent.inputDisplayTruncated,
@@ -887,11 +1006,20 @@ export class PiExecutorOperationStore {
 
   private requireMutableRecord(record: OperationRecord | undefined): OperationRecord {
     if (record === undefined) throw new PiExecutorOperationNotFoundError();
+    if (this.legacyReadOnlyOperationIds.has(record.operationId)) {
+      throw new PiExecutorOperationStateConflictError();
+    }
     return record;
   }
 
   private async persist(record: OperationRecord): Promise<void> {
-    const parsed = operationRecordSchema.parse(record);
+    if (
+      this.legacyReadOnlyOperationIds.has(record.operationId) ||
+      record.schemaVersion === LEGACY_STORE_SCHEMA_VERSION
+    ) {
+      throw new PiExecutorOperationStateConflictError();
+    }
+    const parsed = currentOperationRecordSchema.parse(record);
     validateOperationRecord(parsed);
     await this.beforePersist?.({
       operationId: parsed.operationId,

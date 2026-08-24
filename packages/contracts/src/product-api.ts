@@ -56,6 +56,7 @@ import {
 import {
   promptAssemblyV2Schema,
   promptAssemblyV3Schema,
+  promptAssemblyV4Schema,
   promptBearingNodeTypeSchema,
   promptTurnSelectionInputSchema,
 } from "./prompt-assembly.js";
@@ -159,7 +160,7 @@ export const promptTurnPreviewDtoSchema = z
     schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
     status: z.literal("pre_send"),
     currentInput: z.string().min(1).max(4_000),
-    assembly: z.union([promptAssemblyV2Schema, promptAssemblyV3Schema]),
+    assembly: z.union([promptAssemblyV2Schema, promptAssemblyV3Schema, promptAssemblyV4Schema]),
     nodes: z
       .array(
         z

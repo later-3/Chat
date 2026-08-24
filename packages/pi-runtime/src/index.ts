@@ -5,6 +5,7 @@ export * from "./planner.js";
 export * from "./executor.js";
 export * from "./executor-service-contract.js";
 export * from "./executor-service-client.js";
+export * from "./execution-evidence-verifier.js";
 export * from "./direct-executor-service-contract.js";
 export * from "./direct-executor-identity.js";
 export * from "./direct-executor-service-client.js";

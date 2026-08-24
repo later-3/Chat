@@ -8,10 +8,12 @@ import {
 } from "@chat/domain";
 import {
   nodeRunTransitionSchema,
+  toolExecutionResultIdSchema,
   workflowNodeRunSchema,
   type ProductRun,
   type ProductRunId,
   type ProductSnapshot,
+  type ToolExecutionResult,
   type WorkflowNodeRun,
   type WorkflowNodeRunStatus,
 } from "@chat/contracts";
@@ -107,6 +109,52 @@ function failOpenNoteCandidates(
   }
 }
 
+function settleDirectToolIntents(
+  draft: ProductSnapshot,
+  productRunId: ProductRunId,
+  errorCode: string,
+  now: string,
+): void {
+  for (const intent of Object.values(draft.entities.toolExecutionIntents)) {
+    if (intent.productRunId !== productRunId) continue;
+    if (intent.status === "waiting_decision" || intent.status === "approved") {
+      draft.entities.toolExecutionIntents[intent.toolExecutionIntentId] = {
+        ...intent,
+        status: "not_executed",
+        revision: intent.revision + 1,
+        updatedAt: now,
+      };
+      continue;
+    }
+    if (intent.status !== "dispatching") continue;
+    const toolExecutionResultId = toolExecutionResultIdSchema.parse(
+      `ter_${hashCanonical("id.tool-execution-result.settlement.v1", {
+        toolExecutionIntentId: intent.toolExecutionIntentId,
+      }).slice(0, 40)}`,
+    );
+    const result: ToolExecutionResult = {
+      schemaVersion: "tool-execution-result.v1",
+      toolExecutionResultId,
+      toolExecutionIntentId: intent.toolExecutionIntentId,
+      productRunId,
+      outcome: "outcome_unknown",
+      evidenceRefs: [],
+      errorCode,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    draft.entities.toolExecutionResults[toolExecutionResultId] = result;
+    draft.entities.toolExecutionIntents[intent.toolExecutionIntentId] = {
+      ...intent,
+      status: "outcome_unknown",
+      resultId: toolExecutionResultId,
+      revision: intent.revision + 1,
+      updatedAt: now,
+    };
+  }
+}
+
 /** 失败、取消或结果未知的产品事实收敛；跨Runtime派发由Outbox用例负责。 */
 export function settleRunWithoutSuccess(
   draft: ProductSnapshot,
@@ -153,10 +201,18 @@ export function settleRunWithoutSuccess(
     const promptReviews = Object.values(draft.entities.promptReviewRequests).filter(
       (review) => review.productRunId === productRunId,
     );
+    const toolIntents = Object.values(draft.entities.toolExecutionIntents).filter(
+      (intent) => intent.productRunId === productRunId,
+    );
     const providerBoundaryCrossed = promptReviews.some((review) => review.status === "dispatching");
+    const toolBoundaryCrossed = toolIntents.some(
+      (intent) => intent.status === "dispatching" || intent.status === "outcome_unknown",
+    );
     // dispatching表示一次性permit已交付，Provider fetch是否发生已无法由普通异常证明。
     // 即使调用方报告failed，也必须保守收敛为outcome_unknown，禁止自动重发。
-    const effectiveStatus = providerBoundaryCrossed ? "outcome_unknown" : status;
+    const effectiveStatus =
+      providerBoundaryCrossed || toolBoundaryCrossed ? "outcome_unknown" : status;
+    settleDirectToolIntents(draft, productRunId, errorCode, now);
     const current =
       run.status === "pending" && run.phase === "queued"
         ? ({ status: "pending", phase: "queued" } as const)
@@ -164,7 +220,9 @@ export function settleRunWithoutSuccess(
           ? ({ status: "running", phase: "executing" } as const)
           : run.status === "waiting_human" && run.phase === "prompt_review"
             ? ({ status: "waiting_human", phase: "prompt_review" } as const)
-            : undefined;
+            : run.status === "waiting_human" && run.phase === "tool_review"
+              ? ({ status: "waiting_human", phase: "tool_review" } as const)
+              : undefined;
     if (current === undefined) throw new Error("Direct Agent Run生命周期事实损坏");
     const lifecycle =
       effectiveStatus === "cancelled"

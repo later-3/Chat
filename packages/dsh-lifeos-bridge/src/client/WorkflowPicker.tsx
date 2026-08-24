@@ -657,6 +657,18 @@ function AgentNodeConfiguration({
       ? agentOverride.enabledToolNames
       : (selectedVersion?.enabledToolNames ??
         runtimeToolNames(runtimeVariant?.enabledToolNames ?? []));
+  const enabledCapabilityRefs =
+    agentOverride?.configurationMode === "temporary" &&
+    agentOverride.enabledCapabilityRefs !== undefined
+      ? agentOverride.enabledCapabilityRefs
+      : (selectedVersion?.enabledCapabilityRefs ??
+        runtimeVariant?.tools
+          .filter((tool) => enabledToolNames.includes(tool.name))
+          .map((tool) => ({
+            capabilityId: tool.capability.capabilityId,
+            descriptorSha256: tool.capability.descriptorSha256,
+          })) ??
+        []);
   const resources =
     agentOverride?.configurationMode === "temporary"
       ? agentOverride.resources
@@ -683,6 +695,7 @@ function AgentNodeConfiguration({
     runtime: { kind: "pi_coding_agent" as const, baseVariantKey: runtimeVariantKey },
     systemPrompt,
     enabledToolNames,
+    enabledCapabilityRefs,
     resources,
     ...(selectedVersion === null
       ? {}
@@ -751,6 +764,14 @@ function AgentNodeConfiguration({
       runtime: temporary.runtime,
       systemPrompt: temporary.systemPrompt,
       enabledToolNames: temporary.enabledToolNames,
+      enabledCapabilityRefs:
+        runtimeVariant?.tools
+          .filter((tool) => temporary.enabledToolNames.includes(tool.name))
+          .map((tool) => ({
+            localName: tool.name,
+            capabilityId: tool.capability.capabilityId,
+            descriptorSha256: tool.capability.descriptorSha256,
+          })) ?? [],
       resources: temporary.resources,
       ...(selectedVersion === null
         ? {}
@@ -871,6 +892,13 @@ function AgentNodeConfiguration({
                       },
                       systemPrompt: { mode: "inherit_runtime" },
                       enabledToolNames: runtimeToolNames(defaultVariant?.enabledToolNames ?? []),
+                      enabledCapabilityRefs:
+                        defaultVariant?.tools
+                          .filter((tool) => defaultVariant.enabledToolNames.includes(tool.name))
+                          .map((tool) => ({
+                            capabilityId: tool.capability.capabilityId,
+                            descriptorSha256: tool.capability.descriptorSha256,
+                          })) ?? [],
                       resources: INHERIT_AGENT_RESOURCES,
                     });
                   return;
@@ -916,6 +944,12 @@ function AgentNodeConfiguration({
                 updateTemporary({
                   runtime: { kind: "pi_coding_agent", baseVariantKey: variant.variantKey },
                   enabledToolNames: runtimeToolNames(variant.enabledToolNames),
+                  enabledCapabilityRefs: variant.tools
+                    .filter((tool) => variant.enabledToolNames.includes(tool.name))
+                    .map((tool) => ({
+                      capabilityId: tool.capability.capabilityId,
+                      descriptorSha256: tool.capability.descriptorSha256,
+                    })),
                 });
               }}
             >
@@ -975,20 +1009,32 @@ function AgentNodeConfiguration({
                     type="checkbox"
                     checked={enabledToolNames.includes(tool.name)}
                     disabled={busy}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const nextNames = event.currentTarget.checked
+                        ? runtimeVariant.tools
+                            .map((candidate) => candidate.name)
+                            .filter(
+                              (candidate) =>
+                                enabledToolNames.includes(candidate) || candidate === tool.name,
+                            )
+                        : enabledToolNames.filter((candidate) => candidate !== tool.name);
                       updateTemporary({
-                        enabledToolNames: event.currentTarget.checked
-                          ? runtimeVariant.tools
-                              .map((candidate) => candidate.name)
-                              .filter(
-                                (candidate) =>
-                                  enabledToolNames.includes(candidate) || candidate === tool.name,
-                              )
-                          : enabledToolNames.filter((candidate) => candidate !== tool.name),
-                      })
-                    }
+                        enabledToolNames: nextNames,
+                        enabledCapabilityRefs: runtimeVariant.tools
+                          .filter((candidate) => nextNames.includes(candidate.name))
+                          .map((candidate) => ({
+                            capabilityId: candidate.capability.capabilityId,
+                            descriptorSha256: candidate.capability.descriptorSha256,
+                          })),
+                      });
+                    }}
                   />
-                  <code>{tool.name}</code>
+                  <span>
+                    <code>{tool.name}</code>
+                    <small>
+                      {tool.capability.capabilityId} · {tool.capability.effect}
+                    </small>
+                  </span>
                 </label>
               ))}
             </div>

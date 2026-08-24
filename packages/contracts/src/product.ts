@@ -141,6 +141,7 @@ export const directAgentRunPhaseSchema = z.enum([
   "queued",
   "executing",
   "prompt_review",
+  "tool_review",
   "completed",
   "rejected",
 ]);
@@ -547,6 +548,24 @@ export const markdownSectionSchema = z
   })
   .strict();
 
+/** Planning Executor只把Pi Journal中可核验的Tool Result引用提升为产品候选证据。 */
+export const executionEvidenceRefSchema = z
+  .object({
+    kind: z.literal("pi_tool_result"),
+    executionAttemptId: runAttemptIdSchema,
+    capabilityId: z
+      .string()
+      .min(8)
+      .max(240)
+      .regex(/^[a-z][a-z0-9._:-]+$/u),
+    localName: z.string().min(1).max(160),
+    toolCallId: z.string().min(1).max(160),
+    inputSha256: sha256Schema,
+    resultSha256: sha256Schema,
+    outcome: z.enum(["completed", "failed"]),
+  })
+  .strict();
+
 export const stepResultSchema = z
   .object({
     stepId: z.string().min(1).max(100),
@@ -567,6 +586,8 @@ export const stepResultSchema = z
     sections: z.array(markdownSectionSchema).max(20),
     successCriteriaEvidence: z.array(z.string().min(1).max(1000)).min(1).max(20),
     criteriaEvidence: z.array(z.string().min(1).max(1000)).max(20),
+    /** 缺失只用于历史Candidate；新严格验证要求至少一个成功的结构化引用。 */
+    executionEvidenceRefs: z.array(executionEvidenceRefSchema).max(200).optional(),
     warnings: z.array(z.string().min(1).max(500)).max(50),
     sha256: sha256Schema,
   })
@@ -578,6 +599,8 @@ export const executionCandidateSchema = z
     executionCandidateId: executionCandidateIdSchema,
     productRunId: productRunIdSchema,
     executionContractId: executionContractIdSchema,
+    /** 历史Candidate缺失；新Runtime必须声明并满足结构化Tool证据政策。 */
+    evidencePolicyVersion: z.literal("structured-tool-result.v1").optional(),
     stepResults: z.array(stepResultSchema).min(1).max(B2_MAX_PLAN_STEPS),
     finalOutput: z
       .object({
@@ -876,6 +899,7 @@ export type RevisionInput = z.infer<typeof revisionInputSchema>;
 export type ApprovalRequest = z.infer<typeof approvalRequestSchema>;
 export type Decision = z.infer<typeof decisionSchema>;
 export type ExecutionContract = z.infer<typeof executionContractSchema>;
+export type ExecutionEvidenceRef = z.infer<typeof executionEvidenceRefSchema>;
 export type ExecutionCandidate = z.infer<typeof executionCandidateSchema>;
 export type ValidationResult = z.infer<typeof validationResultSchema>;
 export type Artifact = z.infer<typeof artifactSchema>;

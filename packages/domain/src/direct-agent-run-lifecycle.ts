@@ -3,13 +3,19 @@ import { DomainInvariantError } from "./plan-state.js";
 export type DirectAgentRunLifecycle =
   | { readonly status: "pending"; readonly phase: "queued" }
   | { readonly status: "running"; readonly phase: "executing" }
-  | { readonly status: "waiting_human"; readonly phase: "prompt_review" }
+  | { readonly status: "waiting_human"; readonly phase: "prompt_review" | "tool_review" }
   | { readonly status: "succeeded"; readonly phase: "completed" }
-  | { readonly status: "cancelled"; readonly phase: "queued" | "executing" | "rejected" }
-  | { readonly status: "failed"; readonly phase: "queued" | "executing" | "prompt_review" }
+  | {
+      readonly status: "cancelled";
+      readonly phase: "queued" | "executing" | "prompt_review" | "tool_review" | "rejected";
+    }
+  | {
+      readonly status: "failed";
+      readonly phase: "queued" | "executing" | "prompt_review" | "tool_review";
+    }
   | {
       readonly status: "outcome_unknown";
-      readonly phase: "queued" | "executing" | "prompt_review";
+      readonly phase: "queued" | "executing" | "prompt_review" | "tool_review";
     };
 
 const key = (state: DirectAgentRunLifecycle): string => `${state.status}/${state.phase}`;
@@ -23,6 +29,7 @@ const allowedTransitions: Readonly<Record<string, readonly string[]>> = {
   ],
   "running/executing": [
     "waiting_human/prompt_review",
+    "waiting_human/tool_review",
     "succeeded/completed",
     "cancelled/executing",
     "failed/executing",
@@ -33,6 +40,12 @@ const allowedTransitions: Readonly<Record<string, readonly string[]>> = {
     "cancelled/rejected",
     "failed/prompt_review",
     "outcome_unknown/prompt_review",
+  ],
+  "waiting_human/tool_review": [
+    "running/executing",
+    "cancelled/tool_review",
+    "failed/tool_review",
+    "outcome_unknown/tool_review",
   ],
 };
 

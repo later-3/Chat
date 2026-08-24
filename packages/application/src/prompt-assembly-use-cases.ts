@@ -1,12 +1,12 @@
 import {
   DIRECT_PROMPT_COMPILER_V2_VERSION,
-  DIRECT_PROMPT_COMPILER_V3_VERSION,
+  DIRECT_PROMPT_COMPILER_V4_VERSION,
   DIRECT_PROMPT_INPUT_TOKEN_LIMIT,
   DIRECT_PROMPT_METER_VERSION,
   DIRECT_PROMPT_PROFILE_V2_VERSION,
   DIRECT_PROMPT_TOOL_TOKEN_RESERVE,
-  PROMPT_ASSEMBLY_V2_SCHEMA_VERSION,
   PROMPT_ASSEMBLY_V3_SCHEMA_VERSION,
+  PROMPT_ASSEMBLY_V4_SCHEMA_VERSION,
   WORKFLOW_PROMPT_COMPILER_VERSION,
   WORKFLOW_PROMPT_PROFILE_VERSION,
   promptTurnSelectionInputV2Schema,
@@ -27,6 +27,7 @@ import {
   type PromptAssembly,
   type PromptAssemblyV2,
   type PromptAssemblyV3,
+  type PromptAssemblyV4,
   type PiSystemPromptResolution,
   type PromptBearingNodeType,
   type PromptAssemblyFragment,
@@ -45,8 +46,8 @@ import {
 } from "@chat/contracts";
 import {
   computePromptAssemblyRegionSha256,
-  computePromptAssemblyV2Sha256,
   computePromptAssemblyV3Sha256,
+  computePromptAssemblyV4Sha256,
   computePromptNodeAssemblySha256,
   computeWorkflowNodePromptOverrideIdentitySha256,
   computeWorkflowNodePromptOverrideSha256,
@@ -622,7 +623,7 @@ export function agentNodeBindingDescriptor(
                 typeof config["agentVersionId"] === "string"
                   ? "由绑定的不可变Agent Version决定"
                   : config["capabilityMode"] === "project_bootstrap"
-                    ? "只读文件工具，并可准备受控项目初始化候选"
+                    ? "可准备受控项目初始化候选"
                     : config["capabilityMode"] === "read_only"
                       ? "显式只读Agent版本"
                       : config["capabilityMode"] === "custom"
@@ -632,7 +633,7 @@ export function agentNodeBindingDescriptor(
                 typeof config["agentVersionId"] === "string"
                   ? []
                   : config["capabilityMode"] === "project_bootstrap"
-                    ? ["read", "grep", "find", "ls", "project_bootstrap_prepare"]
+                    ? ["project_bootstrap_prepare"]
                     : config["capabilityMode"] === "read_only"
                       ? ["read", "grep", "find", "ls"]
                       : config["capabilityMode"] === "custom" &&
@@ -809,14 +810,14 @@ function estimatePromptTokens(text: string): number {
 }
 
 /** Run编译与Operation授权共用，保证Version/临时配置到Pi能力包络只有一套算法。 */
-export function resolveDirectAgentExecutionEnvelope(input: {
+function resolveCurrentDirectAgentExecutionEnvelope(input: {
   readonly profile: AgentProfileDto;
   readonly agentVersion?: AgentVersion | undefined;
   readonly directNodeConfig: Readonly<Record<string, unknown>>;
   readonly workspaceRootId?: string | undefined;
   readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
 }): {
-  readonly tools: PromptAssemblyV2["tools"];
+  readonly tools: PromptAssemblyV4["tools"];
   readonly requestOptions: PromptAssemblyV2["requestOptions"];
   readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
 } {
@@ -896,12 +897,12 @@ export function resolveDirectAgentExecutionEnvelope(input: {
     promptTemplates: "disabled" as const,
     extensions: "disabled" as const,
   };
-  const tools: PromptAssemblyV2["tools"] = {
+  const tools: PromptAssemblyV4["tools"] = {
     capabilityMode,
     selectionMode: capabilityMode === "pi_cli_default" ? "inherit_runtime_default" : "explicit",
     names:
       capabilityMode === "project_bootstrap"
-        ? ["read", "grep", "find", "ls", "project_bootstrap_prepare"]
+        ? ["project_bootstrap_prepare"]
         : capabilityMode === "read_only"
           ? ["read", "grep", "find", "ls"]
           : capabilityMode === "pi_cli_default"
@@ -913,7 +914,8 @@ export function resolveDirectAgentExecutionEnvelope(input: {
         ? capabilityMode === "pi_cli_default"
           ? inheritedResources
           : isolatedResources
-        : (input.directNodeConfig["resourcePolicy"] as PromptAssemblyV2["tools"]["resources"])),
+        : (input.directNodeConfig["resourcePolicy"] as PromptAssemblyV4["tools"]["resources"])),
+    capabilities: [],
     estimatedTokens: DIRECT_PROMPT_TOOL_TOKEN_RESERVE,
   };
   const usesPiRuntimeDefaults =
@@ -930,6 +932,120 @@ export function resolveDirectAgentExecutionEnvelope(input: {
     tools,
     requestOptions,
     ...(input.piSystemPrompt === undefined ? {} : { piSystemPrompt: input.piSystemPrompt }),
+  };
+}
+
+/** 历史v2授权重建真实发布过的裸名/资源字面量；当前Run一律走v4 qualified快照。 */
+export function resolveDirectAgentExecutionEnvelope(input: {
+  readonly profile: AgentProfileDto;
+  readonly agentVersion?: AgentVersion | undefined;
+  readonly directNodeConfig: Readonly<Record<string, unknown>>;
+  readonly workspaceRootId?: string | undefined;
+  readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
+}): {
+  readonly tools: PromptAssemblyV2["tools"];
+  readonly requestOptions: PromptAssemblyV2["requestOptions"];
+  readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
+} {
+  const current = resolveCurrentDirectAgentExecutionEnvelope(input);
+  return {
+    tools: {
+      capabilityMode: current.tools.capabilityMode,
+      selectionMode: current.tools.selectionMode,
+      names: current.tools.names,
+      resources: current.tools.resources,
+      estimatedTokens: current.tools.estimatedTokens,
+    },
+    requestOptions: current.requestOptions,
+    ...(current.piSystemPrompt === undefined ? {} : { piSystemPrompt: current.piSystemPrompt }),
+  };
+}
+
+/** 新Direct Run把Agent选择解析为精确、带Scope的Capability快照。 */
+export function resolveDirectAgentExecutionEnvelopeV4(input: {
+  readonly profile: AgentProfileDto;
+  readonly agentVersion?: AgentVersion | undefined;
+  readonly directNodeConfig: Readonly<Record<string, unknown>>;
+  readonly workspaceRootId?: string | undefined;
+  readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
+}): {
+  readonly tools: PromptAssemblyV4["tools"];
+  readonly requestOptions: PromptAssemblyV4["requestOptions"];
+  readonly piSystemPrompt?: PiSystemPromptResolution | undefined;
+} {
+  const current = resolveCurrentDirectAgentExecutionEnvelope(input);
+  const rawTemporary = input.directNodeConfig["agentTemporaryConfiguration"];
+  const temporary =
+    rawTemporary === undefined ? undefined : agentTemporaryConfigurationSchema.parse(rawTemporary);
+  const configured = temporary ?? input.agentVersion;
+  const variantKey =
+    input.directNodeConfig["capabilityMode"] === "project_bootstrap"
+      ? "project_bootstrap"
+      : (configured?.runtime.baseVariantKey ??
+        (input.directNodeConfig["capabilityMode"] === "read_only"
+          ? "read_only"
+          : "pi_cli_default"));
+  const variant = input.profile.runtimeBaseline?.variants.find(
+    (candidate) => candidate.variantKey === variantKey,
+  );
+  if (variant === undefined || variant.readiness !== "available") {
+    throw revisionConflict("当前Agent Runtime目录不可用，不能冻结新Run能力");
+  }
+  const selectedNames =
+    current.tools.selectionMode === "inherit_runtime_default"
+      ? variant.enabledToolNames
+      : current.tools.names;
+  const byName = new Map(variant.tools.map((tool) => [tool.name, tool]));
+  const selected = selectedNames.map((name) => {
+    const tool = byName.get(name);
+    if (tool === undefined || tool.resolvedRef === undefined) {
+      throw revisionConflict(`Capability缺少可执行Scope或实现引用:${name}`);
+    }
+    return tool;
+  });
+  if (configured !== undefined) {
+    if (
+      configured.enabledCapabilityRefs === undefined ||
+      configured.enabledCapabilityRefs.length !== selected.length
+    ) {
+      throw revisionConflict("新Run的Agent配置缺少完整qualified Capability Ref");
+    }
+    selected.forEach((tool, index) => {
+      const frozen = configured.enabledCapabilityRefs?.[index];
+      const frozenLocalName =
+        frozen !== undefined && "localName" in frozen ? frozen.localName : undefined;
+      if (
+        ("schemaVersion" in configured &&
+          configured.schemaVersion === "agent-version.v2" &&
+          frozenLocalName !== tool.name) ||
+        frozen?.capabilityId !== tool.capability.capabilityId ||
+        frozen.descriptorSha256 !== tool.capability.descriptorSha256
+      ) {
+        throw revisionConflict("Agent配置Capability Ref与当前固定Runtime目录不一致");
+      }
+    });
+  } else if (current.tools.capabilityMode === "custom") {
+    throw revisionConflict("历史裸名自定义Agent只能读取，不能创建新的扩权Run");
+  }
+  const capabilities = selected.map((tool) => ({
+    ref: tool.resolvedRef!,
+    localName: tool.name,
+    kind: tool.capability.kind,
+    runtimeOwner: tool.capability.runtimeOwner,
+    sourceRef: tool.capability.sourceRef,
+    effect: tool.capability.effect,
+    scopePolicy: tool.capability.scopePolicy,
+    approvalPolicy: tool.capability.approvalPolicy,
+    evidencePolicy: tool.capability.evidencePolicy,
+  }));
+  return {
+    tools: {
+      ...current.tools,
+      capabilities,
+      resources: current.tools.resources,
+    },
+    requestOptions: current.requestOptions,
+    ...(current.piSystemPrompt === undefined ? {} : { piSystemPrompt: current.piSystemPrompt }),
   };
 }
 
@@ -1071,7 +1187,7 @@ export async function compileDirectPromptAssembly(
     readonly nodeResolutions?: readonly WorkflowNodeResolution[];
     readonly createdAt: string;
   },
-): Promise<PromptAssemblyV2> {
+): Promise<PromptAssemblyV4> {
   const nodes =
     input.nodeResolutions === undefined
       ? [
@@ -1146,7 +1262,7 @@ export async function compileDirectPromptAssembly(
     (sum, message) => sum + message.estimatedTokens,
     0,
   );
-  const { tools, requestOptions } = resolveDirectAgentExecutionEnvelope({
+  const { tools, requestOptions } = resolveDirectAgentExecutionEnvelopeV4({
     profile: agent.profile,
     ...(agent.agentVersion === undefined ? {} : { agentVersion: agent.agentVersion }),
     directNodeConfig: directNode.config,
@@ -1175,7 +1291,7 @@ export async function compileDirectPromptAssembly(
     sourceMessageId: input.sourceMessageId,
     workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
     profileVersion: DIRECT_PROMPT_PROFILE_V2_VERSION,
-    compilerVersion: DIRECT_PROMPT_COMPILER_V3_VERSION,
+    compilerVersion: DIRECT_PROMPT_COMPILER_V4_VERSION,
     ...(selection.workspaceRootId === undefined
       ? {}
       : { workspaceRootId: selection.workspaceRootId }),
@@ -1192,14 +1308,14 @@ export async function compileDirectPromptAssembly(
     budget,
   } as const;
   return promptAssemblySchema.parse({
-    schemaVersion: PROMPT_ASSEMBLY_V2_SCHEMA_VERSION,
+    schemaVersion: PROMPT_ASSEMBLY_V4_SCHEMA_VERSION,
     ...body,
-    sha256: computePromptAssemblyV2Sha256({
-      schemaVersion: PROMPT_ASSEMBLY_V2_SCHEMA_VERSION,
+    sha256: computePromptAssemblyV4Sha256({
+      schemaVersion: PROMPT_ASSEMBLY_V4_SCHEMA_VERSION,
       ...body,
     }),
     createdAt: input.createdAt,
-  }) as PromptAssemblyV2;
+  }) as PromptAssemblyV4;
 }
 
 /** SubmitUserMessage事务内再次校验用户Revision仍存在、可用且与预编译快照一致。 */

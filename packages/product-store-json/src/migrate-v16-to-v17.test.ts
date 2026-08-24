@@ -13,6 +13,12 @@ import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 
 const NOW = "2026-08-21T00:00:00.000Z";
 
+function removeV19ToolFacts(entities: Record<string, unknown>): void {
+  delete entities["toolExecutionIntents"];
+  delete entities["toolExecutionDecisions"];
+  delete entities["toolExecutionResults"];
+}
+
 function mainV16() {
   const current = createEmptySnapshot(NOW);
   const entities = structuredClone(current.entities) as Record<string, unknown>;
@@ -21,6 +27,7 @@ function mainV16() {
   delete entities["projectBootstrapDecisions"];
   delete entities["projectBootstrapOperations"];
   delete entities["projectWorkspaceBindings"];
+  removeV19ToolFacts(entities);
   return productSnapshotV16MainSchema.parse({
     ...current,
     schemaVersion: "chat-product-store.v16",
@@ -41,6 +48,7 @@ async function seededMainV16() {
   delete entities["projectBootstrapDecisions"];
   delete entities["projectBootstrapOperations"];
   delete entities["projectWorkspaceBindings"];
+  removeV19ToolFacts(entities);
   return productSnapshotV16MainSchema.parse({
     ...snapshot,
     schemaVersion: "chat-product-store.v16",
@@ -123,6 +131,7 @@ function planeV16WithFacts() {
   };
   const entities = structuredClone(current.entities) as Record<string, unknown>;
   delete entities["agentVersions"];
+  removeV19ToolFacts(entities);
   return productSnapshotV16PlaneSchema.parse({
     ...current,
     schemaVersion: "chat-product-store.v16",

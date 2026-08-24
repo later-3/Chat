@@ -86,7 +86,7 @@ fencing token同时进入Provider Port。Application在整个provision前校验�
 Adapter的有界超时总和；以后Provider若延长运行上界，必须同步调整租约与竞争测试。
 用户显式“重试”只创建`mode=reconcile`的新Outbox，且绑定当前Operation revision。
 v18遗留且没有执行Outbox的`queued/dispatching` Operation不在迁移时补造副作用；Product Query明确投影
-`recovery.canRecover/recovery.reason`，DSH只在该投影允许时显示“检查并恢复”。健康v19后台Outbox或活跃lease不会被
+`recovery.canRecover/recovery.reason`，DSH只在该投影允许时显示“检查并恢复”。当前健康v20中的后台Outbox或活跃lease不会被
 前端猜成遗留恢复。用户显式恢复只创建先对账Outbox。重复确认、响应丢失、页面关闭或刷新都不能产生第二个Operation或
 第二次Provider写入。
 公开Retry遇到任何活动execute/reconcile Outbox都会返回既有意图，不会再创建第二条活动Outbox；只有旧意图终结后

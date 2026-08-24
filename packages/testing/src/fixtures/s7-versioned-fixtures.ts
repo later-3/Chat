@@ -60,11 +60,13 @@ import {
   migrateProductSnapshotV16ToV17,
   migrateProductSnapshotV17ToV18,
   migrateProductSnapshotV18ToV19,
+  migrateProductSnapshotV19ToV20,
   productSnapshotV1Schema,
   productSnapshotV10Schema,
   type ProductSnapshotV10,
   type ProductSnapshotV16,
   type ProductSnapshotV18,
+  type ProductSnapshotV19,
   type ProductSnapshotV1,
 } from "@chat/product-store-json";
 
@@ -114,6 +116,7 @@ export type S7VersionedFixtureSnapshot =
   | ProductSnapshotV15Fixture
   | ProductSnapshotV16
   | ProductSnapshotV18
+  | ProductSnapshotV19
   | ProductSnapshot;
 
 export interface S7VersionedFixtureManifestEntry {
@@ -270,7 +273,7 @@ export async function buildS7VersionedFixture(
 }
 
 export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot): ProductSnapshot {
-  if (snapshot.schemaVersion === "chat-product-store.v19") return structuredClone(snapshot);
+  if (snapshot.schemaVersion === "chat-product-store.v20") return structuredClone(snapshot);
   const v2 =
     snapshot.schemaVersion === "chat-product-store.v1"
       ? migrateProductSnapshotV1ToV2(snapshot)
@@ -299,8 +302,10 @@ export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot):
     v16.schemaVersion === "chat-product-store.v16" ? migrateProductSnapshotV16ToV17(v16) : v16;
   const v18 =
     v17.schemaVersion === "chat-product-store.v17" ? migrateProductSnapshotV17ToV18(v17) : v17;
+  const v19 =
+    v18.schemaVersion === "chat-product-store.v18" ? migrateProductSnapshotV18ToV19(v18) : v18;
   return productSnapshotSchema.parse(
-    v18.schemaVersion === "chat-product-store.v18" ? migrateProductSnapshotV18ToV19(v18) : v18,
+    v19.schemaVersion === "chat-product-store.v19" ? migrateProductSnapshotV19ToV20(v19) : v19,
   );
 }
 
@@ -333,6 +338,9 @@ function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
   delete entities["projectBootstrapOperations"];
   delete entities["projectWorkspaceBindings"];
   delete entities["agentVersions"];
+  delete entities["toolExecutionIntents"];
+  delete entities["toolExecutionDecisions"];
+  delete entities["toolExecutionResults"];
   return productSnapshotV10Schema.parse(downgraded);
 }
 

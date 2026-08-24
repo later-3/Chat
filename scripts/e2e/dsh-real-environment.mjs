@@ -31,6 +31,16 @@ export const DSH_PROJECT_BOOTSTRAP_E2E_PORTS = Object.freeze({
   webInternal: 45_414,
 });
 
+/** Capability治理门：真实Workflow/API/Pi/DSH，仅Provider为进程内Faux。 */
+export const DSH_CAPABILITY_GOVERNANCE_E2E_PORTS = Object.freeze({
+  web: 45_510,
+  api: 45_511,
+  workflow: 45_512,
+  webInternal: 45_514,
+  piExecutor: 45_515,
+  piControl: 45_516,
+});
+
 export const DSH_REAL_E2E_PORTS = Object.freeze({
   web: 45_310,
   api: 45_311,
@@ -48,6 +58,7 @@ export function resolveDshRealDataRoot(root, environment = process.env) {
     resolve(repoRoot, ".data/e2e/dsh-real"),
     resolve(repoRoot, ".data/e2e/dsh-prompt-three-gates-real"),
     resolve(repoRoot, ".data/e2e/dsh-project-bootstrap-real"),
+    resolve(repoRoot, ".data/e2e/dsh-capability-governance-real"),
   ]);
   if (!allowed.has(dataRoot)) {
     throw new Error("CHAT_DSH_E2E_DATA_ROOT只能指向受管的DSH E2E数据目录");
@@ -147,9 +158,12 @@ export function dshRealWebEnvironment(root, environment = process.env) {
   if (
     configuredTemporary !== undefined &&
     configuredTemporary !== "" &&
-    temporary !== resolve(repoRoot, ".data/e2e/dsh-t3-tmp")
+    ![
+      resolve(repoRoot, ".data/e2e/dsh-t3-tmp"),
+      resolve(repoRoot, ".data/e2e/dsh-cap-tmp"),
+    ].includes(temporary)
   ) {
-    throw new Error("CHAT_DSH_E2E_TEMP_ROOT只能指向受管的三闸门E2E临时目录");
+    throw new Error("CHAT_DSH_E2E_TEMP_ROOT只能指向受管的DSH E2E短临时目录");
   }
   return {
     ...safe,

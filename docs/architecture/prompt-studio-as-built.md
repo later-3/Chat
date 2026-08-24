@@ -1,6 +1,6 @@
 # Prompt Studio 与系统级 Prompt Assembly As-built
 
-> 状态：会话Prompt管理、独立Agent Profile、Workflow节点Agent配置与本次Session/Run临时覆盖、全局/Workspace Markdown版本、统一发送前完整Prompt预览、DSH→Bridge与Bridge→Chat调试审核、Workflow Prompt Assembly v3、Direct Prompt Assembly v2、近期正式会话历史和Direct Provider前逐次审核均已打通。完整Agent版本管理的唯一事实源见[Chat Agent管理](./agent-management-as-built.md)；Provider逐请求人工审核仍只由Direct节点开放。
+> 状态：会话Prompt管理、独立Agent Profile、Workflow节点Agent配置与本次Session/Run临时覆盖、全局/Workspace Markdown版本、统一发送前完整Prompt预览、DSH→Bridge与Bridge→Chat调试审核、Workflow Prompt Assembly v3、Direct Prompt Assembly v4、近期正式会话历史和Direct Provider前逐次审核均已打通。完整Agent版本管理的唯一事实源见[Chat Agent管理](./agent-management-as-built.md)；Capability冻结、动作授权与证据恢复的唯一事实源见[Capability治理](./capability-governance-as-built.md)。Provider逐请求人工审核仍只由Direct节点开放。
 
 ## 1. 用户结果
 
@@ -8,7 +8,7 @@
 2. 每个会话的Composer配置栏有「本次 Prompt」统一入口。发送前在全局与当前Workspace两个Scope中选择会话上下文Revision；同一面板的完整预览同时展示当前Workflow每个Agent节点的有效System Prompt、Runtime固定层、Tools和当前User输入。Workflow配置仍由Workflow入口管理，不把“生成计划/执行计划”伪装成Prompt区域。
 3. 「提示词配置预览」只回答当前会话Region怎样组成；「预览完整 Prompt」调用`POST /api/prompt-turn-previews`，与正式Submit Message共用Application的Workflow预编译和Prompt编译路径，再附加DSH请求与Bridge→Chat命令映射。它是只读预发送模型，不创建Session、Message、Run或执行授权，也不是最终Provider请求。
 4. Composer的「调试审核」面板有两个独立开关：DSH→Bridge审核真实`GenerateOptions`；Bridge→Chat审核筛选后将实际交给`fetch`的完整Command Plan。两项关闭时自动发送；开启时必须依序批准。第二道批准前Chat Session/Message写入数为零。
-5. Message Command在创建Run的同一事务中冻结Prompt Assembly：Pi-backed节点明确冻结`piSystemPrompt=inherit|replace`；`inherit`由Pi使用自己的默认动态System，`replace`把用户/Workflow/Run选出的完整正文作为Pi `customPrompt`。只有显式受限或专用Workflow声明的Chat Runtime Contract才会追加，本轮会话上下文则按Assembly继续进入System。Direct v2另冻结正式Messages、Tool选择模式、资源策略和Request Options；多节点Workflow用v3冻结每个节点的同一解析结果。配置随后被修改、归档或页面刷新，都不能改变该Run。
+5. Message Command在创建Run的同一事务中冻结Prompt Assembly：Pi-backed节点明确冻结`piSystemPrompt=inherit|replace`；`inherit`由Pi使用自己的默认动态System，`replace`把用户/Workflow/Run选出的完整正文作为Pi `customPrompt`。只有显式受限或专用Workflow声明的Chat Runtime Contract才会追加，本轮会话上下文则按Assembly继续进入System。Direct v4在v2四路输入上继续冻结qualified Capability Snapshot、Runtime Profile和Workspace Grant；多节点Workflow用v3冻结每个节点的同一解析结果。配置随后被修改、归档或页面刷新，都不能改变该Run。
 6. Planner、Coding Executor与Note Extractor只接收Application从同一冻结v3 Assembly授权出的节点Prompt；节点Hash进入Planning/Execution Input Manifest，不从当前Bridge草稿或文件重新推导。
 7. Pi Agent仍负责单次节点内的Agent/Tool Loop。Direct的`pi_cli_default`直接继承Pi真实Context Files、Skills、Prompt Templates与Extensions发现；用户派生的受限Version可逐项关闭。Planning Coding Executor仍按已批准Execution Contract隔离这些自动来源；显式选择的Chat会话Prompt组件继续由Prompt Assembly进入请求。
 8. Direct Provider Gate在每次真实模型请求前暂停。Raw是Provider Adapter将发送的Canonical Payload；Friendly只增加来源、区域、Revision、Hash、Scope和JSON Pointer，不添加模型可见正文。Planner、Executor与Note当前使用已冻结Prompt，但没有新增Provider人工审核语义。
@@ -25,14 +25,14 @@ prompts/catalog.json + prompts/**/*.md
 <Workspace>/.chat/prompts/**/*.md
   └── 用户Prompt正文与人可读版本文件
 
-Product Store v18
+Product Store v20
   ├── PromptFragment（owner/scope/status/current/CAS）
   ├── PromptFragmentRevision（不可变元数据、内容Hash、MD路径/文件Hash）
   ├── AgentVersion（完整配置、Scope、来源版本与Hash，不可变）
   ├── Workflow Definition/Revision（节点精确AgentVersion引用与兼容Prompt差异）
   └── PromptAssembly（一次Run冻结的有效Agent Prompt与会话上下文投影、来源、版本、预算与Hash）
 
-DSH Bridge State v12
+DSH Bridge State v16
   └── 每个DSH Session的未发送选择草稿、两个调试审核开关与请求冻结引用
 
 Bridge进程内Review Coordinator
@@ -69,6 +69,8 @@ Bridge按`CHAT_PROJECT_ROOTS_JSON`把DSH当前打开目录映射为Chat `rootId`
 - `v15 → v16`：用户新Revision改为Markdown内容引用，Direct Assembly升级为四路输入v2；
 - `v16 → v17`：补齐项目初始化相关事实集合；
 - `v17 → v18`：新增不可变AgentVersion集合，并发布继承Pi CLI默认能力的Direct Workflow v2；历史只读Workflow Revision/View继续保留。
+- `v18 → v19`：新增Project Bootstrap Outbox事实；
+- `v19 → v20`：只新增Tool Execution Intent/Decision/Result事实，严格拒绝与任务02格式冲突的歧义v19。
 
 历史v1用户正文仍可读取；首次读取时会生成一个可见的兼容Markdown文件，之后继续通过同一文件Port访问。历史Direct Run保留原Assembly语义，迁移不会把当时不存在的选择伪造成新上下文。
 
@@ -164,7 +166,7 @@ DSH发送审核使用实际Adapter入口捕获的完整可序列化`GenerateOpti
 | `execute.plan` | `executor-coding-agent-prompt.v1` | Coding Executor默认或节点/Run差异 + 会话上下文 |
 | `note.extract` | `note-capture.v1` | Note Extractor默认或节点/Run差异 + 会话上下文 |
 
-### 6.1 Direct Prompt Assembly v2
+### 6.1 Direct Prompt Assembly v4
 
 Direct固定Profile为：
 
@@ -187,13 +189,13 @@ direct-agent-prompt-profile.v2
     └── 来源、Revision、Scope、顺序、采用/排除原因、预算与Hash
 ```
 
-用户管理的所有活动语义Region在Direct v2中都编译成带稳定标题的System追加段。`AGENTS.md`不是特殊旁路：它是`workspace_instructions` Region中的一个可选Markdown组件，选中时正文进入System，未选中时不会被Pi发现。
+用户管理的所有活动语义Region仍按v2语义编译成带稳定标题的System追加段。v4额外冻结每个Tool的qualified Capability ID、descriptor、实现/Schema Hash、effect、scopePolicy和Resolved Scope，并把Runtime Profile与Workspace Grant纳入Assembly Hash。`AGENTS.md`不是特殊旁路：它是`workspace_instructions` Region中的一个可选Markdown组件，选中时正文进入System，未选中时不会被Pi发现。
 
 历史只选择已形成正式Assistant Message的成功`User → Assistant`对，按最近优先、完整成对地加入；失败、取消、`outcome_unknown`或没有正式Assistant结果的User Message不自动重放。当前输入永远是最后一条原始User Message，不加`<history>`等伪文本包装。
 
 v2使用确定性首版预算：总输入上限64,000估算Token，固定为Tool Schema预留8,000；文本估算器为`ceil(UTF-8 bytes / 3)`。必需System与当前User超限时在Provider前失败；可选历史从旧到新稳定排除并在Manifest记录原因。Pi默认与显式受限版本的重试/Compaction选择分别冻结在Request Options中。
 
-Direct Run与Assembly强制1:1；Input Manifest绑定Assembly Hash。Executor授权响应只返回冻结内容和证据，不从DSH Session、当前文件或已被修改的Prompt组件重新推导。
+Direct Run与Assembly强制1:1；Input Manifest绑定Assembly Hash。Executor授权响应只返回冻结内容、Capability refs和证据，不从DSH Session、当前Extension、当前文件或已被修改的Prompt组件重新推导。历史v1/v2继续只读，所有新Direct Run必须写v4。
 
 Runtime默认继承直到真实AgentSession绑定Extension后才能得到最终清单；该清单Hash在首次Session绑定时进入Operation Store。Prompt Review后恢复如果观察到不同的System、Tool Schema或资源清单，Operation直接失败，不会用新能力继续同一个Run。
 
@@ -204,7 +206,7 @@ DSH原生Send
 → 可选DSH→Bridge审核：审核DSH真正交给LifeOS Adapter的GenerateOptions
 → Bridge筛选最新真实User并冻结会话上下文选择
 → 可选Bridge→Chat审核：审核实际HTTP Command Plan/bodyJson
-→ Chat Direct Message Command冻结Assembly v2并启动Workflow
+→ Chat Direct Message Command冻结Assembly v4并启动Workflow
 → Pi AgentSession组成真实Provider Context
 → Provider Gate逐次冻结真实Payload
 → Workflow节点以同一个Review Revision/Hash进入waiting_human后，公开Query才返回可审核内容
@@ -230,7 +232,7 @@ Friendly页按Raw JSON Pointer逐项对应：
 
 已完成并应用于全部当前模型节点：会话Prompt管理、独立Agent Profile管理、Workspace Scope、Markdown版本、会话上下文选择、后端发布的
 Agent/Tool绑定、Workflow节点持久差异、Session/Run临时差异、两个前端预览、v3节点Assembly、Manifest Hash绑定和Pi安全输入。
-Direct另外拥有v2四通道Chat输入Assembly、正式历史选择、逐请求最终Payload Prompt Review和来源映射。
+Direct另外拥有v4冻结Assembly（保留v2四通道输入并增加完整Capability/Scope/Runtime/Workspace证据）、正式历史选择、逐请求最终Payload Prompt Review和来源映射。
 
 尚未实现：
 

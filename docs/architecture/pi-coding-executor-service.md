@@ -91,19 +91,19 @@ Operation终态提交仍会重新读取耐久Journal。发现任一`tool.intent_
 
 唯一的`validatePiExecutorOperationJournal`同时供Store append后的原子持久化、Store启动扫描与Executor Client终态消费使用；它为`queued / running / succeeded / failed / outcome_unknown`定义完整合法矩阵，并验证文件名（Store边界）、Record/Request/全部Event Operation身份、真实Request Hash、连续sequence、非倒退时间、Session/Turn/Provider/Compaction/Tool身份与顺序、唯一terminal及Record字段组合。Assistant Evidence只允许发生在活动Turn与对应活动Provider内；Provider关闭、Turn完成或Session settled后出现Assistant都失败关闭。`succeeded`还要求Result正文按Execution Contract确定性投影，真实Result Hash同时匹配Record与`operation.completed`；攻击者不能通过同步伪造Result和自身Hash绕过耐久执行证据。
 
-Journal代际的optional字段矩阵如下；“可缺省”只服务首次即没有v2标记的真正历史v1，字段一旦存在仍必须匹配对应Intent/正文：
+Journal代际的optional字段矩阵如下；“可缺省”只服务真正历史代际，字段一旦存在仍必须匹配对应Intent/正文：
 
-| 合同字段/证据 | 旧v1只读兼容 | `full-operation.v2` |
-|---|---|---|
-| Snapshot `integrityVersion` | 首次缺省，并在本次Client消费中始终缺省 | 首次为`full-operation.v2`，后续Snapshot必须逐次相同 |
-| Snapshot完整`request` | 可缺省，Client使用本次提交请求验证身份 | 每个Snapshot都必须存在且Hash精确匹配 |
-| `tool.completed.inputSha256` | 可缺省；存在时匹配唯一Intent | 必须存在并匹配唯一Intent |
-| `tool.failed.inputSha256` | 可缺省；存在时匹配唯一Intent | 必须存在并匹配唯一Intent |
-| `provider.failed.inputSha256` | 可缺省；存在时匹配`provider.started` | 必须存在并匹配`provider.started` |
-| `session.settled` | 历史成功记录可缺省 | 成功记录必须唯一存在，且在Turn/Provider关闭之后 |
-| 最终Assistant `visibleTextSha256` | 可缺省；存在时匹配Candidate正文 | 必须存在并匹配Candidate正文 |
+| 合同字段/证据 | 旧v1只读兼容 | `full-operation.v2` | `full-operation.v3` |
+|---|---|---|---|
+| Snapshot `integrityVersion` | 首次缺省，并在本次Client消费中始终缺省 | 首次为`full-operation.v2`，后续Snapshot必须逐次相同 | 首次为`full-operation.v3`，后续不得降级 |
+| Snapshot完整`request` | 可缺省，Client使用本次提交请求验证身份 | 每个Snapshot都必须存在且Hash精确匹配 | 同v2 |
+| Tool Result `inputSha256` | 可缺省；存在时匹配唯一Intent | 必须存在并匹配唯一Intent | 同v2 |
+| Tool `capabilityId/capabilityRefSha256` | 历史无此语义 | 不要求，不反向扩权 | Intent/Result必须存在且逐项匹配 |
+| `provider.failed.inputSha256` | 可缺省；存在时匹配`provider.started` | 必须存在并匹配`provider.started` | 同v2 |
+| `session.settled` | 历史成功记录可缺省 | 成功记录必须唯一存在，且在Turn/Provider关闭之后 | 同v2 |
+| 最终Assistant `visibleTextSha256` | 可缺省；存在时匹配Candidate正文 | 必须存在并匹配Candidate正文 | 同v2 |
 
-新Operation写入`full-operation.v2`完整性标记，并按`provider.started → assistant message.completed → provider.completed/failed → turn.completed → session.settled → operation.completed`闭合成功证据。Executor Client把首次Start Snapshot的`integrityVersion`钉为不可变化身份；v2后续删除标记、完整Request或必需证据不能借用v1矩阵，会以`executor.journal_integrity_invalid`和`outcomeUnknown=true`失败关闭，绝不返回Candidate。旧v1虽可缺少上表新证据，但Request、Operation、Session、Turn/Provider因果顺序、terminal、Result与Tool身份从不降级。Store遇到矛盾旧记录同样拒绝启动。所有新追加Tool Result仍必须携带真实输入Hash并通过五字段精确匹配，兼容读取不能放宽写入门。
+新Operation写入`full-operation.v3`完整性标记，并按`provider.started → assistant message.completed → provider.completed/failed → turn.completed → session.settled → operation.completed`闭合成功证据。Executor Client把首次Start Snapshot的`integrityVersion`钉为不可变化身份；v3→v2/v1或v2→v1会以`executor.journal_integrity_invalid`和`outcomeUnknown=true`失败关闭，绝不返回Candidate。旧v1/v2按原代际只读；Request、Operation、Session、Turn/Provider因果顺序、terminal、Result与Tool身份从不降级。Store遇到矛盾旧记录同样拒绝启动，兼容读取不能放宽新写入门。
 
 新Result的第五字段来自固定Pi `tool_result`事件携带的真实`input`重新Canonical Hash，而不是复制内存Intent Hash；真实输入与Intent不等时先触发fatal latch，再把Operation耐久收敛为`executor.tool_result_intent_mismatch / outcome_unknown`。
 

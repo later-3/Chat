@@ -1,7 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   EXECUTOR_PROMPT_TEMPLATE_VERSION,
   MODEL_CONFIG_VERSION,
@@ -98,7 +98,15 @@ async function createDeps(): Promise<{ deps: ApplicationDeps; cmd: () => Command
     filePath: join(directory, "chat-product-store.v1.json"),
     now,
   });
-  return { deps: { store, now, ids: ids() }, cmd: commands() };
+  return {
+    deps: {
+      store,
+      now,
+      ids: ids(),
+      executionEvidenceVerifier: { verify: vi.fn(async () => undefined) },
+    },
+    cmd: commands(),
+  };
 }
 
 async function buildCandidate(validEvidence: boolean, strictEvidence = true) {
@@ -201,16 +209,34 @@ async function buildCandidate(validEvidence: boolean, strictEvidence = true) {
       criteriaEvidence: contractStep.stepId === "compose" ? ["正式周报可读：结构完整"] : [],
       warnings: [],
     };
+    const executionEvidenceRefs =
+      contractStep.stepId === "collect"
+        ? [
+            {
+              kind: "pi_tool_result" as const,
+              executionAttemptId: attemptId,
+              capabilityId: "pi_planning:tool:builtin:read",
+              localName: "read",
+              toolCallId: `call_${contractStep.stepId}`,
+              inputSha256: "a".repeat(64),
+              resultSha256: "b".repeat(64),
+              outcome: "completed" as const,
+            },
+          ]
+        : [];
     stepResults.push({
       ...base,
-      sha256: hashCanonical("execution-step-result.v1", base),
+      executionEvidenceRefs,
+      sha256: hashCanonical("execution-step-result.v1", { ...base, executionEvidenceRefs }),
     });
   }
 
-  const candidate = await persistExecutionCandidate(deps, {
-    commandId: cmd(),
+  const candidateCommandId = cmd();
+  const candidateInput = {
+    commandId: candidateCommandId,
     productRunId: run.productRunId,
     executionContractId: contract.executionContractId,
+    evidencePolicyVersion: "structured-tool-result.v1",
     stepResults,
     finalOutput: {
       format: "markdown_sections",
@@ -218,7 +244,8 @@ async function buildCandidate(validEvidence: boolean, strictEvidence = true) {
     },
     completionCriteriaEvidence: stepResults.flatMap((result) => result.criteriaEvidence),
     warnings: stepResults.flatMap((result) => result.warnings),
-  });
+  } as const;
+  const candidate = await persistExecutionCandidate(deps, candidateInput);
   const validation = await persistValidationResult(deps, {
     commandId: cmd(),
     productRunId: run.productRunId,
@@ -226,10 +253,74 @@ async function buildCandidate(validEvidence: boolean, strictEvidence = true) {
     executionCandidateId: candidate.executionCandidateId,
     strictEvidence,
   });
-  return { deps, cmd, run, session, contract, candidate, validation };
+  return {
+    deps,
+    cmd,
+    run,
+    session,
+    contract,
+    candidate,
+    candidateInput,
+    candidateCommandId,
+    validation,
+  };
 }
 
 describe("验证与Product Commit信任边界", () => {
+  it("PersistExecutionCandidate精确Receipt在Evidence/时间/ID前恢复不可变ID与SHA", async () => {
+    const state = await buildCandidate(true);
+    const verifier = state.deps.executionEvidenceVerifier?.verify;
+    if (verifier === undefined || !("mockClear" in verifier)) {
+      throw new Error("测试缺少可观察Evidence Verifier");
+    }
+    const poison = vi.fn(async () => {
+      throw new Error("Receipt重放不得调用Evidence Verifier");
+    });
+    const poisonedDeps: ApplicationDeps = {
+      ...state.deps,
+      now: () => {
+        throw new Error("Receipt重放不得读取时间");
+      },
+      ids: {
+        ...state.deps.ids,
+        executionCandidate: () => {
+          throw new Error("Receipt重放不得分配Candidate ID");
+        },
+      },
+      executionEvidenceVerifier: { verify: poison },
+    };
+
+    await expect(persistExecutionCandidate(poisonedDeps, state.candidateInput)).resolves.toEqual(
+      state.candidate,
+    );
+    expect(poison).toHaveBeenCalledTimes(0);
+
+    await expect(
+      persistExecutionCandidate(poisonedDeps, {
+        ...state.candidateInput,
+        warnings: ["同Command ID的另一Payload"],
+      }),
+    ).rejects.toMatchObject({ code: "command_id_reused" });
+    expect(poison).toHaveBeenCalledTimes(0);
+  });
+
+  it("PersistExecutionCandidate并发首次提交只增加一组事实", async () => {
+    const state = await buildCandidate(true);
+    const before = await state.deps.store.read({ kind: "committedSnapshot" });
+    const commandId = state.cmd();
+    const input = { ...state.candidateInput, commandId };
+    const [left, right] = await Promise.all([
+      persistExecutionCandidate(state.deps, input),
+      persistExecutionCandidate(state.deps, input),
+    ]);
+    expect(left).toEqual(right);
+    const after = await state.deps.store.read({ kind: "committedSnapshot" });
+    expect(
+      Object.keys(after.snapshot.entities.executionCandidates).length -
+        Object.keys(before.snapshot.entities.executionCandidates).length,
+    ).toBe(1);
+  });
+
   it("Application自行验证持久化Candidate并从它确定性渲染正式正文", async () => {
     const state = await buildCandidate(true);
     expect(state.validation.outcome).toBe("pass");

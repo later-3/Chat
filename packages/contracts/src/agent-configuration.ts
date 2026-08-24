@@ -7,8 +7,10 @@ import {
   agentRuntimeToolNameSchema,
   piBuiltinToolNameSchema,
 } from "./agent-runtime-capabilities.js";
+import { capabilitySelectionRefSchema } from "./capability.js";
 
-export const AGENT_VERSION_SCHEMA_VERSION = "agent-version.v1";
+export const LEGACY_AGENT_VERSION_SCHEMA_VERSION = "agent-version.v1";
+export const AGENT_VERSION_SCHEMA_VERSION = "agent-version.v2";
 
 /** Later Pi Fork当前公开的全部内置工具及其上游稳定顺序。 */
 export const PI_BUILTIN_TOOL_NAMES = [
@@ -44,6 +46,11 @@ export const agentEnabledToolNamesSchema = z
       seen.add(name);
     }
   });
+
+/** v2把qualified Ref与本地Tool投影绑定；位置、名字与身份共同进入Version Hash。 */
+export const agentVersionCapabilitySelectionRefSchema = capabilitySelectionRefSchema.safeExtend({
+  localName: agentRuntimeToolNameSchema,
+});
 
 export const agentRuntimeSchema = z
   .object({
@@ -172,8 +179,7 @@ export const agentRuntimeBaselineRefSchema = z
   })
   .strict();
 
-const agentVersionHashFields = {
-  schemaVersion: z.literal(AGENT_VERSION_SCHEMA_VERSION),
+const sharedAgentVersionHashFields = {
   agentVersionId: agentVersionIdSchema,
   agentKey: agentKeySchema,
   ownerPrincipalId: principalIdSchema,
@@ -190,12 +196,34 @@ const agentVersionHashFields = {
   createdAt: z.iso.datetime(),
 } as const;
 
+const legacyAgentVersionV1HashFields = {
+  schemaVersion: z.literal(LEGACY_AGENT_VERSION_SCHEMA_VERSION),
+  ...sharedAgentVersionHashFields,
+  /** v1从未发布qualified选择；显式拒绝用同一literal扩权。 */
+  enabledCapabilityRefs: z.undefined().optional(),
+} as const;
+
+const agentVersionV2HashFields = {
+  schemaVersion: z.literal(AGENT_VERSION_SCHEMA_VERSION),
+  ...sharedAgentVersionHashFields,
+  /** v2的权威选择不可删除；合法零Tool Agent使用显式空数组。 */
+  enabledCapabilityRefs: z.array(agentVersionCapabilitySelectionRefSchema).max(32),
+} as const;
+
 function assertVersionRelations(
   value: {
     readonly agentVersionId: string;
     readonly basedOnVersionId?: string | undefined;
     readonly runtime: { readonly baseVariantKey: string };
     readonly baselineRef: { readonly variantKey: string };
+    readonly enabledToolNames: readonly string[];
+    readonly enabledCapabilityRefs?:
+      | readonly {
+          readonly localName: string;
+          readonly capabilityId: string;
+          readonly descriptorSha256: string;
+        }[]
+      | undefined;
   },
   ctx: z.RefinementCtx,
 ): void {
@@ -213,22 +241,75 @@ function assertVersionRelations(
       message: "Agent Version的Runtime Variant与冻结基线必须一致",
     });
   }
+  if (value.enabledCapabilityRefs !== undefined) {
+    const capabilityIds = new Set<string>();
+    const qualifiedRefs = new Set<string>();
+    const localNames = new Set<string>();
+    if (value.enabledCapabilityRefs.length !== value.enabledToolNames.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["enabledCapabilityRefs"],
+        message: "Agent Version的Tool名字与qualified Capability Ref必须数量一致",
+      });
+    }
+    for (const [index, ref] of value.enabledCapabilityRefs.entries()) {
+      if (ref.localName !== value.enabledToolNames[index]) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["enabledCapabilityRefs", index, "localName"],
+          message: "Agent Version的Capability localName必须与有序Tool清单一致",
+        });
+      }
+      const qualifiedRef = `${ref.capabilityId}:${ref.descriptorSha256}`;
+      if (
+        capabilityIds.has(ref.capabilityId) ||
+        qualifiedRefs.has(qualifiedRef) ||
+        localNames.has(ref.localName)
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["enabledCapabilityRefs", index],
+          message: "Agent Version的capabilityId、qualified Capability Ref与localName不能重复",
+        });
+      }
+      capabilityIds.add(ref.capabilityId);
+      qualifiedRefs.add(qualifiedRef);
+      localNames.add(ref.localName);
+    }
+  }
 }
 
 /** 进入Canonical Hash的精确字段；`sha256`本身不参与计算。 */
-export const agentVersionHashInputSchema = z
-  .object(agentVersionHashFields)
+export const legacyAgentVersionV1HashInputSchema = z
+  .object(legacyAgentVersionV1HashFields)
   .strict()
   .superRefine(assertVersionRelations);
+
+export const agentVersionV2HashInputSchema = z
+  .object(agentVersionV2HashFields)
+  .strict()
+  .superRefine(assertVersionRelations);
+
+export const agentVersionHashInputSchema = z.union([
+  legacyAgentVersionV1HashInputSchema,
+  agentVersionV2HashInputSchema,
+]);
 
 /**
  * Agent Version是不可变产品事实。现有Agent Catalog继续拥有内置Agent定义；本对象只保存
  * Principal基于某个内置Agent派生出的精确版本，不建立第二套重型Agent Definition。
  */
-export const agentVersionSchema = z
-  .object({ ...agentVersionHashFields, sha256: sha256Schema })
+export const legacyAgentVersionV1Schema = z
+  .object({ ...legacyAgentVersionV1HashFields, sha256: sha256Schema })
   .strict()
   .superRefine(assertVersionRelations);
+
+export const agentVersionV2Schema = z
+  .object({ ...agentVersionV2HashFields, sha256: sha256Schema })
+  .strict()
+  .superRefine(assertVersionRelations);
+
+export const agentVersionSchema = z.union([legacyAgentVersionV1Schema, agentVersionV2Schema]);
 
 export type AgentPiBuiltinToolName = z.infer<typeof agentPiBuiltinToolNameSchema>;
 export type AgentRuntime = z.infer<typeof agentRuntimeSchema>;
@@ -238,6 +319,12 @@ export type AgentResourceMode = z.infer<typeof agentResourceModeSchema>;
 export type AgentResources = z.infer<typeof agentResourcesSchema>;
 export type AgentVersionHashInput = z.infer<typeof agentVersionHashInputSchema>;
 export type AgentVersion = z.infer<typeof agentVersionSchema>;
+
+export function agentVersionHashDomain(
+  version: Pick<AgentVersion, "schemaVersion">,
+): "agent-version.v1" | "agent-version.v2" {
+  return version.schemaVersion;
+}
 
 /** 唯一的Version→Hash输入投影，避免各层手写遗漏字段或把`sha256`递归计入。 */
 export function toAgentVersionHashInput(version: AgentVersion): AgentVersionHashInput {

@@ -68,6 +68,9 @@ function assembleCandidate(
       sections: candidate.sections,
       successCriteriaEvidence: candidate.successCriteriaEvidence,
       criteriaEvidence: candidate.criteriaEvidence,
+      ...(candidate.executionEvidenceRefs === undefined
+        ? {}
+        : { executionEvidenceRefs: candidate.executionEvidenceRefs }),
       warnings: candidate.warnings,
       sha256: candidate.sha256,
     })),

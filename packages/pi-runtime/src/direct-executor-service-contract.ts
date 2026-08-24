@@ -10,12 +10,14 @@ import {
   runAttemptIdSchema,
   sha256Schema,
   workflowRunSpecIdSchema,
+  resolvedCapabilitySnapshotSchema,
 } from "@chat/contracts";
 import { z } from "zod";
 import { piOperationIdSchema, piRuntimeSessionIdSchema } from "./executor-service-contract.js";
 
 /** Direct Agent是独立私有协议，不借用已批准Plan的Execution Contract。 */
-export const PI_DIRECT_EXECUTOR_PROTOCOL_VERSION = "pi-direct-executor.v1";
+export const LEGACY_PI_DIRECT_EXECUTOR_PROTOCOL_VERSION = "pi-direct-executor.v1";
+export const PI_DIRECT_EXECUTOR_PROTOCOL_VERSION = "pi-direct-executor.v2";
 
 const isoDateTimeSchema = z.iso.datetime();
 const stableErrorCodeSchema = z
@@ -63,6 +65,12 @@ export const startPiDirectExecutorOperationRequestSchema = z
     inputManifestSha256: sha256Schema,
   })
   .strict();
+
+/** v1仅供历史Journal读取/投影；新Service入口永远只接受v2。 */
+export const legacyStartPiDirectExecutorOperationRequestSchema =
+  startPiDirectExecutorOperationRequestSchema.extend({
+    schemaVersion: z.literal(LEGACY_PI_DIRECT_EXECUTOR_PROTOCOL_VERSION),
+  });
 
 export type StartPiDirectExecutorOperationRequest = z.infer<
   typeof startPiDirectExecutorOperationRequestSchema
@@ -144,6 +152,22 @@ export const piDirectExecutorOperationStatusSchema = z.enum([
 
 export type PiDirectExecutorOperationStatus = z.infer<typeof piDirectExecutorOperationStatusSchema>;
 
+/**
+ * v2 Journal携带Manifest Hash的完整、可重算非正文输入。Capability数组单独冻结，避免
+ * 重复保存；schemaVersion只标识投影代际，不改变Runtime既有Hash算法。
+ */
+export const directResolvedRuntimeManifestHashInputSchema = z
+  .object({
+    schemaVersion: z.literal("pi-direct-resolved-runtime-manifest.v1"),
+    systemPromptSha256: sha256Schema,
+    resourceInventorySha256: sha256Schema,
+  })
+  .strict();
+
+export type DirectResolvedRuntimeManifestHashInput = z.infer<
+  typeof directResolvedRuntimeManifestHashInputSchema
+>;
+
 const eventBase = {
   sequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   timestamp: isoDateTimeSchema,
@@ -164,8 +188,10 @@ export const piDirectExecutorEventSchema = z.discriminatedUnion("type", [
       type: z.literal("session.started"),
       sessionId: piRuntimeSessionIdSchema,
       enabledTools: z.array(directAgentRuntimeToolNameSchema).max(32),
-      /** optional只用于读取P0修复前的既有Operation文件；新事件始终写入。 */
+      /** 协议Schema与v1事件共用；v2 Journal Validator要求session事件显式携带。 */
       resolvedRuntimeManifestSha256: sha256Schema.optional(),
+      resolvedRuntimeManifest: directResolvedRuntimeManifestHashInputSchema.optional(),
+      resolvedCapabilities: z.array(resolvedCapabilitySnapshotSchema).max(64).optional(),
     })
     .strict(),
   z
@@ -174,9 +200,11 @@ export const piDirectExecutorEventSchema = z.discriminatedUnion("type", [
       type: z.literal("session.resumed"),
       sessionId: piRuntimeSessionIdSchema,
       checkpointSha256: sha256Schema,
-      /** 旧Operation没有这两个字段；恢复后的新事件记录真实绑定结果。 */
+      /** v1只读事件可缺失；v2恢复事件必须携带完整Manifest身份。 */
       enabledTools: z.array(directAgentRuntimeToolNameSchema).max(32).optional(),
       resolvedRuntimeManifestSha256: sha256Schema.optional(),
+      resolvedRuntimeManifest: directResolvedRuntimeManifestHashInputSchema.optional(),
+      resolvedCapabilities: z.array(resolvedCapabilitySnapshotSchema).max(64).optional(),
     })
     .strict(),
   z
@@ -231,16 +259,22 @@ export const piDirectExecutorEventSchema = z.discriminatedUnion("type", [
       toolCallId: z.string().min(1).max(160),
       toolName: directAgentRuntimeToolNameSchema,
       inputSha256: sha256Schema,
+      inputDisplay: z.string().max(32_000).optional(),
+      inputDisplayTruncated: z.boolean().optional(),
+      capability: resolvedCapabilitySnapshotSchema.optional(),
     })
     .strict(),
   z
     .object({
       ...eventBase,
-      type: z.enum(["tool.completed", "tool.failed", "tool.outcome_unknown"]),
+      type: z.enum(["tool.completed", "tool.failed", "tool.blocked", "tool.outcome_unknown"]),
       sessionId: piRuntimeSessionIdSchema,
       toolCallId: z.string().min(1).max(160),
       toolName: directAgentRuntimeToolNameSchema,
+      /** v1历史Result可缺失；v2新Journal由共享Validator强制与Intent一致。 */
+      inputSha256: sha256Schema.optional(),
       resultSha256: sha256Schema.optional(),
+      capability: resolvedCapabilitySnapshotSchema.optional(),
     })
     .strict(),
   z
@@ -286,6 +320,9 @@ export const piDirectExecutorOperationSnapshotSchema = z
     decision: directPromptReviewDecisionRefSchema.optional(),
     result: directAgentResultRefSchema.optional(),
     errorCode: stableErrorCodeSchema.optional(),
+    resolvedRuntimeManifestSha256: sha256Schema.optional(),
+    resolvedRuntimeManifest: directResolvedRuntimeManifestHashInputSchema.optional(),
+    resolvedCapabilities: z.array(resolvedCapabilitySnapshotSchema).max(64).optional(),
     lastEventSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     createdAt: isoDateTimeSchema,
     updatedAt: isoDateTimeSchema,

@@ -11,6 +11,8 @@ import {
   productRunIdSchema,
   productSessionIdSchema,
   sha256Schema,
+  toolExecutionIntentIdSchema,
+  toolExecutionIntentDtoSchema,
   workspaceInstructionsInputSchema,
 } from "@chat/contracts/public";
 import { z } from "zod";
@@ -21,6 +23,7 @@ import {
   noteDecisionRequestSchema,
   promptSelectionRequestSchema,
   promptReviewDecisionRequestSchema,
+  toolExecutionDecisionRequestSchema,
   workflowSelectionSchema,
 } from "./contracts.ts";
 
@@ -74,6 +77,47 @@ const pendingPromptReviewDecisionSchema = z
     request: promptReviewDecisionRequestSchema,
   })
   .strict();
+
+/** v16只保存同一Tool Decision Command的本地重试身份，不复制权威Intent/Decision。 */
+const pendingToolExecutionDecisionSchema = z
+  .object({
+    bodySha256: sha256Schema,
+    commandId: commandIdSchema.transform(String),
+    productRunId: productRunIdSchema.transform(String),
+    expectedRunRevision: z.number().int().positive(),
+    toolExecutionIntentId: toolExecutionIntentIdSchema.transform(String),
+    intentRevision: z.number().int().positive(),
+    capabilityDescriptorSha256: sha256Schema,
+    inputSha256: sha256Schema,
+    scopeRef: toolExecutionDecisionRequestSchema.shape.binding.shape.scopeRef,
+    capability: toolExecutionIntentDtoSchema.shape.capability,
+    kind: toolExecutionDecisionRequestSchema.shape.kind,
+    explanation: toolExecutionDecisionRequestSchema.shape.explanation,
+    request: toolExecutionDecisionRequestSchema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const binding = value.request.binding;
+    if (
+      value.productRunId !== binding.productRunId ||
+      value.expectedRunRevision !== binding.runRevision ||
+      value.toolExecutionIntentId !== binding.toolExecutionIntentId ||
+      value.intentRevision !== binding.intentRevision ||
+      value.capabilityDescriptorSha256 !== binding.capabilityDescriptorSha256 ||
+      value.inputSha256 !== binding.inputSha256 ||
+      JSON.stringify(value.scopeRef) !== JSON.stringify(binding.scopeRef) ||
+      value.capability.ref.descriptorSha256 !== value.capabilityDescriptorSha256 ||
+      JSON.stringify(value.capability.ref.scopeRef) !== JSON.stringify(value.scopeRef) ||
+      value.kind !== value.request.kind ||
+      value.explanation !== value.request.explanation
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["request", "binding"],
+        message: "pending Tool Decision顶层身份必须与冻结请求逐字段一致",
+      });
+    }
+  });
 
 const requestSchema = z
   .object({
@@ -170,7 +214,7 @@ const legacyV14SessionBindingSchema = legacyV13SessionBindingSchema
   })
   .strict();
 
-const currentRequestSchema = legacyV14RequestSchema
+const legacyV15RequestSchema = legacyV14RequestSchema
   .safeExtend({
     /**
      * Bridge对Product Message写边界的耐久认识。prepared尚未越过HTTP写边界；
@@ -192,6 +236,30 @@ const currentRequestSchema = legacyV14RequestSchema
         code: "custom",
         path: ["submissionStatus"],
         message: "只有bound Request允许携带Product Run身份",
+      });
+    }
+  });
+
+const legacyV15SessionBindingSchema = legacyV13SessionBindingSchema
+  .omit({ requests: true })
+  .extend({
+    requests: z.record(z.string().min(1).max(256), legacyV15RequestSchema),
+  })
+  .strict();
+
+const currentRequestSchema = legacyV15RequestSchema
+  .safeExtend({ pendingToolExecutionDecision: pendingToolExecutionDecisionSchema.optional() })
+  .superRefine((value, ctx) => {
+    if (
+      value.pendingToolExecutionDecision !== undefined &&
+      (value.pendingDecision !== undefined ||
+        value.pendingNoteDecision !== undefined ||
+        value.pendingPromptReviewDecision !== undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["pendingToolExecutionDecision"],
+        message: "同一请求不能同时等待多个产品决定",
       });
     }
   });
@@ -344,6 +412,14 @@ const legacyBridgeStateV14Schema = z
   })
   .strict();
 
+const legacyBridgeStateV15Schema = z
+  .object({
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v15"),
+    newSessionWorkflowPreference: workflowSelectionSchema.nullable(),
+    sessions: z.record(dshSessionIdSchema, legacyV15SessionBindingSchema),
+  })
+  .strict();
+
 const legacyBridgeStateSchema = z.union([
   legacyBridgeStateBeforePreferenceSchema,
   legacyBridgeStateWithPreferenceSchema,
@@ -353,11 +429,12 @@ const legacyBridgeStateSchema = z.union([
   legacyBridgeStateV12Schema,
   legacyBridgeStateV13Schema,
   legacyBridgeStateV14Schema,
+  legacyBridgeStateV15Schema,
 ]);
 
 const bridgeStateSchema = z
   .object({
-    schemaVersion: z.literal("chat-dsh-lifeos-state.v15"),
+    schemaVersion: z.literal("chat-dsh-lifeos-state.v16"),
     /** 新DSH会话继承的用户级Workflow选择；null表示系统默认规划工作流。 */
     newSessionWorkflowPreference: workflowSelectionSchema.nullable(),
     sessions: z.record(dshSessionIdSchema, currentSessionBindingSchema),
@@ -370,9 +447,10 @@ export type RequestBinding = z.infer<typeof currentRequestSchema>;
 export type PendingDecision = z.infer<typeof pendingDecisionSchema>;
 export type PendingNoteDecision = z.infer<typeof pendingNoteDecisionSchema>;
 export type PendingPromptReviewDecision = z.infer<typeof pendingPromptReviewDecisionSchema>;
+export type PendingToolExecutionDecision = z.infer<typeof pendingToolExecutionDecisionSchema>;
 
 const emptyState = (): BridgeState => ({
-  schemaVersion: "chat-dsh-lifeos-state.v15",
+  schemaVersion: "chat-dsh-lifeos-state.v16",
   newSessionWorkflowPreference: null,
   sessions: {},
 });
@@ -858,83 +936,88 @@ export class AtomicBridgeStateStore {
       return this.state;
     }
     const migrated =
-      legacy.data.schemaVersion === "chat-dsh-lifeos-state.v14"
+      legacy.data.schemaVersion === "chat-dsh-lifeos-state.v15"
         ? bridgeStateSchema.parse({
-            schemaVersion: "chat-dsh-lifeos-state.v15",
-            newSessionWorkflowPreference: legacy.data.newSessionWorkflowPreference,
-            sessions: Object.fromEntries(
-              Object.entries(legacy.data.sessions).map(([sessionId, binding]) => [
-                sessionId,
-                {
-                  ...binding,
-                  requests: requestsFromV14(binding.requests),
-                },
-              ]),
-            ),
+            ...legacy.data,
+            schemaVersion: "chat-dsh-lifeos-state.v16",
           })
-        : legacy.data.schemaVersion === "chat-dsh-lifeos-state.v13"
+        : legacy.data.schemaVersion === "chat-dsh-lifeos-state.v14"
           ? bridgeStateSchema.parse({
-              schemaVersion: "chat-dsh-lifeos-state.v15",
+              schemaVersion: "chat-dsh-lifeos-state.v16",
               newSessionWorkflowPreference: legacy.data.newSessionWorkflowPreference,
               sessions: Object.fromEntries(
                 Object.entries(legacy.data.sessions).map(([sessionId, binding]) => [
                   sessionId,
                   {
                     ...binding,
-                    requests: requestsFromPreV14(binding),
+                    requests: requestsFromV14(binding.requests),
                   },
                 ]),
               ),
             })
-          : bridgeStateSchema.parse({
-              schemaVersion: "chat-dsh-lifeos-state.v15",
-              newSessionWorkflowPreference: (() => {
-                const preference =
-                  legacy.data.schemaVersion === "chat-dsh-lifeos-state.v8" ||
-                  legacy.data.schemaVersion === "chat-dsh-lifeos-state.v9" ||
-                  legacy.data.schemaVersion === "chat-dsh-lifeos-state.v10" ||
-                  legacy.data.schemaVersion === "chat-dsh-lifeos-state.v11" ||
-                  legacy.data.schemaVersion === "chat-dsh-lifeos-state.v12"
-                    ? legacy.data.preferredWorkflowSelection
-                    : null;
-                if (preference === null) return null;
-                return (
-                  withoutProjectBootstrapCapability(workflowSelectionSchema.parse(preference)) ??
-                  null
-                );
-              })(),
-              sessions: Object.fromEntries(
-                Object.entries(legacy.data.sessions).map(([sessionId, binding]) => {
-                  const { workflowSelection, ...bindingWithoutWorkflow } = binding;
-                  const legacyWorkflowSelection =
-                    workflowSelection === undefined
-                      ? undefined
-                      : workflowSelectionSchema.parse(workflowSelection);
-                  const normalizedWorkflowSelection =
-                    withoutProjectBootstrapCapability(legacyWorkflowSelection);
-                  return [
+          : legacy.data.schemaVersion === "chat-dsh-lifeos-state.v13"
+            ? bridgeStateSchema.parse({
+                schemaVersion: "chat-dsh-lifeos-state.v16",
+                newSessionWorkflowPreference: legacy.data.newSessionWorkflowPreference,
+                sessions: Object.fromEntries(
+                  Object.entries(legacy.data.sessions).map(([sessionId, binding]) => [
                     sessionId,
                     {
-                      ...bindingWithoutWorkflow,
-                      // 冻结Request可能已经越过Product Command边界，只是响应在rememberRun前丢失。
-                      // 迁移只增加本地路由目标，不改Product payload；普通新提交仍由Application
-                      // 的专用授权门拒绝。
+                      ...binding,
                       requests: requestsFromPreV14(binding),
-                      dshSendReviewEnabled:
-                        "dshSendReviewEnabled" in binding ? binding.dshSendReviewEnabled : false,
-                      bridgeDispatchReviewEnabled:
-                        "bridgeDispatchReviewEnabled" in binding &&
-                        binding.bridgeDispatchReviewEnabled !== undefined
-                          ? binding.bridgeDispatchReviewEnabled
-                          : false,
-                      ...(normalizedWorkflowSelection === undefined
-                        ? {}
-                        : { sessionWorkflowSelection: normalizedWorkflowSelection }),
                     },
-                  ];
-                }),
-              ),
-            });
+                  ]),
+                ),
+              })
+            : bridgeStateSchema.parse({
+                schemaVersion: "chat-dsh-lifeos-state.v16",
+                newSessionWorkflowPreference: (() => {
+                  const preference =
+                    legacy.data.schemaVersion === "chat-dsh-lifeos-state.v8" ||
+                    legacy.data.schemaVersion === "chat-dsh-lifeos-state.v9" ||
+                    legacy.data.schemaVersion === "chat-dsh-lifeos-state.v10" ||
+                    legacy.data.schemaVersion === "chat-dsh-lifeos-state.v11" ||
+                    legacy.data.schemaVersion === "chat-dsh-lifeos-state.v12"
+                      ? legacy.data.preferredWorkflowSelection
+                      : null;
+                  if (preference === null) return null;
+                  return (
+                    withoutProjectBootstrapCapability(workflowSelectionSchema.parse(preference)) ??
+                    null
+                  );
+                })(),
+                sessions: Object.fromEntries(
+                  Object.entries(legacy.data.sessions).map(([sessionId, binding]) => {
+                    const { workflowSelection, ...bindingWithoutWorkflow } = binding;
+                    const legacyWorkflowSelection =
+                      workflowSelection === undefined
+                        ? undefined
+                        : workflowSelectionSchema.parse(workflowSelection);
+                    const normalizedWorkflowSelection =
+                      withoutProjectBootstrapCapability(legacyWorkflowSelection);
+                    return [
+                      sessionId,
+                      {
+                        ...bindingWithoutWorkflow,
+                        // 冻结Request可能已经越过Product Command边界，只是响应在rememberRun前丢失。
+                        // 迁移只增加本地路由目标，不改Product payload；普通新提交仍由Application
+                        // 的专用授权门拒绝。
+                        requests: requestsFromPreV14(binding),
+                        dshSendReviewEnabled:
+                          "dshSendReviewEnabled" in binding ? binding.dshSendReviewEnabled : false,
+                        bridgeDispatchReviewEnabled:
+                          "bridgeDispatchReviewEnabled" in binding &&
+                          binding.bridgeDispatchReviewEnabled !== undefined
+                            ? binding.bridgeDispatchReviewEnabled
+                            : false,
+                        ...(normalizedWorkflowSelection === undefined
+                          ? {}
+                          : { sessionWorkflowSelection: normalizedWorkflowSelection }),
+                      },
+                    ];
+                  }),
+                ),
+              });
     await this.writeAtomic(migrated);
     this.state = migrated;
     return this.state;

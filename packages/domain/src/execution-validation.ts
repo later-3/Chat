@@ -10,6 +10,7 @@ export interface ValidationContractStep {
   readonly stepId: string;
   readonly dependsOn: readonly string[];
   readonly successCriteria: readonly string[];
+  readonly capabilityRefs?: readonly string[];
 }
 
 export interface ValidationContract {
@@ -23,7 +24,19 @@ export interface ValidationContract {
 
 export interface ValidationCandidateStepResult {
   readonly stepId: string;
+  readonly executionAttemptId: string;
   readonly successCriteriaEvidence: readonly string[];
+  readonly executionEvidenceRefs?:
+    | readonly {
+        readonly outcome: "completed" | "failed";
+        readonly executionAttemptId: string;
+        readonly capabilityId: string;
+        readonly localName: string;
+        readonly toolCallId: string;
+        readonly inputSha256: string;
+        readonly resultSha256: string;
+      }[]
+    | undefined;
 }
 
 export interface ValidationCandidate {
@@ -31,6 +44,7 @@ export interface ValidationCandidate {
   readonly stepResults: readonly ValidationCandidateStepResult[];
   readonly finalOutputSections: readonly { readonly heading: string; readonly body: string }[];
   readonly completionCriteriaEvidence: readonly string[];
+  readonly structuredEvidenceRequired?: boolean;
 }
 
 export interface ValidationFailure {
@@ -42,6 +56,29 @@ function mentions(haystacks: readonly string[], needle: string): boolean {
   const normalizedNeedle = needle.trim();
   if (normalizedNeedle === "") return false;
   return haystacks.some((haystack) => haystack.includes(normalizedNeedle));
+}
+
+function requiresStructuredToolEvidence(capabilityRefs: readonly string[] | undefined): boolean {
+  return capabilityRefs?.some((capability) => capability !== "markdown_text_compose") ?? false;
+}
+
+function evidenceMatchesAllowedCapability(
+  evidence: NonNullable<ValidationCandidateStepResult["executionEvidenceRefs"]>[number],
+  capabilityRefs: readonly string[] | undefined,
+): boolean {
+  return (
+    capabilityRefs?.some((capability) => {
+      if (capability === "workspace_read") {
+        return ["read", "grep", "find", "ls"].includes(evidence.localName);
+      }
+      if (capability === "workspace_write") return ["edit", "write"].includes(evidence.localName);
+      if (capability === "shell_execute") return evidence.localName === "bash";
+      if (capability === "workspace_write_shell") {
+        return ["edit", "write", "bash"].includes(evidence.localName);
+      }
+      return capability === evidence.localName || capability === evidence.capabilityId;
+    }) ?? false
+  );
 }
 
 export function validateExecutionCandidate(
@@ -89,6 +126,21 @@ export function validateExecutionCandidate(
     seen.add(actual.stepId);
     // strictEvidence=false只放宽“逐条文字覆盖”，不放宽合同、顺序、依赖或输出结构。
     // 这样配置影响真实行为，但不能把验证节点变成无条件通过开关。
+    // 结构化Tool证据是不可关闭的授权/事实门；strictEvidence只控制文字逐条匹配。
+    if (
+      requiresStructuredToolEvidence(expected.capabilityRefs) &&
+      !actual.executionEvidenceRefs?.some(
+        (evidence) =>
+          evidence.outcome === "completed" &&
+          evidence.executionAttemptId === actual.executionAttemptId &&
+          evidenceMatchesAllowedCapability(evidence, expected.capabilityRefs),
+      )
+    ) {
+      failures.push({
+        code: "structured_evidence_missing",
+        detail: `步骤${actual.stepId}缺少匹配Attempt与允许Capability的成功Tool Result`,
+      });
+    }
     if (options.strictEvidence) {
       for (const criterion of expected.successCriteria) {
         if (!mentions(actual.successCriteriaEvidence, criterion)) {

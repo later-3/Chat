@@ -56,6 +56,11 @@ export const promptAssemblyIdSchema = prefixedId("pma");
 /** Chat拥有的不可变Agent配置版本；不能复用Pi Runtime Session或Workflow身份。 */
 export const agentVersionIdSchema = prefixedId("avn");
 
+/* Capability治理v1产品身份；Runtime Tool Call ID与这些产品事实不能混用。 */
+export const toolExecutionIntentIdSchema = prefixedId("tei");
+export const toolExecutionDecisionIdSchema = prefixedId("ted");
+export const toolExecutionResultIdSchema = prefixedId("ter");
+
 /* C1 长期上下文新增身份。均由服务端根据已提交产品身份确定性派生。 */
 export const contextRequestIdSchema = prefixedId("ctxr");
 export const memoryQueryIdSchema = prefixedId("mqy");
@@ -158,6 +163,9 @@ export type PromptFragmentId = z.infer<typeof promptFragmentIdSchema>;
 export type PromptFragmentRevisionId = z.infer<typeof promptFragmentRevisionIdSchema>;
 export type PromptAssemblyId = z.infer<typeof promptAssemblyIdSchema>;
 export type AgentVersionId = z.infer<typeof agentVersionIdSchema>;
+export type ToolExecutionIntentId = z.infer<typeof toolExecutionIntentIdSchema>;
+export type ToolExecutionDecisionId = z.infer<typeof toolExecutionDecisionIdSchema>;
+export type ToolExecutionResultId = z.infer<typeof toolExecutionResultIdSchema>;
 export type ContextRequestId = z.infer<typeof contextRequestIdSchema>;
 export type MemoryQueryId = z.infer<typeof memoryQueryIdSchema>;
 export type MemoryResultSnapshotId = z.infer<typeof memoryResultSnapshotIdSchema>;

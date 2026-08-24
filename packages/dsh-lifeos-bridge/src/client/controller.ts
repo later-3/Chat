@@ -11,6 +11,7 @@ import {
   type LifeosWorkflowOption,
   type NoteDecisionRequest,
   type PromptReviewDecisionRequest,
+  type ToolExecutionDecisionRequest,
   type ProjectBootstrapDecisionRequest,
   type WorkflowSelection,
 } from "../contracts.ts";
@@ -262,6 +263,15 @@ export class LifeosProjectionController {
       });
       return false;
     }
+  }
+
+  async decideToolExecution(request: ToolExecutionDecisionRequest): Promise<boolean> {
+    return await this.submitProjectionCommand(
+      `/lifeos/sessions/${encodeURIComponent(this.sessionId)}/tool-execution-decisions`,
+      "POST",
+      request,
+      "LifeOS Tool决定提交失败",
+    );
   }
 
   async decideProjectBootstrap(request: ProjectBootstrapDecisionRequest): Promise<boolean> {

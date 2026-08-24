@@ -6,6 +6,7 @@ import {
   dshSendReviewDecisionRequestSchema,
   noteDecisionRequestSchema,
   promptReviewDecisionRequestSchema,
+  toolExecutionDecisionRequestSchema,
   workflowSelectionSchema,
 } from "../src/contracts.ts";
 
@@ -372,6 +373,42 @@ test("decidePromptReview submits the exact observed request hashes to its same-o
   assert.deepEqual(requests, [
     {
       path: "/lifeos/sessions/dsh-session-1/prompt-review-decisions",
+      method: "POST",
+      body: request,
+    },
+  ]);
+  controller.dispose();
+});
+
+test("decideToolExecution submits Capability、参数与Scope绑定到独立同源路由", async () => {
+  const requests: Array<{ path: string; method?: string; body?: unknown }> = [];
+  const controller = new LifeosProjectionController(
+    "dsh-session-1",
+    async (input: URL | RequestInfo, init?: RequestInit) => {
+      requests.push({
+        path: String(input),
+        ...(init?.method === undefined ? {} : { method: init.method }),
+        ...(init?.body === undefined ? {} : { body: JSON.parse(String(init.body)) }),
+      });
+      return new Response(JSON.stringify(projection), { status: 200 });
+    },
+  );
+  const request = toolExecutionDecisionRequestSchema.parse({
+    kind: "approve",
+    binding: {
+      productRunId: "run_tool1",
+      runRevision: 4,
+      toolExecutionIntentId: "tei_tool1",
+      intentRevision: 1,
+      capabilityDescriptorSha256: "1".repeat(64),
+      inputSha256: "2".repeat(64),
+      scopeRef: { kind: "workspace", rootId: "root_chat" },
+    },
+  });
+  assert.equal(await controller.decideToolExecution(request), true);
+  assert.deepEqual(requests, [
+    {
+      path: "/lifeos/sessions/dsh-session-1/tool-execution-decisions",
       method: "POST",
       body: request,
     },

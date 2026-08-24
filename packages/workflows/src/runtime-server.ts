@@ -138,10 +138,12 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       activity: (event) => {
         try {
           options.activitySink?.emit(event);
+          return true;
         } catch (error) {
           console.error(
             `[activity] emit_failed code=run_activity.emit_failed source=${event.sourceKind} cause=${traceFailureCause(error)}`,
           );
+          return false;
         }
       },
       now: () => new Date().toISOString(),

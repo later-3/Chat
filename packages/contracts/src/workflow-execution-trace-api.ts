@@ -5,6 +5,7 @@ import { productRunPhaseSchema, productRunStatusSchema } from "./product.js";
 import { workflowRuntimeTraceDtoSchema } from "./workflow-runtime-trace-api.js";
 import { workflowNodeRunSummaryDtoSchema } from "./workflow-api.js";
 import { nodeProductRefSchema } from "./workflow-run.js";
+import { resolvedCapabilitySnapshotSchema } from "./capability.js";
 
 export const WORKFLOW_EXECUTION_TRACE_SCHEMA_VERSION = "chat-workflow-execution-trace.v1";
 
@@ -76,8 +77,9 @@ export const piTraceActivityDtoSchema = z
     nodeKind: z.enum(["planner", "executor", "direct_agent", "note_capture"]),
     toolName: z
       .string()
-      .regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/u)
+      .regex(/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/u)
       .optional(),
+    capability: resolvedCapabilitySnapshotSchema.optional(),
     inputDisplay: z.string().max(32_000).optional(),
     inputDisplayTruncated: z.boolean().optional(),
     resultDisplay: z.string().max(32_000).optional(),

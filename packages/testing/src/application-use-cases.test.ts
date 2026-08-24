@@ -810,7 +810,7 @@ describe("Message Receipt历史重放闭包", () => {
       },
     });
     const migrated = (await store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(migrated.schemaVersion).toBe("chat-product-store.v19");
+    expect(migrated.schemaVersion).toBe("chat-product-store.v20");
     expect(migrated.commandReceipts[commandId]?.resultRefs).toEqual({
       messageId: message.messageId,
       productRunId: run.productRunId,

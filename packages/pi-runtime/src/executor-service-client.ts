@@ -43,7 +43,7 @@ export interface PiExecutorServiceClientOptions {
   readonly pollIntervalMs?: number;
 }
 
-function operationIdForAttempt(executionAttemptId: string): string {
+export function operationIdForExecutionAttempt(executionAttemptId: string): string {
   return `pio_${hashExecutorValue({ executionAttemptId }).slice(0, 32)}`;
 }
 
@@ -59,7 +59,7 @@ export function createPiExecutorServiceClient(options: PiExecutorServiceClientOp
   return async function run(input: RunPiExecutorServiceInput): Promise<ExecutorStepCandidate> {
     const request = startPiExecutorOperationRequestSchema.parse({
       schemaVersion: PI_EXECUTOR_PROTOCOL_VERSION,
-      operationId: operationIdForAttempt(input.executionAttemptId),
+      operationId: operationIdForExecutionAttempt(input.executionAttemptId),
       executionAttemptId: input.executionAttemptId,
       inputManifestSha256: input.inputManifestSha256,
       contract: input.contract,
@@ -78,7 +78,9 @@ export function createPiExecutorServiceClient(options: PiExecutorServiceClientOp
     // 首次Snapshot声明的Journal代际是本次Client消费的不可降级身份；后续状态不能
     // 通过删除v2标记或request转入legacy宽松矩阵。
     const initialIntegrityVersion = startSnapshot.integrityVersion;
-    const requiresFullOperationV2 = initialIntegrityVersion === "full-operation.v2";
+    const requiresFullOperationV2 =
+      initialIntegrityVersion === "full-operation.v2" ||
+      initialIntegrityVersion === "full-operation.v3";
     const journalRequest = startSnapshot.request ?? request;
     const { nodePrompt: _authorizedNodePrompt, ...journalSubmittedRequest } = journalRequest;
     void _authorizedNodePrompt;

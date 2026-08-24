@@ -1,8 +1,13 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { agentRuntimeBaselineDtoSchema, type CommandId, type PrincipalId } from "@chat/contracts";
+import {
+  agentRuntimeBaselineDtoSchema,
+  type CommandId,
+  type PrincipalId,
+  type ProductSnapshot,
+} from "@chat/contracts";
 import {
   authorizeDirectAgentOperation,
   beginDirectAgentAttempt,
@@ -13,6 +18,11 @@ import {
   createProductSession,
   getCurrentPromptReview,
   persistDirectAgentCandidate,
+  publishToolExecutionIntent,
+  getToolExecutions,
+  submitToolExecutionDecision,
+  claimToolExecutionDecision,
+  commitToolExecutionResult,
   publishPromptReviewRequest,
   submitPromptReviewDecision,
   submitUserMessage,
@@ -22,11 +32,70 @@ import {
   type IdFactory,
 } from "@chat/application";
 import { SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
-import { canonicalJsonStringify, computePromptReviewPayloadSha256 } from "@chat/domain";
+import {
+  canonicalJsonStringify,
+  computeToolExecutionDecisionSha256,
+  computeDirectRuntimeOperationRefSha256,
+  computePromptReviewPayloadSha256,
+  hashCanonical,
+} from "@chat/domain";
 import { JsonProductStore } from "./json-product-store.js";
 
 const PRINCIPAL = "usr_directvertical" as PrincipalId;
 const BASE_TIME = "2026-08-19T12:00:00.000Z";
+
+function runtimeTool(name: string, workspaceRootId?: string) {
+  const effect = ["read", "grep", "find", "ls"].includes(name)
+    ? ("read" as const)
+    : name === "bash"
+      ? ("shell" as const)
+      : name === "edit" || name === "write"
+        ? ("local_write" as const)
+        : ("external_write" as const);
+  const descriptorInput = {
+    schemaVersion: "capability-descriptor.v1" as const,
+    capabilityId: `pi_direct:tool:builtin:${name}`,
+    kind: "executable_tool" as const,
+    runtimeOwner: "pi_direct" as const,
+    localName: name,
+    sourceRef: {
+      sourceKind: "builtin" as const,
+      package: "@earendil-works/pi-coding-agent",
+      repository: "later-3/pi",
+      revision: "1".repeat(40),
+      resourcePath: `pi/packages/coding-agent/src/core/tools/${name}.ts`,
+    },
+    inputSchemaSha256: hashCanonical("test-tool-schema.v1", { name }),
+    effect,
+    scopePolicy: "workspace_required" as const,
+    approvalPolicy:
+      effect === "read" ? ("run_policy" as const) : ("product_decision_required" as const),
+    evidencePolicy:
+      effect === "read" ? ("runtime_journal" as const) : ("product_intent_result" as const),
+    readiness: "available" as const,
+  };
+  const descriptorSha256 = hashCanonical("capability-descriptor.v1", descriptorInput);
+  return {
+    name,
+    description: `${name} tool`,
+    parametersJson: "{}",
+    sourceRelativePath: descriptorInput.sourceRef.resourcePath,
+    capability: { ...descriptorInput, descriptorSha256 },
+    resolvedRef: {
+      capabilityId: descriptorInput.capabilityId,
+      descriptorSha256,
+      inputSchemaSha256: descriptorInput.inputSchemaSha256,
+      resolvedImplementationSha256: hashCanonical(
+        "test-tool-implementation.v1",
+        descriptorInput.sourceRef,
+      ),
+      scopeRef:
+        workspaceRootId === undefined
+          ? ({ kind: "global" } as const)
+          : ({ kind: "workspace", rootId: workspaceRootId } as const),
+    },
+  };
+}
 
 function createIdFactories(): {
   readonly ids: IdFactory;
@@ -104,7 +173,7 @@ async function createHarness() {
       }),
     },
     agentRuntimeProfiles: {
-      read: async (agentKey) =>
+      read: async (agentKey, workspaceRootId) =>
         agentKey === "direct"
           ? agentRuntimeBaselineDtoSchema.parse({
               kind: "pi_coding_agent",
@@ -121,10 +190,30 @@ async function createHarness() {
               },
               variants: [
                 {
+                  variantKey: "pi_cli_default",
+                  title: "Pi CLI默认",
+                  description: "测试默认能力。",
+                  capabilityCatalogSha256: "2".repeat(64),
+                  readiness: "available",
+                  diagnostics: [],
+                  enabledToolNames: ["read", "grep", "find", "ls", "write"],
+                  piSystemPrompt: {
+                    bodyMarkdown: "You are an expert coding assistant operating inside pi.",
+                    sha256: "d".repeat(64),
+                    dynamicPlaceholders: ["WORKSPACE_ROOT"],
+                    sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
+                  },
+                  tools: ["read", "grep", "find", "ls", "write"].map((name) =>
+                    runtimeTool(name, workspaceRootId),
+                  ),
+                },
+                {
                   variantKey: "read_only",
                   title: "只读执行",
                   description: "只读检查Workspace。",
                   capabilityCatalogSha256: "2".repeat(64),
+                  readiness: "available",
+                  diagnostics: [],
                   enabledToolNames: ["read", "grep", "find", "ls"],
                   piSystemPrompt: {
                     bodyMarkdown: "You are an expert coding assistant operating inside pi.",
@@ -132,17 +221,27 @@ async function createHarness() {
                     dynamicPlaceholders: ["WORKSPACE_ROOT"],
                     sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
                   },
-                  tools: ["read", "grep", "find", "ls"].map((name) => ({
-                    name,
-                    description: `${name} tool`,
-                    parametersJson: "{}",
-                    sourceRelativePath: `pi/packages/coding-agent/src/core/tools/${name}.ts`,
-                  })),
+                  tools: ["read", "grep", "find", "ls"].map((name) =>
+                    runtimeTool(name, workspaceRootId),
+                  ),
                 },
               ],
               finalReviewNote: "最终内容以发送前审核为准。",
             })
           : undefined,
+    },
+    projectRoots: {
+      list: () => [
+        {
+          rootId: "root_chat",
+          displayName: "Chat Workspace",
+          enabledAdapters: ["local-git-workspace.v1"],
+          grantSha256: "4".repeat(64),
+        },
+      ],
+      observe: async () => {
+        throw new Error("测试不观察Workspace");
+      },
     },
   };
   const { session } = await createProductSession(deps, {
@@ -159,7 +258,7 @@ async function createHarness() {
     workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
     definitionSha256: directRevision.definitionSha256,
   };
-  return { command, deps, session, store, workflowSelection };
+  return { command, deps, directory, session, store, workflowSelection };
 }
 
 async function startDirectAgent(text = "只读检查当前项目并给出结论", agentPromptOverride?: string) {
@@ -170,6 +269,11 @@ async function startDirectAgent(text = "只读检查当前项目并给出结论"
     commandId: harness.command(),
     payload: {
       text,
+      promptSelection: {
+        schemaVersion: "prompt-turn-selection-input.v1",
+        workspaceRootId: "root_chat",
+        regions: [],
+      },
       workflowSelection: {
         ...harness.workflowSelection,
         ...(agentPromptOverride === undefined
@@ -347,6 +451,477 @@ describe("Direct Agent Application + JsonProductStore最小纵向", () => {
           attempt.productRunId === submitted.run.productRunId && attempt.kind === "workflow",
       ),
     ).toMatchObject({ outcome: "failure", errorCode: "direct_agent.prepare_failed" });
+  });
+
+  it("高影响Tool按精确Capability/参数/Scope审核并只交付一次执行许可", async () => {
+    const started = await startDirectAgent("修改受权Workspace中的说明文件");
+    const tool = runtimeTool("write", "root_chat");
+    const capability = {
+      ref: tool.resolvedRef!,
+      localName: tool.name,
+      kind: tool.capability.kind,
+      runtimeOwner: tool.capability.runtimeOwner,
+      sourceRef: tool.capability.sourceRef,
+      effect: tool.capability.effect,
+      scopePolicy: tool.capability.scopePolicy,
+      approvalPolicy: tool.capability.approvalPolicy,
+      evidencePolicy: tool.capability.evidencePolicy,
+    };
+    const inputSha256 = hashCanonical("test-tool-input.v1", {
+      path: "README.md",
+      content: "updated",
+    });
+    const publishInput = {
+      schemaVersion: "chat-internal-runtime.v1",
+      productRunId: started.run.productRunId,
+      directAgentAttemptId: started.begun.directAgentAttemptId,
+      runtimeOperationRefSha256: computeDirectRuntimeOperationRefSha256({
+        productRunId: started.run.productRunId,
+        directAgentAttemptId: started.begun.directAgentAttemptId,
+        inputManifestSha256: started.begun.inputManifestSha256,
+      }),
+      capability,
+      toolCallId: "tool_write_1",
+      inputDisplay: '{"path":"README.md","content":"updated"}',
+      inputDisplayTruncated: false,
+      inputSha256,
+      scopeRef: capability.ref.scopeRef,
+      effect: "local_write",
+    } as const;
+    await expect(
+      publishToolExecutionIntent(started.deps, {
+        ...publishInput,
+        commandId: started.command(),
+        runtimeOperationRefSha256: "0".repeat(64),
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    await expect(
+      publishToolExecutionIntent(started.deps, {
+        ...publishInput,
+        commandId: started.command(),
+        capability: {
+          ...capability,
+          ref: { ...capability.ref, resolvedImplementationSha256: "0".repeat(64) },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    await expect(
+      publishToolExecutionIntent(started.deps, {
+        ...publishInput,
+        commandId: started.command(),
+        capability: {
+          ...capability,
+          ref: { ...capability.ref, scopeRef: { kind: "workspace", rootId: "root_wrong" } },
+        },
+        scopeRef: { kind: "workspace", rootId: "root_wrong" },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    await expect(
+      publishToolExecutionIntent(started.deps, {
+        ...publishInput,
+        commandId: started.command(),
+        effect: "shell",
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    await expect(
+      publishToolExecutionIntent(started.deps, {
+        ...publishInput,
+        commandId: started.command(),
+        capability: { ...capability, approvalPolicy: "run_policy" },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    await expect(
+      publishToolExecutionIntent(started.deps, {
+        ...publishInput,
+        commandId: started.command(),
+        capability: { ...capability, evidencePolicy: "runtime_journal" },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    await expect(
+      publishToolExecutionIntent(started.deps, {
+        ...publishInput,
+        commandId: started.command(),
+        capability: {
+          ...capability,
+          ref: { ...capability.ref, scopeRef: { kind: "workspace", rootId: "root_wrong" } },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    expect(
+      Object.keys(
+        (await started.store.read({ kind: "committedSnapshot" })).snapshot.entities
+          .toolExecutionIntents,
+      ),
+    ).toHaveLength(0);
+    const publishCommandId = started.command();
+    const [published, concurrentPublished] = await Promise.all([
+      publishToolExecutionIntent(started.deps, { ...publishInput, commandId: publishCommandId }),
+      publishToolExecutionIntent(started.deps, { ...publishInput, commandId: publishCommandId }),
+    ]);
+    expect(concurrentPublished).toEqual(published);
+    const listed = await getToolExecutions(started.deps, {
+      principalId: PRINCIPAL,
+      productRunId: started.run.productRunId,
+    });
+    expect(listed.intents[0]).toMatchObject({
+      toolExecutionIntentId: published.toolExecutionIntentId,
+      status: "waiting_decision",
+      effect: "local_write",
+      capability: { ref: { capabilityId: "pi_direct:tool:builtin:write" } },
+    });
+    await expect(
+      submitToolExecutionDecision(started.deps, {
+        principalId: PRINCIPAL,
+        productRunId: started.run.productRunId,
+        commandId: started.command(),
+        expectedIntentRevision: published.revision,
+        payload: {
+          toolExecutionIntentId: published.toolExecutionIntentId,
+          intentRevision: published.revision,
+          capabilityDescriptorSha256: capability.ref.descriptorSha256,
+          inputSha256,
+          scopeRef: { kind: "workspace", rootId: "root_wrong" },
+          kind: "approve",
+        },
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    const decisionCommandId = started.command();
+    const decisionInput = {
+      principalId: PRINCIPAL,
+      productRunId: started.run.productRunId,
+      commandId: decisionCommandId,
+      expectedIntentRevision: published.revision,
+      payload: {
+        toolExecutionIntentId: published.toolExecutionIntentId,
+        intentRevision: published.revision,
+        capabilityDescriptorSha256: capability.ref.descriptorSha256,
+        inputSha256,
+        scopeRef: capability.ref.scopeRef,
+        kind: "approve",
+      },
+    } as const;
+    const [decided, concurrentDecided] = await Promise.all([
+      submitToolExecutionDecision(started.deps, decisionInput),
+      submitToolExecutionDecision(started.deps, decisionInput),
+    ]);
+    expect(concurrentDecided).toEqual(decided);
+    const claimInput = {
+      schemaVersion: "chat-internal-runtime.v1" as const,
+      commandId: started.command(),
+      productRunId: started.run.productRunId,
+      directAgentAttemptId: started.begun.directAgentAttemptId,
+      toolExecutionIntentId: published.toolExecutionIntentId,
+      intentRevision: published.revision,
+      capabilityDescriptorSha256: capability.ref.descriptorSha256,
+      inputSha256,
+      scopeRef: capability.ref.scopeRef,
+    };
+    await expect(claimToolExecutionDecision(started.deps, claimInput)).resolves.toMatchObject({
+      status: "authorized",
+    });
+    await expect(
+      claimToolExecutionDecision(started.deps, {
+        ...claimInput,
+        commandId: started.command(),
+      }),
+    ).resolves.toMatchObject({ status: "already_claimed" });
+    await commitToolExecutionResult(started.deps, {
+      schemaVersion: "chat-internal-runtime.v1",
+      commandId: started.command(),
+      productRunId: started.run.productRunId,
+      directAgentAttemptId: started.begun.directAgentAttemptId,
+      toolExecutionIntentId: published.toolExecutionIntentId,
+      outcome: "completed",
+      resultSha256: "8".repeat(64),
+      journalResultSha256: "9".repeat(64),
+    });
+    const { snapshot } = await started.store.read({ kind: "committedSnapshot" });
+    expect(snapshot.entities.toolExecutionIntents[published.toolExecutionIntentId]).toMatchObject({
+      status: "completed",
+    });
+    expect(snapshot.entities.runs[started.run.productRunId]).toMatchObject({
+      status: "running",
+      phase: "executing",
+    });
+
+    const poisonedDeps = {
+      ...started.deps,
+      now: () => {
+        throw new Error("Receipt重放不得读取当前时间");
+      },
+    };
+    await expect(
+      publishToolExecutionIntent(poisonedDeps, { ...publishInput, commandId: publishCommandId }),
+    ).resolves.toEqual(published);
+    await expect(submitToolExecutionDecision(poisonedDeps, decisionInput)).resolves.toEqual(
+      decided,
+    );
+    await expect(
+      publishToolExecutionIntent(poisonedDeps, {
+        ...publishInput,
+        commandId: publishCommandId,
+        inputDisplay: '{"path":"OTHER.md"}',
+      }),
+    ).rejects.toMatchObject({ code: "command_id_reused" });
+    await expect(
+      publishToolExecutionIntent(poisonedDeps, {
+        ...publishInput,
+        commandId: publishCommandId,
+        effect: "shell",
+      }),
+    ).rejects.toMatchObject({ code: "command_id_reused" });
+    await expect(
+      publishToolExecutionIntent(poisonedDeps, {
+        ...publishInput,
+        commandId: publishCommandId,
+        capability: { ...capability, approvalPolicy: "run_policy" },
+      }),
+    ).rejects.toMatchObject({ code: "command_id_reused" });
+    await expect(
+      publishToolExecutionIntent(poisonedDeps, {
+        ...publishInput,
+        commandId: publishCommandId,
+        capability: { ...capability, evidencePolicy: "runtime_journal" },
+      }),
+    ).rejects.toMatchObject({ code: "command_id_reused" });
+    await expect(
+      publishToolExecutionIntent(poisonedDeps, {
+        ...publishInput,
+        commandId: publishCommandId,
+        capability: {
+          ...capability,
+          ref: { ...capability.ref, scopeRef: { kind: "workspace", rootId: "root_wrong" } },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "command_id_reused" });
+    await expect(
+      submitToolExecutionDecision(poisonedDeps, {
+        ...decisionInput,
+        payload: { ...decisionInput.payload, explanation: "另一Payload" },
+      }),
+    ).rejects.toMatchObject({ code: "command_id_reused" });
+    expect(
+      Object.values(snapshot.entities.toolExecutionIntents).filter(
+        (intent) => intent.toolCallId === publishInput.toolCallId,
+      ),
+    ).toHaveLength(1);
+    expect(
+      Object.values(snapshot.entities.toolExecutionDecisions).filter(
+        (decision) => decision.commandId === decisionCommandId,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("Run终结后旧Tool批准不能再claim执行许可", async () => {
+    const started = await startDirectAgent("验证终态Run拒绝旧Tool许可");
+    const tool = runtimeTool("write", "root_chat");
+    const capability = {
+      ref: tool.resolvedRef!,
+      localName: tool.name,
+      kind: tool.capability.kind,
+      runtimeOwner: tool.capability.runtimeOwner,
+      sourceRef: tool.capability.sourceRef,
+      effect: tool.capability.effect,
+      scopePolicy: tool.capability.scopePolicy,
+      approvalPolicy: tool.capability.approvalPolicy,
+      evidencePolicy: tool.capability.evidencePolicy,
+    };
+    const inputSha256 = hashCanonical("test-tool-input.v1", { path: "README.md" });
+    const published = await publishToolExecutionIntent(started.deps, {
+      schemaVersion: "chat-internal-runtime.v1",
+      commandId: started.command(),
+      productRunId: started.run.productRunId,
+      directAgentAttemptId: started.begun.directAgentAttemptId,
+      runtimeOperationRefSha256: computeDirectRuntimeOperationRefSha256({
+        productRunId: started.run.productRunId,
+        directAgentAttemptId: started.begun.directAgentAttemptId,
+        inputManifestSha256: started.begun.inputManifestSha256,
+      }),
+      capability,
+      toolCallId: "tool_terminal_claim_1",
+      inputDisplay: '{"path":"README.md"}',
+      inputDisplayTruncated: false,
+      inputSha256,
+      scopeRef: capability.ref.scopeRef,
+      effect: "local_write",
+    });
+    await submitToolExecutionDecision(started.deps, {
+      principalId: PRINCIPAL,
+      productRunId: started.run.productRunId,
+      commandId: started.command(),
+      expectedIntentRevision: published.revision,
+      payload: {
+        toolExecutionIntentId: published.toolExecutionIntentId,
+        intentRevision: published.revision,
+        capabilityDescriptorSha256: capability.ref.descriptorSha256,
+        inputSha256,
+        scopeRef: capability.ref.scopeRef,
+        kind: "approve",
+      },
+    });
+    await commitRunFailure(started.deps, {
+      commandId: started.command(),
+      productRunId: started.run.productRunId,
+      errorCode: "direct.executor_failed_before_claim",
+      summary: "Run在旧许可claim前终结",
+    });
+    await expect(
+      claimToolExecutionDecision(started.deps, {
+        schemaVersion: "chat-internal-runtime.v1",
+        commandId: started.command(),
+        productRunId: started.run.productRunId,
+        directAgentAttemptId: started.begun.directAgentAttemptId,
+        toolExecutionIntentId: published.toolExecutionIntentId,
+        intentRevision: published.revision,
+        capabilityDescriptorSha256: capability.ref.descriptorSha256,
+        inputSha256,
+        scopeRef: capability.ref.scopeRef,
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+    const settled = (await started.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(settled.entities.toolExecutionIntents[published.toolExecutionIntentId]).toMatchObject({
+      status: "not_executed",
+    });
+  });
+
+  it.each([
+    "reject_plus_approved",
+    "approve_plus_rejected",
+    "wrong_principal",
+    "empty_journal_evidence",
+    "effect_drift",
+    "terminal_run_active_intent",
+  ] as const)("Product Store open拒绝Tool状态矩阵反例：%s", async (contradiction) => {
+    const started = await startDirectAgent(`Tool矩阵反例:${contradiction}`);
+    const tool = runtimeTool("write", "root_chat");
+    const capability = {
+      ref: tool.resolvedRef!,
+      localName: tool.name,
+      kind: tool.capability.kind,
+      runtimeOwner: tool.capability.runtimeOwner,
+      sourceRef: tool.capability.sourceRef,
+      effect: tool.capability.effect,
+      scopePolicy: tool.capability.scopePolicy,
+      approvalPolicy: tool.capability.approvalPolicy,
+      evidencePolicy: tool.capability.evidencePolicy,
+    };
+    const inputSha256 = hashCanonical("test-tool-matrix-input.v1", { contradiction });
+    const published = await publishToolExecutionIntent(started.deps, {
+      schemaVersion: "chat-internal-runtime.v1",
+      commandId: started.command(),
+      productRunId: started.run.productRunId,
+      directAgentAttemptId: started.begun.directAgentAttemptId,
+      runtimeOperationRefSha256: computeDirectRuntimeOperationRefSha256({
+        productRunId: started.run.productRunId,
+        directAgentAttemptId: started.begun.directAgentAttemptId,
+        inputManifestSha256: started.begun.inputManifestSha256,
+      }),
+      capability,
+      toolCallId: `tool_matrix_${contradiction}`,
+      inputDisplay: "{}",
+      inputDisplayTruncated: false,
+      inputSha256,
+      scopeRef: capability.ref.scopeRef,
+      effect: "local_write",
+    });
+    const decided = await submitToolExecutionDecision(started.deps, {
+      principalId: PRINCIPAL,
+      productRunId: started.run.productRunId,
+      commandId: started.command(),
+      expectedIntentRevision: published.revision,
+      payload: {
+        toolExecutionIntentId: published.toolExecutionIntentId,
+        intentRevision: published.revision,
+        capabilityDescriptorSha256: capability.ref.descriptorSha256,
+        inputSha256,
+        scopeRef: capability.ref.scopeRef,
+        kind: "approve",
+      },
+    });
+    const claimInput = {
+      schemaVersion: "chat-internal-runtime.v1" as const,
+      commandId: started.command(),
+      productRunId: started.run.productRunId,
+      directAgentAttemptId: started.begun.directAgentAttemptId,
+      toolExecutionIntentId: published.toolExecutionIntentId,
+      intentRevision: published.revision,
+      capabilityDescriptorSha256: capability.ref.descriptorSha256,
+      inputSha256,
+      scopeRef: capability.ref.scopeRef,
+    };
+    if (contradiction === "empty_journal_evidence") {
+      await claimToolExecutionDecision(started.deps, claimInput);
+      await commitToolExecutionResult(started.deps, {
+        schemaVersion: "chat-internal-runtime.v1",
+        commandId: started.command(),
+        productRunId: started.run.productRunId,
+        directAgentAttemptId: started.begun.directAgentAttemptId,
+        toolExecutionIntentId: published.toolExecutionIntentId,
+        outcome: "completed",
+        resultSha256: "8".repeat(64),
+        journalResultSha256: "9".repeat(64),
+      });
+    }
+    const raw = JSON.parse(
+      await readFile(join(started.directory, "product.json"), "utf8"),
+    ) as ProductSnapshot;
+    const intent = raw.entities.toolExecutionIntents[published.toolExecutionIntentId];
+    const decision = raw.entities.toolExecutionDecisions[decided.decision.toolExecutionDecisionId];
+    if (intent === undefined || decision === undefined) throw new Error("测试缺少Tool事实");
+    if (contradiction === "reject_plus_approved") {
+      decision.kind = "reject";
+      decision.sha256 = computeToolExecutionDecisionSha256({
+        toolExecutionDecisionId: decision.toolExecutionDecisionId,
+        toolExecutionIntentId: decision.toolExecutionIntentId,
+        productRunId: decision.productRunId,
+        intentRevision: decision.intentRevision,
+        capabilityDescriptorSha256: decision.capabilityDescriptorSha256,
+        inputSha256: decision.inputSha256,
+        scopeRef: decision.scopeRef,
+        kind: "reject",
+        principalId: decision.principalId,
+        commandId: decision.commandId,
+      });
+    } else if (contradiction === "approve_plus_rejected") {
+      intent.status = "rejected";
+    } else if (contradiction === "wrong_principal") {
+      decision.principalId = "usr_otherprincipal" as never;
+      decision.sha256 = computeToolExecutionDecisionSha256({
+        toolExecutionDecisionId: decision.toolExecutionDecisionId,
+        toolExecutionIntentId: decision.toolExecutionIntentId,
+        productRunId: decision.productRunId,
+        intentRevision: decision.intentRevision,
+        capabilityDescriptorSha256: decision.capabilityDescriptorSha256,
+        inputSha256: decision.inputSha256,
+        scopeRef: decision.scopeRef,
+        kind: decision.kind,
+        principalId: decision.principalId,
+        commandId: decision.commandId,
+      });
+    } else if (contradiction === "empty_journal_evidence") {
+      const result =
+        intent.resultId === undefined
+          ? undefined
+          : raw.entities.toolExecutionResults[intent.resultId];
+      if (result === undefined) throw new Error("测试缺少Tool Result事实");
+      result.evidenceRefs = [];
+    } else if (contradiction === "effect_drift") {
+      intent.effect = "shell";
+    } else {
+      const run = raw.entities.runs[started.run.productRunId];
+      if (run === undefined) throw new Error("测试缺少Run事实");
+      run.status = "failed";
+      run.failure = {
+        code: "direct.matrix_corrupt",
+        summary: "故意制造终态Run活动Intent",
+      };
+    }
+    const corruptDir = await mkdtemp(join(tmpdir(), `chat-tool-matrix-${contradiction}-`));
+    const corruptPath = join(corruptDir, "product.json");
+    await writeFile(corruptPath, JSON.stringify(raw), "utf8");
+    await expect(
+      JsonProductStore.open({ filePath: corruptPath, now: () => BASE_TIME }),
+    ).rejects.toThrow();
   });
 
   it("只在Workflow节点绑定同一Review证据后公开并接受审核", async () => {

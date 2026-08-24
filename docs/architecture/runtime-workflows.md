@@ -175,11 +175,17 @@ Pi Coding Executor完成只产生候选。Approved Step的Capability决定可见
 3. Validation通过后调用Application Product Commit。
 4. Product Store原子提交正式Assistant Message和Run终态。
 
+新的Planning Candidate还必须引用Pi Journal投影出的结构化`ExecutionEvidenceRef`。当批准Step声明Capability时，仅有“测试已通过”等模型字符串不能满足Validation；引用必须绑定同一Execution Attempt、qualified Capability、闭合Tool结果和Hash。
+
 候选已经生成但Product Commit失败时，只重试幂等提交，不重新调用付费Executor。
 
 Executor Operation使用稳定`pio_*`身份和请求Hash。Workflow断线后按事件cursor与终态Snapshot查询同一Operation，不重新创建AgentSession。Tool调用前已耐久保存意图；进程重启发现未闭合Tool时收敛为`outcome_unknown`。完整事件与正文隔离规则见[Pi Coding Executor Service As-built](./pi-coding-executor-service.md)。
 
 Operation Start在进入Journal前还有独立授权门：Executor用`executionAttemptId + Contract ID/Hash + Step + Manifest`向Application回查Product Store，只使用API返回的权威Contract、Context和依赖引用。Runtime Key只是进程身份，不能单独授予文件或Shell能力。
+
+Direct Workflow的Provider Prompt Review与具体Tool动作审核是两个暂停点：前者审核即将发送的Provider Payload，后者只在Provider返回高影响Tool Call之后才存在。Tool审核等待态由Product Store拥有；DSH刷新后重新Query。任一高影响Intent未闭合或为unknown时，Direct Product Commit失败关闭。
+
+高影响Tool固定按`Product Intent → Product Decision → claim → handler一次 → Journal Result → Product Result`执行。claim事务复核Run/Attempt仍活跃；Journal已落盘而Product响应丢失时只重放同一Result Command/Receipt，重启不再claim或执行handler。完整崩溃矩阵见[Capability治理As-built](./capability-governance-as-built.md)。
 
 ## 5. MemoryWriteWorkflow
 

@@ -44,6 +44,7 @@ import {
   projectBootstrapDecisionResponseSchema,
   projectBootstrapReviewResponseSchema,
   projectBootstrapOperationSchema,
+  toolExecutionsResponseSchema,
   type ProjectBootstrapConfiguration,
   type ProjectBootstrapCandidate,
   type ProjectBootstrapOperation,
@@ -61,6 +62,7 @@ import {
   noteCandidateResponseSchema,
   noteDecisionResponseSchema,
   promptReviewDecisionResponseSchema,
+  toolExecutionDecisionResponseSchema,
   plansResponseSchema,
   problemSchema,
   runResponseSchema,
@@ -76,6 +78,8 @@ import {
   type DecisionRequest,
   type NoteDecisionRequest,
   type PromptReviewDecisionRequest,
+  type ToolExecutionDecisionRequest,
+  type ChatToolExecutions,
   type LifeosWorkflowOption,
   type WorkflowSelection,
   type BridgeChatDispatchPlan,
@@ -84,6 +88,7 @@ import type {
   PendingDecision,
   PendingNoteDecision,
   PendingPromptReviewDecision,
+  PendingToolExecutionDecision,
 } from "./state-store.ts";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -534,6 +539,14 @@ export class ChatProductClient {
     return value.promptReview;
   }
 
+  async getToolExecutions(productRunId: string, signal?: AbortSignal): Promise<ChatToolExecutions> {
+    return this.request(
+      `/api/runs/${encodeURIComponent(productRunId)}/tool-executions`,
+      toolExecutionsResponseSchema,
+      withSignal(signal),
+    );
+  }
+
   async getMessage(
     sessionId: string,
     messageId: string,
@@ -641,6 +654,54 @@ export class ChatProductClient {
       },
     );
     return value.run;
+  }
+
+  async submitToolExecutionDecision(
+    pending: PendingToolExecutionDecision,
+    request: ToolExecutionDecisionRequest,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const value = await this.request(
+      `/api/runs/${encodeURIComponent(pending.productRunId)}/tool-execution-decisions`,
+      toolExecutionDecisionResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          commandId: pending.commandId,
+          expectedRevision: pending.intentRevision,
+          payload: {
+            toolExecutionIntentId: pending.toolExecutionIntentId,
+            intentRevision: pending.intentRevision,
+            capabilityDescriptorSha256: pending.capabilityDescriptorSha256,
+            inputSha256: pending.inputSha256,
+            scopeRef: pending.scopeRef,
+            kind: pending.request.kind,
+            ...(pending.request.kind === "reject" && request.explanation !== undefined
+              ? { explanation: request.explanation }
+              : {}),
+          },
+        }),
+        ...withSignal(signal),
+      },
+    );
+    if (
+      value.decision.toolExecutionIntentId !== pending.toolExecutionIntentId ||
+      value.decision.productRunId !== pending.productRunId ||
+      value.decision.intentRevision !== pending.intentRevision ||
+      value.decision.capabilityDescriptorSha256 !== pending.capabilityDescriptorSha256 ||
+      value.decision.inputSha256 !== pending.inputSha256 ||
+      JSON.stringify(value.decision.scopeRef) !== JSON.stringify(pending.scopeRef) ||
+      value.decision.kind !== pending.kind ||
+      value.intent.toolExecutionIntentId !== pending.toolExecutionIntentId ||
+      value.intent.productRunId !== pending.productRunId ||
+      value.intent.revision !== pending.intentRevision + 1 ||
+      value.intent.status !== (pending.kind === "approve" ? "approved" : "rejected") ||
+      value.intent.capability.ref.descriptorSha256 !== pending.capabilityDescriptorSha256 ||
+      value.intent.inputSha256 !== pending.inputSha256 ||
+      JSON.stringify(value.intent.scopeRef) !== JSON.stringify(pending.scopeRef)
+    ) {
+      throw new Error("lifeos_tool_decision_response_binding_mismatch");
+    }
   }
 
   async getPromptRegions(signal?: AbortSignal): Promise<PromptRegionsDto> {

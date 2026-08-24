@@ -39,6 +39,7 @@ Adapter只负责身份/namespace映射、外部Credential与资源Scope、Princi
 | Files、Editor、Terminal、Git/Diff、扩展宿主 | 固定code-server/Code OSS | 固定工件、Workspace范围、生命周期、Gateway隔离和DSH入口 |
 | 耐久步骤、Checkpoint、重放和Worker恢复 | Vercel Workflow | 不可变RunSpec、Chat Workflow定义/节点、产品级暂停/恢复命令、Binding、对账与终态政策 |
 | Agent loop、模型与通用Tool运行 | `pi-agent-core`/`pi-ai` | Planner/Executor输入、Prompt、能力白名单、Candidate校验和产品结果提交 |
+| Capability发布与Tool handler | 各受管Runtime/Provider | Agent/Run采用的qualified引用、Principal/Workspace授权、ToolExecution Intent/Decision/Result与Product Commit |
 | Memory引擎 | memmy、Tencent MemoryCore | Port/Adapter、选择与采用、来源、幂等/对账和产品事实 |
 | Browser（下一纵向） | 待选独立Provider | Browser Session与Product Run的身份/权限映射、人机共用表面和审计 |
 
@@ -59,6 +60,8 @@ Product Session、Interaction、Message、Product Run、Run Attempt、Project、
 - Product Store拥有产品事实。
 - Vercel Workflow拥有耐久控制流与Checkpoint。
 - pi拥有Agent loop、模型和Tool运行，不拥有产品完成事实。
+- Tool本地名不是授权身份；Agent Version与Run冻结带来源的Capability引用。高影响Tool在handler前经过Product Decision，Pi Journal和Product Result Hash共同形成证据链。
+- 当前兼容代际为Product Store v20、Bridge State v16、Prompt Assembly v4、Direct Protocol/Store v2和`full-operation.v3`；迁移与崩溃顺序见[Capability治理As-built](./docs/architecture/capability-governance-as-built.md)。
 - 高影响动作必须先形成可读、可修订、版本绑定的Decision。
 - 失败不能产生假成功；未知副作用必须查询、对账或人工处置。
 

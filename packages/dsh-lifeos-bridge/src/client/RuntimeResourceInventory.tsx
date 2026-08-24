@@ -9,6 +9,7 @@ const RESOURCE_INVENTORY_LABEL: Readonly<Record<keyof RuntimeResourceInventoryVa
   skills: "Skills",
   promptTemplates: "Prompt Templates",
   contextFiles: "Context Files",
+  contentSha256: "Content Manifest",
 };
 
 const RESOURCE_INVENTORY_ORDER = [

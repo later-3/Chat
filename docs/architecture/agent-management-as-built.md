@@ -1,6 +1,6 @@
 # Chat Agent 管理 As-built
 
-> As-built：2026-08-23。本文是当前 Agent Catalog、Agent Version、Workflow 绑定和会话临时配置的唯一事实源。
+> As-built：2026-08-24。本文是当前 Agent Catalog、Agent Version、Workflow 绑定和会话临时配置的唯一事实源。
 > Prompt 的区域与组装见[Prompt Studio 与系统级 Prompt Assembly](./prompt-studio-as-built.md)，Pi 执行边界见[Pi Coding Executor Service](./pi-coding-executor-service.md)，Session/轨迹/Trace 边界见[Session 与轨迹架构](./session-architecture.md)。
 
 ## 1. 产品结论
@@ -33,16 +33,18 @@ Pi-backed Agent 的 Catalog 默认不是一段 Chat 手抄的近似 Prompt。`pa
 
 ### 2.2 AgentVersion：Principal 创建的不可变完整配置
 
-`agent-version.v1`是 Product Store v18 中的不可变产品事实。每个版本冻结：
+当前写入的`agent-version.v2`是不可变产品事实；`agent-version.v1`只按真实历史字段集只读兼容，不能在同一 literal 下增加 qualified Capability 语义。每个 v2 版本冻结：
 
 - `agentVersionId + sha256`、所属 `agentKey`、Owner、版本号和来源版本；
 - `global`或精确`workspace/rootId` Scope；
 - Pi Runtime 基线键，以及包版本、受管 Fork Revision、Variant 与能力目录 Hash；
 - System Prompt 的`inherit_runtime`或完整`replace`正文与 Hash；
-- 按 Pi 上游稳定顺序冻结的 Tool 子集；
+- 按 Pi 上游稳定顺序冻结的 Tool 子集，以及与每个 Tool 名一一对应的 qualified `enabledCapabilityRefs`（`localName + capabilityId + descriptorSha256`）；
 - Context Files、Skills、Prompt Templates、Extensions 各自的继承或关闭策略。
 
-当前资源策略按类别选择`inherit_runtime_default / disabled`；真实资源清单逐项可见，但 v1 尚未承诺单个 Skill、Template、Context File 或 Extension 的独立勾选。不能把“展示了目录”写成“已经支持逐项执行配置”。
+当前资源策略按类别选择`inherit_runtime_default / disabled`；真实资源清单逐项可见，但当前版本尚未承诺单个 Skill、Template、Context File 或 Extension 的独立勾选。不能把“展示了目录”写成“已经支持逐项执行配置”。
+
+v2 的 Tool 名与 qualified Ref 必须数量相等、顺序和`localName`逐项相等，且 Ref 身份和本地名均不重复；合法零 Tool Version 必须把两个数组都显式写为`[]`。Schema、Product Snapshot Integrity、创建命令与 Run 编译共用这一关系，删除 Ref 或只保留裸名会被判为损坏。v1 不猜测 Ref，也不能用于创建新的扩权 Run。
 
 保存永远创建新版本，不修改或删除旧版本。`basedOnVersionId + basedOnVersionSha256`必须成对提交，并且来源版本必须属于同一 Owner、Agent 和 Scope。这样历史 Workflow Revision 与 Run 不会因后来编辑而变义。
 
@@ -155,10 +157,11 @@ Agent 配置不是 Session 日志；Trajectory 不是 Agent Version；Debug Trac
 - Direct Workflow 的 prepare Step 使用共享的`directAgentCapabilityModeSchema`校验能力模式，不能在 Workflow 内再次硬编码旧`read_only`默认；`pi_cli_default`、显式自定义和专用变体必须与 Application 冻结的 RunSpec 保持同一合同。
 - 若 Workflow 在创建 Pi Direct Attempt 前失败，产品事实收敛为`failed/queued`并允许零个 Direct Attempt；不能伪造一次从未开始的 Pi 执行，也不能因终态提交失败而让前端永久显示活动中。
 - Version 不存在、Hash 漂移、Workspace Scope/Grant 不匹配或 scoped Runtime Profile 已在 Run 创建后变化时，Operation 在 Provider 前失败；Executor 不信任 API 提供的 Root ID 代替实际 canonical root 复核。
-- 同一 Operation 恢复时 Resolved Runtime Manifest 必须与首次绑定完全一致；旧记录没有该字段时只允许在首次恢复补钉一次。
+- 当前 Direct v2 Operation 一旦写入`session.started`，Record、Session Event和Snapshot必须显式携带并一致地冻结可重算Manifest输入、Manifest Hash与Capability数组；缺字段或策略/Hash关系漂移都失败关闭。只有真正的Direct v1 Journal按旧矩阵只读兼容，不能把损坏的v2降级后补钉。
 - 自定义能力没有冻结 Tool 清单时失败；客户端不能通过任意 JSON 绕过专用`agent_configuration`合同。
 - Prompt 修改不能扩大 Tool/Workspace授权；Shell和写入仍受运行合同与人工审批治理。
 - Version 与 Workflow Revision 保留精确 ID/Hash和Runtime基线引用；运行工件变化时失败关闭，不会静默追随“最新版本”。
+- 新Version和Temporary都冻结有序`enabledCapabilityRefs`；RunSpec与Prompt Assembly v4继续携带完整Resolved Snapshot。历史裸名配置只读，不猜来源或扩大能力。
 - 当前仅`agent.direct`节点使用的 Direct Pi Coding Agent 完成完整 Version、Tools、Resources 和会话临时配置纵向；Project Bootstrap 的固定产品Tool合同、Coding Executor及其他 Agent Profile 仍只读展示既有Prompt/运行时合同，不能创建或绑定完整Version，也不能声称已经拥有同等可配置能力。
-- Pi 四类资源当前只支持整类继承或关闭；逐项资源选择、独立来源版本与Hash仍是后续合同，不在本次结果中伪装完成。
+- Pi 四类资源当前只支持整类继承或关闭；资源正文和Extension实现树会冻结Hash，但逐项资源选择仍是后续合同，不在本次结果中伪装完成。
 - DSH Tool/Skill/Plugin 目录与执行接缝尚未实现，这是明确的后续 Provider 纵向，不在本次交付中。

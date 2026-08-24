@@ -7,7 +7,11 @@ import {
   resolveRunActivityDir,
 } from "@chat/realtime";
 import type { ApplicationDeps } from "@chat/application";
-import { isBailianReady, loadBailianConfig } from "@chat/pi-runtime";
+import {
+  createPiExecutionEvidenceVerifier,
+  isBailianReady,
+  loadBailianConfig,
+} from "@chat/pi-runtime";
 import { createPiAgentRuntimeProfileClient } from "@chat/pi-runtime/agent-runtime-profile-client";
 import { loadRuntimeCredential } from "@chat/contracts/runtime-credential";
 import { createApiApp } from "./app.js";
@@ -50,6 +54,10 @@ const piExecutorBaseUrl =
 const deps: ApplicationDeps = {
   ...baseDeps,
   agentRuntimeProfiles: createPiAgentRuntimeProfileClient({
+    baseUrl: piExecutorBaseUrl,
+    credential,
+  }),
+  executionEvidenceVerifier: createPiExecutionEvidenceVerifier({
     baseUrl: piExecutorBaseUrl,
     credential,
   }),

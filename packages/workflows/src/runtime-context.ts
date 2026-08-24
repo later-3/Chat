@@ -36,7 +36,7 @@ export interface WorkflowRuntimeContext {
   readonly workflowMemoryProviders: WorkflowMemoryProviderRegistryPort;
   readonly trace: (event: TraceEventInput) => void;
   /** Session Activity与Debug Trace分开写入；这里只接收可展示、有界的Run活动。 */
-  readonly activity?: (event: RunActivityEventInput) => void;
+  readonly activity?: (event: RunActivityEventInput) => boolean | void;
   readonly now: () => string;
   readonly bailian: BailianConfig;
   readonly planner: typeof runPiPlanner;

@@ -2,7 +2,12 @@ import { productSnapshotSchema } from "@chat/contracts";
 import { z } from "zod";
 
 const productSnapshotV16PlaneEntitiesSchema = productSnapshotSchema.shape.entities
-  .omit({ agentVersions: true })
+  .omit({
+    agentVersions: true,
+    toolExecutionIntents: true,
+    toolExecutionDecisions: true,
+    toolExecutionResults: true,
+  })
   .strict();
 
 const productSnapshotV16MainEntitiesSchema = productSnapshotV16PlaneEntitiesSchema

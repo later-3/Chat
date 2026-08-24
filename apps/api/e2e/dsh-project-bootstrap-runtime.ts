@@ -27,6 +27,7 @@ import {
 } from "../src/composition.js";
 import { OutboxDispatcher } from "../src/outbox-dispatcher.js";
 import { createFilePromptCatalog } from "../src/prompt-catalog.js";
+import { runtimeToolFixture } from "../src/runtime-profile-test-fixture.js";
 
 const repoRoot = resolve(import.meta.dirname, "../../..");
 const port = Number.parseInt(process.env.PORT ?? "45411", 10);
@@ -69,16 +70,23 @@ function runtimeProfile(agentKey: AgentKey) {
   if (agentKey !== "direct" && agentKey !== "project_bootstrap" && agentKey !== "coding_executor") {
     return undefined;
   }
-  const variantKey =
+  const variants =
     agentKey === "direct"
-      ? "pi_cli_default"
+      ? [
+          { variantKey: "pi_cli_default", tools: ["read", "bash", "edit", "write"] },
+          { variantKey: "project_bootstrap", tools: ["project_bootstrap_prepare"] },
+        ]
       : agentKey === "project_bootstrap"
-        ? "read_only"
-        : "workspace_write_shell";
-  const tools =
-    agentKey === "project_bootstrap"
-      ? ["read", "grep", "find", "ls"]
-      : ["read", "bash", "edit", "write", "grep", "find", "ls"];
+        ? [
+            { variantKey: "read_only", tools: ["read", "grep", "find", "ls"] },
+            { variantKey: "project_bootstrap", tools: ["project_bootstrap_prepare"] },
+          ]
+        : [
+            {
+              variantKey: "workspace_write_shell",
+              tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
+            },
+          ];
   return agentRuntimeBaselineDtoSchema.parse({
     kind: "pi_coding_agent",
     title: "Pi Coding Agent",
@@ -92,29 +100,29 @@ function runtimeProfile(agentKey: AgentKey) {
       bodyMarkdown: "Chat Runtime Contract",
       sha256: "a".repeat(64),
       sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
-      appliesToVariantKeys: [variantKey],
+      appliesToVariantKeys: variants.map((variant) => variant.variantKey),
     },
-    variants: [
-      {
-        variantKey,
-        title: variantKey,
-        description: "建项浏览器门确定性Pi能力合同",
-        capabilityCatalogSha256: "2".repeat(64),
-        enabledToolNames: tools,
-        piSystemPrompt: {
-          bodyMarkdown: `Pi runtime ${variantKey}`,
-          sha256: "b".repeat(64),
-          dynamicPlaceholders: ["WORKSPACE_ROOT"],
-          sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
-        },
-        tools: tools.map((name) => ({
-          name,
-          description: `${name} tool`,
-          parametersJson: "{}",
-          sourceRelativePath: `pi/packages/coding-agent/src/core/tools/${name}.ts`,
-        })),
+    variants: variants.map((variant) => ({
+      variantKey: variant.variantKey,
+      title: variant.variantKey,
+      description: "建项浏览器门确定性Pi能力合同",
+      capabilityCatalogSha256: "2".repeat(64),
+      readiness: "available",
+      diagnostics: [],
+      enabledToolNames: variant.tools,
+      piSystemPrompt: {
+        bodyMarkdown: `Pi runtime ${variant.variantKey}`,
+        sha256: "b".repeat(64),
+        dynamicPlaceholders: ["WORKSPACE_ROOT"],
+        sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
       },
-    ],
+      tools: variant.tools.map((name) =>
+        runtimeToolFixture(
+          name,
+          name === "project_bootstrap_prepare" ? {} : { workspaceRootId: "root_chat" },
+        ),
+      ),
+    })),
     finalReviewNote: "发送前复核。",
   });
 }

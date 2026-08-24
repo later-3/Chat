@@ -72,6 +72,62 @@ const noteBinding = {
   candidateSha256: noteCandidate.sha256,
 };
 
+const toolRun = {
+  ...run,
+  productRunId: "run_toolrecovery1",
+  status: "waiting_human",
+  phase: "tool_review",
+  revision: 7,
+  allowedActions: [],
+} as unknown as ChatRun;
+const toolCapability = {
+  ref: {
+    capabilityId: "pi_direct:tool:builtin:write",
+    descriptorSha256: "1".repeat(64),
+    inputSchemaSha256: "2".repeat(64),
+    resolvedImplementationSha256: "3".repeat(64),
+    scopeRef: { kind: "workspace" as const, rootId: "root_chat" },
+  },
+  localName: "write",
+  kind: "executable_tool" as const,
+  runtimeOwner: "pi_direct" as const,
+  sourceRef: {
+    sourceKind: "builtin" as const,
+    package: "@earendil-works/pi-coding-agent",
+    revision: "4".repeat(40),
+  },
+  effect: "local_write" as const,
+  scopePolicy: "workspace_required" as const,
+  approvalPolicy: "product_decision_required" as const,
+  evidencePolicy: "product_intent_result" as const,
+};
+const toolIntent = {
+  schemaVersion: "chat-product-api.v1" as const,
+  toolExecutionIntentId: "tei_toolrecovery1" as never,
+  productRunId: toolRun.productRunId,
+  capability: toolCapability,
+  toolCallId: "call_toolrecovery1",
+  inputDisplay: '{"path":"README.md"}',
+  inputDisplayTruncated: false,
+  inputSha256: "5".repeat(64),
+  scopeRef: toolCapability.ref.scopeRef,
+  effect: "local_write" as const,
+  status: "waiting_decision" as const,
+  revision: 1,
+  allowedActions: ["approve", "reject"] as const,
+  createdAt: "2026-08-24T00:00:00.000Z",
+  updatedAt: "2026-08-24T00:00:00.000Z",
+};
+const toolBinding = {
+  productRunId: toolRun.productRunId,
+  runRevision: toolRun.revision,
+  toolExecutionIntentId: toolIntent.toolExecutionIntentId,
+  intentRevision: toolIntent.revision,
+  capabilityDescriptorSha256: toolCapability.ref.descriptorSha256,
+  inputSha256: toolIntent.inputSha256,
+  scopeRef: toolIntent.scopeRef,
+};
+
 async function seededStore(path: string): Promise<AtomicBridgeStateStore> {
   const state = new AtomicBridgeStateStore(path);
   await state.ready();
@@ -108,6 +164,27 @@ async function seededNoteStore(path: string): Promise<AtomicBridgeStateStore> {
         submissionTarget: "existing_session",
         submissionStatus: "bound",
         productRunId: noteRun.productRunId,
+      };
+    },
+  );
+  return state;
+}
+
+async function seededToolStore(path: string): Promise<AtomicBridgeStateStore> {
+  const state = new AtomicBridgeStateStore(path);
+  await state.ready();
+  await state.mutateSession(
+    dshSessionId,
+    stableCommandId("create-session", dshSessionId),
+    (binding) => {
+      binding.chatSessionId = "psn_recovery1";
+      binding.currentRequestKey = requestKey;
+      binding.requests[requestKey] = {
+        userTextSha256: "b".repeat(64),
+        messageCommandId: stableCommandId("message", dshSessionId),
+        submissionTarget: "existing_session",
+        submissionStatus: "bound",
+        productRunId: toolRun.productRunId,
       };
     },
   );
@@ -179,6 +256,128 @@ test("a retryable or transport failure keeps the exact normalized decision for v
     assert.deepEqual(
       (await state.readSession(dshSessionId))?.requests[requestKey]?.pendingDecision?.request,
       { kind: "request_revision", explanation: "保留这段修订要求", binding },
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Tool pending binds the full A identity; 5xx/damaged 2xx preserve bytes, B cannot replay it, exact 4xx clears it", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-tool-decision-recovery-"));
+  const requestA = { kind: "approve" as const, binding: toolBinding };
+  const requestB = {
+    kind: "approve" as const,
+    binding: { ...toolBinding, toolExecutionIntentId: "tei_toolrecovery2" as never },
+  };
+  let submissions = 0;
+  try {
+    const state = await seededToolStore(join(directory, "state.json"));
+    const base = {
+      getRun: async () => toolRun,
+      getToolExecutions: async () => ({ intents: [toolIntent], decisions: [], results: [] }),
+    };
+    const retryable = new LifeosBridgeService(
+      {
+        ...base,
+        submitToolExecutionDecision: async () => {
+          submissions += 1;
+          throw new ChatProductApiError(
+            503,
+            "chat_api_unreachable",
+            true,
+            "retry_same_command",
+            "transport/5xx",
+          );
+        },
+      } as unknown as ChatProductClient,
+      state,
+    );
+    await assert.rejects(retryable.decideToolExecution(dshSessionId, requestA), {
+      name: "ChatProductApiError",
+    });
+    const pendingA = (await state.readSession(dshSessionId))?.requests[requestKey]
+      ?.pendingToolExecutionDecision;
+    assert.ok(pendingA);
+    assert.deepEqual(pendingA.request, requestA);
+    assert.deepEqual(pendingA.capability, toolCapability);
+    const frozenBytes = JSON.stringify(pendingA);
+
+    await assert.rejects(retryable.decideToolExecution(dshSessionId, requestB), (error) => {
+      return (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "lifeos_tool_decision_outcome_unknown"
+      );
+    });
+    assert.equal(submissions, 1);
+    assert.equal(
+      JSON.stringify(
+        (await state.readSession(dshSessionId))?.requests[requestKey]?.pendingToolExecutionDecision,
+      ),
+      frozenBytes,
+    );
+
+    const damaged2xx = new LifeosBridgeService(
+      {
+        ...base,
+        submitToolExecutionDecision: async () => {
+          submissions += 1;
+          throw new Error("lifeos_tool_decision_response_binding_mismatch");
+        },
+      } as unknown as ChatProductClient,
+      state,
+    );
+    await assert.rejects(damaged2xx.decideToolExecution(dshSessionId, requestA), {
+      message: "lifeos_tool_decision_response_binding_mismatch",
+    });
+    assert.equal(
+      JSON.stringify(
+        (await state.readSession(dshSessionId))?.requests[requestKey]?.pendingToolExecutionDecision,
+      ),
+      frozenBytes,
+    );
+
+    const stableReplay = new LifeosBridgeService(
+      {
+        ...base,
+        submitToolExecutionDecision: async () => {
+          submissions += 1;
+        },
+      } as unknown as ChatProductClient,
+      state,
+    );
+    await stableReplay.decideToolExecution(dshSessionId, requestA);
+    assert.equal(
+      (await state.readSession(dshSessionId))?.requests[requestKey]?.pendingToolExecutionDecision,
+      undefined,
+    );
+
+    await assert.rejects(retryable.decideToolExecution(dshSessionId, requestA), {
+      name: "ChatProductApiError",
+    });
+
+    const deterministic4xx = new LifeosBridgeService(
+      {
+        ...base,
+        submitToolExecutionDecision: async () => {
+          submissions += 1;
+          throw new ChatProductApiError(
+            409,
+            "revision_conflict",
+            false,
+            "refresh_run",
+            "deterministic 4xx",
+          );
+        },
+      } as unknown as ChatProductClient,
+      state,
+    );
+    await assert.rejects(deterministic4xx.decideToolExecution(dshSessionId, requestA), {
+      name: "ChatProductApiError",
+    });
+    assert.equal(
+      (await state.readSession(dshSessionId))?.requests[requestKey]?.pendingToolExecutionDecision,
+      undefined,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });

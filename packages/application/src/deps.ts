@@ -49,6 +49,7 @@ import type {
   RunActivityEvent,
   AgentKey,
   AgentRuntimeBaselineDto,
+  ExecutionEvidenceRef,
 } from "@chat/contracts";
 import type { PromptFragmentId, PromptFragmentRevisionId } from "@chat/contracts";
 import type { PromptCatalogPort } from "./prompt-catalog-port.js";
@@ -85,6 +86,13 @@ export interface ExecutionTraceReaderPort {
 /** Session Activity是Run级有序投影；它与Debug Trace、Product事实分别拥有存储边界。 */
 export interface RunActivityReaderPort {
   read(input: { readonly productRunId: ProductRunId }): Promise<readonly RunActivityEvent[]>;
+}
+
+export interface ExecutionEvidenceVerifierPort {
+  verify(input: {
+    readonly executionAttemptId: string;
+    readonly evidenceRefs: readonly ExecutionEvidenceRef[];
+  }): Promise<void>;
 }
 
 /**
@@ -182,6 +190,7 @@ export interface ApplicationDeps {
   /** 可观察执行证据的只读投影；不拥有Product Run或终态。 */
   readonly executionTraceReader?: ExecutionTraceReaderPort;
   readonly runActivityReader?: RunActivityReaderPort;
+  readonly executionEvidenceVerifier?: ExecutionEvidenceVerifierPort;
   /** Vercel Workflow World的脱敏只读投影；不暴露任何Runtime私有身份。 */
   readonly workflowRuntimeTrace?: WorkflowRuntimeTraceReaderPort;
   /** 配置在服务端组合根；浏览器只能选择公开 backendId。 */

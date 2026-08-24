@@ -9,6 +9,7 @@ import type {
   NoteDecisionRequest,
   PromptReviewDecisionRequest,
   ProjectBootstrapDecisionRequest,
+  ToolExecutionDecisionRequest,
 } from "../contracts.ts";
 import type { LifeosProjection } from "../contracts.ts";
 import type { LifeosClientState } from "./controller.ts";
@@ -19,6 +20,7 @@ export interface LifeosDockInjected {
   decide: (request: DecisionRequest) => Promise<boolean>;
   decideNote: (request: NoteDecisionRequest) => Promise<boolean>;
   decidePromptReview: (request: PromptReviewDecisionRequest) => Promise<boolean>;
+  decideToolExecution: (request: ToolExecutionDecisionRequest) => Promise<boolean>;
   decideDshSendReview: (request: DshSendReviewDecisionRequest) => Promise<boolean>;
   decideBridgeDispatchReview: (
     request: BridgeChatDispatchReviewDecisionRequest,
@@ -76,6 +78,7 @@ const PHASE_LABEL: Record<string, string> = {
   plan_review: "等待你审核",
   note_review: "等待你审核笔记",
   prompt_review: "等待你审核发送内容",
+  tool_review: "等待你审核Tool动作",
   executing: "正在执行",
   validating: "正在验证",
   completed: "已完成",
@@ -291,6 +294,16 @@ export function hasActionablePromptReview(projection: LifeosProjection | null): 
   );
 }
 
+export function actionableToolExecution(projection: LifeosProjection | null) {
+  const run = projection?.run;
+  if (run?.status !== "waiting_human" || run.phase !== "tool_review") return null;
+  return (
+    projection?.toolExecutions.intents.find(
+      (intent) => intent.productRunId === run.productRunId && intent.status === "waiting_decision",
+    ) ?? null
+  );
+}
+
 export function shouldShowLifeosReviewDock(projection: LifeosProjection | null): boolean {
   const projectBootstrapVisible =
     projection?.projectBootstrap != null &&
@@ -300,11 +313,13 @@ export function shouldShowLifeosReviewDock(projection: LifeosProjection | null):
     hasActionablePlanReview(projection) ||
     hasActionableNoteReview(projection) ||
     hasActionablePromptReview(projection) ||
+    actionableToolExecution(projection) !== null ||
     projection?.dshSendReview != null ||
     projection?.bridgeDispatchReview != null ||
     projection?.pendingDecision != null ||
     projection?.pendingNoteDecision != null ||
     projection?.pendingPromptReviewDecision != null ||
+    projection?.pendingToolExecutionDecision != null ||
     projectBootstrapVisible
   );
 }
@@ -321,6 +336,7 @@ export function LifeosDock({
   decide,
   decideNote,
   decidePromptReview,
+  decideToolExecution,
   decideDshSendReview,
   decideBridgeDispatchReview,
   decideProjectBootstrap,
@@ -339,6 +355,7 @@ export function LifeosDock({
   const canReviewPlan = hasActionablePlanReview(projection);
   const canReviewNote = hasActionableNoteReview(projection);
   const canReviewPrompt = hasActionablePromptReview(projection);
+  const toolExecution = actionableToolExecution(projection);
   const promptReview = projection?.promptReview ?? null;
   const dshSendReview = projection?.dshSendReview ?? null;
   const bridgeDispatchReview = projection?.bridgeDispatchReview ?? null;
@@ -404,6 +421,24 @@ export function LifeosDock({
       },
     };
     if (await decidePromptReview(request)) setExplanation("");
+  };
+  const submitToolExecution = async (kind: ToolExecutionDecisionRequest["kind"]): Promise<void> => {
+    if (toolExecution === null || run === null || run === undefined) return;
+    const trimmed = explanation.trim();
+    const request: ToolExecutionDecisionRequest = {
+      kind,
+      ...(kind === "reject" && trimmed !== "" ? { explanation: trimmed } : {}),
+      binding: {
+        productRunId: run.productRunId,
+        runRevision: run.revision,
+        toolExecutionIntentId: toolExecution.toolExecutionIntentId,
+        intentRevision: toolExecution.revision,
+        capabilityDescriptorSha256: toolExecution.capability.ref.descriptorSha256,
+        inputSha256: toolExecution.inputSha256,
+        scopeRef: toolExecution.scopeRef,
+      },
+    };
+    if (await decideToolExecution(request)) setExplanation("");
   };
 
   if (dshSendReview !== null) {
@@ -544,6 +579,87 @@ export function LifeosDock({
           )}
         </div>
       </PromptAuditSurface>
+    );
+  }
+
+  if (toolExecution !== null || projection?.pendingToolExecutionDecision != null) {
+    const source = toolExecution?.capability.sourceRef;
+    const scope = toolExecution?.scopeRef;
+    return (
+      <section
+        className="lifeos-card lifeos-scroll-review-card lifeos-tool-review-card"
+        data-testid="lifeos-tool-review-card"
+        aria-label="Pi Tool动作审核"
+      >
+        <header className="lifeos-header">
+          <strong>Pi Tool 动作审核 · {toolExecution?.capability.localName ?? "等待重试"}</strong>
+          <span className="lifeos-status">{PHASE_LABEL.tool_review}</span>
+        </header>
+        {toolExecution === null ? null : (
+          <div className="lifeos-plan" data-testid="lifeos-tool-review-details">
+            <p>{toolExecution.inputDisplay}</p>
+            <ul>
+              <li>Capability：{toolExecution.capability.ref.capabilityId}</li>
+              <li>影响：{toolExecution.effect}</li>
+              <li>
+                来源：{source?.repository ?? source?.package ?? "未知"}
+                {source?.revision === undefined ? "" : ` @ ${source.revision}`}
+              </li>
+              <li>
+                Scope：
+                {scope?.kind === "workspace"
+                  ? `workspace:${scope.rootId}`
+                  : scope?.kind === "provider"
+                    ? `provider:${scope.providerRef}`
+                    : "global"}
+              </li>
+              <li>参数 Hash：{toolExecution.inputSha256}</li>
+            </ul>
+          </div>
+        )}
+        {projection?.pendingToolExecutionDecision != null ? (
+          <div className="lifeos-warning" data-testid="lifeos-pending-tool-decision">
+            <p>上一Tool决定结果仍未知；只能原样重试。</p>
+            <button
+              type="button"
+              disabled={state.submitting}
+              onClick={() => void decideToolExecution(projection.pendingToolExecutionDecision!)}
+            >
+              重试上一决定
+            </button>
+          </div>
+        ) : toolExecution === null ? null : (
+          <div className="lifeos-review" data-testid="lifeos-tool-review-actions">
+            <textarea
+              aria-label="拒绝Tool原因"
+              value={explanation}
+              maxLength={2_000}
+              placeholder="拒绝时可填写原因（可选）"
+              onChange={(event) => setExplanation(event.currentTarget.value)}
+            />
+            <div className="lifeos-actions">
+              <button
+                type="button"
+                data-testid="lifeos-reject-tool"
+                disabled={state.submitting || !toolExecution.allowedActions.includes("reject")}
+                onClick={() => void submitToolExecution("reject")}
+              >
+                拒绝并阻止执行
+              </button>
+              <button
+                type="button"
+                className="lifeos-primary"
+                data-testid="lifeos-approve-tool"
+                disabled={state.submitting || !toolExecution.allowedActions.includes("approve")}
+                onClick={() => void submitToolExecution("approve")}
+              >
+                批准执行一次
+              </button>
+            </div>
+          </div>
+        )}
+        {state.error === null ? null : <p className="lifeos-error">{state.error}</p>}
+      </section>
     );
   }
 

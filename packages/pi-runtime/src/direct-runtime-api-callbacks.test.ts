@@ -2,14 +2,15 @@ import {
   DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
   DIRECT_AGENT_RUNTIME_PATHS,
 } from "@chat/contracts";
-import { canonicalJsonStringify } from "@chat/domain";
-import { describe, expect, it } from "vitest";
+import { canonicalJsonStringify, hashCanonical } from "@chat/domain";
+import { describe, expect, it, vi } from "vitest";
 import {
   PI_DIRECT_EXECUTOR_PROTOCOL_VERSION,
   type StartPiDirectExecutorOperationRequest,
 } from "./direct-executor-service-contract.js";
 import { createDirectAgentRuntimeApiCallbacks } from "./direct-runtime-api-callbacks.js";
 import { hashFinalProviderPayload } from "./prompt-review-gate.js";
+import { ToolExecutionCoordinator } from "./tool-execution-gate.js";
 
 const payload = { messages: [{ role: "user", content: "review me" }], model: "model-test" };
 
@@ -190,4 +191,89 @@ describe("Direct Agent Runtime Fetch callbacks", () => {
     ]);
     expect(JSON.stringify(calls)).not.toContain("rtk_callbacktest");
   });
+
+  it.each(["other_intent", "other_decision"] as const)(
+    "Tool回调2xx注入%s时handler保持0次",
+    async (corruption) => {
+      const capability = {
+        ref: {
+          capabilityId: "pi_direct:tool:builtin:bash",
+          descriptorSha256: "a".repeat(64),
+          inputSchemaSha256: "b".repeat(64),
+          resolvedImplementationSha256: "c".repeat(64),
+          scopeRef: { kind: "workspace" as const, rootId: "root_chat" },
+        },
+        localName: "bash",
+        kind: "executable_tool" as const,
+        runtimeOwner: "pi_direct" as const,
+        sourceRef: {
+          sourceKind: "builtin" as const,
+          package: "@earendil-works/pi-coding-agent",
+          revision: "d".repeat(40),
+        },
+        effect: "shell" as const,
+        scopePolicy: "workspace_required" as const,
+        approvalPolicy: "product_decision_required" as const,
+        evidencePolicy: "product_intent_result" as const,
+      };
+      const inputSha256 = "e".repeat(64);
+      const expectedIntentId = `tei_${hashCanonical("id.tool-execution-intent.v1", {
+        productRunId: "run_callbacktool",
+        directAgentAttemptId: "att_callbacktool",
+        toolCallId: "call_callbacktool",
+        capabilityId: capability.ref.capabilityId,
+        inputSha256,
+      }).slice(0, 40)}`;
+      const fetchFn: typeof fetch = async (url) => {
+        const path = new URL(String(url)).pathname;
+        if (path.endsWith(DIRECT_AGENT_RUNTIME_PATHS.publishToolExecutionIntent)) {
+          return Response.json({
+            schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+            toolExecutionIntentId:
+              corruption === "other_intent" ? "tei_injectedother" : expectedIntentId,
+            revision: 1,
+            status: "waiting_decision",
+          });
+        }
+        return Response.json({
+          schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+          status: "authorized",
+          toolExecutionIntentId: expectedIntentId,
+          toolExecutionDecisionId: "ted_injectedother",
+          decisionIntentRevision: 1,
+          capabilityDescriptorSha256: capability.ref.descriptorSha256,
+          inputSha256: corruption === "other_decision" ? "f".repeat(64) : inputSha256,
+          scopeRef: capability.ref.scopeRef,
+          revision: 3,
+        });
+      };
+      const callbacks = createDirectAgentRuntimeApiCallbacks({
+        baseUrl: "http://api.test",
+        credential: "rtk_callbacktest",
+        fetchFn,
+      });
+      const product = callbacks.toolExecutionProduct;
+      if (product === undefined) throw new Error("测试缺少Tool Product回调");
+      const coordinator = new ToolExecutionCoordinator(product, {
+        operationId: "pio_callbacktool",
+        productRunId: "run_callbacktool",
+        directAgentAttemptId: "att_callbacktool",
+        inputManifestSha256: "1".repeat(64),
+      });
+      const handler = vi.fn();
+      await expect(
+        coordinator
+          .authorize({
+            capability,
+            toolCallId: "call_callbacktool",
+            inputDisplay: "{}",
+            inputDisplayTruncated: false,
+            inputSha256,
+            signal: new AbortController().signal,
+          })
+          .then(handler),
+      ).rejects.toMatchObject({ outcomeUnknown: true });
+      expect(handler).not.toHaveBeenCalled();
+    },
+  );
 });

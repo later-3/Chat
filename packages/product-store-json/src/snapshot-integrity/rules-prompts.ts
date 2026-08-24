@@ -1,6 +1,7 @@
 import {
   DIRECT_PROMPT_COMPILER_V2_VERSION,
   DIRECT_PROMPT_COMPILER_V3_VERSION,
+  DIRECT_PROMPT_COMPILER_V4_VERSION,
   DIRECT_PROMPT_COMPILER_VERSION,
   DIRECT_PROMPT_INPUT_TOKEN_LIMIT,
   DIRECT_PROMPT_METER_VERSION,
@@ -10,6 +11,7 @@ import {
   LEGACY_DIRECT_PROMPT_COMPILER_VERSION,
   LEGACY_DIRECT_PROMPT_PROFILE_VERSION,
   promptFragmentScopeSchema,
+  agentVersionHashDomain,
   inspectDirectAgentConfigurationSource,
   toAgentVersionHashInput,
   type ProductSnapshot,
@@ -55,7 +57,10 @@ export function assertAgentVersions(snapshot: ProductSnapshot, fail: Fail): void
     ) {
       fail(`agentVersion ${version.agentVersionId} System Prompt Hash不一致`);
     }
-    if (version.sha256 !== hashCanonical("agent-version.v1", toAgentVersionHashInput(version))) {
+    if (
+      version.sha256 !==
+      hashCanonical(agentVersionHashDomain(version), toAgentVersionHashInput(version))
+    ) {
       fail(`agentVersion ${version.agentVersionId} Hash不一致`);
     }
     const basedOn =
@@ -491,15 +496,20 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
 
     const isLegacy = assembly.compilerVersion === LEGACY_DIRECT_PROMPT_COMPILER_VERSION;
     const isV2 = assembly.schemaVersion === "prompt-assembly.v2";
+    const isV4 = assembly.schemaVersion === "prompt-assembly.v4";
     if (
       (!isV3 && isLegacy && assembly.profileVersion !== LEGACY_DIRECT_PROMPT_PROFILE_VERSION) ||
       (isV2 &&
         ((assembly.compilerVersion !== DIRECT_PROMPT_COMPILER_V2_VERSION &&
           assembly.compilerVersion !== DIRECT_PROMPT_COMPILER_V3_VERSION) ||
           assembly.profileVersion !== DIRECT_PROMPT_PROFILE_V2_VERSION)) ||
+      (isV4 &&
+        (assembly.compilerVersion !== DIRECT_PROMPT_COMPILER_V4_VERSION ||
+          assembly.profileVersion !== DIRECT_PROMPT_PROFILE_V2_VERSION)) ||
       (!isV3 &&
         !isLegacy &&
         !isV2 &&
+        !isV4 &&
         (assembly.compilerVersion !== DIRECT_PROMPT_COMPILER_VERSION ||
           assembly.profileVersion !== DIRECT_PROMPT_PROFILE_VERSION))
     ) {
@@ -590,7 +600,7 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
               : runSpec?.nodeResolutions.find(
                   (node) => node.definitionNodeId === assemblyNode.definitionNodeId,
                 )
-            : isV2
+            : isV2 || isV4
               ? runSpec?.nodeResolutions.find(
                   (node) => node.nodeType === "agent.direct" && node.activation === "enabled",
                 )
@@ -700,7 +710,8 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
       .filter((region) => region.placement === "system" && region.renderedText !== "")
       .filter(
         (region) =>
-          assembly.schemaVersion !== "prompt-assembly.v2" ||
+          (assembly.schemaVersion !== "prompt-assembly.v2" &&
+            assembly.schemaVersion !== "prompt-assembly.v4") ||
           assembly.piSystemPrompt === undefined ||
           region.regionKey !== "agent_identity",
       )
@@ -727,7 +738,10 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
           fail(`promptAssembly ${assembly.promptAssemblyId} 节点System投影非法`);
         }
       }
-    } else if (assembly.schemaVersion === "prompt-assembly.v2") {
+    } else if (
+      assembly.schemaVersion === "prompt-assembly.v2" ||
+      assembly.schemaVersion === "prompt-assembly.v4"
+    ) {
       const current = assembly.messages.at(-1);
       if (
         assembly.systemPromptAppend !== systemPromptAppend ||

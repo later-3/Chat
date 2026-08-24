@@ -80,6 +80,11 @@ import {
   projectWorkspaceBindingSchema,
 } from "./project-bootstrap.js";
 import { agentVersionSchema } from "./agent-configuration.js";
+import {
+  toolExecutionDecisionSchema,
+  toolExecutionIntentSchema,
+  toolExecutionResultSchema,
+} from "./tool-execution.js";
 
 /**
  * Product Snapshot顶层合同（任务书§8.3）。
@@ -91,7 +96,7 @@ import { agentVersionSchema } from "./agent-configuration.js";
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v19";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v20";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -116,6 +121,9 @@ const productEntitiesSchema = z
     promptFragmentRevisions: z.record(idKeySchema, promptFragmentRevisionSchema),
     promptAssemblies: z.record(idKeySchema, promptAssemblySchema),
     agentVersions: z.record(idKeySchema, agentVersionSchema),
+    toolExecutionIntents: z.record(idKeySchema, toolExecutionIntentSchema),
+    toolExecutionDecisions: z.record(idKeySchema, toolExecutionDecisionSchema),
+    toolExecutionResults: z.record(idKeySchema, toolExecutionResultSchema),
     contextRequests: z.record(idKeySchema, runContextRequestSchema),
     memoryQueries: z.record(idKeySchema, memoryQuerySchema),
     memoryResultSnapshots: z.record(idKeySchema, memoryResultSnapshotSchema),
@@ -211,6 +219,9 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       promptFragmentRevisions: {},
       promptAssemblies: {},
       agentVersions: {},
+      toolExecutionIntents: {},
+      toolExecutionDecisions: {},
+      toolExecutionResults: {},
       contextRequests: {},
       memoryQueries: {},
       memoryResultSnapshots: {},

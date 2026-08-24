@@ -363,6 +363,7 @@ export function apply(ctx: ClientContext): void {
             decide: (request) => controller.decide(request),
             decideNote: (request) => controller.decideNote(request),
             decidePromptReview: (request) => controller.decidePromptReview(request),
+            decideToolExecution: (request) => controller.decideToolExecution(request),
             decideProjectBootstrap: (request) => controller.decideProjectBootstrap(request),
             openProjectWorkspace: async (cwd) => {
               const workspace = await ctx.workspaces.create({ path: cwd });

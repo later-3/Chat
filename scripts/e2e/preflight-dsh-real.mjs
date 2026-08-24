@@ -16,6 +16,7 @@ import {
   DSH_PROMPT_STUDIO_E2E_PORTS,
   DSH_PROMPT_THREE_GATES_E2E_PORTS,
   DSH_PROJECT_BOOTSTRAP_E2E_PORTS,
+  DSH_CAPABILITY_GOVERNANCE_E2E_PORTS,
   DSH_REAL_E2E_PORTS,
   dshRealWebEnvironment,
   resolveDshRealSharedCacheRoot,
@@ -40,13 +41,16 @@ const trajectoryOnly = args.includes("--trajectory-only");
 const promptStudioOnly = args.includes("--prompt-studio-only");
 const promptThreeGatesOnly = args.includes("--prompt-three-gates-only");
 const projectBootstrapOnly = args.includes("--project-bootstrap-only");
+const capabilityGovernanceOnly = args.includes("--capability-governance-only");
 const dataRoot = resolve(
   repoRoot,
   promptThreeGatesOnly
     ? ".data/e2e/dsh-prompt-three-gates-real"
     : projectBootstrapOnly
       ? ".data/e2e/dsh-project-bootstrap-real"
-      : ".data/e2e/dsh-real",
+      : capabilityGovernanceOnly
+        ? ".data/e2e/dsh-capability-governance-real"
+        : ".data/e2e/dsh-real",
 );
 const expectedRoot = resolve(
   repoRoot,
@@ -54,7 +58,9 @@ const expectedRoot = resolve(
     ? ".data/e2e/dsh-prompt-three-gates-real"
     : projectBootstrapOnly
       ? ".data/e2e/dsh-project-bootstrap-real"
-      : ".data/e2e/dsh-real",
+      : capabilityGovernanceOnly
+        ? ".data/e2e/dsh-capability-governance-real"
+        : ".data/e2e/dsh-real",
 );
 
 async function assertE2ePortsFree(ports) {
@@ -84,12 +90,20 @@ if (
       argument !== "--trajectory-only" &&
       argument !== "--prompt-studio-only" &&
       argument !== "--prompt-three-gates-only" &&
-      argument !== "--project-bootstrap-only",
+      argument !== "--project-bootstrap-only" &&
+      argument !== "--capability-governance-only",
   )
 ) {
   throw new Error("DSH真实E2E preflight收到未知参数");
 }
-if (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly && !projectBootstrapOnly)
+if (
+  !workbenchOnly &&
+  !pwaOnly &&
+  !trajectoryOnly &&
+  !promptStudioOnly &&
+  !projectBootstrapOnly &&
+  !capabilityGovernanceOnly
+)
   await import("../debug/load-provider-env.mjs");
 
 if (
@@ -98,6 +112,7 @@ if (
     "/.data/e2e/dsh-real",
     "/.data/e2e/dsh-prompt-three-gates-real",
     "/.data/e2e/dsh-project-bootstrap-real",
+    "/.data/e2e/dsh-capability-governance-real",
   ].some((suffix) => dataRoot.endsWith(suffix))
 ) {
   throw new Error("拒绝清理未通过精确校验的DSH真实E2E目录");
@@ -108,6 +123,7 @@ if (
   !trajectoryOnly &&
   !promptStudioOnly &&
   !projectBootstrapOnly &&
+  !capabilityGovernanceOnly &&
   !process.env.DASHSCOPE_API_KEY?.trim()
 ) {
   throw new Error("真实DSH E2E缺少百炼凭据（本门失败关闭，不会Skip或切换替身）");
@@ -115,7 +131,7 @@ if (
 
 // 必须先用仍存在的受管evidence回收上轮wrapper/child/socket，再删除可再生目录；
 // 反过来会永久丢失Unix socket进程身份，Ctrl-C后的PTY child将无法安全识别。
-if (!promptThreeGatesOnly) {
+if (!promptThreeGatesOnly && !capabilityGovernanceOnly) {
   await cleanupDshRealWorkbench(repoRoot, { environment: process.env });
 }
 const reservedPorts = promptStudioOnly
@@ -124,16 +140,20 @@ const reservedPorts = promptStudioOnly
     ? Object.values(DSH_PROMPT_THREE_GATES_E2E_PORTS)
     : projectBootstrapOnly
       ? Object.values(DSH_PROJECT_BOOTSTRAP_E2E_PORTS)
-      : Object.values(DSH_REAL_E2E_PORTS);
+      : capabilityGovernanceOnly
+        ? Object.values(DSH_CAPABILITY_GOVERNANCE_E2E_PORTS)
+        : Object.values(DSH_REAL_E2E_PORTS);
 await assertE2ePortsFree(reservedPorts);
 rmSync(dataRoot, { recursive: true, force: true });
 mkdirSync(dataRoot, { recursive: true });
-if (projectBootstrapOnly) {
+if (projectBootstrapOnly || capabilityGovernanceOnly) {
   mkdirSync(join(dataRoot, "workspace-root"), { recursive: true });
 }
 const promptThreeGatesTempRoot = promptThreeGatesOnly
   ? resolve(repoRoot, ".data/e2e/dsh-t3-tmp")
-  : undefined;
+  : capabilityGovernanceOnly
+    ? resolve(repoRoot, ".data/e2e/dsh-cap-tmp")
+    : undefined;
 if (promptThreeGatesTempRoot !== undefined) {
   rmSync(promptThreeGatesTempRoot, { recursive: true, force: true });
   mkdirSync(promptThreeGatesTempRoot, { recursive: true });
@@ -182,7 +202,8 @@ if (
   !trajectoryOnly &&
   !promptStudioOnly &&
   !promptThreeGatesOnly &&
-  !projectBootstrapOnly
+  !projectBootstrapOnly &&
+  !capabilityGovernanceOnly
 ) {
   const workbenchFixtureRoot = resolveDshRealWorkbenchFixtureRoot(repoRoot);
   mkdirSync(workbenchFixtureRoot, { recursive: true });
@@ -237,7 +258,8 @@ await runCommand(
 );
 if (
   (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly && !projectBootstrapOnly) ||
-  promptThreeGatesOnly
+  promptThreeGatesOnly ||
+  capabilityGovernanceOnly
 ) {
   await runCommand(
     process.platform === "win32" ? "pnpm.cmd" : "pnpm",
@@ -273,9 +295,11 @@ console.log(
         ? "[e2e-preflight] rc.6 DSH Prompt Studio已就绪（Pi只读配置已加载；未加载Provider/Workflow/Workbench）"
         : projectBootstrapOnly
           ? "[e2e-preflight] rc.6 DSH建项纵向已就绪（确定性Provider；未加载真实Plane/模型/Workflow/Workbench）"
-          : promptThreeGatesOnly
-            ? "[e2e-preflight] rc.6 DSH三闸门、真实Provider与Workflow Bundle已就绪（未启动Workbench/Memory）"
-            : trajectoryOnly
-              ? "[e2e-preflight] rc.6 DSH profile与原生Trajectory/会话记录表面已就绪（使用测试Trace Provider，不加载Provider/Workflow/Workbench）"
-              : "[e2e-preflight] rc.6 DSH profile、真实Provider、隔离Git Workbench fixture与固定code-server已就绪",
+          : capabilityGovernanceOnly
+            ? "[e2e-preflight] rc.6 Capability治理纵向已就绪（进程内Faux Provider；未加载真实凭据/Plane/Memory/Workbench）"
+            : promptThreeGatesOnly
+              ? "[e2e-preflight] rc.6 DSH三闸门、真实Provider与Workflow Bundle已就绪（未启动Workbench/Memory）"
+              : trajectoryOnly
+                ? "[e2e-preflight] rc.6 DSH profile与原生Trajectory/会话记录表面已就绪（使用测试Trace Provider，不加载Provider/Workflow/Workbench）"
+                : "[e2e-preflight] rc.6 DSH profile、真实Provider、隔离Git Workbench fixture与固定code-server已就绪",
 );

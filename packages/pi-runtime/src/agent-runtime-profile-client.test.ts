@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { agentRuntimeBaselineDtoSchema, type AgentRuntimeBaselineDto } from "@chat/contracts";
 import { createPiAgentRuntimeProfileClient } from "./agent-runtime-profile-client.js";
+import { readRuntimeToolFixture } from "./runtime-profile-test-fixture.js";
 
 function runtimeBaseline(): AgentRuntimeBaselineDto {
   return agentRuntimeBaselineDtoSchema.parse({
@@ -22,6 +23,8 @@ function runtimeBaseline(): AgentRuntimeBaselineDto {
         title: "只读执行",
         description: "真实Pi只读工具集合",
         capabilityCatalogSha256: "c".repeat(64),
+        readiness: "available",
+        diagnostics: [],
         enabledToolNames: ["read"],
         piSystemPrompt: {
           bodyMarkdown: "You are an expert coding assistant operating inside pi",
@@ -29,14 +32,7 @@ function runtimeBaseline(): AgentRuntimeBaselineDto {
           dynamicPlaceholders: ["WORKSPACE_ROOT"],
           sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
         },
-        tools: [
-          {
-            name: "read",
-            description: "Read a file",
-            parametersJson: "{}",
-            sourceRelativePath: "pi/packages/coding-agent/src/core/tools/read.ts",
-          },
-        ],
+        tools: [readRuntimeToolFixture()],
       },
     ],
     finalReviewNote: "最终内容以Provider发送前审核为准。",

@@ -82,6 +82,8 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 | `GET` | `/api/runs/:productRunId` | 读取Run状态、阶段与revision |
 | `GET` | `/api/runs/:productRunId/execution-trace` | 读取Principal授权且脱敏的Pi执行轨迹cursor页 |
 | `GET` | `/api/runs/:productRunId/workflow-execution-trace` | 读取Workflow节点、Vercel Runtime证据与Pi活动的脱敏聚合投影 |
+| `GET` | `/api/runs/:productRunId/tool-executions` | 读取当前Run的Tool Intent、Decision、Result与qualified Capability安全投影 |
+| `POST` | `/api/runs/:productRunId/tool-execution-decisions` | 提交绑定Intent revision、Capability descriptor、参数Hash与scope的approve/reject决定 |
 | `GET` | `/api/runs/:productRunId/plans` | 读取Plan revisions |
 | `GET` | `/api/runs/:productRunId/approvals/current` | 读取当前可操作Approval |
 | `POST` | `/api/runs/:productRunId/decisions` | 提交版本/Hash绑定的决定 |
@@ -130,7 +132,7 @@ Workflow时显式提交`session`、`new_sessions`或`session_and_new_sessions`�
 边界前都会重新验证并续租。未来多进程Store必须把协调器替换为数据库advisory lock。Bridge普通Workflow写命令不接受`project_bootstrap`；Application在编译有效RunSpec后同样
 拒绝普通Message携带该能力，因此个人Workflow Definition默认值也不能旁路。只有专用Product Message Command、
 系统Direct Revision和显式单轮override三者同时成立才获得一次性授权。
-Product Query明确返回`recovery.canRecover/recovery.reason`；Client不再按`queued/dispatching`猜测恢复资格，健康v19
+Product Query明确返回`recovery.canRecover/recovery.reason`；Client不再按`queued/dispatching`猜测恢复资格，健康v20
 后台执行不会显示遗留恢复按钮，公开Retry也会复用任何现有活动Outbox。v12迁移逐字保留冻结Request：缺少
 `productRunId`仍可能是提交成功但响应丢失，Adapter会以原commandId+payload触发已有Receipt恢复；没有Receipt的
 普通bootstrap提交仍稳定403。拒绝Candidate是纯Product命令，Provider配置缺失时仍可提交并退出生命周期；已提交的
@@ -144,7 +146,8 @@ Provider、Preflight和当前状态校验前恢复。Candidate出现前专用Run
 `failed_terminal`并恢复普通Workflow；rejected且无动作的Candidate不再显示审核Dock。首轮Product响应中的
 Session、User Message与Run身份在一次Bridge State原子写内绑定，进程不能留下“已有Session但无Run”的半状态并让
 同一Command从首次消息路径漂移到既有Session路径。Bridge State v14为每条Request持久化首轮/既有Session目标，v15
-再持久化`prepared/outcome_unknown/bound/definitely_uncommitted`提交状态；
+再持久化`prepared/outcome_unknown/bound/definitely_uncommitted`提交状态；当前v16只增加Tool Decision本地重试投影，
+不复制Product Intent/Decision；
 v12/v13复合历史无法单独证明原路由或lifecycle终态前的专用种类时，Application只在已有Receipt前提下采用Store记录的
 原Message种类并同时验证两种旧Hash域，不会把猜测变成新命令。active bootstrap存在响应未知Request时，不同消息会
 失败关闭，不能覆盖`currentRequestKey`或创建第二个Run；
@@ -170,10 +173,12 @@ Workflow设计器、任意JSON或执行代码；Plan/HITL与Note Candidate审核
 `conversation.input.dock`；“会话记录”通过加法`conversation.view`注册；Workbench入口使用
 `sidebar.footer.action`，Surface使用`shell.overlay`。
 审核Dock是临时命令表面，不是Run状态看板：只有当前Plan与开放Approval版本/Hash一致且Run正在等待
-计划审核、当前Note Candidate仍可审核、执行Agent正在等待Prompt Review，或存在结果未知且必须原样重试的决定时
+计划审核、当前Note Candidate仍可审核、执行Agent正在等待Prompt Review/Tool Review，或存在结果未知且必须原样重试的决定时
 才显示。Prompt Review在同一个`agent.direct`节点内部暂停，易读视图是原始Provider请求的确定性字段映射，原始
 请求页展示同一份待发送正文；审核卡片不是第二个Workflow节点。决定被Chat确认后
 Dock立即退出Composer；已批准、确认、修订或拒绝的历史由正式消息和Trajectory承载，不用常驻卡片重复展示。
+
+Tool Review卡显示qualified Capability ID、本地显示名、Runtime/来源、effect、scope、参数安全投影和精确Hash。前端不保存等待事实或推导授权；网络结果未知时只保留同一冻结Command供原样重试。Prompt Review approve不会自动批准随后出现的write/bash。
 执行轨迹不创建第二个页面：Bridge保存真实的`DSH user/message ID → Product Run`绑定，Client
 从同源Query读取公开轨迹。State-only Definition在原生`user/message`处恢复绑定；可见的
 `lifeos-execution-trace` Definition在随后同一轮的`request/header`处读取该绑定，并把调用树贡献到

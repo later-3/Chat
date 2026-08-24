@@ -1,12 +1,14 @@
-import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-import type { PromptAssemblyV2 } from "@chat/contracts";
+import type {
+  PromptAssemblyV2,
+  PromptAssemblyV4,
+  ResolvedCapabilitySnapshot,
+} from "@chat/contracts";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { Type } from "@earendil-works/pi-ai";
+import type { Model } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   createAgentSessionServices,
-  defineTool,
   ModelRuntime,
   SessionManager,
   SettingsManager,
@@ -17,7 +19,7 @@ import {
   type ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { assertAllowedBailianHost } from "./config.js";
-import { assertExecutorWorkspacePath } from "./coding-agent-executor.js";
+import { assertExecutorWorkspacePath, toObservableTraceDisplay } from "./coding-agent-executor.js";
 import type { PiDirectExecutorOperationStore } from "./direct-executor-operation-store.js";
 import type { StartPiDirectExecutorOperationRequest } from "./direct-executor-service-contract.js";
 import type { ProjectBootstrapProductPort } from "./direct-executor-service.js";
@@ -33,6 +35,8 @@ import {
   resolvePiRuntimeManifest,
   type ResolvedPiRuntimeManifest,
 } from "./coding-agent-runtime-profile.js";
+import { ToolExecutionCoordinator, type ToolExecutionProductPort } from "./tool-execution-gate.js";
+import { createProjectBootstrapExtension } from "./project-bootstrap-tool.js";
 
 /** 仅用于读取历史Prompt Assembly v1；新Run的默认值由Pi CLI基线与Agent配置决定。 */
 export const P1_DIRECT_AGENT_PROFILE = {
@@ -46,7 +50,14 @@ export const P1_DIRECT_AGENT_PROFILE = {
   branchSummarySkipPrompt: true,
   noExtensions: true,
 } as const;
-const PROJECT_BOOTSTRAP_TOOL = "project_bootstrap_prepare";
+type DirectPromptTools = {
+  readonly capabilityMode: PromptAssemblyV4["tools"]["capabilityMode"];
+  readonly selectionMode?: PromptAssemblyV4["tools"]["selectionMode"] | undefined;
+  readonly names: readonly string[];
+  readonly capabilities?: PromptAssemblyV4["tools"]["capabilities"] | undefined;
+  readonly resources?: PromptAssemblyV4["tools"]["resources"] | undefined;
+  readonly estimatedTokens: PromptAssemblyV4["tools"]["estimatedTokens"];
+};
 const WORKSPACE_PATH_SCOPED_TOOLS = new Set(["read", "grep", "find", "ls", "edit", "write"]);
 
 export class DirectAgentExecutionError extends Error {
@@ -72,9 +83,10 @@ export interface DirectAgentRunInput {
   readonly history: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
   readonly systemPromptAppend: string;
   readonly piSystemPrompt?: PromptAssemblyV2["piSystemPrompt"] | undefined;
-  readonly tools: PromptAssemblyV2["tools"];
+  readonly tools: DirectPromptTools;
   readonly requestOptions: PromptAssemblyV2["requestOptions"];
   readonly cwd: string;
+  readonly workspaceRootId?: string;
   readonly agentDir: string;
   readonly sessionsDir: string;
   readonly store: PiDirectExecutorOperationStore;
@@ -87,6 +99,7 @@ export interface DirectAgentRunInput {
   };
   readonly projectBootstrapProduct?: ProjectBootstrapProductPort;
   readonly promptReview: DirectPromptReviewCoordinator;
+  readonly toolExecutionProduct?: ToolExecutionProductPort;
   readonly promptReviewMode: "manual" | "off";
   readonly signal: AbortSignal;
   readonly resume: boolean;
@@ -96,6 +109,12 @@ export interface DirectAgentRunInput {
 
 export interface DirectAgentRunner {
   run(input: DirectAgentRunInput): Promise<string>;
+}
+
+export interface AgentSessionPiDirectAgentRunnerOptions {
+  /** 仅供确定性合同/E2E注入已注册的本地Provider；生产缺省始终使用Pi标准配置链。 */
+  readonly createModelRuntime?: () => Promise<ModelRuntime>;
+  readonly model?: Model<string>;
 }
 
 /**
@@ -129,8 +148,14 @@ function createControlledJournalExtension(input: {
   readonly workspaceRoot: string;
   readonly store: PiDirectExecutorOperationStore;
   readonly allowedTools: readonly string[];
+  readonly resolvedCapabilities: readonly ResolvedCapabilitySnapshot[];
+  readonly toolExecutions: ToolExecutionCoordinator;
+  readonly signal: AbortSignal;
+  readonly pauseExecutionTimeout?: (() => void) | undefined;
+  readonly resumeExecutionTimeout?: (() => void) | undefined;
 }): ExtensionFactory {
   return (pi) => {
+    const blockedToolCalls = new Set<string>();
     pi.on("tool_call", async (event: ToolCallEvent) => {
       if (!input.allowedTools.includes(event.toolName)) {
         throw new DirectAgentExecutionError("direct_executor.tool_not_allowed");
@@ -139,33 +164,99 @@ function createControlledJournalExtension(input: {
         const path = "path" in event.input ? event.input.path : undefined;
         await assertExecutorWorkspacePath(path ?? ".", input.workspaceRoot);
       }
+      const capability = input.resolvedCapabilities.find(
+        (candidate) => candidate.localName === event.toolName,
+      );
+      if (capability === undefined) {
+        throw new DirectAgentExecutionError("direct_executor.capability_identity_missing");
+      }
+      const inputDisplay = toObservableTraceDisplay(event.input);
+      const inputSha256 = hashExecutorValue(event.input);
       await input.store.appendToolIntent({
         operationId: input.operationId,
         sessionId: input.sessionId,
         toolCallId: event.toolCallId,
         toolName: event.toolName,
-        inputSha256: hashExecutorValue(event.input),
+        inputSha256,
+        inputDisplay: inputDisplay.text,
+        inputDisplayTruncated: inputDisplay.truncated,
+        capability,
       });
+      const decision = await input.toolExecutions.authorize({
+        capability,
+        toolCallId: event.toolCallId,
+        inputDisplay: inputDisplay.text,
+        inputDisplayTruncated: inputDisplay.truncated,
+        inputSha256,
+        signal: input.signal,
+        ...(input.pauseExecutionTimeout === undefined
+          ? {}
+          : { pauseExecutionTimeout: input.pauseExecutionTimeout }),
+        ...(input.resumeExecutionTimeout === undefined
+          ? {}
+          : { resumeExecutionTimeout: input.resumeExecutionTimeout }),
+      });
+      if (decision?.block === true) {
+        await input.store.closeToolIntent({
+          operationId: input.operationId,
+          sessionId: input.sessionId,
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          resultSha256: hashExecutorValue({ rejected: true, reason: decision.reason }),
+          outcome: "blocked",
+        });
+        blockedToolCalls.add(event.toolCallId);
+        return decision;
+      }
+      return undefined;
     });
     pi.on("tool_result", async (event: ToolResultEvent) => {
-      await input.store.closeToolIntent({
-        operationId: input.operationId,
-        sessionId: input.sessionId,
+      // Pi会把tool_call的block结果作为Tool error送回Agent loop；它不是handler执行结果。
+      if (blockedToolCalls.delete(event.toolCallId)) return;
+      const resultSha256 = hashExecutorValue({
+        content: event.content,
+        details: event.details,
+        isError: event.isError,
+        usage: event.usage,
+      });
+      let journalResultSha256: string;
+      try {
+        // 固定崩溃顺序：handler完成后必须先耐久Journal Result，Product才可见completed。
+        journalResultSha256 = await input.store.closeToolIntent({
+          operationId: input.operationId,
+          sessionId: input.sessionId,
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          resultSha256,
+          outcome: event.isError ? "failed" : "completed",
+        });
+      } catch (error) {
+        await input.toolExecutions.markOutcomeUnknown({
+          toolCallId: event.toolCallId,
+          errorCode: "tool_execution.journal_result_persist_unknown",
+        });
+        await input.store
+          .markToolOutcomeUnknown({
+            operationId: input.operationId,
+            sessionId: input.sessionId,
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            errorCode: "direct_executor.tool_outcome_unknown",
+          })
+          .catch(() => undefined);
+        throw error;
+      }
+      await input.toolExecutions.commit({
         toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        resultSha256: hashExecutorValue({
-          content: event.content,
-          details: event.details,
-          isError: event.isError,
-          usage: event.usage,
-        }),
+        resultSha256,
+        journalResultSha256,
         failed: event.isError,
       });
     });
   };
 }
 
-function inheritsPiRuntimeToolDefaults(tools: PromptAssemblyV2["tools"]): boolean {
+function inheritsPiRuntimeToolDefaults(tools: DirectPromptTools): boolean {
   const selectionMode = "selectionMode" in tools ? tools.selectionMode : undefined;
   return (
     selectionMode === "inherit_runtime_default" ||
@@ -182,18 +273,21 @@ export async function bindAndRecordDirectRuntime(input: {
   readonly resourceLoader: ResourceLoader;
   readonly cwd: string;
   readonly agentDir: string;
-  readonly tools: PromptAssemblyV2["tools"];
+  readonly tools: DirectPromptTools;
   readonly journalAllowedTools: string[];
   readonly operationId: string;
   readonly store: Pick<PiDirectExecutorOperationStore, "setSession">;
   readonly resumedFromCheckpointSha256?: string;
+  readonly workspaceRootId?: string;
+  readonly resolvedCapabilities?: ResolvedCapabilitySnapshot[];
 }): Promise<ResolvedPiRuntimeManifest> {
   await input.session.bindExtensions({ mode: "print" });
-  const resolved = resolvePiRuntimeManifest({
+  const resolved = await resolvePiRuntimeManifest({
     session: input.session,
     resourceLoader: input.resourceLoader,
     cwd: input.cwd,
     agentDir: input.agentDir,
+    ...(input.workspaceRootId === undefined ? {} : { workspaceRootId: input.workspaceRootId }),
   });
   if (
     !inheritsPiRuntimeToolDefaults(input.tools) &&
@@ -201,16 +295,42 @@ export async function bindAndRecordDirectRuntime(input: {
   ) {
     throw new DirectAgentExecutionError("direct_executor.active_tool_manifest_mismatch");
   }
+  const frozenCapabilities = "capabilities" in input.tools ? input.tools.capabilities : undefined;
+  if (!inheritsPiRuntimeToolDefaults(input.tools) && frozenCapabilities === undefined) {
+    throw new DirectAgentExecutionError("direct_executor.capability_manifest_missing");
+  }
+  if (
+    frozenCapabilities !== undefined &&
+    JSON.stringify(frozenCapabilities) !== JSON.stringify(resolved.capabilities)
+  ) {
+    const mismatchIndex = Math.max(frozenCapabilities.length, resolved.capabilities.length) - 1;
+    const mismatch = Array.from({ length: mismatchIndex + 1 }).findIndex(
+      (_, index) =>
+        JSON.stringify(frozenCapabilities[index]) !== JSON.stringify(resolved.capabilities[index]),
+    );
+    throw new DirectAgentExecutionError(
+      `direct_executor.capability_manifest_mismatch.${String(mismatch)}`,
+    );
+  }
   input.journalAllowedTools.splice(
     0,
     input.journalAllowedTools.length,
     ...resolved.enabledToolNames,
   );
+  if (input.resolvedCapabilities !== undefined) {
+    input.resolvedCapabilities.splice(
+      0,
+      input.resolvedCapabilities.length,
+      ...resolved.capabilities,
+    );
+  }
   await input.store.setSession({
     operationId: input.operationId,
     sessionId: input.session.sessionId,
     enabledTools: resolved.enabledToolNames,
     resolvedRuntimeManifestSha256: resolved.sha256,
+    resolvedRuntimeManifest: resolved.journalHashInput,
+    resolvedCapabilities: resolved.capabilities,
     ...(input.resumedFromCheckpointSha256 === undefined
       ? {}
       : { resumedFromCheckpointSha256: input.resumedFromCheckpointSha256 }),
@@ -218,102 +338,31 @@ export async function bindAndRecordDirectRuntime(input: {
   return resolved;
 }
 
-function createProjectBootstrapExtension(input: {
-  readonly productRunId: string;
-  readonly product: ProjectBootstrapProductPort;
-}): ExtensionFactory {
-  return (pi) => {
-    pi.registerTool(
-      defineTool({
-        name: PROJECT_BOOTSTRAP_TOOL,
-        label: "准备项目初始化",
-        description:
-          "预检本地Workspace与Plane CE名称，生成需要用户确认的项目初始化候选；不会直接创建目录或Plane项目。",
-        promptSnippet: "准备受控的Plane CE + Git Workspace项目初始化候选",
-        promptGuidelines: [
-          "先确认项目目标、Plane标识、本地目录和初始模块，再调用一次。",
-          "工具返回prepared只表示候选已落盘；必须明确告诉用户仍需审核确认，不能声称项目已创建。",
-        ],
-        executionMode: "sequential",
-        parameters: Type.Object(
-          {
-            name: Type.String({ minLength: 1, maxLength: 160 }),
-            objective: Type.String({ minLength: 1, maxLength: 4000 }),
-            planeWorkspaceSlug: Type.String({ minLength: 1, maxLength: 80 }),
-            planeProjectIdentifier: Type.String({ minLength: 1, maxLength: 12 }),
-            workspaceRootId: Type.String({ minLength: 1, maxLength: 120 }),
-            directoryName: Type.String({ minLength: 1, maxLength: 120 }),
-            initializerProfile: Type.Union([Type.Literal("blank"), Type.Literal("ai_learning")]),
-            initialModules: Type.Array(Type.String({ minLength: 1, maxLength: 120 }), {
-              maxItems: 8,
-            }),
-          },
-          { additionalProperties: false },
-        ),
-        async execute(toolCallId, params, signal) {
-          if (signal?.aborted === true)
-            throw new DirectAgentExecutionError("direct_executor.timeout");
-          const commandId = `cmd_${createHash("sha256")
-            .update(`${input.productRunId}\n${toolCallId}`, "utf8")
-            .digest("hex")
-            .slice(0, 48)}`;
-          const candidate = await input.product.prepare({
-            commandId,
-            productRunId: input.productRunId,
-            proposal: {
-              name: params.name,
-              objective: params.objective,
-              planeWorkspaceSlug: params.planeWorkspaceSlug,
-              planeProjectIdentifier: params.planeProjectIdentifier,
-              workspaceRootId: params.workspaceRootId,
-              directoryName: params.directoryName,
-              initializerProfile: params.initializerProfile,
-              initialModules: params.initialModules,
-            },
-          });
-          const summary = {
-            projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
-            candidateRevision: candidate.revision,
-            candidateSha256: candidate.sha256,
-            status: candidate.status,
-            preview: candidate.preview,
-          };
-          return {
-            content: [
-              {
-                type: "text",
-                text: `${JSON.stringify(summary)}\n候选已准备，尚未创建任何外部资源；请让用户审核确认。`,
-              },
-            ],
-            details: summary,
-          };
-        },
-      }),
-    );
-  };
-}
-
 /**
  * P1固定Direct Profile：真实AgentSession + read/grep/find/ls；自动重试、Compaction、
  * Branch Summary和外部Extension全部关闭，保证每个模型请求只能经过同一个Gate。
  */
 export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
+  constructor(private readonly options: AgentSessionPiDirectAgentRunnerOptions = {}) {}
+
   async run(input: DirectAgentRunInput): Promise<string> {
     await mkdir(input.cwd, { recursive: true });
     await mkdir(input.agentDir, { recursive: true, mode: 0o700 });
     await mkdir(input.sessionsDir, { recursive: true, mode: 0o700 });
 
-    const modelRuntime = await ModelRuntime.create({ refreshOnCreate: false });
+    const modelRuntime =
+      this.options.createModelRuntime === undefined
+        ? await ModelRuntime.create({ refreshOnCreate: false })
+        : await this.options.createModelRuntime();
     await applyDirectAgentRuntimeApiKey({
       modelRuntime,
       environment: process.env,
       providerId: input.requestOptions.providerId,
       signal: input.signal,
     });
-    const model = modelRuntime.getModel(
-      input.requestOptions.providerId,
-      input.requestOptions.modelId,
-    );
+    const model =
+      this.options.model ??
+      modelRuntime.getModel(input.requestOptions.providerId, input.requestOptions.modelId);
     if (model === undefined)
       throw new DirectAgentExecutionError("provider.pre_request.model_missing");
     let modelUrl: URL;
@@ -352,6 +401,16 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
     const frozenToolNames = [...new Set(input.tools.names)];
     const inheritRuntimeToolDefaults = inheritsPiRuntimeToolDefaults(input.tools);
     const journalAllowedTools = inheritRuntimeToolDefaults ? [] : [...frozenToolNames];
+    const resolvedCapabilities: ResolvedCapabilitySnapshot[] = [];
+    if (input.toolExecutionProduct === undefined) {
+      throw new DirectAgentExecutionError("direct_executor.tool_execution_product_missing");
+    }
+    const toolExecutions = new ToolExecutionCoordinator(input.toolExecutionProduct, {
+      operationId: input.request.operationId,
+      productRunId: input.request.productRunId,
+      directAgentAttemptId: input.request.directAgentAttemptId,
+      inputManifestSha256: input.request.inputManifestSha256,
+    });
     if (
       input.capabilityMode === "project_bootstrap" &&
       (input.projectBootstrapContext === undefined || input.projectBootstrapProduct === undefined)
@@ -364,6 +423,15 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       workspaceRoot: input.cwd,
       store: input.store,
       allowedTools: journalAllowedTools,
+      resolvedCapabilities,
+      toolExecutions,
+      signal: input.signal,
+      ...(input.pauseExecutionTimeout === undefined
+        ? {}
+        : { pauseExecutionTimeout: input.pauseExecutionTimeout }),
+      ...(input.resumeExecutionTimeout === undefined
+        ? {}
+        : { resumeExecutionTimeout: input.resumeExecutionTimeout }),
     });
     const projectBootstrapExtension =
       input.capabilityMode === "project_bootstrap"
@@ -386,7 +454,7 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
           ].join("\n");
     const userPromptLayer = governedUserPromptLayer(input.systemPromptAppend);
     const resourcePolicy =
-      input.tools.resources ??
+      ("resources" in input.tools ? input.tools.resources : undefined) ??
       (input.tools.capabilityMode === "pi_cli_default"
         ? {
             contextFiles: "inherit_runtime_default" as const,
@@ -538,6 +606,8 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       journalAllowedTools,
       operationId: input.request.operationId,
       store: input.store,
+      resolvedCapabilities,
+      ...(input.workspaceRootId === undefined ? {} : { workspaceRootId: input.workspaceRootId }),
       ...(resumedCheckpointSha256 === undefined
         ? {}
         : { resumedFromCheckpointSha256: resumedCheckpointSha256 }),
