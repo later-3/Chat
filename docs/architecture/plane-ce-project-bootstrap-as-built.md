@@ -217,11 +217,12 @@ digest。`pnpm plane-ce:prepare`校验并生成私有的锁定Compose和0600环�
 4. 锁定部署测试覆盖：来源Hash、镜像digest、无`latest`、Compose可解析。
 5. 真实CE门：固定容器健康、Web入口可达；提供有效Token后再运行真实创建/对账门。
 6. 根级`build`、`lint`、`format:check`、`typecheck`和`test`全部通过。
-7. `pnpm test:e2e:dsh-project-bootstrap-real`使用真实DSH Host/Client与确定性Workspace/Plane Provider。
+7. `pnpm test:browser:project-bootstrap`使用真实DSH Host/Client与确定性Workspace/Plane Provider。
    首轮消息必须真实经过Router/Application创建Product Session、Run与Candidate来源绑定；确定性替身
    只结算该真实Run，不伪造`/api/messages`、Run或Message Query。门同时验证确认后关页仍完成、
    重开仍见目标且下一条普通消息不再携带bootstrap能力；不启动真实Plane或付费模型。
 
-真实创建门是`pnpm test:provider:plane-ce`。它默认拒绝运行，只有显式设置
-`CHAT_PLANE_CE_REAL_TEST=1`及专用Project/目录身份后才会产生持久副作用；成功后再次查询
+真实创建门是`pnpm test:external:plane-ce`。它默认拒绝运行，只有显式设置
+`CHAT_ALLOW_EXTERNAL_WRITES=1`、`CHAT_PLANE_CE_REAL_TEST=1`及专用Project/目录身份后才会产生
+持久副作用；成功后再次查询
 Plane external ID、Workspace marker和Git仓库，不以单次POST响应宣告完成。

@@ -117,7 +117,9 @@ Intent状态使用一张完整矩阵：reject只形成`rejected`；approve才可
 
 ## 9. 真实非付费门
 
-`pnpm test:e2e:dsh-capability-governance-real` 使用独立455xx端口和`.data/e2e/dsh-capability-governance-real`。DSH Host/Client、Chat Router/Application、Workflow、真实Pi AgentSession/bash handler全部为生产实现，只有模型Provider是进程内确定性Faux。
+`pnpm test:browser:capability-governance`使用独立455xx端口和
+`.data/e2e/dsh-capability-governance-real`。DSH Host/Client、Chat Router/Application、Workflow、
+真实Pi AgentSession/bash handler全部为生产实现，只有模型Provider是进程内确定性Faux。
 
 该门用append型调用日志证明批准handler恰好1次、拒绝handler为0次。Product Result已提交后，E2E Adapter故意悬停而不返回；Supervisor在该响应未知窗口真实SIGTERM并启动新Pi进程，Journal/Receipt恢复与再次重启都保持调用计数为1。环境sentinel证明Pi子进程看不到DashScope/OpenAI/Anthropic/Google/Gemini、GitHub、Plane和SSH凭据。
 

@@ -96,6 +96,8 @@ DSH Bridge/Hono/Vercel/pi Adapters
 8. Playwright端到端正常与恢复场景。
 
 Mock只能证明调用合同；真实Workflow、真实pi和真实浏览器证据不能被Mock代替。
+正式测试分类、默认内存策略、CI调度及付费/外部写三闸门见
+[测试lane](./testing/test-lanes.md)。
 
 ## 9. 规模审查
 

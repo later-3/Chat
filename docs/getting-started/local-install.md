@@ -154,6 +154,7 @@ pnpm plane-ce:down
 
 ```bash
 export CHAT_PLANE_CE_REAL_TEST=1
+export CHAT_ALLOW_EXTERNAL_WRITES=1
 export CHAT_PLANE_CE_REAL_TEST_OPERATION_ID=pbo_planeceacceptance1
 export CHAT_PLANE_CE_REAL_TEST_PROJECT_NAME='Plane CE验收项目'
 export CHAT_PLANE_CE_REAL_TEST_OBJECTIVE='验证Chat受控创建、Git初始化与Plane对账。'
@@ -162,7 +163,7 @@ export CHAT_PLANE_CE_REAL_TEST_PROJECT_IDENTIFIER=CEPOC1
 export CHAT_PLANE_CE_REAL_TEST_ROOT_ID=root_code
 export CHAT_PLANE_CE_REAL_TEST_DIRECTORY_NAME=plane-ce-acceptance
 export CHAT_PLANE_CE_REAL_TEST_MODULES_JSON='["课程","论文","开源项目"]'
-pnpm test:provider:plane-ce
+pnpm test:external:plane-ce
 ```
 
 不要对已有目录或正式Plane项目复用这个真实门。

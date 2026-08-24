@@ -41,7 +41,7 @@ describe("Note Capture真实百炼单调用门（付费，显式运行）", () =
   it("缺少DASHSCOPE_API_KEY时明确失败且不Skip", () => {
     if (!isBailianReady(config)) {
       throw new Error(
-        "缺少DASHSCOPE_API_KEY：请配置后重跑 pnpm test:provider:bailian:note（本测试不Skip）",
+        "缺少DASHSCOPE_API_KEY：请配置后重跑 CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:provider:bailian:note（本测试不Skip）",
       );
     }
   });

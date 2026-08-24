@@ -42,9 +42,11 @@ test("real bootstrap gate requires explicit persistent-write authority and recon
   assert.doesNotMatch(source, /rmSync|rm\(|DELETE/u);
 });
 
-test("real bootstrap gate resolves tsx and project runtime from the API workspace", () => {
-  assert.equal(
-    rootPackage.scripts["test:provider:plane-ce"],
-    "pnpm --filter @chat/api exec node --import tsx ../../scripts/plane-ce/verify-real-bootstrap.ts",
-  );
+test("real bootstrap gate uses the external lane and both write switches", () => {
+  const command = rootPackage.scripts["test:external:plane-ce"];
+  assert.match(command, /test-safety-gate\.mjs external/u);
+  assert.match(command, /--command-name=test:external:plane-ce/u);
+  assert.match(command, /--switch=CHAT_PLANE_CE_REAL_TEST/u);
+  assert.match(command, /--credential=CHAT_PLANE_CE_API_TOKEN/u);
+  assert.match(command, /verify-real-bootstrap\.ts/u);
 });

@@ -137,7 +137,9 @@ Sink。`CHAT_TRACE_MODE`只接受`off/errors/full`；`CHAT_TRACE_SCOPES`只接�
 Run Activity/Pi Session，不再复制到Trace。新写入每日`bounded`文件默认上限16 MiB，可用
 `CHAT_TRACE_MAX_DAILY_BYTES`调整。Trace不保存模型隐藏推理、密钥、用户正文或完整Provider Payload。
 
-真实门：`pnpm test:provider:bailian:coding`验证Pi标准配置链和`read/write/bash`；`pnpm --filter @chat/dsh-web test:e2e:trajectory-real`验证固定rc.6原生Trajectory的running→result投影与双源完整会话记录，不调用付费Provider。
+付费门：`pnpm test:paid:provider:bailian:coding`验证Pi标准配置链和`read/write/bash`；确定性
+浏览器门`pnpm test:browser:trajectory`验证固定rc.6原生Trajectory的running→result投影与
+双源完整会话记录，不调用付费Provider。
 
 真实页面验证时，在DSH发送一条Planning消息后切换到“轨迹”：
 

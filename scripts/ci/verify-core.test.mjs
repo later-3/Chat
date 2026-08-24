@@ -15,7 +15,7 @@ describe("verify:core safety", () => {
       ["pnpm", "lint"],
       ["pnpm", "format:check"],
       ["pnpm", "typecheck"],
-      ["pnpm", "test"],
+      ["pnpm", "test:core"],
     ]);
     const plan = CORE_VERIFY_COMMANDS.flat().join(" ");
     for (const forbidden of ["e2e", "memory", "paid", "plane", "provider", "workbench"]) {

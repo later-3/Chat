@@ -183,10 +183,10 @@ Workflow Definition/View、Note和Rules均不依赖具体前端渲染库。旧We
 既有Planner、旧单轮Executor与Note Capture真实Provider门已通过并保存脱敏证据。完整AgentSession Executor的确定性Service/Journal/Workflow合同门和单独真实Provider付费门均已通过；DSH原生Trajectory另有不付费的真实Host/Session浏览器门。DSH切换后的浏览器门以当前根脚本为准；已删除的旧Web Playwright命令不再是当前完成门。
 
 ```text
-pnpm test:provider:bailian
-pnpm test:provider:bailian:coding
-pnpm test:provider:bailian:note
-pnpm test:e2e:dsh-real
+CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:provider:bailian
+CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:provider:bailian:coding
+CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:provider:bailian:note
+CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:dsh-planning
 ```
 
 Research与Skill仍是产品范围延期，不是Provider问题。Note列表/历史编辑、Definition和Run View的DSH表面尚待单独纵向接入。

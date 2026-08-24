@@ -1,0 +1,1187 @@
+{
+  "schemaVersion": 1,
+  "lanes": ["core", "contract", "integration", "compat", "beta", "browser", "paid", "external"],
+  "deterministicLanes": ["core", "contract", "integration", "compat"],
+  "batch": {
+    "vitestFiles": 6,
+    "nodeFiles": 12
+  },
+  "files": [
+    {
+      "path": "apps/api/src/app.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "apps/api/src/outbox-dispatcher.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "apps/api/src/product-routes.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "apps/api/src/prompt-catalog.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "apps/api/src/prompt-file-library.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "apps/api/src/workflow-runtime-trace-client.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "apps/dsh-web/e2e/dsh-capability-governance-real.spec.ts",
+      "lane": "browser",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "apps/dsh-web/e2e/dsh-mobile-hanui-real.spec.ts",
+      "lane": "browser",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "apps/dsh-web/e2e/dsh-planning-real.spec.ts",
+      "lane": "paid",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "apps/dsh-web/e2e/dsh-project-bootstrap-real.spec.ts",
+      "lane": "browser",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "apps/dsh-web/e2e/dsh-prompt-studio-real.spec.ts",
+      "lane": "browser",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "apps/dsh-web/e2e/dsh-prompt-three-gates-real.spec.ts",
+      "lane": "paid",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "apps/dsh-web/e2e/dsh-pwa-real.spec.ts",
+      "lane": "browser",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "apps/dsh-web/e2e/dsh-trajectory-real.spec.ts",
+      "lane": "browser",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "apps/dsh-web/e2e/dsh-workbench-real.spec.ts",
+      "lane": "beta",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "apps/dsh-web/tests/note-review-render.test.mjs",
+      "lane": "core",
+      "runner": "node-dsh"
+    },
+    {
+      "path": "packages/application/src/configurable-workflow-runtime-use-cases.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/execution-trace-use-cases.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/planning-workflow-projection.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/project-bootstrap-use-cases.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/prompt-assembly-use-cases.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/prompt-review-readable.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/runtime-integrity-diagnostics.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/workflow-definition-kernel.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/workflow-designer-history.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/workflow-designer-policy.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/workflow-structure-operations.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/workflow-view-builder.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/agent-configuration.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/agent-profile-api.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/capability.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/context.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/contracts.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/direct-agent-runtime.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/ids.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/internal-runtime-client.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/note.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/product.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/project-advancement.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/prompt-review.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/rules.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/runtime-credential.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/trace.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/workflow-designer-api.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/workflow-memory.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/workflow-run.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/b2-domain.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/direct-agent-run-lifecycle.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/execution-validation-structured-evidence.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/memory-import.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/note.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/plan-validation.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/planning-input-manifest.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/planning-project-context.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/project-bootstrap.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/project.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/prompt-fragment-v2.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/prompt-review.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/rule.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/run-state.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/workflow-definition-kernel.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/workflow-designer-operations.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/workflow-memory.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/workflow-projection.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/adapter-lifetime.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/adapter.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/bridge-chat-dispatch.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/bridge-dispatch-review.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/bundle-contract.test.ts",
+      "lane": "contract",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/chat-client.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/context-injection-reader.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/controller.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/debug-trace.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/decision-recovery.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/dsh-send-review.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/dsh-session-history.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/execution-trace.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/http-route.test.ts",
+      "lane": "contract",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/lifeos-dock.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/note-vertical-flow.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/project-bootstrap-flow.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/project-bootstrap-navigation.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/prompt-composer-controller.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/prompt-selection.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/prompt-source-file-opener.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/prompt-studio-bridge-service.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/prompt-studio-controller.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/prompt-workspace-resolver.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/pwa.test.ts",
+      "lane": "contract",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/session-records-controller.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/session-records.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/state-store.test.ts",
+      "lane": "compat",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/trajectory.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/vertical-flow.test.ts",
+      "lane": "integration",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/workbench-client-contract.test.ts",
+      "lane": "beta",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/workbench-controller.test.ts",
+      "lane": "beta",
+      "runner": "node-tsx"
+    },
+    {
+      "path": "packages/memory-runtime/src/memmy-adapter.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/memory-runtime/src/tencent-memorycore-adapter.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/memory-runtime/src/tencent-workflow-memory-adapter.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/agent-runtime-profile-client.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/capability-catalog.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/coding-agent-journal.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/coding-agent-runtime-profile.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/direct-executor-service-client.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/direct-executor-service.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/direct-runtime-api-callbacks.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/execution-evidence-verifier.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/executor-service.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/note-capture.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/pi-fork-capabilities.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/pi-runtime.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/prompt-review-gate.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/pi-runtime/src/provider-bailian-coding.real.ts",
+      "lane": "paid",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "packages/pi-runtime/src/provider-bailian-note.real.ts",
+      "lane": "paid",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "packages/pi-runtime/src/provider-bailian.real.ts",
+      "lane": "paid",
+      "runner": "covered-by-command"
+    },
+    {
+      "path": "packages/pi-runtime/src/tool-execution-gate.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/product-store-json/src/configurable-workflow-store-quality-gate.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/product-store-json/src/direct-agent-application-vertical.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/product-store-json/src/json-product-store.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/product-store-json/src/migrate-v16-to-v17.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/product-store-json/src/migrate-v17-to-v18.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/product-store-json/src/migrate-v18-to-v19.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/product-store-json/src/prompt-review-store.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/product-store-json/src/rules-v9-migration.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/project-runtime/src/plane-ce-bootstrap.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/project-runtime/src/registry.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/project-runtime/src/workspace-provisioner.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/realtime/src/memory-import-replay.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/realtime/src/replay.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/realtime/src/trace.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/application-use-cases.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/architecture-boundaries.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/architecture.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/b2-backend-loop.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/commit-runtime-use-cases.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/configurable-planning-quality-gate.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/debug-scripts.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/definition-kernel-conformance.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/definition-kernel-lab-runtime.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/documentation-navigation.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/m1-workflow-recovery.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/memory-context-use-cases.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/note-backend-use-cases.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/note-definition-defaults.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/note-workflow-local-world.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/pi-artifact-evidence.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/planning-memory-selection-v10.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/planning-project-context-use-cases.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/project-intake-use-cases.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/rule-vertical.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/s7-capacity-quality-gate.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/s7-compatibility-auditor.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/s7-failure-security-matrix.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/vscode-debug-config.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/workflow-designer-lifecycle.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/workflow-memory-vertical.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/scripts/source-map-contract.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/configurable-planning-steps.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/configurable-planning-workflow.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/direct-agent-api-client.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/direct-agent-workflow-steps.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/direct-agent-workflow.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/memory-import-workflow-steps-contract.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/memory-import-workflow.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/memory-write-workflow.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/note-capture-steps.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/note-capture-workflow.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/pi-direct-activity-migration.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/pi-direct-executor-activity.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/pi-executor-trace.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/planning-execution-workflow.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/planning-runner-dispatch.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/restricted-run-spec-interpreter.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/runtime-bindings.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/runtime-product-direct-start.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/runtime-trace-projection.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/runtime-version-evidence.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/workflow-execution-steps.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/workflow-memory-steps.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/workflow-network-policy.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/workflow-planning-steps.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/workflows/src/workflow-result-steps.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "scripts/ci/compat-change-gate.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/ci/ci-workflow.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/ci/managed-sources.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/ci/test-lanes.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/ci/test-safety-gate.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/ci/verify-core.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/dev/app-runtime.test.mjs",
+      "lane": "integration",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/dsh/plugin-registry.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/dsh/profile-runtime.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/dsh/web-auth.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/dsh/web-gateway.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/e2e/dsh-real-environment.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/e2e/dsh-real-terminal-canary.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/memory/fixed-memmy.test.mjs",
+      "lane": "compat",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/plane-ce/manage.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/workbench/fixed-code-server.test.mjs",
+      "lane": "beta",
+      "runner": "node"
+    }
+  ],
+  "laneTasks": {
+    "core": [],
+    "contract": [],
+    "integration": [],
+    "compat": [],
+    "beta": [
+      {
+        "name": "workbench-browser",
+        "source": "scripts/e2e/run-dsh-mode.mjs",
+        "command": ["node", "scripts/e2e/run-dsh-mode.mjs", "workbench"]
+      }
+    ],
+    "browser": [],
+    "paid": [],
+    "external": []
+  },
+  "rootScripts": [
+    {
+      "name": "test",
+      "kind": "aggregate",
+      "lanes": ["core", "contract", "integration", "compat"],
+      "command": "pnpm test:all:deterministic"
+    },
+    {
+      "name": "test:all:deterministic",
+      "kind": "aggregate",
+      "lanes": ["core", "contract", "integration", "compat"],
+      "command": "node scripts/ci/test-lanes.mjs run-all"
+    },
+    {
+      "name": "test:beta",
+      "kind": "lane",
+      "lane": "beta",
+      "command": "node scripts/ci/test-lanes.mjs run beta"
+    },
+    {
+      "name": "test:ci-baseline",
+      "kind": "lane",
+      "lane": "contract",
+      "command": "node --test scripts/ci/*.test.mjs"
+    },
+    {
+      "name": "test:browser",
+      "kind": "aggregate",
+      "lanes": ["browser"],
+      "command": "pnpm test:browser:pwa-mobile && pnpm test:browser:prompt-studio && pnpm test:browser:trajectory && pnpm test:browser:project-bootstrap && pnpm test:browser:capability-governance"
+    },
+    {
+      "name": "test:browser:capability-governance",
+      "kind": "lane",
+      "lane": "browser",
+      "command": "node scripts/e2e/run-dsh-mode.mjs capability-governance"
+    },
+    {
+      "name": "test:browser:project-bootstrap",
+      "kind": "lane",
+      "lane": "browser",
+      "command": "node scripts/e2e/run-dsh-mode.mjs project-bootstrap"
+    },
+    {
+      "name": "test:browser:prompt-studio",
+      "kind": "lane",
+      "lane": "browser",
+      "command": "node scripts/e2e/run-dsh-mode.mjs prompt-studio"
+    },
+    {
+      "name": "test:browser:pwa-mobile",
+      "kind": "lane",
+      "lane": "browser",
+      "command": "node scripts/e2e/run-dsh-mode.mjs pwa"
+    },
+    {
+      "name": "test:browser:trajectory",
+      "kind": "lane",
+      "lane": "browser",
+      "command": "node scripts/e2e/run-dsh-mode.mjs trajectory"
+    },
+    {
+      "name": "test:compat",
+      "kind": "lane",
+      "lane": "compat",
+      "command": "node scripts/ci/test-lanes.mjs run compat"
+    },
+    {
+      "name": "test:contract",
+      "kind": "lane",
+      "lane": "contract",
+      "command": "node scripts/ci/test-lanes.mjs run contract"
+    },
+    {
+      "name": "test:core",
+      "kind": "lane",
+      "lane": "core",
+      "command": "node scripts/ci/test-lanes.mjs run core"
+    },
+    {
+      "name": "test:dev-runtime",
+      "kind": "lane",
+      "lane": "integration",
+      "command": "node --test scripts/dev/app-runtime.test.mjs"
+    },
+    {
+      "name": "test:external:memory:memmy",
+      "kind": "lane",
+      "lane": "external",
+      "command": "node scripts/ci/test-safety-gate.mjs external --command-name=test:external:memory:memmy --switch=CHAT_MEMORY_REAL_TEST -- pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-fixed-memmy-http.ts"
+    },
+    {
+      "name": "test:external:memory:memorycore",
+      "kind": "lane",
+      "lane": "external",
+      "command": "node scripts/ci/test-safety-gate.mjs external --command-name=test:external:memory:memorycore --switch=CHAT_MEMORY_REAL_TEST -- pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-fixed-memorycore-http.ts"
+    },
+    {
+      "name": "test:external:memory:response-drop",
+      "kind": "lane",
+      "lane": "external",
+      "command": "node scripts/ci/test-safety-gate.mjs external --command-name=test:external:memory:response-drop --switch=CHAT_MEMORY_REAL_TEST -- pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-response-drop.ts"
+    },
+    {
+      "name": "test:external:plane-ce",
+      "kind": "lane",
+      "lane": "external",
+      "command": "node scripts/ci/test-safety-gate.mjs external --command-name=test:external:plane-ce --switch=CHAT_PLANE_CE_REAL_TEST --credential=CHAT_PLANE_CE_API_TOKEN -- pnpm --filter @chat/api exec node --import tsx ../../scripts/plane-ce/verify-real-bootstrap.ts"
+    },
+    {
+      "name": "test:integration",
+      "kind": "lane",
+      "lane": "integration",
+      "command": "node scripts/ci/test-lanes.mjs run integration"
+    },
+    {
+      "name": "test:memory:scripts",
+      "kind": "lane",
+      "lane": "compat",
+      "command": "node --test scripts/memory/fixed-memmy.test.mjs"
+    },
+    {
+      "name": "test:paid:dsh-planning",
+      "kind": "lane",
+      "lane": "paid",
+      "command": "pnpm --filter @chat/dsh-web test:paid:planning"
+    },
+    {
+      "name": "test:paid:dsh-prompt-three-gates",
+      "kind": "lane",
+      "lane": "paid",
+      "command": "pnpm --filter @chat/dsh-web test:paid:prompt-three-gates"
+    },
+    {
+      "name": "test:paid:provider:bailian",
+      "kind": "lane",
+      "lane": "paid",
+      "command": "pnpm --filter @chat/pi-runtime test:paid:provider:bailian"
+    },
+    {
+      "name": "test:paid:provider:bailian:coding",
+      "kind": "lane",
+      "lane": "paid",
+      "command": "pnpm --filter @chat/pi-runtime test:paid:provider:bailian:coding"
+    },
+    {
+      "name": "test:paid:provider:bailian:note",
+      "kind": "lane",
+      "lane": "paid",
+      "command": "pnpm --filter @chat/pi-runtime test:paid:provider:bailian:note"
+    },
+    {
+      "name": "test:plane-ce:scripts",
+      "kind": "lane",
+      "lane": "contract",
+      "command": "node --test scripts/plane-ce/manage.test.mjs"
+    },
+    {
+      "name": "test:workbench-runtime",
+      "kind": "lane",
+      "lane": "beta",
+      "command": "node --test scripts/workbench/fixed-code-server.test.mjs scripts/dev/app-runtime.test.mjs scripts/dsh/profile-runtime.test.mjs"
+    },
+    {
+      "name": "test:workbench-runtime:real",
+      "kind": "lane",
+      "lane": "beta",
+      "command": "node scripts/workbench/verify-fixed-code-server-real.mjs"
+    }
+  ]
+}

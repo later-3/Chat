@@ -13,10 +13,12 @@ const REQUIRED_EMPTY_ENV = Object.freeze([
   "AZURE_OPENAI_API_KEY",
   "CHAT_DEBUG_PI_KEY_READER",
   "CHAT_DEBUG_PI_PROVIDER_CONFIG",
+  "CHAT_EXTERNAL_TEST_COMMAND_NAME",
   "CHAT_MEMMY_TOKEN",
   "CHAT_PLANE_CE_API_TOKEN",
   "CHAT_PROJECT_MODEL_API_KEY_ENV",
   "CHAT_PROJECT_MODEL_BASE_URL",
+  "CHAT_PAID_TEST_COMMAND_NAME",
   "CHAT_TENCENT_MEMORYCORE_TOKEN",
   "DASHSCOPE_API_KEY",
   "DASHSCOPE_BASE_URL",
@@ -53,6 +55,12 @@ export function parseCiWorkflow(source) {
 }
 
 export function assertCiWorkflowContract(workflow) {
+  assert.deepEqual(workflow.on?.push?.branches, ["main"]);
+  assert.ok(Array.isArray(workflow.on?.pull_request) || workflow.on?.pull_request === null);
+  assert.deepEqual(workflow.on?.schedule, [{ cron: "23 18 * * *" }]);
+  assert.ok(
+    Array.isArray(workflow.on?.workflow_dispatch) || workflow.on?.workflow_dispatch === null,
+  );
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.deepEqual(workflow.concurrency, {
     group: "ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}",
@@ -67,6 +75,24 @@ export function assertCiWorkflowContract(workflow) {
   assert.ok(workflow.jobs !== null && typeof workflow.jobs === "object");
   const jobs = Object.entries(workflow.jobs);
   assert.ok(jobs.length > 0);
+  for (const requiredJob of ["core", "contract", "integration", "compat"]) {
+    assert.ok(workflow.jobs[requiredJob] !== undefined, `CI缺少${requiredJob} lane Job`);
+  }
+  const commandsFor = (name) =>
+    workflow.jobs[name].steps
+      .filter((step) => typeof step?.run === "string")
+      .map((step) => step.run.trim());
+  assert.ok(commandsFor("core").includes("pnpm verify:core"));
+  assert.ok(commandsFor("contract").includes("pnpm test:contract"));
+  assert.ok(commandsFor("integration").includes("pnpm test:integration"));
+  assert.ok(commandsFor("compat").includes("pnpm test:compat"));
+  const compatDecision = workflow.jobs.compat.steps.find((step) => step.id === "compat");
+  assert.equal(compatDecision?.run, "node scripts/ci/compat-change-gate.mjs");
+  for (const step of workflow.jobs.compat.steps.filter((step) =>
+    ["pnpm managed-sources:prepare", "pnpm test:compat"].includes(step?.run?.trim()),
+  )) {
+    assert.equal(step.if, "steps.compat.outputs.run == 'true'");
+  }
   for (const [jobName, job] of jobs) {
     assert.equal(job.permissions, undefined, `${jobName}不得扩大根permissions`);
     assert.ok(Array.isArray(job.steps), `${jobName}.steps必须是数组`);

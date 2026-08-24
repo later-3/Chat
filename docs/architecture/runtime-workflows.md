@@ -391,10 +391,10 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 pnpm test
 pnpm --filter @chat/workflows test
 pnpm --filter @chat/testing test
-pnpm test:provider:bailian
-pnpm test:e2e:planning-execution:real
-CHAT_FIXED_SOURCE_CACHE_ROOT=/path/to/shared/cache pnpm test:memory:memorycore-real-http
-pnpm test:e2e:project-intake:real
+CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:provider:bailian
+CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:dsh-planning
+CHAT_ALLOW_EXTERNAL_WRITES=1 CHAT_MEMORY_REAL_TEST=1 pnpm test:external:memory:memorycore
+pnpm test:browser:project-bootstrap
 ```
 
 普通质量门与真实付费/外部服务门必须分开运行；没有真实凭据时不得用fixture冒充真实完成证据。

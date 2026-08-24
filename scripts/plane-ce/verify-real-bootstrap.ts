@@ -13,11 +13,16 @@ import {
 } from "../../packages/project-runtime/src/index.ts";
 
 const repoEnvironmentPath = fileURLToPath(new URL("../../.env", import.meta.url));
-if (existsSync(repoEnvironmentPath)) process.loadEnvFile(repoEnvironmentPath);
-
+if (process.env.CHAT_ALLOW_EXTERNAL_WRITES !== "1") {
+  throw new Error("真实Plane CE门需要显式设置CHAT_ALLOW_EXTERNAL_WRITES=1");
+}
+if (!process.env.CHAT_EXTERNAL_TEST_COMMAND_NAME?.includes(":external:")) {
+  throw new Error("真实Plane CE门只能由名称包含:external:的受管命令启动");
+}
 if (process.env.CHAT_PLANE_CE_REAL_TEST !== "1") {
   throw new Error("真实Plane CE门会创建持久Project和Git目录；请显式设置CHAT_PLANE_CE_REAL_TEST=1");
 }
+if (existsSync(repoEnvironmentPath)) process.loadEnvFile(repoEnvironmentPath);
 
 function required(name: string): string {
   const value = process.env[name]?.trim();

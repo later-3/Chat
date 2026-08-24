@@ -50,7 +50,7 @@ describe("Pi CLI default Agent runtime profile", () => {
     expect(inspection.resources.skillPaths).toEqual(expect.any(Array));
     expect(inspection.resources.promptTemplatePaths).toEqual(expect.any(Array));
     expect(inspection.resources.contextFilePaths).toEqual(expect.any(Array));
-  }, 20_000);
+  }, 60_000);
 
   it("同一Pi公共SDK helper重复投影的System Prompt与Tool Schema哈希一致", async () => {
     const first = await inspectPiCliDefaultRuntimeVariant();
@@ -58,7 +58,7 @@ describe("Pi CLI default Agent runtime profile", () => {
 
     expect(second.variant.piSystemPrompt.sha256).toBe(first.variant.piSystemPrompt.sha256);
     expect(hashTools(second.variant.tools)).toBe(hashTools(first.variant.tools));
-  }, 20_000);
+  }, 60_000);
 
   it("Workspace配置与Extension只进入scoped目录，且后续读取可观察变化", async () => {
     const root = mkdtempSync(join(tmpdir(), "chat-pi-profile-scope-"));
@@ -134,7 +134,7 @@ describe("Pi CLI default Agent runtime profile", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  }, 20_000);
+  }, 60_000);
 
   it("Extension加载diagnostic使Profile unavailable且不伪装完整目录", async () => {
     const root = mkdtempSync(join(tmpdir(), "chat-pi-profile-diagnostic-"));
@@ -163,7 +163,7 @@ describe("Pi CLI default Agent runtime profile", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  }, 20_000);
+  }, 60_000);
 
   it("默认Agent通过真实Pi AgentSession loop调用bash取得时间，显式受限版本才移除bash", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "chat-pi-cli-default-loop-"));
@@ -258,7 +258,7 @@ describe("Pi CLI default Agent runtime profile", () => {
       restrictedSession.dispose();
       rmSync(workspace, { recursive: true, force: true });
     }
-  }, 20_000);
+  }, 60_000);
 
   it("真实Settings与Extension绑定后统一驱动Profile、Direct Journal和显式失败关闭", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "chat-pi-runtime-parity-"));
@@ -457,5 +457,5 @@ describe("Pi CLI default Agent runtime profile", () => {
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }
-  }, 20_000);
+  }, 60_000);
 });

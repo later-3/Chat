@@ -15,7 +15,7 @@ import { runPiPlanner } from "./planner.js";
 import { runPiExecutor } from "./executor.js";
 
 /**
- * 真实Provider门（任务书§20.2）：pnpm test:provider:bailian。
+ * 真实Provider付费门：CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:provider:bailian。
  *
  * - 真实调用百炼qwen3.7-plus完成Planner与Executor（真实pi Agent loop）。
  * - 缺少DASHSCOPE_API_KEY时明确失败并给出配置方法，绝不Skip。
@@ -50,7 +50,7 @@ describe("真实百炼qwen3.7-plus（付费，显式运行）", () => {
     if (!isBailianReady(config)) {
       writeEvidence();
       throw new Error(
-        "缺少DASHSCOPE_API_KEY：请在仓库根.env中配置百炼按量付费或业务空间Key后重跑 pnpm test:provider:bailian（本测试不Skip）",
+        "缺少DASHSCOPE_API_KEY：请配置后重跑 CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:provider:bailian（本测试不Skip）",
       );
     }
   });

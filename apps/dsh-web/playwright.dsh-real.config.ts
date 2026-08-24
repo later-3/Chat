@@ -17,16 +17,22 @@ const promptStudioOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-studio-only";
 const promptThreeGatesOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-three-gates-only";
 const projectBootstrapOnly = process.env.CHAT_DSH_E2E_MODE === "project-bootstrap-only";
 const capabilityGovernanceOnly = process.env.CHAT_DSH_E2E_MODE === "capability-governance-only";
+const paidMode =
+  promptThreeGatesOnly ||
+  (!workbenchOnly &&
+    !pwaOnly &&
+    !trajectoryOnly &&
+    !promptStudioOnly &&
+    !projectBootstrapOnly &&
+    !capabilityGovernanceOnly);
 const providerEnvironmentModule = "../../scripts/debug/load-provider-env.mjs";
-if (
-  !workbenchOnly &&
-  !pwaOnly &&
-  !trajectoryOnly &&
-  !promptStudioOnly &&
-  !projectBootstrapOnly &&
-  !capabilityGovernanceOnly
-)
-  await import(providerEnvironmentModule);
+if (paidMode && process.env.CHAT_ALLOW_PAID_TESTS !== "1") {
+  throw new Error("DSH付费Playwright配置需要CHAT_ALLOW_PAID_TESTS=1");
+}
+if (paidMode && !process.env.CHAT_PAID_TEST_COMMAND_NAME?.includes(":paid")) {
+  throw new Error("DSH付费Playwright只能由名称包含:paid的受管命令启动");
+}
+if (paidMode) await import(providerEnvironmentModule);
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const dataRoot = resolve(

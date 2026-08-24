@@ -21,9 +21,9 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "test:provider:bailian": "vitest run --config vitest.provider.config.ts",
-    "test:provider:bailian:coding": "vitest run --config vitest.provider-coding.config.ts",
-    "test:provider:bailian:note": "vitest run --config vitest.provider-note.config.ts"
+    "test:paid:provider:bailian": "node ../../scripts/ci/test-safety-gate.mjs paid --command-name=test:paid:provider:bailian --credential=DASHSCOPE_API_KEY --loader=dashscope -- pnpm exec vitest run --config vitest.provider.config.ts",
+    "test:paid:provider:bailian:coding": "node ../../scripts/ci/test-safety-gate.mjs paid --command-name=test:paid:provider:bailian:coding --credential=DASHSCOPE_API_KEY --loader=dashscope -- pnpm exec vitest run --config vitest.provider-coding.config.ts",
+    "test:paid:provider:bailian:note": "node ../../scripts/ci/test-safety-gate.mjs paid --command-name=test:paid:provider:bailian:note --credential=DASHSCOPE_API_KEY --loader=dashscope -- pnpm exec vitest run --config vitest.provider-note.config.ts"
   },
   "dependencies": {
     "@chat/contracts": "workspace:*",

@@ -149,4 +149,9 @@ Direct Operation另有一条更窄的恢复政策：`preparing_prompt_review/wai
 
 ## 7. 当前完成门
 
-自动测试覆盖Operation幂等冲突、cursor事件完整性、脱敏显示证据、Tool未闭合的重启收敛、Service Client以及现有Workflow Candidate→Validation→Product Commit链。完整AgentSession真实百炼门`pnpm test:provider:bailian:coding`已于2026-08-18经用户明确授权通过：从Pi标准配置链调用`dashscope-coding/qwen3.7-plus`，在临时Workspace真实验证`read/write/bash`和连续Journal。`pnpm --filter @chat/dsh-web test:e2e:trajectory-real`同时通过真实rc.6 DSH Host/Session/Agent loop的intent先到、result后到和最终回复恢复。
+自动测试覆盖Operation幂等冲突、cursor事件完整性、脱敏显示证据、Tool未闭合的重启收敛、Service
+Client以及现有Workflow Candidate→Validation→Product Commit链。完整AgentSession真实百炼门
+`CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:provider:bailian:coding`已于2026-08-18经用户明确授权通过：
+从Pi标准配置链调用`dashscope-coding/qwen3.7-plus`，在临时Workspace真实验证`read/write/bash`
+和连续Journal。`pnpm test:browser:trajectory`同时通过真实rc.6 DSH Host/Session/Agent loop的
+intent先到、result后到和最终回复恢复，且不调用付费Provider。

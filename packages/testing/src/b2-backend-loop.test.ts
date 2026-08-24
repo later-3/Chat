@@ -45,7 +45,7 @@ import type { AgentRunResult, BailianConfig, ExecutorStepCandidate } from "@chat
  * M2后端闭环集成测试：
  * 真实Hono API + 真实JSON Product Store + 真实Vercel Workflow本地运行时 +
  * 真实Hook + 确定性pi实现（真实pi Agent loop已由pi-runtime单测证明，
- * 真实百炼由pnpm test:provider:bailian证明）。
+ * 真实百炼由test:paid:provider:bailian证明）。
  *
  * 断言（任务书§20.3）：
  * - 一个Product Run只启动一个Workflow Run；v1后真实等待Hook。

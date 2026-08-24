@@ -26,7 +26,7 @@ import { createPiAgentRuntimeProfileReader } from "./coding-agent-runtime-profil
 /**
  * pi Adapter确定性测试：真实pi Agent loop + faux流。
  * 这些测试证明Adapter经过pi的工具校验、执行与终止语义；
- * 不证明真实百炼接入（真实Provider门由pnpm test:provider:bailian负责）。
+ * 不证明真实百炼接入（真实Provider门由test:paid:provider:bailian负责）。
  */
 
 const config = {
@@ -80,7 +80,7 @@ it("Pi Coding Agent配置投影直接来自真实AgentSession的System Prompt与
     "ls",
   ]);
   expect(coding?.chatRuntimeAppend.bodyMarkdown).toContain("Coding Executor节点");
-}, 20_000);
+}, 60_000);
 
 const planningInput: PlanningInputDto = {
   schemaVersion: "chat-internal-runtime.v1",

@@ -42,6 +42,14 @@ const promptStudioOnly = args.includes("--prompt-studio-only");
 const promptThreeGatesOnly = args.includes("--prompt-three-gates-only");
 const projectBootstrapOnly = args.includes("--project-bootstrap-only");
 const capabilityGovernanceOnly = args.includes("--capability-governance-only");
+const paidMode =
+  promptThreeGatesOnly ||
+  (!workbenchOnly &&
+    !pwaOnly &&
+    !trajectoryOnly &&
+    !promptStudioOnly &&
+    !projectBootstrapOnly &&
+    !capabilityGovernanceOnly);
 const dataRoot = resolve(
   repoRoot,
   promptThreeGatesOnly
@@ -96,15 +104,13 @@ if (
 ) {
   throw new Error("DSH真实E2E preflight收到未知参数");
 }
-if (
-  !workbenchOnly &&
-  !pwaOnly &&
-  !trajectoryOnly &&
-  !promptStudioOnly &&
-  !projectBootstrapOnly &&
-  !capabilityGovernanceOnly
-)
-  await import("../debug/load-provider-env.mjs");
+if (paidMode && process.env.CHAT_ALLOW_PAID_TESTS !== "1") {
+  throw new Error("DSH付费门需要显式设置CHAT_ALLOW_PAID_TESTS=1");
+}
+if (paidMode && !process.env.CHAT_PAID_TEST_COMMAND_NAME?.includes(":paid")) {
+  throw new Error("DSH付费门只能由名称包含:paid的受管命令启动");
+}
+if (paidMode) await import("../debug/load-provider-env.mjs");
 
 if (
   dataRoot !== expectedRoot ||
@@ -117,15 +123,7 @@ if (
 ) {
   throw new Error("拒绝清理未通过精确校验的DSH真实E2E目录");
 }
-if (
-  !workbenchOnly &&
-  !pwaOnly &&
-  !trajectoryOnly &&
-  !promptStudioOnly &&
-  !projectBootstrapOnly &&
-  !capabilityGovernanceOnly &&
-  !process.env.DASHSCOPE_API_KEY?.trim()
-) {
+if (paidMode && !process.env.DASHSCOPE_API_KEY?.trim()) {
   throw new Error("真实DSH E2E缺少百炼凭据（本门失败关闭，不会Skip或切换替身）");
 }
 
