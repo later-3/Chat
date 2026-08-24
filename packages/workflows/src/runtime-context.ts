@@ -12,6 +12,8 @@ import type {
   RunPiExecutorServiceInput,
   runPiNoteCapture,
   runPiPlanner,
+  runPiMemoryRetrievalAgent,
+  runPiMemoryWriteAgent,
 } from "@chat/pi-runtime";
 import type { RuntimeApiClient } from "@chat/contracts";
 import type { RuntimeBindingStore } from "./runtime-bindings.js";
@@ -41,6 +43,8 @@ export interface WorkflowRuntimeContext {
   readonly bailian: BailianConfig;
   readonly planner: typeof runPiPlanner;
   readonly noteCapture: typeof runPiNoteCapture;
+  readonly memoryRetrievalAgent?: typeof runPiMemoryRetrievalAgent;
+  readonly memoryWriteAgent?: typeof runPiMemoryWriteAgent;
   /**
    * 生产为独立Pi Executor Service Client；测试可继续注入旧单轮Executor结果，
    * 直到旧测试fixture完成迁移。两者只在本组合根Port兼容，不形成第二套产品事实。

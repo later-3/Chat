@@ -20,6 +20,8 @@ export * from "./memory-write-use-cases.js";
 export * from "./memory-session-source-port.js";
 export * from "./memory-session-import-use-cases.js";
 export * from "./memory-provider-comparison-use-cases.js";
+export * from "./memory-agent-use-cases.js";
+export * from "./memory-agent-operation-use-cases.js";
 export * from "./project-ports.js";
 export * from "./project-bootstrap-ports.js";
 export * from "./project-bootstrap-use-cases.js";

@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   DSH_PROMPT_STUDIO_E2E_PORTS,
   DSH_PROMPT_THREE_GATES_E2E_PORTS,
+  DSH_MEMORY_MANAGEMENT_E2E_PORTS,
   DSH_REAL_E2E_PORTS,
   dshRealWebEnvironment,
   dshRealWorkbenchEnvironment,
@@ -23,6 +24,7 @@ test("真实浏览器门的45xxx端口族不与production或VS Code debug重叠"
   for (const ports of [
     DSH_PROMPT_STUDIO_E2E_PORTS,
     DSH_PROMPT_THREE_GATES_E2E_PORTS,
+    DSH_MEMORY_MANAGEMENT_E2E_PORTS,
     DSH_REAL_E2E_PORTS,
   ]) {
     for (const port of Object.values(ports)) assert.equal(applicationPorts.has(port), false);
@@ -98,6 +100,23 @@ test("三闸门付费门使用独立数据根且仍隔离Provider凭据", () => 
   assert.equal(environment.CHAT_PUBLIC_WEB_PORT, "45210");
   assert.equal(environment.CHAT_DSH_INTERNAL_WEB_PORT, "45214");
   assert.equal(environment.TMPDIR, "/repo/chat/.data/e2e/dsh-t3-tmp");
+  assert.equal("DASHSCOPE_API_KEY" in environment, false);
+});
+
+test("Memory管理默认-off门使用独立数据根与454xx端口", () => {
+  const environment = dshRealWebEnvironment("/repo/chat", {
+    PATH: "/bin",
+    CHAT_DSH_E2E_DATA_ROOT: "/repo/chat/.data/e2e/dsh-memory-management-real",
+    CHAT_PUBLIC_WEB_PORT: String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.web),
+    CHAT_DSH_INTERNAL_WEB_PORT: String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.webInternal),
+    CHAT_API_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.api)}`,
+    DASHSCOPE_API_KEY: "provider-secret",
+  });
+
+  assert.equal(environment.DSH_HOME, "/repo/chat/.data/e2e/dsh-memory-management-real/dsh-home");
+  assert.equal(environment.CHAT_PUBLIC_WEB_PORT, "45410");
+  assert.equal(environment.CHAT_DSH_INTERNAL_WEB_PORT, "45414");
+  assert.equal(environment.CHAT_API_BASE_URL, "http://127.0.0.1:45411");
   assert.equal("DASHSCOPE_API_KEY" in environment, false);
 });
 

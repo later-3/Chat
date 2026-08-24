@@ -17,6 +17,10 @@ import {
   workflowMemoryWriteNodeConfigSchema,
   workflowMemoryWriteNodeConfigV2Schema,
 } from "@chat/contracts";
+import {
+  memoryAgentRetrieveNodeConfigSchema,
+  memoryAgentWriteNodeConfigSchema,
+} from "@chat/contracts/memory-agent";
 
 export type PublicConfigField =
   | {
@@ -335,6 +339,77 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     outcomes: ["accepted", "materialized", "failed", "outcome_unknown"],
     skipPolicy: { kind: "never" },
     riskPolicy: "external_effect",
+    executorKind: "step",
+    supportedBlueprints: ["direct"],
+  },
+  {
+    nodeType: "agent.memory_retrieve",
+    schemaVersion: 1,
+    displayName: "Memory 检索 Agent",
+    description: "由受限Agent调用只读Memory工具并只按结果引用筛选、排序上下文",
+    category: "agent",
+    configSchema: memoryAgentRetrieveNodeConfigSchema,
+    defaultConfig: {
+      providerId: "mbk_memmy",
+      required: true,
+      maxResults: 8,
+      maxContextCharacters: 8_000,
+    },
+    publicConfigFields: [
+      {
+        type: "memory_provider_selector",
+        name: "providerId",
+        label: "Memory服务",
+        multiple: false,
+        required: true,
+      },
+      booleanField("required", "检索Agent失败时停止工作流", true),
+      integerField("maxResults", "最多候选条数", 8, 1, 20),
+      integerField("maxContextCharacters", "最多上下文字符", 8_000, 128, 50_000),
+    ],
+    inputSlots: [slot("message", "message_ref", true)],
+    outputSlots: [slot("snapshots", "memory_snapshot_ref", false, true)],
+    outcomes: ["success", "empty", "optional_unavailable", "required_unavailable"],
+    skipPolicy: { kind: "never" },
+    riskPolicy: "generate_candidate",
+    executorKind: "step",
+    supportedBlueprints: ["direct"],
+  },
+  {
+    nodeType: "agent.memory_write",
+    schemaVersion: 1,
+    displayName: "Memory 写入 Agent",
+    description: "从有界对话中提出可审核写入候选；不直接调用外部写入",
+    category: "agent",
+    configSchema: memoryAgentWriteNodeConfigSchema,
+    defaultConfig: {
+      providerId: "mbk_memmy",
+      required: false,
+      maxSourceMessages: 20,
+      maxItems: 6,
+      reviewMode: "manual",
+    },
+    publicConfigFields: [
+      {
+        type: "memory_provider_selector",
+        name: "providerId",
+        label: "Memory服务",
+        multiple: false,
+        required: true,
+      },
+      booleanField("required", "候选Agent失败时停止工作流", false),
+      integerField("maxSourceMessages", "最多读取对话消息", 20, 2, 50),
+      integerField("maxItems", "最多写入候选条数", 6, 1, 8),
+      reviewModeField("manual", ["manual"]),
+    ],
+    inputSlots: [
+      slot("message", "message_ref", true),
+      slot("candidate", "direct_agent_candidate_ref", true),
+    ],
+    outputSlots: [slot("writeCandidate", "memory_write_candidate_ref", false)],
+    outcomes: ["candidate_ready", "nothing_useful", "optional_unavailable", "required_unavailable"],
+    skipPolicy: { kind: "never" },
+    riskPolicy: "generate_candidate",
     executorKind: "step",
     supportedBlueprints: ["direct"],
   },

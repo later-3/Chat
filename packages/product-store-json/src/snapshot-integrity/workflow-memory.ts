@@ -1,8 +1,14 @@
-import { type ProductSnapshot } from "@chat/contracts";
+import {
+  memoryAgentWriteNodeConfigSchema,
+  type MemoryAgentEvidenceRef,
+  type ProductSnapshot,
+} from "@chat/contracts";
 import { validateWorkflowRunSpecIntegrity } from "@chat/application/workflow-run-spec-compiler";
 import {
   MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
   MEMORY_DIRECT_RUNNER_FAMILY,
+  MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
 } from "@chat/application/workflow-system-definitions";
 import {
   computeMemoryImportBackendDescriptorSha256,
@@ -21,31 +27,322 @@ import {
   computeWorkflowMemorySnapshotSha256,
   resolveMemoryWriteContent,
   resolveMemoryWriteImportContent,
+  assertMemoryAgentWriteCandidateIntegrity,
+  computeMemoryAgentWriteCandidateItemSha256,
+  computeMemoryAgentEvidenceManifestSha256,
+  computeMemoryWriteAgentEvidenceSha256,
+  computeMemoryWriteAgentCandidateRequestSha256,
+  computeMemoryWriteAgentCandidateSemanticDedupeSha256,
+  resolveMemoryWriteAgentCandidateContent,
+  renderMemoryAgentWriteCandidateItem,
+  computeMemoryAgentOperationInputSha256,
+  computeMemoryAgentOperationResultSha256,
+  deriveMemoryAgentOperationId,
+  deriveMemoryAgentWriteCandidateId,
+  computeMemoryRetrievalAgentSourceSha256,
   hashCanonical,
   MEMORY_SESSION_CONVERSION_VERSION,
   sha256Hex,
 } from "@chat/domain";
 import type { Fail } from "./shared.js";
 
+type MemoryAgentWriteCandidateEntity =
+  ProductSnapshot["entities"]["memoryAgentWriteCandidates"][string];
+
+function expectedWriteCandidateProjection(
+  snapshot: ProductSnapshot,
+  candidate: MemoryAgentWriteCandidateEntity,
+) {
+  const { entities } = snapshot;
+  const run = entities.runs[candidate.productRunId];
+  if (run?.runKind !== "direct_agent" || run.currentDirectAgentCandidateId === undefined) {
+    return undefined;
+  }
+  const runSpec = entities.workflowRunSpecs[run.workflowRunSpecId];
+  const validated = runSpec === undefined ? undefined : validateWorkflowRunSpecIntegrity(runSpec);
+  if (validated === undefined || !validated.success) return undefined;
+  const writeNode = validated.runSpec.nodeResolutions.find(
+    (node) => node.nodeType === "agent.memory_write",
+  );
+  const writeConfig = memoryAgentWriteNodeConfigSchema.safeParse(writeNode?.config);
+  const directCandidate = entities.directAgentCandidates[run.currentDirectAgentCandidateId];
+  const sourceMessage = entities.messages[run.sourceMessageId];
+  if (
+    !writeConfig.success ||
+    directCandidate === undefined ||
+    directCandidate.productRunId !== run.productRunId ||
+    sourceMessage === undefined ||
+    sourceMessage.sessionId !== run.sessionId
+  ) {
+    return undefined;
+  }
+  const evidence: {
+    readonly ref: MemoryAgentEvidenceRef;
+    readonly label: string;
+    readonly role: "user" | "assistant";
+    readonly content: string;
+  }[] = Object.values(entities.messages)
+    .filter(
+      (message) =>
+        message.sessionId === run.sessionId &&
+        message.sessionSequence <= sourceMessage.sessionSequence,
+    )
+    .sort((left, right) => left.sessionSequence - right.sessionSequence)
+    .slice(-writeConfig.data.maxSourceMessages)
+    .map((message) => ({
+      ref: {
+        kind: "message" as const,
+        messageId: message.messageId,
+        messageSha256: computeWorkflowMemoryMessageSha256(message),
+        role: message.role,
+      },
+      label: `对话消息 #${String(message.sessionSequence)}`,
+      role: message.role,
+      content: message.content.text,
+    }));
+  evidence.push({
+    ref: {
+      kind: "direct_agent_candidate" as const,
+      directAgentCandidateId: directCandidate.directAgentCandidateId,
+      candidateSha256: directCandidate.sha256,
+    },
+    label: "本轮执行Agent候选输出",
+    role: "assistant" as const,
+    content: directCandidate.output.text,
+  });
+  const evidenceManifest = evidence.map((item) => item.ref);
+  return {
+    providerId: writeConfig.data.providerId,
+    evidenceManifest,
+    evidenceSha256: computeMemoryWriteAgentEvidenceSha256({
+      productRunId: candidate.productRunId,
+      workflowRunSpecId: run.workflowRunSpecId,
+      directAgentCandidateId: directCandidate.directAgentCandidateId,
+      candidateSha256: directCandidate.sha256,
+      evidence,
+    }),
+  };
+}
+
+function expectedWriteCandidateItems(
+  proposal: Extract<
+    ProductSnapshot["entities"]["memoryAgentOperations"][string],
+    { readonly status: "succeeded" }
+  >["result"] & { readonly kind: "write" },
+  evidenceManifest: MemoryAgentWriteCandidateEntity["evidenceManifest"],
+) {
+  const items = [];
+  for (const [index, proposed] of proposal.proposal.items.entries()) {
+    const evidenceRefs = proposed.evidenceIndexes.map((evidenceIndex) =>
+      evidenceManifest.at(evidenceIndex),
+    );
+    if (evidenceRefs.some((ref) => ref === undefined)) return undefined;
+    const immutable = {
+      itemKey: `item-${String(index + 1)}`,
+      title: proposed.title.trim(),
+      category: proposed.category,
+      content: proposed.content.trim(),
+      labels: [...new Set(proposed.labels.map((label) => label.trim().toLowerCase()))].sort(),
+      evidenceRefs,
+    };
+    items.push({
+      ...immutable,
+      sha256: computeMemoryAgentWriteCandidateItemSha256(immutable as never),
+    });
+  }
+  return items;
+}
+
 function isWorkflowMemoryRun(
   run: ProductSnapshot["entities"]["runs"][string] | undefined,
   runSpec: ProductSnapshot["entities"]["workflowRunSpecs"][string] | undefined,
 ): boolean {
   if (run?.runKind === "planning") return true;
+  if (run?.runKind !== "direct_agent" || runSpec?.definitionRef.blueprintKey !== "direct") {
+    return false;
+  }
   return (
-    run?.runKind === "direct_agent" &&
-    run.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
-    run.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
-    runSpec?.runner.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
-    runSpec.runner.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
-    runSpec.definitionRef.blueprintKey === "direct" &&
-    runSpec.definitionRef.blueprintVersion === 2
+    (run.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
+      run.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
+      runSpec.runner.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
+      runSpec.runner.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
+      runSpec.definitionRef.blueprintVersion === 2) ||
+    (run.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY &&
+      run.runnerBundleVersion === MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION &&
+      runSpec.runner.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY &&
+      runSpec.runner.runnerBundleVersion === MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION &&
+      [3, 4].includes(runSpec.definitionRef.blueprintVersion))
   );
 }
 
 export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): void {
   const { entities } = snapshot;
   const snapshotsByQuery = new Map<string, (typeof entities.workflowMemorySnapshots)[string][]>();
+  const operationIdsByBinding = new Map<string, string>();
+
+  for (const operation of Object.values(entities.memoryAgentOperations)) {
+    const run = entities.runs[operation.productRunId];
+    const runSpec = entities.workflowRunSpecs[operation.workflowRunSpecId];
+    const validated = runSpec === undefined ? undefined : validateWorkflowRunSpecIntegrity(runSpec);
+    const node = validated?.success
+      ? validated.runSpec.nodeResolutions.find(
+          (candidate) => candidate.definitionNodeId === operation.definitionNodeId,
+        )
+      : undefined;
+    const expectedNodeType =
+      operation.operationKind === "retrieval" ? "agent.memory_retrieve" : "agent.memory_write";
+    const expectedBlueprintVersions = operation.operationKind === "retrieval" ? [3, 4] : [3, 5];
+    const bindingKey = [
+      operation.productRunId,
+      operation.workflowRunSpecId,
+      operation.definitionNodeId,
+      operation.operationKind,
+    ].join("\u0000");
+    const duplicateOperationId = operationIdsByBinding.get(bindingKey);
+    operationIdsByBinding.set(bindingKey, operation.memoryAgentOperationId);
+    if (
+      operation.memoryAgentOperationId !==
+        deriveMemoryAgentOperationId({
+          productRunId: operation.productRunId,
+          definitionNodeId: operation.definitionNodeId,
+          operationKind: operation.operationKind,
+        }) ||
+      duplicateOperationId !== undefined ||
+      run?.runKind !== "direct_agent" ||
+      run.runnerFamily !== MEMORY_AGENT_DIRECT_RUNNER_FAMILY ||
+      run.workflowRunSpecId !== operation.workflowRunSpecId ||
+      runSpec?.productRunId !== operation.productRunId ||
+      validated === undefined ||
+      !validated.success ||
+      !expectedBlueprintVersions.includes(validated.runSpec.definitionRef.blueprintVersion) ||
+      node?.nodeType !== expectedNodeType ||
+      node.activation === "skipped" ||
+      computeMemoryAgentOperationInputSha256({
+        operationKind: operation.operationKind,
+        productRunId: operation.productRunId,
+        workflowRunSpecId: operation.workflowRunSpecId,
+        definitionNodeId: operation.definitionNodeId,
+        sourceSha256: operation.sourceSha256,
+      }) !== operation.inputSha256
+    ) {
+      fail(`memoryAgentOperation ${operation.memoryAgentOperationId} Run/Node绑定无效`);
+    }
+    if (
+      operation.startedAt !== operation.createdAt ||
+      Date.parse(operation.updatedAt) < Date.parse(operation.createdAt) ||
+      (operation.status === "dispatching" &&
+        (operation.revision !== 1 ||
+          operation.providerRequestCount !== 0 ||
+          operation.updatedAt !== operation.createdAt)) ||
+      (operation.status !== "dispatching" &&
+        (operation.revision !== 2 ||
+          operation.updatedAt !== operation.completedAt ||
+          Date.parse(operation.completedAt) < Date.parse(operation.startedAt)))
+    ) {
+      fail(`memoryAgentOperation ${operation.memoryAgentOperationId} 时间线无效`);
+    }
+    if (
+      operation.status === "succeeded" &&
+      (operation.result.kind !== operation.operationKind ||
+        computeMemoryAgentOperationResultSha256(operation.result) !== operation.resultSha256)
+    ) {
+      fail(`memoryAgentOperation ${operation.memoryAgentOperationId} 结果Hash或类型无效`);
+    }
+  }
+
+  for (const candidate of Object.values(entities.memoryAgentWriteCandidates)) {
+    const run = entities.runs[candidate.productRunId];
+    const session = entities.sessions[candidate.productSessionId];
+    const operation = entities.memoryAgentOperations[candidate.memoryAgentOperationId];
+    const projection = expectedWriteCandidateProjection(snapshot, candidate);
+    const operationWriteResult =
+      operation?.status === "succeeded" && operation.result.kind === "write"
+        ? operation.result
+        : undefined;
+    const projectedItems =
+      operationWriteResult === undefined
+        ? undefined
+        : expectedWriteCandidateItems(operationWriteResult, candidate.evidenceManifest);
+    try {
+      assertMemoryAgentWriteCandidateIntegrity(candidate);
+    } catch {
+      fail(`memoryAgentWriteCandidate ${candidate.memoryAgentWriteCandidateId} Hash无效`);
+    }
+    if (
+      candidate.memoryAgentWriteCandidateId !==
+        deriveMemoryAgentWriteCandidateId(candidate.productRunId) ||
+      run?.runKind !== "direct_agent" ||
+      run.runnerFamily !== MEMORY_AGENT_DIRECT_RUNNER_FAMILY ||
+      run.sessionId !== candidate.productSessionId ||
+      session === undefined ||
+      operation?.status !== "succeeded" ||
+      operation.operationKind !== "write" ||
+      operation.productRunId !== candidate.productRunId ||
+      operation.workflowRunSpecId !== run.workflowRunSpecId ||
+      operation.sourceSha256 !== candidate.evidenceSha256 ||
+      operation.result.kind !== "write" ||
+      operation.resultSha256 !== candidate.operationResultSha256 ||
+      projection === undefined ||
+      projection.providerId !== candidate.providerId ||
+      projection.evidenceSha256 !== candidate.evidenceSha256 ||
+      computeMemoryAgentEvidenceManifestSha256(projection.evidenceManifest) !==
+        computeMemoryAgentEvidenceManifestSha256(candidate.evidenceManifest) ||
+      projectedItems === undefined ||
+      hashCanonical("memory-agent-write-candidate-items.v1", projectedItems) !==
+        hashCanonical("memory-agent-write-candidate-items.v1", candidate.items) ||
+      (candidate.status === "approved" &&
+        (run.status !== "succeeded" ||
+          run.phase !== "completed" ||
+          run.currentDirectAgentCandidateId === undefined ||
+          run.currentDirectAgentCandidateId !== run.finalDirectAgentCandidateId)) ||
+      new Set(candidate.items.map((item) => item.itemKey)).size !== candidate.items.length
+    ) {
+      fail(`memoryAgentWriteCandidate ${candidate.memoryAgentWriteCandidateId} Run或Item绑定无效`);
+    }
+    for (const ref of candidate.evidenceManifest) {
+      if (ref.kind === "message") {
+        const message = entities.messages[ref.messageId];
+        if (
+          message === undefined ||
+          message.sessionId !== candidate.productSessionId ||
+          message.role !== ref.role ||
+          computeWorkflowMemoryMessageSha256(message) !== ref.messageSha256
+        ) {
+          fail(
+            `memoryAgentWriteCandidate ${candidate.memoryAgentWriteCandidateId} Message证据无效`,
+          );
+        }
+      } else {
+        const directCandidate = entities.directAgentCandidates[ref.directAgentCandidateId];
+        if (
+          directCandidate === undefined ||
+          directCandidate.productRunId !== candidate.productRunId ||
+          directCandidate.sha256 !== ref.candidateSha256
+        ) {
+          fail(`memoryAgentWriteCandidate ${candidate.memoryAgentWriteCandidateId} Direct证据无效`);
+        }
+      }
+    }
+    if (candidate.status === "pending_review") continue;
+    const decision = entities.memoryAgentWriteDecisions[candidate.decisionId];
+    if (
+      decision === undefined ||
+      decision.memoryAgentWriteCandidateId !== candidate.memoryAgentWriteCandidateId ||
+      decision.candidateRevision + 1 !== candidate.revision ||
+      decision.candidateSha256 !== candidate.sha256 ||
+      decision.principalId !== session.ownerPrincipalId ||
+      (candidate.status === "approved" && decision.kind !== "approve") ||
+      (candidate.status === "rejected" && decision.kind !== "reject")
+    ) {
+      fail(`memoryAgentWriteCandidate ${candidate.memoryAgentWriteCandidateId} Decision绑定无效`);
+    }
+  }
+  for (const decision of Object.values(entities.memoryAgentWriteDecisions)) {
+    const candidate = entities.memoryAgentWriteCandidates[decision.memoryAgentWriteCandidateId];
+    if (candidate === undefined || candidate.status === "pending_review") {
+      fail(`memoryAgentWriteDecision ${decision.memoryAgentWriteDecisionId} Candidate反向绑定无效`);
+    }
+  }
 
   for (const memorySnapshot of Object.values(entities.workflowMemorySnapshots)) {
     const query = entities.workflowMemoryQueries[memorySnapshot.workflowMemoryQueryId];
@@ -108,10 +405,49 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
       runSpec.sha256 !== query.workflowRunSpecSha256 ||
       validated === undefined ||
       !validated.success ||
-      node?.nodeType !== "memory.query" ||
+      (node?.nodeType !== "memory.query" && node?.nodeType !== "agent.memory_retrieve") ||
       node.activation === "skipped"
     ) {
       fail(`workflowMemoryQuery ${query.workflowMemoryQueryId} Run/Node绑定无效`);
+    }
+    if (node?.nodeType === "agent.memory_retrieve" && query.status !== "pending") {
+      const sourceSha256 = computeMemoryRetrievalAgentSourceSha256({
+        workflowMemoryQueryId: query.workflowMemoryQueryId,
+        workflowRunSpecSha256: query.workflowRunSpecSha256,
+        sourceMessageSha256: query.sourceMessageSha256,
+        querySha256: query.querySha256,
+        providerDescriptorSha256: query.providerDescriptorSha256,
+        requirement: query.requirement,
+        maxResults: query.maxResults,
+        maxContextCharacters: query.maxContextCharacters,
+      });
+      const operation =
+        entities.memoryAgentOperations[
+          deriveMemoryAgentOperationId({
+            productRunId: query.productRunId,
+            definitionNodeId: query.definitionNodeId,
+            operationKind: "retrieval",
+          })
+        ];
+      const completedResultSha256 =
+        operation?.status === "succeeded" && operation.result.kind === "retrieval"
+          ? computeWorkflowMemoryQueryResultSha256({
+              externalQueryId: operation.result.externalQueryId,
+              hitCount: operation.result.hitCount,
+              sections: operation.result.sections,
+            })
+          : undefined;
+      if (
+        operation === undefined ||
+        operation.sourceSha256 !== sourceSha256 ||
+        (query.status === "completed" &&
+          (operation.status !== "succeeded" || completedResultSha256 !== query.resultSetSha256)) ||
+        (query.status === "failed" &&
+          operation.status !== "failed" &&
+          operation.status !== "outcome_unknown")
+      ) {
+        fail(`workflowMemoryQuery ${query.workflowMemoryQueryId} Agent Operation绑定无效`);
+      }
     }
     const configuredProvider = node?.config["providerId"];
     const configuredRequired = node?.config["required"];
@@ -297,7 +633,7 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
           providerId: intent.providerId,
           sourceSelection: intent.sourceSelection,
         });
-      } else {
+      } else if (intent.schemaVersion === "memory-write-intent.v2") {
         const ownerImport =
           entities.memorySessionImports[intent.sourceSelection.memorySessionImportId];
         if (
@@ -327,6 +663,52 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
           sourceSessionId: intent.sourceSelection.sourceSessionId,
           sourceItemKey: intent.sourceSelection.sourceItemKey,
           sourceItemSha256: intent.sourceSelection.sourceItemSha256,
+        });
+      } else {
+        const candidate =
+          entities.memoryAgentWriteCandidates[intent.sourceSelection.memoryAgentWriteCandidateId];
+        const session = entities.sessions[intent.productSessionId];
+        const item = candidate?.items.find(
+          (candidateItem) => candidateItem.itemKey === intent.sourceSelection.itemKey,
+        );
+        if (
+          candidate === undefined ||
+          candidate.status !== "approved" ||
+          session?.ownerPrincipalId !== intent.requestedByPrincipalId ||
+          candidate.productSessionId !== intent.productSessionId ||
+          candidate.providerId !== intent.providerId ||
+          candidate.sha256 !== intent.sourceSelection.candidateSha256 ||
+          item === undefined ||
+          item.sha256 !== intent.sourceSelection.itemSha256 ||
+          !candidate.memoryWriteIntentIds.includes(intent.memoryWriteIntentId)
+        ) {
+          fail(`memoryWriteIntent ${intent.memoryWriteIntentId} Memory Agent候选来源无效`);
+        }
+        const rendered = renderMemoryAgentWriteCandidateItem(item);
+        if (rendered !== intent.contentSnapshot) {
+          fail(`memoryWriteIntent ${intent.memoryWriteIntentId} Memory Agent正文快照无效`);
+        }
+        content = resolveMemoryWriteAgentCandidateContent({
+          contentSnapshot: intent.contentSnapshot,
+          selection: intent.sourceSelection,
+          maxContentCharacters: writeCapability.maxContentCharacters,
+        });
+        requestSha256 = computeMemoryWriteAgentCandidateRequestSha256({
+          operationId: intent.operationId,
+          providerDescriptorSha256: intent.providerDescriptorSha256,
+          contentType: intent.contentType,
+          sourceSelection: intent.sourceSelection,
+          sourceSessionKey: intent.sourceSessionKey,
+          sourceTurnKey: intent.sourceTurnKey,
+          contentSha256: sha256Hex(content),
+        });
+        semanticSha256 = computeMemoryWriteAgentCandidateSemanticDedupeSha256({
+          requestedByPrincipalId: intent.requestedByPrincipalId,
+          providerId: intent.providerId,
+          productSessionId: intent.productSessionId,
+          memoryAgentWriteCandidateId: intent.sourceSelection.memoryAgentWriteCandidateId,
+          itemKey: intent.sourceSelection.itemKey,
+          itemSha256: intent.sourceSelection.itemSha256,
         });
       }
     } catch (error) {
@@ -401,6 +783,55 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
   for (const intent of Object.values(entities.memoryWriteIntents)) {
     if ((resultCountByIntent.get(intent.memoryWriteIntentId) ?? 0) !== 1) {
       fail(`memoryWriteIntent ${intent.memoryWriteIntentId} 必须恰有一个Result`);
+    }
+  }
+  for (const candidate of Object.values(entities.memoryAgentWriteCandidates)) {
+    if (candidate.status !== "approved") continue;
+    if (
+      candidate.memoryWriteIntentIds.length !== candidate.items.length ||
+      new Set(candidate.memoryWriteIntentIds).size !== candidate.memoryWriteIntentIds.length
+    ) {
+      fail(`memoryAgentWriteCandidate ${candidate.memoryAgentWriteCandidateId} Intent集合无效`);
+    }
+    for (const item of candidate.items) {
+      const matchingIntentIds = candidate.memoryWriteIntentIds.filter((intentId) => {
+        const intent = entities.memoryWriteIntents[intentId];
+        return (
+          intent?.schemaVersion === "memory-write-intent.v3" &&
+          intent.sourceSelection.memoryAgentWriteCandidateId ===
+            candidate.memoryAgentWriteCandidateId &&
+          intent.sourceSelection.candidateSha256 === candidate.sha256 &&
+          intent.sourceSelection.itemKey === item.itemKey &&
+          intent.sourceSelection.itemSha256 === item.sha256
+        );
+      });
+      if (matchingIntentIds.length !== 1) {
+        fail(
+          `memoryAgentWriteCandidate ${candidate.memoryAgentWriteCandidateId} Item ${item.itemKey} 缺少唯一v3 Intent`,
+        );
+      }
+      const memoryWriteIntentId = matchingIntentIds[0]!;
+      const matchingResults = Object.values(entities.memoryWriteResults).filter(
+        (result) => result.memoryWriteIntentId === memoryWriteIntentId,
+      );
+      if (matchingResults.length !== 1) {
+        fail(
+          `memoryAgentWriteCandidate ${candidate.memoryAgentWriteCandidateId} Item ${item.itemKey} 缺少唯一Result`,
+        );
+      }
+      const result = matchingResults[0]!;
+      const initialStartOutboxes = Object.values(snapshot.outbox).filter(
+        (entry) =>
+          entry.kind === "memory_write_start" &&
+          entry.memoryWriteIntentId === memoryWriteIntentId &&
+          entry.memoryWriteResultId === result.memoryWriteResultId &&
+          entry.expectedResultRevision === 1,
+      );
+      if (initialStartOutboxes.length !== 1) {
+        fail(
+          `memoryAgentWriteCandidate ${candidate.memoryAgentWriteCandidateId} Item ${item.itemKey} 缺少唯一初始Memory Write Outbox`,
+        );
+      }
     }
   }
 

@@ -20,15 +20,15 @@
 
 首期纵向已经完成，但当前产品不依赖它，暂按Beta保留且不进入通用CI/CD。需要单独启用、修改或提升为稳定能力时，完成门仍是：真实Workspace可读写；Terminal、Git状态与Diff可见；DSH返回后保留原会话；停止应用后Terminal子进程与端口全部回收。当前本地纵向不是OS沙箱，远程/多用户部署前必须换成容器或独立UID Provider。
 
-### F3 · Memory纵向（进行中）
+### F3 · Memory纵向（已完成当前授权范围）
 
 把固定memmy与Tencent MemoryCore作为可替换Sidecar，通过同一Provider中立Port接入Chat。普通开发默认`off`且不受Memory端口、工件或服务牵绊；显式启用后，API与Workflow冻结同一Provider集合。
 
-交付顺序：运行基础与真实Provider门 → 独立Memory增强Direct Workflow → Chat/Codex Session预览、去重与导入 → 双Provider对比 → Retrieval/Write Agent与可选人工门 → DSH Memory管理表面。旧Memory Planning只作为实现证据，不能决定当前目标形态。
+交付顺序：运行基础与真实Provider门 → 独立Memory增强Direct Workflow → Chat/Codex Session预览、去重与导入 → 双Provider对比 → Retrieval/Write Agent与人工Candidate Decision → DSH Memory管理表面。旧Memory Planning只作为实现证据，不能决定当前目标形态。
 
-截至2026-08-24，前四项已经完成：Chat/Codex Session共享只读预览、确定性`conversation-turns.v1`转换、条目级去重和增量导入；双Provider比较把同一namespace、查询和预算并行执行，并只报告可验证的精确正文/标签差异，不跨Provider比较score。Codex来源按请求扫描，不新增常驻服务。当前下一交付项是Retrieval/Write Agent与可选人工门。Memory Direct的真实DSH浏览器E2E与本轮采用详情仍计入后续管理表面完成门。
+截至2026-08-24，当前授权纵向已完成：Chat/Codex Session共享只读Preview、确定性`conversation-turns.v1`转换、条目级去重和增量导入；双Provider比较只报告可验证的正文/标签差异，不跨Provider比较score；`memory-agent-direct.v1`固定解释`direct@3`完整、`direct@4`只查询、`direct@5`只整理3种节点序列。每次Retrieval/Write Agent模型或Provider边界先持久化`MemoryAgentOperation`；Write Agent绝不直接外写，用户以Candidate revision/hash批准后才创建统一Memory Write Intent/Outbox。DSH「Memory」设置页提供候选列表/详情/批准拒绝、Provider comparison、Session Preview/Import，并只经同源窄代理访问Chat公开Memory API。普通开发继续默认`off`，不准备/启动任何Sidecar。已通过memmy与MemoryCore真实HTTP、真实Codex Session、百炼`qwen3.7-plus` Memory Agent、默认-off DSH Memory管理Chromium、真实故障恢复，以及显式memmy + 真实百炼 + DSH Chromium串行纵向；最后一项依次验证只查询无写候选、只整理无Memory Context、完整组合候选批准/物化和刷新恢复。
 
-完成门：查询结果真实进入Direct Provider输入；同一Session导入重跑零新增；Write响应丢失不会产生第二个外部对象；刷新后可从Product Store重建来源、采用、决定、写入与对账；真实DSH浏览器能配置、查看并管理本轮Memory使用。
+完成门已满足：查询结果真实进入Direct Provider输入；同一Session导入重跑零新增；Write响应丢失不产生第二个外部对象；刷新后可从Product Store重建来源、Operation、Candidate Decision、写入与对账；显式启用Provider的真实DSH浏览器可选择、配置并管理`direct@3/4/5`本轮Memory使用。后续Provider扩展、跨设备身份或新的Memory用户场景仍需新的明确授权。
 
 ### F4 · Browser Provider（候选）
 

@@ -1,8 +1,8 @@
 # Chat 可配置工作流 As-built
 
 > 日期：2026-08-24
-> 状态：后端产品事实、运行内核与公开API已落地；DSH已接入Workflow选择、发送级配置与人工审核表面
-> 范围：运行投影、受限定义内核、发送级配置、Planning、Note、Direct Agent、Memory Direct、Rules、Definition、迁移与验收
+> 状态：后端产品事实、运行内核与公开API已落地；DSH已接入Workflow选择、发送级配置、人工审核与Memory管理表面
+> 范围：运行投影、受限定义内核、发送级配置、Planning、Note、Direct Agent、Memory Direct、Memory Agent完整/只读/只整理组合、Rules、Definition、迁移与验收
 
 ## 1. 用户结果
 
@@ -15,13 +15,13 @@
 
 - 查询真实Run、节点Input/Output/Timeline/Evidence和受控Trace摘要；
 - 为Run选择已发布Planning或Note流程以及Memory、Project、Rules和审核策略；
-- 显式选择独立Memory Direct，并按本轮配置选择Query/Write Provider、失败政策和查询预算；
+- 显式选择独立Memory Direct；或选择`direct@3`完整组合、`direct@4`只查询、`direct@5`只整理，3种组合都由`memory-agent-direct.v1`解释冻结RunSpec；
 - 通过严格Command复制、编辑、校验、发布、归档或恢复受限Definition；
 - 在Planning审核中要求修订、批准或拒绝；在Note审核中确认、编辑后确认、要求修订或拒绝；
 - 刷新、进程重启或重复提交后继续同一产品Run，不重复消费已经提交的决定或副作用；
 - 查询正式Note、历史Revision和来源，维护带Revision/Tag/Scope的规则并把精确Rule Revision注入规划。
 
-DSH桥接面已经交付原生对话、Planning HITL与Note Candidate审核。Note审核读取安全DTO并支持确认、要求修订和拒绝；Candidate正文、标签、类型和来源数量在手机/桌面同一卡片中可见。Note列表/历史编辑、Run Viewer、Rules和Definition编辑仍是已存在的Chat API能力，但在对应DSH Client插件完成前不能写成当前用户界面已经可操作。
+DSH桥接面已经交付原生对话、Planning HITL、Note Candidate审核和全局设置中的Memory管理页。Memory页只经显式`/lifeos/memory/*`同源窄代理读取/提交候选列表与详情、批准/拒绝、Provider comparison、Session source preview/import；它不是通用代理，也不保存Memory产品事实。普通`pnpm dev`仍默认`CHAT_MEMORY_MODE=off`，不准备artifact、不占端口、不启动Sidecar，页面不会绕过该开关。Note审核读取安全DTO并支持确认、要求修订和拒绝；Candidate正文、标签、类型和来源数量在手机/桌面同一卡片中可见。Note列表/历史编辑、Run Viewer、Rules和Definition编辑仍是已存在的Chat API能力，但在对应DSH Client插件完成前不能写成当前用户界面已经可操作。
 
 与原始目标对照，本次真正交付的是受限Kernel、运行观察、Memory/Project/Rules配置化Planning、人工审核循环、执行/验证/提交、Note、Rules和Designer。正式Research产品事实与正式Skill集合/授权/冻结/消费链尚未交付；它们保留为原始目标中的明确延期项，不用兼容节点、空资源目录或`optional_unavailable`冒充完成。
 
@@ -31,7 +31,7 @@ DSH桥接面已经交付原生对话、Planning HITL与Note Candidate审核。No
 flowchart LR
   UI["DeepSeek Harness Web\nLifeOS Client插件"] -->|"Bridge Host / REST Query / Command"| API["Hono\n认证、strict校验、ETag"]
   API --> APP["Application\n事务、CAS、权限、投影"]
-  APP --> STORE["Product Store v19\n权威产品事实"]
+  APP --> STORE["Product Store v21\n权威产品事实"]
   STORE --> OUTBOX["Outbox\nstart / resume"]
   OUTBOX --> RUNTIME["Vercel Workflow Runtime\n固定Runner解释RunSpec"]
   RUNTIME -->|"私有strict命令"| APP
@@ -43,7 +43,7 @@ flowchart LR
 
 责任没有合并：
 
-- Product Store拥有Definition、Revision、RunSpec、Run、Decision、Note、Rule和节点产品证据；
+- Product Store拥有Definition、Revision、RunSpec、Run、Decision、Note、Rule、Memory Agent Operation/Candidate/Decision和节点产品证据；
 - Workflow Store只拥有耐久步骤、Hook和Checkpoint；
 - pi只产生候选，不拥有审批、正式Note或Run成功事实；
 - DSH与浏览器只保存会话轨迹、未发送草稿和查询缓存，不拥有产品历史与终态；
@@ -75,6 +75,8 @@ Note Application按变化原因拆分：公开Query/DTO投影、普通Note维护
 | `memory.query` | `providerId`、`required`、`maxResults`、`maxContextCharacters` | Workflow只读Provider Step + `WorkflowMemoryQuery/Snapshot/Context`原子事实；同类节点最多8个 |
 | `memory.write@1` | `providerId`、来源Message、`conversation_turn` | 历史Memory Planning合同；保持原规范化结果与Definition Hash不变 |
 | `memory.write@2` | `providerId`、`required`、来源Message、`conversation_turn` | Memory Direct合同；父Workflow按`required`决定写回失败或结果未知时是否阻断Product Commit。两个版本都复用统一写入状态机并唯一执行；直接Write Command才由Outbox启动独立`MemoryWriteWorkflow` |
+| `agent.memory_retrieve` | `providerId`、`required`、`maxResults`、`maxContextCharacters` | `direct@3/4`在Direct前以耐久`MemoryAgentOperation`调用受限Retrieval Agent；Agent仅选择原始Provider结果索引，Application冻结选中结果与证据引用 |
+| `agent.memory_write` | `providerId`、`required`、`maxSourceMessages`、`maxItems`、`reviewMode: manual` | `direct@3/5`在Direct后以耐久`MemoryAgentOperation`生成Write Candidate；它不执行外部写。人工批准才在同一事务创建统一Memory Write Intent/Result与Outbox，拒绝不写入Provider |
 | `context.memory` | 历史`required`、`maxItems`、选择的`mrs_*` | 旧完整上下文Planning兼容能力；Compiler + `PlanningMemorySelection`原子事实 |
 | `context.project` | `required`、Project选择 | `PlanningProjectContext`与Node终态/Manifest同事务 |
 | `policy.rules` | `required`、Rule选择 | `RuleSelection`与Node终态/Manifest同事务；正文只经私有Runtime边界 |
@@ -127,9 +129,9 @@ Note流程为`bounded_loop(Extract -> Classify -> Review) -> Commit`。模型只
 
 低风险自动继续只适用于Note，且Policy Resolution绑定RunSpec、Definition Node、Candidate和固定策略版本/Hash。策略不允许时仍创建可审计Resolution，并进入真实`waiting_human`。
 
-### 5.3 Direct与Memory Direct
+### 5.3 Direct、Memory Direct与Memory Agent Direct
 
-公开目录包含两个身份与Runner都独立的Direct Definition：
+公开目录包含5个固定Direct Blueprint版本，其中Memory Agent family提供3种明确组合：
 
 ```text
 direct@1 / direct-agent.v1:
@@ -137,11 +139,24 @@ direct@1 / direct-agent.v1:
 
 direct@2 / memory-direct.v1:
   Memory Query -> Agent Direct -> Memory Write
+
+direct@3 / memory-agent-direct.v1:
+  Memory Retrieval Agent -> Agent Direct -> Memory Write Agent -> Candidate Decision
+
+direct@4 / memory-agent-direct.v1:
+  Memory Retrieval Agent -> Agent Direct
+
+direct@5 / memory-agent-direct.v1:
+  Agent Direct -> Memory Write Agent -> Candidate Decision
 ```
 
 `direct@1`的Definition、Runner、Prompt Review与Product Commit路径保持原样，不会因启用Memory Mode而查询或写入。`direct@2`先把Query终态冻结为唯一`WorkflowMemoryContext`，Application再把Context ID/Revision/Hash写入Direct Attempt Manifest；Pi Executor只在授权引用和组合Token预算都通过后，把规范化Context作为当前请求前的一条不可信历史消息加入同一个AgentSession。它不是系统指令，正文不进入Workflow Checkpoint、Operation Journal或Trace；真正的完整Provider Payload仍由现有Prompt Review显示和审核。
 
 Direct Candidate先作为模型候选持久化。Memory Write随后按冻结配置保存来源User Message；`required=true`时`failed/outcome_unknown`阻止Product Commit，`required=false`时保留独立Write终态后仍可提交候选。无论是否必需，外部写入都只发生一次，结果未知只允许同一Intent做只读对账。
+
+`direct@3`是第三个固定系统Definition/Revision/View，不改变`direct@1`或`direct@2`。它按`Memory Retrieval Agent -> Agent Direct -> Memory Write Agent -> Candidate Decision`顺序运行：Retrieval Agent只从本次Provider原始结果中选择，Write Agent只生成绑定冻结证据的候选。两个Agent外部调用均先记录含输入Hash、来源/候选Hash和请求次数的`MemoryAgentOperation`；派发后异常为`outcome_unknown`，`maxRetries=0`，只能沿同一Operation只读对账。Candidate的revision/hash与人工Decision绑定；批准为每一项创建既有统一Memory Write Intent/Result和`memory_write_start` Outbox，拒绝不触发外部写入。
+
+`direct@4`固定为“只查询 Memory 后回答”：Direct授权必须引用本轮冻结Context，完成后直接提交正式Message，不存在Write Agent节点或候选。`direct@5`固定为“只整理为 Memory 候选”：Direct授权必须没有Workflow Memory Context，回答后才运行Write Agent。二者不是前端开关伪装的同一流程；Definition/Revision/View、RunSpec版本和节点序列都进入Product Store完整性校验。
 
 ## 6. 前后端合同
 
@@ -164,18 +179,20 @@ Direct Agent的“发送前审核提示词”：开启保持逐次审核，关�
 Operation Journal中先提交`provider.started`派发栅栏；派发后结果未知仍禁止自动重发。
 Memory Direct继续复用同一服务端描述表面，并额外公开Query/Write Provider、Query必需性、结果数、Context字符预算和Write必需性；这些都是会话级发送草稿，提交后冻结进RunSpec。
 
+Memory管理页是独立的全局Settings section，而不是把Memory业务写入DSH宿主：Browser controller仅调用已枚举的`/lifeos/memory/*`路径；Bridge Host逐一路由校验ID、查询和Zod body后转发既有Chat`/api/memory/*`，保留响应上限与安全4xx映射。候选批准/拒绝、import等未知网络结果重试复用同一`commandId`和原body。Host不提供通用代理，不持久化Provider配置、Session或产品事实。
+
 ## 7. Checkpoint、恢复与安全
 
 - Planning生成/发布、Note生成/发布、Execution执行/持久化分别合并在单个耐久Step内；Workflow作用域只保留产品ref、outcome和身份，不跨Step携带Message、Memory、Plan输出或Note正文。
 - Hook先由产品Decision提交，再由Outbox恢复；edited Note同时区分被claim的旧Candidate和Decision绑定的successor。
 - Runtime Binding保存runner family/bundle版本；恢复按当次Run证据分派，不按当前全局默认猜测。
-- `direct-agent.v1/direct@1`与`memory-direct.v1/direct@2`必须一一对应；Store、Runtime分发和Direct授权三处都拒绝交叉组合。
+- `direct-agent.v1/direct@1`、`memory-direct.v1/direct@2`必须精确对应；`memory-agent-direct.v1`只接受`direct@3/4/5`各自固定的3/2/2节点序列。Store、Runtime分发和Direct授权三处都拒绝版本、Context与节点序列交叉组合。
 - Runtime私有命令校验RunSpec、节点类型、合法executionPath、activation、状态、终态和产品引用；持有Runtime Key也不能伪造另一路径或在Run终态后创建节点。
 - 百炼Host采用精确域名/Workspace正则；当前允许用户已配置并授权且真实验收通过的`coding.dashscope.aliyuncs.com`，Token Plan与同形恶意域名仍在启动或付费调用前失败关闭。Project模型Profile在provider为`bailian`时使用同一安全合同。
 
 ## 8. Store与迁移
 
-Product Store当前为`chat-product-store.v20`：
+Product Store当前为`chat-product-store.v21`：
 
 - v6：Workflow View/Node/Transition/Manifest；
 - v7：Definition/Revision/RunSpec；
@@ -192,6 +209,7 @@ Product Store当前为`chat-product-store.v20`：
 - v18：新增不可变Agent Version，并发布继承Pi CLI默认能力的Direct系统Revision。
 - v19：只新增固定Memory Direct Definition/Revision/View；不改写已有Run、历史Direct或其他产品事实。
 - v20：新增Provider中立的Session Import批次；批次冻结来源/Preview Hash并引用统一Memory Write Intent/Result，不复制Provider对象或把Codex Session变成Product Session。
+- v21：新增固定`Memory Agent Direct`完整/只读/只整理Definition/Revision/View、`MemoryAgentOperation`及人工`MemoryAgentWriteCandidate/Decision`；它们与既有Memory Write Intent/Result衔接，不改写v20及以前的历史事实。
 
 迁移按版本串行、可重复打开，并对非空历史Fixture执行Zod、生产完整性、只读Auditor和故障注入。v5→v6使用迁移专用冻结投影，不调用会继续演进的当前Application projector。
 
@@ -203,9 +221,9 @@ Workflow Definition/View、Note和Rules均不依赖具体前端渲染库。旧We
 
 ## 10. 验证与剩余边界
 
-自动门覆盖Contracts、Domain、Application、Store、Workflow、Runtime、API、迁移、并发、权限、IDOR、容量和Checkpoint正文扫描。旧Web浏览器证据只存在于Git历史；当前用户界面必须重新通过DSH真实浏览器纵向，不能沿用旧UI结论。Note Bridge的确定性纵向覆盖Candidate投影、版本/Hash绑定决定、断网原样重试和正式Assistant Message收敛；部署前仍须补真实手机浏览器证据。
+自动门覆盖Contracts、Domain、Application、Store、Workflow、Runtime、API、迁移、并发、权限、IDOR、容量和Checkpoint正文扫描。Memory Agent Direct、Memory管理Browser controller与Bridge Host已有确定性合同测试。Memory当前已实际通过6类门：memmy与MemoryCore真实HTTP；真实Codex Session（50个来源、抽样8条消息转换为4个条目）；百炼`qwen3.7-plus` Memory Agent真实门3/3（Retrieval仅选Provider原始index 1，Write生成1个候选）；默认-off真实DSH Chromium 2/2（同源空Provider、Settings→Memory三页签、桌面与390px无页面横向溢出）；真实故障恢复（memmy断响应后同身份只读对账且仅1个外部对象，Sidecar wrapper被`SIGKILL`后回收子进程组并释放端口）；以及显式memmy + 真实百炼 + DSH Chromium串行纵向，依次验证`direct@4`只查询、`direct@5`只整理、`direct@3`完整组合的提示词Context边界、Candidate人工批准、Provider物化与刷新恢复。旧Web浏览器证据只存在于Git历史；当前用户界面不能沿用旧UI结论。Note Bridge的确定性纵向覆盖Candidate投影、版本/Hash绑定决定、断网原样重试和正式Assistant Message收敛；部署前仍须补真实手机浏览器证据。
 
-既有Planner、旧单轮Executor与Note Capture真实Provider门已通过并保存脱敏证据。完整AgentSession Executor的确定性Service/Journal/Workflow合同门和单独真实Provider付费门均已通过；DSH原生Trajectory另有不付费的真实Host/Session浏览器门。DSH切换后的浏览器门以当前根脚本为准；已删除的旧Web Playwright命令不再是当前完成门。
+既有Planner、旧单轮Executor与Note Capture真实Provider门已通过并保存脱敏证据。完整AgentSession Executor的确定性Service/Journal/Workflow合同门和单独真实Provider付费门均已通过；DSH原生Trajectory另有不付费的真实Host/Session浏览器门。DSH切换后的浏览器门以当前根脚本为准；已删除的旧Web Playwright命令不再是当前完成门。Memory显式Provider纵向入口为`env CHAT_REPO_ROOT=/absolute/path/to/Chat pnpm test:e2e:dsh-memory-vertical-real:paid`，它使用专用端口和数据根，不复用或修改当前开发实例。
 
 ```text
 pnpm test:provider:bailian

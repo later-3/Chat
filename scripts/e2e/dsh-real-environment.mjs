@@ -24,6 +24,31 @@ export const DSH_PROMPT_THREE_GATES_E2E_PORTS = Object.freeze({
   piExecutor: 45_215,
 });
 
+/**
+ * Memory 管理页的默认-off门只启动真实 API 与 DSH Host/Gateway。placeholder端口仅满足
+ * API 组合根的私有地址合同，不启动 Workflow 或 Pi Executor。
+ */
+export const DSH_MEMORY_MANAGEMENT_E2E_PORTS = Object.freeze({
+  web: 45_410,
+  api: 45_411,
+  workflowPlaceholder: 45_412,
+  webInternal: 45_414,
+  piExecutorPlaceholder: 45_415,
+});
+
+/**
+ * Memory纵向门同时启动真实memmy、Workflow、Pi与DSH。memmy仍使用固定上游合同端口
+ * 18960；其余进程使用独立45_5xx端口族，避免与其他浏览器门共享运行状态。
+ */
+export const DSH_MEMORY_VERTICAL_E2E_PORTS = Object.freeze({
+  web: 45_510,
+  api: 45_511,
+  workflow: 45_512,
+  webInternal: 45_514,
+  piExecutor: 45_515,
+  memmy: 18_960,
+});
+
 export const DSH_REAL_E2E_PORTS = Object.freeze({
   web: 45_310,
   api: 45_311,
@@ -40,6 +65,8 @@ export function resolveDshRealDataRoot(root, environment = process.env) {
   const allowed = new Set([
     resolve(repoRoot, ".data/e2e/dsh-real"),
     resolve(repoRoot, ".data/e2e/dsh-prompt-three-gates-real"),
+    resolve(repoRoot, ".data/e2e/dsh-memory-management-real"),
+    resolve(repoRoot, ".data/e2e/dsh-memory-vertical-real"),
   ]);
   if (!allowed.has(dataRoot)) {
     throw new Error("CHAT_DSH_E2E_DATA_ROOT只能指向受管的DSH E2E数据目录");
@@ -139,9 +166,12 @@ export function dshRealWebEnvironment(root, environment = process.env) {
   if (
     configuredTemporary !== undefined &&
     configuredTemporary !== "" &&
-    temporary !== resolve(repoRoot, ".data/e2e/dsh-t3-tmp")
+    ![
+      resolve(repoRoot, ".data/e2e/dsh-t3-tmp"),
+      resolve(repoRoot, ".data/e2e/dsh-memory-tmp"),
+    ].includes(temporary)
   ) {
-    throw new Error("CHAT_DSH_E2E_TEMP_ROOT只能指向受管的三闸门E2E临时目录");
+    throw new Error("CHAT_DSH_E2E_TEMP_ROOT只能指向受管的真实E2E临时目录");
   }
   return {
     ...safe,

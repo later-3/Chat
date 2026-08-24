@@ -153,6 +153,63 @@ describe("Product Workflow Direct Agent start分发", () => {
     );
   });
 
+  it("Memory Agent Direct family只启动direct@3专属Workflow ID，checkpoint输入仍只有产品引用", async () => {
+    const app = new Hono();
+    const bindings = {
+      claimStartIntent: vi.fn().mockResolvedValue("claimed"),
+      claimWorkflowBinding: vi.fn().mockResolvedValue({ alreadyExisted: false }),
+      markStartOutcomeUnknown: vi.fn(),
+    };
+    registerProductWorkflowHttpRoutes({
+      app,
+      workflowDataDir: "/tmp/workflow-memory-agent-direct-start-test",
+      credential: "rtk_memory_agent_direct_start",
+      bindings,
+      world: {
+        directAgentWorkflowId: "workflow//direct-agent",
+        memoryDirectAgentWorkflowId: "workflow//memory-direct-agent",
+        memoryAgentDirectWorkflowId: "workflow//memory-agent-direct",
+        configurablePlanningWorkflowId: "workflow//planning",
+        noteCaptureWorkflowId: "workflow//note",
+        workflowId: "workflow//legacy",
+      },
+      buildEvidence: {},
+      trace: vi.fn(),
+    } as never);
+
+    const response = await app.request("http://runtime/internal/workflow/v1/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        schemaVersion: "chat-workflow-dispatch.v1",
+        productRunId: "run_memoryagentdirectstart1",
+        attemptId: "att_memoryagentdirectstart1",
+        workflowRunSpecId: "wrs_memoryagentdirectstart1",
+        runnerFamily: "memory-agent-direct.v1",
+        runnerBundleVersion: "memory-agent-direct.bundle.v1",
+        workflowDefinitionVersion: "memory-agent-direct.bundle.v1",
+        outboxId: "obx_memoryagentdirectstart1",
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(mocked.start).toHaveBeenCalledWith({ workflowId: "workflow//memory-agent-direct" }, [
+      {
+        schemaVersion: "direct-agent-workflow-input.v1",
+        productRunId: "run_memoryagentdirectstart1",
+        workflowAttemptId: "att_memoryagentdirectstart1",
+        workflowRunSpecId: "wrs_memoryagentdirectstart1",
+      },
+    ]);
+    expect(bindings.claimWorkflowBinding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productRunId: "run_memoryagentdirectstart1",
+        runnerFamily: "memory-agent-direct.v1",
+        workflowRunSpecId: "wrs_memoryagentdirectstart1",
+      }),
+    );
+  });
+
   it("Prompt Review Resume先认领派发栅栏，再用精确Decision引用恢复Hook且不唤醒Planning sleep", async () => {
     const app = new Hono();
     const bindings = {

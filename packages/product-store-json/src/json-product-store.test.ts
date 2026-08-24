@@ -7,6 +7,7 @@ import {
   productSnapshotSchema,
   workflowViewDefinitionSchema,
   type CommandId,
+  type MemoryProviderDescriptor,
   type ProductSession,
   type ProductSnapshot,
   type TraceEventInput,
@@ -24,6 +25,14 @@ import {
 } from "@chat/application";
 import {
   computeContextPackageSha256,
+  computeMemoryAgentWriteCandidateItemSha256,
+  computeMemoryAgentWriteCandidateSha256,
+  computeMemoryAgentOperationInputSha256,
+  computeMemoryAgentOperationResultSha256,
+  computeMemoryWriteAgentEvidenceSha256,
+  computeMemoryProviderDescriptorSha256,
+  computeMemoryWriteAgentCandidateRequestSha256,
+  computeMemoryWriteAgentCandidateSemanticDedupeSha256,
   computeMemoryBackendDescriptorSha256,
   computeMemoryQueryResultSha256,
   computeMemoryResultSnapshotSha256,
@@ -31,8 +40,20 @@ import {
   computeRunContextRequestSha256,
   estimateMemorySectionTokens,
   hashCanonical,
+  computeWorkflowMemoryMessageSha256,
+  renderMemoryAgentWriteCandidateItem,
+  sha256Hex,
   createLegacyPlanningWorkflowView,
+  deriveMemoryAgentOperationId,
+  deriveMemoryAgentWriteCandidateId,
 } from "@chat/domain";
+import { BUILTIN_WORKFLOW_EXECUTOR_MANIFEST } from "@chat/application";
+import { compileWorkflowRunSpec } from "@chat/application/workflow-run-spec-compiler";
+import {
+  createSystemMemoryAgentDirectDefinition,
+  MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
+} from "@chat/application/workflow-system-definitions";
 import { JsonProductStore, type StoreIo } from "./json-product-store.js";
 import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
 import { migrateProductSnapshotV2ToV3, productSnapshotV2Schema } from "./migrate-v2-to-v3.js";
@@ -53,27 +74,31 @@ import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
+import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { productSnapshotV4Schema } from "./legacy-v4.js";
 import { productSnapshotV5Schema } from "./legacy-v5.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
+import { assertWorkflowMemory } from "./snapshot-integrity/workflow-memory.js";
 
 const NOW = "2026-08-07T12:00:00.000Z";
 
 function migrateProductSnapshotV7ToCurrent(
   snapshot: ReturnType<typeof migrateProductSnapshotV6ToV7>,
 ): ProductSnapshot {
-  return migrateProductSnapshotV19ToV20(
-    migrateProductSnapshotV18ToV19(
-      migrateProductSnapshotV17ToV18(
-        migrateProductSnapshotV16ToV17(
-          migrateProductSnapshotV15ToV16(
-            migrateProductSnapshotV14ToV15(
-              migrateProductSnapshotV13ToV14(
-                migrateProductSnapshotV12ToV13(
-                  migrateProductSnapshotV11ToV12(
-                    migrateProductSnapshotV10ToV11(
-                      migrateProductSnapshotV9ToV10(
-                        migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(snapshot)),
+  return migrateProductSnapshotV20ToV21(
+    migrateProductSnapshotV19ToV20(
+      migrateProductSnapshotV18ToV19(
+        migrateProductSnapshotV17ToV18(
+          migrateProductSnapshotV16ToV17(
+            migrateProductSnapshotV15ToV16(
+              migrateProductSnapshotV14ToV15(
+                migrateProductSnapshotV13ToV14(
+                  migrateProductSnapshotV12ToV13(
+                    migrateProductSnapshotV11ToV12(
+                      migrateProductSnapshotV10ToV11(
+                        migrateProductSnapshotV9ToV10(
+                          migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(snapshot)),
+                        ),
                       ),
                     ),
                   ),
@@ -201,6 +226,9 @@ const S7_ENTITY_KEYS = [
   "projectBootstrapOperations",
   "projectWorkspaceBindings",
   "memorySessionImports",
+  "memoryAgentOperations",
+  "memoryAgentWriteCandidates",
+  "memoryAgentWriteDecisions",
 ] as const;
 
 function v2EntitiesFrom(snapshot: ProductSnapshot): Record<string, unknown> {
@@ -542,7 +570,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
     expect(snapshot.storeRevision).toBe(0);
 
     const onDisk = productSnapshotSchema.parse(JSON.parse(await readFile(filePath, "utf8")));
-    expect(onDisk.schemaVersion).toBe("chat-product-store.v20");
+    expect(onDisk.schemaVersion).toBe("chat-product-store.v21");
   });
 
   it("非空v1真实快照串行迁移到v4，保留旧事实并合成no-memory ContextRequest，重启幂等", async () => {
@@ -560,7 +588,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const store = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await store.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v20");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v21");
     expect(snapshot.storeRevision).toBe(legacy.storeRevision);
     expect(snapshot.commandReceipts).toEqual(legacy.commandReceipts);
     expect(legacyOutboxFrom(snapshot)).toEqual(legacy.outbox);
@@ -632,7 +660,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const opened = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await opened.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v20");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v21");
     expect(snapshot.entities.memoryQueries).toEqual(legacy.entities.memoryQueries);
     expect(snapshot.entities.memoryResultSnapshots).toEqual(legacy.entities.memoryResultSnapshots);
     expect(snapshot.entities.memoryAdoptions).toEqual(legacy.entities.memoryAdoptions);
@@ -744,7 +772,7 @@ describe("JsonProductStore 原子提交与重启恢复", () => {
 
     const opened = await JsonProductStore.open({ filePath, now });
     const { snapshot } = await opened.read({ kind: "committedSnapshot" });
-    expect(snapshot.schemaVersion).toBe("chat-product-store.v20");
+    expect(snapshot.schemaVersion).toBe("chat-product-store.v21");
     expect(snapshot.entities.projects["prj_migration"]?.schemaVersion).toBe("project.v2");
     expect(snapshot.entities.projectMethodSnapshots["pms_migration"]).toMatchObject({
       schemaVersion: "project-method-snapshot.v2",
@@ -1662,5 +1690,437 @@ describe("M1 Context持久化完整性", () => {
     (query as { revision: number }).revision = 1;
     expect(productSnapshotSchema.safeParse(snapshot).success).toBe(false);
     await expectSnapshotOpenFailure(snapshot);
+  });
+
+  it("approved Memory Agent候选逐项要求v3 Intent、Result与初始Outbox", () => {
+    const snapshot = createEmptySnapshot(NOW);
+    (snapshot.entities as Record<string, unknown>).memoryAgentOperations = {};
+    const descriptor: MemoryProviderDescriptor = {
+      schemaVersion: "memory-provider-descriptor.v1",
+      providerId: "mbk_memmy" as never,
+      displayName: "Memmy",
+      providerKind: "memmy",
+      transport: "http",
+      adapterContractVersion: "test.v1",
+      configured: true,
+      configurationFingerprint: "a".repeat(64) as never,
+      capabilities: {
+        query: null,
+        write: {
+          maxContentCharacters: 50_000,
+          materialization: "synchronous",
+          idempotency: "provider_key",
+        },
+        reconcile: true,
+        management: { list: false, get: false, update: false, delete: false, history: false },
+      },
+      authMode: "none",
+      credentialRevision: "none",
+    };
+    const sessionId = "psn_closure1" as never;
+    const messageId = "msg_closure1" as never;
+    const runId = "run_closure1" as never;
+    const system = createSystemMemoryAgentDirectDefinition(NOW);
+    const compiled = compileWorkflowRunSpec({
+      workflowRunSpecId: "wrs_closure1" as never,
+      productRunId: runId,
+      createdAt: NOW,
+      definition: {
+        schemaVersion: "workflow-definition-revision-input.v1",
+        workflowDefinitionRevisionId: system.revision.workflowDefinitionRevisionId,
+        definitionRevision: system.revision.definitionRevision,
+        blueprintKey: "direct",
+        blueprintVersion: 3,
+        semanticRoot: system.revision.semanticRoot,
+        expectedSha256: system.revision.definitionSha256,
+      },
+      runConfiguration: { schemaVersion: "workflow-run-configuration.v1", overrides: [] },
+      principal: { principalId: "usr_closure1" as never, capabilities: [] },
+      availableResources: [],
+      executorManifest: BUILTIN_WORKFLOW_EXECUTOR_MANIFEST,
+      runner: {
+        runnerFamily: MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
+        runnerBundleVersion: MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+      },
+      businessInput: { kind: "direct_agent_message" },
+    });
+    if (!compiled.success) throw new Error("closure runspec invalid");
+    snapshot.entities.sessions[sessionId] = {
+      schemaVersion: "product-session.v1",
+      sessionId,
+      ownerPrincipalId: "usr_closure1" as never,
+      status: "active",
+      lastMessageSequence: 1,
+      revision: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    const message = {
+      schemaVersion: "message.v1" as const,
+      messageId,
+      sessionId,
+      sessionSequence: 1,
+      role: "user" as const,
+      content: { format: "markdown" as const, text: "先读架构合同" },
+      revision: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    snapshot.entities.messages[messageId] = message;
+    snapshot.entities.workflowDefinitions[system.definition.workflowDefinitionId] =
+      system.definition;
+    snapshot.entities.workflowDefinitionRevisions[system.revision.workflowDefinitionRevisionId] =
+      system.revision;
+    snapshot.entities.workflowViewDefinitions[system.view.workflowViewDefinitionId] = system.view;
+    snapshot.entities.workflowRunSpecs[compiled.runSpec.workflowRunSpecId] = compiled.runSpec;
+    const directCandidateId = "dac_closure1" as never;
+    const directCandidateSha256 = "d".repeat(64) as never;
+    snapshot.entities.directAgentCandidates[directCandidateId] = {
+      schemaVersion: "direct-agent-candidate.v1",
+      directAgentCandidateId: directCandidateId,
+      productRunId: runId,
+      directAgentAttemptId: "att_closure1" as never,
+      output: { format: "markdown", text: "已按架构合同完成实现。" },
+      sha256: directCandidateSha256,
+      revision: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    snapshot.entities.runs[runId] = {
+      schemaVersion: "product-run.v3",
+      runKind: "direct_agent",
+      productRunId: runId,
+      sessionId,
+      sourceMessageId: messageId,
+      workflowViewDefinitionId: system.view.workflowViewDefinitionId,
+      workflowRunSpecId: compiled.runSpec.workflowRunSpecId,
+      runnerFamily: MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
+      runnerBundleVersion: MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+      status: "succeeded",
+      phase: "completed",
+      currentDirectAgentCandidateId: directCandidateId,
+      finalDirectAgentCandidateId: directCandidateId,
+      revision: 2,
+      createdAt: NOW,
+      updatedAt: NOW,
+    } as never;
+    const evidence = [
+      {
+        ref: {
+          kind: "message" as const,
+          messageId,
+          messageSha256: computeWorkflowMemoryMessageSha256(message),
+          role: "user" as const,
+        },
+        label: "对话消息 #1",
+        role: "user" as const,
+        content: message.content.text,
+      },
+      {
+        ref: {
+          kind: "direct_agent_candidate" as const,
+          directAgentCandidateId: directCandidateId,
+          candidateSha256: directCandidateSha256,
+        },
+        label: "本轮执行Agent候选输出",
+        role: "assistant" as const,
+        content: "已按架构合同完成实现。",
+      },
+    ];
+    const evidenceManifest = evidence.map((entry) => entry.ref);
+    const itemCore = {
+      itemKey: "item-1",
+      title: "架构偏好",
+      category: "preference" as const,
+      content: "修改前先读架构合同。",
+      labels: ["architecture"],
+      evidenceRefs: [evidenceManifest[0]!],
+    };
+    const item = { ...itemCore, sha256: computeMemoryAgentWriteCandidateItemSha256(itemCore) };
+    const operationId = deriveMemoryAgentOperationId({
+      productRunId: runId,
+      definitionNodeId: "memory-agent.write",
+      operationKind: "write",
+    }) as never;
+    const candidateId = deriveMemoryAgentWriteCandidateId(runId) as never;
+    const intentId = "mwi_closure1" as never,
+      resultId = "mwr_closure1" as never;
+    const evidenceSha256 = computeMemoryWriteAgentEvidenceSha256({
+      productRunId: runId,
+      workflowRunSpecId: compiled.runSpec.workflowRunSpecId,
+      directAgentCandidateId: directCandidateId,
+      candidateSha256: directCandidateSha256,
+      evidence,
+    }) as never;
+    const operationResult = {
+      kind: "write" as const,
+      proposal: {
+        items: [
+          {
+            title: item.title,
+            category: item.category,
+            content: item.content,
+            labels: item.labels,
+            evidenceIndexes: [0],
+          },
+        ],
+      },
+    };
+    const operationResultSha256 = computeMemoryAgentOperationResultSha256(operationResult);
+    const candidateSha256 = computeMemoryAgentWriteCandidateSha256({
+      memoryAgentWriteCandidateId: candidateId,
+      memoryAgentOperationId: operationId,
+      operationResultSha256,
+      productRunId: runId,
+      productSessionId: sessionId,
+      providerId: descriptor.providerId,
+      evidenceSha256,
+      evidenceManifest,
+      items: [item],
+    });
+    const content = renderMemoryAgentWriteCandidateItem(item),
+      providerDescriptorSha256 = computeMemoryProviderDescriptorSha256(descriptor),
+      sourceSelection = {
+        kind: "agent_candidate_item" as const,
+        memoryAgentWriteCandidateId: candidateId,
+        candidateSha256,
+        itemKey: item.itemKey,
+        itemSha256: item.sha256,
+        contentSha256: sha256Hex(content),
+      },
+      sourceSessionKey = sessionId,
+      sourceTurnKey = `${candidateId}:${item.itemKey}`;
+    snapshot.entities.memoryAgentOperations[operationId] = {
+      schemaVersion: "memory-agent-operation.v1",
+      memoryAgentOperationId: operationId,
+      operationKind: "write",
+      productRunId: runId,
+      workflowRunSpecId: compiled.runSpec.workflowRunSpecId,
+      definitionNodeId: "memory-agent.write",
+      inputSha256: computeMemoryAgentOperationInputSha256({
+        operationKind: "write",
+        productRunId: runId,
+        workflowRunSpecId: compiled.runSpec.workflowRunSpecId,
+        definitionNodeId: "memory-agent.write",
+        sourceSha256: evidenceSha256,
+      }),
+      sourceSha256: evidenceSha256,
+      status: "succeeded",
+      result: operationResult,
+      resultSha256: operationResultSha256,
+      providerRequestCount: 1,
+      completedAt: NOW,
+      revision: 2,
+      startedAt: NOW,
+      createdAt: NOW,
+      updatedAt: NOW,
+    } as never;
+    snapshot.entities.memoryAgentWriteCandidates[candidateId] = {
+      schemaVersion: "memory-agent-write-candidate.v1",
+      memoryAgentWriteCandidateId: candidateId,
+      memoryAgentOperationId: operationId,
+      operationResultSha256,
+      productRunId: runId,
+      productSessionId: sessionId,
+      providerId: descriptor.providerId,
+      evidenceSha256,
+      evidenceManifest,
+      items: [item],
+      sha256: candidateSha256,
+      status: "approved",
+      decisionId: "mwd_closure1" as never,
+      memoryWriteIntentIds: [intentId],
+      revision: 2,
+      createdAt: NOW,
+      updatedAt: NOW,
+    } as never;
+    snapshot.entities.memoryAgentWriteDecisions["mwd_closure1"] = {
+      schemaVersion: "memory-agent-write-decision.v1",
+      memoryAgentWriteDecisionId: "mwd_closure1",
+      memoryAgentWriteCandidateId: candidateId,
+      candidateRevision: 1,
+      candidateSha256,
+      kind: "approve",
+      principalId: "usr_closure1",
+      commandId: "cmd_closure1",
+      revision: 1,
+      createdAt: NOW,
+    } as never;
+    snapshot.entities.memoryWriteIntents[intentId] = {
+      schemaVersion: "memory-write-intent.v3",
+      memoryWriteIntentId: intentId,
+      operationId: intentId,
+      requestedByPrincipalId: "usr_closure1",
+      productSessionId: sessionId,
+      sourceSelection,
+      sourceSessionKey,
+      sourceTurnKey,
+      contentSnapshot: content,
+      contentType: "conversation_turn",
+      providerId: descriptor.providerId,
+      providerDescriptor: descriptor,
+      providerDescriptorSha256,
+      requestSha256: computeMemoryWriteAgentCandidateRequestSha256({
+        operationId: intentId,
+        providerDescriptorSha256,
+        contentType: "conversation_turn",
+        sourceSelection,
+        sourceSessionKey,
+        sourceTurnKey,
+        contentSha256: sha256Hex(content),
+      }),
+      semanticDedupeSha256: computeMemoryWriteAgentCandidateSemanticDedupeSha256({
+        requestedByPrincipalId: "usr_closure1",
+        providerId: descriptor.providerId,
+        productSessionId: sessionId,
+        memoryAgentWriteCandidateId: candidateId,
+        itemKey: item.itemKey,
+        itemSha256: item.sha256,
+      }),
+      revision: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    } as never;
+    snapshot.entities.memoryWriteResults[resultId] = {
+      schemaVersion: "memory-write-result.v1",
+      memoryWriteResultId: resultId,
+      memoryWriteIntentId: intentId,
+      status: "queued",
+      dispatchAttempts: 0,
+      reconcileAttempts: 0,
+      revision: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    } as never;
+    snapshot.outbox.obx_closure1 = {
+      schemaVersion: "outbox-entry.v1",
+      outboxId: "obx_closure1",
+      kind: "memory_write_start",
+      status: "pending",
+      memoryWriteIntentId: intentId,
+      memoryWriteResultId: resultId,
+      expectedResultRevision: 1,
+      dispatchAttempts: 0,
+      revision: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    } as never;
+    const assertMemory = (value: typeof snapshot) =>
+      assertWorkflowMemory(value, (detail): never => {
+        throw new Error(detail);
+      });
+    expect(() => assertMemory(snapshot)).not.toThrow();
+    for (const [kind, mutate] of [
+      ["intent", (x: typeof snapshot) => delete x.entities.memoryWriteIntents[intentId]],
+      ["result", (x: typeof snapshot) => delete x.entities.memoryWriteResults[resultId]],
+      ["outbox", (x: typeof snapshot) => delete x.outbox.obx_closure1],
+    ] as const) {
+      void kind;
+      const corrupted = structuredClone(snapshot);
+      mutate(corrupted);
+      expect(() => assertMemory(corrupted)).toThrow();
+    }
+
+    // Operation identity is the durable dispatch fence: a second map entry for the
+    // same node must not become an alternative Provider result source.
+    const duplicatedOperation = structuredClone(snapshot);
+    const nonCanonicalOperationId = `mao_${"0".repeat(32)}` as never;
+    const existingOperation = duplicatedOperation.entities.memoryAgentOperations[operationId];
+    if (existingOperation === undefined) throw new Error("closure Operation missing");
+    duplicatedOperation.entities.memoryAgentOperations[nonCanonicalOperationId] = {
+      ...existingOperation,
+      memoryAgentOperationId: nonCanonicalOperationId,
+    };
+    expect(() => assertMemory(duplicatedOperation)).toThrow(/memoryAgentOperation/u);
+
+    const toPendingCandidateSnapshot = () => {
+      const pending = structuredClone(snapshot);
+      const approved = pending.entities.memoryAgentWriteCandidates[candidateId];
+      if (approved === undefined || approved.status !== "approved") {
+        throw new Error("closure approved Candidate missing");
+      }
+      const { decisionId: _decisionId, memoryWriteIntentIds: _intentIds, ...base } = approved;
+      void _decisionId;
+      void _intentIds;
+      pending.entities.memoryAgentWriteCandidates[candidateId] = {
+        ...base,
+        status: "pending_review",
+        revision: 1,
+        updatedAt: NOW,
+      };
+      delete pending.entities.memoryAgentWriteDecisions["mwd_closure1"];
+      delete pending.entities.memoryWriteIntents[intentId];
+      delete pending.entities.memoryWriteResults[resultId];
+      delete pending.outbox.obx_closure1;
+      return pending;
+    };
+    const candidateHash = (
+      candidate: (typeof snapshot.entities.memoryAgentWriteCandidates)[string],
+    ) =>
+      computeMemoryAgentWriteCandidateSha256({
+        memoryAgentWriteCandidateId: candidate.memoryAgentWriteCandidateId,
+        memoryAgentOperationId: candidate.memoryAgentOperationId,
+        operationResultSha256: candidate.operationResultSha256,
+        productRunId: candidate.productRunId,
+        productSessionId: candidate.productSessionId,
+        providerId: candidate.providerId,
+        evidenceSha256: candidate.evidenceSha256,
+        evidenceManifest: candidate.evidenceManifest,
+        items: candidate.items,
+      });
+
+    const pending = toPendingCandidateSnapshot();
+    expect(() => assertMemory(pending)).not.toThrow();
+
+    // A recomputed Candidate hash alone must not let text diverge from the
+    // successful write Operation's persisted model result.
+    const rewrittenBody = toPendingCandidateSnapshot();
+    const bodyCandidate = rewrittenBody.entities.memoryAgentWriteCandidates[candidateId];
+    if (bodyCandidate === undefined) throw new Error("closure pending Candidate missing");
+    const originalItem = bodyCandidate.items[0]!;
+    const { sha256: _originalItemHash, ...originalItemCore } = originalItem;
+    void _originalItemHash;
+    const rewrittenItemCore = {
+      ...originalItemCore,
+      content: "篡改后、但已重算Hash的模型正文。",
+    };
+    const rewrittenItem = {
+      ...rewrittenItemCore,
+      sha256: computeMemoryAgentWriteCandidateItemSha256(rewrittenItemCore),
+    };
+    const rewrittenCandidate = { ...bodyCandidate, items: [rewrittenItem] };
+    rewrittenBody.entities.memoryAgentWriteCandidates[candidateId] = {
+      ...rewrittenCandidate,
+      sha256: candidateHash(rewrittenCandidate),
+    };
+    expect(() => assertMemory(rewrittenBody)).toThrow(/memoryAgentWriteCandidate/u);
+
+    for (const [label, mutate] of [
+      [
+        "Provider",
+        (candidate: (typeof pending.entities.memoryAgentWriteCandidates)[string]) => ({
+          ...candidate,
+          providerId: "mbk_other" as never,
+        }),
+      ],
+      [
+        "evidence manifest",
+        (candidate: (typeof pending.entities.memoryAgentWriteCandidates)[string]) => ({
+          ...candidate,
+          evidenceManifest: [...candidate.evidenceManifest].reverse(),
+        }),
+      ],
+    ] as const) {
+      void label;
+      const corrupted = toPendingCandidateSnapshot();
+      const candidate = corrupted.entities.memoryAgentWriteCandidates[candidateId];
+      if (candidate === undefined) throw new Error("closure pending Candidate missing");
+      const mutated = mutate(candidate);
+      corrupted.entities.memoryAgentWriteCandidates[candidateId] = {
+        ...mutated,
+        sha256: candidateHash(mutated),
+      };
+      expect(() => assertMemory(corrupted)).toThrow(/memoryAgentWriteCandidate/u);
+    }
   });
 });

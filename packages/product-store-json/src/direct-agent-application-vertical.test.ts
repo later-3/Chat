@@ -6,7 +6,9 @@ import { agentRuntimeBaselineDtoSchema, type CommandId, type PrincipalId } from 
 import {
   authorizeDirectAgentOperation,
   beginDirectAgentAttempt,
+  beginMemoryAgentOperation,
   beginWorkflowMemoryQuery,
+  completeMemoryAgentOperation,
   commitDirectAgentResult,
   commitPromptReviewDispatchOutcome,
   commitRunFailure,
@@ -29,9 +31,15 @@ import {
 } from "@chat/application";
 import {
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
 } from "@chat/application/workflow-system-definitions";
-import { canonicalJsonStringify, computePromptReviewPayloadSha256 } from "@chat/domain";
+import {
+  canonicalJsonStringify,
+  computeMemoryAgentOperationInputSha256,
+  computeMemoryRetrievalAgentSourceSha256,
+  computePromptReviewPayloadSha256,
+} from "@chat/domain";
 import type { MemoryBackendId, MemoryProviderDescriptor } from "@chat/contracts";
 import { JsonProductStore } from "./json-product-store.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
@@ -511,6 +519,170 @@ async function approveReview(started: Awaited<ReturnType<typeof startDirectAgent
 }
 
 describe("Direct Agent Application + JsonProductStore最小纵向", () => {
+  it("direct@3以agent.memory_retrieve冻结原始检索结果并通过完整性门", async () => {
+    const harness = await createHarness();
+    const before = (await harness.store.read({ kind: "committedSnapshot" })).snapshot;
+    const revision =
+      before.entities.workflowDefinitionRevisions[SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_REVISION_ID];
+    if (revision === undefined) throw new Error("测试Fixture缺少Memory Agent Direct系统Definition");
+
+    const submitted = await submitUserMessage(harness.deps, {
+      principalId: PRINCIPAL,
+      sessionId: harness.session.sessionId,
+      commandId: harness.command(),
+      payload: {
+        text: "检索已有偏好，并只采用原始Memory结果。",
+        workflowSelection: {
+          kind: "published_revision",
+          workflowDefinitionRevisionId: revision.workflowDefinitionRevisionId,
+          definitionSha256: revision.definitionSha256,
+          runConfiguration: {
+            schemaVersion: "workflow-run-configuration.v1",
+            overrides: [
+              {
+                kind: "node_config",
+                definitionNodeId: "memory-agent.retrieve",
+                field: "providerId",
+                value: MEMORY_PROVIDER_ID,
+              },
+              {
+                kind: "node_config",
+                definitionNodeId: "memory-agent.write",
+                field: "providerId",
+                value: MEMORY_PROVIDER_ID,
+              },
+            ],
+          },
+        },
+      },
+    });
+    const afterSubmit = (await harness.store.read({ kind: "committedSnapshot" })).snapshot;
+    const run = afterSubmit.entities.runs[submitted.run.productRunId];
+    const workflowAttempt = Object.values(afterSubmit.entities.attempts).find(
+      (candidate) =>
+        candidate.productRunId === submitted.run.productRunId && candidate.kind === "workflow",
+    );
+    const runSpec =
+      run?.workflowRunSpecId === undefined
+        ? undefined
+        : afterSubmit.entities.workflowRunSpecs[run.workflowRunSpecId];
+    if (run?.runKind !== "direct_agent" || workflowAttempt === undefined || runSpec === undefined) {
+      throw new Error("测试Fixture没有形成完整Memory Agent Direct Run");
+    }
+    expect(run.runnerFamily).toBe("memory-agent-direct.v1");
+    expect(runSpec.definitionRef.blueprintVersion).toBe(3);
+
+    const identity = {
+      productRunId: run.productRunId,
+      workflowRunSpecId: runSpec.workflowRunSpecId,
+      definitionNodeId: "memory-agent.retrieve",
+      executionPath: [],
+      attemptNumber: 1,
+    };
+    const begun = await beginWorkflowMemoryQuery(harness.deps, {
+      commandId: harness.command(),
+      ...identity,
+    });
+    if (begun.status !== "dispatch_required") {
+      throw new Error("Memory Agent检索未进入dispatch_required");
+    }
+    const sourceSha256 = computeMemoryRetrievalAgentSourceSha256({
+      workflowMemoryQueryId: begun.query.workflowMemoryQueryId,
+      workflowRunSpecSha256: runSpec.sha256,
+      sourceMessageSha256: begun.query.sourceMessageSha256,
+      querySha256: begun.query.querySha256,
+      providerDescriptorSha256: begun.query.providerDescriptorSha256,
+      requirement: begun.query.requirement,
+      maxResults: begun.query.maxResults,
+      maxContextCharacters: begun.query.maxContextCharacters,
+    });
+    const inputSha256 = computeMemoryAgentOperationInputSha256({
+      operationKind: "retrieval",
+      productRunId: run.productRunId,
+      workflowRunSpecId: runSpec.workflowRunSpecId,
+      definitionNodeId: "memory-agent.retrieve",
+      sourceSha256,
+    });
+    const operation = await beginMemoryAgentOperation(harness.deps, {
+      commandId: harness.command(),
+      productRunId: run.productRunId,
+      workflowRunSpecId: runSpec.workflowRunSpecId,
+      definitionNodeId: "memory-agent.retrieve",
+      operationKind: "retrieval",
+      inputSha256,
+      sourceSha256,
+    });
+    if (operation.status !== "dispatch_required") {
+      throw new Error("Memory Agent检索Operation未进入dispatch_required");
+    }
+    const providerOutput = await harness.memoryProvider.queryMemory({
+      operationId: begun.query.operationId,
+      productRunId: begun.query.productRunId,
+      productSessionId: begun.query.productSessionId,
+      principalId: begun.query.principalId,
+      query: begun.query.queryText,
+      maxResults: begun.query.maxResults,
+      maxContextCharacters: begun.query.maxContextCharacters,
+    });
+    const retrievalResult = normalizeWorkflowMemoryQueryResult(begun.query, providerOutput);
+    const completed = await completeMemoryAgentOperation(harness.deps, {
+      commandId: harness.command(),
+      memoryAgentOperationId: operation.operation.memoryAgentOperationId,
+      expectedRevision: 1,
+      inputSha256,
+      outcome: {
+        kind: "succeeded",
+        result: {
+          kind: "retrieval",
+          externalQueryId: retrievalResult.externalQueryId,
+          hitCount: retrievalResult.hitCount,
+          sections: retrievalResult.sections,
+        },
+        providerRequestCount: 1,
+      },
+    });
+    if (completed.operation.status !== "succeeded") {
+      throw new Error("Memory Agent检索Operation未进入succeeded");
+    }
+    await persistWorkflowMemoryQueryResult(harness.deps, {
+      commandId: harness.command(),
+      ...identity,
+      workflowMemoryQueryId: begun.workflowMemoryQueryId,
+      result: retrievalResult,
+    });
+    const frozen = await freezeWorkflowMemoryContext(harness.deps, {
+      commandId: harness.command(),
+      productRunId: run.productRunId,
+      workflowRunSpecId: runSpec.workflowRunSpecId,
+    });
+    expect(frozen.status).toBe("ready");
+    if (frozen.status !== "ready") throw new Error("Memory Agent Context未冻结");
+    const begunDirect = await beginDirectAgentAttempt(harness.deps, {
+      commandId: harness.command(),
+      productRunId: run.productRunId,
+      workflowAttemptId: workflowAttempt.attemptId,
+    });
+    expect(begunDirect.inputManifestSha256).toMatch(/^[a-f0-9]{64}$/u);
+
+    const snapshot = (await harness.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(snapshot.entities.workflowMemoryQueries[begun.workflowMemoryQueryId]).toMatchObject({
+      definitionNodeId: "memory-agent.retrieve",
+      status: "completed",
+      selectedCount: 1,
+    });
+    expect(frozen).toMatchObject({
+      contextRef: {
+        workflowMemoryContextId: expect.any(String),
+        revision: 1,
+      },
+    });
+    expect(snapshot.entities.attempts[begunDirect.directAgentAttemptId]).toMatchObject({
+      workflowMemoryContextId: frozen.contextRef.workflowMemoryContextId,
+      workflowMemoryContextSha256: frozen.contextRef.sha256,
+    });
+    expect(() => assertSnapshotIntegrity(snapshot)).not.toThrow();
+  });
+
   it("独立Memory Direct冻结三节点RunSpec、查询Context并授权给同一Direct Executor", async () => {
     const started = await startMemoryDirectAgent();
 

@@ -11,6 +11,21 @@ export declare const DSH_PROMPT_THREE_GATES_E2E_PORTS: Readonly<{
   webInternal: number;
   piExecutor: number;
 }>;
+export declare const DSH_MEMORY_MANAGEMENT_E2E_PORTS: Readonly<{
+  web: number;
+  api: number;
+  workflowPlaceholder: number;
+  webInternal: number;
+  piExecutorPlaceholder: number;
+}>;
+export declare const DSH_MEMORY_VERTICAL_E2E_PORTS: Readonly<{
+  web: number;
+  api: number;
+  workflow: number;
+  webInternal: number;
+  piExecutor: number;
+  memmy: number;
+}>;
 export declare const DSH_REAL_E2E_PORTS: Readonly<{
   web: number;
   api: number;

@@ -72,6 +72,8 @@ export async function executePlanningNode(input: {
     case "note.commit":
       throw new Error("configurable_planning.note_node_not_allowed");
     case "agent.direct":
+    case "agent.memory_retrieve":
+    case "agent.memory_write":
     case "human.prompt_review":
       throw new Error("configurable_planning.direct_node_not_allowed");
     default: {

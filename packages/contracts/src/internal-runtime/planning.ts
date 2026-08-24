@@ -21,6 +21,9 @@ import {
   ruleRevisionIdSchema,
   workflowMemoryQueryIdSchema,
   workflowMemorySnapshotIdSchema,
+  directAgentCandidateIdSchema,
+  memoryAgentWriteCandidateIdSchema,
+  memoryAgentOperationIdSchema,
 } from "../ids.js";
 import { planContentSchema } from "../product.js";
 import { sha256Schema } from "../hash.js";
@@ -37,6 +40,16 @@ import {
   memoryProviderDescriptorSchema,
   workflowMemoryCategorySchema,
 } from "../workflow-memory.js";
+import {
+  dispatchingMemoryAgentOperationSchema,
+  failedMemoryAgentOperationSchema,
+  memoryAgentEvidenceRefSchema,
+  memoryAgentOperationResultSchema,
+  memoryAgentOperationSchema,
+  memoryWriteAgentProposalSchema,
+  outcomeUnknownMemoryAgentOperationSchema,
+  succeededMemoryAgentOperationSchema,
+} from "../memory-agent.js";
 import {
   versioned,
   internalContextPackageRefSchema,
@@ -365,6 +378,7 @@ export const workflowMemoryQueryDispatchDtoSchema = z
     productSessionId: productSessionIdSchema,
     principalId: principalIdSchema,
     workflowRunSpecId: workflowRunSpecIdSchema,
+    workflowRunSpecSha256: sha256Schema,
     definitionNodeId: z.string().min(1).max(100),
     providerId: memoryBackendIdSchema,
     providerDescriptor: memoryProviderDescriptorSchema,
@@ -483,5 +497,188 @@ export const freezeWorkflowMemoryContextResponseSchema = z.discriminatedUnion("s
     })
     .strict(),
 ]);
+
+/* ---------- Memory Agent：写入候选准备与持久化 ---------- */
+
+export const prepareMemoryWriteAgentInputRequestSchema = z
+  .object({
+    ...versioned,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    directAgentCandidateId: directAgentCandidateIdSchema,
+    candidateSha256: sha256Schema,
+  })
+  .strict();
+
+export const memoryWriteAgentEvidenceInputSchema = z
+  .object({
+    ref: memoryAgentEvidenceRefSchema,
+    label: z.string().min(1).max(200),
+    role: z.enum(["user", "assistant"]),
+    content: z.string().min(1).max(100_000),
+  })
+  .strict();
+
+export const prepareMemoryWriteAgentInputResponseSchema = z
+  .object({
+    ...versioned,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    providerId: memoryBackendIdSchema,
+    required: z.boolean(),
+    maxItems: z.number().int().min(1).max(8),
+    evidenceSha256: sha256Schema,
+    evidence: z.array(memoryWriteAgentEvidenceInputSchema).min(1).max(51),
+  })
+  .strict();
+
+export const persistMemoryWriteAgentCandidateRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    directAgentCandidateId: directAgentCandidateIdSchema,
+    candidateSha256: sha256Schema,
+    expectedEvidenceSha256: sha256Schema,
+    memoryAgentOperationId: memoryAgentOperationIdSchema,
+    operationResultSha256: sha256Schema,
+    proposal: memoryWriteAgentProposalSchema,
+  })
+  .strict();
+
+export const persistMemoryWriteAgentCandidateResponseSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      ...versioned,
+      productRunId: productRunIdSchema,
+      status: z.literal("candidate_ready"),
+      memoryAgentWriteCandidateId: memoryAgentWriteCandidateIdSchema,
+      candidateSha256: sha256Schema,
+    })
+    .strict(),
+  z
+    .object({
+      ...versioned,
+      productRunId: productRunIdSchema,
+      status: z.literal("nothing_useful"),
+    })
+    .strict(),
+]);
+
+/* ---------- Memory Agent：耐久模型调用操作 ---------- */
+
+export const beginMemoryAgentOperationRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    definitionNodeId: z.string().min(1).max(128),
+    operationKind: z.enum(["retrieval", "write"]),
+    inputSha256: sha256Schema,
+    sourceSha256: sha256Schema,
+  })
+  .strict();
+
+export const beginMemoryAgentOperationResponseSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      ...versioned,
+      status: z.literal("dispatch_required"),
+      operation: dispatchingMemoryAgentOperationSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...versioned,
+      status: z.literal("recovery_required"),
+      operation: dispatchingMemoryAgentOperationSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...versioned,
+      status: z.literal("succeeded"),
+      operation: succeededMemoryAgentOperationSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...versioned,
+      status: z.literal("failed"),
+      operation: failedMemoryAgentOperationSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...versioned,
+      status: z.literal("outcome_unknown"),
+      operation: outcomeUnknownMemoryAgentOperationSchema,
+    })
+    .strict(),
+]);
+
+export const completeMemoryAgentOperationRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    memoryAgentOperationId: memoryAgentOperationIdSchema,
+    expectedRevision: z.literal(1),
+    inputSha256: sha256Schema,
+    outcome: z.discriminatedUnion("kind", [
+      z
+        .object({
+          kind: z.literal("succeeded"),
+          result: memoryAgentOperationResultSchema,
+          providerRequestCount: z.number().int().min(1).max(4),
+          usage: z
+            .object({
+              inputTokens: z.number().int().nonnegative(),
+              outputTokens: z.number().int().nonnegative(),
+            })
+            .strict()
+            .optional(),
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal("failed"),
+          errorCode: z
+            .string()
+            .regex(/^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$/u)
+            .max(96),
+          providerRequestCount: z.number().int().nonnegative().max(4),
+          usage: z
+            .object({
+              inputTokens: z.number().int().nonnegative(),
+              outputTokens: z.number().int().nonnegative(),
+            })
+            .strict()
+            .optional(),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+
+export const markMemoryAgentOperationOutcomeUnknownRequestSchema = z
+  .object({
+    ...versioned,
+    commandId: commandIdSchema,
+    memoryAgentOperationId: memoryAgentOperationIdSchema,
+    expectedRevision: z.literal(1),
+    inputSha256: sha256Schema,
+    errorCode: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$/u)
+      .max(96),
+    providerRequestCount: z.number().int().nonnegative().max(4),
+  })
+  .strict();
+
+export const memoryAgentOperationResponseSchema = z
+  .object({ operation: memoryAgentOperationSchema })
+  .strict();
 
 /* ---------- publishPlanReview ---------- */

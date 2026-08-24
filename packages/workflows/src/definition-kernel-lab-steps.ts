@@ -186,6 +186,8 @@ export async function executeDefinitionKernelNodeStep(input: {
     case "execute_plan":
     case "advance_direct_agent":
     case "review_prompt":
+    case "retrieve_memory_with_agent":
+    case "propose_memory_write_with_agent":
       throw new FatalError("executor_registry.wrong_dispatch_kind");
     default: {
       const exhaustive: never = registration.operation;

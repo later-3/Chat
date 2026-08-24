@@ -71,6 +71,8 @@ import {
 import {
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
 } from "@chat/application/workflow-system-definitions";
@@ -825,6 +827,14 @@ describe("公开产品API", () => {
       (definition) =>
         definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
     );
+    const memoryRead = definitionsEnvelope.definitions.definitions.find(
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_REVISION_ID,
+    );
+    const memoryWrite = definitionsEnvelope.definitions.definitions.find(
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_REVISION_ID,
+    );
     expect(
       definitionsEnvelope.definitions.definitions.map((definition) => definition.title),
     ).toEqual([
@@ -832,6 +842,9 @@ describe("公开产品API", () => {
       "Memory 增强规划与执行",
       "执行 Agent（逐次提示词审核）",
       "Memory 增强执行 Agent",
+      "Memory Agent 增强执行",
+      "只查询 Memory 后回答",
+      "只整理为 Memory 候选",
     ]);
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.query");
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.write");
@@ -891,6 +904,26 @@ describe("公开产品API", () => {
       "memory-direct.write",
     ]);
     expect(memoryDirect?.nodes.at(-1)?.schemaVersion).toBe(2);
+    expect(memoryRead).toMatchObject({
+      title: "只查询 Memory 后回答",
+      blueprintKey: "direct",
+      blueprintVersion: 4,
+      ownerKind: "system",
+    });
+    expect(memoryRead?.nodes.map((node) => node.nodeType)).toEqual([
+      "agent.memory_retrieve",
+      "agent.direct",
+    ]);
+    expect(memoryWrite).toMatchObject({
+      title: "只整理为 Memory 候选",
+      blueprintKey: "direct",
+      blueprintVersion: 5,
+      ownerKind: "system",
+    });
+    expect(memoryWrite?.nodes.map((node) => node.nodeType)).toEqual([
+      "agent.direct",
+      "agent.memory_write",
+    ]);
     expect(
       memoryDirect?.nodes
         .filter((node) => node.nodeType === "memory.query" || node.nodeType === "memory.write")

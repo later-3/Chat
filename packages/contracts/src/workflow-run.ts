@@ -32,6 +32,7 @@ import {
   workflowMemoryContextIdSchema,
   workflowMemorySnapshotIdSchema,
   memoryWriteResultIdSchema,
+  memoryAgentWriteCandidateIdSchema,
 } from "./ids.js";
 
 /**
@@ -190,6 +191,13 @@ export const nodeProductRefSchema = z.discriminatedUnion("kind", [
       ...productRefBase,
       kind: z.literal("memory_write_result"),
       id: memoryWriteResultIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...productRefBase,
+      kind: z.literal("memory_agent_write_candidate"),
+      id: memoryAgentWriteCandidateIdSchema,
     })
     .strict(),
   z.object({ ...productRefBase, kind: z.literal("project"), id: projectIdSchema }).strict(),

@@ -51,6 +51,7 @@ function dispatch(): WorkflowMemoryQueryDispatchDto {
     productSessionId: "psn_workflowstep1" as never,
     principalId: "usr_workflowstep1" as never,
     workflowRunSpecId: "wrs_workflowstep1" as never,
+    workflowRunSpecSha256: "d".repeat(64) as never,
     definitionNodeId: "planning.memory-query",
     providerId: DESCRIPTOR.providerId,
     providerDescriptor: DESCRIPTOR,

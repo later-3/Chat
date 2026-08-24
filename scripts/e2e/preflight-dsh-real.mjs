@@ -15,6 +15,8 @@ import {
 import {
   DSH_PROMPT_STUDIO_E2E_PORTS,
   DSH_PROMPT_THREE_GATES_E2E_PORTS,
+  DSH_MEMORY_MANAGEMENT_E2E_PORTS,
+  DSH_MEMORY_VERTICAL_E2E_PORTS,
   DSH_REAL_E2E_PORTS,
   dshRealWebEnvironment,
   resolveDshRealSharedCacheRoot,
@@ -38,13 +40,27 @@ const pwaOnly = args.includes("--pwa-only");
 const trajectoryOnly = args.includes("--trajectory-only");
 const promptStudioOnly = args.includes("--prompt-studio-only");
 const promptThreeGatesOnly = args.includes("--prompt-three-gates-only");
+const memoryManagementOnly = args.includes("--memory-management-only");
+const memoryVerticalOnly = args.includes("--memory-vertical-only");
 const dataRoot = resolve(
   repoRoot,
-  promptThreeGatesOnly ? ".data/e2e/dsh-prompt-three-gates-real" : ".data/e2e/dsh-real",
+  promptThreeGatesOnly
+    ? ".data/e2e/dsh-prompt-three-gates-real"
+    : memoryManagementOnly
+      ? ".data/e2e/dsh-memory-management-real"
+      : memoryVerticalOnly
+        ? ".data/e2e/dsh-memory-vertical-real"
+        : ".data/e2e/dsh-real",
 );
 const expectedRoot = resolve(
   repoRoot,
-  promptThreeGatesOnly ? ".data/e2e/dsh-prompt-three-gates-real" : ".data/e2e/dsh-real",
+  promptThreeGatesOnly
+    ? ".data/e2e/dsh-prompt-three-gates-real"
+    : memoryManagementOnly
+      ? ".data/e2e/dsh-memory-management-real"
+      : memoryVerticalOnly
+        ? ".data/e2e/dsh-memory-vertical-real"
+        : ".data/e2e/dsh-real",
 );
 
 async function assertE2ePortsFree(ports) {
@@ -73,19 +89,24 @@ if (
       argument !== "--pwa-only" &&
       argument !== "--trajectory-only" &&
       argument !== "--prompt-studio-only" &&
-      argument !== "--prompt-three-gates-only",
+      argument !== "--prompt-three-gates-only" &&
+      argument !== "--memory-management-only" &&
+      argument !== "--memory-vertical-only",
   )
 ) {
   throw new Error("DSH真实E2E preflight收到未知参数");
 }
-if (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly)
+if (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly && !memoryManagementOnly)
   await import("../debug/load-provider-env.mjs");
 
 if (
   dataRoot !== expectedRoot ||
-  !["/.data/e2e/dsh-real", "/.data/e2e/dsh-prompt-three-gates-real"].some((suffix) =>
-    dataRoot.endsWith(suffix),
-  )
+  ![
+    "/.data/e2e/dsh-real",
+    "/.data/e2e/dsh-prompt-three-gates-real",
+    "/.data/e2e/dsh-memory-management-real",
+    "/.data/e2e/dsh-memory-vertical-real",
+  ].some((suffix) => dataRoot.endsWith(suffix))
 ) {
   throw new Error("拒绝清理未通过精确校验的DSH真实E2E目录");
 }
@@ -94,6 +115,7 @@ if (
   !pwaOnly &&
   !trajectoryOnly &&
   !promptStudioOnly &&
+  !memoryManagementOnly &&
   !process.env.DASHSCOPE_API_KEY?.trim()
 ) {
   throw new Error("真实DSH E2E缺少百炼凭据（本门失败关闭，不会Skip或切换替身）");
@@ -101,37 +123,59 @@ if (
 
 // 必须先用仍存在的受管evidence回收上轮wrapper/child/socket，再删除可再生目录；
 // 反过来会永久丢失Unix socket进程身份，Ctrl-C后的PTY child将无法安全识别。
-if (!promptThreeGatesOnly) {
+if (!promptThreeGatesOnly && !memoryManagementOnly && !memoryVerticalOnly) {
   await cleanupDshRealWorkbench(repoRoot, { environment: process.env });
 }
 const reservedPorts = promptStudioOnly
   ? Object.values(DSH_PROMPT_STUDIO_E2E_PORTS)
   : promptThreeGatesOnly
     ? Object.values(DSH_PROMPT_THREE_GATES_E2E_PORTS)
-    : Object.values(DSH_REAL_E2E_PORTS);
+    : memoryManagementOnly
+      ? Object.values(DSH_MEMORY_MANAGEMENT_E2E_PORTS)
+      : memoryVerticalOnly
+        ? Object.values(DSH_MEMORY_VERTICAL_E2E_PORTS)
+        : Object.values(DSH_REAL_E2E_PORTS);
 await assertE2ePortsFree(reservedPorts);
 rmSync(dataRoot, { recursive: true, force: true });
 mkdirSync(dataRoot, { recursive: true });
 const promptThreeGatesTempRoot = promptThreeGatesOnly
   ? resolve(repoRoot, ".data/e2e/dsh-t3-tmp")
   : undefined;
-if (promptThreeGatesTempRoot !== undefined) {
-  rmSync(promptThreeGatesTempRoot, { recursive: true, force: true });
-  mkdirSync(promptThreeGatesTempRoot, { recursive: true });
+const memoryVerticalTempRoot = memoryVerticalOnly
+  ? resolve(repoRoot, ".data/e2e/dsh-memory-tmp")
+  : undefined;
+const isolatedTempRoot = promptThreeGatesTempRoot ?? memoryVerticalTempRoot;
+if (isolatedTempRoot !== undefined) {
+  rmSync(isolatedTempRoot, { recursive: true, force: true });
+  mkdirSync(isolatedTempRoot, { recursive: true });
 }
 
 const safeDshEnvironment = dshRealWebEnvironment(repoRoot, {
   ...process.env,
   CHAT_DSH_E2E_DATA_ROOT: dataRoot,
-  ...(promptThreeGatesTempRoot === undefined
-    ? {}
-    : { CHAT_DSH_E2E_TEMP_ROOT: promptThreeGatesTempRoot }),
-  ...(promptThreeGatesTempRoot === undefined
+  ...(memoryManagementOnly
+    ? {
+        CHAT_MEMORY_MODE: "off",
+        CHAT_API_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.api)}`,
+        CHAT_PUBLIC_WEB_PORT: String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.web),
+        CHAT_DSH_INTERNAL_WEB_PORT: String(DSH_MEMORY_MANAGEMENT_E2E_PORTS.webInternal),
+      }
+    : {}),
+  ...(memoryVerticalOnly
+    ? {
+        CHAT_MEMORY_MODE: "memmy",
+        CHAT_API_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.api)}`,
+        CHAT_PUBLIC_WEB_PORT: String(DSH_MEMORY_VERTICAL_E2E_PORTS.web),
+        CHAT_DSH_INTERNAL_WEB_PORT: String(DSH_MEMORY_VERTICAL_E2E_PORTS.webInternal),
+      }
+    : {}),
+  ...(isolatedTempRoot === undefined ? {} : { CHAT_DSH_E2E_TEMP_ROOT: isolatedTempRoot }),
+  ...(isolatedTempRoot === undefined
     ? {}
     : {
-        TMPDIR: promptThreeGatesTempRoot,
-        TMP: promptThreeGatesTempRoot,
-        TEMP: promptThreeGatesTempRoot,
+        TMPDIR: isolatedTempRoot,
+        TMP: isolatedTempRoot,
+        TEMP: isolatedTempRoot,
       }),
 });
 const runtime = resolveDshWebRuntime(repoRoot, safeDshEnvironment);
@@ -158,7 +202,14 @@ for (const dir of [environment.TMPDIR, environment.HOME, environment.XDG_CACHE_H
 
 // PWA-only只验证DSH/Gateway/浏览器表面，不能因为没有下载数百MB的
 // code-server或没有Workbench Git fixture而失败。其他两种真实门仍保留原完整合同。
-if (!pwaOnly && !trajectoryOnly && !promptStudioOnly && !promptThreeGatesOnly) {
+if (
+  !pwaOnly &&
+  !trajectoryOnly &&
+  !promptStudioOnly &&
+  !promptThreeGatesOnly &&
+  !memoryManagementOnly &&
+  !memoryVerticalOnly
+) {
   const workbenchFixtureRoot = resolveDshRealWorkbenchFixtureRoot(repoRoot);
   mkdirSync(workbenchFixtureRoot, { recursive: true });
   writeFileSync(join(workbenchFixtureRoot, ".gitignore"), ".data/\n", "utf8");
@@ -210,7 +261,11 @@ await runCommand(
   ["--filter", "@chat/dsh-lifeos-bridge", "build"],
   { cwd: repoRoot, env: environment, label: "DSH E2E Bridge构建" },
 );
-if ((!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly) || promptThreeGatesOnly) {
+if (
+  (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly && !memoryManagementOnly) ||
+  promptThreeGatesOnly ||
+  memoryVerticalOnly
+) {
   await runCommand(
     process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     ["--filter", "@chat/workflows", "build:bundles"],
@@ -245,7 +300,11 @@ console.log(
         ? "[e2e-preflight] rc.6 DSH Prompt Studio已就绪（Pi只读配置已加载；未加载Provider/Workflow/Workbench）"
         : promptThreeGatesOnly
           ? "[e2e-preflight] rc.6 DSH三闸门、真实Provider与Workflow Bundle已就绪（未启动Workbench/Memory）"
-          : trajectoryOnly
-            ? "[e2e-preflight] rc.6 DSH profile与原生Trajectory/会话记录表面已就绪（使用测试Trace Provider，不加载Provider/Workflow/Workbench）"
-            : "[e2e-preflight] rc.6 DSH profile、真实Provider、隔离Git Workbench fixture与固定code-server已就绪",
+          : memoryManagementOnly
+            ? "[e2e-preflight] rc.6 DSH Memory管理页默认-off门已就绪（未加载Provider/Workflow/Pi/Workbench）"
+            : memoryVerticalOnly
+              ? "[e2e-preflight] rc.6 DSH、真实memmy、真实Provider与Workflow Bundle已就绪（未启动Workbench）"
+              : trajectoryOnly
+                ? "[e2e-preflight] rc.6 DSH profile与原生Trajectory/会话记录表面已就绪（使用测试Trace Provider，不加载Provider/Workflow/Workbench）"
+                : "[e2e-preflight] rc.6 DSH profile、真实Provider、隔离Git Workbench fixture与固定code-server已就绪",
 );

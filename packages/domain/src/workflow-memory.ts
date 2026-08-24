@@ -231,6 +231,15 @@ type MemoryWriteSessionImportSourceSelectionShape = {
   readonly contentSha256: string;
 };
 
+type MemoryWriteAgentCandidateSourceSelectionShape = {
+  readonly kind: "agent_candidate_item";
+  readonly memoryAgentWriteCandidateId: string;
+  readonly candidateSha256: string;
+  readonly itemKey: string;
+  readonly itemSha256: string;
+  readonly contentSha256: string;
+};
+
 export function computeWorkflowMemoryMessageSha256(message: MessageForMemoryWrite): string {
   return hashCanonical("message.v1", {
     messageId: message.messageId,
@@ -355,6 +364,47 @@ export function computeMemoryWriteImportSemanticDedupeSha256(input: {
   readonly sourceItemSha256: string;
 }): string {
   return hashCanonical("memory-write-semantic-dedupe.v2", input);
+}
+
+export function resolveMemoryWriteAgentCandidateContent(input: {
+  readonly contentSnapshot: string;
+  readonly selection: MemoryWriteAgentCandidateSourceSelectionShape;
+  readonly maxContentCharacters: number;
+}): string {
+  if (
+    !/[^\p{C}\s]/u.test(input.contentSnapshot) ||
+    input.contentSnapshot.length > input.maxContentCharacters ||
+    sha256Hex(input.contentSnapshot) !== input.selection.contentSha256
+  ) {
+    throw new WorkflowMemoryInvariantError(
+      "memory.write.agent_candidate_snapshot_invalid",
+      "Memory Agent候选正文为空、超限或Hash不一致",
+    );
+  }
+  return input.contentSnapshot;
+}
+
+export function computeMemoryWriteAgentCandidateRequestSha256(input: {
+  readonly operationId: string;
+  readonly providerDescriptorSha256: string;
+  readonly contentType: "conversation_turn";
+  readonly sourceSelection: MemoryWriteAgentCandidateSourceSelectionShape;
+  readonly sourceSessionKey: string;
+  readonly sourceTurnKey: string;
+  readonly contentSha256: string;
+}): string {
+  return hashCanonical("memory-write-request.v3", input);
+}
+
+export function computeMemoryWriteAgentCandidateSemanticDedupeSha256(input: {
+  readonly requestedByPrincipalId: string;
+  readonly providerId: string;
+  readonly productSessionId: string;
+  readonly memoryAgentWriteCandidateId: string;
+  readonly itemKey: string;
+  readonly itemSha256: string;
+}): string {
+  return hashCanonical("memory-write-semantic-dedupe.v3", input);
 }
 
 type MemoryWriteStatus =

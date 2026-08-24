@@ -6,6 +6,7 @@ import {
   memoryWriteIntentIdSchema,
   memoryWriteResultIdSchema,
   memorySessionImportIdSchema,
+  memoryAgentWriteCandidateIdSchema,
   messageIdSchema,
   principalIdSchema,
   productRunIdSchema,
@@ -306,9 +307,21 @@ export const memoryWriteSessionImportSourceSelectionSchema = z
   })
   .strict();
 
+export const memoryWriteAgentCandidateSourceSelectionSchema = z
+  .object({
+    kind: z.literal("agent_candidate_item"),
+    memoryAgentWriteCandidateId: memoryAgentWriteCandidateIdSchema,
+    candidateSha256: sha256Schema,
+    itemKey: z.string().regex(/^item-[1-8]$/u),
+    itemSha256: sha256Schema,
+    contentSha256: sha256Schema,
+  })
+  .strict();
+
 export const memoryWriteIntentSourceSelectionSchema = z.union([
   memoryWriteSourceSelectionSchema,
   memoryWriteSessionImportSourceSelectionSchema,
+  memoryWriteAgentCandidateSourceSelectionSchema,
 ]);
 
 export const memoryWriteIntentV1Schema = z
@@ -357,9 +370,37 @@ export const memoryWriteIntentV2Schema = z
   })
   .strict();
 
+/**
+ * v3只用于人工批准后的Memory Agent候选条目。模型正文先成为可审核Candidate；
+ * Decision绑定Candidate revision/hash后，Application才冻结本Intent并派发外部写入。
+ */
+export const memoryWriteIntentV3Schema = z
+  .object({
+    schemaVersion: z.literal("memory-write-intent.v3"),
+    memoryWriteIntentId: memoryWriteIntentIdSchema,
+    operationId: memoryWriteIntentIdSchema,
+    requestedByPrincipalId: principalIdSchema,
+    productSessionId: productSessionIdSchema,
+    sourceSelection: memoryWriteAgentCandidateSourceSelectionSchema,
+    sourceSessionKey: z.string().min(1).max(200),
+    sourceTurnKey: z.string().min(1).max(200),
+    contentSnapshot: z.string().min(1).max(50_000),
+    contentType: z.literal("conversation_turn"),
+    providerId: memoryBackendIdSchema,
+    providerDescriptor: memoryProviderDescriptorSchema,
+    providerDescriptorSha256: sha256Schema,
+    requestSha256: sha256Schema,
+    semanticDedupeSha256: sha256Schema,
+    revision: z.literal(1),
+    createdAt: isoDateTimeSchema,
+    updatedAt: isoDateTimeSchema,
+  })
+  .strict();
+
 export const memoryWriteIntentSchema = z.discriminatedUnion("schemaVersion", [
   memoryWriteIntentV1Schema,
   memoryWriteIntentV2Schema,
+  memoryWriteIntentV3Schema,
 ]);
 
 const memoryWriteResultBase = {

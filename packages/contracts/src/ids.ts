@@ -77,6 +77,11 @@ export const memoryWriteIntentIdSchema = prefixedId("mwi");
 export const memoryWriteResultIdSchema = prefixedId("mwr");
 /** Session导入批次是Chat产品事实，不复用外部Codex Thread或Memory对象身份。 */
 export const memorySessionImportIdSchema = prefixedId("msi");
+/** Memory Agent写入候选与人工决定；不能复用Provider对象或普通Memory Write身份。 */
+export const memoryAgentWriteCandidateIdSchema = prefixedId("mwc");
+export const memoryAgentWriteDecisionIdSchema = prefixedId("mwd");
+/** 受限Memory Agent的耐久模型调用操作；与Candidate、Provider对象和Workflow Run分离。 */
+export const memoryAgentOperationIdSchema = prefixedId("mao");
 
 /* PS1 Project Solution新增身份；与Git、Workflow和pi私有身份严格分离。 */
 export const projectMethodSnapshotIdSchema = prefixedId("pms");
@@ -174,6 +179,9 @@ export type WorkflowMemoryContextId = z.infer<typeof workflowMemoryContextIdSche
 export type MemoryWriteIntentId = z.infer<typeof memoryWriteIntentIdSchema>;
 export type MemoryWriteResultId = z.infer<typeof memoryWriteResultIdSchema>;
 export type MemorySessionImportId = z.infer<typeof memorySessionImportIdSchema>;
+export type MemoryAgentWriteCandidateId = z.infer<typeof memoryAgentWriteCandidateIdSchema>;
+export type MemoryAgentWriteDecisionId = z.infer<typeof memoryAgentWriteDecisionIdSchema>;
+export type MemoryAgentOperationId = z.infer<typeof memoryAgentOperationIdSchema>;
 export type ProjectMethodSnapshotId = z.infer<typeof projectMethodSnapshotIdSchema>;
 export type ProjectStageId = z.infer<typeof projectStageIdSchema>;
 export type ProjectResourceId = z.infer<typeof projectResourceIdSchema>;

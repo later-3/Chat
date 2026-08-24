@@ -3,7 +3,13 @@ import { z } from "zod";
 
 /** v17尚未持久化Principal派生的不可变Agent Version。 */
 const productSnapshotV17EntitiesSchema = productSnapshotSchema.shape.entities
-  .omit({ agentVersions: true, memorySessionImports: true })
+  .omit({
+    agentVersions: true,
+    memorySessionImports: true,
+    memoryAgentWriteCandidates: true,
+    memoryAgentWriteDecisions: true,
+    memoryAgentOperations: true,
+  })
   .strict();
 
 export const productSnapshotV17Schema = productSnapshotSchema

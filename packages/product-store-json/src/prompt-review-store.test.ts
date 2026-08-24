@@ -42,6 +42,7 @@ import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
+import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-19T12:00:00.000Z";
@@ -307,6 +308,9 @@ describe("Prompt Review Product Snapshot完整性", () => {
       delete legacyEntities["projectBootstrapOperations"];
       delete legacyEntities["projectWorkspaceBindings"];
       delete legacyEntities["memorySessionImports"];
+      delete legacyEntities["memoryAgentWriteCandidates"];
+      delete legacyEntities["memoryAgentWriteDecisions"];
+      delete legacyEntities["memoryAgentOperations"];
       const legacy = productSnapshotV14Schema.parse({
         ...snapshot,
         schemaVersion: "chat-product-store.v14",
@@ -333,10 +337,12 @@ describe("Prompt Review Product Snapshot完整性", () => {
       );
       expect(() =>
         assertSnapshotIntegrity(
-          migrateProductSnapshotV19ToV20(
-            migrateProductSnapshotV18ToV19(
-              migrateProductSnapshotV17ToV18(
-                migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16(migrated)),
+          migrateProductSnapshotV20ToV21(
+            migrateProductSnapshotV19ToV20(
+              migrateProductSnapshotV18ToV19(
+                migrateProductSnapshotV17ToV18(
+                  migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16(migrated)),
+                ),
               ),
             ),
           ),
@@ -355,6 +361,9 @@ describe("Prompt Review Product Snapshot完整性", () => {
     delete legacyEntities["projectBootstrapOperations"];
     delete legacyEntities["projectWorkspaceBindings"];
     delete legacyEntities["memorySessionImports"];
+    delete legacyEntities["memoryAgentWriteCandidates"];
+    delete legacyEntities["memoryAgentWriteDecisions"];
+    delete legacyEntities["memoryAgentOperations"];
     const legacy = productSnapshotV14Schema.parse({
       ...snapshot,
       schemaVersion: "chat-product-store.v14",

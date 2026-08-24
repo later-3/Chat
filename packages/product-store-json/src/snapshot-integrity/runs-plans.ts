@@ -5,6 +5,8 @@ import {
   DIRECT_AGENT_RUNNER_FAMILY,
   MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
   MEMORY_DIRECT_RUNNER_FAMILY,
+  MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
 } from "@chat/application/workflow-system-definitions";
 import {
   assertPromptReviewRequestIndexes,
@@ -104,8 +106,14 @@ export function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
         runSpec?.runner.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
         runSpec.runner.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
         runSpec.definitionRef.blueprintVersion === 2;
+      const memoryAgentDirectV1 =
+        run.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY &&
+        run.runnerBundleVersion === MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION &&
+        runSpec?.runner.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY &&
+        runSpec.runner.runnerBundleVersion === MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION &&
+        [3, 4, 5].includes(runSpec.definitionRef.blueprintVersion);
       if (
-        (!directV1 && !memoryDirectV1) ||
+        (!directV1 && !memoryDirectV1 && !memoryAgentDirectV1) ||
         runSpec?.productRunId !== run.productRunId ||
         runSpec.definitionRef.blueprintKey !== "direct" ||
         runSpec.businessInput?.kind !== "direct_agent_message" ||

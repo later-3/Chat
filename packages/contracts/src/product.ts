@@ -268,7 +268,7 @@ export const directAgentProductRunSchema = z
     sourceMessageId: messageIdSchema,
     workflowViewDefinitionId: workflowViewDefinitionIdSchema,
     workflowRunSpecId: workflowRunSpecIdSchema,
-    runnerFamily: z.enum(["direct-agent.v1", "memory-direct.v1"]),
+    runnerFamily: z.enum(["direct-agent.v1", "memory-direct.v1", "memory-agent-direct.v1"]),
     runnerBundleVersion: z
       .string()
       .min(1)

@@ -18,6 +18,7 @@ export * from "./migrate-v16-to-v17.js";
 export * from "./migrate-v17-to-v18.js";
 export * from "./migrate-v18-to-v19.js";
 export * from "./migrate-v19-to-v20.js";
+export * from "./migrate-v20-to-v21.js";
 export * from "./legacy-v10.js";
 export * from "./legacy-v11.js";
 export * from "./legacy-v12.js";

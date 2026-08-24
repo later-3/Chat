@@ -10,6 +10,7 @@ import {
   memoryProviderDescriptorSchema,
   memoryWriteResultSchema,
   memoryWriteSessionImportSourceSelectionSchema,
+  memoryWriteAgentCandidateSourceSelectionSchema,
   memoryWriteSourceSelectionSchema,
 } from "./workflow-memory.js";
 
@@ -46,6 +47,13 @@ export const memoryWriteDtoSchema = z.union([
     .object({
       ...memoryWriteDtoBase,
       sourceSelection: memoryWriteSessionImportSourceSelectionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...memoryWriteDtoBase,
+      productSessionId: productSessionIdSchema,
+      sourceSelection: memoryWriteAgentCandidateSourceSelectionSchema,
     })
     .strict(),
 ]);

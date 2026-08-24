@@ -14,6 +14,8 @@ import {
   loadBailianConfig,
   runPiNoteCapture,
   runPiPlanner,
+  runPiMemoryRetrievalAgent,
+  runPiMemoryWriteAgent,
 } from "@chat/pi-runtime";
 import { createMemoryRegistrySet, parseMemoryMode } from "@chat/memory-runtime";
 import { ZodError } from "zod";
@@ -71,6 +73,8 @@ export interface WorkflowRuntimeServerOptions {
       | "bailian"
       | "planner"
       | "noteCapture"
+      | "memoryRetrievalAgent"
+      | "memoryWriteAgent"
       | "executor"
       | "directExecutor"
       | "now"
@@ -160,6 +164,8 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       bailian: loadBailianConfig(process.env),
       planner: runPiPlanner,
       noteCapture: runPiNoteCapture,
+      memoryRetrievalAgent: runPiMemoryRetrievalAgent,
+      memoryWriteAgent: runPiMemoryWriteAgent,
       executor: executorClient,
       directExecutor: directExecutorClient,
       ...options.runtimeOverrides,

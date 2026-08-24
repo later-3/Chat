@@ -23,6 +23,8 @@ import {
   DIRECT_AGENT_RUNNER_FAMILY,
   MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
   MEMORY_DIRECT_RUNNER_FAMILY,
+  MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
   LEGACY_PLANNING_RUNNER_BUNDLE_VERSION,
   LEGACY_PLANNING_RUNNER_FAMILY,
   NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
@@ -57,6 +59,7 @@ const productWorkflowRunnerFamilySchema = z.enum([
   NOTE_CAPTURE_RUNNER_FAMILY,
   DIRECT_AGENT_RUNNER_FAMILY,
   MEMORY_DIRECT_RUNNER_FAMILY,
+  MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
 ]);
 
 const startIntentSchema = legacyStartIntentSchema
@@ -101,7 +104,9 @@ function assertProductRunnerEvidence(
           ? NOTE_CAPTURE_RUNNER_BUNDLE_VERSION
           : value.runnerFamily === DIRECT_AGENT_RUNNER_FAMILY
             ? DIRECT_AGENT_RUNNER_BUNDLE_VERSION
-            : MEMORY_DIRECT_RUNNER_BUNDLE_VERSION;
+            : value.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY
+              ? MEMORY_DIRECT_RUNNER_BUNDLE_VERSION
+              : MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION;
   const bundleMatches = value.runnerBundleVersion === expectedBundle;
   if (!bundleMatches) {
     context.addIssue({
@@ -432,7 +437,9 @@ export function normalizeProductRunnerEvidence(input: ProductRunnerEvidenceInput
           ? NOTE_CAPTURE_RUNNER_BUNDLE_VERSION
           : runnerFamily === DIRECT_AGENT_RUNNER_FAMILY
             ? DIRECT_AGENT_RUNNER_BUNDLE_VERSION
-            : MEMORY_DIRECT_RUNNER_BUNDLE_VERSION);
+            : runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY
+              ? MEMORY_DIRECT_RUNNER_BUNDLE_VERSION
+              : MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION);
   const parsed = z
     .object({
       runnerFamily: productWorkflowRunnerFamilySchema,
@@ -611,7 +618,8 @@ export function assertRuntimeBindingsIntegrity(bindings: RuntimeBindingsFile): v
     if (
       workflow === undefined ||
       (workflow.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY &&
-        workflow.runnerFamily !== MEMORY_DIRECT_RUNNER_FAMILY) ||
+        workflow.runnerFamily !== MEMORY_DIRECT_RUNNER_FAMILY &&
+        workflow.runnerFamily !== MEMORY_AGENT_DIRECT_RUNNER_FAMILY) ||
       workflow.workflowRunId !== hook.startWorkflowRunId
     ) {
       throw new RuntimeBindingError(

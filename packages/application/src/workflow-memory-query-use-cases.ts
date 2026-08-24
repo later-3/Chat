@@ -20,6 +20,7 @@ import {
   type WorkflowMemoryQueryExecutionResult,
   type WorkflowMemorySnapshot,
 } from "@chat/contracts";
+import { memoryAgentRetrieveNodeConfigSchema } from "@chat/contracts/memory-agent";
 import {
   assertWorkflowMemoryContextOrder,
   computeMemoryProviderDescriptorSha256,
@@ -78,6 +79,7 @@ function dispatchDto(
     productSessionId: query.productSessionId,
     principalId: query.requestedByPrincipalId,
     workflowRunSpecId: query.workflowRunSpecId,
+    workflowRunSpecSha256: query.workflowRunSpecSha256,
     definitionNodeId: query.definitionNodeId,
     providerId: query.providerId,
     providerDescriptor: query.providerDescriptor,
@@ -146,19 +148,25 @@ export async function beginWorkflowMemoryQuery(
   const node = validated.runSpec.nodeResolutions.find(
     (candidate) => candidate.definitionNodeId === input.definitionNodeId,
   );
-  if (node?.nodeType !== "memory.query" || node.activation === "skipped") {
+  if (
+    (node?.nodeType !== "memory.query" && node?.nodeType !== "agent.memory_retrieve") ||
+    node.activation === "skipped"
+  ) {
     throw new ApplicationError({
       code: "validation_failed",
       httpStatus: 422,
-      message: "指定节点不是可执行的memory.query节点",
+      message: "指定节点不是可执行的Memory查询节点",
     });
   }
-  const parsedConfig = workflowMemoryQueryNodeConfigSchema.safeParse(node.config);
+  const parsedConfig =
+    node.nodeType === "agent.memory_retrieve"
+      ? memoryAgentRetrieveNodeConfigSchema.safeParse(node.config)
+      : workflowMemoryQueryNodeConfigSchema.safeParse(node.config);
   if (!parsedConfig.success) {
     throw new ApplicationError({
       code: "store_corrupted",
       httpStatus: 500,
-      message: "memory.query冻结配置损坏",
+      message: "Memory查询冻结配置损坏",
       recoveryAction: "contact_support",
     });
   }
@@ -334,6 +342,11 @@ export async function persistWorkflowMemoryQueryResult(
       const rawRunSpec = draft.entities.workflowRunSpecs[input.workflowRunSpecId];
       const validated =
         rawRunSpec === undefined ? undefined : validateWorkflowRunSpecIntegrity(rawRunSpec);
+      const executedNode = validated?.success
+        ? validated.runSpec.nodeResolutions.find(
+            (candidate) => candidate.definitionNodeId === input.definitionNodeId,
+          )
+        : undefined;
       if (
         validated === undefined ||
         !validated.success ||
@@ -341,7 +354,9 @@ export async function persistWorkflowMemoryQueryResult(
         current.workflowRunSpecId !== input.workflowRunSpecId ||
         current.definitionNodeId !== input.definitionNodeId ||
         current.attemptNumber !== input.attemptNumber ||
-        JSON.stringify(current.executionPath) !== JSON.stringify(input.executionPath)
+        JSON.stringify(current.executionPath) !== JSON.stringify(input.executionPath) ||
+        (executedNode?.nodeType !== "memory.query" &&
+          executedNode?.nodeType !== "agent.memory_retrieve")
       ) {
         throw revisionConflict("Workflow Memory Query执行身份不一致");
       }
@@ -458,7 +473,7 @@ export async function persistWorkflowMemoryQueryResult(
         run: memoryRun,
         runSpec: validated.runSpec,
         definitionNodeId: input.definitionNodeId,
-        nodeType: "memory.query",
+        nodeType: executedNode.nodeType,
         executionPath: input.executionPath,
         attemptNumber: input.attemptNumber,
         terminal,

@@ -163,6 +163,8 @@ describe("Configurable Planning RunSpec运行时门", () => {
       toStatus: "succeeded" as const,
       outcomeCode: "planned",
       publicSummary: "节点已完成",
+      // Workflow本地执行身份不属于严格HTTP合同，边界必须显式摘取公开字段。
+      workflowAttemptId: "att_localonly",
     };
     await recordConfigurablePlanningNodeStep(input);
     await recordConfigurablePlanningNodeStep(input);
@@ -171,6 +173,7 @@ describe("Configurable Planning RunSpec运行时门", () => {
     const second = mocked.transitionConfigurablePlanningNode.mock.calls[1]?.[0];
     expect(first.commandId).toBe(second.commandId);
     expect(first.commandId).toMatch(/^cmd_[a-f0-9]{32}$/);
+    expect(first).not.toHaveProperty("workflowAttemptId");
   });
 
   it("人工等待与完成使用不同commandId，同一等待状态重放保持稳定", async () => {
