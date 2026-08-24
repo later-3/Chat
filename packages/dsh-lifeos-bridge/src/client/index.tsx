@@ -32,6 +32,10 @@ import {
   type ProjectBootstrapSidebarInjected,
 } from "./ProjectBootstrapSidebarAction.tsx";
 import { projectBootstrapPresetSchema } from "../contracts.ts";
+import {
+  connectProjectBootstrapSession,
+  resolveProjectBootstrapWorkspaceId,
+} from "./project-bootstrap-session.ts";
 
 export const name = "chat-dsh-lifeos-bridge-client";
 // Cordis只允许读取显式注入的Service。项目建项入口同时操作公开Sessions与Workspaces
@@ -65,6 +69,7 @@ export function apply(ctx: ClientContext): void {
   // Client插件根，真实对象是公开ISessions face，显式收窄避免服务端类型声明污染。
   const clientSessions = ctx.sessions as unknown as ISessions;
   const startProjectBootstrap = async (): Promise<void> => {
+    const targetWorkspaceId = resolveProjectBootstrapWorkspaceId(clientSessions, ctx.workspaces);
     const presetResponse = await fetch("/lifeos/project-bootstrap/preset", {
       credentials: "same-origin",
       headers: { accept: "application/json" },
@@ -73,43 +78,22 @@ export function apply(ctx: ClientContext): void {
     if (!presetResponse.ok) throw new Error("项目初始化配置不可用");
     const preset = projectBootstrapPresetSchema.parse(presetJson);
     if (!preset.enabled) throw new Error("当前部署未配置Plane CE项目初始化能力");
-    // DSH会复用当前Workspace里的空白Session。若用户已经停在那个空白Session，单纯比较
-    // current前后无法知道`startSession()`已完成。先通过公开Sessions face清除选择，再启动
-    // New Session flow，使新目标必然从undefined变为精确Session ID；这不归档或删除旧会话。
-    clientSessions.clear();
-    ctx.workspaces.startSession();
-    const sessionId = await new Promise<SessionId>((resolve, reject) => {
-      let settled = false;
-      const finish = (value: SessionId): void => {
-        if (settled) return;
-        settled = true;
-        unsubscribe();
-        clearTimeout(timeout);
-        resolve(value);
-      };
-      const inspect = (): void => {
-        const current = clientSessions.list.getSnapshot().current;
-        if (current !== undefined) finish(current);
-      };
-      const unsubscribe = clientSessions.list.subscribe(inspect);
-      const timeout = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        unsubscribe();
-        reject(new Error("DSH未能创建新的项目会话"));
-      }, 8_000);
-      inspect();
-    });
-    const initialized = await fetch(
-      `/lifeos/project-bootstrap/sessions/${encodeURIComponent(String(sessionId))}/initialize`,
-      {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { accept: "application/json" },
+    await connectProjectBootstrapSession(
+      clientSessions,
+      ctx.workspaces,
+      targetWorkspaceId,
+      async (sessionId) => {
+        const initialized = await fetch(
+          `/lifeos/project-bootstrap/sessions/${encodeURIComponent(String(sessionId))}/initialize`,
+          {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { accept: "application/json" },
+          },
+        );
+        if (!initialized.ok) throw new Error("项目会话预设初始化失败");
       },
     );
-    if (!initialized.ok) throw new Error("项目会话预设初始化失败");
-    clientSessions.open(sessionId);
   };
   const controllers = new Map<SessionId, LifeosProjectionController>();
   const recordControllers = new Map<SessionId, SessionRecordsController>();
@@ -301,8 +285,8 @@ export function apply(ctx: ClientContext): void {
           return {
             hooks: { lifeos, promptComposer: controller, promptStudio },
             loadWorkflows: () => lifeos.loadWorkflows(),
-            selectWorkflow: async (selection) => {
-              const selected = await lifeos.selectWorkflow(selection);
+            selectWorkflow: async (selection, scope) => {
+              const selected = await lifeos.selectWorkflow(selection, scope);
               if (selected) await controller.load();
               return selected;
             },

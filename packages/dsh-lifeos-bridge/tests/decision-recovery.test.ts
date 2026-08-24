@@ -84,6 +84,8 @@ async function seededStore(path: string): Promise<AtomicBridgeStateStore> {
       binding.requests[requestKey] = {
         userTextSha256: "b".repeat(64),
         messageCommandId: stableCommandId("message", dshSessionId),
+        submissionTarget: "existing_session",
+        submissionStatus: "bound",
         productRunId: run.productRunId,
       };
     },
@@ -103,6 +105,8 @@ async function seededNoteStore(path: string): Promise<AtomicBridgeStateStore> {
       binding.requests[requestKey] = {
         userTextSha256: "b".repeat(64),
         messageCommandId: stableCommandId("message", dshSessionId),
+        submissionTarget: "existing_session",
+        submissionStatus: "bound",
         productRunId: noteRun.productRunId,
       };
     },

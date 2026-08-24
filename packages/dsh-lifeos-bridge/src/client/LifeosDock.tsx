@@ -292,6 +292,10 @@ export function hasActionablePromptReview(projection: LifeosProjection | null): 
 }
 
 export function shouldShowLifeosReviewDock(projection: LifeosProjection | null): boolean {
+  const projectBootstrapVisible =
+    projection?.projectBootstrap != null &&
+    (projection.projectBootstrap.candidate.status !== "rejected" ||
+      projection.projectBootstrap.binding !== undefined);
   return (
     hasActionablePlanReview(projection) ||
     hasActionableNoteReview(projection) ||
@@ -301,8 +305,15 @@ export function shouldShowLifeosReviewDock(projection: LifeosProjection | null):
     projection?.pendingDecision != null ||
     projection?.pendingNoteDecision != null ||
     projection?.pendingPromptReviewDecision != null ||
-    projection?.projectBootstrap != null
+    projectBootstrapVisible
   );
+}
+
+/** 恢复资格由Product Query根据Outbox/lease事实投影，Client不根据status猜测。 */
+export function canRequestProjectBootstrapRecovery(projectBootstrap: {
+  readonly recovery: { readonly canRecover: boolean };
+}): boolean {
+  return projectBootstrap.recovery.canRecover;
 }
 
 export function LifeosDock({
@@ -686,11 +697,15 @@ export function LifeosDock({
         ? "等待你确认"
         : candidate.status === "ready"
           ? "初始化完成"
-          : candidate.status === "outcome_unknown"
-            ? "结果未知，等待对账"
-            : candidate.status === "needs_attention"
-              ? "需要处理"
-              : "正在初始化";
+          : candidate.status === "rejected"
+            ? "已取消创建"
+            : projectBootstrap.operation?.status === "failed"
+              ? "初始化失败，可重试"
+              : candidate.status === "outcome_unknown"
+                ? "结果未知，等待对账"
+                : candidate.status === "needs_attention"
+                  ? "需要处理"
+                  : "正在初始化";
     const submitProjectBootstrap = async (
       kind: ProjectBootstrapDecisionRequest["kind"],
     ): Promise<void> => {
@@ -760,15 +775,22 @@ export function LifeosDock({
             </div>
           </div>
         ) : null}
-        {["needs_attention", "outcome_unknown"].includes(candidate.status) ? (
+        {canRequestProjectBootstrapRecovery(projectBootstrap) ? (
           <div className="lifeos-warning">
-            <p>{projectBootstrap.operation?.errorCode ?? "初始化未完成，可重新对账。"}</p>
+            <p>
+              {projectBootstrap.operation?.errorCode ??
+                (projectBootstrap.recovery.reason === "legacy_dispatch_missing"
+                  ? "初始化未收口，检查Provider后可恢复。"
+                  : "初始化未完成，可重新对账。")}
+            </p>
             <button
               type="button"
               disabled={state.submitting}
               onClick={() => void submitProjectBootstrap("retry")}
             >
-              重新对账并继续
+              {projectBootstrap.recovery.reason === "legacy_dispatch_missing"
+                ? "检查并恢复"
+                : "重新对账并继续"}
             </button>
           </div>
         ) : null}

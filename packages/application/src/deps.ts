@@ -65,6 +65,7 @@ import type {
 } from "./project-ports.js";
 import type { WorkflowRuntimeTraceReaderPort } from "./runtime-ports.js";
 import type {
+  ProjectBootstrapExecutionCoordinatorPort,
   ProjectManagementBootstrapPort,
   ProjectWorkspaceProvisionerPort,
 } from "./project-bootstrap-ports.js";
@@ -204,6 +205,7 @@ export interface ApplicationDeps {
   /** Plane与本地Workspace只通过窄Port进入Application；Token和绝对路径不进产品事实。 */
   readonly projectManagementBootstrap?: ProjectManagementBootstrapPort;
   readonly projectWorkspaceProvisioner?: ProjectWorkspaceProvisionerPort;
+  readonly projectBootstrapExecutionCoordinator?: ProjectBootstrapExecutionCoordinatorPort;
   readonly projectBootstrapIds?: ProjectBootstrapIdFactory;
 }
 

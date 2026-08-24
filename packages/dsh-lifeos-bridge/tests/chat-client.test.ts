@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ChatProductClient } from "../src/chat-client.ts";
+import { ChatProductApiError, ChatProductClient } from "../src/chat-client.ts";
+import { prepareBridgeChatDispatch } from "../src/bridge-chat-dispatch.ts";
 import {
   agentProfileDtoSchema,
   agentProfilesDtoSchema,
@@ -490,4 +491,104 @@ test("submitMessage sends the frozen Prompt selection for every workflow", async
       ?.workflowSelection?.runConfiguration,
     planning.runConfiguration,
   );
+});
+
+test("真实ChatProductClient拒绝单对象合法但跨对象矛盾的Message 2xx响应", async () => {
+  const now = "2026-08-24T00:00:00.000Z";
+  const session = {
+    schemaVersion: "chat-product-api.v1",
+    sessionId: "psn_crossidentityfirst1",
+    status: "active",
+    revision: 1,
+    createdAt: now,
+    updatedAt: now,
+  } as const;
+  const message = {
+    schemaVersion: "chat-product-api.v1",
+    messageId: "msg_crossidentityuser1",
+    sessionId: session.sessionId,
+    sessionSequence: 1,
+    role: "user",
+    content: { format: "markdown", text: "身份合同" },
+    sha256: "a".repeat(64),
+    createdAt: now,
+  } as const;
+  const run = {
+    schemaVersion: "chat-product-api.v1",
+    productRunId: "run_crossidentity1",
+    sessionId: session.sessionId,
+    sourceMessageId: message.messageId,
+    runKind: "planning",
+    status: "running",
+    phase: "planning",
+    allowedActions: [],
+    revision: 1,
+    createdAt: now,
+    updatedAt: now,
+  } as const;
+  const firstPlan = prepareBridgeChatDispatch({
+    requestKey: "a".repeat(48),
+    messageCommandId: `cmd_${"1".repeat(48)}`,
+    text: "身份合同",
+  });
+  const existingPlan = prepareBridgeChatDispatch({
+    requestKey: "b".repeat(48),
+    productSessionId: session.sessionId,
+    messageCommandId: `cmd_${"2".repeat(48)}`,
+    text: "身份合同",
+  });
+  const cases = [
+    {
+      label: "first session/message",
+      body: { session: { ...session, sessionId: "psn_crossidentityother1" }, message, run },
+      existing: false,
+    },
+    {
+      label: "first message/run session",
+      body: { session, message, run: { ...run, sessionId: "psn_crossidentityother1" } },
+      existing: false,
+    },
+    {
+      label: "first run source message",
+      body: { session, message, run: { ...run, sourceMessageId: "msg_crossidentityother1" } },
+      existing: false,
+    },
+    {
+      label: "existing target/message session",
+      body: { message: { ...message, sessionId: "psn_crossidentityother1" }, run },
+      existing: true,
+    },
+    {
+      label: "existing target/run session",
+      body: { message, run: { ...run, sessionId: "psn_crossidentityother1" } },
+      existing: true,
+    },
+    {
+      label: "existing run source message",
+      body: { message, run: { ...run, sourceMessageId: "msg_crossidentityother1" } },
+      existing: true,
+    },
+  ] as const;
+
+  for (const scenario of cases) {
+    const client = new ChatProductClient(
+      new URL("http://127.0.0.1:1"),
+      async () =>
+        new Response(JSON.stringify(scenario.body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const request = scenario.existing
+      ? client.submitMessageFromDispatch(session.sessionId, existingPlan.submitMessage)
+      : client.submitFirstMessageFromDispatch(firstPlan.submitMessage);
+    await assert.rejects(
+      request,
+      (error) =>
+        error instanceof ChatProductApiError &&
+        error.status === 200 &&
+        error.code === "chat_api_contract_mismatch",
+      scenario.label,
+    );
+  }
 });

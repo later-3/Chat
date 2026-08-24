@@ -54,6 +54,7 @@ import { productSnapshotV14Schema, type ProductSnapshotV14 } from "./legacy-v14.
 import { productSnapshotV15Schema, type ProductSnapshotV15 } from "./legacy-v15.js";
 import { productSnapshotV16Schema, type ProductSnapshotV16 } from "./legacy-v16.js";
 import { productSnapshotV17Schema, type ProductSnapshotV17 } from "./legacy-v17.js";
+import { productSnapshotV18Schema } from "./legacy-v18.js";
 import { migrateProductSnapshotV4ToV5 } from "./migrate-v4-to-v5.js";
 import { migrateProductSnapshotV5ToV6 } from "./migrate-v5-to-v6.js";
 import { migrateProductSnapshotV6ToV7 } from "./migrate-v6-to-v7.js";
@@ -68,6 +69,7 @@ import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
 import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
 import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
+import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -208,6 +210,15 @@ export class JsonProductStore implements ProductStorePort {
       return new JsonProductStore(options, current.data);
     }
 
+    const legacyV18 = productSnapshotV18Schema.safeParse(parsedJson);
+    if (legacyV18.success) {
+      const migrated = migrateProductSnapshotV18ToV19(legacyV18.data);
+      assertSnapshotIntegrity(migrated);
+      const store = new JsonProductStore(options, migrated);
+      await store.persist(migrated);
+      return store;
+    }
+
     const legacyV17 = productSnapshotV17Schema.safeParse(parsedJson);
     let v17: ProductSnapshotV17;
     if (legacyV17.success) {
@@ -326,7 +337,7 @@ export class JsonProductStore implements ProductStorePort {
       }
       v17 = migrateProductSnapshotV16ToV17(v16);
     }
-    const migrated = migrateProductSnapshotV17ToV18(v17);
+    const migrated = migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(v17));
     assertSnapshotIntegrity(migrated);
     const store = new JsonProductStore(options, migrated);
     // 成功迁移使用与普通事务相同的原子替换；rename 前失败时旧文件逐字节不变。

@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   DSH_PROMPT_STUDIO_E2E_PORTS,
   DSH_PROMPT_THREE_GATES_E2E_PORTS,
+  DSH_PROJECT_BOOTSTRAP_E2E_PORTS,
   DSH_REAL_E2E_PORTS,
   dshRealWebEnvironment,
   dshRealWorkbenchEnvironment,
@@ -23,10 +24,34 @@ test("真实浏览器门的45xxx端口族不与production或VS Code debug重叠"
   for (const ports of [
     DSH_PROMPT_STUDIO_E2E_PORTS,
     DSH_PROMPT_THREE_GATES_E2E_PORTS,
+    DSH_PROJECT_BOOTSTRAP_E2E_PORTS,
     DSH_REAL_E2E_PORTS,
   ]) {
     for (const port of Object.values(ports)) assert.equal(applicationPorts.has(port), false);
   }
+});
+
+test("建项浏览器门使用独立数据根且DSH Host仍拿不到Provider凭据", () => {
+  const environment = dshRealWebEnvironment("/repo/chat", {
+    PATH: "/bin",
+    CHAT_DSH_E2E_DATA_ROOT: "/repo/chat/.data/e2e/dsh-project-bootstrap-real",
+    CHAT_PUBLIC_WEB_PORT: "45410",
+    CHAT_DSH_INTERNAL_WEB_PORT: "45414",
+    CHAT_API_BASE_URL: "http://127.0.0.1:45411",
+    DASHSCOPE_API_KEY: "provider-secret",
+    PLANE_API_TOKEN: "plane-secret",
+  });
+
+  assert.equal(environment.DSH_HOME, "/repo/chat/.data/e2e/dsh-project-bootstrap-real/dsh-home");
+  assert.equal(
+    environment.CHAT_DSH_STATE_PATH,
+    "/repo/chat/.data/e2e/dsh-project-bootstrap-real/bridge/state.json",
+  );
+  assert.equal(environment.CHAT_PUBLIC_WEB_PORT, "45410");
+  assert.equal(environment.CHAT_DSH_INTERNAL_WEB_PORT, "45414");
+  assert.equal(environment.CHAT_API_BASE_URL, "http://127.0.0.1:45411");
+  assert.equal("DASHSCOPE_API_KEY" in environment, false);
+  assert.equal("PLANE_API_TOKEN" in environment, false);
 });
 
 test("真实浏览器入口禁止硬编码production端口或调用production preclean", () => {

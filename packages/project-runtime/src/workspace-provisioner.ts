@@ -132,13 +132,14 @@ class LocalProjectWorkspaceProvisioner implements ProjectWorkspaceProvisionerPor
     let crossedWriteBoundary = false;
     try {
       if (!(await exists(target))) {
+        await input.writeFence.assertCurrent("workspace.target.mkdir");
         await mkdir(target, { mode: 0o755 });
         crossedWriteBoundary = true;
       }
-      await ensureMarker(target, input.operationId, input.candidateSha256);
+      await ensureMarker(target, input.operationId, input.candidateSha256, input.writeFence);
       crossedWriteBoundary = true;
-      await writeTemplate(target, input.proposal);
-      await ensureGitRepository(target);
+      await writeTemplate(target, input.proposal, input.writeFence);
+      await ensureGitRepository(target, input.writeFence);
       return {
         status: "completed" as const,
         workspaceLabel: `${root.descriptor.displayName}/${input.proposal.directoryName}`,
@@ -218,14 +219,21 @@ function targetPath(root: string, directoryName: string): string {
   return target;
 }
 
-async function ensureMarker(target: string, operationId: string, candidateSha256: string) {
+async function ensureMarker(
+  target: string,
+  operationId: string,
+  candidateSha256: string,
+  writeFence: Parameters<ProjectWorkspaceProvisionerPort["provision"]>[0]["writeFence"],
+) {
   const markerDirectory = resolve(target, MARKER_DIRECTORY);
   const markerPath = resolve(markerDirectory, MARKER_FILE);
+  await writeFence.assertCurrent("workspace.marker-directory.mkdir");
   await mkdir(markerDirectory, { recursive: true, mode: 0o700 });
   if (await exists(markerPath)) {
     await assertMarker(target, operationId, candidateSha256);
     return;
   }
+  await writeFence.assertCurrent("workspace.marker.write");
   await writeFile(
     markerPath,
     `${JSON.stringify({
@@ -260,10 +268,13 @@ async function assertMarker(target: string, operationId: string, candidateSha256
 async function writeTemplate(
   target: string,
   proposal: z.infer<typeof projectBootstrapProposalSchema>,
+  writeFence: Parameters<ProjectWorkspaceProvisionerPort["provision"]>[0]["writeFence"],
 ) {
   await writeIfMissing(
     resolve(target, ".gitignore"),
     [".chat/", ".cache/", "downloads/", "media/", ""].join("\n"),
+    writeFence,
+    "workspace.template.gitignore.write",
   );
   await writeIfMissing(
     resolve(target, "README.md"),
@@ -275,17 +286,29 @@ async function writeTemplate(
       `Plane: ${proposal.planeWorkspaceSlug}/${proposal.planeProjectIdentifier}`,
       "",
     ].join("\n"),
+    writeFence,
+    "workspace.template.readme.write",
   );
   if (proposal.initializerProfile === "ai_learning") {
     for (const directory of ["sources", "courses", "papers", "opensource", "projects", "notes"]) {
+      await writeFence.assertCurrent(`workspace.template.${directory}.mkdir`);
       await mkdir(resolve(target, directory), { recursive: true, mode: 0o755 });
-      await writeIfMissing(resolve(target, directory, ".gitkeep"), "");
+      await writeIfMissing(
+        resolve(target, directory, ".gitkeep"),
+        "",
+        writeFence,
+        `workspace.template.${directory}.gitkeep.write`,
+      );
     }
   }
 }
 
-async function ensureGitRepository(target: string) {
+async function ensureGitRepository(
+  target: string,
+  writeFence: Parameters<ProjectWorkspaceProvisionerPort["provision"]>[0]["writeFence"],
+) {
   if (!(await exists(resolve(target, ".git")))) {
+    await writeFence.assertCurrent("workspace.git.init");
     await execFileAsync("git", ["init", "--initial-branch=main", target], {
       encoding: "utf8",
       timeout: 15_000,
@@ -294,8 +317,14 @@ async function ensureGitRepository(target: string) {
   }
 }
 
-async function writeIfMissing(path: string, content: string) {
+async function writeIfMissing(
+  path: string,
+  content: string,
+  writeFence: Parameters<ProjectWorkspaceProvisionerPort["provision"]>[0]["writeFence"],
+  writeKey: string,
+) {
   if (await exists(path)) return;
+  await writeFence.assertCurrent(writeKey);
   await writeFile(path, content, { encoding: "utf8", mode: 0o644, flag: "wx" });
 }
 

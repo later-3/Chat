@@ -298,9 +298,21 @@ export const workflowSelectionSchema = z
   })
   .strict();
 
-/** Browser-to-bridge command：null表示恢复系统默认规划工作流。 */
+export const workflowSelectionScopeSchema = z.enum([
+  "session",
+  "new_sessions",
+  "session_and_new_sessions",
+]);
+
+/**
+ * Browser-to-bridge command：null表示恢复系统默认规划工作流；scope明确本次只改当前
+ * 草稿、以后新会话偏好或两者，Bridge不得再附加隐藏的全局写入。
+ */
 export const workflowSelectionRequestSchema = z
-  .object({ workflowSelection: workflowSelectionSchema.nullable() })
+  .object({
+    workflowSelection: workflowSelectionSchema.nullable(),
+    scope: workflowSelectionScopeSchema.default("session"),
+  })
   .strict();
 
 export type LifeosWorkflowOption = z.infer<typeof lifeosWorkflowOptionSchema>;
@@ -832,7 +844,10 @@ export const lifeosProjectionSchema = z
       .strict()
       .nullable()
       .default(null),
+    /** @deprecated 使用sessionWorkflowSelection；保留一个Bridge合同版本供旧Client迁移。 */
     workflowSelection: workflowSelectionSchema.nullable(),
+    sessionWorkflowSelection: workflowSelectionSchema.nullable().default(null),
+    newSessionWorkflowPreference: workflowSelectionSchema.nullable().default(null),
     executionTraces: z.array(lifeosExecutionTraceSchema).max(100),
   })
   .strict();

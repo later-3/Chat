@@ -92,6 +92,8 @@ test("unified records compose identities without turning DSH into a Product Sess
         dshMessageId: "dsh-message-1",
         userTextSha256: "d".repeat(64),
         messageCommandId: `cmd_${"e".repeat(48)}`,
+        submissionTarget: "existing_session",
+        submissionStatus: "bound",
         productUserMessageId: userMessage.messageId,
         productRunId: "run_records1",
         productAssistantMessageId: assistantMessage.messageId,

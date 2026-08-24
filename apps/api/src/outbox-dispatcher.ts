@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION,
   PROJECT_ADVANCEMENT_WORKFLOW_DEFINITION_VERSION,
@@ -24,6 +25,10 @@ import {
   commitMemoryWriteOutcomeUnknown,
   emitMemoryImportEvent,
   emitRunEvent,
+  executeProjectBootstrapOperationFromOutbox,
+  ApplicationError,
+  MAX_PROJECT_BOOTSTRAP_EXECUTION_LEASE_MS,
+  ProjectBootstrapExecutionLeaseBusyError,
   failOutboxAndRun,
   recoverMemoryImportAfterTerminalWorkflow,
   safeErrorType,
@@ -62,6 +67,8 @@ export interface OutboxDispatcherOptions {
   readonly workflowRuntimeBaseUrl: string;
   readonly credential: string;
   readonly intervalMs?: number;
+  /** 仅用于私有执行lease的竞争者身份；生产默认每个Dispatcher实例唯一。 */
+  readonly dispatcherInstanceId?: string;
 }
 
 // Snapshot是Product Store已经提交的只读快照；Dispatcher只能通过Application Command改状态，
@@ -86,6 +93,7 @@ type ProjectAdvancementEntry = Extract<
   OutboxEntry,
   { kind: "project_advancement_start" | "project_advancement_resume" }
 >;
+type ProjectBootstrapEntry = Extract<OutboxEntry, { kind: "project_bootstrap_execute" }>;
 const projectDispatchResponseSchema = z
   .object({
     schemaVersion: z.literal("chat-workflow-dispatch.v1"),
@@ -683,6 +691,73 @@ async function dispatchProjectAdvancement(
   await markStatus(options, entry, "acknowledged", undefined, true);
 }
 
+/**
+ * 建项Provider写不经Bridge或Workflow Runtime。Application先以Outbox稳定身份认领同一
+ * Operation，再在Product事务外调用Workspace/Plane；这里完成后只结算Outbox投影。
+ * 进程在任意Provider边界崩溃时条目保持pending，下一轮同一claim重放会先查询对账。
+ */
+async function dispatchProjectBootstrap(
+  options: OutboxDispatcherOptions,
+  snapshot: Snapshot,
+  entry: ProjectBootstrapEntry,
+  dispatcherInstanceId: string,
+): Promise<void> {
+  const current = snapshot.entities.projectBootstrapOperations[entry.projectBootstrapOperationId];
+  if (current?.status === "ready") {
+    await markStatus(options, entry, "acknowledged", undefined, true);
+    return;
+  }
+  let operation;
+  try {
+    const executionInvocationId = dispatchCommandId(
+      "invoke-project-bootstrap",
+      entry.outboxId,
+      dispatcherInstanceId,
+      randomUUID(),
+    );
+    operation = await executeProjectBootstrapOperationFromOutbox(options.deps, {
+      // Claim属于一次Worker调用，而不是Dispatcher实例。相同Dispatcher的新tick必须
+      // 形成新attempt，才能在旧lease过期后接管而不是永久重放旧Receipt。
+      commandId: dispatchCommandId(
+        "claim-project-bootstrap",
+        entry.outboxId,
+        dispatcherInstanceId,
+        executionInvocationId,
+      ),
+      executionInvocationId,
+      outboxId: entry.outboxId,
+      projectBootstrapOperationId: entry.projectBootstrapOperationId,
+      expectedOperationRevision: entry.expectedOperationRevision,
+      mode: entry.mode,
+      // 现有Workspace命令和Plane模块序列均有独立超时，总上界小于10分钟。
+      // 若未来Provider上界增长，必须同步调整Application上限和合同测试。
+      leaseDurationMs: MAX_PROJECT_BOOTSTRAP_EXECUTION_LEASE_MS,
+    });
+  } catch (error) {
+    if (error instanceof ProjectBootstrapExecutionLeaseBusyError) return;
+    // 另一实例可能在本轮旧snapshot之后已经收口。只对确定的版本竞争
+    // 重读产品事实；终态可安全ack，其他异常仍失败关闭。
+    if (error instanceof ApplicationError && error.code === "revision_conflict") {
+      const latest = await options.deps.store.read({ kind: "committedSnapshot" });
+      const settled =
+        latest.snapshot.entities.projectBootstrapOperations[entry.projectBootstrapOperationId];
+      if (
+        settled !== undefined &&
+        settled.status !== "queued" &&
+        settled.status !== "dispatching"
+      ) {
+        await markStatus(options, entry, "acknowledged", undefined, true);
+        return;
+      }
+    }
+    throw error;
+  }
+  if (operation.status === "dispatching" || operation.status === "queued") {
+    throw new Error("Project Bootstrap后台执行返回了非收敛状态");
+  }
+  await markStatus(options, entry, "acknowledged", undefined, true);
+}
+
 async function settleImportDispatchUnknown(
   options: OutboxDispatcherOptions,
   snapshot: Snapshot,
@@ -1106,11 +1181,13 @@ async function superviseAcknowledgedWorkflow(
  */
 export class OutboxDispatcher {
   private readonly options: OutboxDispatcherOptions;
+  private readonly dispatcherInstanceId: string;
   private timer: ReturnType<typeof setInterval> | undefined;
   private running = false;
 
   constructor(options: OutboxDispatcherOptions) {
     this.options = options;
+    this.dispatcherInstanceId = options.dispatcherInstanceId ?? randomUUID();
   }
 
   start(): void {
@@ -1150,7 +1227,13 @@ export class OutboxDispatcher {
           await dispatchMemoryWrite(this.options, snapshot, entry);
         else if (entry.kind === "project_intake_start" || entry.kind === "project_intake_resume")
           await dispatchProjectIntake(this.options, entry);
-        else await dispatchProjectAdvancement(this.options, entry);
+        else if (
+          entry.kind === "project_advancement_start" ||
+          entry.kind === "project_advancement_resume"
+        )
+          await dispatchProjectAdvancement(this.options, entry);
+        else
+          await dispatchProjectBootstrap(this.options, snapshot, entry, this.dispatcherInstanceId);
       }
       const unknownEntries = Object.values(snapshot.outbox)
         .filter((entry) => entry.status === "outcome_unknown")
@@ -1158,6 +1241,9 @@ export class OutboxDispatcher {
       for (const entry of unknownEntries) {
         if (entry.kind === "workflow_start" || entry.kind === "workflow_resume") {
           await reconcileUnknown(this.options, snapshot, entry);
+        } else if (entry.kind === "project_bootstrap_execute") {
+          // 本kind由Application直接拥有Provider对账，不使用Runtime unknown状态。
+          await markStatus(this.options, entry, "pending");
         } else if (
           entry.kind === "memory_import_start" ||
           entry.kind === "memory_import_reconcile"

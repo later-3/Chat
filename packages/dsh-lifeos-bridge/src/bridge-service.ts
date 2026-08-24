@@ -40,6 +40,7 @@ import { ChatProductApiError, ChatProductClient } from "./chat-client.ts";
 import { sha256, stableCommandId } from "./adapter.ts";
 import {
   AtomicBridgeStateStore,
+  isProjectBootstrapWorkflowSelection,
   type PendingDecision,
   type PendingNoteDecision,
   type PendingPromptReviewDecision,
@@ -57,6 +58,7 @@ import {
 import { exactSectionsFromJson, lastDshUserInputMapping } from "./dsh-bridge-readable.ts";
 import { bridgeChatSubmitPayload } from "./bridge-chat-dispatch.ts";
 import { productSessionIdSchema } from "@chat/contracts/public";
+import { resolveProjectBootstrapLifecycleTerminalStatus } from "./project-bootstrap-lifecycle.ts";
 
 export class BridgeRequestError extends Error {
   constructor(
@@ -335,12 +337,12 @@ export class LifeosBridgeService {
       ...preset.promptSelection,
       ...(workspace === null ? {} : { workspaceRootId: workspace.rootId }),
     };
-    await this.state.selectWorkflowForSession(
+    await this.state.initializeProjectBootstrapSession(
       dshSessionId,
       createCommandId,
       preset.workflowSelection,
+      promptSelection,
     );
-    await this.state.selectPrompt(dshSessionId, createCommandId, promptSelection);
     return this.projection(dshSessionId, signal);
   }
 
@@ -562,21 +564,38 @@ export class LifeosBridgeService {
   }
 
   async projection(dshSessionId: string, signal?: AbortSignal): Promise<LifeosProjection> {
-    const binding = await this.state.readSession(dshSessionId);
-    const workflowSelection = await this.state.readWorkflowSelection(dshSessionId);
-    const dshSendReviewEnabled = await this.state.readDshSendReviewEnabled(dshSessionId);
+    let binding = await this.state.readSession(dshSessionId);
+    const projectBootstrap =
+      binding?.chatSessionId === undefined
+        ? null
+        : await this.currentProjectBootstrap(binding.chatSessionId, signal);
+    if (binding?.projectBootstrapLifecycle?.status === "active") {
+      const terminalStatus = await resolveProjectBootstrapLifecycleTerminalStatus({
+        binding,
+        projectBootstrap,
+        readRun: (productRunId) => this.chat.getRun(productRunId, signal),
+      });
+      if (terminalStatus !== undefined) {
+        await this.state.completeProjectBootstrapLifecycle(
+          dshSessionId,
+          stableCommandId("create-session", dshSessionId),
+          terminalStatus,
+        );
+        binding = await this.state.readSession(dshSessionId);
+      }
+    }
+    const [workflowSelection, newSessionWorkflowPreference, dshSendReviewEnabled] =
+      await Promise.all([
+        this.state.readWorkflowSelection(dshSessionId),
+        this.state.readNewSessionWorkflowPreference(),
+        this.state.readDshSendReviewEnabled(dshSessionId),
+      ]);
     const dshSendReview = this.dshSendReview?.current(dshSessionId) ?? null;
     const bridgeDispatchReviewEnabled =
       await this.state.readBridgeDispatchReviewEnabled(dshSessionId);
     const bridgeDispatchReview = this.bridgeDispatchReview?.current(dshSessionId) ?? null;
     const executionTracesPromise = this.executionTraces(dshSessionId, binding, signal);
-    const projectBootstrapPromise =
-      binding?.chatSessionId === undefined
-        ? Promise.resolve(null)
-        : this.currentProjectBootstrap(binding.chatSessionId, signal);
-    const projectBootstrapTargetsPromise = projectBootstrapPromise.then((projectBootstrap) =>
-      this.projectBootstrapTargets(projectBootstrap),
-    );
+    const projectBootstrapTargetsPromise = this.projectBootstrapTargets(projectBootstrap);
     const current =
       binding?.currentRequestKey === undefined
         ? undefined
@@ -597,16 +616,17 @@ export class LifeosBridgeService {
         dshSendReview,
         bridgeDispatchReviewEnabled,
         bridgeDispatchReview,
-        projectBootstrap: await projectBootstrapPromise,
+        projectBootstrap,
         projectBootstrapTargets: await projectBootstrapTargetsPromise,
         workflowSelection,
+        sessionWorkflowSelection: workflowSelection,
+        newSessionWorkflowPreference,
         executionTraces: await executionTracesPromise,
       };
     }
-    const [run, executionTraces, projectBootstrap, projectBootstrapTargets] = await Promise.all([
+    const [run, executionTraces, projectBootstrapTargets] = await Promise.all([
       this.chat.getRun(current.productRunId, signal),
       executionTracesPromise,
-      projectBootstrapPromise,
       projectBootstrapTargetsPromise,
     ]);
     let plan: ChatPlan | null = null;
@@ -657,6 +677,8 @@ export class LifeosBridgeService {
       projectBootstrap,
       projectBootstrapTargets,
       workflowSelection,
+      sessionWorkflowSelection: workflowSelection,
+      newSessionWorkflowPreference,
       executionTraces,
     };
   }
@@ -695,8 +717,9 @@ export class LifeosBridgeService {
           "当前建项操作不需要重试",
         );
       }
-      await this.chat.executeProjectBootstrap(
+      await this.chat.requestProjectBootstrapRetry(
         current.operation.projectBootstrapOperationId,
+        current.operation.revision,
         stableCommandId(
           "project-bootstrap-reconcile",
           dshSessionId,
@@ -716,7 +739,7 @@ export class LifeosBridgeService {
       request.kind,
       sha256(request.explanation ?? ""),
     );
-    const decided = await this.chat.decideProjectBootstrap(
+    await this.chat.decideProjectBootstrap(
       {
         projectBootstrapCandidateId: request.binding.projectBootstrapCandidateId,
         revision: request.binding.candidateRevision,
@@ -727,20 +750,12 @@ export class LifeosBridgeService {
       request.explanation,
       signal,
     );
-    if (request.kind === "confirm" && decided.operation !== undefined) {
-      const operation = decided.operation;
-      if (operation.status !== "ready") {
-        await this.chat.executeProjectBootstrap(
-          operation.projectBootstrapOperationId,
-          stableCommandId(
-            "project-bootstrap-execute",
-            dshSessionId,
-            operation.projectBootstrapOperationId,
-            String(operation.revision),
-          ),
-          signal,
-        );
-      }
+    if (request.kind === "reject") {
+      await this.state.completeProjectBootstrapLifecycle(
+        dshSessionId,
+        stableCommandId("create-session", dshSessionId),
+        "rejected",
+      );
     }
     return this.projection(dshSessionId, signal);
   }
@@ -845,10 +860,30 @@ export class LifeosBridgeService {
   async selectWorkflow(
     dshSessionId: string,
     selection: WorkflowSelection | null,
+    scope: "session" | "new_sessions" | "session_and_new_sessions" = "session",
     signal?: AbortSignal,
   ): Promise<LifeosProjection> {
     const createCommandId = stableCommandId("create-session", dshSessionId);
-    await this.state.selectWorkflow(dshSessionId, createCommandId, selection);
+    if (selection !== null && isProjectBootstrapWorkflowSelection(selection)) {
+      throw new BridgeRequestError(
+        409,
+        "lifeos_project_bootstrap_dedicated_entry_required",
+        "project_bootstrap只能通过创建项目专用入口启用",
+      );
+    }
+    const binding = await this.state.readSession(dshSessionId);
+    if (
+      binding?.projectBootstrapLifecycle?.status === "active" &&
+      (scope === "session" || scope === "session_and_new_sessions")
+    ) {
+      throw new BridgeRequestError(
+        409,
+        "lifeos_project_bootstrap_workflow_frozen",
+        "项目初始化完成、拒绝或确定失败前不能切换当前会话Workflow",
+      );
+    }
+    await this.state.selectWorkflow(dshSessionId, createCommandId, selection, scope);
+    if (scope === "new_sessions") return await this.projection(dshSessionId, signal);
     const storedPrompt = await this.state.readPromptSelection(dshSessionId);
     if (storedPrompt?.schemaVersion === "prompt-turn-selection-input.v2") {
       const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;

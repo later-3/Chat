@@ -24,6 +24,13 @@ export const DSH_PROMPT_THREE_GATES_E2E_PORTS = Object.freeze({
   piExecutor: 45_215,
 });
 
+/** 不加载模型或真实Plane；只验证真实DSH Host/Client到耐久建项Outbox的纵向。 */
+export const DSH_PROJECT_BOOTSTRAP_E2E_PORTS = Object.freeze({
+  web: 45_410,
+  api: 45_411,
+  webInternal: 45_414,
+});
+
 export const DSH_REAL_E2E_PORTS = Object.freeze({
   web: 45_310,
   api: 45_311,
@@ -40,6 +47,7 @@ export function resolveDshRealDataRoot(root, environment = process.env) {
   const allowed = new Set([
     resolve(repoRoot, ".data/e2e/dsh-real"),
     resolve(repoRoot, ".data/e2e/dsh-prompt-three-gates-real"),
+    resolve(repoRoot, ".data/e2e/dsh-project-bootstrap-real"),
   ]);
   if (!allowed.has(dataRoot)) {
     throw new Error("CHAT_DSH_E2E_DATA_ROOT只能指向受管的DSH E2E数据目录");

@@ -253,7 +253,7 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
   }
   const receiptShapes: Record<string, readonly string[]> = {
     CreateProductSession: ["sessionId"],
-    // SubmitUserMessage在下方按Run保存的runner family区分历史/正式configurable形状。
+    // Message提交在下方按Run保存的runner family区分历史/正式configurable形状。
     CompilePlanningInput: ["attemptId", "productRunId"],
     PublishPlanForReview: ["planRevisionId", "approvalRequestId", "productRunId"],
     BeginRunAttempt: ["attemptId"],
@@ -271,7 +271,8 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
     PersistDirectAgentCandidate: ["directAgentCandidateId"],
     CommitDirectAgentResult: ["directAgentCandidateId", "messageId", "productRunId"],
     PrepareProjectBootstrapCandidate: ["projectBootstrapCandidateId"],
-    ClaimProjectBootstrapOperation: ["projectBootstrapOperationId"],
+    RequestProjectBootstrapOperationRetry: ["projectBootstrapOperationId", "outboxId"],
+    RenewProjectBootstrapExecutionLease: [],
     CommitRejectedRun: ["productRunId"],
     ExpireApproval: ["status"],
     CommitRunFailure: ["productRunId"],
@@ -364,7 +365,8 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
     }
     const receiptRun = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
     const expectedKeys =
-      receipt.commandType === "SubmitUserMessage"
+      receipt.commandType === "SubmitUserMessage" ||
+      receipt.commandType === "SubmitProjectBootstrapUserMessage"
         ? receiptRun?.runnerFamily === "legacy-planning.v1"
           ? ["messageId", "productRunId"]
           : ["messageId", "productRunId", "workflowRunSpecId"]
@@ -375,45 +377,58 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
           : receipt.commandType === "DecideProjectBootstrapCandidate"
             ? receipt.resultRefs["projectBootstrapOperationId"] === undefined
               ? ["projectBootstrapCandidateId", "projectBootstrapDecisionId"]
-              : [
-                  "projectBootstrapCandidateId",
-                  "projectBootstrapDecisionId",
-                  "projectBootstrapOperationId",
-                ]
-            : receipt.commandType === "FinalizeProjectBootstrapOperation"
-              ? receipt.resultRefs["projectWorkspaceBindingId"] === undefined
+              : receipt.resultRefs["outboxId"] === undefined
+                ? [
+                    "projectBootstrapCandidateId",
+                    "projectBootstrapDecisionId",
+                    "projectBootstrapOperationId",
+                  ]
+                : [
+                    "outboxId",
+                    "projectBootstrapCandidateId",
+                    "projectBootstrapDecisionId",
+                    "projectBootstrapOperationId",
+                  ]
+            : receipt.commandType === "ClaimProjectBootstrapOperation"
+              ? receipt.resultRefs["outboxId"] === undefined
                 ? ["projectBootstrapOperationId"]
-                : ["projectBootstrapOperationId", "projectWorkspaceBindingId"]
-              : receipt.commandType === "DecideProjectCandidate"
-                ? receipt.resultRefs["projectId"] === undefined
-                  ? ["projectCandidateId"]
-                  : ["projectCandidateId", "projectId"]
-                : receipt.commandType === "PreparePlanningMemoryContext"
-                  ? receipt.resultRefs["planningMemorySelectionId"] === undefined
-                    ? ["contextStatus", "productRunId", "workflowNodeRunId"]
-                    : [
-                        "contextStatus",
-                        "planningMemorySelectionId",
-                        "productRunId",
-                        "workflowNodeRunId",
-                      ]
-                  : receipt.commandType === "PreparePlanningProjectContext"
-                    ? receipt.resultRefs["planningProjectContextId"] === undefined
-                      ? ["productRunId", "workflowNodeRunId"]
-                      : ["planningProjectContextId", "productRunId", "workflowNodeRunId"]
-                    : receipt.commandType === "PreparePlanningRulesContext"
-                      ? receipt.resultRefs["ruleSelectionId"] === undefined
+                : receipt.resultRefs["fencingToken"] === undefined
+                  ? ["executionMode", "outboxId", "projectBootstrapOperationId"]
+                  : ["executionMode", "fencingToken", "outboxId", "projectBootstrapOperationId"]
+              : receipt.commandType === "FinalizeProjectBootstrapOperation"
+                ? receipt.resultRefs["projectWorkspaceBindingId"] === undefined
+                  ? ["projectBootstrapOperationId"]
+                  : ["projectBootstrapOperationId", "projectWorkspaceBindingId"]
+                : receipt.commandType === "DecideProjectCandidate"
+                  ? receipt.resultRefs["projectId"] === undefined
+                    ? ["projectCandidateId"]
+                    : ["projectCandidateId", "projectId"]
+                  : receipt.commandType === "PreparePlanningMemoryContext"
+                    ? receipt.resultRefs["planningMemorySelectionId"] === undefined
+                      ? ["contextStatus", "productRunId", "workflowNodeRunId"]
+                      : [
+                          "contextStatus",
+                          "planningMemorySelectionId",
+                          "productRunId",
+                          "workflowNodeRunId",
+                        ]
+                    : receipt.commandType === "PreparePlanningProjectContext"
+                      ? receipt.resultRefs["planningProjectContextId"] === undefined
                         ? ["productRunId", "workflowNodeRunId"]
-                        : ["productRunId", "ruleSelectionId", "workflowNodeRunId"]
-                      : receipt.commandType === "PublishNoteCandidate"
-                        ? receipt.resultRefs["workflowPolicyResolutionId"] === undefined
-                          ? ["noteCandidateId", "productRunId"]
-                          : ["noteCandidateId", "productRunId", "workflowPolicyResolutionId"]
-                        : receipt.commandType === "FreezeWorkflowMemoryContext"
-                          ? receipt.resultRefs["workflowMemoryContextId"] === undefined
-                            ? ["productRunId"]
-                            : ["productRunId", "workflowMemoryContextId"]
-                          : receiptShapes[receipt.commandType];
+                        : ["planningProjectContextId", "productRunId", "workflowNodeRunId"]
+                      : receipt.commandType === "PreparePlanningRulesContext"
+                        ? receipt.resultRefs["ruleSelectionId"] === undefined
+                          ? ["productRunId", "workflowNodeRunId"]
+                          : ["productRunId", "ruleSelectionId", "workflowNodeRunId"]
+                        : receipt.commandType === "PublishNoteCandidate"
+                          ? receipt.resultRefs["workflowPolicyResolutionId"] === undefined
+                            ? ["noteCandidateId", "productRunId"]
+                            : ["noteCandidateId", "productRunId", "workflowPolicyResolutionId"]
+                          : receipt.commandType === "FreezeWorkflowMemoryContext"
+                            ? receipt.resultRefs["workflowMemoryContextId"] === undefined
+                              ? ["productRunId"]
+                              : ["productRunId", "workflowMemoryContextId"]
+                            : receiptShapes[receipt.commandType];
     if (expectedKeys === undefined) fail(`receipt ${receipt.commandId} commandType未知`);
     const actualKeys = Object.keys(receipt.resultRefs).sort();
     if (JSON.stringify(actualKeys) !== JSON.stringify([...expectedKeys].sort())) {
@@ -669,21 +684,36 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
                                                                                                                           value ===
                                                                                                                             "ready"
                                                                                                                         : key ===
-                                                                                                                            "messageSha256"
-                                                                                                                          ? /^[a-f0-9]{64}$/.test(
+                                                                                                                            "fencingToken"
+                                                                                                                          ? /^\d+$/u.test(
                                                                                                                               value,
-                                                                                                                            )
+                                                                                                                            ) &&
+                                                                                                                            Number(
+                                                                                                                              value,
+                                                                                                                            ) >
+                                                                                                                              0
                                                                                                                           : key ===
-                                                                                                                              "approvalExpired"
+                                                                                                                              "executionMode"
                                                                                                                             ? value ===
-                                                                                                                              "true"
+                                                                                                                                "execute" ||
+                                                                                                                              value ===
+                                                                                                                                "reconcile"
                                                                                                                             : key ===
-                                                                                                                                "status"
-                                                                                                                              ? value ===
-                                                                                                                                  "expired" ||
-                                                                                                                                value ===
-                                                                                                                                  "already_decided"
-                                                                                                                              : false;
+                                                                                                                                "messageSha256"
+                                                                                                                              ? /^[a-f0-9]{64}$/.test(
+                                                                                                                                  value,
+                                                                                                                                )
+                                                                                                                              : key ===
+                                                                                                                                  "approvalExpired"
+                                                                                                                                ? value ===
+                                                                                                                                  "true"
+                                                                                                                                : key ===
+                                                                                                                                    "status"
+                                                                                                                                  ? value ===
+                                                                                                                                      "expired" ||
+                                                                                                                                    value ===
+                                                                                                                                      "already_decided"
+                                                                                                                                  : false;
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
     }
     const receiptDefinitionId = receipt.resultRefs["workflowDefinitionId"];
@@ -694,7 +724,10 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
         fail(`receipt ${receipt.commandId} Definition与Revision交叉绑定不一致`);
       }
     }
-    if (receipt.commandType === "SubmitUserMessage") {
+    if (
+      receipt.commandType === "SubmitUserMessage" ||
+      receipt.commandType === "SubmitProjectBootstrapUserMessage"
+    ) {
       const message = entities.messages[receipt.resultRefs["messageId"] ?? ""];
       const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
       if (
@@ -858,7 +891,33 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
       }
     }
   }
+  const leasedProjectBootstrapOperations = new Set<string>();
   for (const entry of Object.values(snapshot.outbox)) {
+    if (entry.kind === "project_bootstrap_execute") {
+      const operation = entities.projectBootstrapOperations[entry.projectBootstrapOperationId];
+      if (operation === undefined || entry.expectedOperationRevision > operation.revision) {
+        fail(`outbox ${entry.outboxId} Project Bootstrap绑定不完整`);
+      }
+      if (entry.executionLease !== undefined) {
+        if (
+          operation?.status !== "dispatching" ||
+          !["pending", "dispatched", "outcome_unknown"].includes(entry.status)
+        ) {
+          fail(`outbox ${entry.outboxId} Project Bootstrap lease与执行状态不一致`);
+        }
+        if (leasedProjectBootstrapOperations.has(entry.projectBootstrapOperationId)) {
+          fail(`operation ${entry.projectBootstrapOperationId} 存在多个Project Bootstrap lease`);
+        }
+        if (
+          entry.executionLease.fencingToken !== undefined &&
+          entry.executionLease.fencingToken !== operation?.revision
+        ) {
+          fail(`outbox ${entry.outboxId} Project Bootstrap fencing token与Operation不一致`);
+        }
+        leasedProjectBootstrapOperations.add(entry.projectBootstrapOperationId);
+      }
+      continue;
+    }
     if (entry.kind === "project_intake_start" || entry.kind === "project_intake_resume") {
       const candidate = entities.projectCandidates[entry.projectCandidateId];
       if (

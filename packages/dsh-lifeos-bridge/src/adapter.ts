@@ -14,14 +14,23 @@ import type {
   Message,
   StreamChunk,
 } from "@deepseek-ai/dsh-llm";
-import { ChatProductApiError, ChatProductClient } from "./chat-client.ts";
+import {
+  assertExistingSessionMessageResponseBinding,
+  assertFirstMessageResponseBinding,
+  ChatProductApiError,
+  ChatProductClient,
+} from "./chat-client.ts";
 import {
   dshAdapterRequestCaptureSchema,
   dshSessionIdSchema,
   type ChatRun,
   type DshAdapterRequestCapture,
 } from "./contracts.ts";
-import { AtomicBridgeStateStore, type RequestBinding } from "./state-store.ts";
+import {
+  AtomicBridgeStateStore,
+  isProjectBootstrapWorkflowSelection,
+  type RequestBinding,
+} from "./state-store.ts";
 import {
   promptSelectionForWorkspace,
   type PromptWorkspaceResolver,
@@ -31,6 +40,7 @@ import type { BridgeDispatchReviewCoordinator } from "./bridge-dispatch-review.t
 import { prepareBridgeChatDispatch } from "./bridge-chat-dispatch.ts";
 import { exactSectionsFromJson, lastDshUserInputMapping } from "./dsh-bridge-readable.ts";
 import { DSH_BRIDGE_TRACE_EVENTS, type DshBridgeTraceEventInput } from "./debug-trace.ts";
+import { resolveProjectBootstrapLifecycleTerminalStatus } from "./project-bootstrap-lifecycle.ts";
 
 export const LIFEOS_PROVIDER = "lifeos";
 export const LIFEOS_MODEL = "workflow";
@@ -140,6 +150,10 @@ interface UserPrompt {
   text: string;
   textSha256: string;
   requestKey: string;
+}
+
+interface PreparedRequestBinding extends RequestBinding {
+  readonly submissionTarget: "first_message" | "existing_session";
 }
 
 function textOf(message: Message): string {
@@ -310,6 +324,23 @@ function asLlmError(error: unknown): LlmError {
   });
 }
 
+const DEFINITELY_UNCOMMITTED_MESSAGE_PROBLEM_CODES = new Set([
+  "command_id_reused",
+  "forbidden",
+  "not_found",
+  "revision_conflict",
+  "validation_failed",
+]);
+
+function isDefinitelyUncommittedMessageError(error: unknown): error is ChatProductApiError {
+  return (
+    error instanceof ChatProductApiError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    DEFINITELY_UNCOMMITTED_MESSAGE_PROBLEM_CODES.has(error.code)
+  );
+}
+
 /**
  * Adapter route whose model call is a Chat Product Run. Product Store仍拥有
  * Message/Run终态；DSH只接收已提交的Assistant Message，Plan和审批仍是Chat资源。
@@ -366,19 +397,51 @@ export class LifeosLlmAdapter extends LlmAdapter {
       return;
     }
 
+    let pendingProductWrite:
+      | {
+          readonly dshSessionId: string;
+          readonly requestKey: string;
+          readonly projectBootstrapSubmission: boolean;
+        }
+      | undefined;
     try {
       const dshSessionId = requireSessionId(options);
       const prompt = lastUserPrompt(options.messages);
       const diagnosticTraceId = `trd_${prompt.requestKey}`;
-      const request = await this.ensureRequest(dshSessionId, prompt);
+      // State Store的串行事务先原子检查/预留Request。不同B若遇到pending A，必须
+      // 在任何Chat Query或Command之前失败，且回调抛错不会产生一次状态写入。
+      await this.ensureRequest(dshSessionId, prompt);
+      await this.completeTerminalProjectBootstrapLifecycle(dshSessionId, prompt.requestKey, signal);
       const binding = await this.state.readSession(dshSessionId);
+      const request = binding?.requests[prompt.requestKey];
+      if (request === undefined) {
+        throw new Error("lifeos bridge request disappeared after lifecycle recovery");
+      }
+      if (request.submissionStatus === "definitely_uncommitted") {
+        throw new LlmError(
+          "本次消息已确认未提交，请发送一条新消息继续",
+          "LIFEOS_MESSAGE_DEFINITELY_UNCOMMITTED",
+        );
+      }
+      const projectBootstrapSubmission =
+        binding?.projectBootstrapLifecycle?.status === "active" &&
+        isProjectBootstrapWorkflowSelection(request.workflowSelection);
+      const submissionProductSessionId =
+        request.submissionTarget === "first_message" ? undefined : binding?.chatSessionId;
+      if (
+        request.submissionTarget === "existing_session" &&
+        submissionProductSessionId === undefined
+      ) {
+        throw new Error("Bridge existing-session request is missing its Product Session binding");
+      }
       const dispatchPlan = prepareBridgeChatDispatch({
         requestKey: prompt.requestKey,
-        ...(binding?.chatSessionId === undefined
+        ...(submissionProductSessionId === undefined
           ? {}
-          : { productSessionId: binding.chatSessionId }),
+          : { productSessionId: submissionProductSessionId }),
         messageCommandId: request.messageCommandId,
         text: prompt.text,
+        ...(projectBootstrapSubmission ? { projectBootstrap: true } : {}),
         ...(request.workflowSelection === undefined
           ? {}
           : { workflowSelection: request.workflowSelection }),
@@ -388,7 +451,8 @@ export class LifeosLlmAdapter extends LlmAdapter {
       });
 
       if (
-        request.productRunId === undefined &&
+        (request.submissionStatus === "prepared" ||
+          request.submissionStatus === "outcome_unknown") &&
         (this.dshSendReview !== undefined || this.dshTrace !== undefined)
       ) {
         const adapterRequest = captureDshAdapterRequest(options);
@@ -412,6 +476,14 @@ export class LifeosLlmAdapter extends LlmAdapter {
             ...(signal === undefined ? {} : { signal }),
           });
           if (decision === "reject") {
+            if (request.submissionStatus === "prepared") {
+              await this.state.markRequestDefinitelyUncommitted(
+                dshSessionId,
+                stableCommandId("create-session", dshSessionId),
+                prompt.requestKey,
+                { reason: "local_review_rejected" },
+              );
+            }
             throw new LlmError("用户取消了本次DSH发送", "LIFEOS_DSH_SEND_REJECTED");
           }
         }
@@ -444,13 +516,25 @@ export class LifeosLlmAdapter extends LlmAdapter {
           : { productSessionId: productSessionIdSchema.parse(binding.chatSessionId) }),
       });
 
-      if (request.productRunId === undefined && this.bridgeDispatchReview !== undefined) {
+      if (
+        (request.submissionStatus === "prepared" ||
+          request.submissionStatus === "outcome_unknown") &&
+        this.bridgeDispatchReview !== undefined
+      ) {
         const decision = await this.bridgeDispatchReview.waitForDecision({
           dshSessionId,
           plan: dispatchPlan,
           ...(signal === undefined ? {} : { signal }),
         });
         if (decision === "reject") {
+          if (request.submissionStatus === "prepared") {
+            await this.state.markRequestDefinitelyUncommitted(
+              dshSessionId,
+              stableCommandId("create-session", dshSessionId),
+              prompt.requestKey,
+              { reason: "local_review_rejected" },
+            );
+          }
           throw new LlmError(
             "用户取消了Bridge到Chat后端的本次发送",
             "LIFEOS_BRIDGE_DISPATCH_REJECTED",
@@ -461,31 +545,51 @@ export class LifeosLlmAdapter extends LlmAdapter {
       let chatSessionId = binding?.chatSessionId;
       let run: ChatRun;
       if (request.productRunId === undefined) {
-        let submitted;
-        if (chatSessionId === undefined) {
+        // 这是唯一Product HTTP写边界：先把prepared原子提升为outcome_unknown。
+        // 进程在此后任一点退出都只能用同一Command恢复，不能让另一条DSH消息越过。
+        await this.state.markRequestOutcomeUnknown(
+          dshSessionId,
+          stableCommandId("create-session", dshSessionId),
+          prompt.requestKey,
+        );
+        pendingProductWrite = {
+          dshSessionId,
+          requestKey: prompt.requestKey,
+          projectBootstrapSubmission,
+        };
+        if (request.submissionTarget === "first_message") {
           const started = await this.chat.submitFirstMessageFromDispatch(
             dispatchPlan.submitMessage,
             signal,
           );
-          if (started.session.sessionId !== started.message.sessionId) {
-            throw new Error("Chat first-message response Session/Message binding mismatch");
-          }
-          chatSessionId = await this.rememberChatSession(dshSessionId, started.session.sessionId);
-          submitted = started;
+          assertFirstMessageResponseBinding(started);
+          chatSessionId = await this.rememberFirstMessageSubmission(
+            dshSessionId,
+            prompt.requestKey,
+            started.session.sessionId,
+            started.run.productRunId,
+            started.message.messageId,
+          );
+          run = started.run;
         } else {
-          submitted = await this.chat.submitMessageFromDispatch(
+          if (chatSessionId === undefined) {
+            throw new Error("Bridge existing-session request lost its Product Session binding");
+          }
+          const submitted = await this.chat.submitMessageFromDispatch(
             chatSessionId,
             dispatchPlan.submitMessage,
             signal,
           );
+          assertExistingSessionMessageResponseBinding(chatSessionId, submitted);
+          await this.rememberRun(
+            dshSessionId,
+            prompt.requestKey,
+            submitted.run.productRunId,
+            submitted.message.messageId,
+          );
+          run = submitted.run;
         }
-        await this.rememberRun(
-          dshSessionId,
-          prompt.requestKey,
-          submitted.run.productRunId,
-          submitted.message.messageId,
-        );
-        run = submitted.run;
+        pendingProductWrite = undefined;
       } else {
         if (chatSessionId === undefined) {
           throw new Error("Bridge Product Run binding is missing its Chat Product Session");
@@ -522,13 +626,35 @@ export class LifeosLlmAdapter extends LlmAdapter {
       const text = final.content.text;
       yield* textStream(text);
     } catch (error) {
+      if (pendingProductWrite !== undefined && isDefinitelyUncommittedMessageError(error)) {
+        // 白名单4xx Problem证明本次Message没有形成可按同Command恢复的响应未知结果。
+        // Request终态和bootstrap lifecycle退出在同一次Bridge原子写完成；transport、
+        // 5xx与2xx响应合同损坏均可能发生在提交后，必须继续保留outcome_unknown。
+        await this.state.markRequestDefinitelyUncommitted(
+          pendingProductWrite.dshSessionId,
+          stableCommandId("create-session", pendingProductWrite.dshSessionId),
+          pendingProductWrite.requestKey,
+          {
+            reason: "product_definitely_uncommitted",
+            failProjectBootstrapLifecycle: pendingProductWrite.projectBootstrapSubmission,
+          },
+        );
+      }
       throw asLlmError(error);
     }
   }
 
-  private async rememberChatSession(
+  /**
+   * 首轮Product响应中的Session、User Message与Run属于同一命令结果，必须在一次
+   * Bridge原子写中绑定。否则进程若只保存Session便退出，同一Command重放会从
+   * `/api/messages`漂移到既有Session路径并改变Product Receipt hash。
+   */
+  private async rememberFirstMessageSubmission(
     dshSessionId: string,
+    requestKey: string,
     productSessionId: string,
+    productRunId: string,
+    productUserMessageId: string,
   ): Promise<string> {
     // v11持久字段仍叫createSessionCommandId，但它只是Bridge本地映射的CAS身份，
     // 不再被用于调用Chat创建Session。后续格式迁移再单独改名，避免破坏已有映射。
@@ -539,34 +665,98 @@ export class LifeosLlmAdapter extends LlmAdapter {
       if (binding.chatSessionId !== undefined && binding.chatSessionId !== productSessionId) {
         throw new Error(`lifeos bridge observed two Chat sessions for DSH session ${dshSessionId}`);
       }
+      const request = binding.requests[requestKey];
+      if (request === undefined) {
+        throw new Error("lifeos bridge request disappeared before first-message binding");
+      }
+      this.bindRun(request, productRunId, productUserMessageId);
       binding.chatSessionId = productSessionId;
       return productSessionId;
     });
   }
 
-  private async ensureRequest(dshSessionId: string, prompt: UserPrompt): Promise<RequestBinding> {
+  /**
+   * 页面轮询不是正确性的前提。下一次普通发送冻结Request之前直接查询Product事实，
+   * 确保ready/rejected/确定失败的专用能力已经恢复到入口时冻结的普通Workflow。
+   */
+  private async completeTerminalProjectBootstrapLifecycle(
+    dshSessionId: string,
+    preparedRequestKey: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const binding = await this.state.readSession(dshSessionId);
+    if (
+      binding?.projectBootstrapLifecycle?.status !== "active" ||
+      binding.chatSessionId === undefined
+    ) {
+      return;
+    }
+    const current = await this.chat.getCurrentProjectBootstrap(binding.chatSessionId, signal);
+    const status = await resolveProjectBootstrapLifecycleTerminalStatus({
+      binding,
+      projectBootstrap: current,
+      readRun: (productRunId) => this.chat.getRun(productRunId, signal),
+    });
+    if (status === undefined) return;
+    await this.state.completeProjectBootstrapLifecycle(
+      dshSessionId,
+      stableCommandId("create-session", dshSessionId),
+      status,
+      preparedRequestKey,
+    );
+  }
+
+  private async ensureRequest(
+    dshSessionId: string,
+    prompt: UserPrompt,
+  ): Promise<PreparedRequestBinding> {
     const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;
     return await this.state.mutateSession(
       dshSessionId,
       stableCommandId("create-session", dshSessionId),
       (binding) => {
+        if (
+          isProjectBootstrapWorkflowSelection(binding.sessionWorkflowSelection) &&
+          binding.projectBootstrapLifecycle?.status !== "active"
+        ) {
+          throw new Error("project_bootstrap workflow is missing its dedicated lifecycle");
+        }
         const promptSelection = promptSelectionForWorkspace(binding.promptSelection, workspace);
         binding.promptSelection = promptSelection;
-        const request = (binding.requests[prompt.requestKey] ??= {
-          dshMessageId: prompt.messageId,
-          userTextSha256: prompt.textSha256,
-          messageCommandId: stableCommandId(
-            "submit-message",
-            dshSessionId,
-            prompt.messageId,
-            prompt.textSha256,
-          ),
-          // 首次创建时冻结会话当前的选择草稿；之后用户再改草稿不影响本请求。
-          ...(binding.workflowSelection !== undefined
-            ? { workflowSelection: binding.workflowSelection }
-            : {}),
-          promptSelection,
-        });
+        let request = binding.requests[prompt.requestKey];
+        if (request === undefined) {
+          const pendingRequest = Object.entries(binding.requests).find(
+            ([requestKey, candidate]) =>
+              requestKey !== prompt.requestKey &&
+              (candidate.submissionStatus === "prepared" ||
+                candidate.submissionStatus === "outcome_unknown"),
+          );
+          if (pendingRequest !== undefined) {
+            throw new LlmError(
+              "上一条消息尚未完成提交恢复，请重试原消息后再发送新内容",
+              "LIFEOS_PROJECT_BOOTSTRAP_REQUEST_PENDING",
+            );
+          }
+          request = {
+            dshMessageId: prompt.messageId,
+            userTextSha256: prompt.textSha256,
+            messageCommandId: stableCommandId(
+              "submit-message",
+              dshSessionId,
+              prompt.messageId,
+              prompt.textSha256,
+            ),
+            submissionTarget:
+              binding.chatSessionId === undefined ? "first_message" : "existing_session",
+            submissionStatus: "prepared",
+            // 首次创建时冻结会话当前的选择草稿；之后用户再改草稿不影响本请求。
+            ...(binding.sessionWorkflowSelection !== undefined
+              ? { workflowSelection: binding.sessionWorkflowSelection }
+              : {}),
+            promptSelection,
+          };
+          binding.requests[prompt.requestKey] = request;
+        }
         if (request.userTextSha256 !== prompt.textSha256) {
           throw new Error("lifeos bridge request key collision");
         }
@@ -593,21 +783,33 @@ export class LifeosLlmAdapter extends LlmAdapter {
         const request = binding.requests[requestKey];
         if (request === undefined)
           throw new Error("lifeos bridge request disappeared before Run binding");
-        if (request.productRunId !== undefined && request.productRunId !== productRunId) {
-          throw new Error("lifeos bridge observed two Product Runs for one DSH message");
-        }
-        if (
-          request.productUserMessageId !== undefined &&
-          request.productUserMessageId !== productUserMessageId
-        ) {
-          throw new Error("lifeos bridge observed two Product User Messages for one DSH message");
-        }
-        request.productRunId = productRunId;
-        request.productUserMessageId = productUserMessageId;
-        // 旧v5-v11状态可能仍带有DSH指令快照；新请求不再创建该旁路。
-        delete request.workspaceInstructions;
+        this.bindRun(request, productRunId, productUserMessageId);
       },
     );
+  }
+
+  private bindRun(
+    request: RequestBinding,
+    productRunId: string,
+    productUserMessageId: string,
+  ): void {
+    if (request.submissionStatus !== "outcome_unknown" && request.submissionStatus !== "bound") {
+      throw new Error(`lifeos bridge cannot bind request from ${request.submissionStatus}`);
+    }
+    if (request.productRunId !== undefined && request.productRunId !== productRunId) {
+      throw new Error("lifeos bridge observed two Product Runs for one DSH message");
+    }
+    if (
+      request.productUserMessageId !== undefined &&
+      request.productUserMessageId !== productUserMessageId
+    ) {
+      throw new Error("lifeos bridge observed two Product User Messages for one DSH message");
+    }
+    request.productRunId = productRunId;
+    request.productUserMessageId = productUserMessageId;
+    request.submissionStatus = "bound";
+    // 旧v5-v11状态可能仍带有DSH指令快照；新请求不再创建该旁路。
+    delete request.workspaceInstructions;
   }
 
   private async rememberAssistantMessage(

@@ -11,6 +11,11 @@ export declare const DSH_PROMPT_THREE_GATES_E2E_PORTS: Readonly<{
   webInternal: number;
   piExecutor: number;
 }>;
+export declare const DSH_PROJECT_BOOTSTRAP_E2E_PORTS: Readonly<{
+  web: number;
+  api: number;
+  webInternal: number;
+}>;
 export declare const DSH_REAL_E2E_PORTS: Readonly<{
   web: number;
   api: number;

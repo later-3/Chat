@@ -152,6 +152,7 @@ export class PlaneCeProjectBootstrap implements ProjectManagementBootstrapPort {
     );
     try {
       if (project === undefined) {
+        await input.writeFence.assertCurrent("plane.project.create");
         const response = await this.request(
           `/api/v1/workspaces/${encodeURIComponent(proposal.planeWorkspaceSlug)}/projects/`,
           {
@@ -170,7 +171,7 @@ export class PlaneCeProjectBootstrap implements ProjectManagementBootstrapPort {
         );
         project = planeProjectSchema.parse(response);
       }
-      await this.ensureModules(project.id, input.operationId, proposal);
+      await this.ensureModules(project.id, input.operationId, proposal, input.writeFence);
       return { status: "completed" as const, planeProjectId: project.id };
     } catch (error) {
       if (error instanceof PlaneCeBootstrapError) {
@@ -242,6 +243,7 @@ export class PlaneCeProjectBootstrap implements ProjectManagementBootstrapPort {
     projectId: z.infer<typeof planeCeProjectIdSchema>,
     operationId: string,
     proposal: z.infer<typeof projectBootstrapProposalSchema>,
+    writeFence: Parameters<ProjectManagementBootstrapPort["provision"]>[0]["writeFence"],
   ) {
     const existing = await this.listModules(proposal.planeWorkspaceSlug, projectId);
     for (const [index, name] of proposal.initialModules.entries()) {
@@ -253,6 +255,7 @@ export class PlaneCeProjectBootstrap implements ProjectManagementBootstrapPort {
       ) {
         continue;
       }
+      await writeFence.assertCurrent(`plane.module.create.${String(index + 1)}`);
       const response = await this.request(
         `/api/v1/workspaces/${encodeURIComponent(proposal.planeWorkspaceSlug)}/projects/${projectId}/modules/`,
         {

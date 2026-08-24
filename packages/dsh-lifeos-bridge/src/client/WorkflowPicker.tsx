@@ -25,7 +25,10 @@ import { browserCommandId, requestSameOriginJson } from "./same-origin-json.ts";
 export interface WorkflowPickerInjected {
   hooks: { lifeos: HostObservable<LifeosClientState> };
   loadWorkflows: () => Promise<readonly LifeosWorkflowOption[] | null>;
-  selectWorkflow: (selection: WorkflowSelection | null) => Promise<boolean>;
+  selectWorkflow: (
+    selection: WorkflowSelection | null,
+    scope?: "session" | "new_sessions" | "session_and_new_sessions",
+  ) => Promise<boolean>;
   resolvePromptWorkspace: () => Promise<string | null>;
 }
 
@@ -75,15 +78,16 @@ export function WorkflowPicker({
   >("ready");
   const [agentConfigurationError, setAgentConfigurationError] = useState<string | null>(null);
   const projection = state.projection;
-  const selection = projection?.workflowSelection ?? null;
+  const selection = projection?.sessionWorkflowSelection ?? projection?.workflowSelection ?? null;
+  const newSessionPreference = projection?.newSessionWorkflowPreference ?? null;
   const workflows = state.workflows;
   const locked = input.phase !== "plain" || state.selectingWorkflow;
 
   useEffect(() => {
-    if ((open || projection?.workflowSelection !== null) && workflows === null) {
+    if ((open || selection !== null) && workflows === null) {
       void loadWorkflows();
     }
-  }, [open, projection?.workflowSelection, workflows, loadWorkflows]);
+  }, [open, selection, workflows, loadWorkflows]);
 
   useEffect(() => {
     if (configurationOpen) setDraftConfiguration(selectionConfiguration(selection));
@@ -158,13 +162,16 @@ export function WorkflowPicker({
       return;
     }
     if (
-      await selectWorkflow({
-        workflowDefinitionRevisionId: option.workflowDefinitionRevisionId,
-        definitionSha256: option.definitionSha256,
-        title: option.title,
-        blueprintKey: option.blueprintKey,
-        runConfiguration: EMPTY_RUN_CONFIGURATION,
-      })
+      await selectWorkflow(
+        {
+          workflowDefinitionRevisionId: option.workflowDefinitionRevisionId,
+          definitionSha256: option.definitionSha256,
+          title: option.title,
+          blueprintKey: option.blueprintKey,
+          runConfiguration: EMPTY_RUN_CONFIGURATION,
+        },
+        "session",
+      )
     ) {
       setOpen(false);
     }
@@ -215,7 +222,7 @@ export function WorkflowPicker({
       blueprintKey: selectedOption.blueprintKey,
       runConfiguration: draftConfiguration,
     };
-    if (await selectWorkflow(next)) setConfigurationOpen(false);
+    if (await selectWorkflow(next, "session")) setConfigurationOpen(false);
   };
 
   const saveAgentNode = async (
@@ -254,13 +261,16 @@ export function WorkflowPicker({
       await loadWorkflows();
       const saved = result.workflow;
       if (
-        await selectWorkflow({
-          workflowDefinitionRevisionId: saved.workflowDefinitionRevisionId,
-          definitionSha256: saved.definitionSha256,
-          title: saved.title,
-          blueprintKey: saved.blueprintKey,
-          runConfiguration: EMPTY_RUN_CONFIGURATION,
-        })
+        await selectWorkflow(
+          {
+            workflowDefinitionRevisionId: saved.workflowDefinitionRevisionId,
+            definitionSha256: saved.definitionSha256,
+            title: saved.title,
+            blueprintKey: saved.blueprintKey,
+            runConfiguration: EMPTY_RUN_CONFIGURATION,
+          },
+          "session",
+        )
       ) {
         setConfigurationOpen(false);
       }
@@ -340,6 +350,26 @@ export function WorkflowPicker({
           </button>
         }
       />
+      {selection?.runConfiguration.overrides.some(
+        (override) =>
+          override.kind === "node_config" &&
+          override.field === "capabilityMode" &&
+          override.value === "project_bootstrap",
+      ) === true ? null : (
+        <button
+          type="button"
+          className="lifeos-workflow-config-toggle"
+          data-testid="lifeos-workflow-new-session-default"
+          disabled={locked || JSON.stringify(selection) === JSON.stringify(newSessionPreference)}
+          aria-label="将当前工作流选择设为以后新会话默认"
+          title="只修改以后新建的空白会话，不改变其他已绑定会话"
+          onClick={() => void selectWorkflow(selection, "new_sessions")}
+        >
+          {JSON.stringify(selection) === JSON.stringify(newSessionPreference)
+            ? "新会话默认"
+            : "设为新会话默认"}
+        </button>
+      )}
       {configurable ? (
         <button
           type="button"

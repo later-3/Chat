@@ -1,8 +1,47 @@
 import type {
+  CommandId,
   PlaneCeProjectId,
   ProjectBootstrapProposal,
   ProjectBootstrapOperationId,
 } from "@chat/contracts";
+
+/**
+ * 当前Product Store是单API进程、单写者；本协调器把同一Operation从claim到Provider
+ * 收口串行化。旧执行者只要仍可能恢复就继续持有互斥，进程崩溃后锁随进程释放。
+ * 未来若Product Store升级为多进程数据库，本Port必须替换为数据库advisory lock。
+ */
+export interface ProjectBootstrapExecutionCoordinatorPort {
+  runExclusive<T>(operationId: ProjectBootstrapOperationId, execute: () => Promise<T>): Promise<T>;
+}
+
+/** Provider必须在每一个真实写边界前调用assertCurrent；token同时进入Adapter合同。 */
+export interface ProjectBootstrapWriteFence {
+  readonly attemptCommandId: CommandId;
+  readonly fencingToken: number;
+  assertCurrent(writeKey: string): Promise<void>;
+}
+
+export function createInProcessProjectBootstrapExecutionCoordinator(): ProjectBootstrapExecutionCoordinatorPort {
+  const tails = new Map<ProjectBootstrapOperationId, Promise<void>>();
+  return {
+    async runExclusive<T>(operationId: ProjectBootstrapOperationId, execute: () => Promise<T>) {
+      const prior = tails.get(operationId) ?? Promise.resolve();
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const tail = prior.then(() => held);
+      tails.set(operationId, tail);
+      await prior;
+      try {
+        return await execute();
+      } finally {
+        release();
+        if (tails.get(operationId) === tail) tails.delete(operationId);
+      }
+    },
+  };
+}
 
 export interface ProjectCreationRootDescriptor {
   readonly rootId: ProjectBootstrapProposal["workspaceRootId"];
@@ -31,6 +70,7 @@ export interface ProjectWorkspaceProvisionerPort {
     readonly operationId: ProjectBootstrapOperationId;
     readonly candidateSha256: string;
     readonly proposal: ProjectBootstrapProposal;
+    readonly writeFence: ProjectBootstrapWriteFence;
   }): Promise<ProjectWorkspaceProvisionResult>;
   reconcile(input: {
     readonly operationId: ProjectBootstrapOperationId;
@@ -70,6 +110,7 @@ export interface ProjectManagementBootstrapPort {
     readonly operationId: ProjectBootstrapOperationId;
     readonly candidateSha256: string;
     readonly proposal: ProjectBootstrapProposal;
+    readonly writeFence: ProjectBootstrapWriteFence;
   }): Promise<ProjectManagementProvisionResult>;
   reconcile(input: {
     readonly operationId: ProjectBootstrapOperationId;

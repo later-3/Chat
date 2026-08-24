@@ -83,10 +83,16 @@ describe("Plane CE 1.4.1项目初始化Adapter", () => {
       workspaces: [{ slug: "learning", displayName: "Learning" }],
       fetchFn,
     });
+    const assertCurrent = vi.fn(async (_writeKey: string) => undefined);
     const input = {
       operationId,
       candidateSha256: sha256,
       proposal: proposal(),
+      writeFence: {
+        attemptCommandId: "cmd_planeadapterfence1" as never,
+        fencingToken: 2,
+        assertCurrent,
+      },
     };
     await expect(adapter.provision(input)).resolves.toEqual({
       status: "completed",
@@ -104,6 +110,10 @@ describe("Plane CE 1.4.1项目初始化Adapter", () => {
       identifier: "AI2026",
       module_view: true,
     });
+    expect(assertCurrent.mock.calls.map(([writeKey]) => writeKey)).toEqual([
+      "plane.project.create",
+      "plane.module.create.1",
+    ]);
   });
 
   it("写请求断线标记outcome_unknown，拒绝非HTTPS远程地址和不完整配置", async () => {
@@ -122,6 +132,11 @@ describe("Plane CE 1.4.1项目初始化Adapter", () => {
         operationId,
         candidateSha256: sha256,
         proposal: proposal(),
+        writeFence: {
+          attemptCommandId: "cmd_planeadapterfence2" as never,
+          fencingToken: 3,
+          assertCurrent: vi.fn(async () => undefined),
+        },
       }),
     ).resolves.toEqual({ status: "outcome_unknown", errorCode: "plane_ce_write_outcome_unknown" });
 

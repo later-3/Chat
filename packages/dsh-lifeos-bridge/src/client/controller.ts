@@ -342,8 +342,11 @@ export class LifeosProjectionController {
     }
   }
 
-  /** 提交选择草稿；成功后以返回的投影刷新本地状态。 */
-  async selectWorkflow(selection: WorkflowSelection | null): Promise<boolean> {
+  /** 提交显式scope的选择；成功后以返回的投影刷新本地状态。 */
+  async selectWorkflow(
+    selection: WorkflowSelection | null,
+    scope: "session" | "new_sessions" | "session_and_new_sessions" = "session",
+  ): Promise<boolean> {
     if (this.disposed || this.snapshot.selectingWorkflow) return false;
     this.publish({ ...this.snapshot, selectingWorkflow: true, workflowError: null });
     try {
@@ -353,7 +356,7 @@ export class LifeosProjectionController {
           method: "PUT",
           credentials: "same-origin",
           headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify({ workflowSelection: selection }),
+          body: JSON.stringify({ workflowSelection: selection, scope }),
         },
       );
       const json = await responseJson(response);

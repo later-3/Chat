@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { JsonProductStore } from "./json-product-store.js";
 import { productSnapshotV17Schema } from "./legacy-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
+import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-22T08:00:00.000Z";
@@ -93,7 +94,7 @@ describe("Product Store v17到v18 Agent Version迁移", () => {
     const { agentVersions: _agentVersions, ...migratedEntities } = migrated.entities;
     void _agentVersions;
     expect(migratedEntities).toEqual(legacy.entities);
-    expect(() => assertSnapshotIntegrity(migrated)).not.toThrow();
+    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV18ToV19(migrated))).not.toThrow();
   });
 
   it("首次原子迁移后重启不再改写", async () => {
@@ -198,7 +199,7 @@ describe("Product Store v17到v18 Agent Version迁移", () => {
       version: 1,
       systemPromptBody: "你是可配置的 Pi Coding Agent。",
     });
-    const valid = migrateProductSnapshotV17ToV18(await seededV17());
+    const valid = migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(await seededV17()));
     valid.entities.agentVersions[version.agentVersionId] = version;
     expect(() => assertSnapshotIntegrity(valid)).not.toThrow();
 

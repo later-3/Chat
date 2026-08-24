@@ -1,8 +1,8 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { JsonProductStore } from "@chat/product-store-json";
+import { JsonProductStore, productSnapshotV1Schema } from "@chat/product-store-json";
 import type { CommandId, PlanContent, PrincipalId, ProductRunId } from "@chat/contracts";
 import {
   type ApplicationDeps,
@@ -10,6 +10,7 @@ import {
   ApplicationError,
   CommandIdReusedError,
   createProductSession,
+  submitProjectBootstrapUserMessage,
   submitUserMessage,
   settleIncompatibleWorkflowRun,
   publishPlanForReview as publishPlanForReviewUseCase,
@@ -25,6 +26,11 @@ import {
   SYSTEM_NOTE_WORKFLOW_REVISION_ID,
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
 } from "@chat/application/workflow-system-definitions";
+import { hashCanonical } from "@chat/domain";
+import {
+  S7_VERSIONED_FIXTURE_MANIFEST,
+  buildS7VersionedFixture,
+} from "./fixtures/s7-versioned-fixtures.js";
 
 const PRINCIPAL = "usr_debug" as PrincipalId;
 const OTHER = "usr_other" as PrincipalId;
@@ -107,6 +113,29 @@ function replayProbeDeps(deps: ApplicationDeps, calls: string[]): ApplicationDep
       list: () => fail("projectRoots.list"),
       observe: async () => fail("projectRoots.observe"),
     },
+  };
+}
+
+function poisonedReplayDeps(store: ApplicationDeps["store"]): ApplicationDeps {
+  const unexpected = (name: string): never => {
+    throw new Error(`Receipt重放不应触达${name}`);
+  };
+  const poison = (name: string): never =>
+    new Proxy(
+      {},
+      {
+        get: () => unexpected(name),
+      },
+    ) as never;
+  return {
+    store,
+    now: () => unexpected("now"),
+    ids: poison("ID Factory"),
+    promptCatalog: poison("Prompt Catalog"),
+    agentRuntimeProfiles: poison("Agent Runtime"),
+    projectManagementBootstrap: poison("Project Provider"),
+    projectWorkspaceProvisioner: poison("Workspace Provider"),
+    projectBootstrapIds: poison("Project Bootstrap ID Factory"),
   };
 }
 
@@ -728,6 +757,163 @@ describe("CreateProductSession + SubmitUserMessage", () => {
         payload: { text: "使用当前代码重新开始" },
       }),
     ).resolves.toMatchObject({ run: { status: "pending" } });
+  });
+});
+
+describe("Message Receipt历史重放闭包", () => {
+  it("真实v1磁盘Receipt缺少RunSpec时完整迁移到v19并在所有运行依赖前恢复", async () => {
+    const manifest = S7_VERSIONED_FIXTURE_MANIFEST.find(
+      (entry) => entry.fixtureId === "v1-legacy-planning-active",
+    );
+    if (manifest === undefined) throw new Error("缺少真实v1 legacy Fixture");
+    const fixture = await buildS7VersionedFixture(manifest);
+    if (fixture.schemaVersion !== "chat-product-store.v1") {
+      throw new Error("Fixture物理版本不是v1");
+    }
+    const session = Object.values(fixture.entities.sessions)[0];
+    const message = Object.values(fixture.entities.messages)[0];
+    const run = Object.values(fixture.entities.runs)[0];
+    if (session === undefined || message === undefined || run === undefined) {
+      throw new Error("v1 Fixture缺少Session/Message/Run");
+    }
+    const commandId = "cmd_legacymessagereceipt" as CommandId;
+    const source = productSnapshotV1Schema.parse({
+      ...structuredClone(fixture),
+      storeRevision: 1,
+      commandReceipts: {
+        ...fixture.commandReceipts,
+        [commandId]: {
+          commandId,
+          commandType: "SubmitUserMessage",
+          requestSha256: hashCanonical("command.submit-user-message.v1", {
+            principalId: session.ownerPrincipalId,
+            sessionId: session.sessionId,
+            payload: { text: message.content.text },
+          }),
+          // 真实legacy形状：不得手工补现代workflowRunSpecId。
+          resultRefs: {
+            messageId: message.messageId,
+            productRunId: run.productRunId,
+          },
+          committedStoreRevision: 1,
+          createdAt: fixture.committedAt,
+        },
+      },
+    });
+    const dir = await mkdtemp(join(tmpdir(), "chat-legacy-message-replay-"));
+    const filePath = join(dir, "chat-product-store.v1.json");
+    await writeFile(filePath, `${JSON.stringify(source, null, 2)}\n`, "utf8");
+    const store = await JsonProductStore.open({
+      filePath,
+      now: () => {
+        throw new Error("迁移现有磁盘快照不应读取now");
+      },
+    });
+    const migrated = (await store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(migrated.schemaVersion).toBe("chat-product-store.v19");
+    expect(migrated.commandReceipts[commandId]?.resultRefs).toEqual({
+      messageId: message.messageId,
+      productRunId: run.productRunId,
+    });
+    expect(migrated.entities.runs[run.productRunId]?.workflowRunSpecId).toBeUndefined();
+
+    const input = {
+      principalId: session.ownerPrincipalId,
+      sessionId: session.sessionId,
+      commandId,
+      payload: { text: message.content.text },
+    } as const;
+    const replayed = await submitUserMessage(poisonedReplayDeps(store), input);
+    expect(replayed.session.sessionId).toBe(session.sessionId);
+    expect(replayed.message.messageId).toBe(message.messageId);
+    expect(replayed.run.productRunId).toBe(run.productRunId);
+
+    await expect(
+      submitProjectBootstrapUserMessage(poisonedReplayDeps(store), input),
+    ).rejects.toBeInstanceOf(CommandIdReusedError);
+
+    await expect(
+      submitUserMessage(poisonedReplayDeps(store), {
+        ...input,
+        payload: { text: "不同payload" },
+      }),
+    ).rejects.toBeInstanceOf(CommandIdReusedError);
+    await expect(
+      submitUserMessage(poisonedReplayDeps(store), {
+        ...input,
+        principalId: OTHER,
+      }),
+    ).rejects.toBeInstanceOf(CommandIdReusedError);
+
+    const wrongCommandSnapshot = structuredClone(migrated);
+    wrongCommandSnapshot.commandReceipts[commandId] = {
+      ...wrongCommandSnapshot.commandReceipts[commandId]!,
+      commandType: "CreateProductSession",
+    };
+    const wrongCommandStore: ApplicationDeps["store"] = {
+      read: async () => ({ snapshot: wrongCommandSnapshot }),
+      transact: async () => {
+        throw new Error("错误Command Type不得进入事务");
+      },
+    };
+    await expect(
+      submitUserMessage(poisonedReplayDeps(wrongCommandStore), input),
+    ).rejects.toBeInstanceOf(CommandIdReusedError);
+
+    const wrongRunSpecSnapshot = structuredClone(migrated);
+    wrongRunSpecSnapshot.commandReceipts[commandId] = {
+      ...wrongRunSpecSnapshot.commandReceipts[commandId]!,
+      resultRefs: {
+        ...wrongRunSpecSnapshot.commandReceipts[commandId]!.resultRefs,
+        workflowRunSpecId: "wrs_notboundtolegacyrun",
+      },
+    };
+    const wrongRunSpecStore: ApplicationDeps["store"] = {
+      read: async () => ({ snapshot: wrongRunSpecSnapshot }),
+      transact: async () => {
+        throw new Error("错误RunSpec引用不得进入事务");
+      },
+    };
+    await expect(
+      submitUserMessage(poisonedReplayDeps(wrongRunSpecStore), input),
+    ).rejects.toMatchObject({ code: "store_corrupted" });
+  });
+
+  it("现代Message Receipt缺少RunSpec引用时在now与运行依赖前失败关闭", async () => {
+    const { deps } = await testDeps();
+    const commandId = cmd();
+    const submitted = await submitUserMessage(deps, {
+      principalId: PRINCIPAL,
+      commandId,
+      payload: { text: "现代Receipt完整性" },
+    });
+    const snapshot = structuredClone(
+      (await deps.store.read({ kind: "committedSnapshot" })).snapshot,
+    );
+    await expect(
+      submitProjectBootstrapUserMessage(poisonedReplayDeps(deps.store), {
+        principalId: PRINCIPAL,
+        commandId,
+        payload: { text: "现代Receipt完整性" },
+      }),
+    ).rejects.toBeInstanceOf(CommandIdReusedError);
+    delete snapshot.commandReceipts[commandId]?.resultRefs["workflowRunSpecId"];
+    const corruptedStore: ApplicationDeps["store"] = {
+      read: async () => ({ snapshot }),
+      transact: async () => {
+        throw new Error("损坏Receipt不得进入事务");
+      },
+    };
+    await expect(
+      submitUserMessage(poisonedReplayDeps(corruptedStore), {
+        principalId: PRINCIPAL,
+        commandId,
+        payload: { text: "现代Receipt完整性" },
+      }),
+    ).rejects.toMatchObject({ code: "store_corrupted" });
+    expect(snapshot.entities.runs[submitted.run.productRunId]?.runnerFamily).not.toBe(
+      "legacy-planning.v1",
+    );
   });
 });
 

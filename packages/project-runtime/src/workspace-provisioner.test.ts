@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { projectBootstrapOperationIdSchema, type ProjectBootstrapProposal } from "@chat/contracts";
 import { createProjectWorkspaceProvisioner } from "./workspace-provisioner.js";
 
@@ -37,10 +37,16 @@ describe("本地项目Workspace初始化", () => {
     });
     expect(preview.workspaceLabel).toBe("Code/ai-learning");
 
+    const assertCurrent = vi.fn(async () => undefined);
     const input = {
       operationId: operation1,
       candidateSha256: sha256,
       proposal: proposal(),
+      writeFence: {
+        attemptCommandId: "cmd_workspaceadapterfence1" as never,
+        fencingToken: 2,
+        assertCurrent,
+      },
     };
     await expect(provisioner!.provision(input)).resolves.toEqual({
       status: "completed",
@@ -53,6 +59,9 @@ describe("本地项目Workspace初始化", () => {
     expect(await readFile(join(root, "ai-learning", "README.md"), "utf8")).toContain("# AI 学习");
     expect((await stat(join(root, "ai-learning", ".git"))).isDirectory()).toBe(true);
     expect((await stat(join(root, "ai-learning", "papers"))).isDirectory()).toBe(true);
+    expect(assertCurrent).toHaveBeenCalledWith("workspace.target.mkdir");
+    expect(assertCurrent).toHaveBeenCalledWith("workspace.marker.write");
+    expect(assertCurrent).toHaveBeenCalledWith("workspace.git.init");
   });
 
   it("拒绝路径逃逸、未知Root和绑定到另一操作的已有目录", async () => {
@@ -73,6 +82,11 @@ describe("本地项目Workspace初始化", () => {
       operationId: operation1,
       candidateSha256: sha256,
       proposal: proposal(),
+      writeFence: {
+        attemptCommandId: "cmd_workspaceadapterfence2" as never,
+        fencingToken: 2,
+        assertCurrent: vi.fn(async () => undefined),
+      },
     };
     await provisioner!.provision(input);
     await expect(

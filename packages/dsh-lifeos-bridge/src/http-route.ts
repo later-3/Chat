@@ -1086,6 +1086,7 @@ export function createLifeosRouteHandler(
           await service.selectWorkflow(
             sessionIdFrom(workflowSelectionMatch),
             parsed.data.workflowSelection,
+            parsed.data.scope,
           ),
         );
         return;

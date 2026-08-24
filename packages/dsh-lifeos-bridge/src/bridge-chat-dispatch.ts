@@ -47,6 +47,7 @@ export function prepareBridgeChatDispatch(input: {
   readonly productSessionId?: string;
   readonly messageCommandId: string;
   readonly text: string;
+  readonly projectBootstrap?: boolean;
   readonly workflowSelection?: WorkflowSelection;
   readonly promptSelection?: PromptTurnSelectionInput;
 }): BridgeChatDispatchPlan {
@@ -54,9 +55,13 @@ export function prepareBridgeChatDispatch(input: {
   const submitMessageBody = { commandId: input.messageCommandId, payload };
   const submitMessage = {
     ...httpCommand(
-      input.productSessionId === undefined
-        ? "/api/messages"
-        : `/api/sessions/${encodeURIComponent(input.productSessionId)}/messages`,
+      input.projectBootstrap === true
+        ? input.productSessionId === undefined
+          ? "/api/project-bootstrap/messages"
+          : `/api/sessions/${encodeURIComponent(input.productSessionId)}/project-bootstrap/messages`
+        : input.productSessionId === undefined
+          ? "/api/messages"
+          : `/api/sessions/${encodeURIComponent(input.productSessionId)}/messages`,
       submitMessageBody,
     ),
     commandId: input.messageCommandId,

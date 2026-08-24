@@ -12,9 +12,13 @@ import type {
 } from "./product-store-port.js";
 import {
   decideProjectBootstrapCandidate,
-  executeProjectBootstrapOperation,
+  executeProjectBootstrapOperationFromOutbox,
+  getCurrentProjectBootstrapForSession,
   prepareProjectBootstrapCandidate,
+  prepareProjectBootstrapCandidateForRuntime,
+  requestProjectBootstrapOperationRetry,
 } from "./project-bootstrap-use-cases.js";
+import { createInProcessProjectBootstrapExecutionCoordinator } from "./project-bootstrap-ports.js";
 import { BUILTIN_WORKFLOW_EXECUTOR_MANIFEST } from "./workflow-executor-manifest.js";
 import { compileWorkflowRunSpec } from "./workflow-run-spec-compiler.js";
 import {
@@ -33,10 +37,6 @@ const PLANE_PROJECT_ID = "66cf0460-84e0-4d3d-b1ef-d193b83b7562" as const;
 
 class InMemoryProductStore implements ProductStorePort {
   #snapshot: ProductSnapshot;
-  readonly #receipts = new Map<
-    string,
-    { readonly requestSha256: string; readonly result: ProductTransactionResult }
-  >();
 
   constructor(snapshot: ProductSnapshot) {
     this.#snapshot = structuredClone(snapshot);
@@ -47,27 +47,49 @@ class InMemoryProductStore implements ProductStorePort {
   }
 
   async transact(transaction: ProductTransaction): Promise<ProductTransactionResult> {
-    const prior = this.#receipts.get(transaction.commandId);
+    const prior = this.#snapshot.commandReceipts[transaction.commandId];
     if (prior !== undefined) {
-      if (prior.requestSha256 !== transaction.requestSha256) throw new Error("command reused");
-      return { ...prior.result, replayed: true };
+      if (
+        prior.requestSha256 !== transaction.requestSha256 ||
+        prior.commandType !== transaction.commandType
+      ) {
+        throw new Error("command reused");
+      }
+      return {
+        storeRevision: this.#snapshot.storeRevision,
+        resultRefs: prior.resultRefs,
+        replayed: true,
+      };
     }
     const draft = structuredClone(this.#snapshot);
     const mutation = transaction.mutate(draft);
     draft.storeRevision += 1;
     draft.committedAt = NOW;
+    draft.commandReceipts[transaction.commandId] = {
+      commandId: transaction.commandId,
+      commandType: transaction.commandType,
+      requestSha256: transaction.requestSha256,
+      resultRefs: mutation.resultRefs,
+      committedStoreRevision: draft.storeRevision,
+      createdAt: NOW,
+    };
     this.#snapshot = draft;
     const result = {
       storeRevision: draft.storeRevision,
       resultRefs: mutation.resultRefs,
       replayed: false,
     };
-    this.#receipts.set(transaction.commandId, { requestSha256: transaction.requestSha256, result });
     return result;
   }
 
   inspect(): ProductSnapshot {
     return structuredClone(this.#snapshot);
+  }
+
+  mutateForTest(mutate: (snapshot: ProductSnapshot) => void): void {
+    const next = structuredClone(this.#snapshot);
+    mutate(next);
+    this.#snapshot = next;
   }
 }
 
@@ -207,8 +229,17 @@ function fixture(options?: { readonly planeOutcomeUnknown?: boolean }) {
   const deps: ApplicationDeps = {
     store,
     now: () => NOW,
-    ids: new Proxy({}, { get: () => () => "unused" }) as ApplicationDeps["ids"],
+    ids: new Proxy(
+      {},
+      {
+        get: (_target, property) =>
+          property === "outbox"
+            ? () => `obx_bootstrap${String(store.inspect().storeRevision + 1)}`
+            : () => "unused",
+      },
+    ) as ApplicationDeps["ids"],
     projectBootstrapIds: ids,
+    projectBootstrapExecutionCoordinator: createInProcessProjectBootstrapExecutionCoordinator(),
     projectWorkspaceProvisioner: workspace,
     projectManagementBootstrap: plane,
   };
@@ -247,10 +278,18 @@ describe("受控Plane CE建项纵向", () => {
       kind: "confirm",
     });
     expect(decided.operation?.status).toBe("queued");
-    const completed = await executeProjectBootstrapOperation(f.deps, {
-      principalId: PRINCIPAL as never,
-      commandId: "cmd_execute1" as never,
+    const outbox = Object.values(f.store.inspect().outbox).find(
+      (entry) => entry.kind === "project_bootstrap_execute",
+    );
+    expect(outbox).toMatchObject({ mode: "execute", status: "pending" });
+    const completed = await executeProjectBootstrapOperationFromOutbox(f.deps, {
+      commandId: "cmd_claim1" as never,
+      executionInvocationId: "cmd_invoke1" as never,
+      outboxId: outbox!.outboxId,
       projectBootstrapOperationId: decided.operation!.projectBootstrapOperationId,
+      expectedOperationRevision: 1,
+      mode: "execute",
+      leaseDurationMs: 600_000,
     });
     expect(completed).toMatchObject({
       status: "ready",
@@ -267,6 +306,98 @@ describe("受控Plane CE建项纵向", () => {
       workspaceRootId: "root_code",
       directoryName: "ai-learning",
     });
+  });
+
+  it("Provider配置移除后仍可拒绝已准备Candidate并退出一次性生命周期", async () => {
+    const f = fixture();
+    const candidate = await prepareProjectBootstrapCandidate(f.deps, {
+      principalId: PRINCIPAL as never,
+      productSessionId: SESSION as never,
+      productRunId: RUN as never,
+      commandId: "cmd_prepare_reject_without_provider" as never,
+      proposal: proposal(),
+    });
+    const disabledDeps = { ...f.deps };
+    delete disabledDeps.projectWorkspaceProvisioner;
+    delete disabledDeps.projectManagementBootstrap;
+
+    const rejected = await decideProjectBootstrapCandidate(disabledDeps, {
+      principalId: PRINCIPAL as never,
+      commandId: "cmd_reject_without_provider" as never,
+      projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
+      candidateRevision: candidate.revision,
+      candidateSha256: candidate.sha256,
+      kind: "reject",
+    });
+
+    expect(rejected.candidate.status).toBe("rejected");
+    expect(rejected.operation).toBeUndefined();
+    const snapshot = f.store.inspect();
+    expect(Object.values(snapshot.entities.projectBootstrapDecisions)).toEqual([
+      expect.objectContaining({ kind: "reject" }),
+    ]);
+    expect(Object.values(snapshot.entities.projectBootstrapOperations)).toHaveLength(0);
+    expect(Object.values(snapshot.outbox)).toHaveLength(0);
+    expect(f.workspace.provision).not.toHaveBeenCalled();
+    expect(f.plane.provision).not.toHaveBeenCalled();
+  });
+
+  it("Candidate Receipt在现有Candidate和Provider移除前完成前置重放", async () => {
+    const f = fixture();
+    const command = {
+      principalId: PRINCIPAL as never,
+      productSessionId: SESSION as never,
+      productRunId: RUN as never,
+      commandId: "cmd_prepare_receipt_replay" as never,
+      proposal: proposal(),
+    };
+    const prepared = await prepareProjectBootstrapCandidate(f.deps, command);
+    const disabledDeps = { ...f.deps };
+    delete disabledDeps.projectWorkspaceProvisioner;
+    delete disabledDeps.projectManagementBootstrap;
+
+    const replayed = await prepareProjectBootstrapCandidate(disabledDeps, command);
+    const runtimeReplayed = await prepareProjectBootstrapCandidateForRuntime(disabledDeps, {
+      productRunId: command.productRunId,
+      commandId: command.commandId,
+      proposal: command.proposal,
+    });
+
+    expect(replayed.projectBootstrapCandidateId).toBe(prepared.projectBootstrapCandidateId);
+    expect(runtimeReplayed.projectBootstrapCandidateId).toBe(prepared.projectBootstrapCandidateId);
+    expect(f.workspace.preflight).toHaveBeenCalledTimes(1);
+    expect(f.plane.preflight).toHaveBeenCalledTimes(1);
+    expect(Object.values(f.store.inspect().entities.projectBootstrapCandidates)).toHaveLength(1);
+  });
+
+  it("确认Receipt重放不依赖随后仍存在的Provider配置", async () => {
+    const f = fixture();
+    const candidate = await prepareProjectBootstrapCandidate(f.deps, {
+      principalId: PRINCIPAL as never,
+      productSessionId: SESSION as never,
+      productRunId: RUN as never,
+      commandId: "cmd_prepare_confirm_replay" as never,
+      proposal: proposal(),
+    });
+    const command = {
+      principalId: PRINCIPAL as never,
+      commandId: "cmd_confirm_provider_replay" as never,
+      projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
+      candidateRevision: candidate.revision,
+      candidateSha256: candidate.sha256,
+      kind: "confirm" as const,
+    };
+    const confirmed = await decideProjectBootstrapCandidate(f.deps, command);
+    const disabledDeps = { ...f.deps };
+    delete disabledDeps.projectWorkspaceProvisioner;
+    delete disabledDeps.projectManagementBootstrap;
+
+    const replayed = await decideProjectBootstrapCandidate(disabledDeps, command);
+    expect(replayed.operation?.projectBootstrapOperationId).toBe(
+      confirmed.operation?.projectBootstrapOperationId,
+    );
+    expect(Object.values(f.store.inspect().entities.projectBootstrapOperations)).toHaveLength(1);
+    expect(Object.values(f.store.inspect().outbox)).toHaveLength(1);
   });
 
   it("Plane写入断线不会产生假ready或绑定，而是保留可对账操作", async () => {
@@ -286,10 +417,17 @@ describe("受控Plane CE建项纵向", () => {
       candidateSha256: candidate.sha256,
       kind: "confirm",
     });
-    const result = await executeProjectBootstrapOperation(f.deps, {
-      principalId: PRINCIPAL as never,
-      commandId: "cmd_execute2" as never,
+    const executeOutbox = Object.values(f.store.inspect().outbox).find(
+      (entry) => entry.kind === "project_bootstrap_execute",
+    );
+    const result = await executeProjectBootstrapOperationFromOutbox(f.deps, {
+      commandId: "cmd_claim2" as never,
+      executionInvocationId: "cmd_invoke2" as never,
+      outboxId: executeOutbox!.outboxId,
       projectBootstrapOperationId: decided.operation!.projectBootstrapOperationId,
+      expectedOperationRevision: 1,
+      mode: "execute",
+      leaseDurationMs: 600_000,
     });
     expect(result).toMatchObject({
       status: "outcome_unknown",
@@ -299,5 +437,196 @@ describe("受控Plane CE建项纵向", () => {
       errorCode: "plane_ce_write_outcome_unknown",
     });
     expect(Object.values(f.store.inspect().entities.projectWorkspaceBindings)).toHaveLength(0);
+
+    const activeProjection = await getCurrentProjectBootstrapForSession(f.deps, {
+      principalId: PRINCIPAL as never,
+      productSessionId: SESSION as never,
+    });
+    if (activeProjection === null) throw new Error("结果未知Operation缺少建项投影");
+    expect(activeProjection.recovery).toEqual({
+      canRecover: false,
+      reason: "background_dispatch_pending",
+    });
+    await requestProjectBootstrapOperationRetry(f.deps, {
+      principalId: PRINCIPAL as never,
+      commandId: "cmd_retry_while_execute_outbox_active" as never,
+      projectBootstrapOperationId: result.projectBootstrapOperationId,
+      expectedOperationRevision: result.revision,
+    });
+    expect(
+      Object.values(f.store.inspect().outbox).filter(
+        (entry) =>
+          entry.kind === "project_bootstrap_execute" &&
+          ["pending", "dispatched", "outcome_unknown"].includes(entry.status),
+      ),
+    ).toEqual([expect.objectContaining({ mode: "execute" })]);
+    f.store.mutateForTest((snapshot) => {
+      const execute = Object.values(snapshot.outbox).find(
+        (entry) => entry.kind === "project_bootstrap_execute",
+      );
+      if (execute === undefined) throw new Error("结果未知Operation缺少execute Outbox");
+      execute.status = "acknowledged";
+    });
+
+    const retry = await requestProjectBootstrapOperationRetry(f.deps, {
+      principalId: PRINCIPAL as never,
+      commandId: "cmd_retry2" as never,
+      projectBootstrapOperationId: result.projectBootstrapOperationId,
+      expectedOperationRevision: result.revision,
+    });
+    const disabledDeps = { ...f.deps };
+    delete disabledDeps.projectWorkspaceProvisioner;
+    delete disabledDeps.projectManagementBootstrap;
+    const replayedRetry = await requestProjectBootstrapOperationRetry(disabledDeps, {
+      principalId: PRINCIPAL as never,
+      commandId: "cmd_retry2" as never,
+      projectBootstrapOperationId: result.projectBootstrapOperationId,
+      expectedOperationRevision: result.revision,
+    });
+    expect(replayedRetry.projectBootstrapOperationId).toBe(retry.projectBootstrapOperationId);
+    const retryOutbox = Object.values(f.store.inspect().outbox)
+      .filter(
+        (entry) =>
+          entry.kind === "project_bootstrap_execute" &&
+          entry.projectBootstrapOperationId === result.projectBootstrapOperationId,
+      )
+      .at(-1);
+    expect(retryOutbox).toMatchObject({ mode: "reconcile" });
+    const reconciled = await executeProjectBootstrapOperationFromOutbox(f.deps, {
+      commandId: "cmd_claim_retry2" as never,
+      executionInvocationId: "cmd_invoke_retry2" as never,
+      outboxId: retryOutbox!.outboxId,
+      projectBootstrapOperationId: retry.projectBootstrapOperationId,
+      expectedOperationRevision: retry.revision,
+      mode: "reconcile",
+      leaseDurationMs: 600_000,
+    });
+    expect(reconciled.status).toBe("ready");
+    expect(f.workspace.provision).toHaveBeenCalledTimes(1);
+    expect(f.plane.provision).toHaveBeenCalledTimes(1);
+    expect(f.workspace.reconcile).toHaveBeenCalledTimes(1);
+    expect(f.plane.reconcile).toHaveBeenCalledTimes(1);
+  });
+
+  for (const legacyStatus of ["queued", "dispatching"] as const) {
+    it(`v18 ${legacyStatus} Operation只能由用户显式触发对账恢复`, async () => {
+      const f = fixture();
+      const candidate = await prepareProjectBootstrapCandidate(f.deps, {
+        principalId: PRINCIPAL as never,
+        productSessionId: SESSION as never,
+        productRunId: RUN as never,
+        commandId: `cmd_prepare_legacy_${legacyStatus}` as never,
+        proposal: proposal(),
+      });
+      const decided = await decideProjectBootstrapCandidate(f.deps, {
+        principalId: PRINCIPAL as never,
+        commandId: `cmd_decide_legacy_${legacyStatus}` as never,
+        projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
+        candidateRevision: candidate.revision,
+        candidateSha256: candidate.sha256,
+        kind: "confirm",
+      });
+      const operationId = decided.operation!.projectBootstrapOperationId;
+      f.store.mutateForTest((snapshot) => {
+        snapshot.outbox = {};
+        if (legacyStatus === "dispatching") {
+          const operation = snapshot.entities.projectBootstrapOperations[operationId]!;
+          snapshot.entities.projectBootstrapOperations[operationId] = {
+            ...operation,
+            status: "dispatching",
+            revision: operation.revision + 1,
+          };
+          const currentCandidate =
+            snapshot.entities.projectBootstrapCandidates[operation.projectBootstrapCandidateId]!;
+          snapshot.entities.projectBootstrapCandidates[operation.projectBootstrapCandidateId] = {
+            ...currentCandidate,
+            status: "executing",
+            revision: currentCandidate.revision + 1,
+          };
+        }
+      });
+
+      const legacyOperation = f.store.inspect().entities.projectBootstrapOperations[operationId]!;
+      const projection = await getCurrentProjectBootstrapForSession(f.deps, {
+        principalId: PRINCIPAL as never,
+        productSessionId: SESSION as never,
+      });
+      if (projection === null) throw new Error("遗留Operation缺少建项投影");
+      expect(projection.recovery).toEqual({
+        canRecover: true,
+        reason: "legacy_dispatch_missing",
+      });
+      const requested = await requestProjectBootstrapOperationRetry(f.deps, {
+        principalId: PRINCIPAL as never,
+        commandId: `cmd_recover_legacy_${legacyStatus}` as never,
+        projectBootstrapOperationId: operationId,
+        expectedOperationRevision: legacyOperation.revision,
+      });
+      const recoveryOutbox = Object.values(f.store.inspect().outbox).find(
+        (entry) => entry.kind === "project_bootstrap_execute",
+      );
+      expect(recoveryOutbox).toMatchObject({ mode: "reconcile", status: "pending" });
+
+      const recovered = await executeProjectBootstrapOperationFromOutbox(f.deps, {
+        commandId: `cmd_claim_legacy_${legacyStatus}` as never,
+        executionInvocationId: `cmd_invoke_legacy_${legacyStatus}` as never,
+        outboxId: recoveryOutbox!.outboxId,
+        projectBootstrapOperationId: requested.projectBootstrapOperationId,
+        expectedOperationRevision: requested.revision,
+        mode: "reconcile",
+        leaseDurationMs: 600_000,
+      });
+      expect(recovered.status).toBe("ready");
+      expect(f.workspace.reconcile).toHaveBeenCalledTimes(1);
+      expect(f.plane.reconcile).toHaveBeenCalledTimes(1);
+      expect(f.workspace.provision).not.toHaveBeenCalled();
+      expect(f.plane.provision).not.toHaveBeenCalled();
+    });
+  }
+
+  it("其他Principal不能读取、决定或重试会话内建项事实", async () => {
+    const f = fixture();
+    const candidate = await prepareProjectBootstrapCandidate(f.deps, {
+      principalId: PRINCIPAL as never,
+      productSessionId: SESSION as never,
+      productRunId: RUN as never,
+      commandId: "cmd_prepare_idor" as never,
+      proposal: proposal(),
+    });
+    const otherPrincipal = "usr_other" as never;
+
+    await expect(
+      getCurrentProjectBootstrapForSession(f.deps, {
+        principalId: otherPrincipal,
+        productSessionId: SESSION as never,
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    await expect(
+      decideProjectBootstrapCandidate(f.deps, {
+        principalId: otherPrincipal,
+        commandId: "cmd_decide_idor" as never,
+        projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
+        candidateRevision: candidate.revision,
+        candidateSha256: candidate.sha256,
+        kind: "confirm",
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+
+    const decided = await decideProjectBootstrapCandidate(f.deps, {
+      principalId: PRINCIPAL as never,
+      commandId: "cmd_decide_owner" as never,
+      projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
+      candidateRevision: candidate.revision,
+      candidateSha256: candidate.sha256,
+      kind: "confirm",
+    });
+    await expect(
+      requestProjectBootstrapOperationRetry(f.deps, {
+        principalId: otherPrincipal,
+        commandId: "cmd_retry_idor" as never,
+        projectBootstrapOperationId: decided.operation!.projectBootstrapOperationId,
+        expectedOperationRevision: decided.operation!.revision,
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
   });
 });

@@ -51,8 +51,11 @@ export const projectBootstrapDecisionResponseSchema = z
   })
   .strict();
 
-export const executeProjectBootstrapPayloadSchema = z
-  .object({ projectBootstrapOperationId: projectBootstrapOperationIdSchema })
+export const retryProjectBootstrapPayloadSchema = z
+  .object({
+    projectBootstrapOperationId: projectBootstrapOperationIdSchema,
+    expectedOperationRevision: z.number().int().positive(),
+  })
   .strict();
 
 export const projectBootstrapReviewResponseSchema = z
@@ -70,6 +73,20 @@ export const projectBootstrapSessionProjectionSchema = z
     decision: projectBootstrapDecisionSchema.optional(),
     operation: projectBootstrapOperationSchema.optional(),
     binding: projectWorkspaceBindingSchema.optional(),
+    recovery: z
+      .object({
+        canRecover: z.boolean(),
+        reason: z.enum([
+          "not_applicable",
+          "terminal",
+          "active_execution",
+          "background_dispatch_pending",
+          "recovery_pending",
+          "legacy_dispatch_missing",
+          "retryable_failure",
+        ]),
+      })
+      .strict(),
   })
   .strict();
 

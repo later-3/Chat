@@ -9,18 +9,20 @@ import {
   projectBootstrapConfigurationSchema,
   projectBootstrapDecisionPayloadSchema,
   projectBootstrapDecisionResponseSchema,
-  executeProjectBootstrapPayloadSchema,
+  retryProjectBootstrapPayloadSchema,
   projectBootstrapReviewResponseSchema,
   currentProjectBootstrapResponseSchema,
+  submitMessagePayloadSchema,
 } from "@chat/contracts";
 import {
   ApplicationError,
   listProjectRoots,
   decideProjectBootstrapCandidate,
-  executeProjectBootstrapOperation,
+  requestProjectBootstrapOperationRetry,
   getProjectBootstrapConfiguration,
   getProjectBootstrapReview,
   getCurrentProjectBootstrapForSession,
+  submitProjectBootstrapUserMessage,
 } from "@chat/application";
 import {
   type ProductRouteContext,
@@ -35,6 +37,56 @@ export function registerProjectBootstrapRoutes(
   router: ProductRouter,
   ctx: ProductRouteContext,
 ): void {
+  /**
+   * 专用Message Command是Product侧授权边界。普通/messages即使某个已发布Definition
+   * 默认启用project_bootstrap也会被Application拒绝。
+   */
+  router.post("/project-bootstrap/messages", async (c) => {
+    try {
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const payload = submitMessagePayloadSchema.parse(envelope.payload);
+      const result = await submitProjectBootstrapUserMessage(ctx.deps, {
+        principalId: ctx.principalId,
+        commandId: envelope.commandId,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/project-bootstrap/messages",
+        statusCode: 201,
+        productRunId: result.run.productRunId,
+        productSessionId: result.session.sessionId,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.post("/sessions/:sessionId/project-bootstrap/messages", async (c) => {
+    try {
+      const sessionId = productSessionIdSchema.parse(c.req.param("sessionId"));
+      const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
+      const payload = submitMessagePayloadSchema.parse(envelope.payload);
+      const result = await submitProjectBootstrapUserMessage(ctx.deps, {
+        principalId: ctx.principalId,
+        sessionId,
+        commandId: envelope.commandId,
+        payload,
+      });
+      emitCommandAccepted(ctx, c, {
+        commandId: envelope.commandId,
+        routeTemplate: "/api/sessions/:sessionId/project-bootstrap/messages",
+        statusCode: 201,
+        productRunId: result.run.productRunId,
+        productSessionId: sessionId,
+      });
+      return c.json({ message: result.message, run: result.run }, 201);
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
   router.get("/project-roots", async (c) => {
     try {
       assertNoQuery(c.req.url);
@@ -92,13 +144,13 @@ export function registerProjectBootstrapRoutes(
     }
   });
 
-  router.post("/project-bootstrap/operations/:projectBootstrapOperationId/execute", async (c) => {
+  router.post("/project-bootstrap/operations/:projectBootstrapOperationId/retry", async (c) => {
     try {
       const operationId = projectBootstrapOperationIdSchema.parse(
         c.req.param("projectBootstrapOperationId"),
       );
       const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
-      const payload = executeProjectBootstrapPayloadSchema.parse(envelope.payload);
+      const payload = retryProjectBootstrapPayloadSchema.parse(envelope.payload);
       if (payload.projectBootstrapOperationId !== operationId) {
         throw new ApplicationError({
           code: "validation_failed",
@@ -106,17 +158,18 @@ export function registerProjectBootstrapRoutes(
           message: "路径与Payload的Project Bootstrap Operation不一致",
         });
       }
-      const operation = await executeProjectBootstrapOperation(ctx.deps, {
+      const operation = await requestProjectBootstrapOperationRetry(ctx.deps, {
         principalId: ctx.principalId,
         commandId: envelope.commandId,
         projectBootstrapOperationId: operationId,
+        expectedOperationRevision: payload.expectedOperationRevision,
       });
       emitCommandAccepted(ctx, c, {
         commandId: envelope.commandId,
-        routeTemplate: "/api/project-bootstrap/operations/:projectBootstrapOperationId/execute",
-        statusCode: 200,
+        routeTemplate: "/api/project-bootstrap/operations/:projectBootstrapOperationId/retry",
+        statusCode: 202,
       });
-      return c.json({ operation }, 200);
+      return c.json({ operation }, 202);
     } catch (error) {
       return mapError(c, error);
     }

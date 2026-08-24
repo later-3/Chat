@@ -22,6 +22,7 @@ import {
   productRunIdSchema,
   productSessionIdSchema,
   projectCandidateIdSchema,
+  projectBootstrapOperationIdSchema,
   projectIdSchema,
   projectResourceIdSchema,
   revisionInputIdSchema,
@@ -669,6 +670,7 @@ export const outboxEntryKindSchema = z.enum([
   "project_intake_resume",
   "project_advancement_start",
   "project_advancement_resume",
+  "project_bootstrap_execute",
 ]);
 
 export const outboxEntryStatusSchema = z.enum([
@@ -829,6 +831,35 @@ export const outboxEntrySchema = z.discriminatedUnion("kind", [
       kind: z.literal("project_advancement_resume"),
       projectCandidateId: projectCandidateIdSchema,
       expectedCandidateRevision: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      ...outboxCommonFields,
+      kind: z.literal("project_bootstrap_execute"),
+      projectBootstrapOperationId: projectBootstrapOperationIdSchema,
+      expectedOperationRevision: z.number().int().positive(),
+      /** 首次执行可写；恢复或用户retry必须先按稳定外部身份对账。 */
+      mode: z.enum(["execute", "reconcile"]),
+      /**
+       * API Dispatcher的耐久执行租约。attemptCommandId不会进入公开Operation DTO；
+       * 活跃租约阻止另一实例执行Provider，过期后只能以reconcile模式接管。
+       */
+      executionLease: z
+        .object({
+          schemaVersion: z.literal("project-bootstrap-execution-lease.v1"),
+          attemptCommandId: commandIdSchema,
+          /** Operation revision派生的单调fencing token；旧未收口lease可缺省并只能等待接管。 */
+          fencingToken: z.number().int().positive().optional(),
+          mode: z.enum(["execute", "reconcile"]),
+          claimedAt: isoDateTimeSchema,
+          expiresAt: isoDateTimeSchema,
+        })
+        .strict()
+        .refine((lease) => Date.parse(lease.expiresAt) > Date.parse(lease.claimedAt), {
+          message: "Project Bootstrap执行租约到期时间必须晚于认领时间",
+        })
+        .optional(),
     })
     .strict(),
 ]);

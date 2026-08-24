@@ -13,6 +13,21 @@ const direct = workflowSelectionSchema.parse({
   title: "执行 Agent（逐次提示词审核）",
   blueprintKey: "direct",
 });
+const bootstrap = workflowSelectionSchema.parse({
+  ...direct,
+  title: "创建项目",
+  runConfiguration: {
+    schemaVersion: "workflow-run-configuration.v1",
+    overrides: [
+      {
+        kind: "node_config",
+        definitionNodeId: "direct.agent",
+        field: "capabilityMode",
+        value: "project_bootstrap",
+      },
+    ],
+  },
+});
 const promptSelection = promptSelectionRequestSchema.shape.promptSelection.parse({
   schemaVersion: "prompt-turn-selection-input.v1",
   workspaceRootId: "root_chat",
@@ -139,4 +154,30 @@ test("Bridge首轮只发送一条Message命令且bodyJson与真实fetch字节一
       promptSelection,
     },
   });
+});
+
+test("一次性项目初始化生命周期只生成专用Product Message命令路径", () => {
+  const first = prepareBridgeChatDispatch({
+    requestKey,
+    messageCommandId,
+    text: "创建项目",
+    projectBootstrap: true,
+    workflowSelection: bootstrap,
+    promptSelection,
+  });
+  assert.equal(first.submitMessage.path, "/api/project-bootstrap/messages");
+
+  const existing = prepareBridgeChatDispatch({
+    requestKey: "a".repeat(48),
+    productSessionId: "psn_bootstrapdispatch1",
+    messageCommandId: `cmd_${"8".repeat(48)}`,
+    text: "创建项目",
+    projectBootstrap: true,
+    workflowSelection: bootstrap,
+    promptSelection,
+  });
+  assert.equal(
+    existing.submitMessage.path,
+    "/api/sessions/psn_bootstrapdispatch1/project-bootstrap/messages",
+  );
 });

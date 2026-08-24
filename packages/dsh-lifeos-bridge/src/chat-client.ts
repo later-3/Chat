@@ -111,6 +111,52 @@ export class ChatProductApiError extends Error {
   }
 }
 
+function responseContractMismatch(message: string): never {
+  throw new ChatProductApiError(
+    200,
+    "chat_api_contract_mismatch",
+    false,
+    "inspect_chat_api",
+    message,
+  );
+}
+
+/**
+ * Zod只证明单个DTO合法；Message Command还必须证明三个对象来自同一次提交。
+ * 该检查同时供真实Client与Adapter mock边界复用，避免测试替身绕过产品身份合同。
+ */
+export function assertFirstMessageResponseBinding(response: {
+  readonly session: ChatSession;
+  readonly message: ChatMessage;
+  readonly run: ChatRun;
+}): void {
+  if (
+    response.session.sessionId !== response.message.sessionId ||
+    (response.run.sessionId !== undefined &&
+      response.message.sessionId !== response.run.sessionId) ||
+    (response.run.sourceMessageId !== undefined &&
+      response.run.sourceMessageId !== response.message.messageId)
+  ) {
+    responseContractMismatch("Chat first-message response contained conflicting object identities");
+  }
+}
+
+export function assertExistingSessionMessageResponseBinding(
+  productSessionId: string,
+  response: { readonly message: ChatMessage; readonly run: ChatRun },
+): void {
+  if (
+    response.message.sessionId !== productSessionId ||
+    (response.run.sessionId !== undefined && response.run.sessionId !== productSessionId) ||
+    (response.run.sourceMessageId !== undefined &&
+      response.run.sourceMessageId !== response.message.messageId)
+  ) {
+    responseContractMismatch(
+      "Chat existing-session message response contained conflicting object identities",
+    );
+  }
+}
+
 export function parseChatApiBaseUrl(raw: string | undefined): URL {
   if (raw === undefined || raw.trim() === "") {
     throw new Error("CHAT_API_BASE_URL is required for @chat/dsh-lifeos-bridge");
@@ -235,19 +281,23 @@ export class ChatProductClient {
     };
   }
 
-  async executeProjectBootstrap(
+  async requestProjectBootstrapRetry(
     operationId: string,
+    expectedOperationRevision: number,
     commandId: string,
     signal?: AbortSignal,
   ): Promise<ProjectBootstrapOperation> {
     const response = await this.request(
-      `/api/project-bootstrap/operations/${encodeURIComponent(operationId)}/execute`,
+      `/api/project-bootstrap/operations/${encodeURIComponent(operationId)}/retry`,
       z.object({ operation: projectBootstrapOperationSchema }).strict(),
       {
         method: "POST",
         body: JSON.stringify({
           commandId,
-          payload: { projectBootstrapOperationId: operationId },
+          payload: {
+            projectBootstrapOperationId: operationId,
+            expectedOperationRevision,
+          },
         }),
         ...withSignal(signal),
       },
@@ -321,29 +371,34 @@ export class ChatProductClient {
     command: BridgeChatDispatchPlan["submitMessage"],
     signal?: AbortSignal,
   ): Promise<{ message: ChatMessage; run: ChatRun }> {
-    return await this.request(
-      `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
-      submitMessageResponseSchema,
-      {
-        method: command.method,
-        body: command.bodyJson,
-        ...withSignal(signal),
-      },
-    );
+    const ordinaryPath = `/api/sessions/${encodeURIComponent(sessionId)}/messages`;
+    const bootstrapPath = `/api/sessions/${encodeURIComponent(sessionId)}/project-bootstrap/messages`;
+    if (command.path !== ordinaryPath && command.path !== bootstrapPath) {
+      throw new Error("Bridge dispatch session-message path mismatch");
+    }
+    const response = await this.request(command.path, submitMessageResponseSchema, {
+      method: command.method,
+      body: command.bodyJson,
+      ...withSignal(signal),
+    });
+    assertExistingSessionMessageResponseBinding(sessionId, response);
+    return response;
   }
 
   async submitFirstMessageFromDispatch(
     command: BridgeChatDispatchPlan["submitMessage"],
     signal?: AbortSignal,
   ): Promise<{ session: ChatSession; message: ChatMessage; run: ChatRun }> {
-    if (command.path !== "/api/messages") {
+    if (command.path !== "/api/messages" && command.path !== "/api/project-bootstrap/messages") {
       throw new Error("Bridge dispatch first-message path mismatch");
     }
-    return await this.request(command.path, startSessionMessageResponseSchema, {
+    const response = await this.request(command.path, startSessionMessageResponseSchema, {
       method: command.method,
       body: command.bodyJson,
       ...withSignal(signal),
     });
+    assertFirstMessageResponseBinding(response);
+    return response;
   }
 
   async listWorkflows(signal?: AbortSignal): Promise<readonly LifeosWorkflowOption[]> {

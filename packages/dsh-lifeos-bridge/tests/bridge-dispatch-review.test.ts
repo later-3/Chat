@@ -328,6 +328,13 @@ test("two enabled gates require DSH approval before Bridge approval and reject p
       { firstMessageCalls, existingSessionMessageCalls },
       { firstMessageCalls: 1, existingSessionMessageCalls: 0 },
     );
+    const rejectedBinding = await state.readSession("dsh-two-gates-reject");
+    assert.equal(
+      rejectedBinding?.currentRequestKey === undefined
+        ? undefined
+        : rejectedBinding.requests[rejectedBinding.currentRequestKey]?.submissionStatus,
+      "definitely_uncommitted",
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -270,6 +270,7 @@ test("selectWorkflow submits the draft and adopts the returned projection", asyn
   assert.equal(requests.length, 1);
   assert.equal(requests[0]?.method, "PUT");
   assert.deepEqual(JSON.parse(requests[0]?.body ?? "{}"), {
+    scope: "session",
     workflowSelection: {
       workflowDefinitionRevisionId: "wfr_systemmemoryplanningv1",
       definitionSha256: "a".repeat(64),

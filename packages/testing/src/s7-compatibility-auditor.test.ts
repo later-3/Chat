@@ -126,7 +126,7 @@ describe("S7 versioned fixture与v1→最终兼容矩阵", () => {
     const migrated = migrateS7FixtureToCurrent(v12);
 
     expect(v12).toEqual(sourceBefore);
-    expect(migrated.schemaVersion).toBe("chat-product-store.v18");
+    expect(migrated.schemaVersion).toBe("chat-product-store.v19");
     expect(migrated.entities.runs).toEqual(v12.entities.runs);
     expect(migrated.entities.directAgentCandidates).toEqual({});
     expect(migrated.entities.promptReviewRequests).toEqual({});

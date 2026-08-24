@@ -64,6 +64,7 @@ import type {
   PromptFragmentIdFactory,
   ProjectBootstrapIdFactory,
 } from "@chat/application";
+import { createInProcessProjectBootstrapExecutionCoordinator } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
 import {
   createPlaneCeProjectBootstrap,
@@ -232,6 +233,10 @@ export async function createApplicationDeps(
     noteIds: createNoteIdFactory(),
     ruleIds: createRuleIdFactory(),
     directAgentIds: createDirectAgentIdFactory(),
+    // Product Bootstrap Decision ID与Provider配置无关；已有Candidate即使在Provider关闭后
+    // 仍必须能够被拒绝并退出一次性会话生命周期。
+    projectBootstrapIds: createProjectBootstrapIdFactory(),
+    projectBootstrapExecutionCoordinator: createInProcessProjectBootstrapExecutionCoordinator(),
     promptCatalog,
     promptFiles,
     promptFragmentIds: createPromptFragmentIdFactory(),
@@ -240,7 +245,6 @@ export async function createApplicationDeps(
       : {
           projectWorkspaceProvisioner,
           projectManagementBootstrap: projectManagementBootstrap!,
-          projectBootstrapIds: createProjectBootstrapIdFactory(),
         }),
     ...(trace !== undefined ? { trace } : {}),
   };
