@@ -1,5 +1,8 @@
 # Chat 本地安装
 
+第一次接手仓库先读[0–15分钟接手](./quick-context.md)；本文件只负责全新克隆、固定工件与
+本地运行，不复制产品边界。
+
 本文是全新克隆后的唯一安装入口。当前产品前端是固定DeepSeek Harness Web，后端由
 Chat API、Vercel Workflow与可选Code Workbench组成；Memory Provider代码暂时保留但默认关闭。不要再安装
 旧`apps/web`或Agent Canvas。当前开发阶段必须同时检出Later维护的Pi与DSH Fork稳定分支；不要检出官方上游替代它们。

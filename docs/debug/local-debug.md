@@ -1,5 +1,7 @@
 # Chat 本地调试
 
+若尚未确定模块Owner和安全完成门，先读[0–15分钟接手](../getting-started/quick-context.md)。
+
 ## 运行实例与固定端口
 
 | 服务 | production | VS Code debug |

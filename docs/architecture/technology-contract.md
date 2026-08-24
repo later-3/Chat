@@ -6,7 +6,7 @@
 
 | 层 | 选择 | 责任 |
 |---|---|---|
-| 唯一主前端 | Chat私有DeepSeek Harness Web rc.6（固定窄派生） | 原生会话、消息、Composer、布局、主题和Client插件宿主；仅Trajectory Location/标签/紧凑预览扩展 |
+| 唯一主前端 | Chat公开派生仓库维护的DeepSeek Harness Web rc.6（固定窄派生） | 原生会话、消息、Composer、布局、主题和Client插件宿主；仅Trajectory Location/标签/紧凑预览扩展 |
 | 前端集成 | `@chat/dsh-lifeos-bridge` | DSH Host/Client插件、Chat Query/Command适配、HITL与Workbench表面 |
 | HTTP | Node.js + Hono | 认证上下文、运行时校验、REST和未来SSE协议终止 |
 | Product Core | TypeScript Domain + Application | 状态机、权限、用例、事务、幂等和产品提交 |

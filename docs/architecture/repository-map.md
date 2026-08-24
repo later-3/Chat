@@ -20,17 +20,22 @@ packages/
   realtime/               Trace与Replay
   testing/                合同、架构与测试工具
 scripts/
+  ci/                     Managed Sources、去凭据环境、测试lane与CI/文档机械门
   dev/                    统一应用监督器与production/debug实例合同
   dsh/                    DSH Profile准备与Host启动
   debug/                  固定端口、PID身份与停止/状态
   memory/                 固定Memory依赖准备与验证
   workbench/              固定code-server准备、运行、回收与真实验证
   e2e/                    真实纵向预检和服务编排
+config/
+  managed-sources.json    Chat/Pi/DSH工具链、来源、构建输入、许可证与精确链接锁
+  test-lanes.json         正式测试文件与根测试命令的唯一主要lane分类
 docs/
   getting-started/        全新克隆、固定工件准备与本地安装
   architecture/           当前合同与as-built
   product/                稳定产品原则
   debug/                  当前调试入口
+  testing/                测试lane、默认内存与付费/外部写门
 ```
 
 仓库不包含旧自研Web、Agent Canvas、DeepSeek Harness源码副本或UI原型归档。DSH派生源码由独立Public仓库`later-3/deepseek-harness-chat`维护，本仓库只保存Fork链接声明、分支证据与漂移门；删除内容需要时从Git历史读取。
@@ -69,3 +74,17 @@ domain ───────────────────> TypeScript标�
 5. 实现事实与冻结规范冲突时必须停止并报告，由用户决定修实现还是修合同。
 
 当前树不保留archive/legacy、个人学习资料、历史任务书或过程截图；Git历史是唯一历史档案。Chat开发事实只由源码、`PROJECT_STATE.md`与`docs/`中的当前合同/as-built描述。
+
+## 工程与供应链入口
+
+| 目标 | 入口 | 失败关闭内容 |
+| --- | --- | --- |
+| 新Agent接手 | `docs/getting-started/quick-context.md`、14个Workspace README | 缺README、坏链接或虚构脚本 |
+| Managed Sources | `config/managed-sources.json`、`scripts/ci/managed-sources.mjs` | Fork来源/commit/dirty/marker/license/link漂移 |
+| 测试lane | `config/test-lanes.json`、`scripts/ci/test-lanes.mjs` | 漏分、重复、脚本/命令漂移、默认Heap聚合 |
+| 普通核心门 | `scripts/ci/verify-core.mjs` | 凭据/外部开关、build/lint/format/typecheck/core失败 |
+| Browser纵向 | `scripts/e2e/run-dsh-mode.mjs`、唯一Playwright配置 | 端口/数据隔离、凭据sentinel、真实Host/Client失败 |
+| CI结构 | `.github/workflows/ci.yml`、`scripts/ci/ci-workflow.test.mjs` | Action SHA、permissions、Job准备、paid/external混入 |
+
+公共API Surface与最低供应链的机器入口在对应Phase建立后继续登记于此，不从README手抄第二份
+Schema事实。

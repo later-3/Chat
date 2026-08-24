@@ -6,7 +6,7 @@
 >
 > 产品事实源：Product Store；Workflow返回值和Runtime状态不是产品终态。
 >
-> 当前默认产品Profile选择独立的“规划执行工作流”，其Definition只含“规划—审核—执行—验证—提交”，不包含Memory节点。另有用户显式选择的“Memory 增强规划与执行”和历史完整上下文Planning；三者身份、RunSpec和轨迹完全隔离。Chat装配Tencent MemoryCore窄Adapter，但不自动启动第三方服务。
+> 当前默认产品Profile选择独立的“规划执行工作流”，其Definition只含“规划—审核—执行—验证—提交”，不包含Memory节点。Memory已暂停：增强Definition、历史完整上下文Planning、Adapter和Workflow代码只为旧事实读取、迁移、兼容测试与后续明确授权的重新接入保留；当前组合根不装配可用Memory Provider，统一启动也不准备或启动第三方服务。
 
 ## 1. 为什么有多套Workflow
 
@@ -49,7 +49,7 @@ API Product Command
 | Workflow Store | Step结果、Hook等待、Checkpoint和重放 |
 | pi Runtime | Planner与Pi Adapter；Executor通过私有Client访问独立AgentSession服务 |
 | Pi Executor Service | Operation幂等、AgentSession、Workspace工具、Session与安全Journal |
-| Workflow Memory Registry | API与Workflow装配同一Tencent MemoryCore Adapter合同；无凭据时描述为未配置。memmy不进入新Workflow的活动Registry |
+| Workflow Memory Registry | Port、Tencent MemoryCore/memmy Adapter与历史合同保留；当前API/Workflow组合根不装配可用Provider，显式触达在Provider边界失败关闭 |
 | Trace/Replay | 记录系统路径并组合Product事实、版本证据进行回放 |
 
 Workflow进程不得打开Product JSON文件；所有产品读写都通过API私有Application Command完成。
@@ -365,12 +365,12 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 
 ## 11. 当前边界与后续演进
 
-已经实现：
+已经实现（Memory相关条目是历史已交付证据，不代表当前重新启用或进入通用完成门）：
 
 1. 同一Planning Workflow内的规划、反复修订、批准/拒绝、执行与正式提交。
 2. Provider中立、可重复的`memory.query`节点和唯一`WorkflowMemoryContext`；首个活动Provider为Tencent MemoryCore。
 3. `memory.write`节点与独立Memory Write/对账Workflow及结果未知语义；旧Import链只做历史兼容。
-4. 真实百炼`qwen3.7-plus`、真实Memory服务和真实浏览器E2E。
+4. 历史明确授权下运行过真实百炼`qwen3.7-plus`、真实Memory服务和真实浏览器E2E；当前paid与external门均只允许显式手工运行。
 5. 固定端口F5调试、严格Trace和多源Replay。
 6. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
 7. 独立Project Advancement耐久链、Stage/Milestone/负责人Update审核、State Transition与Timeline。

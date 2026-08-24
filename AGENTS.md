@@ -82,14 +82,15 @@ Chat的核心是“产品责任”，不是“代码量必须最大”。整个�
 新Session、接手现有任务或用户说“继续Chat项目”时，按顺序读取：
 
 1. `AGENTS.md`
-2. `PROJECT_LESSONS.md`
-3. `docs/product/concept-space.md`
-4. `PROJECT_CONTEXT.md`
-5. `PROJECT_STATE.md`
-6. `PROJECT_PLAN.md`
-7. `docs/product/flywheel.md`
-8. `docs/product/design-guidelines.md`
-9. 与任务直接相关的`docs/`
+2. `docs/getting-started/quick-context.md`
+3. `PROJECT_LESSONS.md`
+4. `docs/product/concept-space.md`
+5. `PROJECT_CONTEXT.md`
+6. `PROJECT_STATE.md`
+7. `PROJECT_PLAN.md`
+8. `docs/product/flywheel.md`
+9. `docs/product/design-guidelines.md`
+10. 与任务直接相关的`docs/`
 
 随后读取与当前任务直接相关的合同、as-built文档和测试。历史任务书只从Git历史按需读取，不保留在当前树，也不授予实现、下载、外部调用、push或PR权限。同一Session后续回复不机械重复全文。
 

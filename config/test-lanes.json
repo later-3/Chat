@@ -948,6 +948,11 @@
       "runner": "node"
     },
     {
+      "path": "scripts/ci/workspace-readmes.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
       "path": "scripts/dev/app-runtime.test.mjs",
       "lane": "integration",
       "runner": "node"
