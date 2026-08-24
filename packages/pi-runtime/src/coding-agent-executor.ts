@@ -1,7 +1,7 @@
 import { lstat, mkdir, readlink, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Model, Usage } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   createBashToolDefinition,
@@ -75,6 +75,12 @@ export interface PiCodingAgentRunInput {
 
 export interface PiCodingAgentRunner {
   run(input: PiCodingAgentRunInput): Promise<ExecutorStepCandidate>;
+}
+
+export interface AgentSessionPiCodingAgentRunnerOptions {
+  /** 仅供确定性合同/E2E注入已注册的本地Provider；生产缺省仍使用Pi标准配置链。 */
+  readonly createModelRuntime?: () => Promise<ModelRuntime>;
+  readonly model?: Model<string>;
 }
 
 export class PiCodingAgentExecutionError extends Error {
@@ -630,6 +636,8 @@ export function createCodingExecutorJournalExtension(input: {
 }
 
 export class AgentSessionPiCodingAgentRunner implements PiCodingAgentRunner {
+  constructor(private readonly options: AgentSessionPiCodingAgentRunnerOptions = {}) {}
+
   async run(input: PiCodingAgentRunInput): Promise<ExecutorStepCandidate> {
     const step = input.request.contract.steps.find(
       (candidate) => candidate.stepId === input.request.stepId,
@@ -641,12 +649,13 @@ export class AgentSessionPiCodingAgentRunner implements PiCodingAgentRunner {
     await mkdir(input.agentDir, { recursive: true, mode: 0o700 });
     await mkdir(input.sessionsDir, { recursive: true, mode: 0o700 });
 
-    const modelRuntime = await ModelRuntime.create({
-      refreshOnCreate: false,
-    });
+    const modelRuntime =
+      this.options.createModelRuntime === undefined
+        ? await ModelRuntime.create({ refreshOnCreate: false })
+        : await this.options.createModelRuntime();
     // 执行层直接使用Pi标准models.json/auth.json。命令型apiKey由ModelRuntime
     // 在Provider请求边界解析，Chat不读取、复制或持久密钥正文。
-    const model = modelRuntime.getModel(PI_CODING_PROVIDER, PI_CODING_MODEL);
+    const model = this.options.model ?? modelRuntime.getModel(PI_CODING_PROVIDER, PI_CODING_MODEL);
     if (model === undefined)
       throw new PiCodingAgentExecutionError("provider.pre_request.model_missing");
     let modelUrl: URL;

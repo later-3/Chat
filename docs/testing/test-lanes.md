@@ -49,6 +49,8 @@ pnpm verify:core
 `CHAT_PLANE_CE_API_TOKEN`。普通CI统一清空Provider、GitHub、Plane、SSH和动态模型Key，关闭
 Memory、Workbench、paid与external开关。仅本机存在Key不会触发凭据加载或外部子进程。
 
+Browser的18项场景、唯一Harness与子进程环境边界见[确定性Browser lane](./browser-lane.md)。
+
 ## Phase 2 基线度量
 
 2026-08-24在默认Node Heap、同一开发机上重新盘点：原根门为196个正式测试文件、1,532项

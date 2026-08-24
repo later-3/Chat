@@ -75,7 +75,7 @@ export function assertCiWorkflowContract(workflow) {
   assert.ok(workflow.jobs !== null && typeof workflow.jobs === "object");
   const jobs = Object.entries(workflow.jobs);
   assert.ok(jobs.length > 0);
-  for (const requiredJob of ["core", "contract", "integration", "compat"]) {
+  for (const requiredJob of ["core", "contract", "integration", "compat", "browser"]) {
     assert.ok(workflow.jobs[requiredJob] !== undefined, `CI缺少${requiredJob} lane Job`);
   }
   const commandsFor = (name) =>
@@ -85,6 +85,12 @@ export function assertCiWorkflowContract(workflow) {
   assert.ok(commandsFor("core").includes("pnpm verify:core"));
   assert.ok(commandsFor("contract").includes("pnpm test:contract"));
   assert.ok(commandsFor("integration").includes("pnpm test:integration"));
+  assert.ok(commandsFor("browser").includes("pnpm test:browser"));
+  assert.ok(
+    commandsFor("browser").some((command) =>
+      command.includes("playwright install --with-deps chromium"),
+    ),
+  );
   assert.ok(commandsFor("compat").includes("pnpm test:compat"));
   const compatDecision = workflow.jobs.compat.steps.find((step) => step.id === "compat");
   assert.equal(compatDecision?.run, "node scripts/ci/compat-change-gate.mjs");

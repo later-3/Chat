@@ -2521,6 +2521,14 @@ describe("公开产品API", () => {
       runtime: { kind: "pi_coding_agent" as const, baseVariantKey: "pi_cli_default" },
       systemPrompt: { mode: "inherit_runtime" as const },
       enabledToolNames: ["read", "bash", "edit", "write"] as const,
+      enabledCapabilityRefs: ["read", "bash", "edit", "write"].map((localName) => {
+        const capability = runtimeToolFixture(localName).capability;
+        return {
+          localName,
+          capabilityId: capability.capabilityId,
+          descriptorSha256: capability.descriptorSha256,
+        };
+      }),
       resources: inheritedResources,
     };
     const firstResponse = await postJson(app, "/api/agent-profiles/direct/versions", {

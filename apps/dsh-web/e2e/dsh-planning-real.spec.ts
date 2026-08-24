@@ -9,7 +9,6 @@ import {
 import { createRunActivitySink } from "@chat/realtime";
 import { z } from "zod";
 import { DSH_REAL_E2E_PORTS } from "../../../scripts/e2e/dsh-real-environment.mjs";
-import { exerciseDshWorkbench, observeWorkbenchTraffic } from "./dsh-workbench-real-helper.js";
 
 const BRIDGE_PACKAGE = "@chat/dsh-lifeos-bridge";
 const COMPLETION_MARKER = "DSH_REAL_E2E_COMPLETED_20260816";
@@ -149,8 +148,6 @@ test("rc.6 DSH：发送 -> Plan等待人工 -> 刷新 -> 批准 -> 正式Assista
   page,
   request,
 }) => {
-  const workbenchTraffic = observeWorkbenchTraffic(page);
-
   const clientFactoryResponse = page.waitForResponse((response) =>
     response.url().includes(`/plugins/${BRIDGE_PACKAGE}/client.js?rev=`),
   );
@@ -345,8 +342,4 @@ test("rc.6 DSH：发送 -> Plan等待人工 -> 刷新 -> 批准 -> 正式Assista
   for (const marker of PRIVATE_MARKERS) {
     expect(JSON.stringify(publicBrowserSurface)).not.toContain(marker);
   }
-
-  // 同一付费用例继续验证Hosted Workbench；以下步骤不发送Chat消息，也不会增加
-  // Planner/Executor调用。文件、SCM、Diff和Terminal必须来自真实code-server UI。
-  await exerciseDshWorkbench(page, workbenchTraffic);
 });

@@ -1114,7 +1114,16 @@ export async function createAgentVersion(
   }));
   if (
     input.payload.enabledCapabilityRefs !== undefined &&
-    JSON.stringify(input.payload.enabledCapabilityRefs) !== JSON.stringify(enabledCapabilityRefs)
+    (input.payload.enabledCapabilityRefs.length !== enabledCapabilityRefs.length ||
+      input.payload.enabledCapabilityRefs.some((submitted, index) => {
+        const current = enabledCapabilityRefs[index];
+        return (
+          current === undefined ||
+          submitted.localName !== current.localName ||
+          submitted.capabilityId !== current.capabilityId ||
+          submitted.descriptorSha256 !== current.descriptorSha256
+        );
+      }))
   ) {
     throw revisionConflict("Agent Version提交的Capability身份与当前Pi目录不一致");
   }

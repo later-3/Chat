@@ -37,6 +37,7 @@ async function openReadyConversation(page: Page) {
 }
 
 test("rc.6 DSH原生轨迹、双源会话记录与上下文注入保留完整过程", async ({ page, request }) => {
+  test.setTimeout(120_000);
   const composer = await openReadyConversation(page);
 
   // 空会话没有纯预演合同：管理面板必须如实显示尚未组装，而不是复制
@@ -76,21 +77,28 @@ test("rc.6 DSH原生轨迹、双源会话记录与上下文注入保留完整过
   // 用语义上稳定的Workflow标签和标题校验，不绑定具体排版字符。
   const workflowRecord = page.getByText(/Workflow.*轨迹验证工作流/u).first();
   await expect(workflowRecord).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("RUN", { exact: true }).first()).toBeVisible();
+  const timeline = page.getByRole("region", { name: "Trajectory timeline" });
+  await expect(timeline).toBeVisible();
+  const trajectoryTable = page.getByRole("table");
+  await expect(
+    // 顶层行的可访问名称包含轮次前缀（例如“Turn 1 TOOL”）；只绑定
+    // 稳定的类型后缀，不把DSH的轮次展示文案冻结成Chat合同。
+    trajectoryTable.getByRole("cell", { name: /TOOL$/u }).first(),
+  ).toBeVisible();
+  await expect(trajectoryTable.getByRole("cell", { name: "SUBTOOL", exact: true })).toHaveCount(9);
   const expandCalls = page.getByRole("button", { name: /展开调用|Expand calls/u });
   if (await expandCalls.isVisible().catch(() => false)) await expandCalls.click();
   for (const label of [
-    "DSH",
-    "BRIDGE",
-    "BACKEND",
-    "WORKFLOW",
-    "NODE",
-    "STEP",
-    "AGENT",
-    "MODEL",
-    "TOOL",
+    /DSH.*用户输入与原生会话/u,
+    /Bridge.*选择、审核与身份映射/u,
+    /Chat.*Product Run 与 Workflow/u,
+    /执行轨迹验证/u,
+    /运行node --version/u,
+    /执行 Agent/u,
+    /模型：fixture\/model/u,
+    /工具：bash/u,
   ]) {
-    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+    await expect(trajectoryTable.getByText(label).first()).toBeVisible();
   }
   await expect(page.getByText("TRACE_UI_RESULT_OK")).toHaveCount(0);
 

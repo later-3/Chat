@@ -8,7 +8,11 @@ import {
   DSH_PROMPT_THREE_GATES_E2E_PORTS,
   DSH_PROJECT_BOOTSTRAP_E2E_PORTS,
   DSH_CAPABILITY_GOVERNANCE_E2E_PORTS,
+  DSH_PLANNING_FAUX_E2E_PORTS,
   DSH_REAL_E2E_PORTS,
+  DSH_BROWSER_FORBIDDEN_ENV_NAMES,
+  assertDeterministicBrowserEnvironment,
+  deterministicBrowserProcessEnvironment,
   dshRealWebEnvironment,
   dshRealWorkbenchEnvironment,
   resolveDshRealWorkbenchFixtureRoot,
@@ -27,10 +31,33 @@ test("真实浏览器门的45xxx端口族不与production或VS Code debug重叠"
     DSH_PROMPT_THREE_GATES_E2E_PORTS,
     DSH_PROJECT_BOOTSTRAP_E2E_PORTS,
     DSH_CAPABILITY_GOVERNANCE_E2E_PORTS,
+    DSH_PLANNING_FAUX_E2E_PORTS,
     DSH_REAL_E2E_PORTS,
   ]) {
     for (const port of Object.values(ports)) assert.equal(applicationPorts.has(port), false);
   }
+});
+
+test("确定性Browser公共环境从allowlist开始并冻结paid/external/Memory/Workbench", () => {
+  const environment = deterministicBrowserProcessEnvironment({
+    PATH: "/bin",
+    LANG: "zh_CN.UTF-8",
+    HOME: "/Users/private",
+    DASHSCOPE_API_KEY: "provider-secret",
+    GITHUB_TOKEN: "github-secret",
+    PLANE_API_TOKEN: "plane-secret",
+    SSH_AUTH_SOCK: "/tmp/ssh.sock",
+    CHAT_ALLOW_PAID_TESTS: "1",
+  });
+  assert.equal(environment.PATH, "/bin");
+  assert.equal(environment.LANG, "zh_CN.UTF-8");
+  assert.equal("HOME" in environment, false);
+  for (const name of DSH_BROWSER_FORBIDDEN_ENV_NAMES) assert.equal(name in environment, false);
+  assert.equal(environment.CHAT_ALLOW_PAID_TESTS, "0");
+  assert.equal(environment.CHAT_ALLOW_EXTERNAL_WRITES, "0");
+  assert.equal(environment.CHAT_MEMORY_ENABLED, "0");
+  assert.equal(environment.CHAT_CODE_WORKBENCH_ENABLED, "0");
+  assert.doesNotThrow(() => assertDeterministicBrowserEnvironment(environment));
 });
 
 test("建项浏览器门使用独立数据根且DSH Host仍拿不到Provider凭据", () => {
@@ -54,6 +81,21 @@ test("建项浏览器门使用独立数据根且DSH Host仍拿不到Provider凭�
   assert.equal(environment.CHAT_API_BASE_URL, "http://127.0.0.1:45411");
   assert.equal("DASHSCOPE_API_KEY" in environment, false);
   assert.equal("PLANE_API_TOKEN" in environment, false);
+});
+
+test("受管短临时根把父目录证明传给嵌套DSH启动器", () => {
+  const first = dshRealWebEnvironment("/repo/chat", {
+    PATH: "/bin",
+    CHAT_DSH_E2E_DATA_ROOT: "/repo/chat/.data/e2e/dsh-real",
+    CHAT_DSH_E2E_TEMP_ROOT: "/tmp/chat-dsh-e2e-fixture",
+    CHAT_DSH_E2E_TEMP_PARENT: "/tmp",
+  });
+  assert.equal(first.TMPDIR, "/tmp/chat-dsh-e2e-fixture");
+  assert.equal(first.CHAT_DSH_E2E_TEMP_PARENT, "/tmp");
+
+  const nested = dshRealWebEnvironment("/repo/chat", first);
+  assert.equal(nested.TMPDIR, "/tmp/chat-dsh-e2e-fixture");
+  assert.equal(nested.CHAT_DSH_E2E_TEMP_PARENT, "/tmp");
 });
 
 test("真实浏览器入口禁止硬编码production端口或调用production preclean", () => {

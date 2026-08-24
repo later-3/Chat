@@ -19,3 +19,4 @@ export * from "./direct-runtime-api-callbacks.js";
 export * from "./pi-fork-capabilities.js";
 export * from "./coding-agent-runtime-profile.js";
 export * from "./deterministic-capability-e2e-runner.js";
+export * from "./deterministic-planning-e2e-runner.js";

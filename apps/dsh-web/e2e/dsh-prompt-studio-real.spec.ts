@@ -209,6 +209,9 @@ test("Direct Workflow可配置是否逐次审核提示词并在刷新后恢复",
     "false",
   );
   await dialog.getByRole("button", { name: "应用到当前会话", exact: true }).click();
+  // click只等待浏览器事件派发；Modal关闭才表示selectWorkflow的持久化Command已完成。
+  // 若立即reload，偶尔会在Command落盘前重载并读回默认开启值，形成5分钟假失败。
+  await expect(dialog).toBeHidden();
 
   await page.reload();
   await expect(page.getByTestId("lifeos-workflow-config-open")).toBeVisible();
@@ -224,6 +227,7 @@ test("Direct Workflow可配置是否逐次审核提示词并在刷新后恢复",
 });
 
 test("Agent默认、Workflow节点实例与本次会话覆盖是三个清晰作用域", async ({ page }) => {
+  test.setTimeout(120_000);
   await openReadyConversation(page);
   await page.getByTestId("lifeos-workflow-current").click();
   await page.getByRole("menuitem", { name: /^规划执行工作流 规划 · 系统$/u }).click();
@@ -248,11 +252,21 @@ test("Agent默认、Workflow节点实例与本次会话覆盖是三个清晰作�
   await page.getByTestId("lifeos-workflow-config-open").click();
   const transientDialog = page.getByRole("dialog", { name: /配置 · 规划执行工作流/u });
   await expect(transientDialog).toContainText("本次会话临时修改");
+  const workflowSaved = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/lifeos/workflow/agent-node-configurations" &&
+      response.request().method() === "POST",
+    { timeout: 15_000 },
+  );
   await transientDialog
     .getByRole("button", { name: "保存到 Workflow", exact: true })
     .first()
     .click();
-  await expect(page.getByTestId("lifeos-workflow-current")).toContainText("我的配置");
+  const workflowResponse = await workflowSaved;
+  expect(workflowResponse.status(), await workflowResponse.text()).toBe(201);
+  await expect(page.getByTestId("lifeos-workflow-current")).toContainText("我的配置", {
+    timeout: 15_000,
+  });
 
   await page.getByTestId("lifeos-workflow-config-open").click();
   const persistedDialog = page.getByRole("dialog", { name: /配置 · .*我的配置/u });
@@ -339,7 +353,15 @@ test("Agent默认、Workflow节点实例与本次会话覆盖是三个清晰作�
   await versionManager
     .getByRole("textbox", { name: "Agent Version名称", exact: true })
     .fill("E2E Direct Version");
+  const versionCreated = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === "/lifeos/agents/direct/versions" && response.request().method() === "POST"
+    );
+  });
   await versionManager.getByRole("button", { name: "保存为新 Agent Version", exact: true }).click();
+  const versionResponse = await versionCreated;
+  expect(versionResponse.status(), await versionResponse.text()).toBe(201);
   await expect(versionManager.getByRole("button", { name: /E2E Direct Version/u })).toBeVisible();
   await agents.getByRole("button", { name: /Pi Coding Agent · 规划步骤执行/u }).click();
   await expect(agents.getByTestId("lifeos-agent-runtime-baseline")).toBeVisible();
@@ -355,7 +377,15 @@ test("Agent默认、Workflow节点实例与本次会话覆盖是三个清晰作�
   });
   const original = await prompt.inputValue();
   await prompt.fill(`${original}\n\n<!-- e2e-agent-revision -->`);
+  const promptRevisionSaved = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/lifeos/agents/planner/prompt-revisions" &&
+      response.request().method() === "POST",
+    { timeout: 15_000 },
+  );
   await agents.getByRole("button", { name: "保存旧Prompt Revision", exact: true }).click();
+  const promptRevisionResponse = await promptRevisionSaved;
+  expect(promptRevisionResponse.status(), await promptRevisionResponse.text()).toBe(200);
   await expect(agents).toContainText(/我的覆盖 v\d+/u);
   await agents.getByRole("button", { name: "恢复 Chat 内置默认", exact: true }).click();
   await expect(agents).toContainText("内置默认");

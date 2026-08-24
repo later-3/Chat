@@ -53,6 +53,11 @@
       "runner": "covered-by-command"
     },
     {
+      "path": "apps/dsh-web/e2e/dsh-planning-faux-real.spec.ts",
+      "lane": "browser",
+      "runner": "covered-by-command"
+    },
+    {
       "path": "apps/dsh-web/e2e/dsh-project-bootstrap-real.spec.ts",
       "lane": "browser",
       "runner": "covered-by-command"
@@ -983,6 +988,11 @@
       "runner": "node"
     },
     {
+      "path": "scripts/e2e/browser-lane-contract.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
       "path": "scripts/e2e/dsh-real-terminal-canary.test.mjs",
       "lane": "contract",
       "runner": "node"
@@ -1048,7 +1058,7 @@
       "name": "test:browser",
       "kind": "aggregate",
       "lanes": ["browser"],
-      "command": "pnpm test:browser:pwa-mobile && pnpm test:browser:prompt-studio && pnpm test:browser:trajectory && pnpm test:browser:project-bootstrap && pnpm test:browser:capability-governance"
+      "command": "pnpm test:browser:pwa-mobile && pnpm test:browser:planning && pnpm test:browser:prompt-studio && pnpm test:browser:trajectory && pnpm test:browser:project-bootstrap && pnpm test:browser:capability-governance"
     },
     {
       "name": "test:browser:capability-governance",
@@ -1061,6 +1071,12 @@
       "kind": "lane",
       "lane": "browser",
       "command": "node scripts/e2e/run-dsh-mode.mjs project-bootstrap"
+    },
+    {
+      "name": "test:browser:planning",
+      "kind": "lane",
+      "lane": "browser",
+      "command": "node scripts/e2e/run-dsh-mode.mjs planning-faux"
     },
     {
       "name": "test:browser:prompt-studio",

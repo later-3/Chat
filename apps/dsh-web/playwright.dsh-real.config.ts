@@ -5,9 +5,12 @@ import {
   DSH_PROMPT_THREE_GATES_E2E_PORTS,
   DSH_PROJECT_BOOTSTRAP_E2E_PORTS,
   DSH_CAPABILITY_GOVERNANCE_E2E_PORTS,
+  DSH_PLANNING_FAUX_E2E_PORTS,
   DSH_REAL_E2E_PORTS,
+  deterministicBrowserProcessEnvironment,
   dshRealWebEnvironment,
   dshRealWorkbenchEnvironment,
+  managedDshE2eTemporaryRoot,
 } from "../../scripts/e2e/dsh-real-environment.mjs";
 
 const workbenchOnly = process.env.CHAT_DSH_E2E_MODE === "workbench-only";
@@ -17,6 +20,7 @@ const promptStudioOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-studio-only";
 const promptThreeGatesOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-three-gates-only";
 const projectBootstrapOnly = process.env.CHAT_DSH_E2E_MODE === "project-bootstrap-only";
 const capabilityGovernanceOnly = process.env.CHAT_DSH_E2E_MODE === "capability-governance-only";
+const planningFauxOnly = process.env.CHAT_DSH_E2E_MODE === "planning-faux-only";
 const paidMode =
   promptThreeGatesOnly ||
   (!workbenchOnly &&
@@ -24,7 +28,8 @@ const paidMode =
     !trajectoryOnly &&
     !promptStudioOnly &&
     !projectBootstrapOnly &&
-    !capabilityGovernanceOnly);
+    !capabilityGovernanceOnly &&
+    !planningFauxOnly);
 const providerEnvironmentModule = "../../scripts/debug/load-provider-env.mjs";
 if (paidMode && process.env.CHAT_ALLOW_PAID_TESTS !== "1") {
   throw new Error("DSH付费Playwright配置需要CHAT_ALLOW_PAID_TESTS=1");
@@ -39,55 +44,63 @@ const dataRoot = resolve(
   repoRoot,
   promptThreeGatesOnly
     ? ".data/e2e/dsh-prompt-three-gates-real"
-    : projectBootstrapOnly
-      ? ".data/e2e/dsh-project-bootstrap-real"
-      : capabilityGovernanceOnly
-        ? ".data/e2e/dsh-capability-governance-real"
-        : ".data/e2e/dsh-real",
+    : planningFauxOnly
+      ? ".data/e2e/dsh-planning-faux-real"
+      : projectBootstrapOnly
+        ? ".data/e2e/dsh-project-bootstrap-real"
+        : capabilityGovernanceOnly
+          ? ".data/e2e/dsh-capability-governance-real"
+          : ".data/e2e/dsh-real",
 );
-const processEnvironment = Object.fromEntries(
-  [
-    "PATH",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "TZ",
-    "SHELL",
-    "TERM",
-    "HOME",
-    "USERPROFILE",
-    "TMPDIR",
-    "TMP",
-    "TEMP",
-    "SystemRoot",
-    "ComSpec",
-    "PATHEXT",
-    "COREPACK_HOME",
-    "COREPACK_ENABLE_DOWNLOAD_PROMPT",
-    "npm_config_store_dir",
-  ].flatMap((name) => {
-    const value = process.env[name];
-    return typeof value === "string" && value !== "" ? [[name, value]] : [];
-  }),
-);
-const sharedEnvironment = {
+const processEnvironment = deterministicBrowserProcessEnvironment(process.env);
+// Playwright会在选择webServer前求值整份配置。Browser lane把系统mktemp根只交给
+// 当前DSH实例；通用PWA占位对象必须显式丢弃该模式私有值，否则一个未选中的
+// server也会按默认dsh-real数据根校验它并造成假失败。
+const genericProfileEnvironment = {
   ...process.env,
+  CHAT_DSH_E2E_DATA_ROOT: undefined,
+  CHAT_DSH_E2E_TEMP_ROOT: undefined,
+};
+const browserTemporary = process.env.CHAT_DSH_E2E_TEMP_ROOT ?? resolve(dataRoot, "process-tmp");
+const browserTemporaryParent = process.env.CHAT_DSH_E2E_TEMP_PARENT ?? process.env.TMPDIR ?? "";
+if (
+  !paidMode &&
+  (browserTemporaryParent === "" ||
+    !managedDshE2eTemporaryRoot(browserTemporary, browserTemporaryParent))
+) {
+  throw new Error("确定性Browser Playwright缺少受管短临时目录");
+}
+const deterministicDataEnvironment = {
+  ...processEnvironment,
+  HOME: resolve(dataRoot, "process-home"),
+  USERPROFILE: resolve(dataRoot, "process-home"),
+  TMPDIR: browserTemporary,
+  TMP: browserTemporary,
+  TEMP: browserTemporary,
+  CHAT_DSH_E2E_TEMP_ROOT: browserTemporary,
+  CHAT_DSH_E2E_TEMP_PARENT: browserTemporaryParent,
+};
+const dshEnvironmentForMode = (enabled: boolean, environment: NodeJS.ProcessEnv) =>
+  enabled ? dshRealWebEnvironment(repoRoot, environment) : deterministicDataEnvironment;
+const sharedEnvironment = {
+  ...(paidMode ? process.env : deterministicDataEnvironment),
   CHAT_REPO_ROOT: repoRoot,
   CHAT_RUNTIME_KEY: "rtk_dshreale2etestonly0000000000",
   CHAT_TRACE_DIR: resolve(dataRoot, "traces"),
   CHAT_RUN_ACTIVITY_DIR: resolve(dataRoot, "run-activity"),
 };
 const capabilityGovernanceEnvironment = {
-  ...processEnvironment,
+  ...deterministicDataEnvironment,
   CHAT_REPO_ROOT: repoRoot,
   CHAT_RUNTIME_KEY: "rtk_dshcapabilitye2etestonly0000",
   CHAT_TRACE_DIR: resolve(dataRoot, "traces"),
   CHAT_RUN_ACTIVITY_DIR: resolve(dataRoot, "run-activity"),
   CHAT_DSH_E2E_DATA_ROOT: dataRoot,
-  CHAT_DSH_E2E_TEMP_ROOT: resolve(repoRoot, ".data/e2e/dsh-cap-tmp"),
-  TMPDIR: resolve(repoRoot, ".data/e2e/dsh-cap-tmp"),
-  TMP: resolve(repoRoot, ".data/e2e/dsh-cap-tmp"),
-  TEMP: resolve(repoRoot, ".data/e2e/dsh-cap-tmp"),
+  CHAT_DSH_E2E_TEMP_ROOT: browserTemporary,
+  CHAT_DSH_E2E_TEMP_PARENT: browserTemporaryParent,
+  TMPDIR: browserTemporary,
+  TMP: browserTemporary,
+  TEMP: browserTemporary,
   CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
     {
       rootId: "root_chat",
@@ -170,13 +183,24 @@ const api = {
     CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.piExecutor)}`,
   },
 } as const;
-const dsh = {
+const dshWorkbench = {
   command: "node scripts/e2e/start-dsh-real.mjs",
   cwd: repoRoot,
   url: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.web)}/`,
   reuseExistingServer: false,
   timeout: 120_000,
-  env: dshRealWebEnvironment(repoRoot, process.env),
+  env: dshRealWebEnvironment(repoRoot, genericProfileEnvironment),
+} as const;
+const dsh = {
+  command: "node scripts/e2e/start-dsh-pwa-real.mjs",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.web)}/healthz`,
+  reuseExistingServer: false,
+  timeout: 120_000,
+  env: dshRealWebEnvironment(repoRoot, {
+    ...sharedEnvironment,
+    CHAT_CODE_WORKBENCH_ENABLED: "0",
+  }),
 } as const;
 const dshPwa = {
   command: "node scripts/e2e/start-dsh-pwa-real.mjs",
@@ -184,7 +208,7 @@ const dshPwa = {
   url: `http://127.0.0.1:${String(DSH_REAL_E2E_PORTS.web)}/healthz`,
   reuseExistingServer: false,
   timeout: 120_000,
-  env: dshRealWebEnvironment(repoRoot, process.env),
+  env: dshRealWebEnvironment(repoRoot, genericProfileEnvironment),
 } as const;
 const trajectoryDsh = {
   ...dshPwa,
@@ -243,7 +267,7 @@ const projectBootstrapDsh = {
   url: `http://127.0.0.1:${String(DSH_PROJECT_BOOTSTRAP_E2E_PORTS.web)}/healthz`,
   reuseExistingServer: false,
   timeout: 120_000,
-  env: dshRealWebEnvironment(repoRoot, {
+  env: dshEnvironmentForMode(projectBootstrapOnly, {
     ...projectBootstrapEnvironment,
     CHAT_API_BASE_URL: `http://127.0.0.1:${String(DSH_PROJECT_BOOTSTRAP_E2E_PORTS.api)}`,
     CHAT_PUBLIC_WEB_PORT: String(DSH_PROJECT_BOOTSTRAP_E2E_PORTS.web),
@@ -308,7 +332,7 @@ const capabilityGovernanceDsh = {
   url: `http://127.0.0.1:${String(DSH_CAPABILITY_GOVERNANCE_E2E_PORTS.web)}/healthz`,
   reuseExistingServer: false,
   timeout: 120_000,
-  env: dshRealWebEnvironment(repoRoot, {
+  env: dshEnvironmentForMode(capabilityGovernanceOnly, {
     ...capabilityGovernanceEnvironment,
     CHAT_API_BASE_URL: `http://127.0.0.1:${String(DSH_CAPABILITY_GOVERNANCE_E2E_PORTS.api)}`,
     CHAT_PUBLIC_WEB_PORT: String(DSH_CAPABILITY_GOVERNANCE_E2E_PORTS.web),
@@ -324,6 +348,73 @@ const promptStudioRuntime = {
   reuseExistingServer: false,
   timeout: 180_000,
   env: sharedEnvironment,
+} as const;
+const planningFauxEnvironment = {
+  ...deterministicDataEnvironment,
+  CHAT_REPO_ROOT: repoRoot,
+  CHAT_DSH_E2E_DATA_ROOT: dataRoot,
+  CHAT_DSH_E2E_TEMP_ROOT: browserTemporary,
+  CHAT_DSH_E2E_TEMP_PARENT: browserTemporaryParent,
+  TMPDIR: browserTemporary,
+  TMP: browserTemporary,
+  TEMP: browserTemporary,
+  CHAT_RUNTIME_KEY: "rtk_dshplanningfauxe2e00000000",
+  CHAT_TRACE_DIR: resolve(dataRoot, "traces"),
+  CHAT_RUN_ACTIVITY_DIR: resolve(dataRoot, "run-activity"),
+};
+const planningFauxRuntime = {
+  command: "pnpm --filter @chat/testing exec tsx src/dsh-planning-browser-runtime.ts",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_PLANNING_FAUX_E2E_PORTS.api)}/api/readyz`,
+  reuseExistingServer: false,
+  timeout: 180_000,
+  env: {
+    ...planningFauxEnvironment,
+    PORT: String(DSH_PLANNING_FAUX_E2E_PORTS.api),
+    CHAT_WORKFLOW_PORT: String(DSH_PLANNING_FAUX_E2E_PORTS.workflow),
+    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_PLANNING_FAUX_E2E_PORTS.piExecutor)}`,
+  },
+} as const;
+const planningFauxPiExecutor = {
+  command: "pnpm --filter @chat/pi-executor exec tsx src/planning-faux-e2e.ts",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_PLANNING_FAUX_E2E_PORTS.piExecutor)}/healthz`,
+  reuseExistingServer: false,
+  timeout: 180_000,
+  env: {
+    ...planningFauxEnvironment,
+    CHAT_PI_EXECUTOR_PORT: String(DSH_PLANNING_FAUX_E2E_PORTS.piExecutor),
+    CHAT_PI_EXECUTOR_DATA_DIR: resolve(dataRoot, "pi-executor"),
+    CHAT_API_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_PLANNING_FAUX_E2E_PORTS.api)}`,
+  },
+} as const;
+const planningFauxWorkflow = {
+  command: "pnpm --filter @chat/testing exec tsx src/fixtures/dsh-planning-workflow-runtime.ts",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_PLANNING_FAUX_E2E_PORTS.workflow)}/healthz`,
+  reuseExistingServer: false,
+  timeout: 180_000,
+  env: {
+    ...planningFauxEnvironment,
+    PORT: String(DSH_PLANNING_FAUX_E2E_PORTS.api),
+    CHAT_WORKFLOW_PORT: String(DSH_PLANNING_FAUX_E2E_PORTS.workflow),
+    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_PLANNING_FAUX_E2E_PORTS.piExecutor)}`,
+  },
+} as const;
+const planningFauxDsh = {
+  command: "node scripts/e2e/start-dsh-pwa-real.mjs",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_PLANNING_FAUX_E2E_PORTS.web)}/healthz`,
+  reuseExistingServer: false,
+  timeout: 120_000,
+  env: dshEnvironmentForMode(planningFauxOnly, {
+    ...planningFauxEnvironment,
+    CHAT_API_BASE_URL: `http://127.0.0.1:${String(DSH_PLANNING_FAUX_E2E_PORTS.api)}`,
+    CHAT_PUBLIC_WEB_PORT: String(DSH_PLANNING_FAUX_E2E_PORTS.web),
+    CHAT_DSH_INTERNAL_WEB_PORT: String(DSH_PLANNING_FAUX_E2E_PORTS.webInternal),
+    CHAT_PUBLIC_WEB_HOSTNAME: undefined,
+    CHAT_WEB_AUTH_REQUIRED: "0",
+  }),
 } as const;
 const promptThreeGatesPiExecutor = {
   command: "pnpm --filter @chat/pi-executor start",
@@ -374,7 +465,7 @@ const promptThreeGatesDsh = {
   url: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.web)}/healthz`,
   reuseExistingServer: false,
   timeout: 120_000,
-  env: dshRealWebEnvironment(repoRoot, {
+  env: dshEnvironmentForMode(promptThreeGatesOnly, {
     ...promptThreeGatesEnvironment,
     CHAT_API_BASE_URL: `http://127.0.0.1:${String(DSH_PROMPT_THREE_GATES_E2E_PORTS.api)}`,
     CHAT_PUBLIC_WEB_PORT: String(DSH_PROMPT_THREE_GATES_E2E_PORTS.web),
@@ -402,14 +493,16 @@ export default defineConfig({
           ? "dsh-project-bootstrap-real.spec.ts"
           : capabilityGovernanceOnly
             ? "dsh-capability-governance-real.spec.ts"
-            : promptThreeGatesOnly
-              ? "dsh-prompt-three-gates-real.spec.ts"
-              : trajectoryOnly
-                ? "dsh-trajectory-real.spec.ts"
-                : "dsh-planning-real.spec.ts",
-  ...(promptThreeGatesOnly || projectBootstrapOnly || capabilityGovernanceOnly
-    ? {}
-    : { globalTeardown: resolve(repoRoot, "scripts/e2e/dsh-real-workbench-lifecycle.mjs") }),
+            : planningFauxOnly
+              ? "dsh-planning-faux-real.spec.ts"
+              : promptThreeGatesOnly
+                ? "dsh-prompt-three-gates-real.spec.ts"
+                : trajectoryOnly
+                  ? "dsh-trajectory-real.spec.ts"
+                  : "dsh-planning-real.spec.ts",
+  ...(workbenchOnly
+    ? { globalTeardown: resolve(repoRoot, "scripts/e2e/dsh-real-workbench-lifecycle.mjs") }
+    : {}),
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -424,9 +517,11 @@ export default defineConfig({
           ? DSH_PROJECT_BOOTSTRAP_E2E_PORTS.web
           : capabilityGovernanceOnly
             ? DSH_CAPABILITY_GOVERNANCE_E2E_PORTS.web
-            : promptThreeGatesOnly
-              ? DSH_PROMPT_THREE_GATES_E2E_PORTS.web
-              : DSH_REAL_E2E_PORTS.web,
+            : planningFauxOnly
+              ? DSH_PLANNING_FAUX_E2E_PORTS.web
+              : promptThreeGatesOnly
+                ? DSH_PROMPT_THREE_GATES_E2E_PORTS.web
+                : DSH_REAL_E2E_PORTS.web,
     )}`,
     trace: "off",
     screenshot: "off",
@@ -434,7 +529,7 @@ export default defineConfig({
     actionTimeout: promptThreeGatesOnly ? 30_000 : 0,
   },
   webServer: workbenchOnly
-    ? [codeServer, dsh]
+    ? [codeServer, dshWorkbench]
     : pwaOnly
       ? [dshPwa]
       : promptStudioOnly
@@ -448,15 +543,17 @@ export default defineConfig({
                 capabilityGovernanceApi,
                 capabilityGovernanceDsh,
               ]
-            : promptThreeGatesOnly
-              ? [
-                  promptThreeGatesPiExecutor,
-                  promptThreeGatesWorkflow,
-                  promptThreeGatesApi,
-                  promptThreeGatesDsh,
-                ]
-              : trajectoryOnly
-                ? [trajectoryApi, trajectoryDsh]
-                : [codeServer, piExecutor, workflow, api, dsh],
+            : planningFauxOnly
+              ? [planningFauxRuntime, planningFauxPiExecutor, planningFauxWorkflow, planningFauxDsh]
+              : promptThreeGatesOnly
+                ? [
+                    promptThreeGatesPiExecutor,
+                    promptThreeGatesWorkflow,
+                    promptThreeGatesApi,
+                    promptThreeGatesDsh,
+                  ]
+                : trajectoryOnly
+                  ? [trajectoryApi, trajectoryDsh]
+                  : [piExecutor, workflow, api, dsh],
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });
