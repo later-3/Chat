@@ -15,7 +15,7 @@ Code Workbench当前为Beta：本地实现与固定工件继续保留，但不�
 | CPU | arm64或x64 |
 | Node.js | Node 24（本仓库`.node-version`固定`24.8.0`，原生工件ABI为`137`） |
 | pnpm | 精确`10.13.1`，由根`packageManager`与Corepack选择 |
-| 本机工具 | Git、tar、npm、Corepack/pnpm |
+| 本机工具 | Git、curl、tar、npm、Corepack/pnpm |
 | 网络 | 首次准备需要访问GitHub和npm registry |
 
 Windows与其他CPU架构目前不属于本地一键安装范围，`pnpm run setup`会在写入运行缓存前
@@ -28,18 +28,26 @@ Windows与其他CPU架构目前不属于本地一键安装范围，`pnpm run set
 ```bash
 git clone git@github.com:later-3/Chat.git
 cd Chat
-mkdir -p ../opc-os
-git clone git@github.com:later-3/pi.git ../opc-os/pi
-git -C ../opc-os/pi switch codex/later-custom
-git clone git@github.com:later-3/deepseek-harness-chat.git ../deepseek-harness-chat-trajectory
-git -C ../deepseek-harness-chat-trajectory switch codex/chat-trajectory-location-rc6
 corepack enable
 pnpm --version
+pnpm managed-sources:prepare
 ```
 
-这两个路径是当前分支集成合同：任意Chat worktree都从同一个父目录解析`../opc-os/pi`和
-`../deepseek-harness-chat-trajectory`。Pi官方仓库`earendil-works/pi`与DSH官方仓库
+`config/managed-sources.json`是两个Fork的唯一机器锁：它冻结origin、稳定分支、完整commit、
+构建命令、能力marker和许可证位置。准备脚本从Chat父目录解析`../opc-os/pi`和
+`../deepseek-harness-chat-trajectory`，按各自锁文件安装并构建，再安装Chat并断言4个`link:`
+都指向预期源码。Pi官方仓库`earendil-works/pi`与DSH官方仓库
 `deepseek-ai/deepseek-harness`只作为各Fork中的只读`upstream`，不能成为Chat运行依赖。
+
+Pi Git源码按上游发布合同不跟踪生成的模型数据。Manifest额外锁定官方`v0.84.2` source
+archive的URL、字节数与SHA-256，只在构建期间挂载其中的`providers/data`；构建后恢复已有本地
+忽略数据。全部运行代码仍从Later Fork精确commit编译，不使用官方npm包或归档源码替代Fork。
+
+已存在的checkout若有未提交改动或origin、分支、HEAD、marker漂移，脚本会失败关闭，不会
+自动切分支或覆盖开发者改动。普通安装不要从文档手抄SHA；更新锁必须修改Manifest并重跑测试。
+Manifest中的许可证、marker、Build Input与link source都必须是checkout内的安全相对路径；路径
+穿越或symlink逃逸会失败关闭。临时Build Input使用恢复state与信号清理：异常退出后下次检查先
+恢复原忽略目录，再判断Fork是否洁净，不把残留固定数据当成受管源码。
 
 `pnpm --version`必须输出`10.13.1`。如果机器没有Corepack，可先按Node官方方式安装
 Corepack，或直接安装精确`pnpm@10.13.1`；不要使用浮动`latest`替代锁定版本。
@@ -47,17 +55,15 @@ Corepack，或直接安装精确`pnpm@10.13.1`；不要使用浮动`latest`替�
 ## 3. 安装与配置
 
 ```bash
-npm --prefix ../opc-os/pi install --ignore-scripts
-npm --prefix ../opc-os/pi run build:offline
-pnpm -C ../deepseek-harness-chat-trajectory install --frozen-lockfile
-pnpm -C ../deepseek-harness-chat-trajectory run build:lib:client
-pnpm install --frozen-lockfile
+pnpm managed-sources:verify
 cp .env.example .env
 pnpm run setup --memory=off --workbench=off
 ```
 
-前两组命令从Fork分支生成Pi `dist`与DSH `lib`，Chat随后通过`link:`直接消费这些源码构建。
-Fork没有检出、分支错误、构建缺失或能力标记不符时，安装、构建或服务启动必须失败关闭；不得用
+`managed-sources:prepare`已经从精确Fork commit生成Pi `dist`与DSH `lib`，Chat随后通过
+`link:`直接消费这些源码构建。这里再次运行`managed-sources:verify`，用于在创建私有配置前
+确认运行marker与解析路径没有漂移。Fork没有检出、分支错误、构建缺失或能力标记不符时，
+安装、构建或服务启动必须失败关闭；不得用
 `pnpm patch`或官方npm包临时补洞。
 
 仅准备当前稳定核心服务时使用：

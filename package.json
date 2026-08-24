@@ -17,7 +17,11 @@
     "test:dev-runtime": "node --test scripts/dev/app-runtime.test.mjs",
     "build": "pnpm -r --sort build",
     "typecheck": "pnpm -r --sort typecheck",
-    "test": "pnpm -r --sort test",
+    "test": "pnpm test:ci-baseline && pnpm -r --sort test",
+    "test:ci-baseline": "node --test scripts/ci/*.test.mjs",
+    "managed-sources:prepare": "node scripts/ci/managed-sources.mjs prepare",
+    "managed-sources:verify": "node scripts/ci/managed-sources.mjs verify",
+    "verify:core": "node scripts/ci/verify-core.mjs",
     "lint": "eslint .",
     "debug:trace": "pnpm --filter @chat/api exec tsx ../../packages/realtime/src/trace-cli.ts",
     "debug:preclean": "node scripts/debug/preclean.mjs",
@@ -62,7 +66,8 @@
     "eslint": "^9.39.5",
     "prettier": "^3.9.6",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.66.0"
+    "typescript-eslint": "^8.66.0",
+    "yaml": "2.9.0"
   },
   "pnpm": {
     "overrides": {

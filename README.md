@@ -34,16 +34,7 @@ DSH Session、Product Session、Product Run、Workflow Run、Checkpoint、pi Ses
 
 ```bash
 corepack enable
-mkdir -p ../opc-os
-git clone git@github.com:later-3/pi.git ../opc-os/pi
-git -C ../opc-os/pi switch codex/later-custom
-git clone git@github.com:later-3/deepseek-harness-chat.git ../deepseek-harness-chat-trajectory
-git -C ../deepseek-harness-chat-trajectory switch codex/chat-trajectory-location-rc6
-npm --prefix ../opc-os/pi install --ignore-scripts
-npm --prefix ../opc-os/pi run build:offline
-pnpm -C ../deepseek-harness-chat-trajectory install --frozen-lockfile
-pnpm -C ../deepseek-harness-chat-trajectory run build:lib:client
-pnpm install --frozen-lockfile
+pnpm managed-sources:prepare
 cp .env.example .env
 pnpm run setup --memory=off --workbench=off
 pnpm dev --memory=off --workbench=off
