@@ -64,6 +64,9 @@ export async function prepareDirectAgentOperationStep(
         const memoryDirectRunner = runSpec.runner.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY;
         const memoryAgentDirectRunner =
           runSpec.runner.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY;
+        const blueprintVersion = runSpec.definitionRef.blueprintVersion;
+        const memoryAgentHasRetrieve = memoryAgentDirectRunner && [3, 4].includes(blueprintVersion);
+        const memoryAgentHasWrite = memoryAgentDirectRunner && [3, 5].includes(blueprintVersion);
         if (
           runSpec.productRunId !== input.productRunId ||
           runSpec.workflowRunSpecId !== input.workflowRunSpecId ||
@@ -75,8 +78,9 @@ export async function prepareDirectAgentOperationStep(
           (memoryAgentDirectRunner &&
             runSpec.runner.runnerBundleVersion !== MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION) ||
           runSpec.definitionRef.blueprintKey !== "direct" ||
-          runSpec.definitionRef.blueprintVersion !==
-            (memoryAgentDirectRunner ? 3 : memoryDirectRunner ? 2 : 1) ||
+          (memoryAgentDirectRunner
+            ? ![3, 4, 5].includes(blueprintVersion)
+            : blueprintVersion !== (memoryDirectRunner ? 2 : 1)) ||
           runSpec.businessInput?.kind !== "direct_agent_message"
         ) {
           throw new FatalError("run_spec.direct_agent_binding_incompatible");
@@ -92,17 +96,24 @@ export async function prepareDirectAgentOperationStep(
         );
         if (
           runSpec.nodeResolutions.length !==
-            (memoryDirectRunner || memoryAgentDirectRunner ? 3 : 1) ||
+            (memoryDirectRunner
+              ? 3
+              : memoryAgentDirectRunner
+                ? blueprintVersion === 3
+                  ? 3
+                  : 2
+                : 1) ||
           directNode === undefined ||
           directNode.definitionNodeId !== "direct.agent" ||
           !directAgentCapabilityModeSchema.safeParse(directNode.config["capabilityMode"]).success ||
           (directNode.config["promptReviewMode"] !== "manual" &&
             directNode.config["promptReviewMode"] !== "off") ||
-          (memoryAgentDirectRunner &&
+          (memoryAgentHasRetrieve &&
             (memoryRetrieveNode?.nodeType !== "agent.memory_retrieve" ||
               memoryRetrieveNode.activation !== "enabled" ||
-              memoryRetrieveNode.schemaVersion !== 1 ||
-              memoryWriteNode?.nodeType !== "agent.memory_write" ||
+              memoryRetrieveNode.schemaVersion !== 1)) ||
+          (memoryAgentHasWrite &&
+            (memoryWriteNode?.nodeType !== "agent.memory_write" ||
               memoryWriteNode.activation !== "enabled" ||
               memoryWriteNode.schemaVersion !== 1))
         ) {

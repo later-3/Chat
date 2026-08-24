@@ -8,6 +8,8 @@ import {
   createSystemDirectAgentDefinition,
   createSystemMemoryDirectDefinition,
   createSystemMemoryAgentDirectDefinition,
+  createSystemMemoryReadDirectDefinition,
+  createSystemMemoryWriteDirectDefinition,
   SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
@@ -29,6 +31,12 @@ import {
   SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_DEFINITION_ID,
   SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_VIEW_ID,
+  SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_DEFINITION_ID,
+  SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_VIEW_ID,
+  SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_DEFINITION_ID,
+  SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_VIEW_ID,
 } from "@chat/application/workflow-system-definitions";
 import {
   hashCanonical,
@@ -253,6 +261,20 @@ export function assertWorkflowDefinitions(snapshot: ProductSnapshot, fail: Fail)
     workflowDefinitionRevisionId: SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_REVISION_ID,
     workflowViewDefinitionId: SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_VIEW_ID,
     create: createSystemMemoryAgentDirectDefinition,
+  });
+  assertPinnedSystemDefinition(snapshot, fail, {
+    label: "memory read direct",
+    workflowDefinitionId: SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_DEFINITION_ID,
+    workflowDefinitionRevisionId: SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_REVISION_ID,
+    workflowViewDefinitionId: SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_VIEW_ID,
+    create: createSystemMemoryReadDirectDefinition,
+  });
+  assertPinnedSystemDefinition(snapshot, fail, {
+    label: "memory write direct",
+    workflowDefinitionId: SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_DEFINITION_ID,
+    workflowDefinitionRevisionId: SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_REVISION_ID,
+    workflowViewDefinitionId: SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_VIEW_ID,
+    create: createSystemMemoryWriteDirectDefinition,
   });
 }
 

@@ -656,6 +656,13 @@ describe("Direct Agent Application + JsonProductStore最小纵向", () => {
       workflowRunSpecId: runSpec.workflowRunSpecId,
     });
     expect(frozen.status).toBe("ready");
+    if (frozen.status !== "ready") throw new Error("Memory Agent Context未冻结");
+    const begunDirect = await beginDirectAgentAttempt(harness.deps, {
+      commandId: harness.command(),
+      productRunId: run.productRunId,
+      workflowAttemptId: workflowAttempt.attemptId,
+    });
+    expect(begunDirect.inputManifestSha256).toMatch(/^[a-f0-9]{64}$/u);
 
     const snapshot = (await harness.store.read({ kind: "committedSnapshot" })).snapshot;
     expect(snapshot.entities.workflowMemoryQueries[begun.workflowMemoryQueryId]).toMatchObject({
@@ -668,6 +675,10 @@ describe("Direct Agent Application + JsonProductStore最小纵向", () => {
         workflowMemoryContextId: expect.any(String),
         revision: 1,
       },
+    });
+    expect(snapshot.entities.attempts[begunDirect.directAgentAttemptId]).toMatchObject({
+      workflowMemoryContextId: frozen.contextRef.workflowMemoryContextId,
+      workflowMemoryContextSha256: frozen.contextRef.sha256,
     });
     expect(() => assertSnapshotIntegrity(snapshot)).not.toThrow();
   });

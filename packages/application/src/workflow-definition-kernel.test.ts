@@ -25,6 +25,8 @@ import {
 import {
   createSystemDirectAgentDefinition,
   createSystemMemoryAgentDirectDefinition,
+  createSystemMemoryReadDirectDefinition,
+  createSystemMemoryWriteDirectDefinition,
   createSystemMemoryDirectDefinition,
   createSystemMemoryPlanningDefinition,
   createSystemPlanningDefinition,
@@ -36,6 +38,8 @@ import {
   MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
   systemDirectAgentSemanticRoot,
   systemMemoryAgentDirectSemanticRoot,
+  systemMemoryReadDirectSemanticRoot,
+  systemMemoryWriteDirectSemanticRoot,
   systemMemoryDirectSemanticRoot,
   systemSimplePlanningSemanticRoot,
 } from "./workflow-system-definitions.js";
@@ -131,6 +135,16 @@ describe("Node Catalog与Blueprint一致性", () => {
       repeatableNodeTypes: [],
       mandatoryManualReviewTypes: ["agent.memory_write"],
     });
+    expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 4)).toMatchObject({
+      runnerFamily: "memory-agent-direct.v1",
+      terminalNodeType: "agent.direct",
+      mandatoryManualReviewTypes: [],
+    });
+    expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 5)).toMatchObject({
+      runnerFamily: "memory-agent-direct.v1",
+      terminalNodeType: "agent.memory_write",
+      mandatoryManualReviewTypes: ["agent.memory_write"],
+    });
     expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("planning", 99)).toBeUndefined();
   });
 
@@ -195,6 +209,20 @@ describe("Node Catalog与Blueprint一致性", () => {
       {
         blueprintVersion: 3,
         title: "Memory Agent 增强执行",
+        runnerFamily: "memory-agent-direct.v1",
+        terminalNodeType: "agent.memory_write",
+        reviewModes: ["manual"],
+      },
+      {
+        blueprintVersion: 4,
+        title: "只查询 Memory 后回答",
+        runnerFamily: "memory-agent-direct.v1",
+        terminalNodeType: "agent.direct",
+        reviewModes: ["manual", "auto_continue_if_policy_allows"],
+      },
+      {
+        blueprintVersion: 5,
+        title: "只整理为 Memory 候选",
         runnerFamily: "memory-agent-direct.v1",
         terminalNodeType: "agent.memory_write",
         reviewModes: ["manual"],
@@ -482,6 +510,49 @@ describe("Node Catalog与Blueprint一致性", () => {
       runnerFamily: MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
       runnerBundleVersion: MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
     });
+  });
+
+  it("独立Memory读取与整理流程复用同一Runner但冻结不同节点序列", () => {
+    const createdAt = "2026-08-24T00:00:00.000Z";
+    const read = createSystemMemoryReadDirectDefinition(createdAt);
+    const write = createSystemMemoryWriteDirectDefinition(createdAt);
+    const readBlueprint = DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 4);
+    const writeBlueprint = DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 5);
+    if (readBlueprint === undefined || writeBlueprint === undefined) {
+      throw new Error("独立Memory Blueprint不存在");
+    }
+    expect(
+      validateDefinitionAgainstBlueprint(
+        read.revision.semanticRoot,
+        readBlueprint,
+        DEFAULT_NODE_CATALOG,
+      ),
+    ).toEqual([]);
+    expect(
+      validateDefinitionAgainstBlueprint(
+        write.revision.semanticRoot,
+        writeBlueprint,
+        DEFAULT_NODE_CATALOG,
+      ),
+    ).toEqual([]);
+    expect(
+      systemMemoryReadDirectSemanticRoot().elements.map((node) =>
+        "nodeType" in node ? node.nodeType : node.kind,
+      ),
+    ).toEqual(["agent.memory_retrieve", "agent.direct"]);
+    expect(
+      systemMemoryWriteDirectSemanticRoot().elements.map((node) =>
+        "nodeType" in node ? node.nodeType : node.kind,
+      ),
+    ).toEqual(["agent.direct", "agent.memory_write"]);
+    expect(read.view.nodes.map((node) => node.nodeType)).toEqual([
+      "agent.memory_retrieve",
+      "agent.direct",
+    ]);
+    expect(write.view.nodes.map((node) => node.nodeType)).toEqual([
+      "agent.direct",
+      "agent.memory_write",
+    ]);
   });
 
   it("RunSpec把Agent Version与临时配置逐字段冻结，并拒绝非Direct节点覆盖", () => {

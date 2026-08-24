@@ -39,9 +39,8 @@ async function fail(
 }
 
 /**
- * 独立Memory Agent纵向：检索Agent调用只读Memory工具并筛选引用 → 同一Direct核心 →
- * 写入Agent产生待审核候选 → Product Commit。真正Memory写副作用只会在用户后续批准候选
- * 后由既有Memory Write Workflow执行。
+ * Memory Agent family支持三种固定组合：完整查询+回答+整理、只查询+回答、回答+只整理。
+ * 真正Memory写副作用始终只会在用户后续批准候选后由既有Memory Write Workflow执行。
  */
 export async function memoryAgentDirectWorkflow(
   rawInput: DirectAgentWorkflowInput,
@@ -61,80 +60,66 @@ export async function memoryAgentDirectWorkflow(
       "Memory Agent Direct冻结运行定义无效",
     );
   }
-  const [retrieveNode, directNode, writeNode] = runSpec.semanticRoot.elements;
+  const retrieveNode = runSpec.semanticRoot.elements.find(
+    (node) => "nodeType" in node && node.nodeType === "agent.memory_retrieve",
+  );
+  const directNode = runSpec.semanticRoot.elements.find(
+    (node) => "nodeType" in node && node.nodeType === "agent.direct",
+  );
+  const writeNode = runSpec.semanticRoot.elements.find(
+    (node) => "nodeType" in node && node.nodeType === "agent.memory_write",
+  );
   if (
-    retrieveNode?.kind !== "task" ||
     directNode?.kind !== "composite" ||
-    writeNode?.kind !== "task"
+    !("nodeType" in directNode) ||
+    (retrieveNode !== undefined &&
+      (!("nodeType" in retrieveNode) || retrieveNode.kind !== "task")) ||
+    (writeNode !== undefined && (!("nodeType" in writeNode) || writeNode.kind !== "task"))
   ) {
     return fail(input, "memory_agent_direct.sequence_invalid", "Memory Agent节点序列无效");
   }
-  const retrieveIdentity = {
-    workflowAttemptId: input.workflowAttemptId,
-    productRunId: input.productRunId,
-    workflowRunSpecId: input.workflowRunSpecId,
-    definitionNodeId: retrieveNode.definitionNodeId,
-    executionPath: [],
-    attemptNumber: 1,
-  } as const;
-  try {
-    await recordConfigurablePlanningNodeStep({
-      ...retrieveIdentity,
-      toStatus: "running",
-      publicSummary: "Memory检索Agent正在调用只读工具并筛选相关结果",
-    });
-    const retrieval = await executeMemoryRetrievalAgentStep({ identity: retrieveIdentity });
-    if (retrieval === "required_unavailable") {
-      await recordConfigurablePlanningNodeStep({
-        ...retrieveIdentity,
-        toStatus: "failed",
-        outcomeCode: "required_unavailable",
-        publicSummary: "必需Memory检索Agent不可用",
-      });
-      return fail(
-        input,
-        "memory_agent_direct.retrieval_required_unavailable",
-        "必需Memory检索Agent不可用",
-      );
-    }
-    const frozen = await freezeWorkflowMemoryContextStep({
+  if (retrieveNode !== undefined) {
+    const retrieveIdentity = {
+      workflowAttemptId: input.workflowAttemptId,
       productRunId: input.productRunId,
       workflowRunSpecId: input.workflowRunSpecId,
-      workflowAttemptId: input.workflowAttemptId,
-    });
-    if (frozen.status !== "ready") {
+      definitionNodeId: retrieveNode.definitionNodeId,
+      executionPath: [],
+      attemptNumber: 1,
+    } as const;
+    try {
       await recordConfigurablePlanningNodeStep({
         ...retrieveIdentity,
-        toStatus: "failed",
-        outcomeCode: "context_missing",
-        publicSummary: "Memory检索Agent未形成冻结Context",
+        toStatus: "running",
+        publicSummary: "Memory检索Agent正在调用只读工具并筛选相关结果",
       });
-      return fail(input, "memory_agent_direct.context_missing", "检索Agent未形成冻结Context");
+      // persistWorkflowMemoryQueryResult会把Query、Snapshots与检索节点终态原子提交；
+      // Runner只拥有开始信号，不能随后用另一份摘要重复写同一终态。
+      const retrieval = await executeMemoryRetrievalAgentStep({ identity: retrieveIdentity });
+      if (retrieval === "required_unavailable") {
+        return fail(
+          input,
+          "memory_agent_direct.retrieval_required_unavailable",
+          "必需Memory检索Agent不可用",
+        );
+      }
+      const frozen = await freezeWorkflowMemoryContextStep({
+        productRunId: input.productRunId,
+        workflowRunSpecId: input.workflowRunSpecId,
+        workflowAttemptId: input.workflowAttemptId,
+      });
+      if (frozen.status !== "ready") {
+        return fail(input, "memory_agent_direct.context_missing", "检索Agent未形成冻结Context");
+      }
+    } catch (error) {
+      const errorCode = failureCode(error, "memory_agent_direct.retrieval_failed");
+      return fail(input, errorCode, "Memory检索Agent未能安全完成");
     }
-    await recordConfigurablePlanningNodeStep({
-      ...retrieveIdentity,
-      toStatus: "succeeded",
-      outcomeCode: retrieval,
-      publicSummary:
-        retrieval === "success"
-          ? "Memory检索Agent已筛选并冻结相关上下文"
-          : retrieval === "empty"
-            ? "Memory检索Agent未找到可采用的上下文"
-            : "可选Memory检索Agent不可用，继续执行本轮任务",
-    });
-  } catch (error) {
-    const errorCode = failureCode(error, "memory_agent_direct.retrieval_failed");
-    await recordConfigurablePlanningNodeStep({
-      ...retrieveIdentity,
-      toStatus: "failed",
-      outcomeCode: errorCode,
-      publicSummary: "Memory检索Agent未能安全完成",
-    });
-    return fail(input, errorCode, "Memory检索Agent未能安全完成");
   }
 
   const directResult = await runDirectAgentWorkflowCore(input);
   if (directResult.outcome !== "candidate_ready") return directResult;
+  if (writeNode === undefined) return commitDirectAgentCandidate(input, directResult);
 
   const writeIdentity = {
     productRunId: input.productRunId,

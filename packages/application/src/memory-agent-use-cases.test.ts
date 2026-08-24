@@ -84,6 +84,10 @@ class InMemoryProductStore implements ProductStorePort {
   inspect(): ProductSnapshot {
     return structuredClone(this.#snapshot);
   }
+
+  receiptResultRefs(commandId: string): Readonly<Record<string, string>> | undefined {
+    return this.#receipts.get(commandId)?.result.resultRefs;
+  }
 }
 
 function providerDescriptor(input?: {
@@ -348,6 +352,10 @@ describe("Memory Agent写入候选用例", () => {
     expect(Object.values(f.store.inspect().entities.memoryWriteIntents)).toHaveLength(0);
     expect(Object.values(f.store.inspect().entities.memoryWriteResults)).toHaveLength(0);
     expect(Object.values(f.store.inspect().outbox)).toHaveLength(0);
+    expect(f.store.receiptResultRefs("cmd_memoryagentwritecandidate")).toEqual({
+      productRunId: f.runId,
+      memoryAgentWriteCandidateId: persisted.memoryAgentWriteCandidateId,
+    });
 
     await expect(
       getMemoryAgentWriteCandidate(f.deps, {

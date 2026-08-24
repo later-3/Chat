@@ -44,6 +44,12 @@ import {
   SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_DEFINITION_ID,
   SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_VIEW_ID,
+  SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_DEFINITION_ID,
+  SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_VIEW_ID,
+  SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_DEFINITION_ID,
+  SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_VIEW_ID,
 } from "@chat/application/workflow-system-definitions";
 import { hashCanonical } from "@chat/domain";
 import {
@@ -334,6 +340,12 @@ function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
   delete entities["workflowDefinitions"]?.[SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_DEFINITION_ID];
   delete entities["workflowDefinitionRevisions"]?.[SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_REVISION_ID];
   delete entities["workflowViewDefinitions"]?.[SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_VIEW_ID];
+  delete entities["workflowDefinitions"]?.[SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_DEFINITION_ID];
+  delete entities["workflowDefinitionRevisions"]?.[SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_REVISION_ID];
+  delete entities["workflowViewDefinitions"]?.[SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_VIEW_ID];
+  delete entities["workflowDefinitions"]?.[SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_DEFINITION_ID];
+  delete entities["workflowDefinitionRevisions"]?.[SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_REVISION_ID];
+  delete entities["workflowViewDefinitions"]?.[SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_VIEW_ID];
   delete entities["workflowMemoryQueries"];
   delete entities["workflowMemorySnapshots"];
   delete entities["workflowMemoryContexts"];

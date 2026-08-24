@@ -171,7 +171,7 @@ function isWorkflowMemoryRun(
       run.runnerBundleVersion === MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION &&
       runSpec.runner.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY &&
       runSpec.runner.runnerBundleVersion === MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION &&
-      runSpec.definitionRef.blueprintVersion === 3)
+      [3, 4].includes(runSpec.definitionRef.blueprintVersion))
   );
 }
 
@@ -191,6 +191,7 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
       : undefined;
     const expectedNodeType =
       operation.operationKind === "retrieval" ? "agent.memory_retrieve" : "agent.memory_write";
+    const expectedBlueprintVersions = operation.operationKind === "retrieval" ? [3, 4] : [3, 5];
     const bindingKey = [
       operation.productRunId,
       operation.workflowRunSpecId,
@@ -213,7 +214,7 @@ export function assertWorkflowMemory(snapshot: ProductSnapshot, fail: Fail): voi
       runSpec?.productRunId !== operation.productRunId ||
       validated === undefined ||
       !validated.success ||
-      validated.runSpec.definitionRef.blueprintVersion !== 3 ||
+      !expectedBlueprintVersions.includes(validated.runSpec.definitionRef.blueprintVersion) ||
       node?.nodeType !== expectedNodeType ||
       node.activation === "skipped" ||
       computeMemoryAgentOperationInputSha256({

@@ -93,6 +93,18 @@ function workflowBlueprintCopy(
     case "note":
       return { title: "笔记工作流", description: "抽取、分类并提交笔记。" };
     case "direct":
+      if (blueprintVersion === 5) {
+        return {
+          title: "只整理为 Memory 候选",
+          description: "执行Agent完成当前回答，写入Agent生成待审核候选；批准后才写入Memory。",
+        };
+      }
+      if (blueprintVersion === 4) {
+        return {
+          title: "只查询 Memory 后回答",
+          description: "检索Agent筛选相关记忆，执行Agent使用冻结上下文回答，不写入Memory。",
+        };
+      }
       if (blueprintVersion === 3) {
         return {
           title: "Memory Agent 增强执行",

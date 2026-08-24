@@ -313,6 +313,68 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
     mandatoryManualReviewTypes: ["agent.memory_write"],
     terminalNodeType: "agent.memory_write",
   },
+  {
+    blueprintKey: "direct",
+    blueprintVersion: 4,
+    runnerFamily: "memory-agent-direct.v1",
+    allowedNodeTypes: MEMORY_AGENT_DIRECT_NODE_TYPES,
+    optionalNodeTypes: [],
+    repeatableNodeTypes: [],
+    requiredRoles: [
+      { role: "memory_retrieval_agent", nodeType: "agent.memory_retrieve", exactlyOnce: true },
+      { role: "direct_agent", nodeType: "agent.direct", exactlyOnce: true },
+    ],
+    loopRules: [],
+    perRunOverrides: [
+      {
+        nodeType: "agent.memory_retrieve",
+        fields: [],
+        configFields: ["providerId", "required", "maxResults", "maxContextCharacters"],
+      },
+      {
+        nodeType: "agent.direct",
+        fields: [],
+        configFields: ["agentKey", "agentPromptOverride", "capabilityMode", "promptReviewMode"],
+      },
+    ],
+    immutableMinimumRisk: {
+      "agent.memory_retrieve": "generate_candidate",
+      "agent.direct": "generate_candidate",
+    },
+    mandatoryManualReviewTypes: [],
+    terminalNodeType: "agent.direct",
+  },
+  {
+    blueprintKey: "direct",
+    blueprintVersion: 5,
+    runnerFamily: "memory-agent-direct.v1",
+    allowedNodeTypes: MEMORY_AGENT_DIRECT_NODE_TYPES,
+    optionalNodeTypes: [],
+    repeatableNodeTypes: [],
+    requiredRoles: [
+      { role: "direct_agent", nodeType: "agent.direct", exactlyOnce: true },
+      { role: "memory_write_agent", nodeType: "agent.memory_write", exactlyOnce: true },
+    ],
+    loopRules: [],
+    perRunOverrides: [
+      {
+        nodeType: "agent.direct",
+        fields: [],
+        configFields: ["agentKey", "agentPromptOverride", "capabilityMode", "promptReviewMode"],
+      },
+      {
+        nodeType: "agent.memory_write",
+        fields: [],
+        configFields: ["providerId", "required", "maxSourceMessages", "maxItems", "reviewMode"],
+      },
+    ],
+    immutableMinimumRisk: {
+      "agent.direct": "generate_candidate",
+      "agent.memory_write": "generate_candidate",
+    },
+    mandatoryManualReviewTypes: ["agent.memory_write"],
+    terminalNodeType: "agent.memory_write",
+  },
 ] satisfies readonly WorkflowBlueprint[];
 
 export const DEFAULT_WORKFLOW_BLUEPRINTS = new WorkflowBlueprintRegistry(

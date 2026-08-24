@@ -111,7 +111,7 @@ export function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
         run.runnerBundleVersion === MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION &&
         runSpec?.runner.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY &&
         runSpec.runner.runnerBundleVersion === MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION &&
-        runSpec.definitionRef.blueprintVersion === 3;
+        [3, 4, 5].includes(runSpec.definitionRef.blueprintVersion);
       if (
         (!directV1 && !memoryDirectV1 && !memoryAgentDirectV1) ||
         runSpec?.productRunId !== run.productRunId ||

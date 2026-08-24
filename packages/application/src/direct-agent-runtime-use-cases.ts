@@ -86,8 +86,16 @@ function memoryContextForRun(
   return matches[0];
 }
 
-function usesWorkflowMemoryContext(runnerFamily: string): boolean {
-  return runnerFamily === "memory-direct.v1" || runnerFamily === "memory-agent-direct.v1";
+function usesWorkflowMemoryContext(
+  runSpec: Awaited<
+    ReturnType<ApplicationDeps["store"]["read"]>
+  >["snapshot"]["entities"]["workflowRunSpecs"][string],
+): boolean {
+  return (
+    runSpec.runner.runnerFamily === "memory-direct.v1" ||
+    (runSpec.runner.runnerFamily === "memory-agent-direct.v1" &&
+      [3, 4].includes(runSpec.definitionRef.blueprintVersion))
+  );
 }
 
 function directPromptAssembly(
@@ -170,10 +178,7 @@ export async function beginDirectAgentAttempt(
         input.productRunId,
         runSpec.workflowRunSpecId,
       );
-      if (
-        usesWorkflowMemoryContext(runSpec.runner.runnerFamily) !==
-        (memoryContext !== undefined)
-      ) {
+      if (usesWorkflowMemoryContext(runSpec) !== (memoryContext !== undefined)) {
         throw revisionConflict("Direct Agent Runner与Workflow Memory Context绑定不一致");
       }
       const sourceMessageSha256 = computeMessageSha256(sourceMessage);
@@ -373,7 +378,7 @@ export async function authorizeDirectAgentOperation(
     attempt.workflowMemoryContextId !== undefined ||
     attempt.workflowMemoryContextSha256 !== undefined;
   if (
-    usesWorkflowMemoryContext(runSpec.runner.runnerFamily) !== attemptHasMemoryContext ||
+    usesWorkflowMemoryContext(runSpec) !== attemptHasMemoryContext ||
     (memoryContext === undefined) !== !attemptHasMemoryContext ||
     (memoryContext !== undefined &&
       (attempt.workflowMemoryContextId !== memoryContext.workflowMemoryContextId ||

@@ -419,8 +419,8 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
                             : ["productRunId", "workflowMemoryContextId"]
                           : receipt.commandType === "PersistMemoryWriteAgentCandidate"
                             ? receipt.resultRefs["memoryAgentWriteCandidateId"] === undefined
-                              ? ["productRunId", "status"]
-                              : ["memoryAgentWriteCandidateId", "productRunId", "status"]
+                              ? ["productRunId"]
+                              : ["memoryAgentWriteCandidateId", "productRunId"]
                             : receiptShapes[receipt.commandType];
     if (expectedKeys === undefined) fail(`receipt ${receipt.commandId} commandType未知`);
     const actualKeys = Object.keys(receipt.resultRefs).sort();

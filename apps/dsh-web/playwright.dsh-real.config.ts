@@ -4,6 +4,7 @@ import {
   DSH_PROMPT_STUDIO_E2E_PORTS,
   DSH_PROMPT_THREE_GATES_E2E_PORTS,
   DSH_MEMORY_MANAGEMENT_E2E_PORTS,
+  DSH_MEMORY_VERTICAL_E2E_PORTS,
   DSH_REAL_E2E_PORTS,
   dshRealWebEnvironment,
   dshRealWorkbenchEnvironment,
@@ -15,18 +16,24 @@ const trajectoryOnly = process.env.CHAT_DSH_E2E_MODE === "trajectory-only";
 const promptStudioOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-studio-only";
 const promptThreeGatesOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-three-gates-only";
 const memoryManagementOnly = process.env.CHAT_DSH_E2E_MODE === "memory-management-only";
+const memoryVerticalOnly = process.env.CHAT_DSH_E2E_MODE === "memory-vertical-only";
 const providerEnvironmentModule = "../../scripts/debug/load-provider-env.mjs";
 if (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly && !memoryManagementOnly)
   await import(providerEnvironmentModule);
 
 const repoRoot = resolve(import.meta.dirname, "../..");
+// CHAT_REPO_ROOT可在命令入口临时指向受管凭据文件所在checkout；Provider加载结束后，
+// Playwright及其证据路径必须恢复为当前worktree，不能把测试产物写进另一个checkout。
+process.env.CHAT_REPO_ROOT = repoRoot;
 const dataRoot = resolve(
   repoRoot,
   promptThreeGatesOnly
     ? ".data/e2e/dsh-prompt-three-gates-real"
     : memoryManagementOnly
       ? ".data/e2e/dsh-memory-management-real"
-      : ".data/e2e/dsh-real",
+      : memoryVerticalOnly
+        ? ".data/e2e/dsh-memory-vertical-real"
+        : ".data/e2e/dsh-real",
 );
 const sharedEnvironment = {
   ...process.env,
@@ -56,6 +63,29 @@ const memoryManagementEnvironment = {
   ...sharedEnvironment,
   CHAT_DSH_E2E_DATA_ROOT: dataRoot,
   CHAT_MEMORY_MODE: "off",
+};
+const memoryVerticalEnvironment = {
+  ...sharedEnvironment,
+  CHAT_DSH_E2E_DATA_ROOT: dataRoot,
+  CHAT_DSH_E2E_TEMP_ROOT: resolve(repoRoot, ".data/e2e/dsh-memory-tmp"),
+  CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
+    {
+      rootId: "root_chat",
+      displayName: "Chat 工作区",
+      canonicalPath: repoRoot,
+      enabledAdapters: [
+        "local-git-workspace.v1",
+        "project-document-manifest.v1",
+        "package-script-catalog.v1",
+      ],
+    },
+  ]),
+  CHAT_MEMORY_MODE: "memmy",
+  CHAT_MEMMY_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.memmy)}`,
+  CHAT_MEMMY_TOKEN: "",
+  CHAT_MEMMY_CONFIG_REVISION: "fixed-memmy-memory-vertical-e2e-v1",
+  CHAT_MEMMY_CREDENTIAL_REVISION: "none",
+  CHAT_MEMMY_PRINCIPAL_ID: "usr_debug",
 };
 
 const codeServer = {
@@ -241,6 +271,81 @@ const promptThreeGatesDsh = {
     CHAT_WEB_AUTH_REQUIRED: "0",
   }),
 } as const;
+const memoryVerticalMemmy = {
+  command: "node scripts/memory/start-fixed-memmy.mjs",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.memmy)}/api/v1/health`,
+  reuseExistingServer: false,
+  timeout: 120_000,
+  env: {
+    PATH: process.env.PATH ?? "",
+    HOME: process.env.HOME ?? "",
+    CHAT_REPO_ROOT: repoRoot,
+    CHAT_RUNTIME_INSTANCE: "production",
+    CHAT_MEMMY_PORT: String(DSH_MEMORY_VERTICAL_E2E_PORTS.memmy),
+    CHAT_MEMMY_RUN_ROOT: resolve(dataRoot, "memmy"),
+    CHAT_MEMMY_DB_PATH: resolve(dataRoot, "memmy", "memory.sqlite"),
+  },
+} as const;
+const memoryVerticalPiExecutor = {
+  command: "pnpm --filter @chat/pi-executor start",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.piExecutor)}/healthz`,
+  reuseExistingServer: false,
+  timeout: 180_000,
+  env: {
+    ...memoryVerticalEnvironment,
+    CHAT_PI_EXECUTOR_PORT: String(DSH_MEMORY_VERTICAL_E2E_PORTS.piExecutor),
+    CHAT_PI_EXECUTOR_DATA_DIR: resolve(dataRoot, "pi-executor"),
+    CHAT_API_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.api)}`,
+  },
+} as const;
+const memoryVerticalWorkflow = {
+  command: "pnpm --filter @chat/workflows start:runtime",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.workflow)}/healthz`,
+  reuseExistingServer: false,
+  timeout: 180_000,
+  env: {
+    ...memoryVerticalEnvironment,
+    CHAT_WORKFLOW_PORT: String(DSH_MEMORY_VERTICAL_E2E_PORTS.workflow),
+    CHAT_WORKFLOW_DATA_DIR: resolve(dataRoot, "workflow"),
+    CHAT_RUNTIME_BINDINGS_PATH: resolve(dataRoot, "runtime-bindings.v1.json"),
+    CHAT_API_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.api)}`,
+    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.piExecutor)}`,
+  },
+} as const;
+const memoryVerticalApi = {
+  command: "pnpm --filter @chat/api start",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.api)}/api/readyz`,
+  reuseExistingServer: false,
+  timeout: 180_000,
+  env: {
+    ...memoryVerticalEnvironment,
+    PORT: String(DSH_MEMORY_VERTICAL_E2E_PORTS.api),
+    CHAT_API_HOST: "127.0.0.1",
+    CHAT_PRODUCT_STORE_PATH: resolve(dataRoot, "product-store.v1.json"),
+    CHAT_WORKFLOW_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.workflow)}`,
+    CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.piExecutor)}`,
+    CODEX_HOME: resolve(dataRoot, "codex-home"),
+  },
+} as const;
+const memoryVerticalDsh = {
+  command: "node scripts/e2e/start-dsh-pwa-real.mjs",
+  cwd: repoRoot,
+  url: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.web)}/healthz`,
+  reuseExistingServer: false,
+  timeout: 120_000,
+  env: dshRealWebEnvironment(repoRoot, {
+    ...memoryVerticalEnvironment,
+    CHAT_API_BASE_URL: `http://127.0.0.1:${String(DSH_MEMORY_VERTICAL_E2E_PORTS.api)}`,
+    CHAT_PUBLIC_WEB_PORT: String(DSH_MEMORY_VERTICAL_E2E_PORTS.web),
+    CHAT_DSH_INTERNAL_WEB_PORT: String(DSH_MEMORY_VERTICAL_E2E_PORTS.webInternal),
+    CHAT_PUBLIC_WEB_HOSTNAME: undefined,
+    CHAT_WEB_AUTH_REQUIRED: "0",
+  }),
+} as const;
 
 /**
  * 默认付费门使用真实JSON Product Store、Workflow World、pi与百炼；显式
@@ -258,12 +363,16 @@ export default defineConfig({
           ? "dsh-prompt-three-gates-real.spec.ts"
           : memoryManagementOnly
             ? "dsh-memory-management-real.spec.ts"
-            : trajectoryOnly
-              ? "dsh-trajectory-real.spec.ts"
-              : "dsh-planning-real.spec.ts",
-  ...(promptThreeGatesOnly
-    ? {}
-    : { globalTeardown: resolve(repoRoot, "scripts/e2e/dsh-real-workbench-lifecycle.mjs") }),
+            : memoryVerticalOnly
+              ? "dsh-memory-vertical-real.spec.ts"
+              : trajectoryOnly
+                ? "dsh-trajectory-real.spec.ts"
+                : "dsh-planning-real.spec.ts",
+  ...(memoryVerticalOnly
+    ? { globalTeardown: resolve(repoRoot, "scripts/e2e/dsh-memory-vertical-teardown.mjs") }
+    : promptThreeGatesOnly
+      ? {}
+      : { globalTeardown: resolve(repoRoot, "scripts/e2e/dsh-real-workbench-lifecycle.mjs") }),
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -278,12 +387,14 @@ export default defineConfig({
           ? DSH_PROMPT_THREE_GATES_E2E_PORTS.web
           : memoryManagementOnly
             ? DSH_MEMORY_MANAGEMENT_E2E_PORTS.web
-            : DSH_REAL_E2E_PORTS.web,
+            : memoryVerticalOnly
+              ? DSH_MEMORY_VERTICAL_E2E_PORTS.web
+              : DSH_REAL_E2E_PORTS.web,
     )}`,
     trace: "off",
     screenshot: "off",
     video: "off",
-    actionTimeout: promptThreeGatesOnly ? 30_000 : 0,
+    actionTimeout: promptThreeGatesOnly || memoryVerticalOnly ? 30_000 : 0,
   },
   webServer: workbenchOnly
     ? [codeServer, dsh]
@@ -300,8 +411,16 @@ export default defineConfig({
             ]
           : memoryManagementOnly
             ? [memoryManagementApi, memoryManagementDsh]
-            : trajectoryOnly
-              ? [trajectoryApi, trajectoryDsh]
-              : [codeServer, piExecutor, workflow, api, dsh],
+            : memoryVerticalOnly
+              ? [
+                  memoryVerticalMemmy,
+                  memoryVerticalPiExecutor,
+                  memoryVerticalWorkflow,
+                  memoryVerticalApi,
+                  memoryVerticalDsh,
+                ]
+              : trajectoryOnly
+                ? [trajectoryApi, trajectoryDsh]
+                : [codeServer, piExecutor, workflow, api, dsh],
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

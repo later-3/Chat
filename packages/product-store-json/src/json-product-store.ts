@@ -22,6 +22,8 @@ import {
   createSystemDirectAgentDefinition,
   createSystemMemoryDirectDefinition,
   createSystemMemoryAgentDirectDefinition,
+  createSystemMemoryReadDirectDefinition,
+  createSystemMemoryWriteDirectDefinition,
   SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
@@ -43,6 +45,12 @@ import {
   SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_DEFINITION_ID,
   SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_VIEW_ID,
+  SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_DEFINITION_ID,
+  SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_VIEW_ID,
+  SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_DEFINITION_ID,
+  SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_VIEW_ID,
 } from "@chat/application/workflow-system-definitions";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
@@ -308,6 +316,8 @@ export class JsonProductStore implements ProductStorePort {
         const directSeed = createSystemDirectAgentDefinition(genesis.committedAt);
         const memoryDirectSeed = createSystemMemoryDirectDefinition(genesis.committedAt);
         const memoryAgentDirectSeed = createSystemMemoryAgentDirectDefinition(genesis.committedAt);
+        const memoryReadDirectSeed = createSystemMemoryReadDirectDefinition(genesis.committedAt);
+        const memoryWriteDirectSeed = createSystemMemoryWriteDirectDefinition(genesis.committedAt);
         genesis.entities.workflowDefinitions[SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID] =
           seed.definition;
         genesis.entities.workflowDefinitions[SYSTEM_NOTE_WORKFLOW_DEFINITION_ID] =
@@ -322,6 +332,10 @@ export class JsonProductStore implements ProductStorePort {
           memoryDirectSeed.definition;
         genesis.entities.workflowDefinitions[SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_DEFINITION_ID] =
           memoryAgentDirectSeed.definition;
+        genesis.entities.workflowDefinitions[SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_DEFINITION_ID] =
+          memoryReadDirectSeed.definition;
+        genesis.entities.workflowDefinitions[SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_DEFINITION_ID] =
+          memoryWriteDirectSeed.definition;
         genesis.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID] =
           seed.revision;
         genesis.entities.workflowDefinitionRevisions[SYSTEM_NOTE_WORKFLOW_REVISION_ID] =
@@ -337,6 +351,12 @@ export class JsonProductStore implements ProductStorePort {
         genesis.entities.workflowDefinitionRevisions[
           SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_REVISION_ID
         ] = memoryAgentDirectSeed.revision;
+        genesis.entities.workflowDefinitionRevisions[
+          SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_REVISION_ID
+        ] = memoryReadDirectSeed.revision;
+        genesis.entities.workflowDefinitionRevisions[
+          SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_REVISION_ID
+        ] = memoryWriteDirectSeed.revision;
         genesis.entities.workflowViewDefinitions[SYSTEM_PLANNING_WORKFLOW_VIEW_ID] = seed.view;
         genesis.entities.workflowViewDefinitions[SYSTEM_NOTE_WORKFLOW_VIEW_ID] = noteSeed.view;
         genesis.entities.workflowViewDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID] =
@@ -349,6 +369,10 @@ export class JsonProductStore implements ProductStorePort {
           memoryDirectSeed.view;
         genesis.entities.workflowViewDefinitions[SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_VIEW_ID] =
           memoryAgentDirectSeed.view;
+        genesis.entities.workflowViewDefinitions[SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_VIEW_ID] =
+          memoryReadDirectSeed.view;
+        genesis.entities.workflowViewDefinitions[SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_VIEW_ID] =
+          memoryWriteDirectSeed.view;
         const store = new JsonProductStore(options, genesis);
         await store.persist(genesis);
         return store;

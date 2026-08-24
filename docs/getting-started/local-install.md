@@ -218,6 +218,20 @@ pnpm dev:debug --memory=compare
 
 `off`不检查Memory端口、不准备工件、不启动Sidecar且API/Workflow Registry为空；显式模式才使用
 production的`18960/18970`或debug的`19960/19970`以及对应实例私有数据根。未知端口占用仍失败关闭。
+
+启用后，在Composer的工作流选择器中按本轮目的选择：
+
+1. **只查询 Memory 后回答**：查询和筛选长期记忆，再交给执行Agent回答；不会生成写入候选。
+2. **只整理为 Memory 候选**：不查询Memory，完成当前回答后整理候选；到「Settings → Memory」批准前不会外写。
+3. **Memory Agent 增强执行**：先查询、再回答、最后整理候选；同样必须在Memory页批准后才写入。
+
+真实验收使用专用`455xx`端口和隔离数据根，不应复用正在开发或常驻的实例：
+
+```bash
+env CHAT_REPO_ROOT=/absolute/path/to/Chat pnpm test:e2e:dsh-memory-vertical-real:paid
+```
+
+该门会真实调用配置的模型Provider并启动memmy，属于显式付费/外部服务测试；没有有效凭据时必须失败关闭，不能改用fixture冒充通过。
 本地固定memmy使用Chat实例私有数据库并绑定`usr_debug`；远程memmy也必须为该Principal提供专属
 物理数据库。当前固定版本不能安全共享给多个Principal，不能把`namespace.userId`当成真实租户隔离。
 

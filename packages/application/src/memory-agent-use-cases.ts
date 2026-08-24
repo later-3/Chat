@@ -115,7 +115,7 @@ function writeAgentContext(
     validated === undefined ||
     !validated.success ||
     validated.runSpec.definitionRef.blueprintKey !== "direct" ||
-    validated.runSpec.definitionRef.blueprintVersion !== 3 ||
+    ![3, 5].includes(validated.runSpec.definitionRef.blueprintVersion) ||
     candidate === undefined ||
     candidate.productRunId !== input.productRunId ||
     candidate.sha256 !== input.candidateSha256
@@ -128,12 +128,18 @@ function writeAgentContext(
   const writeNode = validated.runSpec.nodeResolutions.find(
     (node) => node.nodeType === "agent.memory_write",
   );
-  const retrievalConfig = memoryAgentRetrieveNodeConfigSchema.safeParse(retrievalNode?.config);
+  const retrievalConfig =
+    retrievalNode === undefined
+      ? undefined
+      : memoryAgentRetrieveNodeConfigSchema.safeParse(retrievalNode.config);
   const writeConfig = memoryAgentWriteNodeConfigSchema.safeParse(writeNode?.config);
   if (
-    !retrievalConfig.success ||
     !writeConfig.success ||
-    retrievalConfig.data.providerId !== writeConfig.data.providerId
+    (validated.runSpec.definitionRef.blueprintVersion === 3 &&
+      (retrievalConfig === undefined ||
+        !retrievalConfig.success ||
+        retrievalConfig.data.providerId !== writeConfig.data.providerId)) ||
+    (validated.runSpec.definitionRef.blueprintVersion === 5 && retrievalConfig !== undefined)
   ) {
     throw revisionConflict("Memory Agent节点配置不存在或Provider不一致");
   }
@@ -325,7 +331,7 @@ export async function persistMemoryWriteAgentCandidate(
       const existing = draft.entities.memoryAgentWriteCandidates[memoryAgentWriteCandidateId];
       if (candidate === undefined) {
         if (existing !== undefined) throw revisionConflict("本轮已存在Memory写入候选");
-        return { resultRefs: { productRunId: input.productRunId, status: "nothing_useful" } };
+        return { resultRefs: { productRunId: input.productRunId } };
       }
       if (existing !== undefined && existing.sha256 !== candidate.sha256) {
         throw revisionConflict("Memory写入候选稳定身份发生Hash冲突");
@@ -335,13 +341,12 @@ export async function persistMemoryWriteAgentCandidate(
       return {
         resultRefs: {
           productRunId: input.productRunId,
-          status: "candidate_ready",
           memoryAgentWriteCandidateId,
         },
       };
     },
   });
-  if (transaction.resultRefs["status"] === "nothing_useful") {
+  if (transaction.resultRefs["memoryAgentWriteCandidateId"] === undefined) {
     return {
       schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
       productRunId: input.productRunId,

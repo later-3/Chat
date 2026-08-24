@@ -110,7 +110,7 @@ export async function loadMemoryDirectRunSpecStep(input: {
   return runSpec;
 }
 
-/** Memory Agent Direct使用独立runner family与direct@3 Blueprint。 */
+/** Memory Agent Direct family承载完整、只读和只整理三种固定节点组合。 */
 export async function loadMemoryAgentDirectRunSpecStep(input: {
   readonly productRunId: string;
   readonly workflowRunSpecId: string;
@@ -123,19 +123,29 @@ export async function loadMemoryAgentDirectRunSpecStep(input: {
   });
   if (
     runSpec.businessInput?.kind !== "direct_agent_message" ||
-    runSpec.definitionRef.blueprintVersion !== 3
+    ![3, 4, 5].includes(runSpec.definitionRef.blueprintVersion)
   ) {
     throw new FatalError("run_spec.business_input_incompatible");
   }
   const elements = runSpec.semanticRoot.elements;
+  const nodeTypes = elements.map((element) =>
+    "nodeType" in element ? element.nodeType : element.kind,
+  );
+  const expected =
+    runSpec.definitionRef.blueprintVersion === 3
+      ? ["agent.memory_retrieve", "agent.direct", "agent.memory_write"]
+      : runSpec.definitionRef.blueprintVersion === 4
+        ? ["agent.memory_retrieve", "agent.direct"]
+        : ["agent.direct", "agent.memory_write"];
   if (
-    elements.length !== 3 ||
-    elements[0]?.kind !== "task" ||
-    elements[0].nodeType !== "agent.memory_retrieve" ||
-    elements[1]?.kind !== "composite" ||
-    elements[1].nodeType !== "agent.direct" ||
-    elements[2]?.kind !== "task" ||
-    elements[2].nodeType !== "agent.memory_write"
+    JSON.stringify(nodeTypes) !== JSON.stringify(expected) ||
+    elements.some(
+      (element) =>
+        !("nodeType" in element) ||
+        (element.nodeType === "agent.direct"
+          ? element.kind !== "composite"
+          : element.kind !== "task"),
+    )
   ) {
     throw new FatalError("run_spec.memory_agent_direct_sequence_incompatible");
   }
@@ -292,7 +302,6 @@ export async function recordConfigurablePlanningNodeStep(
   "use step";
   try {
     await getWorkflowRuntimeContext().api.transitionConfigurablePlanningNode({
-      ...input,
       commandId: `cmd_${sha256Hex(
         [
           input.workflowRunSpecId,
@@ -304,6 +313,14 @@ export async function recordConfigurablePlanningNodeStep(
           input.outcomeCode ?? "",
         ].join("\0"),
       ).slice(0, 32)}`,
+      productRunId: input.productRunId,
+      workflowRunSpecId: input.workflowRunSpecId,
+      definitionNodeId: input.definitionNodeId,
+      executionPath: input.executionPath,
+      attemptNumber: input.attemptNumber,
+      toStatus: input.toStatus,
+      ...(input.outcomeCode === undefined ? {} : { outcomeCode: input.outcomeCode }),
+      ...(input.publicSummary === undefined ? {} : { publicSummary: input.publicSummary }),
     } as never);
   } catch (error) {
     wrapApiError(error);

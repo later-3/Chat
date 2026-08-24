@@ -11,6 +11,8 @@ import {
   computeDirectAgentInputManifestSha256,
 } from "@chat/domain";
 import {
+  MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
   MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
   MEMORY_DIRECT_RUNNER_FAMILY,
 } from "@chat/application/workflow-system-definitions";
@@ -329,12 +331,17 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
       const modelConfigVersion = attempt.modelConfigVersion;
       const memoryDirect =
         run?.runKind === "direct_agent" &&
-        run.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
-        run.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
-        runSpec?.runner.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
-        runSpec.runner.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
-        runSpec.definitionRef.blueprintKey === "direct" &&
-        runSpec.definitionRef.blueprintVersion === 2;
+        runSpec?.definitionRef.blueprintKey === "direct" &&
+        ((run.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
+          run.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
+          runSpec.runner.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY &&
+          runSpec.runner.runnerBundleVersion === MEMORY_DIRECT_RUNNER_BUNDLE_VERSION &&
+          runSpec.definitionRef.blueprintVersion === 2) ||
+          (run.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY &&
+            run.runnerBundleVersion === MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION &&
+            runSpec.runner.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY &&
+            runSpec.runner.runnerBundleVersion === MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION &&
+            [3, 4].includes(runSpec.definitionRef.blueprintVersion)));
       const memoryEvidencePaired =
         (attempt.workflowMemoryContextId === undefined) ===
         (attempt.workflowMemoryContextSha256 === undefined);

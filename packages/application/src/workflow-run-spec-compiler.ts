@@ -353,12 +353,11 @@ function parseCompilerBoundaries(
         : definition.blueprintKey === "direct"
           ? {
               inputKind: "direct_agent_message",
-              runnerFamily:
-                definition.blueprintVersion === 3
-                  ? "memory-agent-direct.v1"
-                  : definition.blueprintVersion === 2
-                    ? "memory-direct.v1"
-                    : "direct-agent.v1",
+              runnerFamily: [3, 4, 5].includes(definition.blueprintVersion)
+                ? "memory-agent-direct.v1"
+                : definition.blueprintVersion === 2
+                  ? "memory-direct.v1"
+                  : "direct-agent.v1",
             }
           : { inputKind: "planning_message", runnerFamily: "configurable-planning.v1" };
     if (

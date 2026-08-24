@@ -71,6 +71,18 @@ function runSpec() {
   } as never;
 }
 
+function readOnlyRunSpec() {
+  const spec = runSpec() as { semanticRoot: { elements: unknown[] } };
+  spec.semanticRoot.elements = spec.semanticRoot.elements.slice(0, 2);
+  return spec as never;
+}
+
+function writeOnlyRunSpec() {
+  const spec = runSpec() as { semanticRoot: { elements: unknown[] } };
+  spec.semanticRoot.elements = spec.semanticRoot.elements.slice(1);
+  return spec as never;
+}
+
 const candidate = {
   outcome: "candidate_ready" as const,
   productRunId: input.productRunId,
@@ -133,11 +145,17 @@ describe("Memory Agent Direct耐久Workflow", () => {
         attemptNumber: 1,
       }),
     });
+    // Query结果、Snapshot和检索节点终态由Application在同一事务提交；Runner只记录running。
     expect(mocked.recordNode).toHaveBeenCalledWith(
       expect.objectContaining({
         definitionNodeId: "memory-agent.retrieve",
+        toStatus: "running",
+      }),
+    );
+    expect(mocked.recordNode).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        definitionNodeId: "memory-agent.retrieve",
         toStatus: "succeeded",
-        outcomeCode: "success",
       }),
     );
     expect(mocked.write).toHaveBeenCalledWith({
@@ -156,6 +174,36 @@ describe("Memory Agent Direct耐久Workflow", () => {
     );
   });
 
+  it("只查询流程在Direct完成后直接提交，不生成写入候选", async () => {
+    mocked.loadRunSpec.mockResolvedValue(readOnlyRunSpec());
+
+    await expect(memoryAgentDirectWorkflow(input)).resolves.toEqual({
+      outcome: "product_committed",
+      productRunId: input.productRunId,
+    });
+
+    expect(mocked.retrieve).toHaveBeenCalledTimes(1);
+    expect(mocked.freeze).toHaveBeenCalledTimes(1);
+    expect(mocked.directCore).toHaveBeenCalledTimes(1);
+    expect(mocked.write).not.toHaveBeenCalled();
+    expect(mocked.commitCandidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("只整理流程不查询Memory，Direct完成后生成待审核候选", async () => {
+    mocked.loadRunSpec.mockResolvedValue(writeOnlyRunSpec());
+
+    await expect(memoryAgentDirectWorkflow(input)).resolves.toEqual({
+      outcome: "product_committed",
+      productRunId: input.productRunId,
+    });
+
+    expect(mocked.retrieve).not.toHaveBeenCalled();
+    expect(mocked.freeze).not.toHaveBeenCalled();
+    expect(mocked.directCore).toHaveBeenCalledTimes(1);
+    expect(mocked.write).toHaveBeenCalledTimes(1);
+    expect(mocked.commitCandidate).toHaveBeenCalledTimes(1);
+  });
+
   it("必需检索不可用时在Direct、写入候选和提交之前失败关闭", async () => {
     mocked.retrieve.mockResolvedValue("required_unavailable");
 
@@ -168,12 +216,9 @@ describe("Memory Agent Direct耐久Workflow", () => {
     expect(mocked.commitFailure).toHaveBeenCalledWith(
       expect.objectContaining({ errorCode: "memory_agent_direct.retrieval_required_unavailable" }),
     );
+    expect(mocked.recordNode).toHaveBeenCalledTimes(1);
     expect(mocked.recordNode).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        definitionNodeId: "memory-agent.retrieve",
-        toStatus: "failed",
-        outcomeCode: "required_unavailable",
-      }),
+      expect.objectContaining({ definitionNodeId: "memory-agent.retrieve", toStatus: "running" }),
     );
     expect(mocked.freeze).not.toHaveBeenCalled();
     expect(mocked.directCore).not.toHaveBeenCalled();
@@ -190,13 +235,7 @@ describe("Memory Agent Direct耐久Workflow", () => {
       errorCode: "memory_agent_direct.context_missing",
     });
 
-    expect(mocked.recordNode).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        definitionNodeId: "memory-agent.retrieve",
-        toStatus: "failed",
-        outcomeCode: "context_missing",
-      }),
-    );
+    expect(mocked.recordNode).toHaveBeenCalledTimes(1);
     expect(mocked.directCore).not.toHaveBeenCalled();
     expect(mocked.write).not.toHaveBeenCalled();
     expect(mocked.commitCandidate).not.toHaveBeenCalled();
@@ -211,13 +250,7 @@ describe("Memory Agent Direct耐久Workflow", () => {
       errorCode: "memory_agent.provider_unavailable",
     });
 
-    expect(mocked.recordNode).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        definitionNodeId: "memory-agent.retrieve",
-        toStatus: "failed",
-        outcomeCode: "memory_agent.provider_unavailable",
-      }),
-    );
+    expect(mocked.recordNode).toHaveBeenCalledTimes(1);
     expect(mocked.directCore).not.toHaveBeenCalled();
     expect(mocked.write).not.toHaveBeenCalled();
     expect(mocked.commitCandidate).not.toHaveBeenCalled();

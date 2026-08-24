@@ -55,6 +55,7 @@ function assertOperationBinding(
     : undefined;
   const expectedNodeType =
     input.operationKind === "retrieval" ? "agent.memory_retrieve" : "agent.memory_write";
+  const expectedBlueprintVersions = input.operationKind === "retrieval" ? [3, 4] : [3, 5];
   if (
     run.runnerFamily !== "memory-agent-direct.v1" ||
     run.workflowRunSpecId !== input.workflowRunSpecId ||
@@ -62,7 +63,7 @@ function assertOperationBinding(
     validated === undefined ||
     !validated.success ||
     validated.runSpec.definitionRef.blueprintKey !== "direct" ||
-    validated.runSpec.definitionRef.blueprintVersion !== 3 ||
+    !expectedBlueprintVersions.includes(validated.runSpec.definitionRef.blueprintVersion) ||
     node?.nodeType !== expectedNodeType ||
     node.activation === "skipped" ||
     computeMemoryAgentOperationInputSha256({
