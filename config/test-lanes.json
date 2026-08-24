@@ -923,7 +923,17 @@
       "runner": "vitest"
     },
     {
+      "path": "scripts/ci/api-surface.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
       "path": "scripts/ci/compat-change-gate.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/ci/compatibility-policy.test.mjs",
       "lane": "contract",
       "runner": "node"
     },
@@ -933,7 +943,17 @@
       "runner": "node"
     },
     {
+      "path": "scripts/ci/decision-records.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
       "path": "scripts/ci/managed-sources.test.mjs",
+      "lane": "contract",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/ci/supply-chain.test.mjs",
       "lane": "contract",
       "runner": "node"
     },

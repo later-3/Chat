@@ -22,4 +22,3 @@ Hono协议入口、认证/运行上下文、公开Query/Command路由、私有Ru
 - `pnpm --filter @chat/api typecheck`
 - `pnpm --filter @chat/api test`
 - `pnpm --filter @chat/api start`会启动本地API；普通测试不需要Provider、付费或外部写。
-

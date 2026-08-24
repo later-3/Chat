@@ -21,4 +21,3 @@
 - `pnpm --filter @chat/application typecheck`
 - `pnpm --filter @chat/application test`
 - 测试使用本地Port替身，不调用付费Provider或真实外部写。
-

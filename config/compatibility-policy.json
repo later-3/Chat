@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "rules": [
+    "read_old_write_current",
+    "same_schema_literal_immutable",
+    "new_write_semantics_require_new_generation",
+    "read_only_legacy_cannot_expand_authority",
+    "breaking_change_requires_detect_why_fix_verify_rollback",
+    "breaking_change_requires_explicit_user_approval"
+  ],
+  "domains": [
+    {
+      "id": "network-contracts",
+      "readOld": true,
+      "writeCurrent": true,
+      "factSources": ["packages/contracts/src/public.ts", "config/api-surface.baseline.json"]
+    },
+    {
+      "id": "product-store",
+      "readOld": true,
+      "writeCurrent": true,
+      "factSources": [
+        "packages/contracts/src/product-store.ts",
+        "packages/product-store-json/src/json-product-store.ts",
+        "packages/product-store-json/src/migrate-v19-to-v20.ts"
+      ]
+    },
+    {
+      "id": "bridge-state",
+      "readOld": true,
+      "writeCurrent": true,
+      "factSources": ["packages/dsh-lifeos-bridge/src/state-store.ts"]
+    },
+    {
+      "id": "workflow-run-spec",
+      "readOld": true,
+      "writeCurrent": true,
+      "factSources": [
+        "packages/contracts/src/workflow-run.ts",
+        "packages/workflows/src/restricted-run-spec-interpreter.ts",
+        "packages/workflows/src/pi-direct-activity-migration.ts"
+      ]
+    },
+    {
+      "id": "direct-generic-journals",
+      "readOld": true,
+      "writeCurrent": true,
+      "factSources": [
+        "packages/contracts/src/direct-agent-runtime.ts",
+        "packages/pi-runtime/src/direct-executor-operation-store.ts",
+        "packages/pi-runtime/src/executor-operation-store.ts"
+      ]
+    },
+    {
+      "id": "browser-dto-events",
+      "readOld": true,
+      "writeCurrent": true,
+      "factSources": [
+        "packages/contracts/src/public.ts",
+        "packages/contracts/src/events.ts",
+        "packages/dsh-lifeos-bridge/src/client/index.tsx"
+      ]
+    }
+  ]
+}

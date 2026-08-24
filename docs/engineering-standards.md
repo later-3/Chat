@@ -7,12 +7,14 @@
 ```text
 apps/dsh-web
 apps/api
+apps/pi-executor
 packages/dsh-lifeos-bridge
 packages/contracts
 packages/domain
 packages/application
 packages/product-store-json
 packages/memory-runtime
+packages/project-runtime
 packages/realtime
 packages/workflows
 packages/pi-runtime
@@ -121,9 +123,21 @@ Mock只能证明调用合同；真实Workflow、真实pi和真实浏览器证据
 
 升级DeepSeek Harness、code-server、Vercel Workflow或pi之前，必须先运行对应插件、代理、事件、Hook、Checkpoint、Tool和恢复合同测试。
 
-## 11. 中文注释与当前实现文档
+依赖、锁文件、Managed Fork或CI变化还必须运行`pnpm supply-chain:check`和只读audit。安装期脚本只允许
+`pnpm-workspace.yaml`登记且逐项说明理由的包；新生产许可证、`Unknown`许可证或许可证例外必须先审查，
+不能仅因构建成功而放行。
 
-### 11.1 Capability与Tool执行
+## 11. 公共面、兼容与ADR
+
+1. 公共HTTP、Browser合同和workspace export由`pnpm api-surface:check`从真实组合根生成并与baseline比较；不得手写第二份路由或Schema事实表。
+2. 网络、Product Store、Bridge State、Workflow/RunSpec、Direct/Generic Journal、Browser DTO/Event统一执行`read old / write current`。
+3. 同一`schemaVersion`不得原地新增必填、收窄枚举或改变语义；新写语义升代际，旧代只读不能扩权。
+4. breaking change必须有`detect / why / fix / verify / rollback`和用户明确批准；Agent不得自行写waiver。
+5. ADR只用于跨模块、长期且难以从局部代码恢复的决定。普通修复、测试或单包重构不写ADR。
+
+## 12. 中文注释与当前实现文档
+
+### 12.1 Capability与Tool执行
 
 1. 可执行Tool不得只用裸`localName`作为跨边界身份；必须带`runtimeOwner + source namespace`的稳定Capability ID，并冻结descriptor、input schema、实现/工件和scope Hash。
 2. Runtime Profile必须来自真实Runtime解析结果。来源碰撞、Extension加载diagnostic、资源不可读或实现Hash缺失时失败关闭，不得静默缩小目录或回退built-in。
@@ -136,7 +150,7 @@ Mock只能证明调用合同；真实Workflow、真实pi和真实浏览器证据
 7. 事件合同使用通用Capability引用；不得在Protocol、Store、Activity、Trace与UI各复制一套Tool名字枚举。
 8. 当前新写代际为Product v20、Bridge v16、Prompt Assembly v4、Direct Protocol/Store v2及`full-operation.v3`；历史代际只读，不得借optional字段获得新授权语义。
 
-### 11.2 注释与文档要求
+### 12.2 注释与文档要求
 
 1. 跨前端、HTTP、Application、Store、Outbox、Workflow、Provider或外部服务的关键边界必须有中文JSDoc或块注释，说明“进入什么、离开什么、谁拥有事实、失败怎样恢复”。
 2. 注释优先解释原因和不变量：身份为什么不能混用、为什么需要CAS/Hash/Outbox、为什么不能自动重试；不为显而易见的赋值和语法逐行翻译。

@@ -21,4 +21,3 @@
 - `pnpm --filter @chat/memory-runtime typecheck`
 - `pnpm --filter @chat/memory-runtime test`
 - 普通测试用协议替身；真实Memory只能由根`:external:`命令和专用开关运行。
-

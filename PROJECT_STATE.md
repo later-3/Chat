@@ -1,6 +1,6 @@
 # Chat 项目状态
 
-> 更新日期：2026-08-24
+> 更新日期：2026-08-25
 
 ## 当前事实
 
@@ -21,7 +21,7 @@
 | 调试 | `pnpm dev`用`431xx`与主`.data`启动Pi Executor、Workflow、API、可选code-server与Web Gateway/DSH；VS Code F5/`pnpm dev:debug`用`441xx`与worktree私有`.data/instances/vscode-debug`启动同一服务图，并为API、Workflow、Pi Executor和DSH Host/LifeOS Bridge开放固定Inspector；Bridge Host/Client使用外置source map，Workflow VM/Step bundle使用带完整源码的内联source map，4个Node调试进程统一启用Source Map并由VS Code映射回TypeScript源码；debug可与LaunchAgent常驻实例并行，且固定关闭Workbench与Memory |
 | PWA | DSH Web可安装PWA：Bridge覆盖manifest/sw.js并注入图标与注册脚本；SW只缓存同源静态外壳，/api//lifeos永不缓存 |
 | 移动端布局 | 固定`dsh-mobile-hanui@0.2.4`（MIT）作为DSH profile bundle提供移动端外壳（抽屉/FAB/弹窗全屏/Composer修复）；版本、integrity、上游提交、所有权和人工更新政策进入`config/dsh-plugins.json`，Chat自有Workflow选择、上下文查看和审核控件继续使用DSH公开Slot。合同测试`dsh-mobile-hanui-real.spec.ts` |
-| 工程基线 | Pi/DSH受管源码由`config/managed-sources.json`冻结来源、commit、构建输入、许可证、marker和4个精确链接；正式测试按core/contract/integration/compat/beta/browser/paid/external唯一分类，普通核心门统一去凭据并在默认Node Heap分批运行；[0–15分钟接手](./docs/getting-started/quick-context.md)与14个Workspace README提供责任导航，机械门拒绝漏文档、坏链接和虚构命令 |
+| 工程基线 | Pi/DSH受管源码由`config/managed-sources.json`冻结来源、commit、构建输入、许可证、marker和4个精确链接；正式测试按core/contract/integration/compat/beta/browser/paid/external唯一分类，普通核心门统一去凭据并在默认Node Heap分批运行；唯一Playwright Harness把18项非付费Chromium场景纳入browser lane；[0–15分钟接手](./docs/getting-started/quick-context.md)与14个Workspace README提供责任导航；106条公开HTTP、340个公共Schema、package exports、Problem Code与代际由真实组合根生成baseline并执行统一compat diff；3个轻量ADR记录Managed Fork、测试隔离和API兼容决定；最低供应链门检查三仓锁、Action SHA、secret、production license、lifecycle与三仓audit |
 | 远程部署 | 拓扑A：Chat常驻Mac（LaunchAgent），云端只做Nginx+Cloudflare网关；公网入口强制版本化scrypt、登录节流与App签名Cookie认证；Workbench不进远程部署。见[远程部署合同](./docs/deployment/remote-pwa-gateway.md) |
 
 ## 当前实施顺序
@@ -65,3 +65,6 @@
   以及下一轮恢复普通Workflow；该门不伪造Message/Run Query，也不启动真实Plane或付费模型。
 - DSH派生仓库保持Public，`origin/main`与当前维护分支保存派生源码，官方仓库作为只读`upstream`；升级按[DSH前端派生与维护](./docs/architecture/dsh-frontend-maintenance.md)汇合并重跑门。
 - Workbench处于Beta，不属于当前通用CI/CD基线门；单独启用、修改或准备发布时，仍须人工运行Files、Terminal、Git/Diff、浏览器Origin、WebSocket和子进程生命周期验证。
+- `pnpm test:browser`在唯一Harness中连续运行PWA/Mobile 7、Planning Faux 1、Prompt Studio 5、Trajectory 1、Project Bootstrap 1和Capability Governance 3；Provider只使用进程内Faux，普通CI不加载Memory、Workbench、Provider凭据或外部写。
+- `pnpm api-surface:check`从真实API组合根、`@chat/contracts/public`和workspace manifest生成公共面；
+  `pnpm compatibility:check`、`pnpm adr:check`与`pnpm supply-chain:check`分别固定兼容、决定记录与最低供应链政策。

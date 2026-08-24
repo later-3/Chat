@@ -21,4 +21,3 @@
 - `pnpm --filter @chat/product-store-json typecheck`
 - `pnpm --filter @chat/product-store-json test`
 - 测试只写临时目录；不得指向真实`.data`，无需Provider或外部服务。
-

@@ -22,4 +22,3 @@
 - `pnpm --filter @chat/dsh-web typecheck`
 - `pnpm --filter @chat/dsh-web test`
 - `pnpm --filter @chat/dsh-web dev`会启动本地Host；付费测试脚本不得由普通CI调用。
-

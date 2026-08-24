@@ -21,4 +21,3 @@ Run Activity Journal、Trace、只读Replay、脱敏投影与历史Trace兼容�
 - `pnpm --filter @chat/realtime typecheck`
 - `pnpm --filter @chat/realtime test`
 - 测试只使用临时证据目录，无付费或真实外部写。
-

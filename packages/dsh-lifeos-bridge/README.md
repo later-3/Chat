@@ -22,4 +22,3 @@
 - `pnpm --filter @chat/dsh-lifeos-bridge typecheck`
 - `pnpm --filter @chat/dsh-lifeos-bridge test`
 - 普通命令不需要Provider；真实浏览器由根`test:browser`统一编排。
-

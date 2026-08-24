@@ -22,4 +22,3 @@
 - `pnpm --filter @chat/pi-executor typecheck`
 - `pnpm --filter @chat/pi-executor test`
 - `pnpm --filter @chat/pi-executor start`只用于受管本地运行，不读取外部写授权。
-

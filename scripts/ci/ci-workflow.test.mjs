@@ -75,7 +75,14 @@ export function assertCiWorkflowContract(workflow) {
   assert.ok(workflow.jobs !== null && typeof workflow.jobs === "object");
   const jobs = Object.entries(workflow.jobs);
   assert.ok(jobs.length > 0);
-  for (const requiredJob of ["core", "contract", "integration", "compat", "browser"]) {
+  for (const requiredJob of [
+    "core",
+    "contract",
+    "integration",
+    "compat",
+    "browser",
+    "supply-chain",
+  ]) {
     assert.ok(workflow.jobs[requiredJob] !== undefined, `CI缺少${requiredJob} lane Job`);
   }
   const commandsFor = (name) =>
@@ -83,6 +90,7 @@ export function assertCiWorkflowContract(workflow) {
       .filter((step) => typeof step?.run === "string")
       .map((step) => step.run.trim());
   assert.ok(commandsFor("core").includes("pnpm verify:core"));
+  assert.ok(commandsFor("contract").includes("pnpm api-surface:check"));
   assert.ok(commandsFor("contract").includes("pnpm test:contract"));
   assert.ok(commandsFor("integration").includes("pnpm test:integration"));
   assert.ok(commandsFor("browser").includes("pnpm test:browser"));
@@ -92,6 +100,8 @@ export function assertCiWorkflowContract(workflow) {
     ),
   );
   assert.ok(commandsFor("compat").includes("pnpm test:compat"));
+  assert.ok(commandsFor("supply-chain").includes("pnpm supply-chain:check"));
+  assert.ok(commandsFor("supply-chain").includes("pnpm supply-chain:audit"));
   const compatDecision = workflow.jobs.compat.steps.find((step) => step.id === "compat");
   assert.equal(compatDecision?.run, "node scripts/ci/compat-change-gate.mjs");
   for (const step of workflow.jobs.compat.steps.filter((step) =>
@@ -99,6 +109,17 @@ export function assertCiWorkflowContract(workflow) {
   )) {
     assert.equal(step.if, "steps.compat.outputs.run == 'true'");
   }
+  const apiSurfaceStep = workflow.jobs.contract.steps.find(
+    (step) => step?.run?.trim() === "pnpm api-surface:check",
+  );
+  assert.equal(
+    apiSurfaceStep?.env?.CHAT_API_SURFACE_BASE_SHA,
+    "${{ github.event.pull_request.base.sha || github.event.before || '' }}",
+  );
+  const contractCheckout = workflow.jobs.contract.steps.find((step) =>
+    step?.uses?.startsWith("actions/checkout@"),
+  );
+  assert.equal(contractCheckout?.with?.["fetch-depth"], 0);
   for (const [jobName, job] of jobs) {
     assert.equal(job.permissions, undefined, `${jobName}不得扩大根permissions`);
     assert.ok(Array.isArray(job.steps), `${jobName}.steps必须是数组`);

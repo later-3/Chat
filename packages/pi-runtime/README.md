@@ -21,4 +21,3 @@ Pi Planner/Executor Adapter、AgentSession、Capability Catalog、Operation/Tool
 - `pnpm --filter @chat/pi-runtime typecheck`
 - `pnpm --filter @chat/pi-runtime test`
 - `test:paid:*`需要根安全门、`CHAT_ALLOW_PAID_TESTS=1`与精确Provider凭据，普通CI永不运行。
-
