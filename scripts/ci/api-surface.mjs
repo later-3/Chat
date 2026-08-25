@@ -473,14 +473,6 @@ function declarationKey(declaration) {
   return `${declaration.getSourceFile().fileName}:${String(declaration.pos)}:${String(declaration.end)}`;
 }
 
-function symbolForCall(checker, call) {
-  if (ts.isIdentifier(call.expression)) return checker.getSymbolAtLocation(call.expression);
-  if (ts.isPropertyAccessExpression(call.expression)) {
-    return checker.getSymbolAtLocation(call.expression.name);
-  }
-  return undefined;
-}
-
 function actualSymbol(checker, node) {
   const symbol = checker.getSymbolAtLocation(node);
   return symbol === undefined ? undefined : resolvedSymbol(checker, symbol);
@@ -494,6 +486,10 @@ function unknownCallable(reason) {
   return { kind: "unknown", reason };
 }
 
+function ordinaryValue(reason) {
+  return { kind: "ordinary", reason };
+}
+
 function callableValue(declarations) {
   return {
     kind: "callable",
@@ -505,6 +501,7 @@ function callableValue(declarations) {
 
 function valueKey(value) {
   if (value.kind === "unknown") return `unknown:${value.reason}`;
+  if (value.kind === "ordinary") return `ordinary:${value.reason}`;
   if (value.kind === "callable") {
     return `callable:${value.declarations.map(declarationKey).sort().join(",")}`;
   }
@@ -512,6 +509,30 @@ function valueKey(value) {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, entry]) => `${name}=${valueKey(entry)}`)
     .join(",")}`;
+}
+
+function hasExternallyOwnedType(checker, node) {
+  const pending = [checker.getTypeAtLocation(node)];
+  const declarations = [];
+  const seen = new Set();
+  while (pending.length > 0) {
+    const type = pending.pop();
+    if (seen.has(type)) continue;
+    seen.add(type);
+    if (type.isUnionOrIntersection()) {
+      pending.push(...type.types);
+      continue;
+    }
+    const symbol = type.aliasSymbol ?? type.getSymbol();
+    if (symbol !== undefined) declarations.push(...(symbol.declarations ?? []));
+  }
+  return (
+    declarations.length > 0 &&
+    declarations.every((declaration) => {
+      const source = declaration.getSourceFile().fileName;
+      return !source.startsWith(APPLICATION_ROOT) && !source.startsWith(API_SOURCE_ROOT);
+    })
+  );
 }
 
 function propertyName(node) {
@@ -522,13 +543,28 @@ function propertyName(node) {
   return undefined;
 }
 
+function normalizedCalleeExpression(node) {
+  let current = node;
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    ts.isNonNullExpression(current) ||
+    ts.isSatisfiesExpression(current)
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
 /**
  * Callback值只允许编译期可确定的函数或对象成员。参数、解构成员和局部别名都通过
  * 同一bindings环境解析；动态分支不猜测，会在真正调用该值时失败关闭。
  */
 function staticCallableValue(node, checker, bindings, resolving = new Set()) {
-  if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node)) {
-    return staticCallableValue(node.expression, checker, bindings, resolving);
+  const normalizedNode = normalizedCalleeExpression(node);
+  if (normalizedNode !== node) {
+    return staticCallableValue(normalizedNode, checker, bindings, resolving);
   }
   if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) return callableValue([node]);
   if (ts.isObjectLiteralExpression(node)) {
@@ -572,14 +608,14 @@ function staticCallableValue(node, checker, bindings, resolving = new Set()) {
   }
   if (ts.isPropertyAccessExpression(node)) {
     const owner = staticCallableValue(node.expression, checker, bindings, resolving);
+    const propertySymbol = actualSymbol(checker, node.name);
+    const propertyCallables = (propertySymbol?.declarations ?? []).filter(
+      (declaration) => callableDeclaration(declaration) !== undefined,
+    );
     if (owner.kind === "unknown") {
-      const propertySymbol = actualSymbol(checker, node.name);
-      const externalCallables = (propertySymbol?.declarations ?? []).filter(
-        (declaration) =>
-          !declaration.getSourceFile().fileName.startsWith(API_SOURCE_ROOT) &&
-          callableDeclaration(declaration) !== undefined,
-      );
-      return externalCallables.length > 0 ? callableValue(externalCallables) : owner;
+      // namespace import的owner本身不是callable，但静态属性symbol会精确解析到
+      // named export声明；这里不以owner的unknown覆盖已解析的helper。
+      return propertyCallables.length > 0 ? callableValue(propertyCallables) : owner;
     }
     if (owner.kind === "object") {
       return (
@@ -587,13 +623,15 @@ function staticCallableValue(node, checker, bindings, resolving = new Set()) {
         unknownCallable(`对象缺少callback ${node.name.text}`)
       );
     }
-    const symbol = actualSymbol(checker, node.name);
-    if (symbol === undefined) return unknownCallable(`无法解析属性callback ${node.name.text}`);
-    const callables = (symbol.declarations ?? []).filter(
-      (declaration) => callableDeclaration(declaration) !== undefined,
-    );
-    return callables.length > 0
-      ? callableValue(callables)
+    if (owner.kind === "ordinary") {
+      return propertyCallables.length > 0
+        ? callableValue(propertyCallables)
+        : ordinaryValue(`外部owner静态属性 ${node.name.text}`);
+    }
+    if (propertySymbol === undefined)
+      return unknownCallable(`无法解析属性callback ${node.name.text}`);
+    return propertyCallables.length > 0
+      ? callableValue(propertyCallables)
       : unknownCallable(`属性 ${node.name.text}不是静态callback`);
   }
   if (!ts.isIdentifier(node)) return unknownCallable(`动态callback ${normalizedDeclaration(node)}`);
@@ -635,8 +673,13 @@ function staticCallableValue(node, checker, bindings, resolving = new Set()) {
       return unknownCallable(`解构callback ${node.text}未绑定`);
     }
     if (ts.isParameter(declaration)) {
-      return unknownCallable(`参数callback ${node.text}未绑定`);
+      return hasExternallyOwnedType(checker, node)
+        ? ordinaryValue(`外部类型参数 ${node.text}`)
+        : unknownCallable(`参数callback ${node.text}未绑定`);
     }
+  }
+  if (hasExternallyOwnedType(checker, node)) {
+    return ordinaryValue(`外部类型值 ${node.text}`);
   }
   return unknownCallable(`callback ${node.text}不是静态可调用值`);
 }
@@ -708,6 +751,149 @@ function isApplicationOperationDeclaration(checker, declaration) {
   return returnType !== "void" && returnType !== "never";
 }
 
+function isProvablyOrdinaryCall(call, checker, { allowApplicationTypePort = true } = {}) {
+  const callee = normalizedCalleeExpression(call.expression);
+  if (!ts.isIdentifier(callee) && !ts.isPropertyAccessExpression(callee)) return false;
+  const signature = checker.getResolvedSignature(call);
+  const declaration = signature?.declaration;
+  if (declaration === undefined) return false;
+  const source = declaration.getSourceFile().fileName;
+  // Application/API源码中的可调用值可能继续进入Operation闭包，不能当作普通调用放过。
+  if (!source.startsWith(APPLICATION_ROOT) && !source.startsWith(API_SOURCE_ROOT)) return true;
+  // Application Port的类型签名（例如TraceEmitter）没有可执行函数体，因而在静态
+  // 调用图中不可能间接进入Operation。API自己声明的callback类型仍不放行。
+  return (
+    allowApplicationTypePort &&
+    source.startsWith(APPLICATION_ROOT) &&
+    (ts.isFunctionTypeNode(declaration) ||
+      ts.isCallSignatureDeclaration(declaration) ||
+      ts.isMethodSignature(declaration))
+  );
+}
+
+function directCallDeclarations(call, checker) {
+  const callee = normalizedCalleeExpression(call.expression);
+  const symbol = ts.isIdentifier(callee)
+    ? actualSymbol(checker, callee)
+    : ts.isPropertyAccessExpression(callee)
+      ? actualSymbol(checker, callee.name)
+      : undefined;
+  return symbol?.declarations ?? [];
+}
+
+function applicationUtilityIsOrdinary(
+  declaration,
+  checker,
+  state = { visiting: new Set(), memo: new Map() },
+) {
+  const callable = callableDeclaration(declaration);
+  if (callable === undefined) return false;
+  const key = declarationKey(declaration);
+  if (state.memo.has(key)) return state.memo.get(key);
+  if (state.visiting.has(key)) return true;
+  state.visiting.add(key);
+  let ordinary = true;
+  visitCallableCalls(callable, (call) => {
+    if (!ordinary) return;
+    const callee = normalizedCalleeExpression(call.expression);
+    if (!ts.isIdentifier(callee) && !ts.isPropertyAccessExpression(callee)) {
+      ordinary = false;
+      return;
+    }
+    const targets = directCallDeclarations(call, checker).filter(
+      (target) => callableDeclaration(target) !== undefined,
+    );
+    if (targets.length === 0) {
+      ordinary = isProvablyOrdinaryCall(call, checker, {
+        allowApplicationTypePort: false,
+      });
+      return;
+    }
+    for (const target of targets) {
+      const source = target.getSourceFile().fileName;
+      if (source.startsWith(API_SOURCE_ROOT)) {
+        ordinary = false;
+        return;
+      }
+      if (
+        source.startsWith(APPLICATION_ROOT) &&
+        (isApplicationOperationDeclaration(checker, target) ||
+          !applicationUtilityIsOrdinary(target, checker, state))
+      ) {
+        ordinary = false;
+        return;
+      }
+    }
+  });
+  state.visiting.delete(key);
+  state.memo.set(key, ordinary);
+  return ordinary;
+}
+
+/**
+ * 每个CallExpression只能从这一个出口分类。静态Application Operation记录，API helper
+ * 进入有界调用图，有真实外部signature且不在Application/API责任根的调用才允许忽略；
+ * 其他动态、间接或混合目标统一失败关闭。
+ */
+function classifyCallExpression(call, checker, bindings) {
+  const callee = normalizedCalleeExpression(call.expression);
+  if (ts.isElementAccessExpression(callee) || ts.isCallExpression(callee)) {
+    return {
+      kind: "unknown",
+      reason: `动态或间接callee ${normalizedDeclaration(callee)}`,
+    };
+  }
+  const value = staticCallableValue(callee, checker, bindings);
+  if (value.kind === "unknown") {
+    return isProvablyOrdinaryCall(call, checker)
+      ? { kind: "ordinary" }
+      : { kind: "unknown", reason: value.reason };
+  }
+  if (value.kind === "ordinary") return { kind: "ordinary" };
+  if (value.kind !== "callable") {
+    return { kind: "unknown", reason: "callee是非函数callback对象" };
+  }
+
+  const application = [];
+  const helpers = [];
+  let ordinaryCount = 0;
+  for (const target of value.declarations) {
+    const source = target.getSourceFile().fileName;
+    if (source.startsWith(APPLICATION_ROOT)) {
+      if (!isApplicationOperationDeclaration(checker, target)) {
+        if (applicationUtilityIsOrdinary(target, checker)) ordinaryCount += 1;
+        else {
+          return {
+            kind: "unknown",
+            reason: `Application callable无法证明不进入Operation：${normalizedDeclaration(target)}`,
+          };
+        }
+        continue;
+      }
+      application.push(target);
+      continue;
+    }
+    if (source.startsWith(API_SOURCE_ROOT)) {
+      const callable = callableDeclaration(target);
+      if (callable === undefined) {
+        return { kind: "unknown", reason: "API helper不是静态可调用声明" };
+      }
+      helpers.push(callable);
+      continue;
+    }
+    ordinaryCount += 1;
+  }
+
+  const categories =
+    Number(application.length > 0) + Number(helpers.length > 0) + Number(ordinaryCount > 0);
+  if (categories !== 1) {
+    return { kind: "unknown", reason: "callee存在混合或空的静态目标" };
+  }
+  if (application.length > 0) return { kind: "application", declarations: application };
+  if (helpers.length > 0) return { kind: "helper", declarations: helpers };
+  return { kind: "ordinary" };
+}
+
 /**
  * Route只提供闭包根。这里沿同文件函数、变量函数和已解析import helper收敛，最终以
  * TypeScript resolved symbol判定真实Application operation；递归、环和重复调用由seen稳定去重。
@@ -723,57 +909,34 @@ function operationsInHandler(handler, checker) {
     seen.add(key);
     const callableRoot = callableDeclaration(declaration) ?? declaration;
     visitCallableCalls(callableRoot, (node) => {
-      if (ts.isElementAccessExpression(node.expression) || ts.isCallExpression(node.expression)) {
+      const classification = classifyCallExpression(node, checker, bindings);
+      if (classification.kind === "unknown") {
         throw new Error(
-          `公开route包含无法静态解析的动态调用：${normalizedDeclaration(node.expression)}`,
+          `公开route包含无法静态解析的动态调用：${normalizedDeclaration(normalizedCalleeExpression(node.expression))}（${classification.reason}）`,
         );
       }
-      const value = staticCallableValue(node.expression, checker, bindings);
-      if (value.kind === "unknown") {
-        const symbol = symbolForCall(checker, node);
-        const declarations =
-          symbol === undefined ? [] : (resolvedSymbol(checker, symbol).declarations ?? []);
-        const callbackBoundary =
-          (ts.isIdentifier(node.expression) && symbol === undefined) ||
-          declarations.some(
-            (entry) =>
-              entry.getSourceFile().fileName.startsWith(API_SOURCE_ROOT) &&
-              (ts.isParameter(entry) ||
-                ts.isBindingElement(entry) ||
-                ts.isPropertyAssignment(entry) ||
-                ts.isVariableDeclaration(entry)),
-          );
-        if (callbackBoundary) {
-          throw new Error(`公开route包含无法静态解析的动态调用：${value.reason}`);
-        }
+      if (classification.kind === "ordinary") {
         return;
       }
-      if (value.kind !== "callable") {
-        throw new Error("公开route尝试调用非函数callback对象");
-      }
-      for (const target of value.declarations) {
-        if (
-          target.getSourceFile().fileName.startsWith(APPLICATION_ROOT) &&
-          isApplicationOperationDeclaration(checker, target)
-        ) {
+      if (classification.kind === "application") {
+        for (const target of classification.declarations) {
           const operationSymbol = actualSymbol(checker, target.name ?? target);
           const operation = operationSymbol?.getName();
           if (operation !== undefined && !["ApplicationError", "notFound"].includes(operation)) {
             operations.add(operation);
           }
-          continue;
         }
-        if (!target.getSourceFile().fileName.startsWith(API_SOURCE_ROOT)) continue;
-        const callable = callableDeclaration(target);
-        if (callable === undefined) {
-          throw new Error("公开route helper不是可静态解析函数");
-        }
+        return;
+      }
+      for (const callable of classification.declarations) {
         const nestedBindings = new Map(bindings);
         for (const [index, parameter] of callable.parameters.entries()) {
           const argument = node.arguments[index];
           const argumentValue =
             argument === undefined
-              ? unknownCallable(`callback参数 ${String(index + 1)} 缺失`)
+              ? parameter.initializer === undefined
+                ? unknownCallable(`callback参数 ${String(index + 1)} 缺失`)
+                : staticCallableValue(parameter.initializer, checker, bindings)
               : staticCallableValue(argument, checker, bindings);
           bindName(checker, parameter.name, argumentValue, nestedBindings);
         }

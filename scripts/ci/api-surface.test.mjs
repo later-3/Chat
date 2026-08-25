@@ -432,6 +432,55 @@ test("Application callback沿参数、解构和对象成员传播，动态值失
   );
 });
 
+test("namespace import helper进入调用图，动态条件callee失败关闭", () => {
+  const application = `
+    export async function getNote() { return { kind: "note" as const }; }
+    export async function getNoteHistory() { return { kind: "history" as const }; }
+  `;
+  const helper = `export async function helper(operation) { return operation(); }`;
+  const route = (operation) => `
+    import * as helpers from "./fixture-helper.js";
+    import { ${operation} } from "../../../../packages/application/src/fixture-use-cases.js";
+    export const handler = async () => helpers.helper(${operation});
+  `;
+  const note = applicationOperationsFromFixtureForTest({
+    route: route("getNote"),
+    helper,
+    application,
+  });
+  const history = applicationOperationsFromFixtureForTest({
+    route: route("getNoteHistory"),
+    helper,
+    application,
+  });
+  assert.deepEqual(note, ["getNote"]);
+  assert.deepEqual(history, ["getNoteHistory"]);
+
+  const changed = clone(baseline);
+  changed.routes[0].applicationOperations = note;
+  const replacement = clone(changed);
+  replacement.routes[0].applicationOperations = history;
+  assert.ok(
+    diffApiSurface(changed, replacement).some((entry) =>
+      entry.issueId.startsWith("route_contract_changed:"),
+    ),
+  );
+
+  assert.throws(
+    () =>
+      applicationOperationsFromFixtureForTest({
+        route: `
+          import { getNote, getNoteHistory } from "../../../../packages/application/src/fixture-use-cases.js";
+          declare const condition: boolean;
+          export const handler = async () => (condition ? getNote : getNoteHistory)();
+        `,
+        helper: "export {};",
+        application,
+      }),
+    /无法静态解析的动态调用/u,
+  );
+});
+
 test("禁止身份检查覆盖alias、resolved symbol、声明来源和transitive签名", () => {
   assert.throws(
     () =>
