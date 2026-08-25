@@ -101,7 +101,7 @@ Chat的核心是“产品责任”，不是“代码量必须最大”。整个�
 3. **恢复源码事实**：读取任务相关Schema、状态机、Application用例、组合根、测试和as-built文档。源码描述已实现事实，`AGENTS.md`和技术合同描述规范边界；二者冲突时停止并报告，不能让偶然实现静默覆盖冻结合同。
 4. **作出复用决策**：非核心能力在编码前完成上游源码/工件审核，明确“直接使用 / Hosted App或Sidecar / 窄Adapter / 明确拒绝 / Chat自研”及退出路径。没有这个结论不得先加依赖或复制源码。
 5. **交付最小纵向**：只实现当前用户结果，保持Product Store、Application、Workflow和外部Provider所有权分离；行为变化同步更新合同测试、中文代码导航与唯一as-built事实源。
-6. **分层验证并交付**：文档/注释改动至少运行格式、链接或相关架构测试；代码改动先跑受影响包的build、typecheck与test；跨层纵向在交付前运行根级`pnpm build`、`pnpm lint`、`pnpm format:check`、`pnpm typecheck`和`pnpm test`；依赖或运行工件变化再运行`pnpm audit --prod`及供应链门。用户界面运行适用的真实浏览器E2E；Provider/模型接入才运行显式真实Provider/付费模型门。所有报告都列出实际运行与未运行项，授权push/PR前必须满足CI同等根级门；未经授权不push、不建PR。
+6. **分层验证并交付**：文档/注释改动至少运行格式、链接或相关架构测试；代码改动先跑受影响包的build、typecheck与test；跨层纵向在交付前运行根级`pnpm build`、`pnpm lint`、`pnpm format:check`、`pnpm typecheck`和`pnpm test`；依赖或运行工件变化再运行标准`pnpm audit --prod`，Managed Fork固定点变化还运行`pnpm managed-sources:verify`与Chat接缝测试。用户界面运行适用的真实浏览器E2E；Provider/模型接入才运行显式真实Provider/付费模型门。所有报告都列出实际运行与未运行项，授权push/PR前必须满足CI同等根级门；未经授权不push、不建PR。
 
 ## 6. 已冻结架构规则
 

@@ -7,6 +7,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
+    "bootstrap": "pnpm managed-sources:prepare && pnpm run setup --memory=off --workbench=off",
     "setup": "node scripts/dev/setup.mjs",
     "dev": "node scripts/dev/start.mjs",
     "dev:debug": "node scripts/dev/start.mjs --debug --instance=debug --memory=off --workbench=off",

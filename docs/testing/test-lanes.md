@@ -7,12 +7,12 @@ Owner。测试继续靠近对应Workspace，lane runner只负责分类、批次�
 
 | lane | 责任 | 自动运行 |
 | --- | --- | --- |
-| `core` | 纯规则、Domain与核心单元测试 | 每个PR、main |
-| `contract` | Schema、API、架构、Store迁移与CI配置合同 | 每个PR、main |
-| `integration` | Local World、跨包、进程与恢复纵向 | 每个PR、main |
-| `compat` | 历史Workflow、Store和暂停Memory兼容 | 相关PR、main、夜间 |
+| `core` | 纯规则、Domain与核心单元测试 | 每个PR、main的统一`ci` Job |
+| `contract` | Schema、API、架构、Store迁移与CI配置合同 | 每个PR、main的统一`ci` Job |
+| `integration` | Local World、跨包、进程与恢复纵向 | 每个PR、main的统一`ci` Job |
+| `compat` | 历史Workflow、Store和暂停Memory兼容 | 每个PR、main的统一`ci` Job |
 | `beta` | Workbench等Beta纵向 | 仅显式手工 |
-| `browser` | 无付费Provider的确定性Chromium | 产品变更门 |
+| `browser` | 无付费Provider的确定性Chromium | PR/main跑一条系统接缝；完整套件定时或手工 |
 | `paid` | 真实模型与Provider | 仅显式手工，永不进入普通CI |
 | `external` | 真实Plane、Memory及其他外部写 | 仅显式手工，永不进入普通CI |
 
@@ -62,6 +62,11 @@ case数由Browser合同测试直接解析当前spec，不在文档重复维护�
 `test-results/test-lanes/<lane>.json`，其中的`fileCount`、`testCount`、`wallMs`、`peakRssBytes`和
 `slowest10`是该commit、该机器、默认Node Heap下的唯一度量证据；最终报告从本轮4个JSON汇总，
 不得沿用历史快照。RSS是受监督子进程树采样总和，不是单个Node Heap上限。
+
+GitHub普通流水线只有一个稳定命名的`ci` Job：`pnpm bootstrap`只准备一次固定Pi/DSH与Chat，
+随后运行根build/lint/format/typecheck/test、一条Capability Governance浏览器接缝以及安装后
+启动/健康/停止。完整Browser与标准`pnpm audit --prod`属于`maintenance`定时/手工流水线。
+Pi、DSH各自在自己的Fork运行全量CI，Chat不重复执行其整仓测试。
 
 ## 测试瘦身证据
 

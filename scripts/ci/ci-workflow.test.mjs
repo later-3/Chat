@@ -7,7 +7,13 @@ import { describe, it } from "node:test";
 import { parseDocument } from "yaml";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const workflowSource = readFileSync(resolve(repoRoot, ".github/workflows/ci.yml"), "utf8");
+const ciSource = readFileSync(resolve(repoRoot, ".github/workflows/ci.yml"), "utf8");
+const maintenanceSource = readFileSync(
+  resolve(repoRoot, ".github/workflows/maintenance.yml"),
+  "utf8",
+);
+const packageManifest = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8"));
+
 const REQUIRED_EMPTY_ENV = Object.freeze([
   "ANTHROPIC_API_KEY",
   "AZURE_OPENAI_API_KEY",
@@ -32,6 +38,7 @@ const REQUIRED_EMPTY_ENV = Object.freeze([
   "OPENAI_BASE_URL",
   "PLANE_API_TOKEN",
 ]);
+
 const REQUIRED_DISABLED_ENV = Object.freeze([
   "CHAT_ALLOW_EXTERNAL_WRITES",
   "CHAT_ALLOW_PAID_TESTS",
@@ -47,265 +54,227 @@ export function parseCiWorkflow(source) {
   assert.deepEqual(
     document.errors.map((error) => error.message),
     [],
-    "CI workflow必须是可可靠解析且无重复key的YAML",
+    "workflow必须是可可靠解析且无重复key的YAML",
   );
   const workflow = document.toJS();
   assert.ok(workflow !== null && typeof workflow === "object" && !Array.isArray(workflow));
   return workflow;
 }
 
-export function assertCiWorkflowContract(workflow) {
-  assert.deepEqual(workflow.on?.push?.branches, ["main"]);
-  assert.ok(Array.isArray(workflow.on?.pull_request) || workflow.on?.pull_request === null);
-  assert.deepEqual(workflow.on?.schedule, [{ cron: "23 18 * * *" }]);
-  assert.ok(
-    Array.isArray(workflow.on?.workflow_dispatch) || workflow.on?.workflow_dispatch === null,
-  );
+function commandsFor(job) {
+  return job.steps.filter((step) => typeof step?.run === "string").map((step) => step.run.trim());
+}
+
+function assertSafeWorkflow(workflow) {
   assert.deepEqual(workflow.permissions, { contents: "read" });
-  assert.deepEqual(workflow.concurrency, {
-    group: "ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}",
-    "cancel-in-progress": true,
-  });
   assert.equal(workflow.env?.CI, "true");
   for (const name of REQUIRED_EMPTY_ENV) assert.equal(workflow.env?.[name], "", `${name}必须清空`);
   for (const name of REQUIRED_DISABLED_ENV) {
     assert.equal(workflow.env?.[name], "0", `${name}必须关闭`);
   }
+}
 
-  assert.ok(workflow.jobs !== null && typeof workflow.jobs === "object");
-  const jobs = Object.entries(workflow.jobs);
-  assert.ok(jobs.length > 0);
-  const requiredJobs = [
-    "core",
-    "contract",
-    "integration",
-    "compat",
-    "dsh-smoke",
-    "browser",
-    "supply-chain",
-    "fresh-clone-smoke",
-  ];
-  for (const requiredJob of requiredJobs) {
-    assert.ok(workflow.jobs[requiredJob] !== undefined, `CI缺少${requiredJob} lane Job`);
-  }
-  const commandsFor = (name) =>
-    workflow.jobs[name].steps
-      .filter((step) => typeof step?.run === "string")
-      .map((step) => step.run.trim());
-  assert.ok(commandsFor("core").includes("pnpm verify:core"));
-  assert.ok(commandsFor("contract").includes("pnpm api-surface:check"));
-  assert.ok(commandsFor("contract").includes("pnpm test:contract"));
-  assert.ok(commandsFor("integration").includes("pnpm test:integration"));
-  assert.ok(commandsFor("browser").includes("pnpm test:browser"));
+function assertSafeJob(jobName, job) {
+  assert.equal(job.if, undefined, `${jobName}不得条件跳过`);
+  assert.equal(job["continue-on-error"], undefined, `${jobName}不得容错`);
   assert.ok(
-    commandsFor("browser").some((command) =>
-      command.includes("playwright install --with-deps chromium"),
-    ),
+    Number.isInteger(job["timeout-minutes"]) &&
+      job["timeout-minutes"] >= 5 &&
+      job["timeout-minutes"] <= 60,
+    `${jobName}必须设置5–60分钟timeout`,
   );
-  assert.ok(commandsFor("compat").includes("pnpm test:compat"));
-  assert.ok(commandsFor("supply-chain").includes("pnpm supply-chain:check"));
-  assert.ok(commandsFor("supply-chain").includes("pnpm supply-chain:audit"));
-  const freshCloneCommands = commandsFor("fresh-clone-smoke").join("\n");
-  for (const required of [
-    "pnpm managed-sources:prepare",
-    "pnpm run setup --workbench=off",
+  assert.ok(Array.isArray(job.steps), `${jobName}.steps必须是数组`);
+
+  const checkouts = job.steps.filter(
+    (step) => typeof step?.uses === "string" && step.uses.startsWith("actions/checkout@"),
+  );
+  assert.equal(checkouts.length, 1, `${jobName}必须精确checkout一次`);
+  assert.equal(
+    checkouts[0].with?.["persist-credentials"],
+    false,
+    `${jobName} checkout必须关闭persist-credentials`,
+  );
+
+  for (const step of job.steps) {
+    assert.equal(step?.["continue-on-error"], undefined, `${jobName}步骤不得continue-on-error`);
+    assert.equal(step?.if, undefined, `${jobName}步骤不得条件跳过`);
+    if (typeof step?.uses === "string" && !step.uses.startsWith("./")) {
+      assert.match(step.uses, /^[^@\s]+@[0-9a-f]{40}$/u, `${jobName} Action必须固定完整SHA`);
+    }
+    if (typeof step?.run === "string") {
+      assert.doesNotMatch(
+        step.run,
+        /(?:CHAT_ALLOW_PAID_TESTS=1|CHAT_ALLOW_EXTERNAL_WRITES=1|:paid\b|test:provider:|test:external:)/u,
+        `${jobName}不得运行paid或external入口`,
+      );
+    }
+  }
+}
+
+function requireCommand(job, exactCommand) {
+  assert.ok(commandsFor(job).includes(exactCommand), `缺少命令：${exactCommand}`);
+}
+
+export function assertCiWorkflowContract(workflow, manifest = packageManifest) {
+  assert.deepEqual(workflow.on?.push?.branches, ["main"]);
+  assert.ok(Array.isArray(workflow.on?.pull_request) || workflow.on?.pull_request === null);
+  assert.equal(workflow.on?.schedule, undefined);
+  assert.equal(workflow.on?.workflow_dispatch, undefined);
+  assert.deepEqual(workflow.concurrency, {
+    group: "ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}",
+    "cancel-in-progress": true,
+  });
+  assertSafeWorkflow(workflow);
+
+  assert.deepEqual(Object.keys(workflow.jobs), ["ci"], "普通CI只保留一个稳定Required Job");
+  const job = workflow.jobs.ci;
+  assert.equal(job.name, "ci");
+  assertSafeJob("ci", job);
+
+  assert.equal(
+    manifest.scripts?.bootstrap,
+    "pnpm managed-sources:prepare && pnpm run setup --memory=off --workbench=off",
+    "bootstrap必须同时准备固定Fork、冻结安装与核心运行工件",
+  );
+  for (const command of [
+    "pnpm bootstrap",
+    "pnpm build",
+    "pnpm lint",
+    "pnpm format:check",
+    "pnpm typecheck",
+    "pnpm test",
+    "pnpm test:browser:capability-governance",
+  ]) {
+    requireCommand(job, command);
+  }
+  assert.equal(
+    commandsFor(job).filter((command) => command === "pnpm bootstrap").length,
+    1,
+    "普通CI必须只准备一次Fork与Chat",
+  );
+  assert.ok(
+    commandsFor(job).some((command) => command.includes("playwright install --with-deps chromium")),
+    "普通CI必须准备固定Chromium",
+  );
+
+  const systemStep = job.steps.find(
+    (step) => step.name === "Installed system starts, becomes healthy, and stops cleanly",
+  );
+  assert.ok(systemStep, "普通CI缺少完整系统启动门");
+  for (const evidence of [
     "node scripts/dev/start.mjs --workbench=off",
     "http://127.0.0.1:43110/",
-    "http://127.0.0.1:43110/lifeos/sessions/fresh-clone",
     "http://127.0.0.1:43111/api/readyz",
     "http://127.0.0.1:43112/healthz",
-    "http://127.0.0.1:18960/api/v1/health",
-    "http://127.0.0.1:18970/health",
     'kill -INT "$chat_pid"',
     "pnpm dev:status",
     "本地开发环境未运行",
   ]) {
-    assert.ok(freshCloneCommands.includes(required), `fresh-clone-smoke缺少：${required}`);
+    assert.ok(systemStep.run.includes(evidence), `完整系统启动门缺少：${evidence}`);
   }
-  for (const [required, expectedCount] of [
-    ["pnpm run setup --workbench=off", 1],
-    ["node scripts/dev/start.mjs --workbench=off", 1],
-    ["http://127.0.0.1:43111/api/readyz", 2],
-    ['kill -INT "$chat_pid"', 2],
+  assert.doesNotMatch(
+    commandsFor(job).join("\n"),
+    /(?:api-surface:check|compatibility:check|supply-chain:check|supply-chain:audit)/u,
+    "普通CI不得把自定义治理器当成独立合入门",
+  );
+}
+
+export function assertMaintenanceWorkflowContract(workflow) {
+  assert.equal(workflow.on?.push, undefined);
+  assert.equal(workflow.on?.pull_request, undefined);
+  assert.deepEqual(workflow.on?.schedule, [{ cron: "23 18 * * *" }]);
+  assert.ok(
+    Array.isArray(workflow.on?.workflow_dispatch) || workflow.on?.workflow_dispatch === null,
+  );
+  assert.deepEqual(workflow.concurrency, {
+    group: "maintenance-${{ github.ref }}",
+    "cancel-in-progress": true,
+  });
+  assertSafeWorkflow(workflow);
+
+  assert.deepEqual(Object.keys(workflow.jobs), ["maintenance"]);
+  const job = workflow.jobs.maintenance;
+  assert.equal(job.name, "maintenance");
+  assertSafeJob("maintenance", job);
+  for (const command of [
+    "pnpm bootstrap",
+    "pnpm build",
+    "pnpm test:browser",
+    "pnpm audit --prod",
   ]) {
-    assert.equal(
-      freshCloneCommands.split(required).length - 1,
-      expectedCount,
-      `fresh-clone-smoke的setup/start/health/stop证据次数漂移：${required}`,
-    );
+    requireCommand(job, command);
   }
-  const compatDecision = workflow.jobs.compat.steps.find((step) => step.id === "compat");
-  assert.equal(compatDecision?.run, "node scripts/ci/compat-change-gate.mjs");
-  for (const step of workflow.jobs.compat.steps.filter((step) =>
-    ["pnpm managed-sources:prepare", "pnpm test:compat"].includes(step?.run?.trim()),
-  )) {
-    assert.equal(step.if, "steps.compat.outputs.run == 'true'");
-  }
-  const apiSurfaceStep = workflow.jobs.contract.steps.find(
-    (step) => step?.run?.trim() === "pnpm api-surface:check",
-  );
   assert.equal(
-    apiSurfaceStep?.env?.CHAT_API_SURFACE_BASE_SHA,
-    "${{ github.event.pull_request.base.sha || github.event.before || '' }}",
+    commandsFor(job).filter((command) => command === "pnpm bootstrap").length,
+    1,
+    "维护门必须只准备一次Fork与Chat",
   );
-  const compatibilityStep = workflow.jobs.contract.steps.find(
-    (step) => step?.run?.trim() === "pnpm compatibility:check",
+  assert.ok(
+    commandsFor(job).some((command) => command.includes("playwright install --with-deps chromium")),
   );
-  assert.equal(
-    compatibilityStep?.env?.CHAT_COMPATIBILITY_BASE_SHA,
-    "${{ github.event.pull_request.base.sha || github.event.before || '' }}",
+  assert.doesNotMatch(
+    commandsFor(job).join("\n"),
+    /(?:supply-chain:check|supply-chain:audit)/u,
+    "维护门只使用标准生产依赖Audit，不替Fork审计整仓",
   );
-  const contractCheckout = workflow.jobs.contract.steps.find((step) =>
-    step?.uses?.startsWith("actions/checkout@"),
-  );
-  assert.equal(contractCheckout?.with?.["fetch-depth"], 0);
-  for (const [jobName, job] of jobs) {
-    assert.equal(job.permissions, undefined, `${jobName}不得扩大根permissions`);
-    if (requiredJobs.includes(jobName)) {
-      assert.equal(job.if, undefined, `${jobName} required Job不得条件跳过`);
-      assert.equal(job["continue-on-error"], undefined, `${jobName} required Job不得容错`);
-      assert.ok(
-        Number.isInteger(job["timeout-minutes"]) &&
-          job["timeout-minutes"] >= 5 &&
-          job["timeout-minutes"] <= 60,
-        `${jobName}必须设置5–60分钟timeout`,
-      );
-    }
-    assert.ok(Array.isArray(job.steps), `${jobName}.steps必须是数组`);
-
-    const checkoutSteps = job.steps.filter(
-      (step) => typeof step?.uses === "string" && step.uses.startsWith("actions/checkout@"),
-    );
-    assert.equal(checkoutSteps.length, 1, `${jobName}必须精确checkout一次Chat`);
-    assert.equal(
-      checkoutSteps[0].with?.["persist-credentials"],
-      false,
-      `${jobName} checkout必须关闭persist-credentials`,
-    );
-
-    const prepareSteps = job.steps.filter(
-      (step) => typeof step?.run === "string" && step.run.trim() === "pnpm managed-sources:prepare",
-    );
-    assert.equal(prepareSteps.length, 1, `${jobName}必须精确准备一次Managed Sources`);
-
-    for (const step of job.steps) {
-      assert.equal(step?.["continue-on-error"], undefined, `${jobName}步骤不得continue-on-error`);
-      if (typeof step?.uses === "string" && !step.uses.startsWith("./")) {
-        assert.match(step.uses, /^[^@\s]+@[0-9a-f]{40}$/u, `${jobName} Action必须固定完整SHA`);
-      }
-      if (typeof step?.run === "string") {
-        assert.doesNotMatch(
-          step.run,
-          /(?:CHAT_ALLOW_PAID_TESTS=1|CHAT_ALLOW_EXTERNAL_WRITES=1|:paid\b|test:provider:|test:external:)/u,
-          `${jobName}普通CI不得运行paid或external入口`,
-        );
-      }
-    }
-  }
-
-  const criticalSteps = [
-    ["core", (step) => step?.run?.trim() === "pnpm verify:core"],
-    ["contract", (step) => step?.run?.trim() === "pnpm api-surface:check"],
-    ["contract", (step) => step?.run?.trim() === "pnpm compatibility:check"],
-    ["contract", (step) => step?.run?.trim() === "pnpm test:contract"],
-    ["integration", (step) => step?.run?.trim() === "pnpm test:integration"],
-    ["dsh-smoke", (step) => step?.name === "dsh host and bridge start"],
-    ["browser", (step) => step?.run?.trim() === "pnpm test:browser"],
-    ["supply-chain", (step) => step?.run?.trim() === "pnpm supply-chain:check"],
-    ["supply-chain", (step) => step?.run?.trim() === "pnpm supply-chain:audit"],
-    [
-      "fresh-clone-smoke",
-      (step) => step?.name === "prepare pinned local runtime from an empty cache",
-    ],
-    [
-      "fresh-clone-smoke",
-      (step) =>
-        step?.name === "core graph starts without Provider, Memory, or Workbench and stops cleanly",
-    ],
-  ];
-  for (const [jobName, predicate] of criticalSteps) {
-    const matches = workflow.jobs[jobName].steps.filter(predicate);
-    assert.equal(matches.length, 1, `${jobName}关键完成步骤缺失或重复`);
-    assert.equal(matches[0].if, undefined, `${jobName}关键完成步骤不得条件跳过`);
-    assert.equal(matches[0]["continue-on-error"], undefined, `${jobName}关键完成步骤不得容错`);
-  }
 }
 
 describe("CI workflow baseline", () => {
-  it("validates the real YAML structure, job preparation, actions, and safe environment", () => {
-    assertCiWorkflowContract(parseCiWorkflow(workflowSource));
+  it("keeps one required Chat CI job and one scheduled maintenance job", () => {
+    assertCiWorkflowContract(parseCiWorkflow(ciSource));
+    assertMaintenanceWorkflowContract(parseCiWorkflow(maintenanceSource));
   });
 
-  it("rejects the old false-positive shape where one job prepares twice and another never does", () => {
-    const workflow = structuredClone(parseCiWorkflow(workflowSource));
-    const jobs = Object.values(workflow.jobs);
-    const firstPrepare = jobs[0].steps.find(
-      (step) => typeof step?.run === "string" && step.run.trim() === "pnpm managed-sources:prepare",
-    );
-    jobs[0].steps.push(structuredClone(firstPrepare));
-    jobs[1].steps = jobs[1].steps.filter(
-      (step) =>
-        !(typeof step?.run === "string" && step.run.trim() === "pnpm managed-sources:prepare"),
-    );
-    assert.throws(() => assertCiWorkflowContract(workflow), /精确准备一次/u);
-  });
+  it("rejects duplicate Fork preparation and missing Chat completion commands", () => {
+    const duplicate = structuredClone(parseCiWorkflow(ciSource));
+    duplicate.jobs.ci.steps.push({ run: "pnpm bootstrap" });
+    assert.throws(() => assertCiWorkflowContract(duplicate), /只准备一次/u);
 
-  it("rejects tag-pinned actions and checkout credentials", () => {
-    const workflow = structuredClone(parseCiWorkflow(workflowSource));
-    const firstJob = Object.values(workflow.jobs)[0];
-    const checkout = firstJob.steps.find((step) => step?.uses?.startsWith("actions/checkout@"));
-    checkout.uses = "actions/checkout@v4";
-    checkout.with["persist-credentials"] = true;
-    assert.throws(() => assertCiWorkflowContract(workflow), /persist-credentials|完整SHA/u);
-  });
-
-  it("rejects removal of either real DSH or fresh-clone smoke job", () => {
-    for (const jobName of ["dsh-smoke", "fresh-clone-smoke"]) {
-      const workflow = structuredClone(parseCiWorkflow(workflowSource));
-      delete workflow.jobs[jobName];
-      assert.throws(() => assertCiWorkflowContract(workflow), new RegExp(jobName, "u"));
+    for (const command of ["pnpm build", "pnpm test", "pnpm test:browser:capability-governance"]) {
+      const changed = structuredClone(parseCiWorkflow(ciSource));
+      changed.jobs.ci.steps = changed.jobs.ci.steps.filter((step) => step.run?.trim() !== command);
+      assert.throws(() => assertCiWorkflowContract(changed), /缺少命令/u);
     }
   });
 
-  it("rejects disabling or tolerating required jobs and critical completion steps", () => {
-    const disabledJob = structuredClone(parseCiWorkflow(workflowSource));
-    disabledJob.jobs["dsh-smoke"].if = false;
-    assert.throws(() => assertCiWorkflowContract(disabledJob), /required Job不得条件跳过/u);
+  it("rejects tag-pinned Actions, checkout credentials, conditional skips, and paid commands", () => {
+    const unsafeAction = structuredClone(parseCiWorkflow(ciSource));
+    const checkout = unsafeAction.jobs.ci.steps.find((step) =>
+      step.uses?.startsWith("actions/checkout@"),
+    );
+    checkout.uses = "actions/checkout@v4";
+    checkout.with["persist-credentials"] = true;
+    assert.throws(() => assertCiWorkflowContract(unsafeAction), /persist-credentials|完整SHA/u);
 
-    const tolerantJob = structuredClone(parseCiWorkflow(workflowSource));
-    tolerantJob.jobs["fresh-clone-smoke"]["continue-on-error"] = true;
-    assert.throws(() => assertCiWorkflowContract(tolerantJob), /required Job不得容错/u);
+    const skipped = structuredClone(parseCiWorkflow(ciSource));
+    skipped.jobs.ci.steps.find((step) => step.run?.trim() === "pnpm test").if = "false";
+    assert.throws(() => assertCiWorkflowContract(skipped), /不得条件跳过/u);
 
-    const tolerantStep = structuredClone(parseCiWorkflow(workflowSource));
-    tolerantStep.jobs["dsh-smoke"].steps.find((step) => step.name === "dsh host and bridge start")[
-      "continue-on-error"
-    ] = true;
-    assert.throws(() => assertCiWorkflowContract(tolerantStep), /不得continue-on-error|不得容错/u);
-
-    const skippedStep = structuredClone(parseCiWorkflow(workflowSource));
-    skippedStep.jobs["fresh-clone-smoke"].steps.find(
-      (step) => step.name === "prepare pinned local runtime from an empty cache",
-    ).if = false;
-    assert.throws(() => assertCiWorkflowContract(skippedStep), /关键完成步骤不得条件跳过/u);
+    const paid = structuredClone(parseCiWorkflow(ciSource));
+    paid.jobs.ci.steps.push({ run: "pnpm test:paid:provider:bailian" });
+    assert.throws(() => assertCiWorkflowContract(paid), /paid或external/u);
   });
 
-  it("validates fresh-clone setup, start, health and stop evidence independently", () => {
-    for (const required of [
-      "pnpm run setup --workbench=off",
+  it("rejects removal of install, health, stop, browser regression, or standard audit evidence", () => {
+    for (const evidence of [
       "node scripts/dev/start.mjs --workbench=off",
       "http://127.0.0.1:43111/api/readyz",
       'kill -INT "$chat_pid"',
     ]) {
-      const changed = structuredClone(parseCiWorkflow(workflowSource));
-      const step = changed.jobs["fresh-clone-smoke"].steps.find(
-        (candidate) => typeof candidate.run === "string" && candidate.run.includes(required),
+      const changed = structuredClone(parseCiWorkflow(ciSource));
+      const step = changed.jobs.ci.steps.find((candidate) =>
+        candidate.run?.includes("node scripts/dev/start.mjs"),
       );
-      assert.ok(step, `fixture缺少${required}`);
-      step.run = step.run.replace(required, "removed-contract-evidence");
-      assert.throws(
-        () => assertCiWorkflowContract(changed),
-        new RegExp(required.includes("setup") ? "setup|缺少|次数漂移" : "缺少|次数漂移", "u"),
+      step.run = step.run.replaceAll(evidence, "removed-evidence");
+      assert.throws(() => assertCiWorkflowContract(changed), /完整系统启动门缺少/u);
+    }
+
+    for (const command of ["pnpm test:browser", "pnpm audit --prod"]) {
+      const changed = structuredClone(parseCiWorkflow(maintenanceSource));
+      changed.jobs.maintenance.steps = changed.jobs.maintenance.steps.filter(
+        (step) => step.run?.trim() !== command,
       );
+      assert.throws(() => assertMaintenanceWorkflowContract(changed), /缺少命令/u);
     }
   });
 });

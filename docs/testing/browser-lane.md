@@ -36,5 +36,5 @@ Capability与Planning Faux在真实子进程内落0600环境sentinel；合同测
 allowlist。Provider只使用进程内Faux，不发起真实网络模型调用；Project Bootstrap的Plane与
 Workspace写仅发生在隔离fixture，并使用确定性Provider。
 
-CI的browser Job必须先运行`pnpm managed-sources:prepare`，再安装固定Chromium并执行根Browser
-lane。普通CI不运行paid、external或beta。
+普通`ci` Job通过`pnpm bootstrap`只准备一次固定源码，再运行Capability Governance作为完整系统
+接缝；`maintenance`定时/手工Job运行根Browser lane。两者都不运行paid、external或beta。

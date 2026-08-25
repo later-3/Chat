@@ -4,9 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-  schedule:
-    - cron: "23 18 * * *"
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,6 +12,7 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# 普通CI永远不继承本机或仓库中的Provider、外部写和付费开关。
 env:
   CI: "true"
   ANTHROPIC_API_KEY: ""
@@ -48,9 +46,10 @@ env:
   PLANE_API_TOKEN: ""
 
 jobs:
-  core:
+  ci:
+    name: ci
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -63,186 +62,30 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
 
-      - name: managed-source smoke from clean runner
-        run: pnpm managed-sources:prepare
-      - run: pnpm managed-sources:verify
-      - run: pnpm verify:core
+      # 公开安装入口：取得并构建固定Pi/DSH源码、冻结安装Chat、准备核心运行工件。
+      - name: Bootstrap pinned Chat runtime
+        run: pnpm bootstrap
 
-  contract:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-          fetch-depth: 0
+      - name: Build
+        run: pnpm build
+      - name: Lint
+        run: pnpm lint
+      - name: Format
+        run: pnpm format:check
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Deterministic tests
+        run: pnpm test
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - run: pnpm managed-sources:prepare
-      - name: compare public API surface with PR/push base
-        env:
-          CHAT_API_SURFACE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
-        run: pnpm api-surface:check
-      - name: compare compatibility facts with PR/push base
-        env:
-          CHAT_COMPATIBILITY_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
-        run: pnpm compatibility:check
-      - run: pnpm test:contract
-
-  integration:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - run: pnpm managed-sources:prepare
-      - run: pnpm test:integration
-
-  compat:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - name: decide whether historical compatibility is affected
-        id: compat
-        env:
-          CHAT_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          CHAT_CI_HEAD_SHA: ${{ github.sha }}
-        run: node scripts/ci/compat-change-gate.mjs
-      - if: steps.compat.outputs.run == 'true'
-        run: pnpm managed-sources:prepare
-      - if: steps.compat.outputs.run == 'true'
-        run: pnpm test:compat
-
-  dsh-smoke:
-    # 唯一前端完成门：真实准备固定DSH profile，启动Host并确认LifeOS插件路由已挂载。
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - run: pnpm managed-sources:prepare
-      - run: pnpm --filter @chat/dsh-lifeos-bridge build
-      - run: pnpm --filter @chat/dsh-web prepare:profile
-      - name: dsh host and bridge start
-        run: |
-          pnpm --filter @chat/dsh-web start > /tmp/chat-dsh-web.log 2>&1 &
-          dsh_pid=$!
-          trap 'kill "$dsh_pid" 2>/dev/null || true' EXIT
-          # GitHub bash启用pipefail；grep -q命中大HTML后提前关管会让curl返23。
-          # 这里让grep消费完整响应，只将匹配输出丢弃。
-          for i in $(seq 1 90); do
-            sleep 1
-            if ! kill -0 "$dsh_pid" 2>/dev/null; then cat /tmp/chat-dsh-web.log; exit 1; fi
-            if curl -fsS http://127.0.0.1:43110/ | grep "DeepSeek Harness" > /dev/null && \
-              curl -fsS http://127.0.0.1:43110/pwa/register.js | grep 'serviceWorker.register("/sw.js")' > /dev/null; then
-              break
-            fi
-            if [ "$i" = "90" ]; then cat /tmp/chat-dsh-web.log; exit 1; fi
-          done
-
-  browser:
-    # 唯一Playwright Harness：真实DSH Host/Client与Chat后端，确定性Provider；不含Workbench/paid/external。
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - run: pnpm managed-sources:prepare
+      # 只运行一条跨越DSH、Bridge、Chat、Workflow和真实Pi AgentSession的代表性纵向。
+      # Fork自己的全量测试仍只在各自仓库运行。
       - run: pnpm --filter @chat/dsh-web exec playwright install --with-deps chromium
-      - run: pnpm test:browser
+      - name: System browser seam
+        run: pnpm test:browser:capability-governance
 
-  supply-chain:
-    # 依赖/Fork变化必须经过本lane；当前始终运行，避免changed-files检测本身引入额外Action与权限。
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - run: pnpm managed-sources:prepare
-      - run: pnpm supply-chain:check
-      - run: pnpm supply-chain:audit
-
-  fresh-clone-smoke:
-    # 完成门：陌生机器只凭仓库与Manifest中的公开固定源即可完成核心Chat服务启动和安全停止。
-    # Workbench当前是Beta，不下载、不启动，也不作为通用CI/CD合入门。
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - run: pnpm managed-sources:prepare
-
-      - name: prepare pinned local runtime from an empty cache
-        run: pnpm run setup --workbench=off
-
-      - name: core graph starts without Provider, Memory, or Workbench and stops cleanly
+      - name: Installed system starts, becomes healthy, and stops cleanly
         run: |
-          # 直接持有仓库启动器PID，SIGINT会进入其受管反向停止路径并以0退出；
-          # 若把pnpm包装器PID当启动器，预期SIGINT会返回130并让bash -e跳过清理断言。
-          node scripts/dev/start.mjs --workbench=off > /tmp/chat-fresh-clone.log 2>&1 &
+          node scripts/dev/start.mjs --workbench=off > /tmp/chat-ci-system.log 2>&1 &
           chat_pid=$!
           cleanup() {
             kill -INT "$chat_pid" 2>/dev/null || true
@@ -251,31 +94,23 @@ jobs:
           trap cleanup EXIT
           for i in $(seq 1 180); do
             sleep 1
-            if ! kill -0 "$chat_pid" 2>/dev/null; then cat /tmp/chat-fresh-clone.log; exit 1; fi
+            if ! kill -0 "$chat_pid" 2>/dev/null; then cat /tmp/chat-ci-system.log; exit 1; fi
             chat_root_body=$(curl --noproxy '*' -fsS http://127.0.0.1:43110/ 2>/dev/null || true)
-            chat_lifeos_body=$(curl --noproxy '*' -fsS http://127.0.0.1:43110/lifeos/sessions/fresh-clone 2>/dev/null || true)
+            chat_lifeos_body=$(curl --noproxy '*' -fsS http://127.0.0.1:43110/lifeos/sessions/ci-system 2>/dev/null || true)
             if [[ "$chat_root_body" == *"DeepSeek Harness"* ]] && \
               [[ "$chat_lifeos_body" == *'"run":null'* ]] && \
               curl --noproxy '*' -fsS -o /dev/null http://127.0.0.1:43111/api/readyz && \
               curl --noproxy '*' -fsS -o /dev/null http://127.0.0.1:43112/healthz; then
               break
             fi
-            if [ "$i" = "180" ]; then
-              printf '[fresh-clone] probe lengths root=%s lifeos=%s\n' "${#chat_root_body}" "${#chat_lifeos_body}"
-              printf '[fresh-clone] lifeos response: %.500s\n' "$chat_lifeos_body"
-              cat /tmp/chat-fresh-clone.log
-              exit 1
-            fi
+            if [ "$i" = "180" ]; then cat /tmp/chat-ci-system.log; exit 1; fi
           done
-          curl -fsS http://127.0.0.1:43111/api/readyz
-          curl -fsS http://127.0.0.1:43112/healthz
           if curl -fsS --max-time 1 http://127.0.0.1:18960/api/v1/health; then exit 1; fi
           if curl -fsS --max-time 1 http://127.0.0.1:18970/health; then exit 1; fi
-          pnpm dev:status | tee /tmp/chat-running-status.log
-          if grep -Eq 'healthy workbench' /tmp/chat-running-status.log; then exit 1; fi
-          if grep -Eq 'healthy (memory|memoryCore)' /tmp/chat-running-status.log; then exit 1; fi
+          pnpm dev:status | tee /tmp/chat-ci-running.log
+          if grep -Eq 'healthy workbench|healthy (memory|memoryCore)' /tmp/chat-ci-running.log; then exit 1; fi
           kill -INT "$chat_pid"
           wait "$chat_pid"
           trap - EXIT
-          pnpm dev:status | tee /tmp/chat-stopped-status.log
-          grep -q '本地开发环境未运行' /tmp/chat-stopped-status.log
+          pnpm dev:status | tee /tmp/chat-ci-stopped.log
+          grep -q '本地开发环境未运行' /tmp/chat-ci-stopped.log

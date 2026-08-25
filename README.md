@@ -34,9 +34,8 @@ DSH Session、Product Session、Product Run、Workflow Run、Checkpoint、pi Ses
 
 ```bash
 corepack enable
-pnpm managed-sources:prepare
+pnpm bootstrap
 cp .env.example .env
-pnpm run setup --memory=off --workbench=off
 pnpm dev --memory=off --workbench=off
 ```
 
@@ -160,12 +159,11 @@ API Token配置，再按[本地安装指南](./docs/getting-started/local-instal
 12. [安全边界](./docs/architecture/security-boundaries.md)
 13. [仓库地图](./docs/architecture/repository-map.md)
 14. [测试lane](./docs/testing/test-lanes.md)
-15. [API与兼容政策](./docs/architecture/compatibility-policy.md)
-16. [最低供应链基线](./docs/architecture/supply-chain-baseline.md)
-17. [架构决定索引](./docs/decisions/README.md)
-18. [状态与运行时边界](./docs/architecture/system-boundaries.md)
-19. [产品设计准则](./docs/product/design-guidelines.md)
-20. [工程规范](./docs/engineering-standards.md)
-21. [本地安装指南](./docs/getting-started/local-install.md)
+15. [CI/CD基线](./docs/architecture/ci-cd.md)
+16. [架构决定索引](./docs/decisions/README.md)
+17. [状态与运行时边界](./docs/architecture/system-boundaries.md)
+18. [产品设计准则](./docs/product/design-guidelines.md)
+19. [工程规范](./docs/engineering-standards.md)
+20. [本地安装指南](./docs/getting-started/local-install.md)
 
 当前树不保存旧前端、上游源码副本、历史UI原型或归档目录；需要历史时直接使用Git。

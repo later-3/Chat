@@ -83,8 +83,8 @@ pnpm test:core
 | Store/Workflow恢复失败 | [系统边界](../architecture/system-boundaries.md)、对应compat测试 | 先识别Product/Workflow/Pi事实Owner |
 | Bridge页面与后端不一致 | [前后端交互](../architecture/frontend-backend-interaction.md) | 分查DSH Session、Product Query和Bridge State |
 | lane漏测或OOM | `pnpm test:ci-baseline`、[测试lane](../testing/test-lanes.md) | 修Manifest/批次，不设置全局8 GiB Heap |
-| API/Store代际变化被拒 | `pnpm api-surface:diff`、`pnpm compatibility:check`、[兼容政策](../architecture/compatibility-policy.md) | 不伪造record/waiver；先判断新增、同代漂移或需用户批准 |
-| 依赖/Fork/CI门失败 | `pnpm supply-chain:check`、[供应链基线](../architecture/supply-chain-baseline.md) | 不改Fork锁文件伪造audit通过 |
+| API/Store代际变化被拒 | 对应Contracts、API或Store迁移测试 | 修正真实Owner与迁移，不另建第二事实源 |
+| 依赖/Fork/CI门失败 | `pnpm managed-sources:verify`、[CI/CD基线](../architecture/ci-cd.md) | 分清Chat接缝与Fork自身CI，不改Fork锁文件伪造通过 |
 | Provider/外部门拒绝 | 命令名与安全门报错 | 未获授权不要补开关或读取Key |
 
 按任务继续：产品边界读[技术合同](../architecture/technology-contract.md)；会话/轨迹读

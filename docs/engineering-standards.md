@@ -123,13 +123,14 @@ Mock只能证明调用合同；真实Workflow、真实pi和真实浏览器证据
 
 升级DeepSeek Harness、code-server、Vercel Workflow或pi之前，必须先运行对应插件、代理、事件、Hook、Checkpoint、Tool和恢复合同测试。
 
-依赖、锁文件、Managed Fork或CI变化还必须运行`pnpm supply-chain:check`和只读audit。安装期脚本只允许
+依赖或锁文件变化运行标准`pnpm audit --prod`；Managed Fork固定点或CI变化还必须运行
+`pnpm managed-sources:verify`与对应接缝测试。安装期脚本只允许
 `pnpm-workspace.yaml`登记且逐项说明理由的包；新生产许可证、`Unknown`许可证或许可证例外必须先审查，
 不能仅因构建成功而放行。
 
 ## 11. 公共面、兼容与ADR
 
-1. 公共HTTP、Browser合同和workspace export由`pnpm api-surface:check`从真实请求/响应数据流和package manifest生成并与baseline比较；它冻结外部请求、响应、状态、错误和导出合同，不冻结内部Application调用图。不得手写第二份路由、Operation或Schema事实表。兼容新增使用精确一次性change record。
+1. 公共HTTP、Browser合同和workspace export由其真实Contracts、Router和消费者测试看护；不得为CI手写第二份路由、Operation、内部调用图或Schema事实表。
 2. 网络、Product Store、Bridge State、Workflow/RunSpec、Direct/Generic Journal、Browser DTO/Event统一执行`read old / write current`。
 3. 同一`schemaVersion`不得原地新增必填、收窄枚举或改变语义；新写语义升代际，旧代只读不能扩权。
 4. breaking change必须有`detect / why / fix / verify / rollback`和用户明确批准；waiver绑定精确before/after digest与diff hash，Agent不得自行写waiver。

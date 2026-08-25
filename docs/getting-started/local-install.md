@@ -22,19 +22,22 @@ Code Workbench当前为Beta：本地实现与固定工件继续保留，但不�
 | 网络 | 首次准备需要访问GitHub和npm registry |
 
 Windows与其他CPU架构目前不属于本地一键安装范围，`pnpm run setup`会在写入运行缓存前
-失败关闭。首次默认准备会下载约211–239MB的固定code-server压缩包，不再拉取两套Memory
-源码及其npm依赖；请预留至少1GB可用空间。工件缓存、运行数据和私有配置都位于Git忽略
-的`.data`或`.env`中。
+失败关闭。推荐的`pnpm bootstrap`默认关闭Beta Workbench，不下载code-server；只有显式准备
+Workbench时才会下载约211–239MB的固定压缩包。请预留至少1GB可用空间。工件缓存、运行数据
+和私有配置都位于Git忽略的`.data`或`.env`中。
 
 ## 2. 克隆与工具链
 
 ```bash
-git clone git@github.com:later-3/Chat.git
+git clone https://github.com/later-3/Chat.git
 cd Chat
 corepack enable
 pnpm --version
-pnpm managed-sources:prepare
+pnpm bootstrap
 ```
+
+`pnpm bootstrap`是全新机器的唯一安装入口：它取得并构建Manifest固定的Pi/DSH源码，使用
+`--frozen-lockfile`安装Chat，再以Memory和Beta Workbench关闭的稳定配置准备核心运行工件。
 
 `config/managed-sources.json`是两个Fork的唯一机器锁：它冻结origin、稳定分支、完整commit、
 构建命令、能力marker和许可证位置。准备脚本从Chat父目录解析`../opc-os/pi`和
@@ -60,7 +63,6 @@ Corepack，或直接安装精确`pnpm@10.13.1`；不要使用浮动`latest`替�
 ```bash
 pnpm managed-sources:verify
 cp .env.example .env
-pnpm run setup --memory=off --workbench=off
 ```
 
 `managed-sources:prepare`已经从精确Fork commit生成Pi `dist`与DSH `lib`，Chat随后通过
@@ -69,7 +71,7 @@ pnpm run setup --memory=off --workbench=off
 安装、构建或服务启动必须失败关闭；不得用
 `pnpm patch`或官方npm包临时补洞。
 
-仅准备当前稳定核心服务时使用：
+已有完整安装、只需重新准备当前稳定核心服务时使用：
 
 ```bash
 pnpm run setup --workbench=off
@@ -78,7 +80,7 @@ pnpm run setup --workbench=off
 `pnpm run setup`是幂等准备命令，它会：
 
 1. 校验平台、Node、pnpm、Git、tar与npm；
-2. 下载并校验固定`code-server@4.132.0`工件；
+2. 仅在显式启用Beta Workbench时下载并校验固定`code-server@4.132.0`工件；
 3. 校验[DSH插件登记表](../../config/dsh-plugins.json)、Fork分支、运行标记和许可证，构建Workflow
    Bundle与LifeOS Bridge，再准备固定DSH Web Profile；
 4. 只生成可重建缓存，不启动任何服务。
