@@ -10,8 +10,6 @@ const BASELINE_PATH = join(ROOT, "config/api-surface.baseline.json");
 const WAIVER_PATH = join(ROOT, "config/api-breaking-change-waivers.json");
 const CHANGE_RECORD_PATH = join(ROOT, "config/api-compatible-change-records.json");
 const CONTRACTS_ROOT = join(ROOT, "packages/contracts/src");
-const APPLICATION_ROOT = join(ROOT, "packages/application/src");
-const API_SOURCE_ROOT = join(ROOT, "apps/api/src");
 const FORBIDDEN_PUBLIC_NAME =
   /(?:HookToken|WorkflowRunId|Pi(?:Runtime)?SessionId|RuntimeCredential|ProviderCredential|ApiKey)/u;
 const FORBIDDEN_PUBLIC_IDENTITY =
@@ -43,9 +41,9 @@ function sourceFile(path) {
   return ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true);
 }
 
-function visit(node, callback) {
-  callback(node);
-  ts.forEachChild(node, (child) => visit(child, callback));
+function visit(node, visitor) {
+  visitor(node);
+  ts.forEachChild(node, (child) => visit(child, visitor));
 }
 
 function literalText(node) {
@@ -296,16 +294,6 @@ function queryParserContracts(handler, checker, initializers, schemas) {
   ];
 }
 
-function expressionClosure(expression, initializers, output = new Set(), seen = new Set()) {
-  output.add(normalizedDeclaration(expression));
-  visit(expression, (node) => {
-    if (!ts.isIdentifier(node) || !initializers.has(node.text) || seen.has(node.text)) return;
-    seen.add(node.text);
-    expressionClosure(initializers.get(node.text), initializers, output, seen);
-  });
-  return output;
-}
-
 function routeContract(handler, checker, schemas) {
   const initializers = variableInitializers(handler);
   const pathParameters = [];
@@ -356,7 +344,7 @@ function routeContract(handler, checker, schemas) {
           : (resolvedLiteralText(checker, node.arguments[1]) ?? "dynamic"),
       explicitSchemas: [...explicit].sort().map((name) => schemaReference(name, schemas)),
       signatureSha256: sha256(
-        JSON.stringify({ type, closure: [...expressionClosure(expression, initializers)].sort() }),
+        JSON.stringify({ type, expression: normalizedDeclaration(expression) }),
       ),
     });
   });
@@ -378,7 +366,15 @@ function routeContract(handler, checker, schemas) {
           signatureSha256: sha256(
             JSON.stringify({
               helper: rendered,
-              call: [...expressionClosure(node, initializers)].sort(),
+              call: normalizedDeclaration(node),
+              argumentTypes: node.arguments.map((argument) =>
+                checker.typeToString(
+                  checker.getTypeAtLocation(argument),
+                  argument,
+                  ts.TypeFormatFlags.NoTruncation |
+                    ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope,
+                ),
+              ),
             }),
           ),
         });
@@ -436,571 +432,28 @@ export function classifySchemaRolesForTest(source) {
   return { request: [...request].sort(), response: [...response].sort() };
 }
 
-export function assertPublicContractNameAllowed(name) {
-  if (FORBIDDEN_PUBLIC_NAME.test(name)) {
-    throw new Error(`@chat/contracts/public导出禁止的Runtime身份：${name}`);
-  }
-}
-
-function callableDeclaration(declaration) {
-  if (
-    ts.isFunctionDeclaration(declaration) ||
-    ts.isMethodDeclaration(declaration) ||
-    ts.isArrowFunction(declaration) ||
-    ts.isFunctionExpression(declaration)
-  ) {
-    return declaration;
-  }
-  if (
-    ts.isVariableDeclaration(declaration) &&
-    declaration.initializer !== undefined &&
-    (ts.isArrowFunction(declaration.initializer) ||
-      ts.isFunctionExpression(declaration.initializer))
-  ) {
-    return declaration.initializer;
-  }
-  if (
-    ts.isPropertyAssignment(declaration) &&
-    (ts.isArrowFunction(declaration.initializer) ||
-      ts.isFunctionExpression(declaration.initializer))
-  ) {
-    return declaration.initializer;
-  }
-  return undefined;
-}
-
-function declarationKey(declaration) {
-  return `${declaration.getSourceFile().fileName}:${String(declaration.pos)}:${String(declaration.end)}`;
-}
-
-function actualSymbol(checker, node) {
-  const symbol = checker.getSymbolAtLocation(node);
-  return symbol === undefined ? undefined : resolvedSymbol(checker, symbol);
-}
-
-function symbolKey(symbol) {
-  return (symbol.declarations ?? []).map(declarationKey).sort().join("|") || symbol.getName();
-}
-
-function unknownCallable(reason) {
-  return { kind: "unknown", reason };
-}
-
-function ordinaryValue(reason) {
-  return { kind: "ordinary", reason };
-}
-
-function callableValue(declarations) {
-  return {
-    kind: "callable",
-    declarations: [
-      ...new Map(declarations.map((entry) => [declarationKey(entry), entry])).values(),
-    ],
-  };
-}
-
-function valueKey(value) {
-  if (value.kind === "unknown") return `unknown:${value.reason}`;
-  if (value.kind === "ordinary") return `ordinary:${value.reason}`;
-  if (value.kind === "callable") {
-    return `callable:${value.declarations.map(declarationKey).sort().join(",")}`;
-  }
-  return `object:${[...value.properties.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([name, entry]) => `${name}=${valueKey(entry)}`)
-    .join(",")}`;
-}
-
-function hasExternallyOwnedType(checker, node) {
-  const pending = [checker.getTypeAtLocation(node)];
-  const declarations = [];
-  const seen = new Set();
-  while (pending.length > 0) {
-    const type = pending.pop();
-    if (seen.has(type)) continue;
-    seen.add(type);
-    if (type.isUnionOrIntersection()) {
-      pending.push(...type.types);
-      continue;
-    }
-    const symbol = type.aliasSymbol ?? type.getSymbol();
-    if (symbol !== undefined) declarations.push(...(symbol.declarations ?? []));
-  }
-  return (
-    declarations.length > 0 &&
-    declarations.every((declaration) => {
-      const source = declaration.getSourceFile().fileName;
-      return !source.startsWith(APPLICATION_ROOT) && !source.startsWith(API_SOURCE_ROOT);
-    })
-  );
-}
-
-function propertyName(node) {
-  if (node === undefined) return undefined;
-  if (ts.isIdentifier(node) || ts.isStringLiteralLike(node) || ts.isNumericLiteral(node)) {
-    return node.text;
-  }
-  return undefined;
-}
-
-function normalizedCalleeExpression(node) {
-  let current = node;
-  while (
-    ts.isParenthesizedExpression(current) ||
-    ts.isAsExpression(current) ||
-    ts.isTypeAssertionExpression(current) ||
-    ts.isNonNullExpression(current) ||
-    ts.isSatisfiesExpression(current)
-  ) {
-    current = current.expression;
-  }
-  return current;
-}
-
-/**
- * Callback值只允许编译期可确定的函数或对象成员。参数、解构成员和局部别名都通过
- * 同一bindings环境解析；动态分支不猜测，会在真正调用该值时失败关闭。
- */
-function staticCallableValue(node, checker, bindings, resolving = new Set()) {
-  const normalizedNode = normalizedCalleeExpression(node);
-  if (normalizedNode !== node) {
-    return staticCallableValue(normalizedNode, checker, bindings, resolving);
-  }
-  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) return callableValue([node]);
-  if (ts.isObjectLiteralExpression(node)) {
-    const properties = new Map();
-    for (const property of node.properties) {
-      if (ts.isSpreadAssignment(property)) {
-        return unknownCallable("对象callback含动态spread");
-      }
-      if (ts.isShorthandPropertyAssignment(property)) {
-        properties.set(
-          property.name.text,
-          staticCallableValue(property.name, checker, bindings, resolving),
-        );
-        continue;
-      }
-      if (ts.isPropertyAssignment(property)) {
-        const name = propertyName(property.name);
-        if (name === undefined) return unknownCallable("对象callback含动态属性名");
-        properties.set(
-          name,
-          staticCallableValue(property.initializer, checker, bindings, resolving),
-        );
-        continue;
-      }
-      if (ts.isMethodDeclaration(property)) {
-        const name = propertyName(property.name);
-        if (name === undefined) return unknownCallable("对象callback含动态方法名");
-        properties.set(name, callableValue([property]));
-      }
-    }
-    return { kind: "object", properties };
-  }
-  if (ts.isConditionalExpression(node)) {
-    const condition = resolvedLiteralText(checker, node.condition);
-    if (condition === "true")
-      return staticCallableValue(node.whenTrue, checker, bindings, resolving);
-    if (condition === "false") {
-      return staticCallableValue(node.whenFalse, checker, bindings, resolving);
-    }
-    return unknownCallable("动态条件选择callback");
-  }
-  if (ts.isPropertyAccessExpression(node)) {
-    const owner = staticCallableValue(node.expression, checker, bindings, resolving);
-    const propertySymbol = actualSymbol(checker, node.name);
-    const propertyCallables = (propertySymbol?.declarations ?? []).filter(
-      (declaration) => callableDeclaration(declaration) !== undefined,
-    );
-    if (owner.kind === "unknown") {
-      // namespace import的owner本身不是callable，但静态属性symbol会精确解析到
-      // named export声明；这里不以owner的unknown覆盖已解析的helper。
-      return propertyCallables.length > 0 ? callableValue(propertyCallables) : owner;
-    }
-    if (owner.kind === "object") {
-      return (
-        owner.properties.get(node.name.text) ??
-        unknownCallable(`对象缺少callback ${node.name.text}`)
-      );
-    }
-    if (owner.kind === "ordinary") {
-      return propertyCallables.length > 0
-        ? callableValue(propertyCallables)
-        : ordinaryValue(`外部owner静态属性 ${node.name.text}`);
-    }
-    if (propertySymbol === undefined)
-      return unknownCallable(`无法解析属性callback ${node.name.text}`);
-    return propertyCallables.length > 0
-      ? callableValue(propertyCallables)
-      : unknownCallable(`属性 ${node.name.text}不是静态callback`);
-  }
-  if (!ts.isIdentifier(node)) return unknownCallable(`动态callback ${normalizedDeclaration(node)}`);
-  const symbol = actualSymbol(checker, node);
-  if (symbol === undefined) return unknownCallable(`无法解析callback ${node.text}`);
-  if (bindings.has(symbol)) return bindings.get(symbol);
-  const key = symbolKey(symbol);
-  if (resolving.has(key)) return unknownCallable(`callback别名循环 ${node.text}`);
-  const nextResolving = new Set(resolving).add(key);
-  const declarations = symbol.declarations ?? [];
-  const callables = declarations.filter(
-    (declaration) => callableDeclaration(declaration) !== undefined,
-  );
-  if (callables.length > 0) return callableValue(callables);
-  for (const declaration of declarations) {
-    if (ts.isVariableDeclaration(declaration) && declaration.initializer !== undefined) {
-      return staticCallableValue(declaration.initializer, checker, bindings, nextResolving);
-    }
-    if (ts.isPropertyAssignment(declaration)) {
-      return staticCallableValue(declaration.initializer, checker, bindings, nextResolving);
-    }
-    if (ts.isShorthandPropertyAssignment(declaration)) {
-      return staticCallableValue(declaration.name, checker, bindings, nextResolving);
-    }
-    if (ts.isBindingElement(declaration)) {
-      const pattern = declaration.parent;
-      const owner = pattern.parent;
-      if (ts.isObjectBindingPattern(pattern) && ts.isVariableDeclaration(owner)) {
-        if (owner.initializer === undefined) {
-          return unknownCallable(`局部解构callback ${node.text}缺少初始值`);
-        }
-        const object = staticCallableValue(owner.initializer, checker, bindings, nextResolving);
-        const name = propertyName(declaration.propertyName ?? declaration.name);
-        if (object.kind === "object" && name !== undefined) {
-          return object.properties.get(name) ?? unknownCallable(`callback对象缺少 ${name}`);
-        }
-        return unknownCallable(`无法从动态对象解构callback ${name ?? "?"}`);
-      }
-      return unknownCallable(`解构callback ${node.text}未绑定`);
-    }
-    if (ts.isParameter(declaration)) {
-      return hasExternallyOwnedType(checker, node)
-        ? ordinaryValue(`外部类型参数 ${node.text}`)
-        : unknownCallable(`参数callback ${node.text}未绑定`);
-    }
-  }
-  if (hasExternallyOwnedType(checker, node)) {
-    return ordinaryValue(`外部类型值 ${node.text}`);
-  }
-  return unknownCallable(`callback ${node.text}不是静态可调用值`);
-}
-
-function bindName(checker, name, value, bindings) {
-  if (ts.isIdentifier(name)) {
-    const symbol = actualSymbol(checker, name);
-    if (symbol === undefined) throw new Error(`无法解析callback参数：${name.text}`);
-    bindings.set(symbol, value);
-    return;
-  }
-  if (!ts.isObjectBindingPattern(name)) {
-    throw new Error("公开route callback参数包含不支持的动态绑定");
-  }
-  for (const element of name.elements) {
-    if (element.dotDotDotToken !== undefined) {
-      bindName(checker, element.name, unknownCallable("解构callback含rest"), bindings);
-      continue;
-    }
-    const key = propertyName(element.propertyName ?? element.name);
-    const nested =
-      value.kind === "object" && key !== undefined
-        ? (value.properties.get(key) ?? unknownCallable(`callback对象缺少 ${key}`))
-        : unknownCallable(`无法从动态对象解构callback ${key ?? "?"}`);
-    bindName(checker, element.name, nested, bindings);
-  }
-}
-
-function frameKey(declaration, bindings) {
-  return `${declarationKey(declaration)}|${[...bindings.entries()]
-    .map(([symbol, value]) => `${symbolKey(symbol)}=${valueKey(value)}`)
-    .sort()
-    .join(";")}`;
-}
-
-function visitCallableCalls(callable, callback) {
-  const root = callable.body ?? callable;
-  const walk = (node) => {
-    if (
-      node !== root &&
-      (ts.isFunctionDeclaration(node) ||
-        ts.isFunctionExpression(node) ||
-        ts.isArrowFunction(node) ||
-        ts.isMethodDeclaration(node))
-    ) {
-      return;
-    }
-    if (ts.isCallExpression(node)) callback(node);
-    ts.forEachChild(node, walk);
-  };
-  walk(root);
-}
-
-function isApplicationOperationDeclaration(checker, declaration) {
-  const callable = callableDeclaration(declaration);
-  if (callable === undefined) return false;
-  if (
-    !/(?:use-cases(?:\/|\.ts$)|operations\.ts$|service-status\.ts$)/u.test(
-      declaration.getSourceFile().fileName,
-    )
-  ) {
-    return false;
-  }
-  if (callable.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword))
-    return true;
-  const signature = checker.getSignatureFromDeclaration(callable);
-  if (signature === undefined) return false;
-  const returnType = checker.typeToString(checker.getReturnTypeOfSignature(signature), callable);
-  return returnType !== "void" && returnType !== "never";
-}
-
-function isProvablyOrdinaryCall(call, checker, { allowApplicationTypePort = true } = {}) {
-  const callee = normalizedCalleeExpression(call.expression);
-  if (!ts.isIdentifier(callee) && !ts.isPropertyAccessExpression(callee)) return false;
-  const signature = checker.getResolvedSignature(call);
-  const declaration = signature?.declaration;
-  if (declaration === undefined) return false;
-  const source = declaration.getSourceFile().fileName;
-  // Application/API源码中的可调用值可能继续进入Operation闭包，不能当作普通调用放过。
-  if (!source.startsWith(APPLICATION_ROOT) && !source.startsWith(API_SOURCE_ROOT)) return true;
-  // Application Port的类型签名（例如TraceEmitter）没有可执行函数体，因而在静态
-  // 调用图中不可能间接进入Operation。API自己声明的callback类型仍不放行。
-  return (
-    allowApplicationTypePort &&
-    source.startsWith(APPLICATION_ROOT) &&
-    (ts.isFunctionTypeNode(declaration) ||
-      ts.isCallSignatureDeclaration(declaration) ||
-      ts.isMethodSignature(declaration))
-  );
-}
-
-function directCallDeclarations(call, checker) {
-  const callee = normalizedCalleeExpression(call.expression);
-  const symbol = ts.isIdentifier(callee)
-    ? actualSymbol(checker, callee)
-    : ts.isPropertyAccessExpression(callee)
-      ? actualSymbol(checker, callee.name)
-      : undefined;
-  return symbol?.declarations ?? [];
-}
-
-function applicationUtilityIsOrdinary(
-  declaration,
-  checker,
-  state = { visiting: new Set(), memo: new Map() },
-) {
-  const callable = callableDeclaration(declaration);
-  if (callable === undefined) return false;
-  const key = declarationKey(declaration);
-  if (state.memo.has(key)) return state.memo.get(key);
-  if (state.visiting.has(key)) return true;
-  state.visiting.add(key);
-  let ordinary = true;
-  visitCallableCalls(callable, (call) => {
-    if (!ordinary) return;
-    const callee = normalizedCalleeExpression(call.expression);
-    if (!ts.isIdentifier(callee) && !ts.isPropertyAccessExpression(callee)) {
-      ordinary = false;
-      return;
-    }
-    const targets = directCallDeclarations(call, checker).filter(
-      (target) => callableDeclaration(target) !== undefined,
-    );
-    if (targets.length === 0) {
-      ordinary = isProvablyOrdinaryCall(call, checker, {
-        allowApplicationTypePort: false,
-      });
-      return;
-    }
-    for (const target of targets) {
-      const source = target.getSourceFile().fileName;
-      if (source.startsWith(API_SOURCE_ROOT)) {
-        ordinary = false;
-        return;
-      }
-      if (
-        source.startsWith(APPLICATION_ROOT) &&
-        (isApplicationOperationDeclaration(checker, target) ||
-          !applicationUtilityIsOrdinary(target, checker, state))
-      ) {
-        ordinary = false;
-        return;
-      }
-    }
-  });
-  state.visiting.delete(key);
-  state.memo.set(key, ordinary);
-  return ordinary;
-}
-
-/**
- * 每个CallExpression只能从这一个出口分类。静态Application Operation记录，API helper
- * 进入有界调用图，有真实外部signature且不在Application/API责任根的调用才允许忽略；
- * 其他动态、间接或混合目标统一失败关闭。
- */
-function classifyCallExpression(call, checker, bindings) {
-  const callee = normalizedCalleeExpression(call.expression);
-  if (ts.isElementAccessExpression(callee) || ts.isCallExpression(callee)) {
-    return {
-      kind: "unknown",
-      reason: `动态或间接callee ${normalizedDeclaration(callee)}`,
-    };
-  }
-  const value = staticCallableValue(callee, checker, bindings);
-  if (value.kind === "unknown") {
-    return isProvablyOrdinaryCall(call, checker)
-      ? { kind: "ordinary" }
-      : { kind: "unknown", reason: value.reason };
-  }
-  if (value.kind === "ordinary") return { kind: "ordinary" };
-  if (value.kind !== "callable") {
-    return { kind: "unknown", reason: "callee是非函数callback对象" };
-  }
-
-  const application = [];
-  const helpers = [];
-  let ordinaryCount = 0;
-  for (const target of value.declarations) {
-    const source = target.getSourceFile().fileName;
-    if (source.startsWith(APPLICATION_ROOT)) {
-      if (!isApplicationOperationDeclaration(checker, target)) {
-        if (applicationUtilityIsOrdinary(target, checker)) ordinaryCount += 1;
-        else {
-          return {
-            kind: "unknown",
-            reason: `Application callable无法证明不进入Operation：${normalizedDeclaration(target)}`,
-          };
-        }
-        continue;
-      }
-      application.push(target);
-      continue;
-    }
-    if (source.startsWith(API_SOURCE_ROOT)) {
-      const callable = callableDeclaration(target);
-      if (callable === undefined) {
-        return { kind: "unknown", reason: "API helper不是静态可调用声明" };
-      }
-      helpers.push(callable);
-      continue;
-    }
-    ordinaryCount += 1;
-  }
-
-  const categories =
-    Number(application.length > 0) + Number(helpers.length > 0) + Number(ordinaryCount > 0);
-  if (categories !== 1) {
-    return { kind: "unknown", reason: "callee存在混合或空的静态目标" };
-  }
-  if (application.length > 0) return { kind: "application", declarations: application };
-  if (helpers.length > 0) return { kind: "helper", declarations: helpers };
-  return { kind: "ordinary" };
-}
-
-/**
- * Route只提供闭包根。这里沿同文件函数、变量函数和已解析import helper收敛，最终以
- * TypeScript resolved symbol判定真实Application operation；递归、环和重复调用由seen稳定去重。
- */
-function operationsInHandler(handler, checker) {
-  const operations = new Set();
-  const queue = [{ declaration: handler, bindings: new Map() }];
-  const seen = new Set();
-  while (queue.length > 0) {
-    const { declaration, bindings } = queue.pop();
-    const key = frameKey(declaration, bindings);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const callableRoot = callableDeclaration(declaration) ?? declaration;
-    visitCallableCalls(callableRoot, (node) => {
-      const classification = classifyCallExpression(node, checker, bindings);
-      if (classification.kind === "unknown") {
-        throw new Error(
-          `公开route包含无法静态解析的动态调用：${normalizedDeclaration(normalizedCalleeExpression(node.expression))}（${classification.reason}）`,
-        );
-      }
-      if (classification.kind === "ordinary") {
-        return;
-      }
-      if (classification.kind === "application") {
-        for (const target of classification.declarations) {
-          const operationSymbol = actualSymbol(checker, target.name ?? target);
-          const operation = operationSymbol?.getName();
-          if (operation !== undefined && !["ApplicationError", "notFound"].includes(operation)) {
-            operations.add(operation);
-          }
-        }
-        return;
-      }
-      for (const callable of classification.declarations) {
-        const nestedBindings = new Map(bindings);
-        for (const [index, parameter] of callable.parameters.entries()) {
-          const argument = node.arguments[index];
-          const argumentValue =
-            argument === undefined
-              ? parameter.initializer === undefined
-                ? unknownCallable(`callback参数 ${String(index + 1)} 缺失`)
-                : staticCallableValue(parameter.initializer, checker, bindings)
-              : staticCallableValue(argument, checker, bindings);
-          bindName(checker, parameter.name, argumentValue, nestedBindings);
-        }
-        queue.push({ declaration: callable, bindings: nestedBindings });
-      }
-    });
-  }
-  return [...operations].sort();
-}
-
-function bindSuccessfulResponsesToOperations(responses, operationContracts) {
-  const applicationResultSignatureSha256 = sha256(
-    JSON.stringify(
-      operationContracts
-        .map((entry) => ({ operation: entry.operation, signatureSha256: entry.signatureSha256 }))
-        .sort((left, right) => left.operation.localeCompare(right.operation)),
-    ),
-  );
-  return responses.map((response) => ({
-    ...response,
-    applicationResultSignatureSha256,
-  }));
-}
-
-export function assertResolvedRouteOperationsForTest(operations, unresolvedDynamicCalls = []) {
-  if (unresolvedDynamicCalls.length > 0) {
-    throw new Error(`公开route包含无法静态解析的动态调用：${unresolvedDynamicCalls.join(", ")}`);
-  }
-  if (!Array.isArray(operations)) {
-    throw new Error("公开route operation闭包无效");
-  }
-  return [...new Set(operations)].sort();
-}
-
-export function applicationOperationsFromFixtureForTest({ route, helper, application }) {
-  const paths = {
-    route: join(API_SOURCE_ROOT, "product-routes/fixture-route.ts"),
-    helper: join(API_SOURCE_ROOT, "product-routes/fixture-helper.ts"),
-    application: join(APPLICATION_ROOT, "fixture-use-cases.ts"),
-  };
-  const sources = new Map([
-    [paths.route, route],
-    [paths.helper, helper],
-    [paths.application, application],
-  ]);
+export function observableRouteContractFromFixtureForTest(source) {
+  const fixturePath = join(ROOT, ".api-surface-observable-route-fixture.ts");
   const options = {
     module: ts.ModuleKind.NodeNext,
     moduleResolution: ts.ModuleResolutionKind.NodeNext,
-    target: ts.ScriptTarget.ESNext,
+    target: ts.ScriptTarget.ES2022,
     strict: true,
+    noEmit: true,
   };
   const host = ts.createCompilerHost(options);
   const originalFileExists = host.fileExists.bind(host);
   const originalReadFile = host.readFile.bind(host);
   const originalGetSourceFile = host.getSourceFile.bind(host);
-  host.fileExists = (path) => sources.has(path) || originalFileExists(path);
-  host.readFile = (path) => sources.get(path) ?? originalReadFile(path);
+  host.fileExists = (path) => path === fixturePath || originalFileExists(path);
+  host.readFile = (path) => (path === fixturePath ? source : originalReadFile(path));
   host.getSourceFile = (path, languageVersion, onError, shouldCreateNewSourceFile) =>
-    sources.has(path)
-      ? ts.createSourceFile(path, sources.get(path), languageVersion, true)
+    path === fixturePath
+      ? ts.createSourceFile(path, source, languageVersion, true)
       : originalGetSourceFile(path, languageVersion, onError, shouldCreateNewSourceFile);
-  const program = ts.createProgram({ rootNames: [...sources.keys()], options, host });
-  const file = program.getSourceFile(paths.route);
-  if (file === undefined) throw new Error("fixture route无法解析");
+  const program = ts.createProgram({ rootNames: [fixturePath], options, host });
+  const file = program.getSourceFile(fixturePath);
+  if (file === undefined) throw new Error("测试fixture未进入TypeScript Program");
   let handler;
   visit(file, (node) => {
     if (
@@ -1014,75 +467,23 @@ export function applicationOperationsFromFixtureForTest({ route, helper, applica
       handler = node.initializer;
     }
   });
-  if (handler === undefined) throw new Error("fixture缺少handler函数");
-  return operationsInHandler(handler, program.getTypeChecker());
+  if (handler === undefined) throw new Error("测试fixture缺少handler函数");
+  const contract = routeContract(handler, program.getTypeChecker(), new Map());
+  return {
+    successfulResponses: contract.successfulResponses,
+    responseSchemas: observableResponseSchemas("GET", "/api/fixture", contract, new Map()),
+  };
 }
 
-function applicationOperationContract(program, checker, operation) {
-  const responseSchemas = new Set();
-  let callable;
-  for (const file of program.getSourceFiles()) {
-    if (!file.fileName.startsWith(APPLICATION_ROOT)) continue;
-    visit(file, (node) => {
-      const isFunction = ts.isFunctionDeclaration(node) && node.name?.text === operation;
-      const isVariable =
-        ts.isVariableDeclaration(node) &&
-        ts.isIdentifier(node.name) &&
-        node.name.text === operation &&
-        node.initializer !== undefined &&
-        (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer));
-      if (!isFunction && !isVariable) return;
-      if (callable !== undefined)
-        throw new Error(`Application operation存在重复声明：${operation}`);
-      callable = isVariable ? node.initializer : node;
-      visit(callable, (nested) => {
-        if (ts.isIdentifier(nested) && nested.text.endsWith("ResponseSchema")) {
-          responseSchemas.add(nested.text);
-        }
-      });
-    });
+export function assertPublicContractNameAllowed(name) {
+  if (FORBIDDEN_PUBLIC_NAME.test(name)) {
+    throw new Error(`@chat/contracts/public导出禁止的Runtime身份：${name}`);
   }
-  if (callable === undefined) {
-    throw new Error(`无法从@chat/application真实源码解析operation：${operation}`);
-  }
-  const signature = checker.getSignatureFromDeclaration(callable);
-  if (signature === undefined) {
-    throw new Error(`无法解析Application operation返回签名：${operation}`);
-  }
-  const awaited = checker.getAwaitedType(checker.getReturnTypeOfSignature(signature));
-  const returnType = checker.typeToString(
-    awaited,
-    callable,
-    ts.TypeFormatFlags.NoTruncation |
-      ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope |
-      ts.TypeFormatFlags.WriteArrayAsGenericType,
-  );
-  const returnExpressions = [];
-  visit(callable.body ?? callable, (nested) => {
-    if (ts.isReturnStatement(nested) && nested.expression !== undefined) {
-      returnExpressions.push(normalizedDeclaration(nested.expression));
-    }
-  });
-  const fallback = {
-    identity: `application-result:${operation}`,
-    schemaVersions: [],
-    // 并非所有历史用例都有显式ResponseSchema。返回类型和return表达式的摘要让推断
-    // 类型/包装对象变化进入compat diff，同时不把内部类型或实现正文写进公共Manifest。
-    signatureSha256: sha256(
-      JSON.stringify({ returnType, returnExpressions: returnExpressions.sort() }),
-    ),
-  };
-  return {
-    operation,
-    responseSchemas: [...responseSchemas].sort(),
-    fallback,
-    signatureSha256: fallback.signatureSha256,
-  };
 }
 
 function parseProgram() {
-  // API tsconfig是公开组合根；显式加入Contracts和Application public barrel，确保
-  // response fallback不是手抄名称，而是来自真实Application返回签名。
+  // API tsconfig是公开HTTP组合根；Contracts和workspace公开入口补齐外部Schema与export事实。
+  // 内部Application调用图不属于公共API兼容身份，因此这里不额外加载其组合根。
   const configPath = join(ROOT, "apps/api/tsconfig.json");
   if (!existsSync(configPath)) throw new Error("缺少API tsconfig.json");
   const config = ts.readConfigFile(configPath, ts.sys.readFile);
@@ -1094,7 +495,6 @@ function parseProgram() {
       ...new Set([
         ...parsed.fileNames,
         join(CONTRACTS_ROOT, "public.ts"),
-        join(APPLICATION_ROOT, "index.ts"),
         ...workspacePublicEntryTargets(),
       ]),
     ],
@@ -1133,6 +533,20 @@ function productRouteFiles() {
   return [...used].sort();
 }
 
+function observableResponseSchemas(method, path, contract, schemas) {
+  if (contract.successfulResponses.length === 0) {
+    throw new Error(`公开路由缺少可观察的成功响应合同：${method} ${path}`);
+  }
+  if (contract.responseSchemaNames.size > 0) {
+    return [...contract.responseSchemaNames].sort().map((name) => schemaReference(name, schemas));
+  }
+  return contract.successfulResponses.map((response, index) => ({
+    identity: `response-expression:${method} ${path}:${String(index + 1)}`,
+    schemaVersions: [],
+    signatureSha256: response.signatureSha256,
+  }));
+}
+
 function collectRoutes(program, schemas) {
   const checker = program.getTypeChecker();
   const routes = [];
@@ -1165,23 +579,8 @@ function collectRoutes(program, schemas) {
       query: contract.query,
       body: contract.body,
       requestSchemas: [],
-      responseSchemas:
-        contract.successfulResponses.length > 0
-          ? contract.successfulResponses.map((response, index) => ({
-              identity: `response-expression:${method} ${path.text}:${String(index + 1)}`,
-              schemaVersions: [],
-              signatureSha256: response.signatureSha256,
-            }))
-          : [
-              {
-                identity: `inline-response:${method} ${path.text}`,
-                schemaVersions: [],
-                signatureSha256: sha256(normalizedDeclaration(handler)),
-              },
-            ],
+      responseSchemas: observableResponseSchemas(method, path.text, contract, schemas),
       successfulResponses: contract.successfulResponses,
-      applicationOperations: [],
-      applicationOperationContracts: [],
     });
   });
   if (!productMounted) throw new Error("apps/api组合根未把createProductRouter挂载到/api");
@@ -1197,52 +596,23 @@ function collectRoutes(program, schemas) {
       const handler = node.arguments.at(-1);
       if (!ts.isStringLiteral(routePath) || handler === undefined) return;
       if (!ts.isArrowFunction(handler) && !ts.isFunctionExpression(handler)) return;
-      const operations = operationsInHandler(handler, checker);
       const contract = routeContract(handler, checker, schemas);
       const requestNames = new Set([
         ...contract.pathParameters.map((entry) => entry.schema.identity),
         ...contract.query.schemas.map((entry) => entry.identity),
         ...contract.body.schemas.map((entry) => entry.identity),
       ]);
-      const derivedResponseNames = new Set(contract.responseSchemaNames);
-      const operationContracts = operations.map((operation) =>
-        applicationOperationContract(program, checker, operation),
-      );
-      for (const contract of operationContracts) {
-        for (const response of contract.responseSchemas) {
-          derivedResponseNames.add(response);
-        }
-      }
+      const publicPath = `/api${routePath.text}`;
       routes.push({
         method,
-        path: `/api${routePath.text}`,
+        path: publicPath,
         kind: method === "GET" ? "query" : "command",
         pathParameters: contract.pathParameters,
         query: contract.query,
         body: contract.body,
         requestSchemas: [...requestNames].sort().map((name) => schemaReference(name, schemas)),
-        responseSchemas:
-          derivedResponseNames.size > 0
-            ? [...derivedResponseNames].sort().map((name) => schemaReference(name, schemas))
-            : operationContracts.length > 0
-              ? operationContracts.map((contract) => contract.fallback)
-              : [
-                  {
-                    identity: `inline-response:${method} /api${routePath.text}`,
-                    schemaVersions: [],
-                    signatureSha256: sha256(normalizedDeclaration(handler)),
-                  },
-                ],
-        successfulResponses: bindSuccessfulResponsesToOperations(
-          contract.successfulResponses,
-          operationContracts,
-        ),
-        applicationOperations: operations,
-        applicationOperationContracts: operationContracts.map((entry) => ({
-          operation: entry.operation,
-          responseSchemas: entry.responseSchemas,
-          signatureSha256: entry.signatureSha256,
-        })),
+        responseSchemas: observableResponseSchemas(method, publicPath, contract, schemas),
+        successfulResponses: contract.successfulResponses,
       });
     });
   }
@@ -1691,7 +1061,7 @@ export function generateApiSurface() {
       browserContractEntry: "@chat/contracts/public",
       packageExportSource: "workspace-package-manifests",
       packageExportExtraction: "all-subpaths-and-transitive-symbols.v2",
-      routeContractExtraction: "request-helper-operation-and-success-response-dataflow.v3",
+      routeContractExtraction: "observable-request-response-dataflow.v4",
     },
     routes,
     commandTypes: contracts.symbols
@@ -1787,14 +1157,41 @@ function normalizeApiSurface(value) {
 
 function routeForComparison(route, fromExtraction, toExtraction) {
   const normalized = structuredClone(route);
-  const upgraded = new Set([fromExtraction, toExtraction]);
-  if (
-    upgraded.has("request-source-and-success-response-dataflow.v2") &&
-    upgraded.has("request-helper-operation-and-success-response-dataflow.v3")
-  ) {
-    for (const response of normalized.successfulResponses ?? []) {
-      delete response.applicationResultSignatureSha256;
-    }
+  const extractionPair = new Set([fromExtraction, toExtraction]);
+  const crossesExternalContractBoundary =
+    extractionPair.has("observable-request-response-dataflow.v4") &&
+    (extractionPair.has("request-source-and-success-response-dataflow.v2") ||
+      extractionPair.has("request-helper-operation-and-success-response-dataflow.v3"));
+  if (crossesExternalContractBoundary) {
+    // v4明确退出内部Application调用图。迁移比较只保留旧、新生成器共同拥有的
+    // 外部事实；此后v4→v4会继续严格比较真实响应表达式、Schema与HTTP状态。
+    delete normalized.applicationOperations;
+    delete normalized.applicationOperationContracts;
+    normalized.successfulResponses = (normalized.successfulResponses ?? []).map((response) => ({
+      source: response.source,
+      status: response.status,
+      explicitSchemas: response.explicitSchemas,
+      signatureSha256: sha256("observable-response-extractor-transition.v4"),
+    }));
+    const explicitSchemas = normalized.successfulResponses.flatMap(
+      (response) => response.explicitSchemas ?? [],
+    );
+    normalized.responseSchemas =
+      explicitSchemas.length > 0
+        ? [...new Map(explicitSchemas.map((schema) => [schema.identity, schema])).values()].sort(
+            (left, right) => left.identity.localeCompare(right.identity),
+          )
+        : normalized.successfulResponses.map((response, index) => ({
+            identity: `response-expression:migrated:${String(index + 1)}`,
+            schemaVersions: [],
+            signatureSha256: sha256(
+              JSON.stringify({
+                migration: "observable-response-extractor-transition.v4",
+                source: response.source,
+                status: response.status,
+              }),
+            ),
+          }));
   }
   return normalized;
 }

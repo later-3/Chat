@@ -14,7 +14,7 @@
     "browserContractEntry": "@chat/contracts/public",
     "packageExportExtraction": "all-subpaths-and-transitive-symbols.v2",
     "packageExportSource": "workspace-package-manifests",
-    "routeContractExtraction": "request-helper-operation-and-success-response-dataflow.v3"
+    "routeContractExtraction": "observable-request-response-dataflow.v4"
   },
   "packageExports": [
     {
@@ -10783,14 +10783,6 @@
   ],
   "routes": [
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listAgentProfiles",
-          "responseSchemas": [],
-          "signatureSha256": "4ebc3ca4e6f7714d94797f1b13bd0275e57a75ad0e9a8d3138ad93ef99a7072f"
-        }
-      ],
-      "applicationOperations": ["listAgentProfiles"],
       "body": {
         "schemas": []
       },
@@ -10865,30 +10857,21 @@
       "requestSchemas": [],
       "responseSchemas": [
         {
-          "identity": "application-result:listAgentProfiles",
+          "identity": "response-expression:GET /api/agent-profiles:1",
           "schemaVersions": [],
-          "signatureSha256": "4ebc3ca4e6f7714d94797f1b13bd0275e57a75ad0e9a8d3138ad93ef99a7072f"
+          "signatureSha256": "22870e5e37f272c68f81fd5f046addc565e22f421f74aae5a078a5d0ddf19918"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "c51375cfdb254aab4b662cf9ad35d05b04a308e5a0d788182f2898356420a1fa",
           "explicitSchemas": [],
-          "signatureSha256": "d8577eeaa500a3d82f28fbc2836a127e4b9d5566b3775dab89d7dbafc7e73c5e",
+          "signatureSha256": "22870e5e37f272c68f81fd5f046addc565e22f421f74aae5a078a5d0ddf19918",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getAgentProfile",
-          "responseSchemas": [],
-          "signatureSha256": "c7906dbd3cdd38579db7028a33129e4390f7bd954928727bb18d36db577150c3"
-        }
-      ],
-      "applicationOperations": ["getAgentProfile"],
       "body": {
         "schemas": []
       },
@@ -10978,30 +10961,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getAgentProfile",
+          "identity": "response-expression:GET /api/agent-profiles/:agentKey:1",
           "schemaVersions": [],
-          "signatureSha256": "c7906dbd3cdd38579db7028a33129e4390f7bd954928727bb18d36db577150c3"
+          "signatureSha256": "620bbcdc2466ce1ea3463a543fc0089945190a865a0c7ee986f5ae63af263027"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "e8c17afe3d57abe242a89fe110077d5c9b4f5bff25bfeb01d8fc518623daa767",
           "explicitSchemas": [],
-          "signatureSha256": "936560b75f35bd686a200e8915f63f1f3c63b81ac755cc0383c16effb840f4ef",
+          "signatureSha256": "620bbcdc2466ce1ea3463a543fc0089945190a865a0c7ee986f5ae63af263027",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "reviseAgentPrompt",
-          "responseSchemas": [],
-          "signatureSha256": "b0c193c810536a756ed4168f3e2e85c7e2771c348d785242619a803ad57f3fac"
-        }
-      ],
-      "applicationOperations": ["reviseAgentPrompt"],
       "body": {
         "schemas": [
           {
@@ -11105,30 +11079,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:reviseAgentPrompt",
+          "identity": "response-expression:POST /api/agent-profiles/:agentKey/prompt-revisions:1",
           "schemaVersions": [],
-          "signatureSha256": "b0c193c810536a756ed4168f3e2e85c7e2771c348d785242619a803ad57f3fac"
+          "signatureSha256": "505ff78676b482019213b0cd00c897bdb48194a35033cd270ad41d41ae06fdba"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "e917ae4a02d156662bc0529cf8abb1ae840a62fcf149aad76e07bfa3c40a57cc",
           "explicitSchemas": [],
-          "signatureSha256": "2f3db41f5c958ddfb91e47555dd90959f2dc7d364baeacecb1d115678e7471b7",
+          "signatureSha256": "505ff78676b482019213b0cd00c897bdb48194a35033cd270ad41d41ae06fdba",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "restoreAgentPrompt",
-          "responseSchemas": [],
-          "signatureSha256": "9d6f89d066fd3ff857298834cdf45774ca7c66dae6181758b79302cd3fc269b9"
-        }
-      ],
-      "applicationOperations": ["restoreAgentPrompt"],
       "body": {
         "schemas": [
           {
@@ -11232,30 +11197,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:restoreAgentPrompt",
+          "identity": "response-expression:POST /api/agent-profiles/:agentKey/restore-default:1",
           "schemaVersions": [],
-          "signatureSha256": "9d6f89d066fd3ff857298834cdf45774ca7c66dae6181758b79302cd3fc269b9"
+          "signatureSha256": "505ff78676b482019213b0cd00c897bdb48194a35033cd270ad41d41ae06fdba"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "03146d6bd6527fa34e5e2c6ad2464c382e027b31144b138dd913f05c3edd24cd",
           "explicitSchemas": [],
-          "signatureSha256": "7882d026c8987aecd7dc94557561f1ab26fd557306cb4dcd705e6fa5d7c5410b",
+          "signatureSha256": "505ff78676b482019213b0cd00c897bdb48194a35033cd270ad41d41ae06fdba",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "createAgentVersion",
-          "responseSchemas": [],
-          "signatureSha256": "0fbbe1bae60893b9b863448d1c258ac815b3744b27dc602c916d52c2bb4b0f77"
-        }
-      ],
-      "applicationOperations": ["createAgentVersion"],
       "body": {
         "schemas": [
           {
@@ -11359,24 +11315,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:createAgentVersion",
+          "identity": "response-expression:POST /api/agent-profiles/:agentKey/versions:1",
           "schemaVersions": [],
-          "signatureSha256": "0fbbe1bae60893b9b863448d1c258ac815b3744b27dc602c916d52c2bb4b0f77"
+          "signatureSha256": "505ff78676b482019213b0cd00c897bdb48194a35033cd270ad41d41ae06fdba"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "91291e328d3e917c1b6072656c2303799b1125c08d94c2775bc843f81da68665",
           "explicitSchemas": [],
-          "signatureSha256": "093e2d36ea0b5e08c27fde4652aefd27284ad3b6833f8c57b458d832c1d1aa9b",
+          "signatureSha256": "505ff78676b482019213b0cd00c897bdb48194a35033cd270ad41d41ae06fdba",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [],
-      "applicationOperations": [],
       "body": {
         "schemas": []
       },
@@ -11446,27 +11399,19 @@
         {
           "identity": "response-expression:GET /api/healthz:1",
           "schemaVersions": [],
-          "signatureSha256": "cf327771c1342a6d335dad173f68d8be1361ef0a0615df91cfb40c8156bfb19c"
+          "signatureSha256": "55503f08e0443eaf8a444e6459992e6feeb97e877955ec87418d42bbc8ccc13b"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "cf327771c1342a6d335dad173f68d8be1361ef0a0615df91cfb40c8156bfb19c",
+          "signatureSha256": "55503f08e0443eaf8a444e6459992e6feeb97e877955ec87418d42bbc8ccc13b",
           "source": "c.json",
           "status": "default"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listMemoryBackends",
-          "responseSchemas": [],
-          "signatureSha256": "9543cbe6c132b17c23096869457247dd366a61cce186761da72f961d20520eb2"
-        }
-      ],
-      "applicationOperations": ["listMemoryBackends"],
       "body": {
         "schemas": []
       },
@@ -11541,30 +11486,21 @@
       "requestSchemas": [],
       "responseSchemas": [
         {
-          "identity": "application-result:listMemoryBackends",
+          "identity": "response-expression:GET /api/memory-backends:1",
           "schemaVersions": [],
-          "signatureSha256": "9543cbe6c132b17c23096869457247dd366a61cce186761da72f961d20520eb2"
+          "signatureSha256": "9a802e17efc634dbaafd4dd052d8bda1b4cd510c9eb85b50f9eb227ead60c010"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "11bc1e2e7c587eb034ba96aad602764d1750e69c298dd912d77709eae9ec5221",
           "explicitSchemas": [],
-          "signatureSha256": "46984da3a187c95e666bf47249922d31bf12f771f37bae4a90a1c46ea9486fe2",
+          "signatureSha256": "9a802e17efc634dbaafd4dd052d8bda1b4cd510c9eb85b50f9eb227ead60c010",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "createMemoryImport",
-          "responseSchemas": [],
-          "signatureSha256": "d745e531c9a12ea3e5746ae64789ec90ff4464a990cbf778c5133f8a9debcc56"
-        }
-      ],
-      "applicationOperations": ["createMemoryImport"],
       "body": {
         "schemas": [
           {
@@ -11654,30 +11590,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:createMemoryImport",
+          "identity": "response-expression:POST /api/memory-imports:1",
           "schemaVersions": [],
-          "signatureSha256": "d745e531c9a12ea3e5746ae64789ec90ff4464a990cbf778c5133f8a9debcc56"
+          "signatureSha256": "50f4b5574393ebeef23853f9a8cd7e2eca3176cb56196eebf0d8b22782abb536"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "62eda15771b42fe5a55e39590b1df6b06c05716fc4083120c1c05af3036cb4ad",
           "explicitSchemas": [],
-          "signatureSha256": "5fe65b6f22320953fdbc681408233d3be3003c62d0f2be5c45ef0b38368a3b3f",
+          "signatureSha256": "50f4b5574393ebeef23853f9a8cd7e2eca3176cb56196eebf0d8b22782abb536",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getMemoryImport",
-          "responseSchemas": [],
-          "signatureSha256": "32569ca8ba9a7450193b5ac11ce38798ed0437b45210e5257956bacfcd32f0d1"
-        }
-      ],
-      "applicationOperations": ["getMemoryImport"],
       "body": {
         "schemas": []
       },
@@ -11767,30 +11694,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getMemoryImport",
+          "identity": "response-expression:GET /api/memory-imports/:memoryImportIntentId:1",
           "schemaVersions": [],
-          "signatureSha256": "32569ca8ba9a7450193b5ac11ce38798ed0437b45210e5257956bacfcd32f0d1"
+          "signatureSha256": "09f94f8c084a8298308b9a05dfe2cc88bc7fa1acffb871bbc8996489a218ce7d"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "7a5966d37fec00d46d30363e7a0236a717e4585ed281cbcbf16f0bc170e47429",
           "explicitSchemas": [],
-          "signatureSha256": "445e66495488e0ef1f7b8d3af0c5a33b63b1aa1de818e2f446139823ad751cd2",
+          "signatureSha256": "09f94f8c084a8298308b9a05dfe2cc88bc7fa1acffb871bbc8996489a218ce7d",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "requestMemoryImportReconciliation",
-          "responseSchemas": [],
-          "signatureSha256": "3cbe22463f7b02ee9ab8fc7a84d28d9852f95eb19c6f4508656cb89ad38e27ca"
-        }
-      ],
-      "applicationOperations": ["requestMemoryImportReconciliation"],
       "body": {
         "schemas": [
           {
@@ -11894,30 +11812,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:requestMemoryImportReconciliation",
+          "identity": "response-expression:POST /api/memory-imports/:memoryImportIntentId/reconcile:1",
           "schemaVersions": [],
-          "signatureSha256": "3cbe22463f7b02ee9ab8fc7a84d28d9852f95eb19c6f4508656cb89ad38e27ca"
+          "signatureSha256": "50f4b5574393ebeef23853f9a8cd7e2eca3176cb56196eebf0d8b22782abb536"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "c1941d5e10dc656d9ecbaf2657bcd1a7a5fb411def4962ea6b4abc1abf0409d5",
           "explicitSchemas": [],
-          "signatureSha256": "31b6dc571cab85394953ee220a88c37e91b9e28c8b2ffd8c1d2433118b53c1a0",
+          "signatureSha256": "50f4b5574393ebeef23853f9a8cd7e2eca3176cb56196eebf0d8b22782abb536",
           "source": "c.json",
           "status": "202"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "createMemoryWrite",
-          "responseSchemas": [],
-          "signatureSha256": "ee0c868a341e22d424393a8d477ea45a557c4f8b6f2843595fdbae71dc62336e"
-        }
-      ],
-      "applicationOperations": ["createMemoryWrite"],
       "body": {
         "schemas": [
           {
@@ -12007,30 +11916,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:createMemoryWrite",
+          "identity": "response-expression:POST /api/memory-writes:1",
           "schemaVersions": [],
-          "signatureSha256": "ee0c868a341e22d424393a8d477ea45a557c4f8b6f2843595fdbae71dc62336e"
+          "signatureSha256": "9f127cfe05c58c708b265e157e8491cc10c293592eb63f15e96a1dd1f7d1314c"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "b5511c45890c49ae821165225c72cef0cbf28390c4d478621960799f3db12c18",
           "explicitSchemas": [],
-          "signatureSha256": "c94e99a9619e62b53e86206a19608b7c67afc51115110f0645b6d587b83de7dc",
+          "signatureSha256": "9f127cfe05c58c708b265e157e8491cc10c293592eb63f15e96a1dd1f7d1314c",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getMemoryWrite",
-          "responseSchemas": [],
-          "signatureSha256": "70c7baa9789ee3ac313284fcbe0180ad9ac61bbbb74bec1fd03d171c3ccff2d4"
-        }
-      ],
-      "applicationOperations": ["getMemoryWrite"],
       "body": {
         "schemas": []
       },
@@ -12120,30 +12020,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getMemoryWrite",
+          "identity": "response-expression:GET /api/memory-writes/:memoryWriteIntentId:1",
           "schemaVersions": [],
-          "signatureSha256": "70c7baa9789ee3ac313284fcbe0180ad9ac61bbbb74bec1fd03d171c3ccff2d4"
+          "signatureSha256": "4971c9b4d2db09f5616c68b58bf023c6d1e02b6d4a0887003bf097741a1b28a9"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "48352e533461d2c43908c4a9ac2b39b624822b984de20682fc108259d8ee5fab",
           "explicitSchemas": [],
-          "signatureSha256": "bc1dc63b91c16054dcc1801b44cb12395fdb202f7a54420752b4cc3488a4ec36",
+          "signatureSha256": "4971c9b4d2db09f5616c68b58bf023c6d1e02b6d4a0887003bf097741a1b28a9",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "requestMemoryWriteReconciliation",
-          "responseSchemas": [],
-          "signatureSha256": "b89b52da57757623d37deb9a0dc5a33d338f15383b2537aeafaec3e5447ac67c"
-        }
-      ],
-      "applicationOperations": ["requestMemoryWriteReconciliation"],
       "body": {
         "schemas": [
           {
@@ -12247,24 +12138,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:requestMemoryWriteReconciliation",
+          "identity": "response-expression:POST /api/memory-writes/:memoryWriteIntentId/reconcile:1",
           "schemaVersions": [],
-          "signatureSha256": "b89b52da57757623d37deb9a0dc5a33d338f15383b2537aeafaec3e5447ac67c"
+          "signatureSha256": "9f127cfe05c58c708b265e157e8491cc10c293592eb63f15e96a1dd1f7d1314c"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "2750adcda1542f051dd99f3c4a6b5f73f101954de430c7439b864aee3947d8b2",
           "explicitSchemas": [],
-          "signatureSha256": "accf1efa7daf1d0f99e6fde6cbb18cf8674559e29e8324b79318db52822e555e",
+          "signatureSha256": "9f127cfe05c58c708b265e157e8491cc10c293592eb63f15e96a1dd1f7d1314c",
           "source": "c.json",
           "status": "202"
         }
       ]
     },
     {
-      "applicationOperationContracts": [],
-      "applicationOperations": [],
       "body": {
         "schemas": []
       },
@@ -12346,7 +12234,6 @@
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "explicitSchemas": [
             {
               "identity": "listMemoryProvidersResponseSchema",
@@ -12354,21 +12241,13 @@
               "signatureSha256": "2ca1a3850a61f0e8c0e0a683d1948988970ce8c69def84de013ab395e9183052"
             }
           ],
-          "signatureSha256": "b72cbd0e3c3fc81573e1952f9f3e5f782cdcedc92654b5902a8497c13c5a1aa2",
+          "signatureSha256": "0e053d9615d059e1849ab41232bc0a07103027f495d000ae37f67429584091d2",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "submitUserMessage",
-          "responseSchemas": [],
-          "signatureSha256": "81886f377c44351d15d9b88fb08efad5b353e0f7a6e1f15b73c0a0240086b594"
-        }
-      ],
-      "applicationOperations": ["submitUserMessage"],
       "body": {
         "schemas": [
           {
@@ -12458,30 +12337,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:submitUserMessage",
+          "identity": "response-expression:POST /api/messages:1",
           "schemaVersions": [],
-          "signatureSha256": "81886f377c44351d15d9b88fb08efad5b353e0f7a6e1f15b73c0a0240086b594"
+          "signatureSha256": "224acacf54e4aa04d31a986ddb66ae31fd2c8f3f89722d93261755036f5cbdeb"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "bf3ec6b1ca9418b1c821f31de50f93a8b4070942aaf4ff141e7cf3f57408efbb",
           "explicitSchemas": [],
-          "signatureSha256": "e9ec694fd107a39d026cab5725f2c16b88df64d1d07d5902f005aa9a336dbbfd",
+          "signatureSha256": "224acacf54e4aa04d31a986ddb66ae31fd2c8f3f89722d93261755036f5cbdeb",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listNotes",
-          "responseSchemas": [],
-          "signatureSha256": "68db6aa5ed67b8470c8d4ac8d570a81ab9f3fc7ce8bc76c42908aeb4d0f1b283"
-        }
-      ],
-      "applicationOperations": ["listNotes"],
       "body": {
         "schemas": []
       },
@@ -12568,30 +12438,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:listNotes",
+          "identity": "response-expression:GET /api/notes:1",
           "schemaVersions": [],
-          "signatureSha256": "68db6aa5ed67b8470c8d4ac8d570a81ab9f3fc7ce8bc76c42908aeb4d0f1b283"
+          "signatureSha256": "320b947e94f8ced3db75c5c91d79fc1930e96341e3a47be7e051323c5f555527"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "f8a79dabb4124a3eb6349c667d6ccf43491ac29b79393e009010168bbd873ed7",
           "explicitSchemas": [],
-          "signatureSha256": "92f01252850044dab18f3e73ce715e8cae0b955db1b0e4a701af455bdf59e084",
+          "signatureSha256": "320b947e94f8ced3db75c5c91d79fc1930e96341e3a47be7e051323c5f555527",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getNote",
-          "responseSchemas": [],
-          "signatureSha256": "083fc7ff0bacdf4d6671c412b470d7c52236bff9db5901a46a378c08650ae663"
-        }
-      ],
-      "applicationOperations": ["getNote"],
       "body": {
         "schemas": []
       },
@@ -12681,30 +12542,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getNote",
+          "identity": "response-expression:GET /api/notes/:noteId:1",
           "schemaVersions": [],
-          "signatureSha256": "083fc7ff0bacdf4d6671c412b470d7c52236bff9db5901a46a378c08650ae663"
+          "signatureSha256": "9abc78a0209fa5f1b9826fb8d6d03b0d0220706f2b8a6f61bb6fab267171d02a"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "0fdeaa80a36b283ee7d9ba57b9848c28e2c5a0ddf65383c79bdfa05496d1b70b",
           "explicitSchemas": [],
-          "signatureSha256": "82029eb3fbc5d4c5290eca3fb58fb1a4945f6aba352ea3cc109b8bb284ae024a",
+          "signatureSha256": "9abc78a0209fa5f1b9826fb8d6d03b0d0220706f2b8a6f61bb6fab267171d02a",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "archiveNote",
-          "responseSchemas": [],
-          "signatureSha256": "cf4fd331aa2ff457e5093471086026326cf1e8a13d7caa61af0fa6017c40f365"
-        }
-      ],
-      "applicationOperations": ["archiveNote"],
       "body": {
         "schemas": [
           {
@@ -12808,30 +12660,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:archiveNote",
+          "identity": "response-expression:POST /api/notes/:noteId/archive:1",
           "schemaVersions": [],
-          "signatureSha256": "cf4fd331aa2ff457e5093471086026326cf1e8a13d7caa61af0fa6017c40f365"
+          "signatureSha256": "6cbad308df71808678685220a99469c3567363d9ac9e33f211b169aee11b94b5"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "58d9b0f04976d5aad1952abdc7d8773a9a990f64d329ebe88e0fe1dd1f320939",
           "explicitSchemas": [],
-          "signatureSha256": "4f1dbf8372a7e43a985ada4c8b06ef628cb248c01b8bdf465e32ccf70babd1b9",
+          "signatureSha256": "6cbad308df71808678685220a99469c3567363d9ac9e33f211b169aee11b94b5",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getNoteHistory",
-          "responseSchemas": [],
-          "signatureSha256": "b5a712889b36102de30c3061384e942be53a8ae0c6e1b16938b094b609689074"
-        }
-      ],
-      "applicationOperations": ["getNoteHistory"],
       "body": {
         "schemas": []
       },
@@ -12932,30 +12775,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getNoteHistory",
+          "identity": "response-expression:GET /api/notes/:noteId/history:1",
           "schemaVersions": [],
-          "signatureSha256": "b5a712889b36102de30c3061384e942be53a8ae0c6e1b16938b094b609689074"
+          "signatureSha256": "4eea24c352a83902218d8ea31fb85a095be1114713275058026c83c4ba6fac88"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "a5f9a741e284c4828a611d7d176e0d18eb0e4f535817c1a4a60ac0b5bbd80411",
           "explicitSchemas": [],
-          "signatureSha256": "1204864571c57c48caac282138c5c217a37bc0e7500d4cd81e1423a955f5a9d5",
+          "signatureSha256": "4eea24c352a83902218d8ea31fb85a095be1114713275058026c83c4ba6fac88",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "restoreNote",
-          "responseSchemas": [],
-          "signatureSha256": "cf4fd331aa2ff457e5093471086026326cf1e8a13d7caa61af0fa6017c40f365"
-        }
-      ],
-      "applicationOperations": ["restoreNote"],
       "body": {
         "schemas": [
           {
@@ -13059,30 +12893,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:restoreNote",
+          "identity": "response-expression:POST /api/notes/:noteId/restore:1",
           "schemaVersions": [],
-          "signatureSha256": "cf4fd331aa2ff457e5093471086026326cf1e8a13d7caa61af0fa6017c40f365"
+          "signatureSha256": "6cbad308df71808678685220a99469c3567363d9ac9e33f211b169aee11b94b5"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "f68bbb84362dfc948ba597168e5a7d2085293c04afe8350800461f4151834f1d",
           "explicitSchemas": [],
-          "signatureSha256": "6559a8f7c9ef1d1324f29b100d41433f5d8b28adbfa4a28d08605110b095a7d7",
+          "signatureSha256": "6cbad308df71808678685220a99469c3567363d9ac9e33f211b169aee11b94b5",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "reviseNote",
-          "responseSchemas": [],
-          "signatureSha256": "daea486ca38bf57fc747ddd5b3a35de7c8ce17a831977ebdf908c5ad46e87fba"
-        }
-      ],
-      "applicationOperations": ["reviseNote"],
       "body": {
         "schemas": [
           {
@@ -13186,30 +13011,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:reviseNote",
+          "identity": "response-expression:POST /api/notes/:noteId/revisions:1",
           "schemaVersions": [],
-          "signatureSha256": "daea486ca38bf57fc747ddd5b3a35de7c8ce17a831977ebdf908c5ad46e87fba"
+          "signatureSha256": "6cbad308df71808678685220a99469c3567363d9ac9e33f211b169aee11b94b5"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "ac9f911a7431fe95328b8900c239a401106252a8752e6882260bfa720ba2f429",
           "explicitSchemas": [],
-          "signatureSha256": "060eb66aba93022d1bcdf0bc887afd68fa61c75dd1c33a83f0a1c4c85388a883",
+          "signatureSha256": "6cbad308df71808678685220a99469c3567363d9ac9e33f211b169aee11b94b5",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "assignProjectAction",
-          "responseSchemas": [],
-          "signatureSha256": "a2a2866767e4b206f4b265dafa825fc10915b83dc790599e1d2b5f4faabde758"
-        }
-      ],
-      "applicationOperations": ["assignProjectAction"],
       "body": {
         "schemas": [
           {
@@ -13313,30 +13129,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:assignProjectAction",
+          "identity": "response-expression:POST /api/project-actions/:projectActionId/assignments:1",
           "schemaVersions": [],
-          "signatureSha256": "a2a2866767e4b206f4b265dafa825fc10915b83dc790599e1d2b5f4faabde758"
+          "signatureSha256": "102e0b73c81482f0c684c95ee758e8d6acf2675770af642a0823d042451eae5c"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "74d27bb5dfe015639f7ce8243b9d6c579b2135dbf4258746f11936cfdda4453b",
           "explicitSchemas": [],
-          "signatureSha256": "b192af6c2d276a7754c4f3f40dff2beb58bfadc4b9fa61aa4f0779c119a6fdfe",
+          "signatureSha256": "102e0b73c81482f0c684c95ee758e8d6acf2675770af642a0823d042451eae5c",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "transitionProjectAction",
-          "responseSchemas": [],
-          "signatureSha256": "6c193dc376c2e65ef79d24b2537d6155384caf25e9fdd21f3a2ece56e2154366"
-        }
-      ],
-      "applicationOperations": ["transitionProjectAction"],
       "body": {
         "schemas": [
           {
@@ -13440,30 +13247,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:transitionProjectAction",
+          "identity": "response-expression:POST /api/project-actions/:projectActionId/transitions:1",
           "schemaVersions": [],
-          "signatureSha256": "6c193dc376c2e65ef79d24b2537d6155384caf25e9fdd21f3a2ece56e2154366"
+          "signatureSha256": "6bf8ae7e53823b1753d085c2832809152fa4bc7f9f0185099c4455ee298e4b6d"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "2774f8a6bdc3f45dc9f90188cce0a885e6fe0f7911d363350352c78b81ed29b5",
           "explicitSchemas": [],
-          "signatureSha256": "c3f2b22d32be34e2dba0a77b1e845b47006d6da67dbdca6677023ecce5b8e84c",
+          "signatureSha256": "6bf8ae7e53823b1753d085c2832809152fa4bc7f9f0185099c4455ee298e4b6d",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "beginProjectAdvancement",
-          "responseSchemas": [],
-          "signatureSha256": "9a7f3666231e971a0dea99daa69ab7f35684200470c1251360abeab77a866149"
-        }
-      ],
-      "applicationOperations": ["beginProjectAdvancement"],
       "body": {
         "schemas": [
           {
@@ -13553,30 +13351,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:beginProjectAdvancement",
+          "identity": "response-expression:POST /api/project-advancements:1",
           "schemaVersions": [],
-          "signatureSha256": "9a7f3666231e971a0dea99daa69ab7f35684200470c1251360abeab77a866149"
+          "signatureSha256": "74261998bc94814f4867c6f71d5574d85e6d9170546625a209b9e95ddfed12a4"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "ae5e2b6ce25b792f4855b0a7b394cd8032657861da13d7a63105503d2278fcf5",
           "explicitSchemas": [],
-          "signatureSha256": "772f20abeb24ecd25f35886b1540009efb7a17368d6ea3a94e8dca08e21b53be",
+          "signatureSha256": "74261998bc94814f4867c6f71d5574d85e6d9170546625a209b9e95ddfed12a4",
           "source": "c.json",
           "status": "202"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "decideProjectAdvancementCandidate",
-          "responseSchemas": [],
-          "signatureSha256": "2de7933792df403a0bb7a267d75ef45b259e46b04dfedff13fc39ebecc44e3ba"
-        }
-      ],
-      "applicationOperations": ["decideProjectAdvancementCandidate"],
       "body": {
         "schemas": [
           {
@@ -13680,37 +13469,32 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:decideProjectAdvancementCandidate",
+          "identity": "response-expression:POST /api/project-advancements/:projectCandidateId/decisions:1",
           "schemaVersions": [],
-          "signatureSha256": "2de7933792df403a0bb7a267d75ef45b259e46b04dfedff13fc39ebecc44e3ba"
+          "signatureSha256": "a038e371ba952c227a4ce9cf4af9adb705a1e792b28b3674467924e29d1efe1e"
+        },
+        {
+          "identity": "response-expression:POST /api/project-advancements/:projectCandidateId/decisions:2",
+          "schemaVersions": [],
+          "signatureSha256": "a038e371ba952c227a4ce9cf4af9adb705a1e792b28b3674467924e29d1efe1e"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "90a89b9df4b17227aadd844a0afb12ff67dce930bb517207b9b806dfd688cc7c",
           "explicitSchemas": [],
-          "signatureSha256": "aa71f34d01963c8fb1aa8e9a3c56c0d38624c6695601bf0cfb096814a569c7b9",
+          "signatureSha256": "a038e371ba952c227a4ce9cf4af9adb705a1e792b28b3674467924e29d1efe1e",
           "source": "c.json",
           "status": "201"
         },
         {
-          "applicationResultSignatureSha256": "90a89b9df4b17227aadd844a0afb12ff67dce930bb517207b9b806dfd688cc7c",
           "explicitSchemas": [],
-          "signatureSha256": "aa71f34d01963c8fb1aa8e9a3c56c0d38624c6695601bf0cfb096814a569c7b9",
+          "signatureSha256": "a038e371ba952c227a4ce9cf4af9adb705a1e792b28b3674467924e29d1efe1e",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "decideProjectBootstrapCandidate",
-          "responseSchemas": [],
-          "signatureSha256": "052d3bf73c752be67d191c46f3c0baca065c51c0c9f731a8f0c89ed4260528fa"
-        }
-      ],
-      "applicationOperations": ["decideProjectBootstrapCandidate"],
       "body": {
         "schemas": [
           {
@@ -13824,30 +13608,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:decideProjectBootstrapCandidate",
+          "identity": "response-expression:POST /api/project-bootstrap/candidates/:projectBootstrapCandidateId/decision:1",
           "schemaVersions": [],
-          "signatureSha256": "052d3bf73c752be67d191c46f3c0baca065c51c0c9f731a8f0c89ed4260528fa"
+          "signatureSha256": "93147b258683a9cfdab272f03de269bf13aa88003303ca245be22b1c150492a5"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "6621c1d2897d9b2a1117eb9f44bb2558fdd641c0f02bb81e20ecf7fbaa81be38",
           "explicitSchemas": [],
-          "signatureSha256": "6d089d6d4a22f5123b1e9593ec82d4518f9741ade5d27a4c28e73fae226bd18d",
+          "signatureSha256": "93147b258683a9cfdab272f03de269bf13aa88003303ca245be22b1c150492a5",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getProjectBootstrapConfiguration",
-          "responseSchemas": [],
-          "signatureSha256": "03dcd961434c15e7fabf13db3da066a9e1330d1198729e3a8f3d29e776d9d162"
-        }
-      ],
-      "applicationOperations": ["getProjectBootstrapConfiguration"],
       "body": {
         "schemas": []
       },
@@ -13929,7 +13704,6 @@
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "4d5d83774ec959b27bdd2d7219a3900cb4c407c07c194bdb8567f7b191b2ee15",
           "explicitSchemas": [
             {
               "identity": "projectBootstrapConfigurationSchema",
@@ -13937,21 +13711,13 @@
               "signatureSha256": "7065e211643b2a3a409ec72614eaa1f149c78d5cf8cf98b2ec1981fc34e26b1b"
             }
           ],
-          "signatureSha256": "2904ff9b048253b713b75b375114c7784b54d2570599dd5ec3056cb5618f5ed8",
+          "signatureSha256": "8e8df613a4ec1e68a76927bd48fed5690829ae0362eece4c357d8daa61ad0d4d",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "submitProjectBootstrapUserMessage",
-          "responseSchemas": [],
-          "signatureSha256": "bcd4044de5db54f17640309c58044ae473b5b8cc3c66e668a3f51293e29d6798"
-        }
-      ],
-      "applicationOperations": ["submitProjectBootstrapUserMessage"],
       "body": {
         "schemas": [
           {
@@ -14041,30 +13807,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:submitProjectBootstrapUserMessage",
+          "identity": "response-expression:POST /api/project-bootstrap/messages:1",
           "schemaVersions": [],
-          "signatureSha256": "bcd4044de5db54f17640309c58044ae473b5b8cc3c66e668a3f51293e29d6798"
+          "signatureSha256": "224acacf54e4aa04d31a986ddb66ae31fd2c8f3f89722d93261755036f5cbdeb"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "73ff0b2e57628f0eec8c946fb0bf5384d2d1d71b678f1e83d98439e9a12e1b54",
           "explicitSchemas": [],
-          "signatureSha256": "f7af5c49da3cbbbc3ee43b32308f12d80cbe1a1ef3191e7c0dbd5a477e56d89f",
+          "signatureSha256": "224acacf54e4aa04d31a986ddb66ae31fd2c8f3f89722d93261755036f5cbdeb",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getProjectBootstrapReview",
-          "responseSchemas": [],
-          "signatureSha256": "4fd7c9ddea9b227c7fb4e7620a0af9e46523f07607db62d19c2c4b23819f6a13"
-        }
-      ],
-      "applicationOperations": ["getProjectBootstrapReview"],
       "body": {
         "schemas": []
       },
@@ -14154,30 +13911,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getProjectBootstrapReview",
+          "identity": "response-expression:GET /api/project-bootstrap/operations/:projectBootstrapOperationId:1",
           "schemaVersions": [],
-          "signatureSha256": "4fd7c9ddea9b227c7fb4e7620a0af9e46523f07607db62d19c2c4b23819f6a13"
+          "signatureSha256": "ce317a2fe91ba556b66b7cdba2d56d842eb4c5d4ef8d00d7e9f4668a1ded1766"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "c491f834e774d80ecb8140268d1d345960061d1f90c16fb3c4ddc9783417996d",
           "explicitSchemas": [],
-          "signatureSha256": "a6e6a8fb6926567eb8528f438fec0c9c2768de7b535daad644966286c3e83efc",
+          "signatureSha256": "ce317a2fe91ba556b66b7cdba2d56d842eb4c5d4ef8d00d7e9f4668a1ded1766",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "requestProjectBootstrapOperationRetry",
-          "responseSchemas": [],
-          "signatureSha256": "1d69ea5dbc732ae95476d6891f908f5fd5616622a5cc5e5f940e8fdcc21db82d"
-        }
-      ],
-      "applicationOperations": ["requestProjectBootstrapOperationRetry"],
       "body": {
         "schemas": [
           {
@@ -14281,30 +14029,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:requestProjectBootstrapOperationRetry",
+          "identity": "response-expression:POST /api/project-bootstrap/operations/:projectBootstrapOperationId/retry:1",
           "schemaVersions": [],
-          "signatureSha256": "1d69ea5dbc732ae95476d6891f908f5fd5616622a5cc5e5f940e8fdcc21db82d"
+          "signatureSha256": "ac029837f9384177bf4ea31254f9e572fd10227aaf2fa15c2c88395415038540"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "d2ee26837c00361cedd059de99b3008a52c5212f1d04ad7a961a8d43082253cf",
           "explicitSchemas": [],
-          "signatureSha256": "650fa255e69357a53de60d98e22efab2da21650943e63798e26205231f057d8f",
+          "signatureSha256": "ac029837f9384177bf4ea31254f9e572fd10227aaf2fa15c2c88395415038540",
           "source": "c.json",
           "status": "202"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getProjectCandidate",
-          "responseSchemas": [],
-          "signatureSha256": "b38888e11fd545d2cfaa80010e4d47f00696a3a5197382de3351bcc80b703433"
-        }
-      ],
-      "applicationOperations": ["getProjectCandidate"],
       "body": {
         "schemas": []
       },
@@ -14394,30 +14133,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getProjectCandidate",
+          "identity": "response-expression:GET /api/project-candidates/:projectCandidateId:1",
           "schemaVersions": [],
-          "signatureSha256": "b38888e11fd545d2cfaa80010e4d47f00696a3a5197382de3351bcc80b703433"
+          "signatureSha256": "48b33ee897535649b8752785bacfad227ce931b4838a3fab2730f884e55a4adb"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "78151e7a8a06090c3cfe00ab3ab27ee5bb72cd3bc04ae1d304d7c4c955b84b1b",
           "explicitSchemas": [],
-          "signatureSha256": "7cad2fc993839bf66e42f8a12f994c5975e8984a95513b34b97d3e9c2fccf251",
+          "signatureSha256": "48b33ee897535649b8752785bacfad227ce931b4838a3fab2730f884e55a4adb",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "decideProjectCandidate",
-          "responseSchemas": [],
-          "signatureSha256": "d96750d6ec7987064bd4d480c2284318a040ee8801c36fe6f5ef0e4b6c348e04"
-        }
-      ],
-      "applicationOperations": ["decideProjectCandidate"],
       "body": {
         "schemas": [
           {
@@ -14521,30 +14251,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:decideProjectCandidate",
+          "identity": "response-expression:POST /api/project-candidates/:projectCandidateId/decisions:1",
           "schemaVersions": [],
-          "signatureSha256": "d96750d6ec7987064bd4d480c2284318a040ee8801c36fe6f5ef0e4b6c348e04"
+          "signatureSha256": "733ac35e3051ea2c9579a9f8da836c423bbf07ae73a11288701e4a6c5cdf637b"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "0cab217709b38726eb82ea85cdd4d88d10af90776942c859295af3171ed2e94f",
           "explicitSchemas": [],
-          "signatureSha256": "17636c081922d1264c23fe9e1734a4163c5df346aace6e1282c8a8d8c3994d9a",
+          "signatureSha256": "733ac35e3051ea2c9579a9f8da836c423bbf07ae73a11288701e4a6c5cdf637b",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "beginProjectIntake",
-          "responseSchemas": [],
-          "signatureSha256": "47a4ed9ff707d9746ade32f4b488aaed73071d42bed4cc459be656ed722b8910"
-        }
-      ],
-      "applicationOperations": ["beginProjectIntake"],
       "body": {
         "schemas": [
           {
@@ -14634,30 +14355,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:beginProjectIntake",
+          "identity": "response-expression:POST /api/project-intakes:1",
           "schemaVersions": [],
-          "signatureSha256": "47a4ed9ff707d9746ade32f4b488aaed73071d42bed4cc459be656ed722b8910"
+          "signatureSha256": "74261998bc94814f4867c6f71d5574d85e6d9170546625a209b9e95ddfed12a4"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "ce68b624dd25d725f97df593a323bb1a00c9f8951cf227c760ab9b6b4dc0414d",
           "explicitSchemas": [],
-          "signatureSha256": "3bae9b425c9d0baec9cce762baed96d716b23592a59e6f5ea3334154d68fd734",
+          "signatureSha256": "74261998bc94814f4867c6f71d5574d85e6d9170546625a209b9e95ddfed12a4",
           "source": "c.json",
           "status": "202"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "beginProjectManagementCandidate",
-          "responseSchemas": [],
-          "signatureSha256": "47a4ed9ff707d9746ade32f4b488aaed73071d42bed4cc459be656ed722b8910"
-        }
-      ],
-      "applicationOperations": ["beginProjectManagementCandidate"],
       "body": {
         "schemas": [
           {
@@ -14747,30 +14459,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:beginProjectManagementCandidate",
+          "identity": "response-expression:POST /api/project-management-candidates:1",
           "schemaVersions": [],
-          "signatureSha256": "47a4ed9ff707d9746ade32f4b488aaed73071d42bed4cc459be656ed722b8910"
+          "signatureSha256": "048e70db9ab09c481695b44d2b331c3773844c299740f977a9ce92e96a6f3b4e"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "5f96c2b7a6b92edca82f865a8bd1d34f5693b1ff55cc809c6b6ec80e2eadb261",
           "explicitSchemas": [],
-          "signatureSha256": "16766e58d7e539a0dfa1673dadab89a87f80edf34c320e1d966a3bcb2e3d3a9e",
+          "signatureSha256": "048e70db9ab09c481695b44d2b331c3773844c299740f977a9ce92e96a6f3b4e",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "decideProjectManagementCandidate",
-          "responseSchemas": [],
-          "signatureSha256": "670a5256b17378885086401507854f42ec99d7c15fe43f25ec662036135dc3fa"
-        }
-      ],
-      "applicationOperations": ["decideProjectManagementCandidate"],
       "body": {
         "schemas": [
           {
@@ -14874,30 +14577,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:decideProjectManagementCandidate",
+          "identity": "response-expression:POST /api/project-management-candidates/:projectCandidateId/decisions:1",
           "schemaVersions": [],
-          "signatureSha256": "670a5256b17378885086401507854f42ec99d7c15fe43f25ec662036135dc3fa"
+          "signatureSha256": "ee4a617f07f72c5521f26bc9ea86a86e58b07139c6c4709112c9f09f158111f4"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "e962af905e95b6d466b88012f79b1c3069e0ef1684fe68dccf2410cec8da7c9e",
           "explicitSchemas": [],
-          "signatureSha256": "a2649105df8a64ac6cf9ed279fee248ff06f10912b68b8cf0983176cfecbf874",
+          "signatureSha256": "ee4a617f07f72c5521f26bc9ea86a86e58b07139c6c4709112c9f09f158111f4",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "transitionProjectMilestone",
-          "responseSchemas": [],
-          "signatureSha256": "a3095f5a749534e809697ed8ee8c925bbb24923ecc4f8dfe2e8d44c35287d03f"
-        }
-      ],
-      "applicationOperations": ["transitionProjectMilestone"],
       "body": {
         "schemas": [
           {
@@ -15001,30 +14695,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:transitionProjectMilestone",
+          "identity": "response-expression:POST /api/project-milestones/:projectMilestoneId/transitions:1",
           "schemaVersions": [],
-          "signatureSha256": "a3095f5a749534e809697ed8ee8c925bbb24923ecc4f8dfe2e8d44c35287d03f"
+          "signatureSha256": "8a2b21b8c53ec653863a683c74305d2849447d340b2598f35661ed1039440740"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "c8d054c9f7f8c986c949b19d52fdb3dd81a9e5818bae0283c7bbbc0a97a509be",
           "explicitSchemas": [],
-          "signatureSha256": "015855205f3350ca4b1301ecef0ce77fb6fad2dcb8edcfddcc3f2a8e7957b140",
+          "signatureSha256": "8a2b21b8c53ec653863a683c74305d2849447d340b2598f35661ed1039440740",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listProjectRoots",
-          "responseSchemas": [],
-          "signatureSha256": "dc69d8dae597f1e86c4ef4e3c7a2b2fa0ffd3cc9e9aca400444b11ab396a301e"
-        }
-      ],
-      "applicationOperations": ["listProjectRoots"],
       "body": {
         "schemas": []
       },
@@ -15099,30 +14784,21 @@
       "requestSchemas": [],
       "responseSchemas": [
         {
-          "identity": "application-result:listProjectRoots",
+          "identity": "response-expression:GET /api/project-roots:1",
           "schemaVersions": [],
-          "signatureSha256": "dc69d8dae597f1e86c4ef4e3c7a2b2fa0ffd3cc9e9aca400444b11ab396a301e"
+          "signatureSha256": "2b3fa5d4eabe5b3e41b8acedb159bed5cdfc92b1751af6a8e5aa8e8e4b25f397"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "142b9f125457f4dc3ede97cf7a8a77baf5fd46a6da43fbe4ea34fbc5b88083af",
           "explicitSchemas": [],
-          "signatureSha256": "7fe799329fef2a3661c73837f0a46082b05cb49cd0596cb0c25f52ea29130ad6",
+          "signatureSha256": "2b3fa5d4eabe5b3e41b8acedb159bed5cdfc92b1751af6a8e5aa8e8e4b25f397",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "transitionProjectStage",
-          "responseSchemas": [],
-          "signatureSha256": "68efc0ca619401b63d4c18361a619588eb60383dbedae1f936771a7ec7693cf7"
-        }
-      ],
-      "applicationOperations": ["transitionProjectStage"],
       "body": {
         "schemas": [
           {
@@ -15226,30 +14902,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:transitionProjectStage",
+          "identity": "response-expression:POST /api/project-stages/:projectStageId/transitions:1",
           "schemaVersions": [],
-          "signatureSha256": "68efc0ca619401b63d4c18361a619588eb60383dbedae1f936771a7ec7693cf7"
+          "signatureSha256": "46088e5faced7ed65cafa22f33f2732294aafc991b996aa9b92213262e7db8d3"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "f95269f5b5a7a7f11b7625a006870f3b0c6cd84e272af86257f99ed80c348cea",
           "explicitSchemas": [],
-          "signatureSha256": "0ceb853a906123ab1e968d6116d572fd166803b30ba08da10950d0ff53529189",
+          "signatureSha256": "46088e5faced7ed65cafa22f33f2732294aafc991b996aa9b92213262e7db8d3",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listProjects",
-          "responseSchemas": [],
-          "signatureSha256": "97d541695c88aa68d82dbbc4aad0d5ba605a70700739fb13a75a0d5495442894"
-        }
-      ],
-      "applicationOperations": ["listProjects"],
       "body": {
         "schemas": []
       },
@@ -15324,30 +14991,21 @@
       "requestSchemas": [],
       "responseSchemas": [
         {
-          "identity": "application-result:listProjects",
+          "identity": "response-expression:GET /api/projects:1",
           "schemaVersions": [],
-          "signatureSha256": "97d541695c88aa68d82dbbc4aad0d5ba605a70700739fb13a75a0d5495442894"
+          "signatureSha256": "e690f9322f7a2f9c9da9b8d081a3d4c86e3dadd6b7293bcec8f5c89974a49727"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "f0b6a1163992fdb0da3b0b98642c997e6ab6706fc2683d84cfe5978f7d1ae3ca",
           "explicitSchemas": [],
-          "signatureSha256": "d8b804638b59232e57f3531a797bebeeecd074106c4b30225929b9528b5af98d",
+          "signatureSha256": "e690f9322f7a2f9c9da9b8d081a3d4c86e3dadd6b7293bcec8f5c89974a49727",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getProjectWorkspace",
-          "responseSchemas": [],
-          "signatureSha256": "9a083b1d1d0d26a33b4d68b33d00850f0f7eb960a66c9bfc808689cf7c12033c"
-        }
-      ],
-      "applicationOperations": ["getProjectWorkspace"],
       "body": {
         "schemas": []
       },
@@ -15437,30 +15095,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getProjectWorkspace",
+          "identity": "response-expression:GET /api/projects/:projectId:1",
           "schemaVersions": [],
-          "signatureSha256": "9a083b1d1d0d26a33b4d68b33d00850f0f7eb960a66c9bfc808689cf7c12033c"
+          "signatureSha256": "746bfffaf2983e9c07ef37dc1a2f995d777b5572adff10eee5d8b65f2276dc32"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "29d3bbb32ec43d794fd747b274a2b43dc230ec10ea7a790562a46efb3839bbd3",
           "explicitSchemas": [],
-          "signatureSha256": "a0218621d153f37387a5e93e3aa55f8a794f15f0365b6b593090794d4b1ee105",
+          "signatureSha256": "746bfffaf2983e9c07ef37dc1a2f995d777b5572adff10eee5d8b65f2276dc32",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "createProjectAction",
-          "responseSchemas": [],
-          "signatureSha256": "f1152e5a8de0b2e414c541f3d1906a99e08b844b7154f66bfa289347ec7ece9f"
-        }
-      ],
-      "applicationOperations": ["createProjectAction"],
       "body": {
         "schemas": [
           {
@@ -15564,30 +15213,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:createProjectAction",
+          "identity": "response-expression:POST /api/projects/:projectId/actions:1",
           "schemaVersions": [],
-          "signatureSha256": "f1152e5a8de0b2e414c541f3d1906a99e08b844b7154f66bfa289347ec7ece9f"
+          "signatureSha256": "0c2d3b59c12d1c09654c0dd8d849a2da4cb7e08279c4b6604d0ef59acbfb3d38"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "07caadaead50e19f55aece833bf27a3de570f26560359f32d67459715d1a0219",
           "explicitSchemas": [],
-          "signatureSha256": "2667ab6fc8c33bfafc1f98c75e1c6458f28b07c7737e035156bf6363675c992a",
+          "signatureSha256": "0c2d3b59c12d1c09654c0dd8d849a2da4cb7e08279c4b6604d0ef59acbfb3d38",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "setProjectArchiveStatus",
-          "responseSchemas": [],
-          "signatureSha256": "7c6bc2a3057723bcf907b57940120f4d12c2615a2939b30c37269646112b2391"
-        }
-      ],
-      "applicationOperations": ["setProjectArchiveStatus"],
       "body": {
         "schemas": [
           {
@@ -15691,30 +15331,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:setProjectArchiveStatus",
+          "identity": "response-expression:POST /api/projects/:projectId/archive-status:1",
           "schemaVersions": [],
-          "signatureSha256": "7c6bc2a3057723bcf907b57940120f4d12c2615a2939b30c37269646112b2391"
+          "signatureSha256": "542df8b02a08d6bc1c459a1a118dc222d60a758028ea9a1b5967173e99589a51"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "f8fff34a0091b61fa0ab1ddbd8616da1e15b674bf8aa4fa8046259067d343e98",
           "explicitSchemas": [],
-          "signatureSha256": "72659dd6b8c20a0de5228bdd0ef0f07403416292462a1926e9cc564424b7ef86",
+          "signatureSha256": "542df8b02a08d6bc1c459a1a118dc222d60a758028ea9a1b5967173e99589a51",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "recordProjectContribution",
-          "responseSchemas": [],
-          "signatureSha256": "bcef45f4d2442e55acedf18d2d6a55d9e4384f6db641dc2d0197b3b23dfc3fed"
-        }
-      ],
-      "applicationOperations": ["recordProjectContribution"],
       "body": {
         "schemas": [
           {
@@ -15818,30 +15449,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:recordProjectContribution",
+          "identity": "response-expression:POST /api/projects/:projectId/contribution-candidates:1",
           "schemaVersions": [],
-          "signatureSha256": "bcef45f4d2442e55acedf18d2d6a55d9e4384f6db641dc2d0197b3b23dfc3fed"
+          "signatureSha256": "4f591068e304fcf05286cb3e98ae638ce238fabaca5bf053f65bf3a1947a9102"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "7406495fa54d13ec7e2393426dc0a5375caa3d09a8fa389ada4955044b3be00e",
           "explicitSchemas": [],
-          "signatureSha256": "05ea871818afe0f4b4e06127185cde1218cab4f58fd0bdd5a1d333850fbb9fc4",
+          "signatureSha256": "4f591068e304fcf05286cb3e98ae638ce238fabaca5bf053f65bf3a1947a9102",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "recordProjectDecision",
-          "responseSchemas": [],
-          "signatureSha256": "10cba328116a80a8a68470ac4a743d7f77ec4597a72b5d4ffd2b8520383001d1"
-        }
-      ],
-      "applicationOperations": ["recordProjectDecision"],
       "body": {
         "schemas": [
           {
@@ -15945,30 +15567,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:recordProjectDecision",
+          "identity": "response-expression:POST /api/projects/:projectId/decision-candidates:1",
           "schemaVersions": [],
-          "signatureSha256": "10cba328116a80a8a68470ac4a743d7f77ec4597a72b5d4ffd2b8520383001d1"
+          "signatureSha256": "ea1d46a20621c42e2321c29854d5d9cb44667c82e56411a217ddea90406c2fcb"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "850a1cf3a0b9ae28e5a5ccbc9ccbf1f5ac33c14d3d6983d1a1a33bf0af824bda",
           "explicitSchemas": [],
-          "signatureSha256": "c65d6385fd180cee83c7349d088a72fdd6832aa2f9cce7f9c1f4788adb79c6c9",
+          "signatureSha256": "ea1d46a20621c42e2321c29854d5d9cb44667c82e56411a217ddea90406c2fcb",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "observeProjectResource",
-          "responseSchemas": [],
-          "signatureSha256": "30776513de2cb7d857a3f864bb33f7c33f978455b6911b4c2e088df94bf8c699"
-        }
-      ],
-      "applicationOperations": ["observeProjectResource"],
       "body": {
         "schemas": [
           {
@@ -16062,30 +15675,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:observeProjectResource",
+          "identity": "response-expression:POST /api/projects/:projectId/observations:1",
           "schemaVersions": [],
-          "signatureSha256": "30776513de2cb7d857a3f864bb33f7c33f978455b6911b4c2e088df94bf8c699"
+          "signatureSha256": "e4a267fad946d9eaadce3c2ab000d410aa6eafa25114bc90296cc99cc39f9007"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "63241a5010f32cc57e07c77c1c3064dd0345b760401c5fce3a4d1fc13b809e84",
           "explicitSchemas": [],
-          "signatureSha256": "58278181217a872b69eeddc1b7ed15d31d2acbdcb5592b2313d19345466ba5c9",
+          "signatureSha256": "e4a267fad946d9eaadce3c2ab000d410aa6eafa25114bc90296cc99cc39f9007",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getProjectTimeline",
-          "responseSchemas": [],
-          "signatureSha256": "8baaf2885f40fb099f293287780801d1a729206e0889d543c2f029a107b571e7"
-        }
-      ],
-      "applicationOperations": ["getProjectTimeline"],
       "body": {
         "schemas": []
       },
@@ -16175,30 +15779,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getProjectTimeline",
+          "identity": "response-expression:GET /api/projects/:projectId/timeline:1",
           "schemaVersions": [],
-          "signatureSha256": "8baaf2885f40fb099f293287780801d1a729206e0889d543c2f029a107b571e7"
+          "signatureSha256": "cba9a04346e0877dc5f1033a04e4845ccdf1fb6c4edd1ba94ed23740b1a0c703"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "1b5e18469dc6fc3e93ee42cd5ca0cfb2ba14cc42fa3b78202dbfbeef00ecdaef",
           "explicitSchemas": [],
-          "signatureSha256": "ca79044adb27736172597a72e779a360128f47ce09693aded5150656f50e7c4a",
+          "signatureSha256": "cba9a04346e0877dc5f1033a04e4845ccdf1fb6c4edd1ba94ed23740b1a0c703",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "transitionProjectLifecycle",
-          "responseSchemas": [],
-          "signatureSha256": "7c6bc2a3057723bcf907b57940120f4d12c2615a2939b30c37269646112b2391"
-        }
-      ],
-      "applicationOperations": ["transitionProjectLifecycle"],
       "body": {
         "schemas": [
           {
@@ -16302,30 +15897,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:transitionProjectLifecycle",
+          "identity": "response-expression:POST /api/projects/:projectId/transitions:1",
           "schemaVersions": [],
-          "signatureSha256": "7c6bc2a3057723bcf907b57940120f4d12c2615a2939b30c37269646112b2391"
+          "signatureSha256": "a6077ddec58d6126294417600f30a3ef29dcca368400306889c9006794d3c80f"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "ac9e065d8f783126da33a892bf6140e7ae044aab565cd3b16e5f23e8bf0528d2",
           "explicitSchemas": [],
-          "signatureSha256": "53d9d3b72b9329d82dcae9d483ced5532d59cbe259b88188722b465eb1ee9246",
+          "signatureSha256": "a6077ddec58d6126294417600f30a3ef29dcca368400306889c9006794d3c80f",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "previewDirectPromptAssembly",
-          "responseSchemas": [],
-          "signatureSha256": "6646cef77f4289bf87c3acc9a0710cdbb33b96f078af1b598920e19cc08324bf"
-        }
-      ],
-      "applicationOperations": ["previewDirectPromptAssembly"],
       "body": {
         "schemas": [
           {
@@ -16412,30 +15998,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:previewDirectPromptAssembly",
+          "identity": "response-expression:POST /api/prompt-assembly-previews:1",
           "schemaVersions": [],
-          "signatureSha256": "6646cef77f4289bf87c3acc9a0710cdbb33b96f078af1b598920e19cc08324bf"
+          "signatureSha256": "066e4dbc4716f425c07c32d2c8c431a868c7b6ccf6ff05e4f181e90c32558634"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "cee834e1513c2936eee0e42a2247e48b49a501be1a6d381c2de66080ca090424",
           "explicitSchemas": [],
-          "signatureSha256": "57da5a58e7eca074cfa4b4d8d48f07c52da1d5a5ebf753a9a0d6ec200e570dd0",
+          "signatureSha256": "066e4dbc4716f425c07c32d2c8c431a868c7b6ccf6ff05e4f181e90c32558634",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "previewDirectPromptConfiguration",
-          "responseSchemas": [],
-          "signatureSha256": "0ff5944ff43dcca3c104a7704d6b199cc059768dd3f339bbba5c1cf59a216b13"
-        }
-      ],
-      "applicationOperations": ["previewDirectPromptConfiguration"],
       "body": {
         "schemas": [
           {
@@ -16522,30 +16099,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:previewDirectPromptConfiguration",
+          "identity": "response-expression:POST /api/prompt-configuration-previews:1",
           "schemaVersions": [],
-          "signatureSha256": "0ff5944ff43dcca3c104a7704d6b199cc059768dd3f339bbba5c1cf59a216b13"
+          "signatureSha256": "16c6c333269ee56fc202dd6e43d161081c761887037762db5ae7e69092ed8698"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "84a26161d850110b84c926395d76bc3f8c6500148c8717be1e9b31ef7388e2ae",
           "explicitSchemas": [],
-          "signatureSha256": "a2cc5cd1749b35304e3c7a360dfa50708f1eb2f96e4a7f0c1a7234523c50f312",
+          "signatureSha256": "16c6c333269ee56fc202dd6e43d161081c761887037762db5ae7e69092ed8698",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getPromptFragmentRevision",
-          "responseSchemas": [],
-          "signatureSha256": "7a1f236363f95d8117d8a191c98fcd2c66e3604d6f3b28857e3a6a8da9ae83b3"
-        }
-      ],
-      "applicationOperations": ["getPromptFragmentRevision"],
       "body": {
         "schemas": []
       },
@@ -16635,30 +16203,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getPromptFragmentRevision",
+          "identity": "response-expression:GET /api/prompt-fragment-revisions/:promptFragmentRevisionId:1",
           "schemaVersions": [],
-          "signatureSha256": "7a1f236363f95d8117d8a191c98fcd2c66e3604d6f3b28857e3a6a8da9ae83b3"
+          "signatureSha256": "5d018b630cd1b784cf71147fffde575c13e9444e090797e7e4019b5512d22b24"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "725dbc4ca5109bd7aa4a385d8b8950213746b38c674d17c00f75fc774db7425c",
           "explicitSchemas": [],
-          "signatureSha256": "4a4096bbd2064300827018de354ae613406f15e8ca3f41988d1af78f5049b13f",
+          "signatureSha256": "5d018b630cd1b784cf71147fffde575c13e9444e090797e7e4019b5512d22b24",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listPromptFragments",
-          "responseSchemas": [],
-          "signatureSha256": "216a6fa12843b0f734e4df1e2245bb106c76f55107d5488b5155771308818b93"
-        }
-      ],
-      "applicationOperations": ["listPromptFragments"],
       "body": {
         "schemas": []
       },
@@ -16745,30 +16304,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:listPromptFragments",
+          "identity": "response-expression:GET /api/prompt-fragments:1",
           "schemaVersions": [],
-          "signatureSha256": "216a6fa12843b0f734e4df1e2245bb106c76f55107d5488b5155771308818b93"
+          "signatureSha256": "290e0f080aae5b37457682c96b3ff88bcba38b037e662e56ceb008e48b31ff09"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "7da4b7d4c460037640017ee8822cf5ffdbcf2a8b8e1f679264833343e236a4cd",
           "explicitSchemas": [],
-          "signatureSha256": "9fbd65eece77fb54d60e90df5bcd2fce6dad4d8c8203d655708bd9303ed7e5b4",
+          "signatureSha256": "290e0f080aae5b37457682c96b3ff88bcba38b037e662e56ceb008e48b31ff09",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "createPromptFragment",
-          "responseSchemas": [],
-          "signatureSha256": "62a4efae859357b62c489fa664c3929f2a97a4cd8209b2958ecc0ff67a2eb3a4"
-        }
-      ],
-      "applicationOperations": ["createPromptFragment"],
       "body": {
         "schemas": [
           {
@@ -16865,30 +16415,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:createPromptFragment",
+          "identity": "response-expression:POST /api/prompt-fragments:1",
           "schemaVersions": [],
-          "signatureSha256": "62a4efae859357b62c489fa664c3929f2a97a4cd8209b2958ecc0ff67a2eb3a4"
+          "signatureSha256": "d4df8066731c99139c534af60a06730862e1ee3a7a69c40e6d9de1e543e8bfb6"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "0e88bb5db8b7a94546a78318e05aaf1ed9bb2896b0ea0415f7d5363266832e14",
           "explicitSchemas": [],
-          "signatureSha256": "981a0f192051f1ddd9de785b2d121a3d97d92b20aa54824d1bda3295ace92c08",
+          "signatureSha256": "d4df8066731c99139c534af60a06730862e1ee3a7a69c40e6d9de1e543e8bfb6",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getPromptFragment",
-          "responseSchemas": [],
-          "signatureSha256": "f077c0399d4d377a8878a0b7c287e97cdca9f7ffe9a84e0c2a7489264329be40"
-        }
-      ],
-      "applicationOperations": ["getPromptFragment"],
       "body": {
         "schemas": []
       },
@@ -16978,30 +16519,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getPromptFragment",
+          "identity": "response-expression:GET /api/prompt-fragments/:promptFragmentId:1",
           "schemaVersions": [],
-          "signatureSha256": "f077c0399d4d377a8878a0b7c287e97cdca9f7ffe9a84e0c2a7489264329be40"
+          "signatureSha256": "8a9eadb64d9d65ee119ebee04f8ace4c7174e662147ce2bfc3dc43345f3bd4f3"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "26ca046cab5c9a28124fb5ab87f82641acb183493f70914d08bd45a516a58beb",
           "explicitSchemas": [],
-          "signatureSha256": "be0b112d1227b9a388ba98c5b724d0b143af527cea5b50dcacdcb742990ca82f",
+          "signatureSha256": "8a9eadb64d9d65ee119ebee04f8ace4c7174e662147ce2bfc3dc43345f3bd4f3",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "changePromptFragmentArchiveStatus",
-          "responseSchemas": [],
-          "signatureSha256": "809e0f1f7aa082c49f43ca15b025b5985cc11bd5db60e73b5d9fcd1e73a994b0"
-        }
-      ],
-      "applicationOperations": ["changePromptFragmentArchiveStatus"],
       "body": {
         "schemas": [
           {
@@ -17112,30 +16644,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:changePromptFragmentArchiveStatus",
+          "identity": "response-expression:POST /api/prompt-fragments/:promptFragmentId/archive-status:1",
           "schemaVersions": [],
-          "signatureSha256": "809e0f1f7aa082c49f43ca15b025b5985cc11bd5db60e73b5d9fcd1e73a994b0"
+          "signatureSha256": "d4df8066731c99139c534af60a06730862e1ee3a7a69c40e6d9de1e543e8bfb6"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "508ecb6f750b817917935d47827e7f08ca428794aa114a27df85f96ffd3e73cd",
           "explicitSchemas": [],
-          "signatureSha256": "99ad2b2a25a440218044adca9c4958a855d965c5daa6640617caeefc133a0d73",
+          "signatureSha256": "d4df8066731c99139c534af60a06730862e1ee3a7a69c40e6d9de1e543e8bfb6",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "revisePromptFragment",
-          "responseSchemas": [],
-          "signatureSha256": "827b16835796e446d804b5684cd8f945ff006613146d1766887ea0bb739988dd"
-        }
-      ],
-      "applicationOperations": ["revisePromptFragment"],
       "body": {
         "schemas": [
           {
@@ -17246,30 +16769,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:revisePromptFragment",
+          "identity": "response-expression:POST /api/prompt-fragments/:promptFragmentId/revisions:1",
           "schemaVersions": [],
-          "signatureSha256": "827b16835796e446d804b5684cd8f945ff006613146d1766887ea0bb739988dd"
+          "signatureSha256": "d4df8066731c99139c534af60a06730862e1ee3a7a69c40e6d9de1e543e8bfb6"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "c73e5a9d4fb8ee5ab2611bc7cad2eb00cbd53f0a226072c1c461e4aa96ac8587",
           "explicitSchemas": [],
-          "signatureSha256": "59a97c67b69dcfaf0ec15ad95f0e9bda9881fe63e30553cf7b845e281217c8fd",
+          "signatureSha256": "d4df8066731c99139c534af60a06730862e1ee3a7a69c40e6d9de1e543e8bfb6",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "copyPromptFragment",
-          "responseSchemas": [],
-          "signatureSha256": "62a4efae859357b62c489fa664c3929f2a97a4cd8209b2958ecc0ff67a2eb3a4"
-        }
-      ],
-      "applicationOperations": ["copyPromptFragment"],
       "body": {
         "schemas": [
           {
@@ -17366,30 +16880,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:copyPromptFragment",
+          "identity": "response-expression:POST /api/prompt-fragments/copies:1",
           "schemaVersions": [],
-          "signatureSha256": "62a4efae859357b62c489fa664c3929f2a97a4cd8209b2958ecc0ff67a2eb3a4"
+          "signatureSha256": "d4df8066731c99139c534af60a06730862e1ee3a7a69c40e6d9de1e543e8bfb6"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "5b06044b0d4b0a911106855f81fe02b0de33291ab950143e4e3bd4b2737f5b8d",
           "explicitSchemas": [],
-          "signatureSha256": "d6494f77656aaccaa387a234690434663249a338dab3221eaddadc8a73887914",
+          "signatureSha256": "d4df8066731c99139c534af60a06730862e1ee3a7a69c40e6d9de1e543e8bfb6",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listPromptRegions",
-          "responseSchemas": [],
-          "signatureSha256": "05786cc06f33a0725afe3b79cc8a130f2f1613191bb088ffe17b31a83a127246"
-        }
-      ],
-      "applicationOperations": ["listPromptRegions"],
       "body": {
         "schemas": []
       },
@@ -17464,30 +16969,21 @@
       "requestSchemas": [],
       "responseSchemas": [
         {
-          "identity": "application-result:listPromptRegions",
+          "identity": "response-expression:GET /api/prompt-regions:1",
           "schemaVersions": [],
-          "signatureSha256": "05786cc06f33a0725afe3b79cc8a130f2f1613191bb088ffe17b31a83a127246"
+          "signatureSha256": "ee3741b51d289f35aaefb9bc7f15a3ce7bb29a2726dd45a92c12bcd3875f1eba"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "b448b98ef2cd9b4288b9a03c6a1d6ce613adf857302d83ca2e2d2684b3633c37",
           "explicitSchemas": [],
-          "signatureSha256": "6d53d096c50a9787d2bef7e2ddac05837e3eb6e71170f67b0b76e64ac16a6830",
+          "signatureSha256": "ee3741b51d289f35aaefb9bc7f15a3ce7bb29a2726dd45a92c12bcd3875f1eba",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "previewPromptTurn",
-          "responseSchemas": [],
-          "signatureSha256": "92cb89c0ef977c2b179a2ba2c70fb4fef5d47186dab891becd0e27b14a85ce90"
-        }
-      ],
-      "applicationOperations": ["previewPromptTurn"],
       "body": {
         "schemas": [
           {
@@ -17574,30 +17070,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:previewPromptTurn",
+          "identity": "response-expression:POST /api/prompt-turn-previews:1",
           "schemaVersions": [],
-          "signatureSha256": "92cb89c0ef977c2b179a2ba2c70fb4fef5d47186dab891becd0e27b14a85ce90"
+          "signatureSha256": "30f1633e229369d607532c3191500cb5b2356ef69ea774502ab8519e2a835567"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "2e6fce07b598137e1796c0052a34c9506f4a64b236938323fcab36d38d117f54",
           "explicitSchemas": [],
-          "signatureSha256": "07ff887a261cb89461a925c9e90db04c2180854afc93ce3d575b9c6473be0e94",
+          "signatureSha256": "30f1633e229369d607532c3191500cb5b2356ef69ea774502ab8519e2a835567",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listPromptWorkspaces",
-          "responseSchemas": [],
-          "signatureSha256": "e214646a4668309453d9e0dca1bb672acf5d237695ab41d8d2f76fd99d06b5e0"
-        }
-      ],
-      "applicationOperations": ["listPromptWorkspaces"],
       "body": {
         "schemas": []
       },
@@ -17672,24 +17159,21 @@
       "requestSchemas": [],
       "responseSchemas": [
         {
-          "identity": "application-result:listPromptWorkspaces",
+          "identity": "response-expression:GET /api/prompt-workspaces:1",
           "schemaVersions": [],
-          "signatureSha256": "e214646a4668309453d9e0dca1bb672acf5d237695ab41d8d2f76fd99d06b5e0"
+          "signatureSha256": "fae014f1306d5a1d998e70ac9079491cffdbbfce4e0593cdf397eedf87116b5d"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "b21e87b761020c7bcde4c2c86573181fc9d12177d2ef2bafc1b70a28664689e3",
           "explicitSchemas": [],
-          "signatureSha256": "44602971df7614c17f8e7cafcfcd8a04f2fb68f9b4c8254833c16a4a1d338eef",
+          "signatureSha256": "fae014f1306d5a1d998e70ac9079491cffdbbfce4e0593cdf397eedf87116b5d",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [],
-      "applicationOperations": [],
       "body": {
         "schemas": []
       },
@@ -17759,27 +17243,19 @@
         {
           "identity": "response-expression:GET /api/readyz:1",
           "schemaVersions": [],
-          "signatureSha256": "73b473401095da716e8381e8cf9f8a7a9f6a958e1a8a80ea7ad1eb8fb0cef7fb"
+          "signatureSha256": "55bf884b0b0c09f3e2c751fa74e6d6250bceb3c1bcde0125711e4d8d528ee054"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "73b473401095da716e8381e8cf9f8a7a9f6a958e1a8a80ea7ad1eb8fb0cef7fb",
+          "signatureSha256": "55bf884b0b0c09f3e2c751fa74e6d6250bceb3c1bcde0125711e4d8d528ee054",
           "source": "c.json",
           "status": "default"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listRuleTags",
-          "responseSchemas": [],
-          "signatureSha256": "fc8aa79b33461aa4bc5f5395f46af80cbcf353a3dc49befc6f14be436cc26fd5"
-        }
-      ],
-      "applicationOperations": ["listRuleTags"],
       "body": {
         "schemas": []
       },
@@ -17854,30 +17330,21 @@
       "requestSchemas": [],
       "responseSchemas": [
         {
-          "identity": "application-result:listRuleTags",
+          "identity": "response-expression:GET /api/rule-tags:1",
           "schemaVersions": [],
-          "signatureSha256": "fc8aa79b33461aa4bc5f5395f46af80cbcf353a3dc49befc6f14be436cc26fd5"
+          "signatureSha256": "641aecfbbb51b0e770c9676cd16f43b34e6d6c0f6a3f6a962550619dfd90c2f7"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "e7ea07624b8c6c544745e1c7940cb2e43082b5761ca1597ca50f54e0682c6c49",
           "explicitSchemas": [],
-          "signatureSha256": "06b7810cb0c92ae23458be1398fd4772c49d2f3aba5bb2536ce6ea7f6d1be838",
+          "signatureSha256": "641aecfbbb51b0e770c9676cd16f43b34e6d6c0f6a3f6a962550619dfd90c2f7",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "createRuleTag",
-          "responseSchemas": [],
-          "signatureSha256": "e75ed503250a4013599e215c2315236cc0efecaeb6e81747d0b1d60c9d44774b"
-        }
-      ],
-      "applicationOperations": ["createRuleTag"],
       "body": {
         "schemas": [
           {
@@ -17974,30 +17441,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:createRuleTag",
+          "identity": "response-expression:POST /api/rule-tags:1",
           "schemaVersions": [],
-          "signatureSha256": "e75ed503250a4013599e215c2315236cc0efecaeb6e81747d0b1d60c9d44774b"
+          "signatureSha256": "c2fc1d1b97306491bddad3a0b971b2d3a1eb099fe0210cf222f6c5b7a9ddf9c5"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "15cd1cb77adce8ed9dab57b099c690c05984f1d3baefa5ce22bbdab4edef6872",
           "explicitSchemas": [],
-          "signatureSha256": "dde09fb7c62713459fcbc9b3fa0252c2dfdd218a00e322cfca90cf6bf9291f7f",
+          "signatureSha256": "c2fc1d1b97306491bddad3a0b971b2d3a1eb099fe0210cf222f6c5b7a9ddf9c5",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "updateRuleTag",
-          "responseSchemas": [],
-          "signatureSha256": "8787f0d180492507dd64e2728a111a0af73d543a42d2d49217b77f09d697bca4"
-        }
-      ],
-      "applicationOperations": ["updateRuleTag"],
       "body": {
         "schemas": [
           {
@@ -18108,30 +17566,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:updateRuleTag",
+          "identity": "response-expression:POST /api/rule-tags/:ruleTagId:1",
           "schemaVersions": [],
-          "signatureSha256": "8787f0d180492507dd64e2728a111a0af73d543a42d2d49217b77f09d697bca4"
+          "signatureSha256": "c2fc1d1b97306491bddad3a0b971b2d3a1eb099fe0210cf222f6c5b7a9ddf9c5"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "a7eb1b2167d2de7474ae5ac9aebe6ed1b52d7ce2a8fc4f7902ef902cb2a6ea90",
           "explicitSchemas": [],
-          "signatureSha256": "a627be35aad7b58d7c7a41dbb10884f0df93f25a80251a3e843efb0b61481fd6",
+          "signatureSha256": "c2fc1d1b97306491bddad3a0b971b2d3a1eb099fe0210cf222f6c5b7a9ddf9c5",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "archiveRuleTag",
-          "responseSchemas": [],
-          "signatureSha256": "b32f3bd0e203c603e3d803eaf822bf5df9c60ee8689b77244776efb6b78954ce"
-        }
-      ],
-      "applicationOperations": ["archiveRuleTag"],
       "body": {
         "schemas": [
           {
@@ -18242,30 +17691,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:archiveRuleTag",
+          "identity": "response-expression:POST /api/rule-tags/:ruleTagId/archive:1",
           "schemaVersions": [],
-          "signatureSha256": "b32f3bd0e203c603e3d803eaf822bf5df9c60ee8689b77244776efb6b78954ce"
+          "signatureSha256": "c2fc1d1b97306491bddad3a0b971b2d3a1eb099fe0210cf222f6c5b7a9ddf9c5"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "ffeb487e95af7c9aae4f0cab72496228d79b01a0ceb90e46fdf11721c08c94a4",
           "explicitSchemas": [],
-          "signatureSha256": "26f26d6b6ae0c4abb20f0218186166cde974b319ced9ce08c1f7308e0f14fad9",
+          "signatureSha256": "c2fc1d1b97306491bddad3a0b971b2d3a1eb099fe0210cf222f6c5b7a9ddf9c5",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listRules",
-          "responseSchemas": [],
-          "signatureSha256": "b55230a1b64fa15a8452be11b6c177685062d7d2b019bfddc44e002afd3f19f3"
-        }
-      ],
-      "applicationOperations": ["listRules"],
       "body": {
         "schemas": []
       },
@@ -18352,30 +17792,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:listRules",
+          "identity": "response-expression:GET /api/rules:1",
           "schemaVersions": [],
-          "signatureSha256": "b55230a1b64fa15a8452be11b6c177685062d7d2b019bfddc44e002afd3f19f3"
+          "signatureSha256": "ad0bfdd6b3cfdb99fee5331cc887f08052815941912312cc65ed711cc07111ba"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "9d19bd0a573903c01beab7ab6153288a443c7d61988e25b79e5e5a84cb1ae6e6",
           "explicitSchemas": [],
-          "signatureSha256": "07ae52041e660669599afce7c51395f56b9b17075b1fdd911ae8186f61112a8d",
+          "signatureSha256": "ad0bfdd6b3cfdb99fee5331cc887f08052815941912312cc65ed711cc07111ba",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "createRule",
-          "responseSchemas": [],
-          "signatureSha256": "01af963a91dea166bda704090f4087bd94e003338af6b16b42510ce90ff3c032"
-        }
-      ],
-      "applicationOperations": ["createRule"],
       "body": {
         "schemas": [
           {
@@ -18472,30 +17903,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:createRule",
+          "identity": "response-expression:POST /api/rules:1",
           "schemaVersions": [],
-          "signatureSha256": "01af963a91dea166bda704090f4087bd94e003338af6b16b42510ce90ff3c032"
+          "signatureSha256": "c14f9c576e3b929901dc76f3c05b3b5a042329ff852cfba7116faaa25293edb2"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "b83d42ddd22ce9d3e1f518c6df4fa5d099c43e34f36790c69574b4910568a1de",
           "explicitSchemas": [],
-          "signatureSha256": "276526730ce4a4f99082791f9d2529073e202cd04e21cb4868870d2afa48c12d",
+          "signatureSha256": "c14f9c576e3b929901dc76f3c05b3b5a042329ff852cfba7116faaa25293edb2",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getRule",
-          "responseSchemas": [],
-          "signatureSha256": "b61444c2f408856d4dbb36d2c5e803b7225918c013924575114dfbe6b3145fa8"
-        }
-      ],
-      "applicationOperations": ["getRule"],
       "body": {
         "schemas": []
       },
@@ -18585,30 +18007,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getRule",
+          "identity": "response-expression:GET /api/rules/:ruleId:1",
           "schemaVersions": [],
-          "signatureSha256": "b61444c2f408856d4dbb36d2c5e803b7225918c013924575114dfbe6b3145fa8"
+          "signatureSha256": "962b60e1f41b6f497b73a60a439bcf492733a20f95e3aee4c9fb5450c167ab57"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "87b45124fe7fa63439850f02e186cad0b4a67bf4b297b977fd909d45b3839ec9",
           "explicitSchemas": [],
-          "signatureSha256": "a67fd3a639d898fcf90e92ca6e315aa257818733e1eb77e136ccc26663b66b6d",
+          "signatureSha256": "962b60e1f41b6f497b73a60a439bcf492733a20f95e3aee4c9fb5450c167ab57",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "transitionRuleLifecycle",
-          "responseSchemas": [],
-          "signatureSha256": "b9cb53b88075a65eda64208056ba56baa4cae9d05e18ee52ce0c154934fc7a75"
-        }
-      ],
-      "applicationOperations": ["transitionRuleLifecycle"],
       "body": {
         "schemas": [
           {
@@ -18719,30 +18132,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:transitionRuleLifecycle",
+          "identity": "response-expression:POST /api/rules/:ruleId/lifecycle:1",
           "schemaVersions": [],
-          "signatureSha256": "b9cb53b88075a65eda64208056ba56baa4cae9d05e18ee52ce0c154934fc7a75"
+          "signatureSha256": "c14f9c576e3b929901dc76f3c05b3b5a042329ff852cfba7116faaa25293edb2"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "5b1de7860bc9d3cb0f9a18859fc5e0f90cd690e2b5026d9c66d59e0f38b4efef",
           "explicitSchemas": [],
-          "signatureSha256": "754ef004f4dfdebf34e1fef6a1350e05efde036a4ac62a89c083c80ecb945a94",
+          "signatureSha256": "c14f9c576e3b929901dc76f3c05b3b5a042329ff852cfba7116faaa25293edb2",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "reviseRule",
-          "responseSchemas": [],
-          "signatureSha256": "79d4aabbffa7fcfac06239aac066f18769406b8c2bccddf952acd9a2121f3781"
-        }
-      ],
-      "applicationOperations": ["reviseRule"],
       "body": {
         "schemas": [
           {
@@ -18853,30 +18257,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:reviseRule",
+          "identity": "response-expression:POST /api/rules/:ruleId/revisions:1",
           "schemaVersions": [],
-          "signatureSha256": "79d4aabbffa7fcfac06239aac066f18769406b8c2bccddf952acd9a2121f3781"
+          "signatureSha256": "c14f9c576e3b929901dc76f3c05b3b5a042329ff852cfba7116faaa25293edb2"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "78989488bf000a8a6bf532b21e6d56e221517c2a4f49f14b9ace5b74bbae0818",
           "explicitSchemas": [],
-          "signatureSha256": "d4401f56a24c2132d87749f20d46a5bac7b30d4276ebb2aee99dd242bee6f2af",
+          "signatureSha256": "c14f9c576e3b929901dc76f3c05b3b5a042329ff852cfba7116faaa25293edb2",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getProductRun",
-          "responseSchemas": [],
-          "signatureSha256": "9b426805e952497b97af248722830a2f8293a4e46858f9f194ae445e659c9497"
-        }
-      ],
-      "applicationOperations": ["getProductRun"],
       "body": {
         "schemas": []
       },
@@ -18966,30 +18361,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getProductRun",
+          "identity": "response-expression:GET /api/runs/:productRunId:1",
           "schemaVersions": [],
-          "signatureSha256": "9b426805e952497b97af248722830a2f8293a4e46858f9f194ae445e659c9497"
+          "signatureSha256": "08ac08127c22de756f4266dcaa25ded650827ae253dd88e2ff0f051efaa31ae8"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "01c1857b6252bc209fe5aae77d09bc2d212fdd7235eb4781fbe79b682e05b845",
           "explicitSchemas": [],
-          "signatureSha256": "86c291ffb22834de4199da14c0010ed4e4656685664a10b7ee2832671da1a0ec",
+          "signatureSha256": "08ac08127c22de756f4266dcaa25ded650827ae253dd88e2ff0f051efaa31ae8",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getCurrentApproval",
-          "responseSchemas": [],
-          "signatureSha256": "0b23128030c1e2dba366580c30c292a712e5704cbb7414e218b829c32212b212"
-        }
-      ],
-      "applicationOperations": ["getCurrentApproval"],
       "body": {
         "schemas": []
       },
@@ -19079,30 +18465,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getCurrentApproval",
+          "identity": "response-expression:GET /api/runs/:productRunId/approvals/current:1",
           "schemaVersions": [],
-          "signatureSha256": "0b23128030c1e2dba366580c30c292a712e5704cbb7414e218b829c32212b212"
+          "signatureSha256": "3d23d8412e491bc8c8058712eac987bc12c5d577d69562d663d88f272adad5c2"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "d0efbc645b899c7eb9c65297df0c20a2184bdb1832d040040030a56d85102f2c",
           "explicitSchemas": [],
-          "signatureSha256": "19e9dfbd78596e35d8269b5123d3add406b9be22dac68fcf21378d42597cc278",
+          "signatureSha256": "3d23d8412e491bc8c8058712eac987bc12c5d577d69562d663d88f272adad5c2",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getRunContext",
-          "responseSchemas": [],
-          "signatureSha256": "70bf9aed73375e2d46a9b81a110f146c716d66f28703ea1b58bab169bf9b4b03"
-        }
-      ],
-      "applicationOperations": ["getRunContext"],
       "body": {
         "schemas": []
       },
@@ -19192,30 +18569,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getRunContext",
+          "identity": "response-expression:GET /api/runs/:productRunId/context:1",
           "schemaVersions": [],
-          "signatureSha256": "70bf9aed73375e2d46a9b81a110f146c716d66f28703ea1b58bab169bf9b4b03"
+          "signatureSha256": "b4a1ed460933f3e96fc86b63e2560ca52091f73cb0dbd37ffad6ddac0b912689"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "80b2669aebeedf3e9a62b7867f5be507eaa24a6711daa1b813212fcc20c5c9bb",
           "explicitSchemas": [],
-          "signatureSha256": "219bfd9a2f9c0c62a750281fbd8cb847241b34a6adcffa33dab604b4c71ebc65",
+          "signatureSha256": "b4a1ed460933f3e96fc86b63e2560ca52091f73cb0dbd37ffad6ddac0b912689",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "submitPlanDecision",
-          "responseSchemas": [],
-          "signatureSha256": "afef577c95cc8ea1489c3339bc5f62e46012a1f035718bc8746dbb31a9edbf18"
-        }
-      ],
-      "applicationOperations": ["submitPlanDecision"],
       "body": {
         "schemas": [
           {
@@ -19319,30 +18687,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:submitPlanDecision",
+          "identity": "response-expression:POST /api/runs/:productRunId/decisions:1",
           "schemaVersions": [],
-          "signatureSha256": "afef577c95cc8ea1489c3339bc5f62e46012a1f035718bc8746dbb31a9edbf18"
+          "signatureSha256": "51ed1d5844e658ca8e7071a5c038d88278fa72af195fcf27c69b81020e5f3456"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "cb2bce4f2ba6008b6a2494e39f9c23f87d53ada70f4ca55fd11f495b1b1c40a3",
           "explicitSchemas": [],
-          "signatureSha256": "30dee7117f3dc897cdc88964cc80846d2dc0dc6053f118b9df634f4b7038d18d",
+          "signatureSha256": "51ed1d5844e658ca8e7071a5c038d88278fa72af195fcf27c69b81020e5f3456",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getRunExecutionTrace",
-          "responseSchemas": [],
-          "signatureSha256": "986a3c7790bdc7615023eba411a1cd7f79f6ca43baa6991a504a1010a4c1f6f8"
-        }
-      ],
-      "applicationOperations": ["getRunExecutionTrace"],
       "body": {
         "schemas": []
       },
@@ -19432,30 +18791,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getRunExecutionTrace",
+          "identity": "response-expression:GET /api/runs/:productRunId/execution-trace:1",
           "schemaVersions": [],
-          "signatureSha256": "986a3c7790bdc7615023eba411a1cd7f79f6ca43baa6991a504a1010a4c1f6f8"
+          "signatureSha256": "ad7bd1ea90961cf5988b8163b85f16ebe40b1cbbd3279b59e9d6d52dfb987306"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "d32eaae1942cb38676bb0122fb870024d15be172c7757bb96f8fed4e997e34a6",
           "explicitSchemas": [],
-          "signatureSha256": "4d9561b0898867a995871375609bd37904ac9a87adba8d76f2401a4e737086c9",
+          "signatureSha256": "ad7bd1ea90961cf5988b8163b85f16ebe40b1cbbd3279b59e9d6d52dfb987306",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getCurrentNoteCandidate",
-          "responseSchemas": [],
-          "signatureSha256": "97a7f38c77d62d040b4755c88739c3bceaf3680916961522ac4d2eaf94638aa2"
-        }
-      ],
-      "applicationOperations": ["getCurrentNoteCandidate"],
       "body": {
         "schemas": []
       },
@@ -19545,30 +18895,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getCurrentNoteCandidate",
+          "identity": "response-expression:GET /api/runs/:productRunId/note-candidates/current:1",
           "schemaVersions": [],
-          "signatureSha256": "97a7f38c77d62d040b4755c88739c3bceaf3680916961522ac4d2eaf94638aa2"
+          "signatureSha256": "f70490464b653c8ccf64e7fe9d3643c42137076195a41d2e12b3d922724d8c84"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "0a741e8d63e905ab6dfb097c09e408958d9094b912e18dbe0d317b987d9dba93",
           "explicitSchemas": [],
-          "signatureSha256": "0a512db894f82e5b35a0daf7b402578dea611087c07508a72962e00d09d35b44",
+          "signatureSha256": "f70490464b653c8ccf64e7fe9d3643c42137076195a41d2e12b3d922724d8c84",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "submitNoteDecision",
-          "responseSchemas": [],
-          "signatureSha256": "fe14198920d5f4803a8419ce0860d534ac15aa743857c11b055b67d472e771ce"
-        }
-      ],
-      "applicationOperations": ["submitNoteDecision"],
       "body": {
         "schemas": [
           {
@@ -19672,30 +19013,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:submitNoteDecision",
+          "identity": "response-expression:POST /api/runs/:productRunId/note-decisions:1",
           "schemaVersions": [],
-          "signatureSha256": "fe14198920d5f4803a8419ce0860d534ac15aa743857c11b055b67d472e771ce"
+          "signatureSha256": "2473a6fc4d5ffe978ce1ac012d2b7895bc88e1b02a49ba3bc0ce2d479885a78c"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "8aa7281e570e6d7a647cf6bc9987745c9af75c6b785d49eef5f62ac52324e6a5",
           "explicitSchemas": [],
-          "signatureSha256": "1aff8dcb4907972fe9011d729105059397ff404a0db47c57cba8738d5032f41e",
+          "signatureSha256": "2473a6fc4d5ffe978ce1ac012d2b7895bc88e1b02a49ba3bc0ce2d479885a78c",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getRunPlans",
-          "responseSchemas": [],
-          "signatureSha256": "8a9ba34fa8bb1d5dc251f4b5b8410809765fae27b2477b939ecf3c0431155de9"
-        }
-      ],
-      "applicationOperations": ["getRunPlans"],
       "body": {
         "schemas": []
       },
@@ -19785,30 +19117,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getRunPlans",
+          "identity": "response-expression:GET /api/runs/:productRunId/plans:1",
           "schemaVersions": [],
-          "signatureSha256": "8a9ba34fa8bb1d5dc251f4b5b8410809765fae27b2477b939ecf3c0431155de9"
+          "signatureSha256": "3b08af41d5c647f25156a2f0a3902aaca3d61ba7276eb41704bde20b156aeb40"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "9bce8a21450dd25736b7af2fb57f42d9930c298d245af28d2fb7b15ec12d5a8e",
           "explicitSchemas": [],
-          "signatureSha256": "18e42b4b4f1edd7e107f7ea678c04abac409b401efd1bd1f8ad3901d8e08a8ce",
+          "signatureSha256": "3b08af41d5c647f25156a2f0a3902aaca3d61ba7276eb41704bde20b156aeb40",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "submitPromptReviewDecision",
-          "responseSchemas": [],
-          "signatureSha256": "649f20b20f595173dbf15b6f0662f16d6abfc258e3a80e4b1d6eacf9573dfc03"
-        }
-      ],
-      "applicationOperations": ["submitPromptReviewDecision"],
       "body": {
         "schemas": [
           {
@@ -19919,30 +19242,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:submitPromptReviewDecision",
+          "identity": "response-expression:POST /api/runs/:productRunId/prompt-review-decisions:1",
           "schemaVersions": [],
-          "signatureSha256": "649f20b20f595173dbf15b6f0662f16d6abfc258e3a80e4b1d6eacf9573dfc03"
+          "signatureSha256": "b7531ebf2466fd7b627572015854b1771fb79eb4068a6543667c676931765306"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "b2639ac4d8a294d28e593ab69963dda8d1f0dc670900b9b43ca912e1c4aaad69",
           "explicitSchemas": [],
-          "signatureSha256": "a6e7bfef16fd28174c3215f954208617a5b4aae19074d878b24579bc1817cd4c",
+          "signatureSha256": "b7531ebf2466fd7b627572015854b1771fb79eb4068a6543667c676931765306",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getCurrentPromptReview",
-          "responseSchemas": [],
-          "signatureSha256": "160d44cfad5db77ccb0b74a452914a7d8b245ce40d5a4c29b463e3106f704418"
-        }
-      ],
-      "applicationOperations": ["getCurrentPromptReview"],
       "body": {
         "schemas": []
       },
@@ -20032,30 +19346,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getCurrentPromptReview",
+          "identity": "response-expression:GET /api/runs/:productRunId/prompt-reviews/current:1",
           "schemaVersions": [],
-          "signatureSha256": "160d44cfad5db77ccb0b74a452914a7d8b245ce40d5a4c29b463e3106f704418"
+          "signatureSha256": "5d9380484f4781667dd7d6982af8b09251755e6818c3a68b0017594bae3e0186"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "3de03a1a2eff42c69c8ac63575da40d8508e627a19c901deb23b3aa4793137ea",
           "explicitSchemas": [],
-          "signatureSha256": "06e621217b46d5cada346c8c50368332572c532684fc9f0ac125063b50c35805",
+          "signatureSha256": "5d9380484f4781667dd7d6982af8b09251755e6818c3a68b0017594bae3e0186",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "submitToolExecutionDecision",
-          "responseSchemas": [],
-          "signatureSha256": "6f2c7e67b9ff94c85b390e79ce8a40fb3754aa27456850b9db3f98ecd11a76ad"
-        }
-      ],
-      "applicationOperations": ["submitToolExecutionDecision"],
       "body": {
         "schemas": [
           {
@@ -20166,30 +19471,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:submitToolExecutionDecision",
+          "identity": "response-expression:POST /api/runs/:productRunId/tool-execution-decisions:1",
           "schemaVersions": [],
-          "signatureSha256": "6f2c7e67b9ff94c85b390e79ce8a40fb3754aa27456850b9db3f98ecd11a76ad"
+          "signatureSha256": "561c89c23b0ddaa0636324e2bdc83fbb156ba6449fa4925a08d63d4fa7828a7d"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "b7e9d7367889d3de8b3f1cd7f1659bfb6d13fa04aba402e810054d1e68618bda",
           "explicitSchemas": [],
-          "signatureSha256": "ec9dcdccd997fc4368f1ce8228504d90c7e7c48a520b977c8baf78af176b78bb",
+          "signatureSha256": "561c89c23b0ddaa0636324e2bdc83fbb156ba6449fa4925a08d63d4fa7828a7d",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getToolExecutions",
-          "responseSchemas": [],
-          "signatureSha256": "46f3a45bc6a59d0b601f229fb969c0ebee74398e67f792b882764c088413a3f4"
-        }
-      ],
-      "applicationOperations": ["getToolExecutions"],
       "body": {
         "schemas": []
       },
@@ -20279,30 +19575,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getToolExecutions",
+          "identity": "response-expression:GET /api/runs/:productRunId/tool-executions:1",
           "schemaVersions": [],
-          "signatureSha256": "46f3a45bc6a59d0b601f229fb969c0ebee74398e67f792b882764c088413a3f4"
+          "signatureSha256": "71c1225a421474e0cbd08c447541b52ce602d0ae6b55b108e5fcb107e1d60e7c"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "5f0e1c553896693933437c274a44d884b6142e931b3d56f14e61ee2718b0bfcc",
           "explicitSchemas": [],
-          "signatureSha256": "f9c240a116002c705048b0487aee9e0ea229edacc9a9796c56fcfffc59e80627",
+          "signatureSha256": "71c1225a421474e0cbd08c447541b52ce602d0ae6b55b108e5fcb107e1d60e7c",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getWorkflowRunConfigSummary",
-          "responseSchemas": [],
-          "signatureSha256": "eabc979a8e13362b8763814bb6bb6d317c24e16e187d7c4eb98a0d90f081e0e6"
-        }
-      ],
-      "applicationOperations": ["getWorkflowRunConfigSummary"],
       "body": {
         "schemas": []
       },
@@ -20392,30 +19679,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getWorkflowRunConfigSummary",
+          "identity": "response-expression:GET /api/runs/:productRunId/workflow-config-summary:1",
           "schemaVersions": [],
-          "signatureSha256": "eabc979a8e13362b8763814bb6bb6d317c24e16e187d7c4eb98a0d90f081e0e6"
+          "signatureSha256": "ad6b3e84262688e41acd1980c86d47ebd11a168f3224fda27bae05932e52500b"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "9578b90dc717aa6674e16e2d9fd0302b8dfedcdff369b6ef616030e49e54b109",
           "explicitSchemas": [],
-          "signatureSha256": "9c2ce52c04af8b49a308dfaf3d55d48d7c40dc9feab8966b561ca2c0b9e4877c",
+          "signatureSha256": "ad6b3e84262688e41acd1980c86d47ebd11a168f3224fda27bae05932e52500b",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getWorkflowExecutionTrace",
-          "responseSchemas": [],
-          "signatureSha256": "547dc234c8a95bb383959988a2afca934ed21b280e9aa68eac06cb785bf3df08"
-        }
-      ],
-      "applicationOperations": ["getWorkflowExecutionTrace"],
       "body": {
         "schemas": []
       },
@@ -20505,30 +19783,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getWorkflowExecutionTrace",
+          "identity": "response-expression:GET /api/runs/:productRunId/workflow-execution-trace:1",
           "schemaVersions": [],
-          "signatureSha256": "547dc234c8a95bb383959988a2afca934ed21b280e9aa68eac06cb785bf3df08"
+          "signatureSha256": "529fe770585e13a054526561442923989af26871d8e0f9a4382f1315e4161bdc"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "cebd2c5daec553cf0994e54ea77fca354503fccf3e1542088a665b647035007a",
           "explicitSchemas": [],
-          "signatureSha256": "4a99efd8f648e2cc122a52abf78e2c3b6aaac6586ae17843833d2e28bde37e0d",
+          "signatureSha256": "529fe770585e13a054526561442923989af26871d8e0f9a4382f1315e4161bdc",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getWorkflowNodeDetail",
-          "responseSchemas": [],
-          "signatureSha256": "4e70678808cbf3190b91a124ca72211f3a25f8e55af4f3f568924d11cf45fbb6"
-        }
-      ],
-      "applicationOperations": ["getWorkflowNodeDetail"],
       "body": {
         "schemas": []
       },
@@ -20648,30 +19917,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getWorkflowNodeDetail",
+          "identity": "response-expression:GET /api/runs/:productRunId/workflow-nodes/:workflowNodeRunId:1",
           "schemaVersions": [],
-          "signatureSha256": "4e70678808cbf3190b91a124ca72211f3a25f8e55af4f3f568924d11cf45fbb6"
+          "signatureSha256": "e041acffd5ec0bc42c0902b2143d5cbaab4beecc8af29a462fbd81989c6bd1b9"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "53fa79e3b6ffc3f0b44240e79362c7b2f1869d6decc7adac75f3f310895bb93e",
           "explicitSchemas": [],
-          "signatureSha256": "2c3ad0e8e551ccec5c8f086c67d1d1a8a3cfa78aaf1174b0264bab27bef1d6f3",
+          "signatureSha256": "e041acffd5ec0bc42c0902b2143d5cbaab4beecc8af29a462fbd81989c6bd1b9",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getWorkflowRunView",
-          "responseSchemas": [],
-          "signatureSha256": "9a5c316f11ac4d52c52840bff5a11d77ac977343376cccd067f34adda8fc013f"
-        }
-      ],
-      "applicationOperations": ["getWorkflowRunView"],
       "body": {
         "schemas": []
       },
@@ -20761,30 +20021,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getWorkflowRunView",
+          "identity": "response-expression:GET /api/runs/:productRunId/workflow-view:1",
           "schemaVersions": [],
-          "signatureSha256": "9a5c316f11ac4d52c52840bff5a11d77ac977343376cccd067f34adda8fc013f"
+          "signatureSha256": "941ce247460d603b144c5b96be13751145523156b54ae347e779cb04e0988be1"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "ea73b4c083f87890f334e33a70ff35dd85c3e791d16349c90ce3de2e67c30b28",
           "explicitSchemas": [],
-          "signatureSha256": "91f3d408353288f8b93bb256c0011b1e6d01c45d2935983b4ddcd934fe24d108",
+          "signatureSha256": "941ce247460d603b144c5b96be13751145523156b54ae347e779cb04e0988be1",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "createProductSession",
-          "responseSchemas": [],
-          "signatureSha256": "497d4b5885f0919a39ca285794b35891b4b4bd536f2e210d727568076c0f4db2"
-        }
-      ],
-      "applicationOperations": ["createProductSession"],
       "body": {
         "schemas": [
           {
@@ -20874,30 +20125,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:createProductSession",
+          "identity": "response-expression:POST /api/sessions:1",
           "schemaVersions": [],
-          "signatureSha256": "497d4b5885f0919a39ca285794b35891b4b4bd536f2e210d727568076c0f4db2"
+          "signatureSha256": "fa49ed3aa17c6f666a6be69a70cfb505544f5bbdffe27d3382c26f5dbe389912"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "ad313336a970f1d3b041f7a287e918f75e5269bba2db56c9723ceca907db5cb8",
           "explicitSchemas": [],
-          "signatureSha256": "0ea16310b775c633eab030000c7d8b0d8bf5fffd02b537db81a4f03b3497ca2e",
+          "signatureSha256": "fa49ed3aa17c6f666a6be69a70cfb505544f5bbdffe27d3382c26f5dbe389912",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getSession",
-          "responseSchemas": [],
-          "signatureSha256": "7ba7753df281cca452c15a26b23ca633f047e32f25246f270be3bea4d331e192"
-        }
-      ],
-      "applicationOperations": ["getSession"],
       "body": {
         "schemas": []
       },
@@ -20987,30 +20229,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getSession",
+          "identity": "response-expression:GET /api/sessions/:sessionId:1",
           "schemaVersions": [],
-          "signatureSha256": "7ba7753df281cca452c15a26b23ca633f047e32f25246f270be3bea4d331e192"
+          "signatureSha256": "fa49ed3aa17c6f666a6be69a70cfb505544f5bbdffe27d3382c26f5dbe389912"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "93458a4176a2bfeb08ce482ad86ea0b28669f8dc1b9f5b6531fb9b066a2e866f",
           "explicitSchemas": [],
-          "signatureSha256": "7f4b2c5ee7e043f1c88af484d29fabafa4b6fcb7f98a23355b40873c54829349",
+          "signatureSha256": "fa49ed3aa17c6f666a6be69a70cfb505544f5bbdffe27d3382c26f5dbe389912",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listSessionMemoryImports",
-          "responseSchemas": [],
-          "signatureSha256": "83ac69719be1b7a44c2a88e2a5615ef846e1dec048f4e0402c7c92364d85ee24"
-        }
-      ],
-      "applicationOperations": ["listSessionMemoryImports"],
       "body": {
         "schemas": []
       },
@@ -21111,30 +20344,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:listSessionMemoryImports",
+          "identity": "response-expression:GET /api/sessions/:sessionId/memory-imports:1",
           "schemaVersions": [],
-          "signatureSha256": "83ac69719be1b7a44c2a88e2a5615ef846e1dec048f4e0402c7c92364d85ee24"
+          "signatureSha256": "22ad9b7994b2ae1a59c942d1057ddbd342f42313de029a844de282b7c35d9101"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "c600006d9be570d60b9a4555742b47d7732b0feaed65d9120df902d98b16059b",
           "explicitSchemas": [],
-          "signatureSha256": "4476d1d0d896fa7e90374e4570c9c4facadc1d0260da50566957ab85aa0c9281",
+          "signatureSha256": "22ad9b7994b2ae1a59c942d1057ddbd342f42313de029a844de282b7c35d9101",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "listMemoryWrites",
-          "responseSchemas": [],
-          "signatureSha256": "c5c0e7dcccd05c0679caa65404124d038c3c936df83820440873d3bd1fe24d8c"
-        }
-      ],
-      "applicationOperations": ["listMemoryWrites"],
       "body": {
         "schemas": []
       },
@@ -21235,30 +20459,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:listMemoryWrites",
+          "identity": "response-expression:GET /api/sessions/:sessionId/memory-writes:1",
           "schemaVersions": [],
-          "signatureSha256": "c5c0e7dcccd05c0679caa65404124d038c3c936df83820440873d3bd1fe24d8c"
+          "signatureSha256": "6691849081bb28fdd4661e8af6d0b8572b562aff7126b947f65b60be65311bfc"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "d99d4985ebfcfdbfb549dd31b3c1664abc7ffa09441c366432516079b44decee",
           "explicitSchemas": [],
-          "signatureSha256": "ebf9fe62a11a162e932da3b04c86c52c1dbc88a68e30bfba6f1b0905cc1d48a4",
+          "signatureSha256": "6691849081bb28fdd4661e8af6d0b8572b562aff7126b947f65b60be65311bfc",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getSessionMessages",
-          "responseSchemas": [],
-          "signatureSha256": "cdfd8f97279a5c89a674089207f99b247c967cc8a0c39cfd54d60780a2c77ea6"
-        }
-      ],
-      "applicationOperations": ["getSessionMessages"],
       "body": {
         "schemas": []
       },
@@ -21365,30 +20580,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getSessionMessages",
+          "identity": "response-expression:GET /api/sessions/:sessionId/messages:1",
           "schemaVersions": [],
-          "signatureSha256": "cdfd8f97279a5c89a674089207f99b247c967cc8a0c39cfd54d60780a2c77ea6"
+          "signatureSha256": "cec7c720ac63276eecee204055cd10033e9f9cd6f49dc841bbc4c7c70fd5fe1a"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "5e627b1c592ab5b7da7b13c1a0cab76c31c616013f8bac724fda83728358b14e",
           "explicitSchemas": [],
-          "signatureSha256": "8fcd48ab0dfb1660d9d92c2eedf35e0c0af8f33634466e84e510f5945dbdb47e",
+          "signatureSha256": "cec7c720ac63276eecee204055cd10033e9f9cd6f49dc841bbc4c7c70fd5fe1a",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "submitUserMessage",
-          "responseSchemas": [],
-          "signatureSha256": "81886f377c44351d15d9b88fb08efad5b353e0f7a6e1f15b73c0a0240086b594"
-        }
-      ],
-      "applicationOperations": ["submitUserMessage"],
       "body": {
         "schemas": [
           {
@@ -21492,30 +20698,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:submitUserMessage",
+          "identity": "response-expression:POST /api/sessions/:sessionId/messages:1",
           "schemaVersions": [],
-          "signatureSha256": "81886f377c44351d15d9b88fb08efad5b353e0f7a6e1f15b73c0a0240086b594"
+          "signatureSha256": "2b56d95d93207ebb453fbfbc50463e1ae42b479846c0216ce0f2d0f4a0558c5e"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "bf3ec6b1ca9418b1c821f31de50f93a8b4070942aaf4ff141e7cf3f57408efbb",
           "explicitSchemas": [],
-          "signatureSha256": "86bb8a853c57cad371abcf214a90f0a7547476f9cc3ee2828c2c850ba2c8125d",
+          "signatureSha256": "2b56d95d93207ebb453fbfbc50463e1ae42b479846c0216ce0f2d0f4a0558c5e",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getSessionMessage",
-          "responseSchemas": [],
-          "signatureSha256": "30780de888f0684d87a8ec3da34eff5e27f9dbafd3ed1517ca867b37d40b15f9"
-        }
-      ],
-      "applicationOperations": ["getSessionMessage"],
       "body": {
         "schemas": []
       },
@@ -21618,30 +20815,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getSessionMessage",
+          "identity": "response-expression:GET /api/sessions/:sessionId/messages/:messageId:1",
           "schemaVersions": [],
-          "signatureSha256": "30780de888f0684d87a8ec3da34eff5e27f9dbafd3ed1517ca867b37d40b15f9"
+          "signatureSha256": "a7180dbc8e7fb8c44abe4a8e3c599e56fa61acf1d1cd0da50167d3a1430349f2"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "766c22079fa6d6a64ab1d1cd0160c5e6b7b7d974eacefecf9cc19d11bcb88c0f",
           "explicitSchemas": [],
-          "signatureSha256": "f3a4f0d213142cc9d510187c10f990ca7593b72f19b85f168c5ad9bbd6c9d4d6",
+          "signatureSha256": "a7180dbc8e7fb8c44abe4a8e3c599e56fa61acf1d1cd0da50167d3a1430349f2",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getCurrentProjectBootstrapForSession",
-          "responseSchemas": [],
-          "signatureSha256": "6a7b76a2f22684cbdd17bd9072277d89ff344739adc2589222a5b2d60b4c2756"
-        }
-      ],
-      "applicationOperations": ["getCurrentProjectBootstrapForSession"],
       "body": {
         "schemas": []
       },
@@ -21731,30 +20919,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getCurrentProjectBootstrapForSession",
+          "identity": "response-expression:GET /api/sessions/:sessionId/project-bootstrap/current:1",
           "schemaVersions": [],
-          "signatureSha256": "6a7b76a2f22684cbdd17bd9072277d89ff344739adc2589222a5b2d60b4c2756"
+          "signatureSha256": "fe55f09b0717b01254295aee33cb664df89b10ec83d54be9b8a0443ccab78bfd"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "8bd9d4c68024506df553b03cc53f90bd4be6b05acb8cf901bf58b07d42a8745c",
           "explicitSchemas": [],
-          "signatureSha256": "a2e561219703cbc893ab8801e0cd0bce278c0564ffc45d9c84d0bcb06408590c",
+          "signatureSha256": "fe55f09b0717b01254295aee33cb664df89b10ec83d54be9b8a0443ccab78bfd",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "submitProjectBootstrapUserMessage",
-          "responseSchemas": [],
-          "signatureSha256": "bcd4044de5db54f17640309c58044ae473b5b8cc3c66e668a3f51293e29d6798"
-        }
-      ],
-      "applicationOperations": ["submitProjectBootstrapUserMessage"],
       "body": {
         "schemas": [
           {
@@ -21858,30 +21037,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:submitProjectBootstrapUserMessage",
+          "identity": "response-expression:POST /api/sessions/:sessionId/project-bootstrap/messages:1",
           "schemaVersions": [],
-          "signatureSha256": "bcd4044de5db54f17640309c58044ae473b5b8cc3c66e668a3f51293e29d6798"
+          "signatureSha256": "2b56d95d93207ebb453fbfbc50463e1ae42b479846c0216ce0f2d0f4a0558c5e"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "73ff0b2e57628f0eec8c946fb0bf5384d2d1d71b678f1e83d98439e9a12e1b54",
           "explicitSchemas": [],
-          "signatureSha256": "266075e9f1f0bd5f099ddde19ddda383f67be3748921bc310071c643de0bf7e4",
+          "signatureSha256": "2b56d95d93207ebb453fbfbc50463e1ae42b479846c0216ce0f2d0f4a0558c5e",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getCurrentProjectCandidate",
-          "responseSchemas": [],
-          "signatureSha256": "8b6e4a2ebfbb5b1be3a642c8a192146add84fe3b37349483a14c6ea17bbc88bf"
-        }
-      ],
-      "applicationOperations": ["getCurrentProjectCandidate"],
       "body": {
         "schemas": []
       },
@@ -21971,30 +21141,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getCurrentProjectCandidate",
+          "identity": "response-expression:GET /api/sessions/:sessionId/project-candidates/current:1",
           "schemaVersions": [],
-          "signatureSha256": "8b6e4a2ebfbb5b1be3a642c8a192146add84fe3b37349483a14c6ea17bbc88bf"
+          "signatureSha256": "af6acaf3371c8e5118522db5bb04d3663ff490a33f1f905eedbb0f85c4caac46"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "98e02dbdb05180568628e52bb5aef8b589dcf2e5acc9bd5e11f5d8c1d07755ce",
           "explicitSchemas": [],
-          "signatureSha256": "0c194b10adf42ea2bb00c275412fb23cb55de15afb045cad8653ed01a06f928d",
+          "signatureSha256": "af6acaf3371c8e5118522db5bb04d3663ff490a33f1f905eedbb0f85c4caac46",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getWorkflowBlueprints",
-          "responseSchemas": [],
-          "signatureSha256": "9aeb44bcff3695c247717e7e5e237836cb0130fa2b21ca3af8499e2fc0913e6d"
-        }
-      ],
-      "applicationOperations": ["getWorkflowBlueprints"],
       "body": {
         "schemas": []
       },
@@ -22069,30 +21230,21 @@
       "requestSchemas": [],
       "responseSchemas": [
         {
-          "identity": "application-result:getWorkflowBlueprints",
+          "identity": "response-expression:GET /api/workflow/blueprints:1",
           "schemaVersions": [],
-          "signatureSha256": "9aeb44bcff3695c247717e7e5e237836cb0130fa2b21ca3af8499e2fc0913e6d"
+          "signatureSha256": "20f27d127c46fc99617cbc0394c4f7cf53542b0212910d1b60856da8e29bdd6c"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "6f9518a24608a47552e564b3221c87d643caa59a709aa86bc087dadb2ac9fe1c",
           "explicitSchemas": [],
-          "signatureSha256": "c6bd3389b0aa8673e03e5cc9b4c9f23dc34ca601098e6f160f5a9dc80de4b4b0",
+          "signatureSha256": "20f27d127c46fc99617cbc0394c4f7cf53542b0212910d1b60856da8e29bdd6c",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getWorkflowCatalog",
-          "responseSchemas": [],
-          "signatureSha256": "f142180b6dce52427dc45cadb09d92e837f02682c83ab0b37748e43925b03817"
-        }
-      ],
-      "applicationOperations": ["getWorkflowCatalog"],
       "body": {
         "schemas": []
       },
@@ -22167,30 +21319,21 @@
       "requestSchemas": [],
       "responseSchemas": [
         {
-          "identity": "application-result:getWorkflowCatalog",
+          "identity": "response-expression:GET /api/workflow/catalog:1",
           "schemaVersions": [],
-          "signatureSha256": "f142180b6dce52427dc45cadb09d92e837f02682c83ab0b37748e43925b03817"
+          "signatureSha256": "cb1607f7f81de6cea4e1c237e19a024916837448fb5a889d4598eadd5bf3b3b6"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "1d2ed6c0e07a40a8efc0074a5ca7cb30ad0f7fe913b5cf56cc0aa8a21814ee6e",
           "explicitSchemas": [],
-          "signatureSha256": "35bc966678bbbe72b320d650392013e0cbd3b58914a55e936849d511969a416b",
+          "signatureSha256": "cb1607f7f81de6cea4e1c237e19a024916837448fb5a889d4598eadd5bf3b3b6",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getWorkflowDefinitions",
-          "responseSchemas": [],
-          "signatureSha256": "ab9d05124e349cef38607b551fbdb0cf3a993d5576fbe2a42c4465355d913340"
-        }
-      ],
-      "applicationOperations": ["getWorkflowDefinitions"],
       "body": {
         "schemas": []
       },
@@ -22265,30 +21408,21 @@
       "requestSchemas": [],
       "responseSchemas": [
         {
-          "identity": "application-result:getWorkflowDefinitions",
+          "identity": "response-expression:GET /api/workflow/definitions:1",
           "schemaVersions": [],
-          "signatureSha256": "ab9d05124e349cef38607b551fbdb0cf3a993d5576fbe2a42c4465355d913340"
+          "signatureSha256": "bdb9b090f0103453fcd430b49acafbf92eae8d350f0d675912d403a62345519f"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "7570a15457fe6cc43161558687f003c935d33781bdfff6a9abb869fe933e8f66",
           "explicitSchemas": [],
-          "signatureSha256": "59e1f7eb54eb20b75be014b76b267a5fb923c3b1deeff533f287217278278e88",
+          "signatureSha256": "bdb9b090f0103453fcd430b49acafbf92eae8d350f0d675912d403a62345519f",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getWorkflowDefinitionDetail",
-          "responseSchemas": [],
-          "signatureSha256": "863d95cd92302f62b741483c2220eb47c8b6b038a296a20a7200d5262ab37b3a"
-        }
-      ],
-      "applicationOperations": ["getWorkflowDefinitionDetail"],
       "body": {
         "schemas": []
       },
@@ -22378,30 +21512,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:getWorkflowDefinitionDetail",
+          "identity": "response-expression:GET /api/workflow/definitions/:workflowDefinitionId:1",
           "schemaVersions": [],
-          "signatureSha256": "863d95cd92302f62b741483c2220eb47c8b6b038a296a20a7200d5262ab37b3a"
+          "signatureSha256": "489a5a06696ec3eeeaea749a3bf6310a25d363e26de4bb8a027818ff302b14ef"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "129f47e00b431f1bd9d27553f21b1ab9f8867946512471dfb775410e46ccf51a",
           "explicitSchemas": [],
-          "signatureSha256": "9211fa59069145710da308dba900bcdb3ccf565c60cfbe75b4fbfd483673234d",
+          "signatureSha256": "489a5a06696ec3eeeaea749a3bf6310a25d363e26de4bb8a027818ff302b14ef",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "changeWorkflowDefinitionArchiveStatus",
-          "responseSchemas": [],
-          "signatureSha256": "b9274028d62138c0869ceca49aa929ffcb8a824ed5d09dff3a2f3a6b0e0bbf9e"
-        }
-      ],
-      "applicationOperations": ["changeWorkflowDefinitionArchiveStatus"],
       "body": {
         "schemas": [
           {
@@ -22505,30 +21630,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:changeWorkflowDefinitionArchiveStatus",
+          "identity": "response-expression:POST /api/workflow/definitions/:workflowDefinitionId/archive-status:1",
           "schemaVersions": [],
-          "signatureSha256": "b9274028d62138c0869ceca49aa929ffcb8a824ed5d09dff3a2f3a6b0e0bbf9e"
+          "signatureSha256": "2eda2ca999ae63e27d57c4e5509d515c090608a039972176a85b1a1c11edabdf"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "8d638671771a925f54be1768bdacd5adfdc9c3097d587a7588fd70d63b605d98",
           "explicitSchemas": [],
-          "signatureSha256": "7f813e85dbb2d4dd1d9a1e0fa9fbc3325827ff9239908467e1c46004e6092d95",
+          "signatureSha256": "2eda2ca999ae63e27d57c4e5509d515c090608a039972176a85b1a1c11edabdf",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "saveWorkflowDefinitionDraft",
-          "responseSchemas": [],
-          "signatureSha256": "691888bd90b2186dd1f2238f06581e4f9784ea507ff5e000dda28d8b57a53bb7"
-        }
-      ],
-      "applicationOperations": ["saveWorkflowDefinitionDraft"],
       "body": {
         "schemas": [
           {
@@ -22632,30 +21748,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:saveWorkflowDefinitionDraft",
+          "identity": "response-expression:POST /api/workflow/definitions/:workflowDefinitionId/drafts:1",
           "schemaVersions": [],
-          "signatureSha256": "691888bd90b2186dd1f2238f06581e4f9784ea507ff5e000dda28d8b57a53bb7"
+          "signatureSha256": "2eda2ca999ae63e27d57c4e5509d515c090608a039972176a85b1a1c11edabdf"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "785bebc55327963bebfbd47674858f18b9307d1ecb2cedc98aa6c7eb7e7249a8",
           "explicitSchemas": [],
-          "signatureSha256": "357b1c54f7b14f587ba9391337838e918da929a5fd490e29b0249f0f78de33a7",
+          "signatureSha256": "2eda2ca999ae63e27d57c4e5509d515c090608a039972176a85b1a1c11edabdf",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "publishWorkflowDefinition",
-          "responseSchemas": [],
-          "signatureSha256": "b9274028d62138c0869ceca49aa929ffcb8a824ed5d09dff3a2f3a6b0e0bbf9e"
-        }
-      ],
-      "applicationOperations": ["publishWorkflowDefinition"],
       "body": {
         "schemas": [
           {
@@ -22759,30 +21866,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:publishWorkflowDefinition",
+          "identity": "response-expression:POST /api/workflow/definitions/:workflowDefinitionId/publish:1",
           "schemaVersions": [],
-          "signatureSha256": "b9274028d62138c0869ceca49aa929ffcb8a824ed5d09dff3a2f3a6b0e0bbf9e"
+          "signatureSha256": "2eda2ca999ae63e27d57c4e5509d515c090608a039972176a85b1a1c11edabdf"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "8f1f36b0af9045c134350dc3de57be47e3dfc722a6ac7bfd9d724f8eeee8c412",
           "explicitSchemas": [],
-          "signatureSha256": "c3038e3ca8f55bdbe699fc3d4a27b53df24bb2453b9b629e69c3f54f06cf5c0c",
+          "signatureSha256": "2eda2ca999ae63e27d57c4e5509d515c090608a039972176a85b1a1c11edabdf",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "saveWorkflowAgentNodeConfiguration",
-          "responseSchemas": [],
-          "signatureSha256": "f99c4019e1aefa62b73320f829f20ecb9af621f486c3d24798f5b7e4c0981512"
-        }
-      ],
-      "applicationOperations": ["saveWorkflowAgentNodeConfiguration"],
       "body": {
         "schemas": [
           {
@@ -22879,30 +21977,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:saveWorkflowAgentNodeConfiguration",
+          "identity": "response-expression:POST /api/workflow/definitions/agent-node-configurations:1",
           "schemaVersions": [],
-          "signatureSha256": "f99c4019e1aefa62b73320f829f20ecb9af621f486c3d24798f5b7e4c0981512"
+          "signatureSha256": "2eda2ca999ae63e27d57c4e5509d515c090608a039972176a85b1a1c11edabdf"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "834c98fb6b114f528bcf014a78bb4f76c115e577bd497d3cc0c0657a05740e4c",
           "explicitSchemas": [],
-          "signatureSha256": "276623b5a7df6047f9be6fd59939197f97bfadbd91e8e543e7f6a7fbcf175a67",
+          "signatureSha256": "2eda2ca999ae63e27d57c4e5509d515c090608a039972176a85b1a1c11edabdf",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "createWorkflowDefinitionCopy",
-          "responseSchemas": [],
-          "signatureSha256": "f99c4019e1aefa62b73320f829f20ecb9af621f486c3d24798f5b7e4c0981512"
-        }
-      ],
-      "applicationOperations": ["createWorkflowDefinitionCopy"],
       "body": {
         "schemas": [
           {
@@ -22992,30 +22081,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:createWorkflowDefinitionCopy",
+          "identity": "response-expression:POST /api/workflow/definitions/copies:1",
           "schemaVersions": [],
-          "signatureSha256": "f99c4019e1aefa62b73320f829f20ecb9af621f486c3d24798f5b7e4c0981512"
+          "signatureSha256": "2eda2ca999ae63e27d57c4e5509d515c090608a039972176a85b1a1c11edabdf"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "dd8f9811c869dc315a363ab0c3de59bfaee27d4fe684bc7335f35139b84ebe95",
           "explicitSchemas": [],
-          "signatureSha256": "c9ce0a1c8771c46f13392d54dff17fd68ce19aa85e4d3df06cf0983fd0e1aff7",
+          "signatureSha256": "2eda2ca999ae63e27d57c4e5509d515c090608a039972176a85b1a1c11edabdf",
           "source": "c.json",
           "status": "201"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "validateWorkflowDefinition",
-          "responseSchemas": [],
-          "signatureSha256": "27ae6d53e571f80886cd02c1d8b25c2ccdd8522f050c9d4a41d15f6095b33172"
-        }
-      ],
-      "applicationOperations": ["validateWorkflowDefinition"],
       "body": {
         "schemas": [
           {
@@ -23095,30 +22175,21 @@
       ],
       "responseSchemas": [
         {
-          "identity": "application-result:validateWorkflowDefinition",
+          "identity": "response-expression:POST /api/workflow/definitions/validate:1",
           "schemaVersions": [],
-          "signatureSha256": "27ae6d53e571f80886cd02c1d8b25c2ccdd8522f050c9d4a41d15f6095b33172"
+          "signatureSha256": "4e4bcfe06a3eb4c4ed020b9910735e0e7b0080c11986ebf3c24e4c6b6534b3f9"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "bc2168927a9046393d5887f79a40f6b98b69b9731d6ee69f5953e6990ff75661",
           "explicitSchemas": [],
-          "signatureSha256": "33a7231606abb323fd78e0535cec6af68aac7497615ec9387082966452125ce3",
+          "signatureSha256": "4e4bcfe06a3eb4c4ed020b9910735e0e7b0080c11986ebf3c24e4c6b6534b3f9",
           "source": "c.json",
           "status": "200"
         }
       ]
     },
     {
-      "applicationOperationContracts": [
-        {
-          "operation": "getWorkflowResources",
-          "responseSchemas": [],
-          "signatureSha256": "7a804c4fe56b076994a943882de147f2986a1282e8ac2bca3f5cf9ce819a1055"
-        }
-      ],
-      "applicationOperations": ["getWorkflowResources"],
       "body": {
         "schemas": []
       },
@@ -23193,16 +22264,15 @@
       "requestSchemas": [],
       "responseSchemas": [
         {
-          "identity": "application-result:getWorkflowResources",
+          "identity": "response-expression:GET /api/workflow/resources:1",
           "schemaVersions": [],
-          "signatureSha256": "7a804c4fe56b076994a943882de147f2986a1282e8ac2bca3f5cf9ce819a1055"
+          "signatureSha256": "bd4ca46fccc6d6e91b389d845edc4f766f7d9876cc538b9d16fa6726e0b95a08"
         }
       ],
       "successfulResponses": [
         {
-          "applicationResultSignatureSha256": "53c8067c3a8408280d530c6a4984dae357595c09d45c1313aa8d9c48daf86d36",
           "explicitSchemas": [],
-          "signatureSha256": "5674a6564cdc2d8ca5b4de69d306f26fe375046b4210726c6cc448bb91eecc26",
+          "signatureSha256": "bd4ca46fccc6d6e91b389d845edc4f766f7d9876cc538b9d16fa6726e0b95a08",
           "source": "response-helper:privateEtagJson",
           "status": "200"
         }

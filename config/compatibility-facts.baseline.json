@@ -116,7 +116,7 @@
       "id": "network-contracts",
       "legacyAuthority": {
         "allowedActions": ["decode", "project"],
-        "canonicalSha256": "94ab9be04b286cca05de55dc10fe725d792ad2bae5d6f58ec766c23e50877565",
+        "canonicalSha256": "d5c44cbea98a8c867785ceafc8ee12f2bb83feab2c469f3d29ff522861c27e44",
         "entry": "@chat/contracts/public:decode-old",
         "generations": ["chat-agent-profile-api.v2"]
       },
@@ -124,7 +124,7 @@
       "sourceFiles": ["config/api-surface.baseline.json", "packages/contracts/src/public.ts"],
       "writeAuthority": {
         "allowedActions": ["validate", "write_current_response"],
-        "canonicalSha256": "94ab9be04b286cca05de55dc10fe725d792ad2bae5d6f58ec766c23e50877565",
+        "canonicalSha256": "d5c44cbea98a8c867785ceafc8ee12f2bb83feab2c469f3d29ff522861c27e44",
         "entry": "apps/api:createApiApp",
         "generations": [
           "chat-agent-profile-api.v3",

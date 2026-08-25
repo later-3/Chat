@@ -9,10 +9,10 @@ import {
   assertApiSurfaceCompatible,
   assertPublicContractIdentityAllowedForTest,
   assertPublicContractNameAllowed,
-  applicationOperationsFromFixtureForTest,
   classifySchemaRolesForTest,
   diffApiSurface,
   generateApiSurface,
+  observableRouteContractFromFixtureForTest,
   validateCompatibleChangeRecords,
   validateWaivers,
 } from "./api-surface.mjs";
@@ -48,8 +48,6 @@ test("API Surface由真实组合根确定性生成并排除私有Runtime身份",
         Array.isArray(route.pathParameters) &&
         Array.isArray(route.query.parsers) &&
         Array.isArray(route.body.schemas) &&
-        Array.isArray(route.applicationOperations) &&
-        Array.isArray(route.applicationOperationContracts) &&
         route.successfulResponses.length > 0 &&
         route.problemContract.codes.length > 0 &&
         route.problemContract.recoveryActions.length > 0,
@@ -117,21 +115,62 @@ test("新增必填、枚举收窄、同schema literal语义变化和错误码变
   );
 });
 
-test("Application fallback响应和非Schema公开符号签名变化均失败关闭", () => {
-  const current = clone(baseline);
-  const fallbackRoute = current.routes.find((route) =>
-    route.responseSchemas.some((response) => response.identity.startsWith("application-result:")),
-  );
-  assert.ok(fallbackRoute);
-  fallbackRoute.responseSchemas[0].signatureSha256 = "a".repeat(64);
-  const symbol = current.publicSymbols.find((entry) => entry.kind !== "schema");
-  assert.ok(symbol);
-  symbol.signatureSha256 = "b".repeat(64);
-  const issueIds = diffApiSurface(baseline, current).map((entry) => entry.issueId);
+test("响应Schema、HTTP状态、请求Schema、Problem Code与公开export继续失败关闭", () => {
+  const responseChanged = clone(baseline);
+  const responseRoute = responseChanged.routes.find((route) => route.responseSchemas.length > 0);
+  assert.ok(responseRoute);
+  responseRoute.responseSchemas[0].signatureSha256 = "a".repeat(64);
   assert.ok(
-    issueIds.includes(`route_contract_changed:${fallbackRoute.method} ${fallbackRoute.path}`),
+    diffApiSurface(baseline, responseChanged).some(
+      (entry) =>
+        entry.issueId === `route_contract_changed:${responseRoute.method} ${responseRoute.path}`,
+    ),
   );
-  assert.ok(issueIds.includes(`public_symbol_changed:${symbol.name}`));
+
+  const statusChanged = clone(baseline);
+  const statusRoute = statusChanged.routes.find((route) => route.successfulResponses.length > 0);
+  assert.ok(statusRoute);
+  statusRoute.successfulResponses[0].status = "299";
+  assert.ok(
+    diffApiSurface(baseline, statusChanged).some(
+      (entry) =>
+        entry.issueId === `route_contract_changed:${statusRoute.method} ${statusRoute.path}`,
+    ),
+  );
+
+  const requestChanged = clone(baseline);
+  const requestRoute = requestChanged.routes.find((route) => route.body.schemas.length > 0);
+  assert.ok(requestRoute);
+  requestRoute.body.schemas[0].signatureSha256 = "b".repeat(64);
+  assert.ok(
+    diffApiSurface(baseline, requestChanged).some(
+      (entry) =>
+        entry.issueId === `route_contract_changed:${requestRoute.method} ${requestRoute.path}`,
+    ),
+  );
+
+  const problemChanged = clone(baseline);
+  const removedProblem = problemChanged.problems.codes.shift();
+  assert.ok(removedProblem);
+  assert.ok(
+    diffApiSurface(baseline, problemChanged).some(
+      (entry) => entry.issueId === `problem_code_removed:${removedProblem}`,
+    ),
+  );
+
+  const exportChanged = clone(baseline);
+  const exported = exportChanged.packageExports.find((entry) => entry.exportPaths.length > 0);
+  assert.ok(exported);
+  const exportKey = exported.exportPaths[0];
+  exported.exports[exportKey] = {
+    import: "./src/replacement.ts",
+    types: "./src/replacement.ts",
+  };
+  assert.ok(
+    diffApiSurface(baseline, exportChanged).some(
+      (entry) => entry.issueId === `package_export_changed:${exported.name}:${exportKey}`,
+    ),
+  );
 });
 
 test("同分支同时改生成结果和checked-in baseline仍由base baseline阻止绕过", () => {
@@ -226,15 +265,13 @@ test("真实请求源与成功响应源分离，return表达式中的输入Schem
   );
 });
 
-test("Application operation替换与package export目标/条件变化都进入diff", () => {
+test("package export目标与条件变化进入diff", () => {
   const changed = clone(baseline);
-  changed.routes[0].applicationOperations = ["replacementOperation"];
   const exported = changed.packageExports.find((entry) => entry.exportPaths.length > 0);
   assert.ok(exported);
   const key = exported.exportPaths[0];
   exported.exports[key] = { import: "./src/replacement.ts", types: "./src/replacement.ts" };
   const ids = diffApiSurface(baseline, changed).map((entry) => entry.issueId);
-  assert.ok(ids.some((id) => id.startsWith("route_contract_changed:")));
   assert.ok(ids.includes(`package_export_changed:${exported.name}:${key}`));
 });
 
@@ -299,186 +336,28 @@ test("禁止的Runtime身份在public入口硬失败，Problem/Recovery增删分
   assert.ok(ids.includes("recovery_action_added:new_recovery"));
 });
 
-test("route沿本地/import helper调用图收敛并让底层Operation替换进入合同", () => {
-  const application = `
-    export async function getNote() { return { kind: "note" as const }; }
-    export async function getNoteHistory() { return { kind: "history" as const }; }
+test("内部Application Operation替换不改变外部响应合同", () => {
+  const fixture = (operation) => `
+    type PublicNote = { id: string; title: string };
+    declare function getNote(): Promise<PublicNote>;
+    declare function getNoteHistory(): Promise<PublicNote>;
+    declare const c: { json(body: unknown, status: number): unknown };
+    const handler = async () => {
+      const result = await ${operation}();
+      return c.json(result, 200);
+    };
   `;
-  const route = `
-    import { helper } from "./fixture-helper.js";
-    export const handler = async () => helper();
-  `;
-  const helper = (operation) => `
-    import { ${operation} } from "../../../../packages/application/src/fixture-use-cases.js";
-    function cycleA() { return cycleB(); }
-    function cycleB() { return cycleA(); }
-    void cycleA;
-    export async function helper() { return ${operation}(); }
-  `;
-  assert.deepEqual(
-    applicationOperationsFromFixtureForTest({
-      route,
-      helper: helper("getNote"),
-      application,
-    }),
-    ["getNote"],
-  );
-  assert.deepEqual(
-    applicationOperationsFromFixtureForTest({
-      route,
-      helper: helper("getNoteHistory"),
-      application,
-    }),
-    ["getNoteHistory"],
-  );
-  assert.throws(
-    () =>
-      applicationOperationsFromFixtureForTest({
-        route,
-        application,
-        helper: `
-          import { getNote, getNoteHistory } from "../../../../packages/application/src/fixture-use-cases.js";
-          export function helper(condition = true) {
-            const operation = condition ? getNote : getNoteHistory;
-            return operation();
-          }
-        `,
-      }),
-    /无法静态解析|不是可静态解析/u,
-  );
-});
-
-test("Application callback沿参数、解构和对象成员传播，动态值失败关闭", () => {
-  const application = `
-    export async function getNote() { return { kind: "note" as const }; }
-    export async function getNoteHistory() { return { kind: "history" as const }; }
-  `;
-  const importedRoute = (operation) => `
-    import { helper } from "./fixture-helper.js";
-    import { ${operation} } from "../../../../packages/application/src/fixture-use-cases.js";
-    export const handler = async () => helper({ operation: ${operation} });
-  `;
-  const destructuredHelper = `
-    export async function helper({ operation }) { return operation(); }
-  `;
-  const note = applicationOperationsFromFixtureForTest({
-    route: importedRoute("getNote"),
-    helper: destructuredHelper,
-    application,
-  });
-  const history = applicationOperationsFromFixtureForTest({
-    route: importedRoute("getNoteHistory"),
-    helper: destructuredHelper,
-    application,
-  });
-  assert.deepEqual(note, ["getNote"]);
-  assert.deepEqual(history, ["getNoteHistory"]);
-
-  assert.deepEqual(
-    applicationOperationsFromFixtureForTest({
-      route: `
-        import { getNote } from "../../../../packages/application/src/fixture-use-cases.js";
-        const local = (operation) => operation();
-        const callbacks = { run: getNote };
-        export const handler = async () => local(callbacks.run);
-      `,
-      helper: "export {};",
-      application,
-    }),
-    ["getNote"],
-  );
-
-  assert.deepEqual(
-    applicationOperationsFromFixtureForTest({
-      route: `
-        import { helper } from "./fixture-helper.js";
-        import { getNote } from "../../../../packages/application/src/fixture-use-cases.js";
-        export const handler = async () => helper({ run: getNote });
-      `,
-      helper: `
-        export async function helper(callbacks) {
-          const { run } = callbacks;
-          return run();
-        }
-      `,
-      application,
-    }),
-    ["getNote"],
-  );
-
-  assert.throws(
-    () =>
-      applicationOperationsFromFixtureForTest({
-        route: `
-          import { helper } from "./fixture-helper.js";
-          import { getNote, getNoteHistory } from "../../../../packages/application/src/fixture-use-cases.js";
-          declare const condition: boolean;
-          export const handler = async () => helper(condition ? getNote : getNoteHistory);
-        `,
-        helper: `export async function helper(operation) { return operation(); }`,
-        application,
-      }),
-    /无法静态解析的动态调用/u,
-  );
+  const note = observableRouteContractFromFixtureForTest(fixture("getNote"));
+  const history = observableRouteContractFromFixtureForTest(fixture("getNoteHistory"));
+  assert.deepEqual(note, history);
 
   const changed = clone(baseline);
-  changed.routes[0].applicationOperations = note;
-  const replacement = clone(changed);
-  replacement.routes[0].applicationOperations = history;
-  assert.ok(
-    diffApiSurface(changed, replacement).some((entry) =>
-      entry.issueId.startsWith("route_contract_changed:"),
-    ),
-  );
-});
-
-test("namespace import helper进入调用图，动态条件callee失败关闭", () => {
-  const application = `
-    export async function getNote() { return { kind: "note" as const }; }
-    export async function getNoteHistory() { return { kind: "history" as const }; }
-  `;
-  const helper = `export async function helper(operation) { return operation(); }`;
-  const route = (operation) => `
-    import * as helpers from "./fixture-helper.js";
-    import { ${operation} } from "../../../../packages/application/src/fixture-use-cases.js";
-    export const handler = async () => helpers.helper(${operation});
-  `;
-  const note = applicationOperationsFromFixtureForTest({
-    route: route("getNote"),
-    helper,
-    application,
-  });
-  const history = applicationOperationsFromFixtureForTest({
-    route: route("getNoteHistory"),
-    helper,
-    application,
-  });
-  assert.deepEqual(note, ["getNote"]);
-  assert.deepEqual(history, ["getNoteHistory"]);
-
-  const changed = clone(baseline);
-  changed.routes[0].applicationOperations = note;
-  const replacement = clone(changed);
-  replacement.routes[0].applicationOperations = history;
-  assert.ok(
-    diffApiSurface(changed, replacement).some((entry) =>
-      entry.issueId.startsWith("route_contract_changed:"),
-    ),
-  );
-
-  assert.throws(
-    () =>
-      applicationOperationsFromFixtureForTest({
-        route: `
-          import { getNote, getNoteHistory } from "../../../../packages/application/src/fixture-use-cases.js";
-          declare const condition: boolean;
-          export const handler = async () => (condition ? getNote : getNoteHistory)();
-        `,
-        helper: "export {};",
-        application,
-      }),
-    /无法静态解析的动态调用/u,
-  );
+  const replacement = clone(baseline);
+  changed.routes[0].successfulResponses = note.successfulResponses;
+  changed.routes[0].responseSchemas = note.responseSchemas;
+  replacement.routes[0].successfulResponses = history.successfulResponses;
+  replacement.routes[0].responseSchemas = history.responseSchemas;
+  assert.deepEqual(diffApiSurface(changed, replacement), []);
 });
 
 test("禁止身份检查覆盖alias、resolved symbol、声明来源和transitive签名", () => {
@@ -534,10 +413,10 @@ test("所有package export subpath独立冻结key/target/conditions/symbol与tra
   assert.equal(runtime.visibility, "internal");
 });
 
-test("Manifest升代产生meta change且不能绕过route/operation/export精确waiver", () => {
+test("Manifest升代产生meta change且不能绕过route/response/export精确waiver", () => {
   const changed = clone(baseline);
   changed.schemaVersion = "chat-public-api-surface.v3";
-  changed.routes[0].applicationOperations = ["replacementOperation"];
+  changed.routes[0].successfulResponses[0].status = "299";
   const subpath = changed.packageExports.find((entry) => entry.subpaths.length > 0).subpaths[0];
   subpath.target = "./src/replacement.ts";
   subpath.conditions = { import: "./src/replacement.ts", types: "./src/replacement.ts" };

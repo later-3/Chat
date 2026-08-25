@@ -91,10 +91,11 @@ domain ───────────────────> TypeScript标�
 | 普通核心门 | `scripts/ci/verify-core.mjs` | 凭据/外部开关、build/lint/format/typecheck/core失败 |
 | Browser纵向 | `scripts/e2e/run-dsh-mode.mjs`、唯一Playwright配置 | 端口/数据隔离、凭据sentinel、真实Host/Client失败 |
 | CI结构 | `.github/workflows/ci.yml`、`scripts/ci/ci-workflow.test.mjs` | Action SHA、permissions、Job准备、paid/external混入 |
-| 公共API Surface | `scripts/ci/api-surface.mjs`、`config/api-surface.baseline.json` | 请求/响应/operation/导出漂移，未记录新增与未批准breaking change |
+| 公共API Surface | `scripts/ci/api-surface.mjs`、`config/api-surface.baseline.json` | 外部请求/响应/状态/错误/导出漂移，未记录新增与未批准breaking change |
 | 兼容政策 | `config/compatibility-policy.json`、`config/compatibility-facts.baseline.json` | 六类真实事实漏项、旧代扩权、原地改语义、无迁移升代 |
 | ADR | `docs/decisions/README.md`、`scripts/ci/decision-records.mjs` | 漏索引、非法状态、缺范围/后果/回滚 |
 | 最低供应链 | `scripts/ci/supply-chain.mjs`、`config/supply-chain-policy.json` | 三仓真实闭包的secret/license/lifecycle/audit失败；whole-fork债务另报 |
 
-API Surface baseline由真实组合根、browser public barrel与package manifest生成，不手抄Schema字段；
+API Surface baseline由真实组合根、browser public barrel与package manifest生成，不手抄Schema字段，也不冻结
+内部Application调用图；
 兼容policy只保存规则和Owner路由，facts baseline由Owner源码生成；两者都不替代产品事实。

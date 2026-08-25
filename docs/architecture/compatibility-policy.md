@@ -28,7 +28,9 @@ before/after digest、diff hash、verification与rollback/removal；一条记录
 `pnpm api-surface:update-baseline`。`check`会先要求生成结果
 与当前baseline精确一致，再把生成结果与Git base中的baseline做breaking diff，因此不能在同一分支同时改
 代码和baseline来绕过删除、必填新增、枚举收窄、错误码变化、响应/公开符号签名变化、同代Schema变化或
-导出收缩。Store、Bridge、Workflow或Journal的代际变化还必须在各自事实Owner内保留旧读测试和当前写
+导出收缩。API Surface只比较外部可观察的请求、响应Schema/表达式、HTTP状态、错误和公开export；内部
+Application use-case或调用图不属于公共兼容身份，产品行为由Application合同、Integration和Browser测试
+证明。Store、Bridge、Workflow或Journal的代际变化还必须在各自事实Owner内保留旧读测试和当前写
 测试，不能只更新API Surface文件。`pnpm compatibility:facts:generate`确定性输出六域事实，只有审查后的
 真实代际变更才运行`pnpm compatibility:facts:update`；`compatibility:check`还会读取PR/push Git base中的
 事实baseline，因此同一分支同时修改Owner与baseline仍会失败。README或无关源码不能充当fact source。
