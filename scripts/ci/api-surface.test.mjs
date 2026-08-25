@@ -348,6 +348,90 @@ test("route沿本地/import helper调用图收敛并让底层Operation替换进�
   );
 });
 
+test("Application callback沿参数、解构和对象成员传播，动态值失败关闭", () => {
+  const application = `
+    export async function getNote() { return { kind: "note" as const }; }
+    export async function getNoteHistory() { return { kind: "history" as const }; }
+  `;
+  const importedRoute = (operation) => `
+    import { helper } from "./fixture-helper.js";
+    import { ${operation} } from "../../../../packages/application/src/fixture-use-cases.js";
+    export const handler = async () => helper({ operation: ${operation} });
+  `;
+  const destructuredHelper = `
+    export async function helper({ operation }) { return operation(); }
+  `;
+  const note = applicationOperationsFromFixtureForTest({
+    route: importedRoute("getNote"),
+    helper: destructuredHelper,
+    application,
+  });
+  const history = applicationOperationsFromFixtureForTest({
+    route: importedRoute("getNoteHistory"),
+    helper: destructuredHelper,
+    application,
+  });
+  assert.deepEqual(note, ["getNote"]);
+  assert.deepEqual(history, ["getNoteHistory"]);
+
+  assert.deepEqual(
+    applicationOperationsFromFixtureForTest({
+      route: `
+        import { getNote } from "../../../../packages/application/src/fixture-use-cases.js";
+        const local = (operation) => operation();
+        const callbacks = { run: getNote };
+        export const handler = async () => local(callbacks.run);
+      `,
+      helper: "export {};",
+      application,
+    }),
+    ["getNote"],
+  );
+
+  assert.deepEqual(
+    applicationOperationsFromFixtureForTest({
+      route: `
+        import { helper } from "./fixture-helper.js";
+        import { getNote } from "../../../../packages/application/src/fixture-use-cases.js";
+        export const handler = async () => helper({ run: getNote });
+      `,
+      helper: `
+        export async function helper(callbacks) {
+          const { run } = callbacks;
+          return run();
+        }
+      `,
+      application,
+    }),
+    ["getNote"],
+  );
+
+  assert.throws(
+    () =>
+      applicationOperationsFromFixtureForTest({
+        route: `
+          import { helper } from "./fixture-helper.js";
+          import { getNote, getNoteHistory } from "../../../../packages/application/src/fixture-use-cases.js";
+          declare const condition: boolean;
+          export const handler = async () => helper(condition ? getNote : getNoteHistory);
+        `,
+        helper: `export async function helper(operation) { return operation(); }`,
+        application,
+      }),
+    /无法静态解析的动态调用/u,
+  );
+
+  const changed = clone(baseline);
+  changed.routes[0].applicationOperations = note;
+  const replacement = clone(changed);
+  replacement.routes[0].applicationOperations = history;
+  assert.ok(
+    diffApiSurface(changed, replacement).some((entry) =>
+      entry.issueId.startsWith("route_contract_changed:"),
+    ),
+  );
+});
+
 test("禁止身份检查覆盖alias、resolved symbol、声明来源和transitive签名", () => {
   assert.throws(
     () =>

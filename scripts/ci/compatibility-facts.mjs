@@ -128,6 +128,32 @@ function directVersions(checker, declaration, pattern) {
   );
 }
 
+function versionScopedReaderEvidence(checker, declaration, pattern, identity) {
+  const evidence = new Set();
+  const visit = (node) => {
+    const value = ts.isStringLiteralLike(node)
+      ? node.text
+      : ts.isIdentifier(node)
+        ? resolvedString(checker, node)
+        : undefined;
+    if (value === identity && pattern.test(value)) {
+      let boundary = node;
+      while (
+        boundary.parent !== undefined &&
+        boundary.parent !== declaration &&
+        !ts.isStatement(boundary)
+      ) {
+        boundary = boundary.parent;
+      }
+      evidence.add(`reader-branch:${normalized(boundary)}`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(declaration);
+  if (evidence.size === 0) evidence.add(`reader-generation:${identity}`);
+  return evidence;
+}
+
 function declarationClosure(checker, declaration, roots, output = new Set(), seen = new Set()) {
   const key = `${declaration.getSourceFile().fileName}:${String(declaration.pos)}:${String(declaration.end)}`;
   if (seen.has(key)) return output;
@@ -208,14 +234,18 @@ function reachableSchemaDeclarations(checker, declarations, roots) {
   return [...output];
 }
 
-function generationRecord(identity, evidence) {
-  return {
+function generationRecord(identity, evidence, legacyEvidence) {
+  const record = {
     identity,
     family: identity.replace(/v\d+$/u, ""),
     generation: Number(/v(\d+)$/u.exec(identity)?.[1]),
     canonicalSha256: sha256([...evidence].sort().join("\n")),
     evidenceCount: evidence.size,
   };
+  if (legacyEvidence !== undefined) {
+    record.previousExtractorCanonicalSha256 = sha256([...legacyEvidence].sort().join("\n"));
+  }
+  return record;
 }
 
 function authority(entry, generations, actions, declarations) {
@@ -232,6 +262,29 @@ function authority(entry, generations, actions, declarations) {
         .join("\n"),
     ),
   };
+}
+
+function authorityPolicyIdentity(domain) {
+  return {
+    id: domain.id,
+    ownerRoots: [...domain.ownerRoots].sort(),
+    legacyAuthority: {
+      entry: domain.legacyAuthority.entry,
+      allowedActions: [...domain.legacyAuthority.allowedActions],
+    },
+    writeAuthority: {
+      entry: domain.writeAuthority.entry,
+      allowedActions: [...domain.writeAuthority.allowedActions],
+    },
+  };
+}
+
+function authorityPolicySha256(domain) {
+  return sha256(json(authorityPolicyIdentity(domain)));
+}
+
+export function authorityBoundaryForTest(domain) {
+  return authorityPolicySha256(domain);
 }
 
 function productStoreFacts(domain, files) {
@@ -324,17 +377,18 @@ function productStoreFacts(domain, files) {
     .map(([identity, schemas]) => {
       const evidence = new Set();
       for (const schema of schemas) declarationClosure(checker, schema, roots, evidence);
-      evidence.add(`reader:${normalized(open)}`);
+      const previousExtractorEvidence = new Set(evidence);
+      previousExtractorEvidence.add(`reader:${normalized(open)}`);
       for (const migration of migrations.filter(
         (entry) => entry.source === identity || entry.target === identity,
       )) {
-        evidence.add(`migration:${normalized(migration.declaration)}`);
+        previousExtractorEvidence.add(`migration:${normalized(migration.declaration)}`);
       }
       if (currentWriteGenerations.includes(identity)) {
-        evidence.add(`writer:${normalized(transact)}`);
-        evidence.add(`persist:${normalized(persist)}`);
+        previousExtractorEvidence.add(`writer:${normalized(transact)}`);
+        previousExtractorEvidence.add(`persist:${normalized(persist)}`);
       }
-      return generationRecord(identity, evidence);
+      return generationRecord(identity, evidence, previousExtractorEvidence);
     })
     .sort((left, right) => left.generation - right.generation);
   const historicalReadableGenerations = generations
@@ -365,6 +419,7 @@ function productStoreFacts(domain, files) {
         evidenceKind: "resolved-call-input-output",
         canonicalSha256: sha256(normalized(entry.declaration)),
       })),
+      generationCanonicalVersion: 2,
     },
   );
 }
@@ -443,9 +498,12 @@ function bridgeStateFacts(domain, files) {
       for (const schema of schemasForVersion) {
         declarationClosure(checker, schema, roots, evidence);
       }
-      evidence.add(`reader-migration:${normalized(load)}`);
-      if (currentWriteGenerations.includes(identity)) evidence.add(`writer:${normalized(write)}`);
-      return generationRecord(identity, evidence);
+      const previousExtractorEvidence = new Set(evidence);
+      previousExtractorEvidence.add(`reader-migration:${normalized(load)}`);
+      if (currentWriteGenerations.includes(identity)) {
+        previousExtractorEvidence.add(`writer:${normalized(write)}`);
+      }
+      return generationRecord(identity, evidence, previousExtractorEvidence);
     })
     .sort((left, right) => left.generation - right.generation);
   const historicalReadableGenerations = generations
@@ -478,6 +536,7 @@ function bridgeStateFacts(domain, files) {
           canonicalSha256: sha256(normalized(load)),
         },
       ],
+      generationCanonicalVersion: 2,
     },
   );
 }
@@ -574,7 +633,7 @@ function rootedDomainFacts(domain, files) {
     const declaration = schema.declaration ?? schema;
     for (const identity of identities) {
       const entries = versionSchemas.get(identity) ?? [];
-      entries.push(declaration);
+      entries.push({ declaration, syntheticReader: schema.identity !== undefined });
       versionSchemas.set(identity, entries);
     }
   }
@@ -586,13 +645,34 @@ function rootedDomainFacts(domain, files) {
   const validatorEvidence = files.map((path) =>
     normalized(ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true)),
   );
+  const isolateJournalGenerations = domain.id === "direct-generic-journals";
   const generations = [...versionSchemas]
     .map(([identity, rootsForVersion]) => {
-      const evidence = new Set(validatorEvidence.map((value) => `validator:${value}`));
-      for (const schema of rootsForVersion) declarationClosure(checker, schema, roots, evidence);
-      if (currentWriteGenerations.includes(identity))
-        evidence.add(`writer:${normalized(writerEntry)}`);
-      return generationRecord(identity, evidence);
+      const previousExtractorEvidence = new Set(
+        validatorEvidence.map((value) => `validator:${value}`),
+      );
+      for (const schema of rootsForVersion) {
+        declarationClosure(checker, schema.declaration, roots, previousExtractorEvidence);
+      }
+      if (currentWriteGenerations.includes(identity)) {
+        previousExtractorEvidence.add(`writer:${normalized(writerEntry)}`);
+      }
+      if (!isolateJournalGenerations) return generationRecord(identity, previousExtractorEvidence);
+
+      const evidence = new Set();
+      for (const schema of rootsForVersion) {
+        if (schema.syntheticReader) {
+          for (const entry of versionScopedReaderEvidence(
+            checker,
+            schema.declaration,
+            pattern,
+            identity,
+          )) {
+            evidence.add(entry);
+          }
+        } else declarationClosure(checker, schema.declaration, roots, evidence);
+      }
+      return generationRecord(identity, evidence, previousExtractorEvidence);
     })
     .sort((left, right) =>
       left.identity.localeCompare(right.identity, undefined, { numeric: true }),
@@ -625,6 +705,7 @@ function rootedDomainFacts(domain, files) {
         evidenceKind: "schema-reader-validator-binding",
         canonicalSha256: sha256(`${identity}:${normalized(writerEntry)}`),
       })),
+      generationCanonicalVersion: isolateJournalGenerations ? 2 : 1,
     },
   );
 }
@@ -650,8 +731,11 @@ function domainFacts(
 ) {
   const legacyAuthority = evidence.legacyAuthority;
   const writeAuthority = evidence.writeAuthority;
-  return {
+  const result = {
     id: domain.id,
+    // 保留policy声明顺序，以便对v1 boundary做一次性可验证迁移；
+    // v2 policy hash内部再按集合排序，不把排序当成Owner变化。
+    ownerRoots: [...domain.ownerRoots],
     sourceFiles: [
       ...new Set(files.map((path) => relative(ROOT, path).split(sep).join("/"))),
     ].sort(),
@@ -661,12 +745,13 @@ function domainFacts(
     compatibilityEntries: evidence.compatibilityEntries.sort((left, right) =>
       left.entry.localeCompare(right.entry),
     ),
+    generationCanonicalVersion: evidence.generationCanonicalVersion ?? 1,
     legacyAuthority,
     writeAuthority,
-    authorityBoundarySha256: sha256(
-      json({ id: domain.id, owners: domain.ownerRoots, legacyAuthority, writeAuthority }),
-    ),
+    authorityBoundaryVersion: 2,
   };
+  result.authorityBoundarySha256 = authorityPolicySha256(result);
+  return result;
 }
 
 function apiGenerations() {
@@ -758,23 +843,37 @@ export function assertCompatibilityFactsCompatible(baseline, current) {
   for (const previous of baseline.domains) {
     const next = currentDomains.get(previous.id);
     if (next === undefined) throw new Error(`兼容事实域被删除：${previous.id}`);
-    if (!extractorUpgrade && next.authorityBoundarySha256 !== previous.authorityBoundarySha256) {
-      throw new Error(`${previous.id}事实Owner边界漂移`);
-    }
+    if (!extractorUpgrade) assertAuthorityPolicyCompatible(previous, next);
     const generations = new Map(next.generations.map((entry) => [entry.identity, entry]));
+    const previousCanonicalVersion = previous.generationCanonicalVersion ?? 1;
+    const nextCanonicalVersion = next.generationCanonicalVersion ?? 1;
     for (const generation of previous.generations) {
       const candidate = generations.get(generation.identity);
       if (candidate === undefined)
         throw new Error(`${previous.id}删除历史代际：${generation.identity}`);
-      if (!extractorUpgrade && candidate.canonicalSha256 !== generation.canonicalSha256) {
+      const sameCanonical = candidate.canonicalSha256 === generation.canonicalSha256;
+      const provenExtractorUpgrade =
+        previousCanonicalVersion === 1 &&
+        nextCanonicalVersion === 2 &&
+        candidate.previousExtractorCanonicalSha256 === generation.canonicalSha256;
+      if (!extractorUpgrade && !sameCanonical && !provenExtractorUpgrade) {
         throw new Error(`${previous.id}同一schema literal原地语义漂移：${generation.identity}`);
       }
+    }
+    if (
+      previousCanonicalVersion !== nextCanonicalVersion &&
+      !(previousCanonicalVersion === 1 && nextCanonicalVersion === 2)
+    ) {
+      throw new Error(`${previous.id} generation canonical提取器无可验证migration`);
     }
     for (const currentIdentity of previous.currentWriteGenerations) {
       if (!next.currentWriteGenerations.includes(currentIdentity)) {
         const prior = previous.generations.find((entry) => entry.identity === currentIdentity);
         const replacement = next.generations.find(
-          (entry) => entry.family === prior?.family && entry.generation > (prior?.generation ?? 0),
+          (entry) =>
+            next.currentWriteGenerations.includes(entry.identity) &&
+            entry.family === prior?.family &&
+            entry.generation > (prior?.generation ?? 0),
         );
         if (replacement === undefined) throw new Error(`${previous.id}写语义变化但未升代际`);
         if (
@@ -792,13 +891,88 @@ export function assertCompatibilityFactsCompatible(baseline, current) {
   return current;
 }
 
+function stringSetEqual(left, right) {
+  return json([...left].sort()) === json([...right].sort());
+}
+
+function assertAuthorityPolicyCompatible(previous, next) {
+  for (const label of ["legacyAuthority", "writeAuthority"]) {
+    if (
+      previous[label]?.entry !== next[label]?.entry ||
+      !stringSetEqual(previous[label]?.allowedActions ?? [], next[label]?.allowedActions ?? [])
+    ) {
+      throw new Error(`${previous.id}事实Owner/entry/action policy漂移`);
+    }
+  }
+  if (previous.authorityBoundaryVersion === 2) {
+    if (
+      !stringSetEqual(previous.ownerRoots ?? [], next.ownerRoots) ||
+      previous.authorityBoundarySha256 !== next.authorityBoundarySha256
+    ) {
+      throw new Error(`${previous.id}事实Owner边界漂移`);
+    }
+  } else {
+    const previousBoundaryWithCurrentOwners = sha256(
+      json({
+        id: previous.id,
+        owners: next.ownerRoots,
+        legacyAuthority: previous.legacyAuthority,
+        writeAuthority: previous.writeAuthority,
+      }),
+    );
+    if (previousBoundaryWithCurrentOwners !== previous.authorityBoundarySha256) {
+      throw new Error(`${previous.id}事实Owner边界漂移`);
+    }
+  }
+  const writeGenerationsChanged = !stringSetEqual(
+    previous.currentWriteGenerations,
+    next.currentWriteGenerations,
+  );
+  if (
+    !writeGenerationsChanged &&
+    previous.writeAuthority.canonicalSha256 !== next.writeAuthority.canonicalSha256
+  ) {
+    throw new Error(`${previous.id} writer implementation未升代际漂移`);
+  }
+  const historicalGenerationsChanged = !stringSetEqual(
+    previous.historicalReadableGenerations,
+    next.historicalReadableGenerations,
+  );
+  if (
+    !historicalGenerationsChanged &&
+    previous.legacyAuthority.canonicalSha256 !== next.legacyAuthority.canonicalSha256
+  ) {
+    throw new Error(`${previous.id} reader implementation未升代际漂移`);
+  }
+}
+
 function assertDomainFactsWellFormed(domain) {
   const generations = new Map(domain.generations.map((entry) => [entry.identity, entry]));
   if (generations.size !== domain.generations.length) throw new Error(`${domain.id}代际重复`);
   for (const entry of domain.generations) {
-    if (!/^[0-9a-f]{64}$/u.test(entry.canonicalSha256) || entry.evidenceCount < 1) {
+    if (
+      !/^[0-9a-f]{64}$/u.test(entry.canonicalSha256) ||
+      entry.evidenceCount < 1 ||
+      (domain.generationCanonicalVersion === 2 &&
+        !/^[0-9a-f]{64}$/u.test(entry.previousExtractorCanonicalSha256))
+    ) {
       throw new Error(`${domain.id}:${entry.identity}缺少真实合同闭包证据`);
     }
+  }
+  if (
+    ![1, 2].includes(domain.generationCanonicalVersion) ||
+    domain.authorityBoundaryVersion !== 2 ||
+    !Array.isArray(domain.ownerRoots) ||
+    domain.ownerRoots.length === 0 ||
+    domain.ownerRoots.some(
+      (root) =>
+        typeof root !== "string" ||
+        root === "" ||
+        root.startsWith("/") ||
+        root.split("/").includes(".."),
+    )
+  ) {
+    throw new Error(`${domain.id}事实Owner/entry/action policy漂移`);
   }
   for (const [label, authorityValue, expectedGenerations, forbiddenActions] of [
     [
@@ -833,6 +1007,9 @@ function assertDomainFactsWellFormed(domain) {
       throw new Error(`${domain.id}历史代际获得写权限`);
     }
   }
+  if (authorityPolicySha256(domain) !== domain.authorityBoundarySha256) {
+    throw new Error(`${domain.id}事实Owner/entry/action policy漂移`);
+  }
   for (const identity of [
     ...domain.currentWriteGenerations,
     ...domain.historicalReadableGenerations,
@@ -840,6 +1017,12 @@ function assertDomainFactsWellFormed(domain) {
     if (!generations.has(identity)) {
       throw new Error(`${domain.id}删除历史代际或authority引用未知代际：${identity}`);
     }
+  }
+  const expectedHistorical = domain.generations
+    .map((entry) => entry.identity)
+    .filter((identity) => !domain.currentWriteGenerations.includes(identity));
+  if (!stringSetEqual(expectedHistorical, domain.historicalReadableGenerations)) {
+    throw new Error(`${domain.id}新代际缺少read-old/migration兼容入口`);
   }
   for (const entry of domain.compatibilityEntries) {
     if (

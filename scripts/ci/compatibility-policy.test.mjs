@@ -7,6 +7,7 @@ import { loadCompatibilityPolicy, validateCompatibilityPolicy } from "./compatib
 import {
   assertCompatibilityFactsBaselineChain,
   assertCompatibilityFactsCompatible,
+  authorityBoundaryForTest,
   generateCompatibilityFacts,
 } from "./compatibility-facts.mjs";
 
@@ -116,6 +117,123 @@ test("新代际没有read-old/migration入口时失败", () => {
     () => assertCompatibilityFactsCompatible(factsBaseline, changed),
     /缺少read-old\/migration/u,
   );
+});
+
+function promoteGeneration(domain, currentIdentity, nextIdentity) {
+  const current = domain.generations.find((entry) => entry.identity === currentIdentity);
+  assert.ok(current);
+  const generation = Number(/v(\d+)$/u.exec(nextIdentity)?.[1]);
+  domain.generations.push({
+    ...current,
+    identity: nextIdentity,
+    generation,
+    canonicalSha256: "d".repeat(64),
+    previousExtractorCanonicalSha256: "e".repeat(64),
+  });
+  domain.currentWriteGenerations = domain.currentWriteGenerations.map((identity) =>
+    identity === currentIdentity ? nextIdentity : identity,
+  );
+  domain.historicalReadableGenerations.push(currentIdentity);
+  domain.writeAuthority.generations = [...domain.currentWriteGenerations].sort();
+  domain.writeAuthority.canonicalSha256 = "b".repeat(64);
+  domain.legacyAuthority.generations = [...domain.historicalReadableGenerations].sort();
+  domain.legacyAuthority.canonicalSha256 = "c".repeat(64);
+  domain.compatibilityEntries.push({
+    entry: `migrate:${currentIdentity}->${nextIdentity}`,
+    generations: [currentIdentity, nextIdentity],
+    evidenceKind: "resolved-call-input-output",
+    canonicalSha256: "a".repeat(64),
+  });
+}
+
+test("合法Writer升代不冒充Owner漂移，缺兼容边或read-old仍失败", () => {
+  const valid = structuredClone(factsBaseline);
+  const product = valid.domains.find((domain) => domain.id === "product-store");
+  promoteGeneration(product, "chat-product-store.v20", "chat-product-store.v21");
+  assert.deepEqual(assertCompatibilityFactsCompatible(factsBaseline, valid), valid);
+
+  const missingMigration = structuredClone(valid);
+  const missingMigrationProduct = missingMigration.domains.find(
+    (domain) => domain.id === "product-store",
+  );
+  missingMigrationProduct.compatibilityEntries =
+    missingMigrationProduct.compatibilityEntries.filter(
+      (entry) => !entry.generations.includes("chat-product-store.v21"),
+    );
+  assert.throws(
+    () => assertCompatibilityFactsCompatible(factsBaseline, missingMigration),
+    /缺少read-old\/migration/u,
+  );
+
+  const missingReadOld = structuredClone(valid);
+  const missingReadOldProduct = missingReadOld.domains.find(
+    (domain) => domain.id === "product-store",
+  );
+  missingReadOldProduct.historicalReadableGenerations =
+    missingReadOldProduct.historicalReadableGenerations.filter(
+      (identity) => identity !== "chat-product-store.v20",
+    );
+  missingReadOldProduct.legacyAuthority.generations = [
+    ...missingReadOldProduct.historicalReadableGenerations,
+  ];
+  assert.throws(
+    () => assertCompatibilityFactsCompatible(factsBaseline, missingReadOld),
+    /缺少read-old\/migration/u,
+  );
+});
+
+test("Owner root、entry和action policy继续失败，同literal不得原地漂移", () => {
+  const ownerChanged = structuredClone(factsBaseline);
+  const ownerDomain = ownerChanged.domains.find((domain) => domain.id === "product-store");
+  ownerDomain.ownerRoots[0] = "packages/contracts/src/changed-owner.ts";
+  ownerDomain.authorityBoundarySha256 = authorityBoundaryForTest(ownerDomain);
+  assert.throws(
+    () => assertCompatibilityFactsCompatible(factsBaseline, ownerChanged),
+    /Owner边界漂移/u,
+  );
+
+  for (const mutate of [
+    (domain) => {
+      domain.writeAuthority.entry = "ChangedWriter.persist";
+    },
+    (domain) => {
+      domain.writeAuthority.allowedActions.push("bypass");
+    },
+  ]) {
+    const policyChanged = structuredClone(factsBaseline);
+    const domain = policyChanged.domains.find((entry) => entry.id === "product-store");
+    mutate(domain);
+    domain.authorityBoundarySha256 = authorityBoundaryForTest(domain);
+    assert.throws(
+      () => assertCompatibilityFactsCompatible(factsBaseline, policyChanged),
+      /Owner\/entry\/action policy漂移/u,
+    );
+  }
+
+  const sameLiteral = structuredClone(factsBaseline);
+  sameLiteral.domains.find(
+    (domain) => domain.id === "product-store",
+  ).generations[0].canonicalSha256 = "0".repeat(64);
+  assert.throws(
+    () => assertCompatibilityFactsCompatible(factsBaseline, sameLiteral),
+    /同一schema literal原地语义漂移/u,
+  );
+});
+
+test("Direct/Generic新增v4保持v1-v3 canonical hash并通过read-old/migration", () => {
+  const changed = structuredClone(factsBaseline);
+  const domain = changed.domains.find((entry) => entry.id === "direct-generic-journals");
+  const oldHashes = new Map(
+    domain.generations.map((entry) => [entry.identity, entry.canonicalSha256]),
+  );
+  promoteGeneration(domain, "full-operation.v3", "full-operation.v4");
+  for (const [identity, hash] of oldHashes) {
+    assert.equal(
+      domain.generations.find((entry) => entry.identity === identity).canonicalSha256,
+      hash,
+    );
+  }
+  assert.deepEqual(assertCompatibilityFactsCompatible(factsBaseline, changed), changed);
 });
 
 test("compat事实绑定真实Schema闭包、writer authority与resolved migration edge", () => {

@@ -481,7 +481,6 @@ export function validateAuditJsonResult({ command, status, stdout, stderr = "" }
     throw new Error(`${command} audit返回错误对象`);
   }
   const counts = vulnerabilityCounts(report, { strict: true });
-  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const pnpmShape = report.advisories !== undefined;
   const npmShape = report.auditReportVersion !== undefined || report.vulnerabilities !== undefined;
   if (pnpmShape === npmShape) throw new Error(`${command} audit Schema无法识别或相互矛盾`);
@@ -509,9 +508,9 @@ export function validateAuditJsonResult({ command, status, stdout, stderr = "" }
         throw new Error(`${command} pnpm advisory ${id}缺少版本、严重度或finding事实`);
       }
     }
-    if (Object.keys(report.advisories).length !== total) {
-      throw new Error(`${command} pnpm advisory数量与metadata漏洞总数矛盾`);
-    }
+    assertAuditDetailsMatchMetadata(command, "pnpm", Object.values(report.advisories), counts, {
+      metadataTotal: report.metadata.vulnerabilities.total,
+    });
   } else {
     if (report.auditReportVersion !== 2) throw new Error(`${command} npm auditReportVersion非法`);
     if (
@@ -520,10 +519,6 @@ export function validateAuditJsonResult({ command, status, stdout, stderr = "" }
       Array.isArray(report.vulnerabilities)
     ) {
       throw new Error(`${command} npm audit缺少vulnerabilities对象`);
-    }
-    const metadataTotal = report.metadata.vulnerabilities.total;
-    if (!Number.isInteger(metadataTotal) || metadataTotal !== total) {
-      throw new Error(`${command} npm metadata.vulnerabilities.total矛盾`);
     }
     for (const [name, vulnerability] of Object.entries(report.vulnerabilities)) {
       if (
@@ -537,11 +532,49 @@ export function validateAuditJsonResult({ command, status, stdout, stderr = "" }
         throw new Error(`${command} npm vulnerability ${name}缺少版本范围或依赖事实`);
       }
     }
+    assertAuditDetailsMatchMetadata(command, "npm", Object.values(report.vulnerabilities), counts, {
+      requireMetadataTotal: true,
+      metadataTotal: report.metadata.vulnerabilities.total,
+    });
   }
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
   if ((status === 0 && total !== 0) || (status === 1 && total === 0)) {
     throw new Error(`${command} audit退出状态与漏洞总数矛盾`);
   }
   return report;
+}
+
+const AUDIT_SEVERITIES = ["info", "low", "moderate", "high", "critical"];
+
+/** Audit的明细是漏洞事实，metadata只是汇总；两者必须按五级严重度双向一致。 */
+function assertAuditDetailsMatchMetadata(
+  command,
+  kind,
+  details,
+  metadataCounts,
+  { requireMetadataTotal = false, metadataTotal } = {},
+) {
+  const detailCounts = Object.fromEntries(AUDIT_SEVERITIES.map((severity) => [severity, 0]));
+  for (const detail of details) detailCounts[detail.severity] += 1;
+  for (const severity of AUDIT_SEVERITIES) {
+    if (detailCounts[severity] !== metadataCounts[severity]) {
+      throw new Error(`${command} ${kind} ${severity}明细与metadata计数矛盾`);
+    }
+  }
+  const detailTotal = Object.values(detailCounts).reduce((sum, count) => sum + count, 0);
+  if (
+    requireMetadataTotal &&
+    (!Number.isInteger(metadataTotal) || metadataTotal < 0 || metadataTotal !== detailTotal)
+  ) {
+    throw new Error(`${command} ${kind} metadata.vulnerabilities.total与明细矛盾`);
+  }
+  if (
+    !requireMetadataTotal &&
+    metadataTotal !== undefined &&
+    (!Number.isInteger(metadataTotal) || metadataTotal < 0 || metadataTotal !== detailTotal)
+  ) {
+    throw new Error(`${command} ${kind} metadata.vulnerabilities.total与明细矛盾`);
+  }
 }
 
 function auditJson(command, args, cwd) {
@@ -567,14 +600,15 @@ function vulnerabilityCounts(report, options = {}) {
   if (counts === null || typeof counts !== "object" || Array.isArray(counts)) {
     throw new Error("audit缺少metadata.vulnerabilities");
   }
-  const severities = ["info", "low", "moderate", "high", "critical"];
   if (
     options.strict === true &&
-    severities.some((severity) => !Number.isInteger(counts[severity]) || counts[severity] < 0)
+    AUDIT_SEVERITIES.some((severity) => !Number.isInteger(counts[severity]) || counts[severity] < 0)
   ) {
     throw new Error("audit metadata.vulnerabilities缺少合法严重度计数");
   }
-  return Object.fromEntries(severities.map((severity) => [severity, Number(counts[severity])]));
+  return Object.fromEntries(
+    AUDIT_SEVERITIES.map((severity) => [severity, Number(counts[severity])]),
+  );
 }
 
 export function classifyPnpmWorkspaceAudit(report, workspacePaths) {

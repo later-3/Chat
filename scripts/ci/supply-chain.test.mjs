@@ -177,6 +177,39 @@ test("pnpm/npm错误JSON、缺字段、非法输出与状态内容矛盾全部�
     { status: 0, stdout: "not-json" },
     { status: 1, stdout: "" },
     { status: 2, stdout: JSON.stringify(pnpmAudit()), stderr: "network unavailable" },
+    {
+      status: 0,
+      stdout: JSON.stringify({
+        ...npmAuditWithOneVulnerability(),
+        vulnerabilities: {
+          vulnerable: {
+            ...npmAuditWithOneVulnerability().vulnerabilities.vulnerable,
+            severity: "critical",
+          },
+        },
+        metadata: {
+          ...npmAuditWithOneVulnerability().metadata,
+          vulnerabilities: {
+            info: 0,
+            low: 0,
+            moderate: 0,
+            high: 0,
+            critical: 0,
+            total: 0,
+          },
+        },
+      }),
+    },
+    {
+      status: 1,
+      stdout: JSON.stringify({
+        ...vulnerablePnpm,
+        metadata: {
+          ...vulnerablePnpm.metadata,
+          vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 1 },
+        },
+      }),
+    },
   ];
   for (const fixture of cases) {
     assert.throws(() =>

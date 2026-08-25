@@ -1,7 +1,8 @@
 {
   "domains": [
     {
-      "authorityBoundarySha256": "ce0260fcaebbcceaae141ee406e6649fdfa1017701c641d6e48be525dc5d252c",
+      "authorityBoundarySha256": "be3391587171fcbe6460efdde1e038a383b7f8155b0eae8e50dae2098b05e6d2",
+      "authorityBoundaryVersion": 2,
       "compatibilityEntries": [],
       "currentWriteGenerations": [
         "chat-agent-profile-api.v3",
@@ -17,6 +18,7 @@
         "workflow-run-configuration.v1",
         "workspace-instructions-input.v1"
       ],
+      "generationCanonicalVersion": 1,
       "generations": [
         {
           "canonicalSha256": "4264f061adcbe4524be59346c932d7dc35d1c08485a30b4d22f4267807b499d6",
@@ -118,6 +120,7 @@
         "entry": "@chat/contracts/public:decode-old",
         "generations": ["chat-agent-profile-api.v2"]
       },
+      "ownerRoots": ["packages/contracts/src", "config/api-surface.baseline.json"],
       "sourceFiles": ["config/api-surface.baseline.json", "packages/contracts/src/public.ts"],
       "writeAuthority": {
         "allowedActions": ["validate", "write_current_response"],
@@ -140,7 +143,8 @@
       }
     },
     {
-      "authorityBoundarySha256": "957ddb992f11a3d6485ada8557e1fa29a7f974d3c4b47ebcb7d48d01a66529fa",
+      "authorityBoundarySha256": "5d24c6cbd85b0b747c8cce8b2ce86d9a696a7fd699e52c3cc18236090f47fb6a",
+      "authorityBoundaryVersion": 2,
       "compatibilityEntries": [
         {
           "canonicalSha256": "0d0595175462b42bf7a1c388ac9b5d8085975a3558e4031c01751ccb12821a28",
@@ -258,146 +262,167 @@
         }
       ],
       "currentWriteGenerations": ["chat-product-store.v20"],
+      "generationCanonicalVersion": 2,
       "generations": [
         {
-          "canonicalSha256": "dfbf051ea1aff834a3ab27b4cab267ffaa7ff86747da7996f9b101333674c96c",
-          "evidenceCount": 61,
+          "canonicalSha256": "09f430761746f9db6b9eeb2ff60bdef6898b58e947fec493e534c8eb30988cc6",
+          "evidenceCount": 59,
           "family": "chat-product-store.",
           "generation": 1,
-          "identity": "chat-product-store.v1"
+          "identity": "chat-product-store.v1",
+          "previousExtractorCanonicalSha256": "dfbf051ea1aff834a3ab27b4cab267ffaa7ff86747da7996f9b101333674c96c"
         },
         {
-          "canonicalSha256": "02710ca19b149ba07d2d64185ed30bf71d50f8622e2325d7ec2d05c837e09aa8",
-          "evidenceCount": 102,
+          "canonicalSha256": "8534dd5c3c5257367b7d483d6798a9fec2309ec2b8034b6e715d45eceb433e9c",
+          "evidenceCount": 99,
           "family": "chat-product-store.",
           "generation": 2,
-          "identity": "chat-product-store.v2"
+          "identity": "chat-product-store.v2",
+          "previousExtractorCanonicalSha256": "02710ca19b149ba07d2d64185ed30bf71d50f8622e2325d7ec2d05c837e09aa8"
         },
         {
-          "canonicalSha256": "cdf7fd38b89d81f347aa0f94d97419a9f37dcd9aadd076e446f71e5426386e96",
-          "evidenceCount": 195,
+          "canonicalSha256": "a2e48ca1400d378b871338d86349d3f3f4501c4813c22dfe47671eadc1a9f60a",
+          "evidenceCount": 192,
           "family": "chat-product-store.",
           "generation": 3,
-          "identity": "chat-product-store.v3"
+          "identity": "chat-product-store.v3",
+          "previousExtractorCanonicalSha256": "cdf7fd38b89d81f347aa0f94d97419a9f37dcd9aadd076e446f71e5426386e96"
         },
         {
-          "canonicalSha256": "8ca21d3e8cb047e579416979014182c1b97f8acce0003061d5503b9afbdb69ca",
-          "evidenceCount": 193,
+          "canonicalSha256": "665828d6206f6cf2bb978a3c090c4deda799a0eda127510ec000b7c8c7ab5520",
+          "evidenceCount": 190,
           "family": "chat-product-store.",
           "generation": 4,
-          "identity": "chat-product-store.v4"
+          "identity": "chat-product-store.v4",
+          "previousExtractorCanonicalSha256": "8ca21d3e8cb047e579416979014182c1b97f8acce0003061d5503b9afbdb69ca"
         },
         {
-          "canonicalSha256": "1fd0081dc0798b20b6498709617f88145aba5118d0e501ba11c8c2214dbe930b",
-          "evidenceCount": 184,
+          "canonicalSha256": "f306d8c8dea41979db5793f7df281fe7eb7c42b70f209ee949d027094ef269b9",
+          "evidenceCount": 181,
           "family": "chat-product-store.",
           "generation": 5,
-          "identity": "chat-product-store.v5"
+          "identity": "chat-product-store.v5",
+          "previousExtractorCanonicalSha256": "1fd0081dc0798b20b6498709617f88145aba5118d0e501ba11c8c2214dbe930b"
         },
         {
-          "canonicalSha256": "b6593261c3c4d25329eb7ab1355d95f7c20979338d638174cc4acd2dcfd8c9e9",
-          "evidenceCount": 212,
+          "canonicalSha256": "1617bd26e13b59b0f4503b8afd87a676cb6dea911ecf9aba07b7a5f906c68782",
+          "evidenceCount": 209,
           "family": "chat-product-store.",
           "generation": 6,
-          "identity": "chat-product-store.v6"
+          "identity": "chat-product-store.v6",
+          "previousExtractorCanonicalSha256": "b6593261c3c4d25329eb7ab1355d95f7c20979338d638174cc4acd2dcfd8c9e9"
         },
         {
-          "canonicalSha256": "f4c93c6a59b596028c1c94bef4a251cb993258a204a6780c47441cbcb62d85db",
-          "evidenceCount": 255,
+          "canonicalSha256": "73ae505719c1c2d7846a0def0787f25effe34859e9bda0e0d4aed5a40065d9e0",
+          "evidenceCount": 252,
           "family": "chat-product-store.",
           "generation": 7,
-          "identity": "chat-product-store.v7"
+          "identity": "chat-product-store.v7",
+          "previousExtractorCanonicalSha256": "f4c93c6a59b596028c1c94bef4a251cb993258a204a6780c47441cbcb62d85db"
         },
         {
-          "canonicalSha256": "f83499cd8f0ae38e84fada40d4f0dd062ee1e4c313ba512b99cea23dac3517dd",
-          "evidenceCount": 275,
+          "canonicalSha256": "00b138192f09e52bac78f16fbb8dc5c34cd4277333cbbdce8222169c4471fa2f",
+          "evidenceCount": 272,
           "family": "chat-product-store.",
           "generation": 8,
-          "identity": "chat-product-store.v8"
+          "identity": "chat-product-store.v8",
+          "previousExtractorCanonicalSha256": "f83499cd8f0ae38e84fada40d4f0dd062ee1e4c313ba512b99cea23dac3517dd"
         },
         {
-          "canonicalSha256": "ea655890fd28f2608015f1831bd1efeadf7be6426134000f2a272a593f65ec78",
-          "evidenceCount": 322,
+          "canonicalSha256": "b94d71c4615708e327394dced7e424aa4514a282865f25df856d127bd33d225f",
+          "evidenceCount": 319,
           "family": "chat-product-store.",
           "generation": 9,
-          "identity": "chat-product-store.v9"
+          "identity": "chat-product-store.v9",
+          "previousExtractorCanonicalSha256": "ea655890fd28f2608015f1831bd1efeadf7be6426134000f2a272a593f65ec78"
         },
         {
-          "canonicalSha256": "58bc2e940327045963c06c3d0142e6e293f77a3447f146ca685640c7375ba4ab",
-          "evidenceCount": 328,
+          "canonicalSha256": "a68965a7f54b2b5467bd70427003e14599353fca2894edd3073fd27a3451028f",
+          "evidenceCount": 325,
           "family": "chat-product-store.",
           "generation": 10,
-          "identity": "chat-product-store.v10"
+          "identity": "chat-product-store.v10",
+          "previousExtractorCanonicalSha256": "58bc2e940327045963c06c3d0142e6e293f77a3447f146ca685640c7375ba4ab"
         },
         {
-          "canonicalSha256": "b19ff3814a67e81298196fc1e0fa0a4cca46bfed0cc637b95601500172a003cc",
-          "evidenceCount": 329,
+          "canonicalSha256": "681b9e03d0ebdf89997e8c3f023b3cc4e2cfe89ff3815e83821a9f265674f90e",
+          "evidenceCount": 326,
           "family": "chat-product-store.",
           "generation": 11,
-          "identity": "chat-product-store.v11"
+          "identity": "chat-product-store.v11",
+          "previousExtractorCanonicalSha256": "b19ff3814a67e81298196fc1e0fa0a4cca46bfed0cc637b95601500172a003cc"
         },
         {
-          "canonicalSha256": "b9c439bcd52940bf23c24c1015c730b7c2b477c9fb333b4fb11707ba91473a8e",
-          "evidenceCount": 353,
+          "canonicalSha256": "934c4ace67f2a5afeb269f1fbbdcc9540a45eb40f1cc6c4dd6ddb07aa2183ea4",
+          "evidenceCount": 350,
           "family": "chat-product-store.",
           "generation": 12,
-          "identity": "chat-product-store.v12"
+          "identity": "chat-product-store.v12",
+          "previousExtractorCanonicalSha256": "b9c439bcd52940bf23c24c1015c730b7c2b477c9fb333b4fb11707ba91473a8e"
         },
         {
-          "canonicalSha256": "bda10263b117133ca4f39d44c849ddcfd29fc90eb96f967b988a698d06969451",
-          "evidenceCount": 380,
+          "canonicalSha256": "29b7076cc5fd40942d247d632ac430549b29d19258c361e4b2532593eddc20fc",
+          "evidenceCount": 377,
           "family": "chat-product-store.",
           "generation": 13,
-          "identity": "chat-product-store.v13"
+          "identity": "chat-product-store.v13",
+          "previousExtractorCanonicalSha256": "bda10263b117133ca4f39d44c849ddcfd29fc90eb96f967b988a698d06969451"
         },
         {
-          "canonicalSha256": "8137c99ed98a5bd60618f780ac8b07da4af32b2dda3fca12af1b938ab12f6d90",
-          "evidenceCount": 394,
+          "canonicalSha256": "55faaa5ba355a30b877a81d57e88e381dacd52b148edfcd37b657acbd4bc2cc0",
+          "evidenceCount": 391,
           "family": "chat-product-store.",
           "generation": 14,
-          "identity": "chat-product-store.v14"
+          "identity": "chat-product-store.v14",
+          "previousExtractorCanonicalSha256": "8137c99ed98a5bd60618f780ac8b07da4af32b2dda3fca12af1b938ab12f6d90"
         },
         {
-          "canonicalSha256": "d79fe4b1e1df72d036bf47cfd4a4f3cc8385c43720fd3ddf4c27c0733fc968e2",
-          "evidenceCount": 508,
-          "family": "chat-product-store.",
-          "generation": 15,
-          "identity": "chat-product-store.v15"
-        },
-        {
-          "canonicalSha256": "4b37145903892ac4179cba718c587110eff8fe1a5b41a49f0a54f1c1c473b560",
-          "evidenceCount": 508,
-          "family": "chat-product-store.",
-          "generation": 16,
-          "identity": "chat-product-store.v16"
-        },
-        {
-          "canonicalSha256": "4bb322dbde15adeeccbfb8b6baf48c6108e31bc2c1871600e193001ba435e78a",
-          "evidenceCount": 506,
-          "family": "chat-product-store.",
-          "generation": 17,
-          "identity": "chat-product-store.v17"
-        },
-        {
-          "canonicalSha256": "237bf400c50c55b765508b67a04afaf72ddc3ed38ea2de5cddc00eca3a72dec6",
-          "evidenceCount": 507,
-          "family": "chat-product-store.",
-          "generation": 18,
-          "identity": "chat-product-store.v18"
-        },
-        {
-          "canonicalSha256": "a4d278e9af43e587e3a5de31fa76a8f1f3bc73ec0d8d2dc2fdaf7e3df35a6d83",
-          "evidenceCount": 506,
-          "family": "chat-product-store.",
-          "generation": 19,
-          "identity": "chat-product-store.v19"
-        },
-        {
-          "canonicalSha256": "a365609028b7f94f1ed430baa0f5f8c0c7e36510a853e0904e6a3f869a631b8b",
+          "canonicalSha256": "8f57e5b9bf389ad15f5afb84ae20df260927ea91c969b9809e472e2c9b8f8606",
           "evidenceCount": 505,
           "family": "chat-product-store.",
+          "generation": 15,
+          "identity": "chat-product-store.v15",
+          "previousExtractorCanonicalSha256": "d79fe4b1e1df72d036bf47cfd4a4f3cc8385c43720fd3ddf4c27c0733fc968e2"
+        },
+        {
+          "canonicalSha256": "fd84545483665c3b15c3760584392685e736111abb599f49bac5975dd41c3c3b",
+          "evidenceCount": 505,
+          "family": "chat-product-store.",
+          "generation": 16,
+          "identity": "chat-product-store.v16",
+          "previousExtractorCanonicalSha256": "4b37145903892ac4179cba718c587110eff8fe1a5b41a49f0a54f1c1c473b560"
+        },
+        {
+          "canonicalSha256": "0009e959155f53ec62fa0e6a74ebd6d438ba47d365723e764765edebc9ee4b28",
+          "evidenceCount": 503,
+          "family": "chat-product-store.",
+          "generation": 17,
+          "identity": "chat-product-store.v17",
+          "previousExtractorCanonicalSha256": "4bb322dbde15adeeccbfb8b6baf48c6108e31bc2c1871600e193001ba435e78a"
+        },
+        {
+          "canonicalSha256": "fe44dd16b48b7eb7abc75a6bc3016c46a49f1126f3005de59d64b54049b4d9c3",
+          "evidenceCount": 504,
+          "family": "chat-product-store.",
+          "generation": 18,
+          "identity": "chat-product-store.v18",
+          "previousExtractorCanonicalSha256": "237bf400c50c55b765508b67a04afaf72ddc3ed38ea2de5cddc00eca3a72dec6"
+        },
+        {
+          "canonicalSha256": "66aa890f8d1394492080d9a844951a4813d1b007474bcbdaecc7fa710d8fb9f3",
+          "evidenceCount": 503,
+          "family": "chat-product-store.",
+          "generation": 19,
+          "identity": "chat-product-store.v19",
+          "previousExtractorCanonicalSha256": "a4d278e9af43e587e3a5de31fa76a8f1f3bc73ec0d8d2dc2fdaf7e3df35a6d83"
+        },
+        {
+          "canonicalSha256": "8d88d6e09f1683cada5ae2298fe97467fed6d0b079f32427110c5246270441ef",
+          "evidenceCount": 501,
+          "family": "chat-product-store.",
           "generation": 20,
-          "identity": "chat-product-store.v20"
+          "identity": "chat-product-store.v20",
+          "previousExtractorCanonicalSha256": "a365609028b7f94f1ed430baa0f5f8c0c7e36510a853e0904e6a3f869a631b8b"
         }
       ],
       "historicalReadableGenerations": [
@@ -448,6 +473,7 @@
           "chat-product-store.v9"
         ]
       },
+      "ownerRoots": ["packages/contracts/src/product-store.ts", "packages/product-store-json/src"],
       "sourceFiles": [
         "packages/contracts/src/product-store.ts",
         "packages/product-store-json/src/index.ts",
@@ -512,7 +538,8 @@
       }
     },
     {
-      "authorityBoundarySha256": "f5bb145b56613c5bba86a63bb4c8cccc08022f048d4df1282d39ef4c23cd1112",
+      "authorityBoundarySha256": "811444d8ca771c7eef5b2e570dfc7c75ace2dbbb54dedece4588f0910e389f7d",
+      "authorityBoundaryVersion": 2,
       "compatibilityEntries": [
         {
           "canonicalSha256": "c02f5e36f7edbca4e4ccd0d406e3c2d4a6b46dfb7cb664e60a9bc27f1ba88ef6",
@@ -539,118 +566,135 @@
         }
       ],
       "currentWriteGenerations": ["chat-dsh-lifeos-state.v16"],
+      "generationCanonicalVersion": 2,
       "generations": [
         {
-          "canonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee",
-          "evidenceCount": 75,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 1,
-          "identity": "chat-dsh-lifeos-state.v1"
-        },
-        {
-          "canonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee",
-          "evidenceCount": 75,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 2,
-          "identity": "chat-dsh-lifeos-state.v2"
-        },
-        {
-          "canonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee",
-          "evidenceCount": 75,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 3,
-          "identity": "chat-dsh-lifeos-state.v3"
-        },
-        {
-          "canonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee",
-          "evidenceCount": 75,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 4,
-          "identity": "chat-dsh-lifeos-state.v4"
-        },
-        {
-          "canonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee",
-          "evidenceCount": 75,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 5,
-          "identity": "chat-dsh-lifeos-state.v5"
-        },
-        {
-          "canonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee",
-          "evidenceCount": 75,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 6,
-          "identity": "chat-dsh-lifeos-state.v6"
-        },
-        {
-          "canonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee",
-          "evidenceCount": 75,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 7,
-          "identity": "chat-dsh-lifeos-state.v7"
-        },
-        {
-          "canonicalSha256": "947cac0ebbb40bf8f0bbb65eca331a288e83bae2c80d6af0bd541eb3c75216d6",
-          "evidenceCount": 75,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 8,
-          "identity": "chat-dsh-lifeos-state.v8"
-        },
-        {
-          "canonicalSha256": "6adefb846e9c411af220e81a0862c4081dbb1448281389df72609f426e3d819c",
-          "evidenceCount": 75,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 9,
-          "identity": "chat-dsh-lifeos-state.v9"
-        },
-        {
-          "canonicalSha256": "b0529dc4c2d7de968a8704bbd57845bb4777c491e2dd16b3da69c3835c872aa2",
-          "evidenceCount": 75,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 10,
-          "identity": "chat-dsh-lifeos-state.v10"
-        },
-        {
-          "canonicalSha256": "c1070d7db6c12bc79569edb9b8fc72ebbaf32dc2f08e7b0687b32bf0b8fe8731",
-          "evidenceCount": 73,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 11,
-          "identity": "chat-dsh-lifeos-state.v11"
-        },
-        {
-          "canonicalSha256": "d33d9e874f0dfd2a341a85c3824b94ef5c180434036a8c4687b6d8686fed96a2",
-          "evidenceCount": 72,
-          "family": "chat-dsh-lifeos-state.",
-          "generation": 12,
-          "identity": "chat-dsh-lifeos-state.v12"
-        },
-        {
-          "canonicalSha256": "a875d08b15fe0a6e3f8628af6cb6be322971694ad27a96086884f8ee110d68d5",
+          "canonicalSha256": "42f46f2ab21fa86e20d29022c8844fdbdc1a1fc33d52c93f3a48174af05202a7",
           "evidenceCount": 74,
           "family": "chat-dsh-lifeos-state.",
-          "generation": 13,
-          "identity": "chat-dsh-lifeos-state.v13"
+          "generation": 1,
+          "identity": "chat-dsh-lifeos-state.v1",
+          "previousExtractorCanonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee"
         },
         {
-          "canonicalSha256": "3b5c4efa95fe36a795da5a6c8da1d8a3e86bac1bcdf04b2cb7a5d9027394eb5b",
-          "evidenceCount": 76,
+          "canonicalSha256": "42f46f2ab21fa86e20d29022c8844fdbdc1a1fc33d52c93f3a48174af05202a7",
+          "evidenceCount": 74,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 2,
+          "identity": "chat-dsh-lifeos-state.v2",
+          "previousExtractorCanonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee"
+        },
+        {
+          "canonicalSha256": "42f46f2ab21fa86e20d29022c8844fdbdc1a1fc33d52c93f3a48174af05202a7",
+          "evidenceCount": 74,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 3,
+          "identity": "chat-dsh-lifeos-state.v3",
+          "previousExtractorCanonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee"
+        },
+        {
+          "canonicalSha256": "42f46f2ab21fa86e20d29022c8844fdbdc1a1fc33d52c93f3a48174af05202a7",
+          "evidenceCount": 74,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 4,
+          "identity": "chat-dsh-lifeos-state.v4",
+          "previousExtractorCanonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee"
+        },
+        {
+          "canonicalSha256": "42f46f2ab21fa86e20d29022c8844fdbdc1a1fc33d52c93f3a48174af05202a7",
+          "evidenceCount": 74,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 5,
+          "identity": "chat-dsh-lifeos-state.v5",
+          "previousExtractorCanonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee"
+        },
+        {
+          "canonicalSha256": "42f46f2ab21fa86e20d29022c8844fdbdc1a1fc33d52c93f3a48174af05202a7",
+          "evidenceCount": 74,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 6,
+          "identity": "chat-dsh-lifeos-state.v6",
+          "previousExtractorCanonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee"
+        },
+        {
+          "canonicalSha256": "42f46f2ab21fa86e20d29022c8844fdbdc1a1fc33d52c93f3a48174af05202a7",
+          "evidenceCount": 74,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 7,
+          "identity": "chat-dsh-lifeos-state.v7",
+          "previousExtractorCanonicalSha256": "f0ee60caf10ce546045df9b0a2a2d16678bbffd790e7cceeec6111261703bcee"
+        },
+        {
+          "canonicalSha256": "c0e2eb6d01165599b3cf00b1b4e71a5ba6f62540a78750d8b9a0cf84e65ddbdd",
+          "evidenceCount": 74,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 8,
+          "identity": "chat-dsh-lifeos-state.v8",
+          "previousExtractorCanonicalSha256": "947cac0ebbb40bf8f0bbb65eca331a288e83bae2c80d6af0bd541eb3c75216d6"
+        },
+        {
+          "canonicalSha256": "0faa8b60a5b15952ad9d03bc7372e7b0f4903b69cf84445d47f05ca31c3178ee",
+          "evidenceCount": 74,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 9,
+          "identity": "chat-dsh-lifeos-state.v9",
+          "previousExtractorCanonicalSha256": "6adefb846e9c411af220e81a0862c4081dbb1448281389df72609f426e3d819c"
+        },
+        {
+          "canonicalSha256": "3aa67a4b5187d17b0140ad8d1eabc9961b7ef551e3ef20235747163c7326b9f8",
+          "evidenceCount": 74,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 10,
+          "identity": "chat-dsh-lifeos-state.v10",
+          "previousExtractorCanonicalSha256": "b0529dc4c2d7de968a8704bbd57845bb4777c491e2dd16b3da69c3835c872aa2"
+        },
+        {
+          "canonicalSha256": "5f057b3c8749762cffe389a6a7bf271f5c61913d20b351184a24600614623bfc",
+          "evidenceCount": 72,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 11,
+          "identity": "chat-dsh-lifeos-state.v11",
+          "previousExtractorCanonicalSha256": "c1070d7db6c12bc79569edb9b8fc72ebbaf32dc2f08e7b0687b32bf0b8fe8731"
+        },
+        {
+          "canonicalSha256": "e693e9bc55c3bddf5e1f40c5adf1982e3d49b4f89db6336c351324b16edc3c69",
+          "evidenceCount": 71,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 12,
+          "identity": "chat-dsh-lifeos-state.v12",
+          "previousExtractorCanonicalSha256": "d33d9e874f0dfd2a341a85c3824b94ef5c180434036a8c4687b6d8686fed96a2"
+        },
+        {
+          "canonicalSha256": "5586e3a5ffd1918dfdb583d062bb2fc08a2b5bc0b83e31e67afbda0bedd5c61b",
+          "evidenceCount": 73,
+          "family": "chat-dsh-lifeos-state.",
+          "generation": 13,
+          "identity": "chat-dsh-lifeos-state.v13",
+          "previousExtractorCanonicalSha256": "a875d08b15fe0a6e3f8628af6cb6be322971694ad27a96086884f8ee110d68d5"
+        },
+        {
+          "canonicalSha256": "4c1ba02cf41c31df9aceab0d33b337b0b0e419ead8d89e42073eb1e6a046c126",
+          "evidenceCount": 75,
           "family": "chat-dsh-lifeos-state.",
           "generation": 14,
-          "identity": "chat-dsh-lifeos-state.v14"
+          "identity": "chat-dsh-lifeos-state.v14",
+          "previousExtractorCanonicalSha256": "3b5c4efa95fe36a795da5a6c8da1d8a3e86bac1bcdf04b2cb7a5d9027394eb5b"
         },
         {
-          "canonicalSha256": "ede07819b900595915ee4ca5759f70451d584c6864d022a0a880d7811fdf4753",
-          "evidenceCount": 77,
+          "canonicalSha256": "8e1df409eccdf76e81cf77492f514c91a8fcf49f22102eb4abed6755130051f3",
+          "evidenceCount": 76,
           "family": "chat-dsh-lifeos-state.",
           "generation": 15,
-          "identity": "chat-dsh-lifeos-state.v15"
+          "identity": "chat-dsh-lifeos-state.v15",
+          "previousExtractorCanonicalSha256": "ede07819b900595915ee4ca5759f70451d584c6864d022a0a880d7811fdf4753"
         },
         {
-          "canonicalSha256": "928b3afab6fc2850562fd9ad4d2bd0df0ba82335abb3c78b59d7b87b66c61413",
-          "evidenceCount": 97,
+          "canonicalSha256": "8635036d41e0311e2cd22d800e2670635c25a62c6b9693d2c1d0a812619b22d7",
+          "evidenceCount": 95,
           "family": "chat-dsh-lifeos-state.",
           "generation": 16,
-          "identity": "chat-dsh-lifeos-state.v16"
+          "identity": "chat-dsh-lifeos-state.v16",
+          "previousExtractorCanonicalSha256": "928b3afab6fc2850562fd9ad4d2bd0df0ba82335abb3c78b59d7b87b66c61413"
         }
       ],
       "historicalReadableGenerations": [
@@ -693,6 +737,7 @@
           "chat-dsh-lifeos-state.v9"
         ]
       },
+      "ownerRoots": ["packages/dsh-lifeos-bridge/src/state-store.ts"],
       "sourceFiles": ["packages/dsh-lifeos-bridge/src/state-store.ts"],
       "writeAuthority": {
         "allowedActions": ["validate", "atomic_persist"],
@@ -702,9 +747,11 @@
       }
     },
     {
-      "authorityBoundarySha256": "20897972da35b0be67a5f294a21f489509d7f18a1f5aee9fa43853809934ca71",
+      "authorityBoundarySha256": "48a308702296fc0a42aa342d2791a21087c20a9e4b72ec83f57f40b6738d73c2",
+      "authorityBoundaryVersion": 2,
       "compatibilityEntries": [],
       "currentWriteGenerations": ["workflow-run-spec.v1"],
+      "generationCanonicalVersion": 1,
       "generations": [
         {
           "canonicalSha256": "c7c350b779becdbbaf37f4e06fe35ff03f80e53861bcc3574c8dfd2c63474dd0",
@@ -722,6 +769,12 @@
         "entry": "workflow-run-spec:reader-validator",
         "generations": []
       },
+      "ownerRoots": [
+        "packages/application/src/workflow-run-spec-compiler.ts",
+        "packages/contracts/src",
+        "packages/product-store-json/src/json-product-store.ts",
+        "packages/workflows/src"
+      ],
       "sourceFiles": [
         "packages/application/src/workflow-run-spec-compiler.ts",
         "packages/contracts/src/workflow-definition.ts",
@@ -738,7 +791,8 @@
       }
     },
     {
-      "authorityBoundarySha256": "28baff981ec1ce71ff200210257d6d03f108994e9a6d9e14205d6d3fa2dc83a5",
+      "authorityBoundarySha256": "a51ce1ed19bfbd55e93ceb96be8981c26cecd8c4dc2a6ae6a1d3e013d2a33800",
+      "authorityBoundaryVersion": 2,
       "compatibilityEntries": [
         {
           "canonicalSha256": "a3bc899a0571415b3cda54699f8cecfc1f43917d25ca598679d72109a20cee06",
@@ -807,69 +861,79 @@
         "pi-direct-executor.v2",
         "pi-executor-operation-store.v2"
       ],
+      "generationCanonicalVersion": 2,
       "generations": [
         {
-          "canonicalSha256": "4f76fab9ad064c5b27efbbba1fb6b4aabbadfdb5fcdb7b17855a6cd30f6398ff",
-          "evidenceCount": 85,
+          "canonicalSha256": "f9437e861005895bdc191ef608f63e030607a1216f5ace91af39853660e078ef",
+          "evidenceCount": 78,
           "family": "full-operation.",
           "generation": 2,
-          "identity": "full-operation.v2"
+          "identity": "full-operation.v2",
+          "previousExtractorCanonicalSha256": "4f76fab9ad064c5b27efbbba1fb6b4aabbadfdb5fcdb7b17855a6cd30f6398ff"
         },
         {
-          "canonicalSha256": "88f888c01e79ce8f24c550aa6d02a35e55044280cc8622cbe143fc71e6f6335a",
-          "evidenceCount": 86,
+          "canonicalSha256": "50e0f7f9203f9becf2577a04561d50b84f78d70274080baed1751140601d6223",
+          "evidenceCount": 78,
           "family": "full-operation.",
           "generation": 3,
-          "identity": "full-operation.v3"
+          "identity": "full-operation.v3",
+          "previousExtractorCanonicalSha256": "88f888c01e79ce8f24c550aa6d02a35e55044280cc8622cbe143fc71e6f6335a"
         },
         {
-          "canonicalSha256": "80e59a2319ea095233e5dab22274429968be628664291590baccef59401c7451",
-          "evidenceCount": 115,
+          "canonicalSha256": "e92c2d9a6647613c993fd76d860d5e41ae9d4fc74a148b3e6a91aad757b89c79",
+          "evidenceCount": 1,
           "family": "pi-direct-executor-operation-store.",
           "generation": 1,
-          "identity": "pi-direct-executor-operation-store.v1"
+          "identity": "pi-direct-executor-operation-store.v1",
+          "previousExtractorCanonicalSha256": "80e59a2319ea095233e5dab22274429968be628664291590baccef59401c7451"
         },
         {
-          "canonicalSha256": "7e5ff9c0179b5796749766b5db2e3d922d96940d778bdd3318c1d1e428873ca5",
-          "evidenceCount": 116,
+          "canonicalSha256": "c5deba0e91318d24b53b93fd199b0d3e144dd3c1a2a7814f5f6ab1927cc7bbd0",
+          "evidenceCount": 49,
           "family": "pi-direct-executor-operation-store.",
           "generation": 2,
-          "identity": "pi-direct-executor-operation-store.v2"
+          "identity": "pi-direct-executor-operation-store.v2",
+          "previousExtractorCanonicalSha256": "7e5ff9c0179b5796749766b5db2e3d922d96940d778bdd3318c1d1e428873ca5"
         },
         {
-          "canonicalSha256": "bb73cb4d6ec21f28499e6a2ac82455994482ca13ad9f5a72ab311c1c98ccfc65",
-          "evidenceCount": 17,
+          "canonicalSha256": "53e0fd713dd456bc822ec79e72df00a3d8493989bb83fc2e39eb4acb268f0d5b",
+          "evidenceCount": 10,
           "family": "pi-direct-executor.",
           "generation": 1,
-          "identity": "pi-direct-executor.v1"
+          "identity": "pi-direct-executor.v1",
+          "previousExtractorCanonicalSha256": "bb73cb4d6ec21f28499e6a2ac82455994482ca13ad9f5a72ab311c1c98ccfc65"
         },
         {
-          "canonicalSha256": "5b0390f39453da9d5f65b5e8414c118aecccd65880262cd0316ca16be6a743a3",
-          "evidenceCount": 118,
+          "canonicalSha256": "ddb1f4b857184fba98d5dc11251b5bb0bfa1c1363a7d7175f2a5e6a90471cdba",
+          "evidenceCount": 40,
           "family": "pi-direct-executor.",
           "generation": 2,
-          "identity": "pi-direct-executor.v2"
+          "identity": "pi-direct-executor.v2",
+          "previousExtractorCanonicalSha256": "5b0390f39453da9d5f65b5e8414c118aecccd65880262cd0316ca16be6a743a3"
         },
         {
-          "canonicalSha256": "c9f7406cf406ad09c324599f9a9f0bdf9f9c9078d61620112500fd52122a97bb",
-          "evidenceCount": 154,
+          "canonicalSha256": "66406b767e63111b0177d5cb3e4d4119660135347e43cadd554f55bb2f73391d",
+          "evidenceCount": 78,
           "family": "pi-executor-operation-store.",
           "generation": 1,
-          "identity": "pi-executor-operation-store.v1"
+          "identity": "pi-executor-operation-store.v1",
+          "previousExtractorCanonicalSha256": "c9f7406cf406ad09c324599f9a9f0bdf9f9c9078d61620112500fd52122a97bb"
         },
         {
-          "canonicalSha256": "49c7326d1241713fad5935e9fa8f21de19354ff069d5f29a53aa6bd39ce97842",
-          "evidenceCount": 85,
+          "canonicalSha256": "237774fd87997cc547520d32a76d3e7b64fa8cbc93b81aef1fae318145acdc24",
+          "evidenceCount": 77,
           "family": "pi-executor-operation-store.",
           "generation": 2,
-          "identity": "pi-executor-operation-store.v2"
+          "identity": "pi-executor-operation-store.v2",
+          "previousExtractorCanonicalSha256": "49c7326d1241713fad5935e9fa8f21de19354ff069d5f29a53aa6bd39ce97842"
         },
         {
-          "canonicalSha256": "84448daf2a965d32a7ba8a5eadc01c4fad998ae78efaf4e009b7c86c6f4fa41c",
-          "evidenceCount": 82,
+          "canonicalSha256": "b7d7c2808001c050c776a0b883677c7f80a6800f44920026b6570da8feff4491",
+          "evidenceCount": 75,
           "family": "pi-executor.",
           "generation": 1,
-          "identity": "pi-executor.v1"
+          "identity": "pi-executor.v1",
+          "previousExtractorCanonicalSha256": "84448daf2a965d32a7ba8a5eadc01c4fad998ae78efaf4e009b7c86c6f4fa41c"
         }
       ],
       "historicalReadableGenerations": [
@@ -892,6 +956,7 @@
           "pi-executor.v1"
         ]
       },
+      "ownerRoots": ["packages/contracts/src", "packages/pi-runtime/src"],
       "sourceFiles": [
         "packages/contracts/src/direct-agent-runtime.ts",
         "packages/pi-runtime/src/direct-executor-operation-store.ts",
@@ -914,7 +979,8 @@
       }
     },
     {
-      "authorityBoundarySha256": "1167ef6b185bc23f4ce884d4f433268685b798dbba10e4c827498bb12ec820e6",
+      "authorityBoundarySha256": "aa6f5d22523b7d7b8513644de8cc277f4feaa2b8b90986ca15011cb1670fd1aa",
+      "authorityBoundaryVersion": 2,
       "compatibilityEntries": [],
       "currentWriteGenerations": [
         "chat-agent-profile-api.v3",
@@ -930,6 +996,7 @@
         "workflow-run-configuration.v1",
         "workspace-instructions-input.v1"
       ],
+      "generationCanonicalVersion": 1,
       "generations": [
         {
           "canonicalSha256": "4264f061adcbe4524be59346c932d7dc35d1c08485a30b4d22f4267807b499d6",
@@ -1031,6 +1098,7 @@
         "entry": "@chat/contracts/public:decode-old",
         "generations": ["chat-agent-profile-api.v2"]
       },
+      "ownerRoots": ["packages/contracts/src", "packages/dsh-lifeos-bridge/src/client"],
       "sourceFiles": [
         "packages/contracts/src/events.ts",
         "packages/contracts/src/public.ts",
