@@ -75,7 +75,7 @@ export function assertCiWorkflowContract(workflow) {
   assert.ok(workflow.jobs !== null && typeof workflow.jobs === "object");
   const jobs = Object.entries(workflow.jobs);
   assert.ok(jobs.length > 0);
-  for (const requiredJob of [
+  const requiredJobs = [
     "core",
     "contract",
     "integration",
@@ -84,7 +84,8 @@ export function assertCiWorkflowContract(workflow) {
     "browser",
     "supply-chain",
     "fresh-clone-smoke",
-  ]) {
+  ];
+  for (const requiredJob of requiredJobs) {
     assert.ok(workflow.jobs[requiredJob] !== undefined, `CI缺少${requiredJob} lane Job`);
   }
   const commandsFor = (name) =>
@@ -121,6 +122,18 @@ export function assertCiWorkflowContract(workflow) {
   ]) {
     assert.ok(freshCloneCommands.includes(required), `fresh-clone-smoke缺少：${required}`);
   }
+  for (const [required, expectedCount] of [
+    ["pnpm run setup --workbench=off", 1],
+    ["node scripts/dev/start.mjs --workbench=off", 1],
+    ["http://127.0.0.1:43111/api/readyz", 2],
+    ['kill -INT "$chat_pid"', 2],
+  ]) {
+    assert.equal(
+      freshCloneCommands.split(required).length - 1,
+      expectedCount,
+      `fresh-clone-smoke的setup/start/health/stop证据次数漂移：${required}`,
+    );
+  }
   const compatDecision = workflow.jobs.compat.steps.find((step) => step.id === "compat");
   assert.equal(compatDecision?.run, "node scripts/ci/compat-change-gate.mjs");
   for (const step of workflow.jobs.compat.steps.filter((step) =>
@@ -148,6 +161,16 @@ export function assertCiWorkflowContract(workflow) {
   assert.equal(contractCheckout?.with?.["fetch-depth"], 0);
   for (const [jobName, job] of jobs) {
     assert.equal(job.permissions, undefined, `${jobName}不得扩大根permissions`);
+    if (requiredJobs.includes(jobName)) {
+      assert.equal(job.if, undefined, `${jobName} required Job不得条件跳过`);
+      assert.equal(job["continue-on-error"], undefined, `${jobName} required Job不得容错`);
+      assert.ok(
+        Number.isInteger(job["timeout-minutes"]) &&
+          job["timeout-minutes"] >= 5 &&
+          job["timeout-minutes"] <= 60,
+        `${jobName}必须设置5–60分钟timeout`,
+      );
+    }
     assert.ok(Array.isArray(job.steps), `${jobName}.steps必须是数组`);
 
     const checkoutSteps = job.steps.filter(
@@ -166,6 +189,7 @@ export function assertCiWorkflowContract(workflow) {
     assert.equal(prepareSteps.length, 1, `${jobName}必须精确准备一次Managed Sources`);
 
     for (const step of job.steps) {
+      assert.equal(step?.["continue-on-error"], undefined, `${jobName}步骤不得continue-on-error`);
       if (typeof step?.uses === "string" && !step.uses.startsWith("./")) {
         assert.match(step.uses, /^[^@\s]+@[0-9a-f]{40}$/u, `${jobName} Action必须固定完整SHA`);
       }
@@ -177,6 +201,33 @@ export function assertCiWorkflowContract(workflow) {
         );
       }
     }
+  }
+
+  const criticalSteps = [
+    ["core", (step) => step?.run?.trim() === "pnpm verify:core"],
+    ["contract", (step) => step?.run?.trim() === "pnpm api-surface:check"],
+    ["contract", (step) => step?.run?.trim() === "pnpm compatibility:check"],
+    ["contract", (step) => step?.run?.trim() === "pnpm test:contract"],
+    ["integration", (step) => step?.run?.trim() === "pnpm test:integration"],
+    ["dsh-smoke", (step) => step?.name === "dsh host and bridge start"],
+    ["browser", (step) => step?.run?.trim() === "pnpm test:browser"],
+    ["supply-chain", (step) => step?.run?.trim() === "pnpm supply-chain:check"],
+    ["supply-chain", (step) => step?.run?.trim() === "pnpm supply-chain:audit"],
+    [
+      "fresh-clone-smoke",
+      (step) => step?.name === "prepare pinned local runtime from an empty cache",
+    ],
+    [
+      "fresh-clone-smoke",
+      (step) =>
+        step?.name === "core graph starts without Provider, Memory, or Workbench and stops cleanly",
+    ],
+  ];
+  for (const [jobName, predicate] of criticalSteps) {
+    const matches = workflow.jobs[jobName].steps.filter(predicate);
+    assert.equal(matches.length, 1, `${jobName}关键完成步骤缺失或重复`);
+    assert.equal(matches[0].if, undefined, `${jobName}关键完成步骤不得条件跳过`);
+    assert.equal(matches[0]["continue-on-error"], undefined, `${jobName}关键完成步骤不得容错`);
   }
 }
 
@@ -213,6 +264,48 @@ describe("CI workflow baseline", () => {
       const workflow = structuredClone(parseCiWorkflow(workflowSource));
       delete workflow.jobs[jobName];
       assert.throws(() => assertCiWorkflowContract(workflow), new RegExp(jobName, "u"));
+    }
+  });
+
+  it("rejects disabling or tolerating required jobs and critical completion steps", () => {
+    const disabledJob = structuredClone(parseCiWorkflow(workflowSource));
+    disabledJob.jobs["dsh-smoke"].if = false;
+    assert.throws(() => assertCiWorkflowContract(disabledJob), /required Job不得条件跳过/u);
+
+    const tolerantJob = structuredClone(parseCiWorkflow(workflowSource));
+    tolerantJob.jobs["fresh-clone-smoke"]["continue-on-error"] = true;
+    assert.throws(() => assertCiWorkflowContract(tolerantJob), /required Job不得容错/u);
+
+    const tolerantStep = structuredClone(parseCiWorkflow(workflowSource));
+    tolerantStep.jobs["dsh-smoke"].steps.find((step) => step.name === "dsh host and bridge start")[
+      "continue-on-error"
+    ] = true;
+    assert.throws(() => assertCiWorkflowContract(tolerantStep), /不得continue-on-error|不得容错/u);
+
+    const skippedStep = structuredClone(parseCiWorkflow(workflowSource));
+    skippedStep.jobs["fresh-clone-smoke"].steps.find(
+      (step) => step.name === "prepare pinned local runtime from an empty cache",
+    ).if = false;
+    assert.throws(() => assertCiWorkflowContract(skippedStep), /关键完成步骤不得条件跳过/u);
+  });
+
+  it("validates fresh-clone setup, start, health and stop evidence independently", () => {
+    for (const required of [
+      "pnpm run setup --workbench=off",
+      "node scripts/dev/start.mjs --workbench=off",
+      "http://127.0.0.1:43111/api/readyz",
+      'kill -INT "$chat_pid"',
+    ]) {
+      const changed = structuredClone(parseCiWorkflow(workflowSource));
+      const step = changed.jobs["fresh-clone-smoke"].steps.find(
+        (candidate) => typeof candidate.run === "string" && candidate.run.includes(required),
+      );
+      assert.ok(step, `fixture缺少${required}`);
+      step.run = step.run.replace(required, "removed-contract-evidence");
+      assert.throws(
+        () => assertCiWorkflowContract(changed),
+        new RegExp(required.includes("setup") ? "setup|缺少|次数漂移" : "缺少|次数漂移", "u"),
+      );
     }
   });
 });

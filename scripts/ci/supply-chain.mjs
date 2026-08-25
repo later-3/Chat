@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 
@@ -258,30 +258,190 @@ function linkedWorkspacePaths(source) {
   return [...new Set(source.linkedPackages.map((linked) => linked.sourcePath))].sort();
 }
 
+function normalizedPath(path) {
+  return path.split(sep).join("/");
+}
+
+function dependencyEntries(manifest) {
+  return Object.entries({
+    ...manifest.dependencies,
+    ...manifest.optionalDependencies,
+    ...manifest.devDependencies,
+  });
+}
+
+/**
+ * Manifest只声明期望值；真实闭包必须从Chat consumer、lockfile与已解析symlink反向恢复。
+ * 这样新增link却忘记登记时会在漏洞分类前失败，而不是掉进whole-fork report-only。
+ */
+export function assertActualManagedLinks(manifest, options = {}) {
+  const root = options.root ?? ROOT;
+  const lockfile = parseYaml(readFileSync(resolve(root, "pnpm-lock.yaml"), "utf8"));
+  const workspaces = workspacePackageManifests(root);
+  const sourceRoots = new Map(
+    manifest.sources.map((source) => [
+      source.id,
+      realpathSync(assertManagedSourceIdentity(source, root, { runtime: true })),
+    ]),
+  );
+  const actual = new Map(manifest.sources.map((source) => [source.id, []]));
+
+  for (const workspace of workspaces) {
+    for (const [dependency, specifier] of dependencyEntries(workspace.manifest)) {
+      if (typeof specifier !== "string" || !specifier.startsWith("link:")) continue;
+      const declaredTarget = resolve(workspace.root, specifier.slice("link:".length));
+      if (!existsSync(declaredTarget)) {
+        throw new Error(`${workspace.consumer}:${dependency} link目标不存在`);
+      }
+      const target = realpathSync(declaredTarget);
+      const source = manifest.sources.find((entry) => {
+        const sourceRoot = sourceRoots.get(entry.id);
+        return target === sourceRoot || target.startsWith(`${sourceRoot}${sep}`);
+      });
+      if (source === undefined) {
+        if (target === realpathSync(root) || target.startsWith(`${realpathSync(root)}${sep}`)) {
+          continue;
+        }
+        throw new Error(`${workspace.consumer}:${dependency}指向未受管外部link：${target}`);
+      }
+      const sourceRoot = sourceRoots.get(source.id);
+      const sourcePath = normalizedPath(relative(sourceRoot, target));
+      const importer = lockfile.importers?.[workspace.consumer];
+      const locked = {
+        ...importer?.dependencies,
+        ...importer?.optionalDependencies,
+        ...importer?.devDependencies,
+      }[dependency];
+      const lockedVersion = typeof locked === "string" ? locked : locked?.version;
+      const lockedSpecifier = typeof locked === "object" ? locked?.specifier : undefined;
+      if (
+        typeof lockedVersion !== "string" ||
+        !lockedVersion.startsWith("link:") ||
+        (lockedSpecifier !== undefined && lockedSpecifier !== specifier)
+      ) {
+        throw new Error(`${workspace.consumer}:${dependency} package.json与lockfile link漂移`);
+      }
+      const resolvedDependency = resolve(workspace.root, "node_modules", ...dependency.split("/"));
+      if (!existsSync(resolvedDependency) || realpathSync(resolvedDependency) !== target) {
+        throw new Error(`${workspace.consumer}:${dependency}实际解析路径未指向固定Fork源码`);
+      }
+      actual.get(source.id).push({ consumer: workspace.consumer, dependency, sourcePath });
+    }
+  }
+
+  for (const source of manifest.sources) {
+    const expected = stableLinks(source.linkedPackages);
+    const observed = stableLinks(actual.get(source.id));
+    if (JSON.stringify(expected) !== JSON.stringify(observed)) {
+      throw new Error(
+        `${source.id} Manifest linkedPackages与Chat实际Fork link不双向相等：expected=${JSON.stringify(expected)} actual=${JSON.stringify(observed)}`,
+      );
+    }
+  }
+  return Object.fromEntries(
+    manifest.sources.map((source) => [source.id, stableLinks(actual.get(source.id))]),
+  );
+}
+
+function stableLinks(links) {
+  return [...links].sort((left, right) =>
+    `${left.consumer}:${left.dependency}:${left.sourcePath}`.localeCompare(
+      `${right.consumer}:${right.dependency}:${right.sourcePath}`,
+    ),
+  );
+}
+
+function workspacePackageManifests(root) {
+  const entries = [];
+  for (const parent of ["apps", "packages"]) {
+    const directory = resolve(root, parent);
+    for (const name of readdirSync(directory).sort()) {
+      const path = resolve(directory, name, "package.json");
+      if (!existsSync(path)) continue;
+      entries.push({
+        consumer: `${parent}/${name}`,
+        root: dirname(path),
+        manifest: loadJson(path),
+      });
+    }
+  }
+  return entries;
+}
+
 function auditWorkspaceKey(path) {
   return path.split("/").join("__");
 }
 
-function builtArtifactImports(source, checkout) {
-  const imports = new Set();
-  for (const marker of source.runtimeMarkers) {
-    const artifact = resolve(checkout, marker.path);
-    const text = readFileSync(artifact, "utf8");
-    for (const match of text.matchAll(
-      /\brequire\(["']([^"']+)["']\)|\bfrom\s+["']([^"']+)["']/gu,
-    )) {
-      const specifier = match[1] ?? match[2];
-      if (specifier !== undefined && !specifier.startsWith(".") && !specifier.startsWith("node:")) {
-        imports.add(specifier);
-      }
-    }
+function exportedTargets(value, output = new Set()) {
+  if (typeof value === "string") output.add(value);
+  else if (value !== null && typeof value === "object") {
+    for (const nested of Object.values(value)) exportedTargets(nested, output);
   }
-  return [...imports].sort();
+  return output;
 }
 
-function assertBuiltImportsResolveFromChat(source, imports) {
+function builtArtifactImports(source, checkout, actualLinks) {
+  const results = [];
+  for (const linked of actualLinks) {
+    const packageRoot = resolve(checkout, linked.sourcePath);
+    const manifest = loadJson(resolve(packageRoot, "package.json"));
+    const entrypoints = new Set([
+      ...[...exportedTargets(manifest.exports)].filter((entry) => !entry.includes("*")),
+      ...[manifest.main, manifest.module, manifest.browser].filter(
+        (entry) => typeof entry === "string",
+      ),
+      ...Object.values(manifest.bin ?? {}).filter((entry) => typeof entry === "string"),
+    ]);
+    if (entrypoints.size === 0) {
+      throw new Error(`${linked.dependency}没有可审计的exports/build入口`);
+    }
+    const queue = [...entrypoints].map((entry) => resolve(packageRoot, entry));
+    const seen = new Set();
+    const imports = new Set();
+    while (queue.length > 0) {
+      const artifact = queue.pop();
+      if (!existsSync(artifact) || !statSync(artifact).isFile()) {
+        throw new Error(
+          `${linked.dependency}导出构建产物不存在：${normalizedPath(relative(checkout, artifact))}`,
+        );
+      }
+      const real = realpathSync(artifact);
+      if (!real.startsWith(`${realpathSync(packageRoot)}${sep}`) || seen.has(real)) continue;
+      seen.add(real);
+      if (!/\.(?:[cm]?js|jsx|ts|tsx)$/u.test(real)) continue;
+      const text = readFileSync(real, "utf8");
+      for (const match of text.matchAll(
+        /\brequire\(["']([^"']+)["']\)|\bfrom\s+["']([^"']+)["']|\bimport\(["']([^"']+)["']\)/gu,
+      )) {
+        const specifier = match[1] ?? match[2] ?? match[3];
+        if (specifier === undefined || specifier.startsWith("node:")) continue;
+        if (!specifier.startsWith(".")) {
+          imports.add(specifier);
+          continue;
+        }
+        const base = resolve(dirname(real), specifier);
+        const candidate = [
+          base,
+          `${base}.js`,
+          `${base}.mjs`,
+          `${base}.cjs`,
+          resolve(base, "index.js"),
+        ].find((path) => existsSync(path) && statSync(path).isFile());
+        if (candidate !== undefined) queue.push(candidate);
+      }
+    }
+    results.push({
+      ...linked,
+      entrypoints: [...entrypoints].sort(),
+      externalImports: [...imports].sort(),
+    });
+  }
+  return results;
+}
+
+function assertBuiltImportsResolveFromChat(source, artifacts) {
   const lockfile = readFileSync(resolve(ROOT, "pnpm-lock.yaml"), "utf8");
-  for (const linked of source.linkedPackages) {
+  for (const linked of artifacts) {
     const checkout = assertManagedSourceIdentity(source, ROOT, { runtime: true });
     const manifest = loadJson(resolve(checkout, linked.sourcePath, "package.json"));
     const declared = {
@@ -290,7 +450,7 @@ function assertBuiltImportsResolveFromChat(source, imports) {
       ...manifest.peerDependencies,
       ...manifest.optionalDependencies,
     };
-    for (const specifier of imports) {
+    for (const specifier of linked.externalImports) {
       const packageName = specifier.startsWith("@")
         ? specifier.split("/").slice(0, 2).join("/")
         : specifier.split("/")[0];
@@ -304,6 +464,86 @@ function assertBuiltImportsResolveFromChat(source, imports) {
   }
 }
 
+export function validateAuditJsonResult({ command, status, stdout, stderr = "" }) {
+  if (![0, 1].includes(status) || typeof stdout !== "string" || stdout.trim() === "") {
+    throw new Error(`${command} audit执行失败：${stderr.trim()}`);
+  }
+  let report;
+  try {
+    report = JSON.parse(stdout);
+  } catch {
+    throw new Error(`${command} audit未返回合法JSON`);
+  }
+  if (report === null || typeof report !== "object" || Array.isArray(report)) {
+    throw new Error(`${command} audit返回的不是对象`);
+  }
+  if (report.error !== undefined) {
+    throw new Error(`${command} audit返回错误对象`);
+  }
+  const counts = vulnerabilityCounts(report, { strict: true });
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const pnpmShape = report.advisories !== undefined;
+  const npmShape = report.auditReportVersion !== undefined || report.vulnerabilities !== undefined;
+  if (pnpmShape === npmShape) throw new Error(`${command} audit Schema无法识别或相互矛盾`);
+  if (pnpmShape) {
+    if (
+      report.advisories === null ||
+      typeof report.advisories !== "object" ||
+      Array.isArray(report.advisories)
+    ) {
+      throw new Error(`${command} pnpm audit缺少advisories对象`);
+    }
+    for (const [id, advisory] of Object.entries(report.advisories)) {
+      if (
+        advisory?.id === undefined ||
+        typeof advisory.module_name !== "string" ||
+        !["info", "low", "moderate", "high", "critical"].includes(advisory.severity) ||
+        typeof advisory.vulnerable_versions !== "string" ||
+        typeof advisory.patched_versions !== "string" ||
+        !Array.isArray(advisory.findings) ||
+        advisory.findings.length === 0 ||
+        advisory.findings.some(
+          (finding) => typeof finding?.version !== "string" || !Array.isArray(finding.paths),
+        )
+      ) {
+        throw new Error(`${command} pnpm advisory ${id}缺少版本、严重度或finding事实`);
+      }
+    }
+    if (Object.keys(report.advisories).length !== total) {
+      throw new Error(`${command} pnpm advisory数量与metadata漏洞总数矛盾`);
+    }
+  } else {
+    if (report.auditReportVersion !== 2) throw new Error(`${command} npm auditReportVersion非法`);
+    if (
+      report.vulnerabilities === null ||
+      typeof report.vulnerabilities !== "object" ||
+      Array.isArray(report.vulnerabilities)
+    ) {
+      throw new Error(`${command} npm audit缺少vulnerabilities对象`);
+    }
+    const metadataTotal = report.metadata.vulnerabilities.total;
+    if (!Number.isInteger(metadataTotal) || metadataTotal !== total) {
+      throw new Error(`${command} npm metadata.vulnerabilities.total矛盾`);
+    }
+    for (const [name, vulnerability] of Object.entries(report.vulnerabilities)) {
+      if (
+        vulnerability?.name !== name ||
+        !["info", "low", "moderate", "high", "critical"].includes(vulnerability.severity) ||
+        !Array.isArray(vulnerability.via) ||
+        !Array.isArray(vulnerability.effects) ||
+        typeof vulnerability.range !== "string" ||
+        !Array.isArray(vulnerability.nodes)
+      ) {
+        throw new Error(`${command} npm vulnerability ${name}缺少版本范围或依赖事实`);
+      }
+    }
+  }
+  if ((status === 0 && total !== 0) || (status === 1 && total === 0)) {
+    throw new Error(`${command} audit退出状态与漏洞总数矛盾`);
+  }
+  return report;
+}
+
 function auditJson(command, args, cwd) {
   const result = spawnSync(command, args, {
     cwd,
@@ -313,25 +553,28 @@ function auditJson(command, args, cwd) {
     maxBuffer: 64 * 1024 * 1024,
   });
   if (result.error !== undefined) throw result.error;
-  // npm/pnpm在发现漏洞时返回1；网络、锁文件或命令错误不得伪装成漏洞报告。
-  if (![0, 1].includes(result.status ?? -1) || result.stdout.trim() === "") {
-    throw new Error(`${command} ${args.join(" ")} audit执行失败：${result.stderr.trim()}`);
-  }
-  try {
-    return JSON.parse(result.stdout);
-  } catch {
-    throw new Error(`${command} audit未返回合法JSON`);
-  }
+  // npm/pnpm只有“0且零漏洞”或“1且存在合法漏洞事实”两种可接受结果。
+  return validateAuditJsonResult({
+    command: `${command} ${args.join(" ")}`,
+    status: result.status ?? -1,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  });
 }
 
-function vulnerabilityCounts(report) {
-  const counts = report.metadata?.vulnerabilities ?? {};
-  return Object.fromEntries(
-    ["info", "low", "moderate", "high", "critical"].map((severity) => [
-      severity,
-      Number(counts[severity] ?? 0),
-    ]),
-  );
+function vulnerabilityCounts(report, options = {}) {
+  const counts = report.metadata?.vulnerabilities;
+  if (counts === null || typeof counts !== "object" || Array.isArray(counts)) {
+    throw new Error("audit缺少metadata.vulnerabilities");
+  }
+  const severities = ["info", "low", "moderate", "high", "critical"];
+  if (
+    options.strict === true &&
+    severities.some((severity) => !Number.isInteger(counts[severity]) || counts[severity] < 0)
+  ) {
+    throw new Error("audit metadata.vulnerabilities缺少合法严重度计数");
+  }
+  return Object.fromEntries(severities.map((severity) => [severity, Number(counts[severity])]));
 }
 
 export function classifyPnpmWorkspaceAudit(report, workspacePaths) {
@@ -397,6 +640,7 @@ export function runSupplyChainCheck() {
   // Manifest本身是三仓唯一版本事实；这里验证其结构、完整SHA、锁文件和禁用安装脚本，
   // 不在第二个policy文件重复commit。
   const manifest = assertManagedManifest(policy);
+  const actualManagedLinks = assertActualManagedLinks(manifest);
   assertLifecycleAllowlist(policy);
   assertWorkflowSupplyChain();
   const secrets = scanTrackedSecrets();
@@ -405,6 +649,7 @@ export function runSupplyChainCheck() {
     managedSources: manifest.sources.map((source) => ({ id: source.id, commit: source.commit })),
     secrets,
     licenses,
+    actualManagedLinks,
     onlyBuiltDependencies: policy.onlyBuiltDependencies.map((entry) => entry.name),
   };
 }
@@ -426,14 +671,18 @@ export function runSupplyChainAudit() {
     throw new Error("Pi受管执行闭包存在audit漏洞");
   }
 
-  const dshImports = builtArtifactImports(dsh, dshCheckout);
+  const dshLinks = report.actualManagedLinks.dsh;
+  const dshImports = builtArtifactImports(dsh, dshCheckout, dshLinks);
   assertBuiltImportsResolveFromChat(dsh, dshImports);
   const dshWholeAudit = auditJson(
     "corepack",
     ["pnpm@11.7.0", "audit", "--prod", "--json"],
     dshCheckout,
   );
-  const dshClassification = classifyPnpmWorkspaceAudit(dshWholeAudit, linkedWorkspacePaths(dsh));
+  const dshClassification = classifyPnpmWorkspaceAudit(
+    dshWholeAudit,
+    dshLinks.map((linked) => linked.sourcePath),
+  );
   assertNoManagedClosureVulnerabilities(dshClassification, "DSH");
   return {
     ...report,

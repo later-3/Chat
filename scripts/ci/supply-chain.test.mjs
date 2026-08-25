@@ -4,12 +4,15 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import {
+  assertActualManagedLinks,
   assertNoManagedClosureVulnerabilities,
   classifyPnpmWorkspaceAudit,
   runSupplyChainCheck,
   scanTrackedSecrets,
+  validateAuditJsonResult,
   validateSupplyChainPolicy,
 } from "./supply-chain.mjs";
+import { loadManagedSourcesManifest } from "./managed-sources.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const policy = JSON.parse(readFileSync(resolve(root, "config/supply-chain-policy.json"), "utf8"));
@@ -81,4 +84,114 @@ test("secret scan覆盖全部tracked与未提交文件且当前0命中", () => {
   const result = scanTrackedSecrets();
   assert.equal(result.findingCount, 0);
   assert.ok(result.fileCount > 300);
+});
+
+function pnpmAudit(overrides = {}) {
+  return {
+    advisories: {},
+    metadata: {
+      vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0 },
+      dependencies: 1,
+      devDependencies: 0,
+      optionalDependencies: 0,
+      totalDependencies: 1,
+    },
+    ...overrides,
+  };
+}
+
+function npmAuditWithOneVulnerability() {
+  return {
+    auditReportVersion: 2,
+    vulnerabilities: {
+      vulnerable: {
+        name: "vulnerable",
+        severity: "high",
+        via: ["GHSA-example"],
+        effects: [],
+        range: "<2.0.0",
+        nodes: ["node_modules/vulnerable"],
+        fixAvailable: false,
+      },
+    },
+    metadata: {
+      vulnerabilities: { info: 0, low: 0, moderate: 0, high: 1, critical: 0, total: 1 },
+      dependencies: { prod: 1, dev: 0, optional: 0, peer: 0, peerOptional: 0, total: 1 },
+    },
+  };
+}
+
+test("audit只接受exit 0零漏洞或exit 1合法漏洞事实", () => {
+  assert.deepEqual(
+    validateAuditJsonResult({
+      command: "pnpm audit",
+      status: 0,
+      stdout: JSON.stringify(pnpmAudit()),
+    }),
+    pnpmAudit(),
+  );
+  const npmVulnerable = npmAuditWithOneVulnerability();
+  assert.deepEqual(
+    validateAuditJsonResult({
+      command: "npm audit",
+      status: 1,
+      stdout: JSON.stringify(npmVulnerable),
+    }),
+    npmVulnerable,
+  );
+});
+
+test("pnpm/npm错误JSON、缺字段、非法输出与状态内容矛盾全部失败关闭", () => {
+  const validPnpmAdvisory = {
+    id: 1,
+    module_name: "vulnerable",
+    vulnerable_versions: "<2.0.0",
+    patched_versions: ">=2.0.0",
+    severity: "high",
+    findings: [{ version: "1.0.0", paths: ["packages__client__ui-trajectory>vulnerable"] }],
+  };
+  const vulnerablePnpm = pnpmAudit({
+    advisories: { 1: validPnpmAdvisory },
+    metadata: {
+      vulnerabilities: { info: 0, low: 0, moderate: 0, high: 1, critical: 0 },
+      dependencies: 1,
+      devDependencies: 0,
+      optionalDependencies: 0,
+      totalDependencies: 1,
+    },
+  });
+  const cases = [
+    { status: 1, stdout: JSON.stringify({ error: { code: "ERR_PNPM_AUDIT_BAD_RESPONSE" } }) },
+    { status: 1, stdout: JSON.stringify({ error: { code: "EAUDITERROR", summary: "npm error" } }) },
+    { status: 0, stdout: JSON.stringify({ advisories: {} }) },
+    { status: 0, stdout: JSON.stringify({ metadata: pnpmAudit().metadata }) },
+    {
+      status: 1,
+      stdout: JSON.stringify({
+        ...vulnerablePnpm,
+        advisories: { 1: { ...validPnpmAdvisory, vulnerable_versions: undefined } },
+      }),
+    },
+    { status: 0, stdout: JSON.stringify(vulnerablePnpm) },
+    { status: 1, stdout: JSON.stringify(pnpmAudit()) },
+    { status: 0, stdout: "not-json" },
+    { status: 1, stdout: "" },
+    { status: 2, stdout: JSON.stringify(pnpmAudit()), stderr: "network unavailable" },
+  ];
+  for (const fixture of cases) {
+    assert.throws(() =>
+      validateAuditJsonResult({ command: "audit fixture", stderr: "", ...fixture }),
+    );
+  }
+});
+
+test("Chat实际Fork link与Manifest必须在漏洞分类前双向精确相等", () => {
+  const manifest = loadManagedSourcesManifest();
+  const actual = assertActualManagedLinks(manifest);
+  assert.equal(actual.pi.length, 3);
+  assert.equal(actual.dsh.length, 1);
+
+  const undeclared = structuredClone(manifest);
+  undeclared.sources.find((source) => source.id === "dsh").linkedPackages = [];
+  assert.throws(() => assertActualManagedLinks(undeclared), /不双向相等/u);
 });

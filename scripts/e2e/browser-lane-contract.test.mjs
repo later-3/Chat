@@ -35,8 +35,32 @@ describe("deterministic browser lane contract", () => {
     assert.equal(testCount("apps/dsh-web/e2e/dsh-project-bootstrap-real.spec.ts"), 1);
     assert.equal(testCount("apps/dsh-web/e2e/dsh-capability-governance-real.spec.ts"), 3);
     assert.equal(testCount("apps/dsh-web/e2e/dsh-planning-faux-real.spec.ts"), 1);
-    assert.ok(testCount("apps/dsh-web/e2e/dsh-prompt-studio-real.spec.ts") >= 1);
-    assert.ok(testCount("apps/dsh-web/e2e/dsh-trajectory-real.spec.ts") >= 1);
+    assert.equal(testCount("apps/dsh-web/e2e/dsh-prompt-studio-real.spec.ts"), 5);
+    assert.equal(testCount("apps/dsh-web/e2e/dsh-trajectory-real.spec.ts"), 1);
+
+    const laneManifest = JSON.parse(read("config/test-lanes.json"));
+    assert.deepEqual(
+      laneManifest.files
+        .filter((entry) => entry.lane === "browser")
+        .map((entry) => entry.path)
+        .sort(),
+      [
+        "apps/dsh-web/e2e/dsh-capability-governance-real.spec.ts",
+        "apps/dsh-web/e2e/dsh-mobile-hanui-real.spec.ts",
+        "apps/dsh-web/e2e/dsh-planning-faux-real.spec.ts",
+        "apps/dsh-web/e2e/dsh-project-bootstrap-real.spec.ts",
+        "apps/dsh-web/e2e/dsh-prompt-studio-real.spec.ts",
+        "apps/dsh-web/e2e/dsh-pwa-real.spec.ts",
+        "apps/dsh-web/e2e/dsh-trajectory-real.spec.ts",
+      ],
+    );
+    for (const path of laneManifest.files
+      .filter((entry) => entry.lane === "browser")
+      .map((entry) => entry.path)) {
+      assert.ok(testCount(path) > 0, `${path}必须含机器可枚举case`);
+    }
+    const docs = `${read("docs/testing/test-lanes.md")}\n${read("docs/testing/browser-lane.md")}`;
+    assert.doesNotMatch(docs, /Browser.{0,20}18项|上述18项|Chromium测试\s*\|/u);
   });
 
   it("separates paid planning from beta Workbench and gives deterministic modes an allowlist", () => {

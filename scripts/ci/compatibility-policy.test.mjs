@@ -111,9 +111,60 @@ test("新代际没有read-old/migration入口时失败", () => {
     canonicalSha256: "e".repeat(64),
   });
   product.currentWriteGenerations = ["chat-product-store.v21"];
+  product.writeAuthority.generations = ["chat-product-store.v21"];
   assert.throws(
     () => assertCompatibilityFactsCompatible(factsBaseline, changed),
     /缺少read-old\/migration/u,
+  );
+});
+
+test("compat事实绑定真实Schema闭包、writer authority与resolved migration edge", () => {
+  const product = factsBaseline.domains.find((domain) => domain.id === "product-store");
+  const current = product.generations.find(
+    (generation) => generation.identity === "chat-product-store.v20",
+  );
+  assert.ok(
+    current.evidenceCount > 100,
+    "v20必须包含productEntities及Imported Tool/Agent Schema闭包",
+  );
+  assert.deepEqual(product.currentWriteGenerations, ["chat-product-store.v20"]);
+  assert.deepEqual(product.writeAuthority.generations, ["chat-product-store.v20"]);
+  assert.equal(product.writeAuthority.entry, "JsonProductStore.doTransact->persist");
+  assert.ok(
+    product.compatibilityEntries.every(
+      (entry) => entry.evidenceKind === "resolved-call-input-output",
+    ),
+  );
+  assert.equal(
+    product.generations.some((generation) => generation.identity === "chat-product-store.v21"),
+    false,
+    "未被reader/writer采用的version literal不得产生generation",
+  );
+
+  const writerMismatch = structuredClone(factsBaseline);
+  const mismatch = writerMismatch.domains.find((domain) => domain.id === "product-store");
+  mismatch.generations.push({
+    ...current,
+    identity: "chat-product-store.v21",
+    generation: 21,
+  });
+  mismatch.currentWriteGenerations = ["chat-product-store.v21"];
+  assert.throws(
+    () => assertCompatibilityFactsCompatible(factsBaseline, writerMismatch),
+    /writeAuthority与真实入口漂移/u,
+  );
+
+  const filenameOnlyMigration = structuredClone(factsBaseline);
+  filenameOnlyMigration.domains
+    .find((domain) => domain.id === "product-store")
+    .compatibilityEntries.push({
+      entry: "packages/product-store-json/src/migrate-v20-to-v21.ts",
+      generations: ["chat-product-store.v20"],
+      canonicalSha256: "a".repeat(64),
+    });
+  assert.throws(
+    () => assertCompatibilityFactsCompatible(factsBaseline, filenameOnlyMigration),
+    /无真实转换edge/u,
   );
 });
 

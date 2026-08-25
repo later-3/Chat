@@ -53,7 +53,8 @@ Memory、Workbench、paid与external开关。仅本机存在Key不会触发凭�
 只恢复本命令声明的精确Credential、全局mode、服务开关和命令名。真实Memory与Bailian入口还在任何Key
 读取、文件删除/写入、子进程或网络之前执行child-side精确命令门；绕过launcher直接运行会非零退出且无副作用。
 
-Browser的18项场景、唯一Harness与子进程环境边界见[确定性Browser lane](./browser-lane.md)。
+Browser场景、唯一Harness与子进程环境边界见[确定性Browser lane](./browser-lane.md)。实际
+case数由Browser合同测试直接解析当前spec，不在文档重复维护。
 
 ## 基线度量
 

@@ -77,3 +77,39 @@ test("ADR编号全局唯一且superseded必须双向引用真实后继", () => {
     },
   ]);
 });
+
+test("ADR禁止自我替代和A→B→A替代环", () => {
+  assert.throws(
+    () =>
+      validateDecisionRelations([
+        {
+          filename: "0099-self.md",
+          number: "0099",
+          status: "superseded",
+          supersededBy: "0099",
+          supersedes: ["0099"],
+        },
+      ]),
+    /自我替代/u,
+  );
+  assert.throws(
+    () =>
+      validateDecisionRelations([
+        {
+          filename: "0099-a.md",
+          number: "0099",
+          status: "superseded",
+          supersededBy: "0100",
+          supersedes: ["0100"],
+        },
+        {
+          filename: "0100-b.md",
+          number: "0100",
+          status: "superseded",
+          supersededBy: "0099",
+          supersedes: ["0099"],
+        },
+      ]),
+    /形成环/u,
+  );
+});

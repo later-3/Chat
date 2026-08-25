@@ -26,12 +26,19 @@
     },
     {
       "id": "workflow-run-spec",
-      "ownerRoots": ["packages/contracts/src", "packages/workflows/src"],
+      "ownerRoots": [
+        "packages/application/src/workflow-run-spec-compiler.ts",
+        "packages/contracts/src",
+        "packages/product-store-json/src/json-product-store.ts",
+        "packages/workflows/src"
+      ],
       "factSources": [
+        "packages/application/src/workflow-run-spec-compiler.ts",
         "packages/contracts/src/workflow-definition.ts",
-        "packages/contracts/src/workflow-run.ts",
+        "packages/product-store-json/src/json-product-store.ts",
+        "packages/workflows/src/configurable-planning-steps.ts",
         "packages/workflows/src/restricted-run-spec-interpreter.ts",
-        "packages/workflows/src/pi-direct-activity-migration.ts"
+        "packages/workflows/src/definition-kernel-lab-steps.ts"
       ]
     },
     {
@@ -39,9 +46,12 @@
       "ownerRoots": ["packages/contracts/src", "packages/pi-runtime/src"],
       "factSources": [
         "packages/contracts/src/direct-agent-runtime.ts",
+        "packages/pi-runtime/src/executor-service-contract.ts",
         "packages/pi-runtime/src/direct-executor-service-contract.ts",
+        "packages/pi-runtime/src/direct-executor-service-client.ts",
         "packages/pi-runtime/src/direct-executor-operation-store.ts",
-        "packages/pi-runtime/src/executor-operation-store.ts"
+        "packages/pi-runtime/src/executor-operation-store.ts",
+        "packages/pi-runtime/src/executor-service-client.ts"
       ]
     },
     {

@@ -38,6 +38,12 @@ export function validateDecisionRelations(records) {
     byNumber.set(record.number, record);
   }
   for (const record of records) {
+    if (record.supersededBy === record.number || record.supersedes.includes(record.number)) {
+      throw new Error(`${record.filename}禁止自我替代`);
+    }
+    if (new Set(record.supersedes).size !== record.supersedes.length) {
+      throw new Error(`${record.filename}替代关系列表重复`);
+    }
     if (record.supersededBy !== undefined) {
       const successor = byNumber.get(record.supersededBy);
       if (successor === undefined) throw new Error(`${record.filename}替代者不存在`);
@@ -52,6 +58,17 @@ export function validateDecisionRelations(records) {
       if (predecessor.supersededBy !== record.number) {
         throw new Error(`${predecessor.filename}未记录替代者ADR-${record.number}`);
       }
+    }
+  }
+  for (const record of records) {
+    const path = new Set([record.number]);
+    let current = record;
+    while (current.supersededBy !== undefined) {
+      if (path.has(current.supersededBy)) {
+        throw new Error(`${record.filename}替代关系形成环`);
+      }
+      path.add(current.supersededBy);
+      current = byNumber.get(current.supersededBy);
     }
   }
 }

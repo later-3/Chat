@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
@@ -11,10 +11,13 @@ const WAIVER_PATH = join(ROOT, "config/api-breaking-change-waivers.json");
 const CHANGE_RECORD_PATH = join(ROOT, "config/api-compatible-change-records.json");
 const CONTRACTS_ROOT = join(ROOT, "packages/contracts/src");
 const APPLICATION_ROOT = join(ROOT, "packages/application/src");
+const API_SOURCE_ROOT = join(ROOT, "apps/api/src");
 const FORBIDDEN_PUBLIC_NAME =
   /(?:HookToken|WorkflowRunId|Pi(?:Runtime)?SessionId|RuntimeCredential|ProviderCredential|ApiKey)/u;
+const FORBIDDEN_PUBLIC_IDENTITY =
+  /(?:hookToken|workflowRunId|pi(?:Runtime)?SessionId|runtimeCredential|providerCredential|apiKey)/iu;
 const FORBIDDEN_MANIFEST_TEXT =
-  /(?:\/internal\/runtime|runtime-credential|hookToken|workflowRunId|piRuntimeSessionId|apiKey|promptText)/u;
+  /(?:\/internal\/runtime|hookToken|workflowRunId|piRuntimeSessionId|apiKey|promptText)/u;
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -439,37 +442,172 @@ export function assertPublicContractNameAllowed(name) {
   }
 }
 
-function importedApplicationOperations(file) {
-  const names = new Set();
-  for (const statement of file.statements) {
-    if (
-      !ts.isImportDeclaration(statement) ||
-      !ts.isStringLiteral(statement.moduleSpecifier) ||
-      statement.moduleSpecifier.text !== "@chat/application" ||
-      statement.importClause?.namedBindings === undefined ||
-      !ts.isNamedImports(statement.importClause.namedBindings)
-    )
-      continue;
-    for (const element of statement.importClause.namedBindings.elements) {
-      if (!["ApplicationError", "notFound"].includes(element.name.text))
-        names.add(element.name.text);
-    }
+function callableDeclaration(declaration) {
+  if (ts.isFunctionDeclaration(declaration) || ts.isMethodDeclaration(declaration)) {
+    return declaration;
   }
-  return names;
+  if (
+    ts.isVariableDeclaration(declaration) &&
+    declaration.initializer !== undefined &&
+    (ts.isArrowFunction(declaration.initializer) ||
+      ts.isFunctionExpression(declaration.initializer))
+  ) {
+    return declaration.initializer;
+  }
+  return undefined;
 }
 
-function operationsInHandler(handler, imported) {
+function declarationKey(declaration) {
+  return `${declaration.getSourceFile().fileName}:${String(declaration.pos)}:${String(declaration.end)}`;
+}
+
+function symbolForCall(checker, call) {
+  if (ts.isIdentifier(call.expression)) return checker.getSymbolAtLocation(call.expression);
+  if (ts.isPropertyAccessExpression(call.expression)) {
+    return checker.getSymbolAtLocation(call.expression.name);
+  }
+  return undefined;
+}
+
+function isApplicationOperationDeclaration(checker, declaration) {
+  const callable = callableDeclaration(declaration);
+  if (callable === undefined) return false;
+  if (
+    !/(?:use-cases(?:\/|\.ts$)|operations\.ts$|service-status\.ts$)/u.test(
+      declaration.getSourceFile().fileName,
+    )
+  ) {
+    return false;
+  }
+  if (callable.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword))
+    return true;
+  const signature = checker.getSignatureFromDeclaration(callable);
+  if (signature === undefined) return false;
+  const returnType = checker.typeToString(checker.getReturnTypeOfSignature(signature), callable);
+  return returnType !== "void" && returnType !== "never";
+}
+
+/**
+ * Route只提供闭包根。这里沿同文件函数、变量函数和已解析import helper收敛，最终以
+ * TypeScript resolved symbol判定真实Application operation；递归、环和重复调用由seen稳定去重。
+ */
+function operationsInHandler(handler, checker) {
   const operations = new Set();
-  visit(handler, (node) => {
+  const queue = [handler];
+  const seen = new Set();
+  while (queue.length > 0) {
+    const declaration = queue.pop();
+    const key = declarationKey(declaration);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    visit(declaration, (node) => {
+      if (!ts.isCallExpression(node)) return;
+      if (ts.isElementAccessExpression(node.expression) || ts.isCallExpression(node.expression)) {
+        throw new Error(
+          `公开route包含无法静态解析的动态调用：${normalizedDeclaration(node.expression)}`,
+        );
+      }
+      const symbol = symbolForCall(checker, node);
+      if (symbol === undefined) {
+        if (ts.isIdentifier(node.expression)) {
+          throw new Error(`公开route调用无法解析：${node.expression.text}`);
+        }
+        return;
+      }
+      const actual = resolvedSymbol(checker, symbol);
+      const declarations = actual.declarations ?? [];
+      const applicationDeclarations = declarations.filter(
+        (entry) =>
+          entry.getSourceFile().fileName.startsWith(APPLICATION_ROOT) &&
+          isApplicationOperationDeclaration(checker, entry),
+      );
+      if (applicationDeclarations.length > 0) {
+        const operation = actual.getName();
+        if (!["ApplicationError", "notFound"].includes(operation)) operations.add(operation);
+        return;
+      }
+      for (const nested of declarations) {
+        if (!nested.getSourceFile().fileName.startsWith(API_SOURCE_ROOT)) continue;
+        const callable = callableDeclaration(nested);
+        if (callable !== undefined) queue.push(callable);
+        else if (ts.isVariableDeclaration(nested)) {
+          throw new Error(`公开route helper不是可静态解析函数：${actual.getName()}`);
+        }
+      }
+    });
+  }
+  return [...operations].sort();
+}
+
+function bindSuccessfulResponsesToOperations(responses, operationContracts) {
+  const applicationResultSignatureSha256 = sha256(
+    JSON.stringify(
+      operationContracts
+        .map((entry) => ({ operation: entry.operation, signatureSha256: entry.signatureSha256 }))
+        .sort((left, right) => left.operation.localeCompare(right.operation)),
+    ),
+  );
+  return responses.map((response) => ({
+    ...response,
+    applicationResultSignatureSha256,
+  }));
+}
+
+export function assertResolvedRouteOperationsForTest(operations, unresolvedDynamicCalls = []) {
+  if (unresolvedDynamicCalls.length > 0) {
+    throw new Error(`公开route包含无法静态解析的动态调用：${unresolvedDynamicCalls.join(", ")}`);
+  }
+  if (!Array.isArray(operations)) {
+    throw new Error("公开route operation闭包无效");
+  }
+  return [...new Set(operations)].sort();
+}
+
+export function applicationOperationsFromFixtureForTest({ route, helper, application }) {
+  const paths = {
+    route: join(API_SOURCE_ROOT, "product-routes/fixture-route.ts"),
+    helper: join(API_SOURCE_ROOT, "product-routes/fixture-helper.ts"),
+    application: join(APPLICATION_ROOT, "fixture-use-cases.ts"),
+  };
+  const sources = new Map([
+    [paths.route, route],
+    [paths.helper, helper],
+    [paths.application, application],
+  ]);
+  const options = {
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    target: ts.ScriptTarget.ESNext,
+    strict: true,
+  };
+  const host = ts.createCompilerHost(options);
+  const originalFileExists = host.fileExists.bind(host);
+  const originalReadFile = host.readFile.bind(host);
+  const originalGetSourceFile = host.getSourceFile.bind(host);
+  host.fileExists = (path) => sources.has(path) || originalFileExists(path);
+  host.readFile = (path) => sources.get(path) ?? originalReadFile(path);
+  host.getSourceFile = (path, languageVersion, onError, shouldCreateNewSourceFile) =>
+    sources.has(path)
+      ? ts.createSourceFile(path, sources.get(path), languageVersion, true)
+      : originalGetSourceFile(path, languageVersion, onError, shouldCreateNewSourceFile);
+  const program = ts.createProgram({ rootNames: [...sources.keys()], options, host });
+  const file = program.getSourceFile(paths.route);
+  if (file === undefined) throw new Error("fixture route无法解析");
+  let handler;
+  visit(file, (node) => {
     if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      imported.has(node.expression.text)
+      handler === undefined &&
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === "handler" &&
+      node.initializer !== undefined &&
+      (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
     ) {
-      operations.add(node.expression.text);
+      handler = node.initializer;
     }
   });
-  return [...operations].sort();
+  if (handler === undefined) throw new Error("fixture缺少handler函数");
+  return operationsInHandler(handler, program.getTypeChecker());
 }
 
 function applicationOperationContract(program, checker, operation) {
@@ -643,7 +781,6 @@ function collectRoutes(program, schemas) {
   for (const path of productRouteFiles()) {
     const file = program.getSourceFile(path);
     if (file === undefined) throw new Error(`TypeScript Program缺少公开路由文件：${path}`);
-    const imported = importedApplicationOperations(file);
     visit(file, (node) => {
       if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return;
       const method = node.expression.name.text.toUpperCase();
@@ -652,7 +789,7 @@ function collectRoutes(program, schemas) {
       const handler = node.arguments.at(-1);
       if (!ts.isStringLiteral(routePath) || handler === undefined) return;
       if (!ts.isArrowFunction(handler) && !ts.isFunctionExpression(handler)) return;
-      const operations = operationsInHandler(handler, imported);
+      const operations = operationsInHandler(handler, checker);
       const contract = routeContract(handler, checker, schemas);
       const requestNames = new Set([
         ...contract.pathParameters.map((entry) => entry.schema.identity),
@@ -688,7 +825,10 @@ function collectRoutes(program, schemas) {
                     signatureSha256: sha256(normalizedDeclaration(handler)),
                   },
                 ],
-        successfulResponses: contract.successfulResponses,
+        successfulResponses: bindSuccessfulResponsesToOperations(
+          contract.successfulResponses,
+          operationContracts,
+        ),
         applicationOperations: operations,
         applicationOperationContracts: operationContracts.map((entry) => ({
           operation: entry.operation,
@@ -721,9 +861,16 @@ function resolvedSymbol(checker, symbol) {
   return symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
 }
 
-function declarationClosure(checker, declaration, collected = new Set(), visiting = new Set()) {
+function declarationClosure(
+  checker,
+  declaration,
+  collected = new Set(),
+  visiting = new Set(),
+  allowedRoot = CONTRACTS_ROOT,
+  completed = new Set(),
+) {
   const key = `${declaration.getSourceFile().fileName}:${String(declaration.pos)}:${String(declaration.end)}`;
-  if (visiting.has(key)) return collected;
+  if (visiting.has(key) || completed.has(key)) return collected;
   visiting.add(key);
   collected.add(normalizedDeclaration(declaration));
   visit(declaration, (node) => {
@@ -732,19 +879,39 @@ function declarationClosure(checker, declaration, collected = new Set(), visitin
     if (symbol === undefined) return;
     const actual = resolvedSymbol(checker, symbol);
     for (const nested of actual.declarations ?? []) {
-      if (!nested.getSourceFile().fileName.startsWith(CONTRACTS_ROOT)) continue;
+      if (
+        !nested.getSourceFile().fileName.startsWith(allowedRoot) ||
+        nested.getSourceFile().fileName.includes(`${sep}node_modules${sep}`)
+      )
+        continue;
       if (
         ts.isVariableDeclaration(nested) ||
         ts.isTypeAliasDeclaration(nested) ||
         ts.isInterfaceDeclaration(nested) ||
         ts.isEnumDeclaration(nested)
       ) {
-        declarationClosure(checker, nested, collected, visiting);
+        declarationClosure(checker, nested, collected, visiting, allowedRoot, completed);
       }
     }
   });
   visiting.delete(key);
+  completed.add(key);
   return collected;
+}
+
+function declarationName(declaration) {
+  if ("name" in declaration && declaration.name !== undefined) {
+    return declaration.name.getText(declaration.getSourceFile());
+  }
+  return "";
+}
+
+export function assertPublicContractIdentityAllowedForTest(evidence) {
+  for (const value of evidence) {
+    if (FORBIDDEN_PUBLIC_NAME.test(value) || FORBIDDEN_PUBLIC_IDENTITY.test(value)) {
+      throw new Error(`公开导出禁止的Runtime/凭据身份：${value}`);
+    }
+  }
 }
 
 function isOptionalSchemaExpression(node) {
@@ -863,6 +1030,15 @@ function publicContracts(program) {
     if (declarations.length === 0) continue;
     const closure = new Set();
     for (const declaration of declarations) declarationClosure(checker, declaration, closure);
+    assertPublicContractIdentityAllowedForTest([
+      name,
+      actual.getName(),
+      ...declarations.flatMap((declaration) => [
+        declarationName(declaration),
+        relative(ROOT, declaration.getSourceFile().fileName).split(sep).join("/"),
+      ]),
+      ...closure,
+    ]);
     const signatureSha256 = sha256([...closure].sort().join("\n"));
     const schema = name.endsWith("Schema");
     const kind = schema
@@ -921,77 +1097,165 @@ function workspaceManifests() {
 function workspacePublicEntryTargets() {
   const targets = [];
   for (const entry of workspaceManifests()) {
-    const rootExport =
+    const exports =
       typeof entry.manifest.exports === "string"
-        ? entry.manifest.exports
-        : exportedTarget(entry.manifest.exports?.["."]);
-    if (typeof rootExport !== "string") continue;
-    const target = resolve(entry.root, rootExport);
-    if (existsSync(target)) targets.push(target);
+        ? { ".": entry.manifest.exports }
+        : (entry.manifest.exports ?? {});
+    for (const value of Object.values(exports)) {
+      const target = exportedTarget(value);
+      if (typeof target !== "string") continue;
+      const absolute = resolve(entry.root, target);
+      if (existsSync(absolute) && /\.[cm]?[jt]sx?$/u.test(absolute)) targets.push(absolute);
+    }
   }
-  return targets;
+  return [...new Set(targets)].sort();
 }
 
-function moduleEntrySignature(program, path, fallback) {
+function moduleEntryContract(program, path, fallback, packageRoot) {
   const file = program.getSourceFile(path);
-  if (file === undefined) return sha256(fallback);
+  if (file === undefined) {
+    const content = existsSync(path) ? readFileSync(path, "utf8") : fallback;
+    const parsed = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
+    const names = new Set();
+    visit(parsed, (node) => {
+      if (ts.isExportAssignment(node)) names.add("default");
+      if (ts.isExportSpecifier(node)) names.add(node.name.text);
+      if (
+        "modifiers" in node &&
+        node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) &&
+        "name" in node &&
+        node.name !== undefined
+      ) {
+        names.add(node.name.getText(parsed));
+      }
+    });
+    return {
+      exportedSymbols: [...names].sort(),
+      transitiveSignatureSha256: sha256(content),
+    };
+  }
   const checker = program.getTypeChecker();
   const moduleSymbol = checker.getSymbolAtLocation(file);
-  if (moduleSymbol === undefined) return sha256(normalizedDeclaration(file));
-  const signatures = checker
+  if (moduleSymbol === undefined) {
+    return {
+      exportedSymbols: [],
+      transitiveSignatureSha256: sha256(normalizedDeclaration(file)),
+    };
+  }
+  const moduleClosure = new Set();
+  const completedDeclarations = new Set();
+  const signatureFacts = [];
+  const exportedSymbols = checker
     .getExportsOfModule(moduleSymbol)
     .map((exported) => {
       const actual = resolvedSymbol(checker, exported);
-      const declaration = actual.declarations?.[0];
-      if (declaration === undefined) return { name: exported.getName(), signature: "unresolved" };
+      const declarations = (actual.declarations ?? []).filter((declaration) =>
+        declaration.getSourceFile().fileName.startsWith(ROOT),
+      );
+      const declaration = declarations[0];
+      if (declaration === undefined) {
+        const forbidden =
+          FORBIDDEN_PUBLIC_NAME.test(exported.getName()) ||
+          FORBIDDEN_PUBLIC_IDENTITY.test(actual.getName());
+        signatureFacts.push({
+          exported: exported.getName(),
+          resolved: actual.getName(),
+          signature: "unresolved",
+        });
+        return forbidden
+          ? `redacted:${sha256(`${exported.getName()}:${actual.getName()}`)}`
+          : exported.getName();
+      }
       const type = checker.typeToString(
         checker.getTypeOfSymbolAtLocation(actual, declaration),
         declaration,
         ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope,
       );
-      return { name: exported.getName(), signature: type };
+      for (const nested of declarations) {
+        declarationClosure(
+          checker,
+          nested,
+          moduleClosure,
+          new Set(),
+          packageRoot,
+          completedDeclarations,
+        );
+      }
+      const forbidden =
+        FORBIDDEN_PUBLIC_NAME.test(exported.getName()) ||
+        FORBIDDEN_PUBLIC_IDENTITY.test(actual.getName());
+      signatureFacts.push({
+        exported: exported.getName(),
+        resolved: actual.getName(),
+        type,
+        declarations: declarations.map(normalizedDeclaration).sort(),
+      });
+      return forbidden
+        ? `redacted:${sha256(`${exported.getName()}:${actual.getName()}`)}`
+        : exported.getName();
     })
-    .sort((left, right) => left.name.localeCompare(right.name));
-  return sha256(JSON.stringify(signatures));
+    .sort((left, right) => left.localeCompare(right));
+  return {
+    exportedSymbols,
+    transitiveSignatureSha256: sha256(
+      JSON.stringify({
+        exportedSymbols,
+        signatureFacts: signatureFacts.sort((left, right) =>
+          left.exported.localeCompare(right.exported),
+        ),
+        closure: [...moduleClosure].sort(),
+      }),
+    ),
+  };
 }
 
 function packageExports(program) {
   const packages = [];
+  const contractCache = new Map();
   for (const { root, manifest } of workspaceManifests()) {
-    const entries = [];
-    const publicExports =
-      typeof manifest.exports === "string"
-        ? manifest.exports
-        : Object.fromEntries(
-            Object.entries(manifest.exports ?? {}).filter(
-              ([key, value]) =>
-                !/runtime-credential|internal-credential/u.test(`${key}:${JSON.stringify(value)}`),
-            ),
-          );
-    if (typeof manifest.exports === "string") entries.push(".");
-    else if (manifest.exports !== null && typeof manifest.exports === "object") {
-      for (const key of Object.keys(publicExports)) {
-        entries.push(key);
-      }
+    const exports =
+      typeof manifest.exports === "string" ? { ".": manifest.exports } : (manifest.exports ?? {});
+    const internalExports = manifest.chatApiSurface?.internalExports ?? [];
+    if (
+      !Array.isArray(internalExports) ||
+      new Set(internalExports).size !== internalExports.length
+    ) {
+      throw new Error(`${manifest.name}.chatApiSurface.internalExports必须是无重复数组`);
     }
-    const rootTarget =
-      typeof manifest.exports === "string"
-        ? manifest.exports
-        : exportedTarget(manifest.exports?.["."]);
+    for (const key of internalExports) {
+      if (exports[key] === undefined)
+        throw new Error(`${manifest.name}内部export分类引用不存在：${key}`);
+    }
+    const subpaths = Object.entries(exports)
+      .map(([key, conditions]) => {
+        const target = exportedTarget(conditions);
+        if (typeof target !== "string") throw new Error(`${manifest.name}:${key} export缺少target`);
+        const absoluteTarget = resolve(root, target);
+        const cacheKey = `${absoluteTarget}:${JSON.stringify(conditions)}`;
+        let contract = contractCache.get(cacheKey);
+        if (contract === undefined) {
+          contract = moduleEntryContract(program, absoluteTarget, JSON.stringify(conditions), root);
+          contractCache.set(cacheKey, contract);
+        }
+        return {
+          key,
+          visibility: internalExports.includes(key) ? "internal" : "public",
+          target,
+          conditions: stable(conditions),
+          ...contract,
+        };
+      })
+      .sort((left, right) => left.key.localeCompare(right.key));
+    const rootContract = subpaths.find((entry) => entry.key === ".");
     packages.push({
       name: manifest.name,
-      exportPaths: entries.sort(),
-      exports: stable(publicExports),
+      exportPaths: subpaths.map((entry) => entry.key),
+      exports: stable(exports),
+      subpaths,
       executableCommands: Object.keys(manifest.bin ?? {}).sort(),
       bin: stable(manifest.bin ?? {}),
       publicEntrySignatureSha256:
-        typeof rootTarget === "string"
-          ? moduleEntrySignature(
-              program,
-              resolve(root, rootTarget),
-              JSON.stringify(manifest.exports),
-            )
-          : sha256(JSON.stringify(manifest.exports ?? {})),
+        rootContract?.transitiveSignatureSha256 ?? sha256(JSON.stringify(exports)),
     });
   }
   return packages.sort((left, right) => left.name.localeCompare(right.name));
@@ -1018,7 +1282,8 @@ export function generateApiSurface() {
       apiCompositionRoot: "apps/api:createApiApp",
       browserContractEntry: "@chat/contracts/public",
       packageExportSource: "workspace-package-manifests",
-      routeContractExtraction: "request-source-and-success-response-dataflow.v2",
+      packageExportExtraction: "all-subpaths-and-transitive-symbols.v2",
+      routeContractExtraction: "request-helper-operation-and-success-response-dataflow.v3",
     },
     routes,
     commandTypes: contracts.symbols
@@ -1043,8 +1308,11 @@ export function generateApiSurface() {
     deprecated: contracts.deprecated,
   };
   const rendered = json(manifest);
-  if (FORBIDDEN_MANIFEST_TEXT.test(rendered)) {
-    throw new Error("API Surface包含私有Runtime身份、凭据或Prompt字段");
+  const forbiddenManifestIdentity = FORBIDDEN_MANIFEST_TEXT.exec(rendered)?.[0];
+  if (forbiddenManifestIdentity !== undefined) {
+    throw new Error(
+      `API Surface包含私有Runtime身份、凭据或Prompt字段：${forbiddenManifestIdentity}`,
+    );
   }
   return stable(manifest);
 }
@@ -1082,15 +1350,97 @@ function mapBy(items, key) {
   return new Map(items.map((item) => [key(item), item]));
 }
 
+const API_SURFACE_NORMALIZERS = Object.freeze({
+  "chat-public-api-surface.v2": (value) => value,
+  "chat-public-api-surface.v3": (value) => value,
+});
+
+function normalizeApiSurface(value) {
+  const normalizer = API_SURFACE_NORMALIZERS[value?.schemaVersion];
+  if (normalizer === undefined) {
+    throw new Error(
+      `API Surface Manifest缺少显式migration/normalizer：${String(value?.schemaVersion)}`,
+    );
+  }
+  const normalized = normalizer(structuredClone(value));
+  for (const field of ["routes", "packageExports", "publicSymbols", "publicSchemas"]) {
+    if (!Array.isArray(normalized[field])) throw new Error(`API Surface缺少可比较字段：${field}`);
+  }
+  if (
+    !Array.isArray(normalized.commandTypes) ||
+    !Array.isArray(normalized.queryTypes) ||
+    !Array.isArray(normalized.problems?.codes) ||
+    !Array.isArray(normalized.problems?.recoveryActions)
+  ) {
+    throw new Error("API Surface缺少Command/Query/Problem可比较字段");
+  }
+  return normalized;
+}
+
+function routeForComparison(route, fromExtraction, toExtraction) {
+  const normalized = structuredClone(route);
+  const upgraded = new Set([fromExtraction, toExtraction]);
+  if (
+    upgraded.has("request-source-and-success-response-dataflow.v2") &&
+    upgraded.has("request-helper-operation-and-success-response-dataflow.v3")
+  ) {
+    for (const response of normalized.successfulResponses ?? []) {
+      delete response.applicationResultSignatureSha256;
+    }
+  }
+  return normalized;
+}
+
+function normalizedSubpaths(entry) {
+  if (Array.isArray(entry.subpaths)) return entry.subpaths;
+  return entry.exportPaths.map((key) => ({
+    key,
+    visibility: "legacy-unclassified",
+    target: exportedTarget(entry.exports?.[key]),
+    conditions: entry.exports?.[key],
+    exportedSymbols: undefined,
+    transitiveSignatureSha256: key === "." ? entry.publicEntrySignatureSha256 : undefined,
+  }));
+}
+
 export function diffApiSurface(baseline, current) {
+  const baselineSchemaVersion = baseline?.schemaVersion;
+  const currentSchemaVersion = current?.schemaVersion;
+  const baselineHadSubpaths = baseline?.packageExports?.some((entry) =>
+    Array.isArray(entry.subpaths),
+  );
+  baseline = normalizeApiSurface(baseline);
+  current = normalizeApiSurface(current);
   const issues = [];
+  if (baselineSchemaVersion !== currentSchemaVersion) {
+    issues.push(
+      issue(
+        "manifest_schema_version_changed",
+        "api-surface-manifest",
+        baselineSchemaVersion,
+        currentSchemaVersion,
+      ),
+    );
+  }
   const previousRoutes = mapBy(baseline.routes, (route) => `${route.method} ${route.path}`);
   const currentRoutes = mapBy(current.routes, (route) => `${route.method} ${route.path}`);
   for (const [key, route] of previousRoutes) {
     const next = currentRoutes.get(key);
     if (next === undefined) issues.push(issue("route_removed", key, route, undefined));
-    else if (baseline.schemaVersion === current.schemaVersion && digest(route) !== digest(next)) {
-      issues.push(issue("route_contract_changed", key, route, next));
+    else {
+      const previousComparable = routeForComparison(
+        route,
+        baseline.generation?.routeContractExtraction,
+        current.generation?.routeContractExtraction,
+      );
+      const currentComparable = routeForComparison(
+        next,
+        current.generation?.routeContractExtraction,
+        baseline.generation?.routeContractExtraction,
+      );
+      if (digest(previousComparable) !== digest(currentComparable)) {
+        issues.push(issue("route_contract_changed", key, route, next));
+      }
     }
   }
   for (const [key, route] of currentRoutes) {
@@ -1110,10 +1460,7 @@ export function diffApiSurface(baseline, current) {
             entry.exports?.[exportPath] ?? exportPath,
           ),
         );
-      } else if (
-        baseline.schemaVersion === current.schemaVersion &&
-        digest(entry.exports?.[exportPath]) !== digest(next.exports?.[exportPath])
-      ) {
+      } else if (digest(entry.exports?.[exportPath]) !== digest(next.exports?.[exportPath])) {
         issues.push(
           issue(
             "package_export_changed",
@@ -1126,9 +1473,9 @@ export function diffApiSurface(baseline, current) {
     }
     if (
       next !== undefined &&
-      baseline.schemaVersion === current.schemaVersion &&
       (digest(entry.bin) !== digest(next.bin) ||
-        entry.publicEntrySignatureSha256 !== next.publicEntrySignatureSha256)
+        (baselineHadSubpaths &&
+          entry.publicEntrySignatureSha256 !== next.publicEntrySignatureSha256))
     ) {
       issues.push(issue("package_executable_or_entry_changed", name, entry, next));
     }
@@ -1137,6 +1484,10 @@ export function diffApiSurface(baseline, current) {
     const previous = previousPackages.get(name);
     for (const exportPath of entry.exportPaths) {
       if (previous === undefined || !previous.exportPaths.includes(exportPath)) {
+        const currentSubpath = normalizedSubpaths(entry).find(
+          (subpath) => subpath.key === exportPath,
+        );
+        if (!baselineHadSubpaths && currentSubpath?.visibility === "internal") continue;
         issues.push(
           issue(
             "package_export_added",
@@ -1145,6 +1496,41 @@ export function diffApiSurface(baseline, current) {
             entry.exports?.[exportPath] ?? exportPath,
           ),
         );
+      }
+    }
+  }
+
+  for (const [name, entry] of previousPackages) {
+    const next = currentPackages.get(name);
+    if (next === undefined) continue;
+    const beforeSubpaths = mapBy(normalizedSubpaths(entry), (subpath) => subpath.key);
+    const afterSubpaths = mapBy(normalizedSubpaths(next), (subpath) => subpath.key);
+    for (const [key, before] of beforeSubpaths) {
+      const after = afterSubpaths.get(key);
+      if (after === undefined) continue;
+      const comparableBefore = {
+        visibility: before.visibility,
+        target: before.target,
+        conditions: before.conditions,
+        exportedSymbols: before.exportedSymbols,
+        transitiveSignatureSha256: before.transitiveSignatureSha256,
+      };
+      const comparableAfter = {
+        visibility:
+          before.visibility === "legacy-unclassified" ? "legacy-unclassified" : after.visibility,
+        target: after.target,
+        conditions: after.conditions,
+        exportedSymbols: before.exportedSymbols === undefined ? undefined : after.exportedSymbols,
+        transitiveSignatureSha256:
+          before.transitiveSignatureSha256 === undefined || !baselineHadSubpaths
+            ? before.transitiveSignatureSha256
+            : after.transitiveSignatureSha256,
+      };
+      if (digest(comparableBefore) !== digest(comparableAfter)) {
+        const target = `${name}:${key}`;
+        if (!issues.some((entry) => entry.issueId === `package_export_changed:${target}`)) {
+          issues.push(issue("package_export_changed", target, before, after));
+        }
       }
     }
   }

@@ -1,9 +1,9 @@
 import { defineConfig } from "vitest/config";
 
-/** 真实Provider门专用配置：只运行*.real.ts；普通CI不运行付费测试。 */
+/** Planner/Executor真实Provider门；另外两个真实入口各自使用独立Config。 */
 export default defineConfig({
   test: {
-    include: ["src/**/*.real.ts"],
+    include: ["src/provider-bailian.real.ts"],
     testTimeout: 240_000,
   },
 });

@@ -26,7 +26,12 @@ const DOMAIN_OWNER_ROOTS = Object.freeze({
   "network-contracts": ["packages/contracts/src", "config/api-surface.baseline.json"],
   "product-store": ["packages/contracts/src/product-store.ts", "packages/product-store-json/src"],
   "bridge-state": ["packages/dsh-lifeos-bridge/src/state-store.ts"],
-  "workflow-run-spec": ["packages/contracts/src", "packages/workflows/src"],
+  "workflow-run-spec": [
+    "packages/application/src/workflow-run-spec-compiler.ts",
+    "packages/contracts/src",
+    "packages/product-store-json/src/json-product-store.ts",
+    "packages/workflows/src",
+  ],
   "direct-generic-journals": ["packages/contracts/src", "packages/pi-runtime/src"],
   "browser-dto-events": ["packages/contracts/src", "packages/dsh-lifeos-bridge/src/client"],
 });

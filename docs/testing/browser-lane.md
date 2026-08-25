@@ -7,16 +7,18 @@ Browser lane只复用[`playwright.dsh-real.config.ts`](../../apps/dsh-web/playwr
 
 ## 当前覆盖
 
-| 模式 | Chromium测试 | 主要证据 |
-| --- | ---: | --- |
-| PWA + Mobile | 7 | manifest/SW/离线边界、移动抽屉/FAB、桌面零影响 |
-| Planning Faux | 1 | 真实DSH/API/Product Store/Workflow/Pi AgentSession与`full-operation.v3`，Plan审核、刷新恢复、批准与正式Assistant |
-| Prompt Studio | 5 | 编辑、版本/来源、Agent最低只读配置表面 |
-| Trajectory | 1 | 原生Trajectory、正式Assistant、刷新、双源Session记录 |
-| Project Bootstrap | 1 | 真实Message/Run/Candidate、一次决定、关页执行、重开与下一轮普通消息 |
-| Capability Governance | 3 | Tool Intent/Decision、一次handler、响应未知后重启恢复、拒绝零执行 |
+| 模式 | 主要证据 |
+| --- | --- |
+| PWA + Mobile | manifest/SW/离线边界、移动抽屉/FAB、桌面零影响 |
+| Planning Faux | 真实DSH/API/Product Store/Workflow/Pi AgentSession与`full-operation.v3`，Plan审核、刷新恢复、批准与正式Assistant |
+| Prompt Studio | 编辑、版本/来源、Agent最低只读配置表面 |
+| Trajectory | 原生Trajectory、正式Assistant、刷新、双源Session记录 |
+| Project Bootstrap | 真实Message/Run/Candidate、一次决定、关页执行、重开与下一轮普通消息 |
+| Capability Governance | Tool Intent/Decision、一次handler、响应未知后重启恢复、拒绝零执行 |
 
-根命令`pnpm test:browser`顺序运行上述18项。完整付费Planning和三层Provider Prompt Review仍在
+根命令`pnpm test:browser`顺序运行上述确定性spec。实际case数由
+[`browser-lane-contract.test.mjs`](../../scripts/e2e/browser-lane-contract.test.mjs)从spec机器
+解析；新增case会直接进入报告并触发该门，文档不维护易漂移总数。完整付费Planning和三层Provider Prompt Review仍在
 `:paid` lane；Workbench只在`beta` lane。旧付费Planning spec已移除Workbench步骤，独立
 Workbench spec继续复用同一配置的`workbench-only`模式。
 

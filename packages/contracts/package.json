@@ -17,6 +17,11 @@
       "import": "./src/runtime-credential.ts"
     }
   },
+  "chatApiSurface": {
+    "internalExports": [
+      "./runtime-credential"
+    ]
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

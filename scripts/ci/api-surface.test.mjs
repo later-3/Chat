@@ -7,7 +7,9 @@ import test from "node:test";
 import {
   assertApiSurfaceBaselineChain,
   assertApiSurfaceCompatible,
+  assertPublicContractIdentityAllowedForTest,
   assertPublicContractNameAllowed,
+  applicationOperationsFromFixtureForTest,
   classifySchemaRolesForTest,
   diffApiSurface,
   generateApiSurface,
@@ -75,7 +77,7 @@ test("API Surface由真实组合根确定性生成并排除私有Runtime身份",
   );
   assert.doesNotMatch(
     JSON.stringify(first),
-    /(?:\/internal\/runtime|runtime-credential|hookToken|workflowRunId|piRuntimeSessionId|apiKey|promptText)/u,
+    /(?:\/internal\/runtime|hookToken|workflowRunId|piRuntimeSessionId|apiKey|promptText)/u,
   );
   assert.deepEqual(diffApiSurface(baseline, first), []);
   assert.deepEqual(assertApiSurfaceCompatible(baseline, first, emptyWaivers), []);
@@ -295,4 +297,145 @@ test("禁止的Runtime身份在public入口硬失败，Problem/Recovery增删分
   assert.ok(ids.includes("problem_code_added:new_problem"));
   assert.ok(ids.includes(`recovery_action_removed:${removedRecovery}`));
   assert.ok(ids.includes("recovery_action_added:new_recovery"));
+});
+
+test("route沿本地/import helper调用图收敛并让底层Operation替换进入合同", () => {
+  const application = `
+    export async function getNote() { return { kind: "note" as const }; }
+    export async function getNoteHistory() { return { kind: "history" as const }; }
+  `;
+  const route = `
+    import { helper } from "./fixture-helper.js";
+    export const handler = async () => helper();
+  `;
+  const helper = (operation) => `
+    import { ${operation} } from "../../../../packages/application/src/fixture-use-cases.js";
+    function cycleA() { return cycleB(); }
+    function cycleB() { return cycleA(); }
+    void cycleA;
+    export async function helper() { return ${operation}(); }
+  `;
+  assert.deepEqual(
+    applicationOperationsFromFixtureForTest({
+      route,
+      helper: helper("getNote"),
+      application,
+    }),
+    ["getNote"],
+  );
+  assert.deepEqual(
+    applicationOperationsFromFixtureForTest({
+      route,
+      helper: helper("getNoteHistory"),
+      application,
+    }),
+    ["getNoteHistory"],
+  );
+  assert.throws(
+    () =>
+      applicationOperationsFromFixtureForTest({
+        route,
+        application,
+        helper: `
+          import { getNote, getNoteHistory } from "../../../../packages/application/src/fixture-use-cases.js";
+          export function helper(condition = true) {
+            const operation = condition ? getNote : getNoteHistory;
+            return operation();
+          }
+        `,
+      }),
+    /无法静态解析|不是可静态解析/u,
+  );
+});
+
+test("禁止身份检查覆盖alias、resolved symbol、声明来源和transitive签名", () => {
+  assert.throws(
+    () =>
+      assertPublicContractIdentityAllowedForTest([
+        "PublicRuntimeError",
+        "RuntimeCredentialError",
+        "packages/contracts/src/runtime-credential.ts",
+      ]),
+    /禁止/u,
+  );
+  assert.throws(
+    () =>
+      assertPublicContractIdentityAllowedForTest([
+        "PublicSafeAlias",
+        "type PublicSafeAlias = { credential: RuntimeCredentialError }",
+      ]),
+    /禁止/u,
+  );
+});
+
+test("所有package export subpath独立冻结key/target/conditions/symbol与transitive hash", () => {
+  const application = baseline.packageExports.find((entry) => entry.name === "@chat/application");
+  assert.ok(application);
+  assert.equal(application.subpaths.length, application.exportPaths.length);
+  for (const pkg of baseline.packageExports) {
+    assert.equal(pkg.subpaths.length, pkg.exportPaths.length);
+    for (const subpath of pkg.subpaths) {
+      assert.equal(typeof subpath.key, "string");
+      assert.equal(typeof subpath.target, "string");
+      assert.ok(["public", "internal"].includes(subpath.visibility));
+      assert.ok(Array.isArray(subpath.exportedSymbols));
+      assert.match(subpath.transitiveSignatureSha256, /^[0-9a-f]{64}$/u);
+    }
+  }
+  const fixture = application.subpaths.find((entry) => entry.key === "./workflow-kernel-fixtures");
+  assert.ok(fixture);
+  const changed = clone(baseline);
+  changed.packageExports
+    .find((entry) => entry.name === "@chat/application")
+    .subpaths.find(
+      (entry) => entry.key === "./workflow-kernel-fixtures",
+    ).transitiveSignatureSha256 = "9".repeat(64);
+  assert.ok(
+    diffApiSurface(baseline, changed)
+      .map((entry) => entry.issueId)
+      .includes("package_export_changed:@chat/application:./workflow-kernel-fixtures"),
+  );
+  const runtime = baseline.packageExports
+    .find((entry) => entry.name === "@chat/contracts")
+    .subpaths.find((entry) => entry.key === "./runtime-credential");
+  assert.equal(runtime.visibility, "internal");
+});
+
+test("Manifest升代产生meta change且不能绕过route/operation/export精确waiver", () => {
+  const changed = clone(baseline);
+  changed.schemaVersion = "chat-public-api-surface.v3";
+  changed.routes[0].applicationOperations = ["replacementOperation"];
+  const subpath = changed.packageExports.find((entry) => entry.subpaths.length > 0).subpaths[0];
+  subpath.target = "./src/replacement.ts";
+  subpath.conditions = { import: "./src/replacement.ts", types: "./src/replacement.ts" };
+  const issues = diffApiSurface(baseline, changed);
+  const ids = issues.map((entry) => entry.issueId);
+  assert.ok(ids.includes("manifest_schema_version_changed:api-surface-manifest"));
+  assert.ok(ids.some((id) => id.startsWith("route_contract_changed:")));
+  assert.ok(ids.some((id) => id.startsWith("package_export_changed:")));
+  assert.throws(
+    () => assertApiSurfaceCompatible(baseline, changed, emptyWaivers),
+    /未获用户明确批准/u,
+  );
+  const waivers = issues.map((entry) => ({
+    issueKind: entry.kind,
+    target: entry.target,
+    baseDigest: entry.baseDigest,
+    currentDigest: entry.currentDigest,
+    diffSha256: entry.diffSha256,
+    approvedBy: "user:fixture",
+    approvalReference: "fixture:exact",
+    detect: "manifest diff",
+    why: "fixture",
+    fix: "fixture migration",
+    verify: "fixture contract",
+    rollback: "restore fixture",
+  }));
+  assert.deepEqual(
+    assertApiSurfaceCompatible(baseline, changed, { schemaVersion: 2, waivers }),
+    issues,
+  );
+  const unknown = clone(changed);
+  unknown.schemaVersion = "chat-public-api-surface.v99";
+  assert.throws(() => diffApiSurface(baseline, unknown), /normalizer/u);
 });

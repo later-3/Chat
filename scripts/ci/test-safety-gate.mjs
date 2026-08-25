@@ -4,6 +4,36 @@ import { pathToFileURL } from "node:url";
 
 import { EXTERNAL_OPT_IN_ENV, PROVIDER_AND_CREDENTIAL_ENV } from "./safe-environment.mjs";
 
+const CHILD_ENV_ALLOWLIST = Object.freeze([
+  "PATH",
+  "HOME",
+  "USERPROFILE",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LANGUAGE",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+  "SHELL",
+  "TERM",
+  "COLORTERM",
+  "NO_COLOR",
+  "FORCE_COLOR",
+  "CI",
+  "COREPACK_HOME",
+  "PNPM_HOME",
+  "NPM_CONFIG_REGISTRY",
+  "npm_config_registry",
+  "CHAT_REPO_ROOT",
+  "CHAT_PLANE_CE_REAL_TEST_PROFILE",
+  "CHAT_PLANE_CE_REAL_TEST_MODULES_JSON",
+  "CHAT_PLANE_CE_REAL_TEST_REUSE",
+]);
+const SENSITIVE_ENV_NAME =
+  /(?:_KEY(?:_|$)|_TOKEN(?:_|$)|_SECRET(?:_|$)|_CREDENTIAL|_AUTH|_PASSWORD(?:_|$)|_COOKIE(?:_|$))/u;
+
 function enabled(value) {
   return value?.trim() === "1";
 }
@@ -48,16 +78,24 @@ export async function validateTestSafetyGate(input, loadEnvironment) {
       throw new Error(`缺少精确测试凭据：${name}`);
     }
   }
-  // Loader可以读取仓库.env，但子进程只能得到本次门声明的最小敏感面。先保存精确
-  // 凭据，再清空Provider/base URL、Memory、Plane、GitHub/npm/SSH和动态Provider Key；
-  // 普通PATH/HOME/TMP/toolchain与非敏感测试配置保持不变。
+  // Loader可以读取仓库.env，但子进程从明确白名单起步；任何未声明敏感名称只会得到
+  // 空值。最后才恢复本命令声明的Credential、全局mode、服务开关和精确命令身份。
   const declaredCredentials = Object.fromEntries(
     input.credentials.map((name) => [name, loaded[name]]),
   );
   const dynamicProviderKey = loaded.CHAT_PROJECT_MODEL_API_KEY_ENV?.trim();
-  const child = { ...loaded };
-  for (const name of [...PROVIDER_AND_CREDENTIAL_ENV, ...EXTERNAL_OPT_IN_ENV]) child[name] = "";
-  if (/^[A-Z_][A-Z0-9_]*$/u.test(dynamicProviderKey ?? "")) child[dynamicProviderKey] = "";
+  const child = Object.fromEntries(
+    CHILD_ENV_ALLOWLIST.flatMap((name) =>
+      typeof loaded[name] === "string" ? [[name, loaded[name]]] : [],
+    ),
+  );
+  const sensitiveNames = new Set([
+    ...PROVIDER_AND_CREDENTIAL_ENV,
+    ...EXTERNAL_OPT_IN_ENV,
+    ...Object.keys(loaded).filter((name) => SENSITIVE_ENV_NAME.test(name)),
+  ]);
+  if (/^[A-Z_][A-Z0-9_]*$/u.test(dynamicProviderKey ?? "")) sensitiveNames.add(dynamicProviderKey);
+  for (const name of sensitiveNames) child[name] = "";
   child.CHAT_EXTERNAL_TEST_COMMAND_NAME = "";
   child.CHAT_PAID_TEST_COMMAND_NAME = "";
   Object.assign(child, declaredCredentials);

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
@@ -134,6 +135,13 @@ describe("paid and external test safety gate", () => {
         GITHUB_TOKEN: "github-secret",
         NPM_TOKEN: "npm-secret",
         SSH_AUTH_SOCK: "/ssh-agent",
+        CHAT_RUNTIME_KEY: "runtime-secret",
+        CHAT_RUNTIME_CREDENTIAL_PATH: "/credential-path",
+        CHAT_WEB_AUTH_CREDENTIALS_FILE: "/web-auth",
+        CHAT_TEST_EXECUTOR_SECRET: "executor-secret",
+        CHAT_CAPABILITY_E2E_CONTROL_TOKEN: "control-token",
+        FUTURE_UNKNOWN_SECRET: "future-secret",
+        UNDECLARED_NON_SENSITIVE_CONFIG: "must-not-be-copied",
       }),
     );
     assert.equal(child.PATH, "/toolchain/bin");
@@ -153,9 +161,16 @@ describe("paid and external test safety gate", () => {
       "NPM_TOKEN",
       "SSH_AUTH_SOCK",
       "CHAT_ALLOW_EXTERNAL_WRITES",
+      "CHAT_RUNTIME_KEY",
+      "CHAT_RUNTIME_CREDENTIAL_PATH",
+      "CHAT_WEB_AUTH_CREDENTIALS_FILE",
+      "CHAT_TEST_EXECUTOR_SECRET",
+      "CHAT_CAPABILITY_E2E_CONTROL_TOKEN",
+      "FUTURE_UNKNOWN_SECRET",
     ]) {
       assert.equal(child[name], "", `${name}不得进入Bailian child`);
     }
+    assert.equal(child.UNDECLARED_NON_SENSITIVE_CONFIG, undefined);
   });
 
   it("Memory and Plane children receive disjoint minimum sensitive environments", async () => {
@@ -269,6 +284,84 @@ describe("paid and external test safety gate", () => {
       assert.ok(guard >= 0, `${path}缺少child-side guard`);
       assert.ok(guard < source.indexOf(firstSideEffect), `${path}在授权前触达真实测试入口`);
       assert.doesNotMatch(source.slice(0, guard), /load-env\.mjs/u, `${path}在授权前加载.env`);
+    }
+  });
+
+  it("three paid Provider configs each collect exactly their own real entry without calling Provider", () => {
+    const root = resolve(import.meta.dirname, "../..");
+    const packageRoot = resolve(root, "packages/pi-runtime");
+    const cases = [
+      ["test:paid:provider:bailian", "vitest.provider.config.ts", "provider-bailian.real.ts"],
+      [
+        "test:paid:provider:bailian:coding",
+        "vitest.provider-coding.config.ts",
+        "provider-bailian-coding.real.ts",
+      ],
+      [
+        "test:paid:provider:bailian:note",
+        "vitest.provider-note.config.ts",
+        "provider-bailian-note.real.ts",
+      ],
+    ];
+    for (const [commandName, config, expected] of cases) {
+      const result = spawnSync("pnpm", ["exec", "vitest", "list", "--json", "--config", config], {
+        cwd: packageRoot,
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          TMPDIR: process.env.TMPDIR,
+          LANG: process.env.LANG,
+          CI: "true",
+          CHAT_ALLOW_PAID_TESTS: "1",
+          CHAT_PAID_TEST_COMMAND_NAME: commandName,
+          DASHSCOPE_API_KEY: "collection-sentinel-not-a-real-key",
+        },
+      });
+      assert.equal(result.status, 0, `${config}: ${result.stderr}`);
+      const files = [...new Set(JSON.parse(result.stdout).map((entry) => entry.file))].filter(
+        (file) => file.endsWith(".real.ts"),
+      );
+      assert.equal(files.length, 1, `${config}必须精确收集一个real入口`);
+      assert.ok(files[0].endsWith(expected), `${config}收集了错误入口：${files[0]}`);
+
+      const wrong = spawnSync("pnpm", ["exec", "vitest", "list", "--json", "--config", config], {
+        cwd: packageRoot,
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          TMPDIR: process.env.TMPDIR,
+          LANG: process.env.LANG,
+          CI: "true",
+          CHAT_ALLOW_PAID_TESTS: "1",
+          CHAT_PAID_TEST_COMMAND_NAME: `${commandName}:wrong`,
+        },
+      });
+      assert.notEqual(wrong.status, 0);
+      assert.match(`${wrong.stdout}\n${wrong.stderr}`, /精确受管命令/u);
+      assert.doesNotMatch(`${wrong.stdout}\n${wrong.stderr}`, /缺少精确测试凭据/u);
+    }
+
+    const ordinary = spawnSync("pnpm", ["exec", "vitest", "list", "--filesOnly"], {
+      cwd: packageRoot,
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        TMPDIR: process.env.TMPDIR,
+        LANG: process.env.LANG,
+        CI: "true",
+      },
+    });
+    assert.equal(ordinary.status, 0, ordinary.stderr);
+    assert.doesNotMatch(ordinary.stdout, /\.real\.ts/u);
+
+    const rootManifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+    const piManifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
+    for (const [commandName, config] of cases) {
+      assert.ok(rootManifest.scripts[commandName].includes(commandName));
+      assert.ok(piManifest.scripts[commandName].includes(config));
     }
   });
 });
