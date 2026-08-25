@@ -3,6 +3,7 @@
     {
       "authorityBoundarySha256": "be3391587171fcbe6460efdde1e038a383b7f8155b0eae8e50dae2098b05e6d2",
       "authorityBoundaryVersion": 2,
+      "authorityCanonicalVersion": 2,
       "compatibilityEntries": [],
       "currentWriteGenerations": [
         "chat-agent-profile-api.v3",
@@ -116,7 +117,7 @@
       "id": "network-contracts",
       "legacyAuthority": {
         "allowedActions": ["decode", "project"],
-        "canonicalSha256": "d5c44cbea98a8c867785ceafc8ee12f2bb83feab2c469f3d29ff522861c27e44",
+        "canonicalSha256": "a3623314c062953502db8a901726aedeeb751c559092a79871f73cbc9604b812",
         "entry": "@chat/contracts/public:decode-old",
         "generations": ["chat-agent-profile-api.v2"]
       },
@@ -124,7 +125,7 @@
       "sourceFiles": ["config/api-surface.baseline.json", "packages/contracts/src/public.ts"],
       "writeAuthority": {
         "allowedActions": ["validate", "write_current_response"],
-        "canonicalSha256": "d5c44cbea98a8c867785ceafc8ee12f2bb83feab2c469f3d29ff522861c27e44",
+        "canonicalSha256": "a3623314c062953502db8a901726aedeeb751c559092a79871f73cbc9604b812",
         "entry": "apps/api:createApiApp",
         "generations": [
           "chat-agent-profile-api.v3",
@@ -145,6 +146,7 @@
     {
       "authorityBoundarySha256": "5d24c6cbd85b0b747c8cce8b2ce86d9a696a7fd699e52c3cc18236090f47fb6a",
       "authorityBoundaryVersion": 2,
+      "authorityCanonicalVersion": 1,
       "compatibilityEntries": [
         {
           "canonicalSha256": "0d0595175462b42bf7a1c388ac9b5d8085975a3558e4031c01751ccb12821a28",
@@ -540,6 +542,7 @@
     {
       "authorityBoundarySha256": "811444d8ca771c7eef5b2e570dfc7c75ace2dbbb54dedece4588f0910e389f7d",
       "authorityBoundaryVersion": 2,
+      "authorityCanonicalVersion": 1,
       "compatibilityEntries": [
         {
           "canonicalSha256": "c02f5e36f7edbca4e4ccd0d406e3c2d4a6b46dfb7cb664e60a9bc27f1ba88ef6",
@@ -749,6 +752,7 @@
     {
       "authorityBoundarySha256": "48a308702296fc0a42aa342d2791a21087c20a9e4b72ec83f57f40b6738d73c2",
       "authorityBoundaryVersion": 2,
+      "authorityCanonicalVersion": 1,
       "compatibilityEntries": [],
       "currentWriteGenerations": ["workflow-run-spec.v1"],
       "generationCanonicalVersion": 1,
@@ -793,6 +797,7 @@
     {
       "authorityBoundarySha256": "a51ce1ed19bfbd55e93ceb96be8981c26cecd8c4dc2a6ae6a1d3e013d2a33800",
       "authorityBoundaryVersion": 2,
+      "authorityCanonicalVersion": 1,
       "compatibilityEntries": [
         {
           "canonicalSha256": "a3bc899a0571415b3cda54699f8cecfc1f43917d25ca598679d72109a20cee06",
@@ -981,6 +986,7 @@
     {
       "authorityBoundarySha256": "aa6f5d22523b7d7b8513644de8cc277f4feaa2b8b90986ca15011cb1670fd1aa",
       "authorityBoundaryVersion": 2,
+      "authorityCanonicalVersion": 2,
       "compatibilityEntries": [],
       "currentWriteGenerations": [
         "chat-agent-profile-api.v3",

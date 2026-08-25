@@ -342,10 +342,7 @@ test("内部Application Operation替换不改变外部响应合同", () => {
     declare function getNote(): Promise<PublicNote>;
     declare function getNoteHistory(): Promise<PublicNote>;
     declare const c: { json(body: unknown, status: number): unknown };
-    const handler = async () => {
-      const result = await ${operation}();
-      return c.json(result, 200);
-    };
+    const handler = async () => c.json(await ${operation}(), 200);
   `;
   const note = observableRouteContractFromFixtureForTest(fixture("getNote"));
   const history = observableRouteContractFromFixtureForTest(fixture("getNoteHistory"));
@@ -358,6 +355,73 @@ test("内部Application Operation替换不改变外部响应合同", () => {
   replacement.routes[0].successfulResponses = history.successfulResponses;
   replacement.routes[0].responseSchemas = history.responseSchemas;
   assert.deepEqual(diffApiSurface(changed, replacement), []);
+});
+
+test("退休内部调用图字段不参与route diff或waiver摘要", () => {
+  const addRetiredFields = (manifest, operation, resultHash) => {
+    const route = manifest.routes.find((entry) => entry.successfulResponses.length > 0);
+    route.applicationOperations = [operation];
+    route.applicationOperationContracts = [{ operation, signatureSha256: resultHash }];
+    route.successfulResponses[0].applicationResultSignatureSha256 = resultHash;
+    return route;
+  };
+
+  const retiredOnly = clone(baseline);
+  addRetiredFields(retiredOnly, "getNote", "1".repeat(64));
+  assert.deepEqual(diffApiSurface(baseline, retiredOnly), []);
+
+  const changed = clone(baseline);
+  const changedRoute = changed.routes.find((entry) => entry.successfulResponses.length > 0);
+  changedRoute.successfulResponses[0].status = "299";
+  const plainIssue = diffApiSurface(baseline, changed).find(
+    (entry) => entry.kind === "route_contract_changed",
+  );
+  assert.ok(plainIssue);
+
+  const retiredBaseline = clone(baseline);
+  const retiredChanged = clone(changed);
+  addRetiredFields(retiredBaseline, "getNote", "2".repeat(64));
+  addRetiredFields(retiredChanged, "getNoteHistory", "3".repeat(64));
+  const retiredIssue = diffApiSurface(retiredBaseline, retiredChanged).find(
+    (entry) => entry.kind === "route_contract_changed",
+  );
+  assert.deepEqual(retiredIssue, plainIssue);
+});
+
+test("响应提取器v4到v5只迁移不可比Hash，状态与Schema仍严格比较", () => {
+  const previous = clone(baseline);
+  previous.generation.routeContractExtraction = "observable-request-response-dataflow.v4";
+  const route = previous.routes.find(
+    (entry) =>
+      entry.successfulResponses.length > 0 &&
+      entry.successfulResponses[0].explicitSchemas.length === 0,
+  );
+  assert.ok(route);
+  route.successfulResponses[0].source = "c.json";
+  route.successfulResponses[0].signatureSha256 = "1".repeat(64);
+  route.responseSchemas[0].signatureSha256 = "1".repeat(64);
+  assert.deepEqual(diffApiSurface(previous, baseline), []);
+
+  const statusChanged = clone(baseline);
+  statusChanged.routes.find(
+    (entry) => entry.method === route.method && entry.path === route.path,
+  ).successfulResponses[0].status = "299";
+  assert.ok(
+    diffApiSurface(previous, statusChanged).some(
+      (entry) => entry.issueId === `route_contract_changed:${route.method} ${route.path}`,
+    ),
+  );
+
+  const requestChanged = clone(baseline);
+  const requestRoute = requestChanged.routes.find((entry) => entry.body.schemas.length > 0);
+  assert.ok(requestRoute);
+  requestRoute.body.schemas[0].signatureSha256 = "2".repeat(64);
+  assert.ok(
+    diffApiSurface(previous, requestChanged).some(
+      (entry) =>
+        entry.issueId === `route_contract_changed:${requestRoute.method} ${requestRoute.path}`,
+    ),
+  );
 });
 
 test("禁止身份检查覆盖alias、resolved symbol、声明来源和transitive签名", () => {

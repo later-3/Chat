@@ -746,12 +746,31 @@ function domainFacts(
       left.entry.localeCompare(right.entry),
     ),
     generationCanonicalVersion: evidence.generationCanonicalVersion ?? 1,
+    authorityCanonicalVersion: evidence.authorityCanonicalVersion ?? 1,
     legacyAuthority,
     writeAuthority,
     authorityBoundaryVersion: 2,
   };
   result.authorityBoundarySha256 = authorityPolicySha256(result);
   return result;
+}
+
+function observableApiAuthorityProjection(api) {
+  const projection = structuredClone(api);
+  // 提取器、组合根和源码定位是治理实现，不是网络/浏览器对外合同。
+  // 真正的外部事实仍由routes、schemas、problems、DTO/Event与exports承担。
+  delete projection.schemaVersion;
+  delete projection.generation;
+  for (const route of projection.routes ?? []) {
+    delete route.applicationOperations;
+    delete route.applicationOperationContracts;
+    route.successfulResponses = (route.successfulResponses ?? []).map((response) => {
+      const normalizedResponse = { ...response };
+      delete normalizedResponse.applicationResultSignatureSha256;
+      return normalizedResponse;
+    });
+  }
+  return projection;
 }
 
 function apiGenerations() {
@@ -795,9 +814,10 @@ export function generateCompatibilityFacts(policy) {
       .map((entry) => entry.identity)
       .filter((identity) => !currentWriteGenerations.includes(identity));
     const api = JSON.parse(readFileSync(resolve(ROOT, "config/api-surface.baseline.json"), "utf8"));
+    const observableApi = observableApiAuthorityProjection(api);
     const authorityEvidence = files.map((path) =>
       path.endsWith(".json")
-        ? `api-surface:${json(api)}`
+        ? `api-surface:${json(observableApi)}`
         : ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true),
     );
     return domainFacts(
@@ -827,6 +847,7 @@ export function generateCompatibilityFacts(policy) {
             evidenceKind: "public-declaration-route-contract",
             canonicalSha256: schema.signatureSha256,
           })),
+        authorityCanonicalVersion: 2,
       },
     );
   });
@@ -896,6 +917,13 @@ function stringSetEqual(left, right) {
 }
 
 function assertAuthorityPolicyCompatible(previous, next) {
+  const previousCanonicalVersion = previous.authorityCanonicalVersion ?? 1;
+  const nextCanonicalVersion = next.authorityCanonicalVersion ?? 1;
+  const provenAuthorityExtractorUpgrade =
+    previousCanonicalVersion === 1 && nextCanonicalVersion === 2;
+  if (previousCanonicalVersion !== nextCanonicalVersion && !provenAuthorityExtractorUpgrade) {
+    throw new Error(`${previous.id} authority canonical提取器无可验证migration`);
+  }
   for (const label of ["legacyAuthority", "writeAuthority"]) {
     if (
       previous[label]?.entry !== next[label]?.entry ||
@@ -930,7 +958,8 @@ function assertAuthorityPolicyCompatible(previous, next) {
   );
   if (
     !writeGenerationsChanged &&
-    previous.writeAuthority.canonicalSha256 !== next.writeAuthority.canonicalSha256
+    previous.writeAuthority.canonicalSha256 !== next.writeAuthority.canonicalSha256 &&
+    !provenAuthorityExtractorUpgrade
   ) {
     throw new Error(`${previous.id} writer implementation未升代际漂移`);
   }
@@ -940,7 +969,8 @@ function assertAuthorityPolicyCompatible(previous, next) {
   );
   if (
     !historicalGenerationsChanged &&
-    previous.legacyAuthority.canonicalSha256 !== next.legacyAuthority.canonicalSha256
+    previous.legacyAuthority.canonicalSha256 !== next.legacyAuthority.canonicalSha256 &&
+    !provenAuthorityExtractorUpgrade
   ) {
     throw new Error(`${previous.id} reader implementation未升代际漂移`);
   }
@@ -949,6 +979,9 @@ function assertAuthorityPolicyCompatible(previous, next) {
 function assertDomainFactsWellFormed(domain) {
   const generations = new Map(domain.generations.map((entry) => [entry.identity, entry]));
   if (generations.size !== domain.generations.length) throw new Error(`${domain.id}代际重复`);
+  if (![1, 2].includes(domain.authorityCanonicalVersion ?? 1)) {
+    throw new Error(`${domain.id} authority canonical提取器版本非法`);
+  }
   for (const entry of domain.generations) {
     if (
       !/^[0-9a-f]{64}$/u.test(entry.canonicalSha256) ||

@@ -236,6 +236,35 @@ test("Direct/Generic新增v4保持v1-v3 canonical hash并通过read-old/migratio
   assert.deepEqual(assertCompatibilityFactsCompatible(factsBaseline, changed), changed);
 });
 
+test("Authority外部投影提取器只允许一次性v1到v2迁移", () => {
+  const previous = structuredClone(factsBaseline);
+  for (const id of ["network-contracts", "browser-dto-events"]) {
+    const domain = previous.domains.find((entry) => entry.id === id);
+    domain.authorityCanonicalVersion = 1;
+    domain.legacyAuthority.canonicalSha256 = "1".repeat(64);
+    domain.writeAuthority.canonicalSha256 = "1".repeat(64);
+  }
+  assert.deepEqual(assertCompatibilityFactsCompatible(previous, factsBaseline), factsBaseline);
+
+  const sameVersionDrift = structuredClone(factsBaseline);
+  sameVersionDrift.domains.find(
+    (entry) => entry.id === "network-contracts",
+  ).writeAuthority.canonicalSha256 = "2".repeat(64);
+  assert.throws(
+    () => assertCompatibilityFactsCompatible(factsBaseline, sameVersionDrift),
+    /writer implementation未升代际漂移/u,
+  );
+
+  const unprovenUpgrade = structuredClone(factsBaseline);
+  unprovenUpgrade.domains.find(
+    (entry) => entry.id === "network-contracts",
+  ).authorityCanonicalVersion = 3;
+  assert.throws(
+    () => assertCompatibilityFactsCompatible(factsBaseline, unprovenUpgrade),
+    /authority canonical提取器/u,
+  );
+});
+
 test("compat事实绑定真实Schema闭包、writer authority与resolved migration edge", () => {
   const product = factsBaseline.domains.find((domain) => domain.id === "product-store");
   const current = product.generations.find(

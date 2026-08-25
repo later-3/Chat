@@ -331,21 +331,15 @@ function routeContract(handler, checker, schemas) {
       if (requestSourceKinds(parsed.input, initializers).size === 0) explicit.add(parsed.name);
     });
     for (const name of explicit) responseSchemaNames.add(name);
-    const type = checker.typeToString(
-      checker.getTypeAtLocation(expression),
-      expression,
-      ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope,
-    );
+    const type = observableTypeString(checker, expression, "公开成功响应");
     successfulResponses.push({
-      source: "c.json",
+      source: "json",
       status:
         node.arguments[1] === undefined
           ? "default"
           : (resolvedLiteralText(checker, node.arguments[1]) ?? "dynamic"),
       explicitSchemas: [...explicit].sort().map((name) => schemaReference(name, schemas)),
-      signatureSha256: sha256(
-        JSON.stringify({ type, expression: normalizedDeclaration(expression) }),
-      ),
+      signatureSha256: sha256(JSON.stringify({ bodyType: type })),
     });
   });
   if (successfulResponses.length === 0) {
@@ -359,22 +353,17 @@ function routeContract(handler, checker, schemas) {
         const rendered = normalizedDeclaration(declaration);
         if (!/\.json\(/u.test(rendered)) continue;
         const status = /\.json\([^,]+,\s*(\d+)\)/u.exec(rendered)?.[1] ?? "dynamic";
+        const bodyArgument = node.arguments.at(-1);
+        if (bodyArgument === undefined) {
+          throw new Error(`公开响应helper缺少可观察响应体：${node.expression.text}`);
+        }
         successfulResponses.push({
-          source: `response-helper:${node.expression.text}`,
+          source: "json",
           status,
           explicitSchemas: [],
           signatureSha256: sha256(
             JSON.stringify({
-              helper: rendered,
-              call: normalizedDeclaration(node),
-              argumentTypes: node.arguments.map((argument) =>
-                checker.typeToString(
-                  checker.getTypeAtLocation(argument),
-                  argument,
-                  ts.TypeFormatFlags.NoTruncation |
-                    ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope,
-                ),
-              ),
+              bodyType: observableTypeString(checker, bodyArgument, "公开响应helper响应体"),
             }),
           ),
         });
@@ -397,6 +386,18 @@ function routeContract(handler, checker, schemas) {
     responseSchemaNames,
     successfulResponses,
   };
+}
+
+function observableTypeString(checker, node, label) {
+  const type = checker.typeToString(
+    checker.getTypeAtLocation(node),
+    node,
+    ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope,
+  );
+  if (type === "any" || type === "unknown") {
+    throw new Error(`${label}缺少可冻结的公开类型；请声明响应Schema或具体类型`);
+  }
+  return type;
 }
 
 export function classifySchemaRolesForTest(source) {
@@ -1061,7 +1062,7 @@ export function generateApiSurface() {
       browserContractEntry: "@chat/contracts/public",
       packageExportSource: "workspace-package-manifests",
       packageExportExtraction: "all-subpaths-and-transitive-symbols.v2",
-      routeContractExtraction: "observable-request-response-dataflow.v4",
+      routeContractExtraction: "observable-response-type-contract.v5",
     },
     routes,
     commandTypes: contracts.symbols
@@ -1128,9 +1129,22 @@ function mapBy(items, key) {
   return new Map(items.map((item) => [key(item), item]));
 }
 
+function stripRetiredInternalRouteFields(value) {
+  for (const route of value.routes ?? []) {
+    delete route.applicationOperations;
+    delete route.applicationOperationContracts;
+    route.successfulResponses = (route.successfulResponses ?? []).map((response) => {
+      const normalized = { ...response };
+      delete normalized.applicationResultSignatureSha256;
+      return normalized;
+    });
+  }
+  return value;
+}
+
 const API_SURFACE_NORMALIZERS = Object.freeze({
-  "chat-public-api-surface.v2": (value) => value,
-  "chat-public-api-surface.v3": (value) => value,
+  "chat-public-api-surface.v2": stripRetiredInternalRouteFields,
+  "chat-public-api-surface.v3": stripRetiredInternalRouteFields,
 });
 
 function normalizeApiSurface(value) {
@@ -1156,22 +1170,31 @@ function normalizeApiSurface(value) {
 }
 
 function routeForComparison(route, fromExtraction, toExtraction) {
-  const normalized = structuredClone(route);
+  const normalized = stripRetiredInternalRouteFields({ routes: [structuredClone(route)] })
+    .routes[0];
   const extractionPair = new Set([fromExtraction, toExtraction]);
+  const currentExtraction = "observable-response-type-contract.v5";
+  const historicalExtractions = new Set([
+    "request-source-and-success-response-dataflow.v2",
+    "request-helper-operation-and-success-response-dataflow.v3",
+    "observable-request-response-dataflow.v4",
+  ]);
   const crossesExternalContractBoundary =
-    extractionPair.has("observable-request-response-dataflow.v4") &&
-    (extractionPair.has("request-source-and-success-response-dataflow.v2") ||
-      extractionPair.has("request-helper-operation-and-success-response-dataflow.v3"));
+    (extractionPair.has(currentExtraction) &&
+      [...historicalExtractions].some((extraction) => extractionPair.has(extraction))) ||
+    (extractionPair.has("observable-request-response-dataflow.v4") &&
+      (extractionPair.has("request-source-and-success-response-dataflow.v2") ||
+        extractionPair.has("request-helper-operation-and-success-response-dataflow.v3")));
   if (crossesExternalContractBoundary) {
-    // v4明确退出内部Application调用图。迁移比较只保留旧、新生成器共同拥有的
-    // 外部事实；此后v4→v4会继续严格比较真实响应表达式、Schema与HTTP状态。
+    // v4退出内部Application调用图，v5进一步只冻结公开响应类型。迁移比较只保留
+    // 各代生成器共同拥有的外部事实；同代比较仍严格检查响应类型、Schema与HTTP状态。
     delete normalized.applicationOperations;
     delete normalized.applicationOperationContracts;
     normalized.successfulResponses = (normalized.successfulResponses ?? []).map((response) => ({
-      source: response.source,
+      source: "json",
       status: response.status,
       explicitSchemas: response.explicitSchemas,
-      signatureSha256: sha256("observable-response-extractor-transition.v4"),
+      signatureSha256: sha256("observable-response-extractor-transition.v5"),
     }));
     const explicitSchemas = normalized.successfulResponses.flatMap(
       (response) => response.explicitSchemas ?? [],
@@ -1186,7 +1209,7 @@ function routeForComparison(route, fromExtraction, toExtraction) {
             schemaVersions: [],
             signatureSha256: sha256(
               JSON.stringify({
-                migration: "observable-response-extractor-transition.v4",
+                migration: "observable-response-extractor-transition.v5",
                 source: response.source,
                 status: response.status,
               }),
