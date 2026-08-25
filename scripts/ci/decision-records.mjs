@@ -20,7 +20,40 @@ export function validateDecisionRecordSource(source, filename) {
   for (const section of REQUIRED_SECTIONS) {
     if (!source.includes(`## ${section}`)) throw new Error(`${filename}缺少${section}章节`);
   }
-  return { number, status };
+  const supersededBy = /^- 替代者：ADR-(\d{4})$/mu.exec(source)?.[1];
+  const supersedes = [...source.matchAll(/^- 替代：ADR-(\d{4})$/gmu)].map((entry) => entry[1]);
+  if (status === "superseded" && supersededBy === undefined) {
+    throw new Error(`${filename}为superseded但缺少替代者`);
+  }
+  if (status !== "superseded" && supersededBy !== undefined) {
+    throw new Error(`${filename}非superseded却声明替代者`);
+  }
+  return { number, status, supersededBy, supersedes };
+}
+
+export function validateDecisionRelations(records) {
+  const byNumber = new Map();
+  for (const record of records) {
+    if (byNumber.has(record.number)) throw new Error(`ADR编号重复：${record.number}`);
+    byNumber.set(record.number, record);
+  }
+  for (const record of records) {
+    if (record.supersededBy !== undefined) {
+      const successor = byNumber.get(record.supersededBy);
+      if (successor === undefined) throw new Error(`${record.filename}替代者不存在`);
+      if (!successor.supersedes.includes(record.number)) {
+        throw new Error(`${successor.filename}未反向记录替代ADR-${record.number}`);
+      }
+    }
+    for (const previous of record.supersedes) {
+      const predecessor = byNumber.get(previous);
+      if (predecessor === undefined)
+        throw new Error(`${record.filename}替代的ADR-${previous}不存在`);
+      if (predecessor.supersededBy !== record.number) {
+        throw new Error(`${predecessor.filename}未记录替代者ADR-${record.number}`);
+      }
+    }
+  }
 }
 
 export function validateDecisionIndex(indexSource, records) {
@@ -43,6 +76,7 @@ export function checkDecisionRecords() {
     filename,
     ...validateDecisionRecordSource(readFileSync(resolve(DECISIONS, filename), "utf8"), filename),
   }));
+  validateDecisionRelations(records);
   validateDecisionIndex(readFileSync(resolve(DECISIONS, "README.md"), "utf8"), records);
   if (!existsSync(resolve(DECISIONS, "template.md"))) throw new Error("ADR模板缺失");
   return records;

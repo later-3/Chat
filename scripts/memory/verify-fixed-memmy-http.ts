@@ -22,6 +22,14 @@ import {
   seedMemoryPlanningReal,
 } from "./seed-memory-planning-real.mjs";
 import { findListenerPid } from "../debug/lib.mjs";
+import { assertRealTestChildAuthorization } from "../ci/real-test-child-guard.mjs";
+
+assertRealTestChildAuthorization({
+  mode: "external",
+  commandName: "test:external:memory:memmy",
+  serviceSwitch: "CHAT_MEMORY_REAL_TEST",
+  credentials: [],
+});
 
 const repoRoot = chatRepoRoot();
 const runRoot = assertChatDataPath(

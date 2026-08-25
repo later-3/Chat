@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "rules": [
     "read_old_write_current",
     "same_schema_literal_immutable",
@@ -11,31 +11,24 @@
   "domains": [
     {
       "id": "network-contracts",
-      "readOld": true,
-      "writeCurrent": true,
+      "ownerRoots": ["packages/contracts/src", "config/api-surface.baseline.json"],
       "factSources": ["packages/contracts/src/public.ts", "config/api-surface.baseline.json"]
     },
     {
       "id": "product-store",
-      "readOld": true,
-      "writeCurrent": true,
-      "factSources": [
-        "packages/contracts/src/product-store.ts",
-        "packages/product-store-json/src/json-product-store.ts",
-        "packages/product-store-json/src/migrate-v19-to-v20.ts"
-      ]
+      "ownerRoots": ["packages/contracts/src/product-store.ts", "packages/product-store-json/src"],
+      "factSources": ["packages/contracts/src/product-store.ts", "packages/product-store-json/src"]
     },
     {
       "id": "bridge-state",
-      "readOld": true,
-      "writeCurrent": true,
+      "ownerRoots": ["packages/dsh-lifeos-bridge/src/state-store.ts"],
       "factSources": ["packages/dsh-lifeos-bridge/src/state-store.ts"]
     },
     {
       "id": "workflow-run-spec",
-      "readOld": true,
-      "writeCurrent": true,
+      "ownerRoots": ["packages/contracts/src", "packages/workflows/src"],
       "factSources": [
+        "packages/contracts/src/workflow-definition.ts",
         "packages/contracts/src/workflow-run.ts",
         "packages/workflows/src/restricted-run-spec-interpreter.ts",
         "packages/workflows/src/pi-direct-activity-migration.ts"
@@ -43,18 +36,17 @@
     },
     {
       "id": "direct-generic-journals",
-      "readOld": true,
-      "writeCurrent": true,
+      "ownerRoots": ["packages/contracts/src", "packages/pi-runtime/src"],
       "factSources": [
         "packages/contracts/src/direct-agent-runtime.ts",
+        "packages/pi-runtime/src/direct-executor-service-contract.ts",
         "packages/pi-runtime/src/direct-executor-operation-store.ts",
         "packages/pi-runtime/src/executor-operation-store.ts"
       ]
     },
     {
       "id": "browser-dto-events",
-      "readOld": true,
-      "writeCurrent": true,
+      "ownerRoots": ["packages/contracts/src", "packages/dsh-lifeos-bridge/src/client"],
       "factSources": [
         "packages/contracts/src/public.ts",
         "packages/contracts/src/events.ts",

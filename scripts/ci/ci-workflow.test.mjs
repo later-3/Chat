@@ -80,8 +80,10 @@ export function assertCiWorkflowContract(workflow) {
     "contract",
     "integration",
     "compat",
+    "dsh-smoke",
     "browser",
     "supply-chain",
+    "fresh-clone-smoke",
   ]) {
     assert.ok(workflow.jobs[requiredJob] !== undefined, `CI缺少${requiredJob} lane Job`);
   }
@@ -102,6 +104,23 @@ export function assertCiWorkflowContract(workflow) {
   assert.ok(commandsFor("compat").includes("pnpm test:compat"));
   assert.ok(commandsFor("supply-chain").includes("pnpm supply-chain:check"));
   assert.ok(commandsFor("supply-chain").includes("pnpm supply-chain:audit"));
+  const freshCloneCommands = commandsFor("fresh-clone-smoke").join("\n");
+  for (const required of [
+    "pnpm managed-sources:prepare",
+    "pnpm run setup --workbench=off",
+    "node scripts/dev/start.mjs --workbench=off",
+    "http://127.0.0.1:43110/",
+    "http://127.0.0.1:43110/lifeos/sessions/fresh-clone",
+    "http://127.0.0.1:43111/api/readyz",
+    "http://127.0.0.1:43112/healthz",
+    "http://127.0.0.1:18960/api/v1/health",
+    "http://127.0.0.1:18970/health",
+    'kill -INT "$chat_pid"',
+    "pnpm dev:status",
+    "本地开发环境未运行",
+  ]) {
+    assert.ok(freshCloneCommands.includes(required), `fresh-clone-smoke缺少：${required}`);
+  }
   const compatDecision = workflow.jobs.compat.steps.find((step) => step.id === "compat");
   assert.equal(compatDecision?.run, "node scripts/ci/compat-change-gate.mjs");
   for (const step of workflow.jobs.compat.steps.filter((step) =>
@@ -114,6 +133,13 @@ export function assertCiWorkflowContract(workflow) {
   );
   assert.equal(
     apiSurfaceStep?.env?.CHAT_API_SURFACE_BASE_SHA,
+    "${{ github.event.pull_request.base.sha || github.event.before || '' }}",
+  );
+  const compatibilityStep = workflow.jobs.contract.steps.find(
+    (step) => step?.run?.trim() === "pnpm compatibility:check",
+  );
+  assert.equal(
+    compatibilityStep?.env?.CHAT_COMPATIBILITY_BASE_SHA,
     "${{ github.event.pull_request.base.sha || github.event.before || '' }}",
   );
   const contractCheckout = workflow.jobs.contract.steps.find((step) =>
@@ -180,5 +206,13 @@ describe("CI workflow baseline", () => {
     checkout.uses = "actions/checkout@v4";
     checkout.with["persist-credentials"] = true;
     assert.throws(() => assertCiWorkflowContract(workflow), /persist-credentials|完整SHA/u);
+  });
+
+  it("rejects removal of either real DSH or fresh-clone smoke job", () => {
+    for (const jobName of ["dsh-smoke", "fresh-clone-smoke"]) {
+      const workflow = structuredClone(parseCiWorkflow(workflowSource));
+      delete workflow.jobs[jobName];
+      assert.throws(() => assertCiWorkflowContract(workflow), new RegExp(jobName, "u"));
+    }
   });
 });

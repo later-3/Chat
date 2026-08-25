@@ -31,7 +31,9 @@ config/
   managed-sources.json    Chat/Pi/DSH工具链、来源、构建输入、许可证与精确链接锁
   test-lanes.json         正式测试文件与根测试命令的唯一主要lane分类
   api-surface.baseline.json  从真实组合根生成的公共接口baseline
-  compatibility-policy.json 六类read-old/write-current机器政策
+  api-compatible-change-records.json 公共新增的精确一次性审查记录
+  compatibility-policy.json 六类read-old/write-current规则与Owner路由
+  compatibility-facts.baseline.json 六类真实Owner源码生成的代际指纹
   supply-chain-policy.json 生产许可证例外与安装lifecycle白名单
 docs/
   getting-started/        全新克隆、固定工件准备与本地安装
@@ -89,10 +91,10 @@ domain ───────────────────> TypeScript标�
 | 普通核心门 | `scripts/ci/verify-core.mjs` | 凭据/外部开关、build/lint/format/typecheck/core失败 |
 | Browser纵向 | `scripts/e2e/run-dsh-mode.mjs`、唯一Playwright配置 | 端口/数据隔离、凭据sentinel、真实Host/Client失败 |
 | CI结构 | `.github/workflows/ci.yml`、`scripts/ci/ci-workflow.test.mjs` | Action SHA、permissions、Job准备、paid/external混入 |
-| 公共API Surface | `scripts/ci/api-surface.mjs`、`config/api-surface.baseline.json` | 路由/导出删除、必填新增、枚举收窄、同代语义与错误码漂移 |
-| 兼容政策 | `config/compatibility-policy.json`、`docs/architecture/compatibility-policy.md` | 六类兼容域漏项、旧代扩权、原地改语义、无批准breaking change |
+| 公共API Surface | `scripts/ci/api-surface.mjs`、`config/api-surface.baseline.json` | 请求/响应/operation/导出漂移，未记录新增与未批准breaking change |
+| 兼容政策 | `config/compatibility-policy.json`、`config/compatibility-facts.baseline.json` | 六类真实事实漏项、旧代扩权、原地改语义、无迁移升代 |
 | ADR | `docs/decisions/README.md`、`scripts/ci/decision-records.mjs` | 漏索引、非法状态、缺范围/后果/回滚 |
-| 最低供应链 | `scripts/ci/supply-chain.mjs`、`config/supply-chain-policy.json` | 三仓锁、secret、license、lifecycle或audit失败 |
+| 最低供应链 | `scripts/ci/supply-chain.mjs`、`config/supply-chain-policy.json` | 三仓真实闭包的secret/license/lifecycle/audit失败；whole-fork债务另报 |
 
 API Surface baseline由真实组合根、browser public barrel与package manifest生成，不手抄Schema字段；
-兼容和供应链JSON保存治理政策，不替代各事实Owner源码。
+兼容policy只保存规则和Owner路由，facts baseline由Owner源码生成；两者都不替代产品事实。

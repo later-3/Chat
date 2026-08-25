@@ -8,6 +8,7 @@ import ts from "typescript";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const BASELINE_PATH = join(ROOT, "config/api-surface.baseline.json");
 const WAIVER_PATH = join(ROOT, "config/api-breaking-change-waivers.json");
+const CHANGE_RECORD_PATH = join(ROOT, "config/api-compatible-change-records.json");
 const CONTRACTS_ROOT = join(ROOT, "packages/contracts/src");
 const APPLICATION_ROOT = join(ROOT, "packages/application/src");
 const FORBIDDEN_PUBLIC_NAME =
@@ -77,26 +78,365 @@ function resolvedLiteralText(checker, node, seen = new Set()) {
 
 function schemaReference(name, schemas) {
   const schema = schemas.get(name);
+  if (schema === undefined) {
+    throw new Error(`公开路由引用了无法从Contracts源码解析的Schema：${name}`);
+  }
   return {
     identity: name,
-    schemaVersions: schema?.schemaVersions ?? [],
-    signatureSha256: schema?.signatureSha256 ?? sha256(`unresolved-schema:${name}`),
+    schemaVersions: schema.schemaVersions,
+    signatureSha256: schema.signatureSha256,
   };
 }
 
-function routeSchemas(handler, responseOnly = false) {
-  const names = new Set();
+function variableInitializers(handler) {
+  const values = new Map();
   visit(handler, (node) => {
-    if (!ts.isIdentifier(node) || !node.text.endsWith("Schema")) return;
-    let current = node;
-    let inReturn = false;
-    while (current.parent !== undefined && current !== handler) {
-      if (ts.isReturnStatement(current.parent)) inReturn = true;
-      current = current.parent;
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined
+    ) {
+      values.set(node.name.text, node.initializer);
     }
-    if (responseOnly === inReturn) names.add(node.text);
+  });
+  return values;
+}
+
+function requestSourceKinds(node, initializers, seen = new Set()) {
+  const kinds = new Set();
+  visit(node, (nested) => {
+    if (
+      ts.isCallExpression(nested) &&
+      ts.isPropertyAccessExpression(nested.expression) &&
+      nested.expression.name.text === "param" &&
+      ts.isPropertyAccessExpression(nested.expression.expression) &&
+      nested.expression.expression.name.text === "req"
+    ) {
+      kinds.add("path");
+    }
+    if (
+      ts.isCallExpression(nested) &&
+      ts.isIdentifier(nested.expression) &&
+      nested.expression.text === "parseJsonBody"
+    ) {
+      kinds.add("body");
+    }
+    if (
+      ts.isPropertyAccessExpression(nested) &&
+      nested.name.text === "url" &&
+      ts.isPropertyAccessExpression(nested.expression) &&
+      nested.expression.name.text === "req"
+    ) {
+      kinds.add("query");
+    }
+    if (
+      ts.isCallExpression(nested) &&
+      ts.isPropertyAccessExpression(nested.expression) &&
+      ["get", "getAll", "has"].includes(nested.expression.name.text) &&
+      ts.isIdentifier(nested.expression.expression) &&
+      /(?:params|query)/iu.test(nested.expression.expression.text)
+    ) {
+      kinds.add("query");
+    }
+    if (ts.isIdentifier(nested) && initializers.has(nested.text) && !seen.has(nested.text)) {
+      seen.add(nested.text);
+      for (const kind of requestSourceKinds(initializers.get(nested.text), initializers, seen)) {
+        kinds.add(kind);
+      }
+    }
+  });
+  return kinds;
+}
+
+function schemaParse(node) {
+  if (
+    !ts.isCallExpression(node) ||
+    !ts.isPropertyAccessExpression(node.expression) ||
+    node.expression.name.text !== "parse" ||
+    !ts.isIdentifier(node.expression.expression) ||
+    !node.expression.expression.text.endsWith("Schema")
+  ) {
+    return undefined;
+  }
+  return { name: node.expression.expression.text, input: node.arguments[0] };
+}
+
+function pathParameterNames(node) {
+  const names = new Set();
+  visit(node, (nested) => {
+    if (
+      ts.isCallExpression(nested) &&
+      ts.isPropertyAccessExpression(nested.expression) &&
+      nested.expression.name.text === "param" &&
+      nested.arguments[0] !== undefined &&
+      ts.isStringLiteralLike(nested.arguments[0])
+    ) {
+      names.add(nested.arguments[0].text);
+    }
   });
   return [...names].sort();
+}
+
+function declarationCallClosure(checker, declaration, output = new Set(), seen = new Set()) {
+  const key = `${declaration.getSourceFile().fileName}:${String(declaration.pos)}`;
+  if (seen.has(key)) return output;
+  seen.add(key);
+  output.add(normalizedDeclaration(declaration));
+  visit(declaration, (node) => {
+    if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) return;
+    const symbol = checker.getSymbolAtLocation(node.expression);
+    if (symbol === undefined) return;
+    for (const nested of resolvedSymbol(checker, symbol).declarations ?? []) {
+      if (!nested.getSourceFile().fileName.includes("/apps/api/src/product-routes/")) continue;
+      if (
+        ts.isFunctionDeclaration(nested) ||
+        (ts.isVariableDeclaration(nested) && nested.initializer !== undefined)
+      ) {
+        declarationCallClosure(checker, nested, output, seen);
+      }
+    }
+  });
+  return output;
+}
+
+function declarationNodeClosure(checker, declaration, output = new Set(), seen = new Set()) {
+  const key = `${declaration.getSourceFile().fileName}:${String(declaration.pos)}`;
+  if (seen.has(key)) return output;
+  seen.add(key);
+  output.add(declaration);
+  visit(declaration, (node) => {
+    if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) return;
+    const symbol = checker.getSymbolAtLocation(node.expression);
+    if (symbol === undefined) return;
+    for (const nested of resolvedSymbol(checker, symbol).declarations ?? []) {
+      if (!nested.getSourceFile().fileName.includes("/apps/api/src/product-routes/")) continue;
+      declarationNodeClosure(checker, nested, output, seen);
+    }
+  });
+  return output;
+}
+
+function allowedQueryKeys(declarations) {
+  const keys = new Set();
+  for (const declaration of declarations) {
+    visit(declaration, (node) => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        ["get", "getAll", "has"].includes(node.expression.name.text) &&
+        node.arguments[0] !== undefined &&
+        ts.isStringLiteralLike(node.arguments[0])
+      ) {
+        keys.add(node.arguments[0].text);
+      }
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "assertOnlyAllowedQueryKeys"
+      ) {
+        const list = node.arguments[1];
+        if (list !== undefined && ts.isArrayLiteralExpression(list)) {
+          for (const element of list.elements) {
+            if (ts.isStringLiteralLike(element)) keys.add(element.text);
+          }
+        }
+      }
+    });
+  }
+  return [...keys].sort();
+}
+
+function queryParserContracts(handler, checker, initializers, schemas) {
+  if (!requestSourceKinds(handler, initializers).has("query")) return [];
+  const declarations = new Set();
+  const queryExpressions = new Set();
+  visit(handler, (node) => {
+    if (!ts.isCallExpression(node)) return;
+    const parsed = schemaParse(node);
+    const directQuery = requestSourceKinds(node, initializers).has("query");
+    if (directQuery && parsed !== undefined) {
+      queryExpressions.add(normalizedDeclaration(node));
+    }
+    if (!ts.isIdentifier(node.expression)) return;
+    if (!node.arguments.some((argument) => requestSourceKinds(argument, initializers).has("query")))
+      return;
+    queryExpressions.add(normalizedDeclaration(node));
+    const symbol = checker.getSymbolAtLocation(node.expression);
+    if (symbol === undefined) return;
+    for (const declaration of resolvedSymbol(checker, symbol).declarations ?? []) {
+      if (declaration.getSourceFile().fileName.includes("/apps/api/src/product-routes/")) {
+        declarations.add(declaration);
+      }
+    }
+  });
+  const closure = new Set(queryExpressions);
+  const closureNodes = new Set();
+  for (const declaration of declarations) {
+    declarationCallClosure(checker, declaration, closure);
+    declarationNodeClosure(checker, declaration, closureNodes);
+  }
+  const schemaNames = new Set();
+  for (const declaration of closureNodes) {
+    visit(declaration, (node) => {
+      const parsed = schemaParse(node);
+      if (parsed !== undefined) schemaNames.add(parsed.name);
+    });
+  }
+  if (closure.size === 0) return [];
+  return [
+    {
+      identity: `query-parser:${handler.getSourceFile().fileName.split("/").at(-1)}`,
+      allowedKeys: allowedQueryKeys(closureNodes),
+      schemas: [...schemaNames].sort().map((name) => schemaReference(name, schemas)),
+      signatureSha256: sha256([...closure].sort().join("\n")),
+    },
+  ];
+}
+
+function expressionClosure(expression, initializers, output = new Set(), seen = new Set()) {
+  output.add(normalizedDeclaration(expression));
+  visit(expression, (node) => {
+    if (!ts.isIdentifier(node) || !initializers.has(node.text) || seen.has(node.text)) return;
+    seen.add(node.text);
+    expressionClosure(initializers.get(node.text), initializers, output, seen);
+  });
+  return output;
+}
+
+function routeContract(handler, checker, schemas) {
+  const initializers = variableInitializers(handler);
+  const pathParameters = [];
+  const querySchemas = new Set();
+  const bodySchemas = new Set();
+  const responseSchemaNames = new Set();
+  visit(handler, (node) => {
+    const parsed = schemaParse(node);
+    if (parsed === undefined || parsed.input === undefined) return;
+    const kinds = requestSourceKinds(parsed.input, initializers);
+    if (kinds.has("path")) {
+      for (const name of pathParameterNames(parsed.input)) {
+        pathParameters.push({ name, schema: schemaReference(parsed.name, schemas) });
+      }
+    }
+    if (kinds.has("query")) querySchemas.add(parsed.name);
+    if (kinds.has("body")) bodySchemas.add(parsed.name);
+  });
+
+  const successfulResponses = [];
+  visit(handler, (node) => {
+    if (
+      !ts.isCallExpression(node) ||
+      !ts.isPropertyAccessExpression(node.expression) ||
+      node.expression.name.text !== "json" ||
+      node.arguments[0] === undefined
+    ) {
+      return;
+    }
+    const expression = node.arguments[0];
+    const explicit = new Set();
+    visit(expression, (nested) => {
+      const parsed = schemaParse(nested);
+      if (parsed === undefined || parsed.input === undefined) return;
+      if (requestSourceKinds(parsed.input, initializers).size === 0) explicit.add(parsed.name);
+    });
+    for (const name of explicit) responseSchemaNames.add(name);
+    const type = checker.typeToString(
+      checker.getTypeAtLocation(expression),
+      expression,
+      ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope,
+    );
+    successfulResponses.push({
+      source: "c.json",
+      status:
+        node.arguments[1] === undefined
+          ? "default"
+          : (resolvedLiteralText(checker, node.arguments[1]) ?? "dynamic"),
+      explicitSchemas: [...explicit].sort().map((name) => schemaReference(name, schemas)),
+      signatureSha256: sha256(
+        JSON.stringify({ type, closure: [...expressionClosure(expression, initializers)].sort() }),
+      ),
+    });
+  });
+  if (successfulResponses.length === 0) {
+    visit(handler, (node) => {
+      if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) return;
+      const symbol = checker.getSymbolAtLocation(node.expression);
+      if (symbol === undefined) return;
+      for (const declaration of resolvedSymbol(checker, symbol).declarations ?? []) {
+        if (!declaration.getSourceFile().fileName.includes("/apps/api/src/product-routes/"))
+          continue;
+        const rendered = normalizedDeclaration(declaration);
+        if (!/\.json\(/u.test(rendered)) continue;
+        const status = /\.json\([^,]+,\s*(\d+)\)/u.exec(rendered)?.[1] ?? "dynamic";
+        successfulResponses.push({
+          source: `response-helper:${node.expression.text}`,
+          status,
+          explicitSchemas: [],
+          signatureSha256: sha256(
+            JSON.stringify({
+              helper: rendered,
+              call: [...expressionClosure(node, initializers)].sort(),
+            }),
+          ),
+        });
+      }
+    });
+  }
+  const queryParsers = queryParserContracts(handler, checker, initializers, schemas);
+  for (const parser of queryParsers) {
+    for (const schema of parser.schemas) querySchemas.add(schema.identity);
+  }
+  return {
+    pathParameters: pathParameters.sort((left, right) => left.name.localeCompare(right.name)),
+    query: {
+      parsers: queryParsers,
+      schemas: [...querySchemas].sort().map((name) => schemaReference(name, schemas)),
+    },
+    body: {
+      schemas: [...bodySchemas].sort().map((name) => schemaReference(name, schemas)),
+    },
+    responseSchemaNames,
+    successfulResponses,
+  };
+}
+
+export function classifySchemaRolesForTest(source) {
+  const file = ts.createSourceFile("route-fixture.ts", source, ts.ScriptTarget.Latest, true);
+  const initializers = variableInitializers(file);
+  const request = new Set();
+  const response = new Set();
+  visit(file, (node) => {
+    const parsed = schemaParse(node);
+    if (parsed === undefined || parsed.input === undefined) return;
+    if (requestSourceKinds(parsed.input, initializers).size > 0) request.add(parsed.name);
+  });
+  visit(file, (node) => {
+    if (
+      !ts.isCallExpression(node) ||
+      !ts.isPropertyAccessExpression(node.expression) ||
+      node.expression.name.text !== "json" ||
+      node.arguments[0] === undefined
+    ) {
+      return;
+    }
+    visit(node.arguments[0], (nested) => {
+      const parsed = schemaParse(nested);
+      if (
+        parsed !== undefined &&
+        parsed.input !== undefined &&
+        requestSourceKinds(parsed.input, initializers).size === 0
+      ) {
+        response.add(parsed.name);
+      }
+    });
+  });
+  return { request: [...request].sort(), response: [...response].sort() };
+}
+
+export function assertPublicContractNameAllowed(name) {
+  if (FORBIDDEN_PUBLIC_NAME.test(name)) {
+    throw new Error(`@chat/contracts/public导出禁止的Runtime身份：${name}`);
+  }
 }
 
 function importedApplicationOperations(file) {
@@ -177,17 +517,20 @@ function applicationOperationContract(program, checker, operation) {
       returnExpressions.push(normalizedDeclaration(nested.expression));
     }
   });
+  const fallback = {
+    identity: `application-result:${operation}`,
+    schemaVersions: [],
+    // 并非所有历史用例都有显式ResponseSchema。返回类型和return表达式的摘要让推断
+    // 类型/包装对象变化进入compat diff，同时不把内部类型或实现正文写进公共Manifest。
+    signatureSha256: sha256(
+      JSON.stringify({ returnType, returnExpressions: returnExpressions.sort() }),
+    ),
+  };
   return {
+    operation,
     responseSchemas: [...responseSchemas].sort(),
-    fallback: {
-      identity: `application-result:${operation}`,
-      schemaVersions: [],
-      // 并非所有历史用例都有显式ResponseSchema。返回类型和return表达式的摘要让推断
-      // 类型/包装对象变化进入compat diff，同时不把内部类型或实现正文写进公共Manifest。
-      signatureSha256: sha256(
-        JSON.stringify({ returnType, returnExpressions: returnExpressions.sort() }),
-      ),
-    },
+    fallback,
+    signatureSha256: fallback.signatureSha256,
   };
 }
 
@@ -199,13 +542,14 @@ function parseProgram() {
   const config = ts.readConfigFile(configPath, ts.sys.readFile);
   if (config.error !== undefined)
     throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, "\n"));
-  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, ROOT);
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, dirname(configPath));
   return ts.createProgram({
     rootNames: [
       ...new Set([
         ...parsed.fileNames,
         join(CONTRACTS_ROOT, "public.ts"),
         join(APPLICATION_ROOT, "index.ts"),
+        ...workspacePublicEntryTargets(),
       ]),
     ],
     options: parsed.options,
@@ -246,7 +590,8 @@ function productRouteFiles() {
 function collectRoutes(program, schemas) {
   const checker = program.getTypeChecker();
   const routes = [];
-  const app = sourceFile(join(ROOT, "apps/api/src/app.ts"));
+  const app = program.getSourceFile(join(ROOT, "apps/api/src/app.ts"));
+  if (app === undefined) throw new Error("TypeScript Program缺少apps/api/src/app.ts");
   let productMounted = false;
   visit(app, (node) => {
     if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return;
@@ -264,25 +609,40 @@ function collectRoutes(program, schemas) {
     if (!ts.isStringLiteral(path) || !path.text.startsWith("/api/")) return;
     const handler = node.arguments.at(-1);
     if (handler === undefined) throw new Error(`公开路由缺少handler：${method} ${path.text}`);
+    if (!ts.isArrowFunction(handler) && !ts.isFunctionExpression(handler)) return;
+    const contract = routeContract(handler, checker, schemas);
     routes.push({
       method,
       path: path.text,
       kind: method === "GET" ? "query" : "command",
+      pathParameters: contract.pathParameters,
+      query: contract.query,
+      body: contract.body,
       requestSchemas: [],
-      responseSchemas: [
-        {
-          identity: `inline-response:${method} ${path.text}`,
-          schemaVersions: [],
-          signatureSha256: sha256(normalizedDeclaration(handler)),
-        },
-      ],
+      responseSchemas:
+        contract.successfulResponses.length > 0
+          ? contract.successfulResponses.map((response, index) => ({
+              identity: `response-expression:${method} ${path.text}:${String(index + 1)}`,
+              schemaVersions: [],
+              signatureSha256: response.signatureSha256,
+            }))
+          : [
+              {
+                identity: `inline-response:${method} ${path.text}`,
+                schemaVersions: [],
+                signatureSha256: sha256(normalizedDeclaration(handler)),
+              },
+            ],
+      successfulResponses: contract.successfulResponses,
       applicationOperations: [],
+      applicationOperationContracts: [],
     });
   });
   if (!productMounted) throw new Error("apps/api组合根未把createProductRouter挂载到/api");
 
   for (const path of productRouteFiles()) {
-    const file = sourceFile(path);
+    const file = program.getSourceFile(path);
+    if (file === undefined) throw new Error(`TypeScript Program缺少公开路由文件：${path}`);
     const imported = importedApplicationOperations(file);
     visit(file, (node) => {
       if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return;
@@ -293,9 +653,13 @@ function collectRoutes(program, schemas) {
       if (!ts.isStringLiteral(routePath) || handler === undefined) return;
       if (!ts.isArrowFunction(handler) && !ts.isFunctionExpression(handler)) return;
       const operations = operationsInHandler(handler, imported);
-      const requestNames = routeSchemas(handler, false);
-      const explicitResponseNames = routeSchemas(handler, true);
-      const derivedResponseNames = new Set(explicitResponseNames);
+      const contract = routeContract(handler, checker, schemas);
+      const requestNames = new Set([
+        ...contract.pathParameters.map((entry) => entry.schema.identity),
+        ...contract.query.schemas.map((entry) => entry.identity),
+        ...contract.body.schemas.map((entry) => entry.identity),
+      ]);
+      const derivedResponseNames = new Set(contract.responseSchemaNames);
       const operationContracts = operations.map((operation) =>
         applicationOperationContract(program, checker, operation),
       );
@@ -308,7 +672,10 @@ function collectRoutes(program, schemas) {
         method,
         path: `/api${routePath.text}`,
         kind: method === "GET" ? "query" : "command",
-        requestSchemas: requestNames.map((name) => schemaReference(name, schemas)),
+        pathParameters: contract.pathParameters,
+        query: contract.query,
+        body: contract.body,
+        requestSchemas: [...requestNames].sort().map((name) => schemaReference(name, schemas)),
         responseSchemas:
           derivedResponseNames.size > 0
             ? [...derivedResponseNames].sort().map((name) => schemaReference(name, schemas))
@@ -321,7 +688,13 @@ function collectRoutes(program, schemas) {
                     signatureSha256: sha256(normalizedDeclaration(handler)),
                   },
                 ],
+        successfulResponses: contract.successfulResponses,
         applicationOperations: operations,
+        applicationOperationContracts: operationContracts.map((entry) => ({
+          operation: entry.operation,
+          responseSchemas: entry.responseSchemas,
+          signatureSha256: entry.signatureSha256,
+        })),
       });
     });
   }
@@ -437,6 +810,40 @@ function schemaFacts(checker, declarations) {
   };
 }
 
+function allContractSchemas(program) {
+  const checker = program.getTypeChecker();
+  const schemas = new Map();
+  const ambiguous = new Set();
+  for (const file of program.getSourceFiles()) {
+    if (!file.fileName.startsWith(CONTRACTS_ROOT)) continue;
+    visit(file, (node) => {
+      if (
+        !ts.isVariableDeclaration(node) ||
+        !ts.isIdentifier(node.name) ||
+        !node.name.text.endsWith("Schema") ||
+        node.initializer === undefined
+      ) {
+        return;
+      }
+      const name = node.name.text;
+      if (ambiguous.has(name)) return;
+      if (schemas.has(name)) {
+        schemas.delete(name);
+        ambiguous.add(name);
+        return;
+      }
+      const closure = declarationClosure(checker, node);
+      const facts = schemaFacts(checker, [node]);
+      schemas.set(name, {
+        name,
+        signatureSha256: sha256([...closure].sort().join("\n")),
+        ...facts,
+      });
+    });
+  }
+  return schemas;
+}
+
 function publicContracts(program) {
   const checker = program.getTypeChecker();
   const entry = program.getSourceFile(join(CONTRACTS_ROOT, "public.ts"));
@@ -448,7 +855,7 @@ function publicContracts(program) {
   const deprecated = [];
   for (const exported of checker.getExportsOfModule(moduleSymbol)) {
     const name = exported.getName();
-    if (FORBIDDEN_PUBLIC_NAME.test(name)) continue;
+    assertPublicContractNameAllowed(name);
     const actual = resolvedSymbol(checker, exported);
     const declarations = (actual.declarations ?? []).filter((declaration) =>
       declaration.getSourceFile().fileName.startsWith(CONTRACTS_ROOT),
@@ -489,28 +896,103 @@ function publicContracts(program) {
   return { symbols, schemas, deprecated };
 }
 
-function packageExports() {
+function exportedTarget(value) {
+  if (typeof value === "string") return value;
+  if (value === null || typeof value !== "object") return undefined;
+  for (const condition of ["types", "import", "default", "node"]) {
+    const target = exportedTarget(value[condition]);
+    if (target !== undefined) return target;
+  }
+  return undefined;
+}
+
+function workspaceManifests() {
   const packages = [];
   for (const parent of [join(ROOT, "apps"), join(ROOT, "packages")]) {
     for (const name of readdirSync(parent).sort()) {
       const path = join(parent, name, "package.json");
       if (!existsSync(path)) continue;
-      const manifest = JSON.parse(readFileSync(path, "utf8"));
-      const entries = [];
-      if (typeof manifest.exports === "string") entries.push(".");
-      else if (manifest.exports !== null && typeof manifest.exports === "object") {
-        for (const key of Object.keys(manifest.exports)) {
-          const serialized = JSON.stringify(manifest.exports[key]);
-          if (/runtime-credential|internal-credential/u.test(`${key}:${serialized}`)) continue;
-          entries.push(key);
-        }
-      }
-      packages.push({
-        name: manifest.name,
-        exportPaths: entries.sort(),
-        executableCommands: Object.keys(manifest.bin ?? {}).sort(),
-      });
+      packages.push({ root: dirname(path), manifest: JSON.parse(readFileSync(path, "utf8")) });
     }
+  }
+  return packages;
+}
+
+function workspacePublicEntryTargets() {
+  const targets = [];
+  for (const entry of workspaceManifests()) {
+    const rootExport =
+      typeof entry.manifest.exports === "string"
+        ? entry.manifest.exports
+        : exportedTarget(entry.manifest.exports?.["."]);
+    if (typeof rootExport !== "string") continue;
+    const target = resolve(entry.root, rootExport);
+    if (existsSync(target)) targets.push(target);
+  }
+  return targets;
+}
+
+function moduleEntrySignature(program, path, fallback) {
+  const file = program.getSourceFile(path);
+  if (file === undefined) return sha256(fallback);
+  const checker = program.getTypeChecker();
+  const moduleSymbol = checker.getSymbolAtLocation(file);
+  if (moduleSymbol === undefined) return sha256(normalizedDeclaration(file));
+  const signatures = checker
+    .getExportsOfModule(moduleSymbol)
+    .map((exported) => {
+      const actual = resolvedSymbol(checker, exported);
+      const declaration = actual.declarations?.[0];
+      if (declaration === undefined) return { name: exported.getName(), signature: "unresolved" };
+      const type = checker.typeToString(
+        checker.getTypeOfSymbolAtLocation(actual, declaration),
+        declaration,
+        ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope,
+      );
+      return { name: exported.getName(), signature: type };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+  return sha256(JSON.stringify(signatures));
+}
+
+function packageExports(program) {
+  const packages = [];
+  for (const { root, manifest } of workspaceManifests()) {
+    const entries = [];
+    const publicExports =
+      typeof manifest.exports === "string"
+        ? manifest.exports
+        : Object.fromEntries(
+            Object.entries(manifest.exports ?? {}).filter(
+              ([key, value]) =>
+                !/runtime-credential|internal-credential/u.test(`${key}:${JSON.stringify(value)}`),
+            ),
+          );
+    if (typeof manifest.exports === "string") entries.push(".");
+    else if (manifest.exports !== null && typeof manifest.exports === "object") {
+      for (const key of Object.keys(publicExports)) {
+        entries.push(key);
+      }
+    }
+    const rootTarget =
+      typeof manifest.exports === "string"
+        ? manifest.exports
+        : exportedTarget(manifest.exports?.["."]);
+    packages.push({
+      name: manifest.name,
+      exportPaths: entries.sort(),
+      exports: stable(publicExports),
+      executableCommands: Object.keys(manifest.bin ?? {}).sort(),
+      bin: stable(manifest.bin ?? {}),
+      publicEntrySignatureSha256:
+        typeof rootTarget === "string"
+          ? moduleEntrySignature(
+              program,
+              resolve(root, rootTarget),
+              JSON.stringify(manifest.exports),
+            )
+          : sha256(JSON.stringify(manifest.exports ?? {})),
+    });
   }
   return packages.sort((left, right) => left.name.localeCompare(right.name));
 }
@@ -518,15 +1000,25 @@ function packageExports() {
 export function generateApiSurface() {
   const program = parseProgram();
   const contracts = publicContracts(program);
-  const routes = collectRoutes(program, contracts.schemas);
+  const routeSchemas = allContractSchemas(program);
   const problem = contracts.schemas.get("problemCodeSchema");
   const recovery = contracts.schemas.get("recoveryActionSchema");
+  const routes = collectRoutes(program, routeSchemas).map((route) => ({
+    ...route,
+    problemContract: {
+      problemCodeSchema: schemaReference("problemCodeSchema", contracts.schemas),
+      recoveryActionSchema: schemaReference("recoveryActionSchema", contracts.schemas),
+      codes: problem?.enumValues ?? [],
+      recoveryActions: recovery?.enumValues ?? [],
+    },
+  }));
   const manifest = {
-    schemaVersion: "chat-public-api-surface.v1",
+    schemaVersion: "chat-public-api-surface.v2",
     generation: {
       apiCompositionRoot: "apps/api:createApiApp",
       browserContractEntry: "@chat/contracts/public",
       packageExportSource: "workspace-package-manifests",
+      routeContractExtraction: "request-source-and-success-response-dataflow.v2",
     },
     routes,
     commandTypes: contracts.symbols
@@ -546,7 +1038,7 @@ export function generateApiSurface() {
       codes: problem?.enumValues ?? [],
       recoveryActions: recovery?.enumValues ?? [],
     },
-    packageExports: packageExports(),
+    packageExports: packageExports(program),
     publicSymbols: contracts.symbols,
     deprecated: contracts.deprecated,
   };
@@ -557,8 +1049,33 @@ export function generateApiSurface() {
   return stable(manifest);
 }
 
-function issue(kind, target, detail = {}) {
-  return { issueId: `${kind}:${target}`, kind, target, ...detail };
+const ADDITIVE_ISSUES = new Set([
+  "route_added",
+  "package_export_added",
+  "public_symbol_added",
+  "schema_added",
+  "command_type_added",
+  "query_type_added",
+  "problem_code_added",
+  "recovery_action_added",
+]);
+
+function digest(value) {
+  return sha256(json(value));
+}
+
+function issue(kind, target, before, after, detail = {}) {
+  const baseDigest = digest(before ?? { state: "absent" });
+  const currentDigest = digest(after ?? { state: "absent" });
+  return {
+    issueId: `${kind}:${target}`,
+    kind,
+    target,
+    baseDigest,
+    currentDigest,
+    diffSha256: sha256(json({ kind, target, baseDigest, currentDigest })),
+    ...detail,
+  };
 }
 
 function mapBy(items, key) {
@@ -571,13 +1088,13 @@ export function diffApiSurface(baseline, current) {
   const currentRoutes = mapBy(current.routes, (route) => `${route.method} ${route.path}`);
   for (const [key, route] of previousRoutes) {
     const next = currentRoutes.get(key);
-    if (next === undefined) issues.push(issue("route_removed", key));
-    else if (
-      JSON.stringify(route.requestSchemas) !== JSON.stringify(next.requestSchemas) ||
-      JSON.stringify(route.responseSchemas) !== JSON.stringify(next.responseSchemas)
-    ) {
-      issues.push(issue("route_contract_changed", key));
+    if (next === undefined) issues.push(issue("route_removed", key, route, undefined));
+    else if (baseline.schemaVersion === current.schemaVersion && digest(route) !== digest(next)) {
+      issues.push(issue("route_contract_changed", key, route, next));
     }
+  }
+  for (const [key, route] of currentRoutes) {
+    if (!previousRoutes.has(key)) issues.push(issue("route_added", key, undefined, route));
   }
 
   const previousPackages = mapBy(baseline.packageExports, (entry) => entry.name);
@@ -586,7 +1103,48 @@ export function diffApiSurface(baseline, current) {
     const next = currentPackages.get(name);
     for (const exportPath of entry.exportPaths) {
       if (next === undefined || !next.exportPaths.includes(exportPath)) {
-        issues.push(issue("package_export_removed", `${name}:${exportPath}`));
+        issues.push(
+          issue(
+            "package_export_removed",
+            `${name}:${exportPath}`,
+            entry.exports?.[exportPath] ?? exportPath,
+          ),
+        );
+      } else if (
+        baseline.schemaVersion === current.schemaVersion &&
+        digest(entry.exports?.[exportPath]) !== digest(next.exports?.[exportPath])
+      ) {
+        issues.push(
+          issue(
+            "package_export_changed",
+            `${name}:${exportPath}`,
+            entry.exports?.[exportPath],
+            next.exports?.[exportPath],
+          ),
+        );
+      }
+    }
+    if (
+      next !== undefined &&
+      baseline.schemaVersion === current.schemaVersion &&
+      (digest(entry.bin) !== digest(next.bin) ||
+        entry.publicEntrySignatureSha256 !== next.publicEntrySignatureSha256)
+    ) {
+      issues.push(issue("package_executable_or_entry_changed", name, entry, next));
+    }
+  }
+  for (const [name, entry] of currentPackages) {
+    const previous = previousPackages.get(name);
+    for (const exportPath of entry.exportPaths) {
+      if (previous === undefined || !previous.exportPaths.includes(exportPath)) {
+        issues.push(
+          issue(
+            "package_export_added",
+            `${name}:${exportPath}`,
+            undefined,
+            entry.exports?.[exportPath] ?? exportPath,
+          ),
+        );
       }
     }
   }
@@ -595,15 +1153,14 @@ export function diffApiSurface(baseline, current) {
   const currentSymbols = mapBy(current.publicSymbols, (entry) => entry.name);
   for (const [name, symbol] of previousSymbols) {
     const next = currentSymbols.get(name);
-    if (next === undefined) issues.push(issue("public_symbol_removed", name));
+    if (next === undefined) issues.push(issue("public_symbol_removed", name, symbol));
     else if (symbol.kind !== "schema" && symbol.signatureSha256 !== next.signatureSha256) {
-      issues.push(
-        issue("public_symbol_changed", name, {
-          before: symbol.signatureSha256,
-          after: next.signatureSha256,
-        }),
-      );
+      issues.push(issue("public_symbol_changed", name, symbol, next));
     }
+  }
+  for (const [name, symbol] of currentSymbols) {
+    if (!previousSymbols.has(name))
+      issues.push(issue("public_symbol_added", name, undefined, symbol));
   }
 
   const previousSchemas = mapBy(baseline.publicSchemas, (entry) => entry.name);
@@ -611,83 +1168,153 @@ export function diffApiSurface(baseline, current) {
   for (const [name, schema] of previousSchemas) {
     const next = currentSchemas.get(name);
     if (next === undefined) {
-      issues.push(issue("schema_removed", name));
+      issues.push(issue("schema_removed", name, schema));
       continue;
     }
     for (const field of next.requiredFields.filter(
       (field) => !schema.requiredFields.includes(field),
     )) {
-      issues.push(issue("required_field_added", `${name}.${field}`));
+      issues.push(issue("required_field_added", `${name}.${field}`, schema, next));
     }
     for (const value of schema.enumValues.filter((value) => !next.enumValues.includes(value))) {
-      issues.push(issue("enum_narrowed", `${name}:${value}`));
+      issues.push(issue("enum_narrowed", `${name}:${value}`, schema, next));
     }
     if (schema.signatureSha256 !== next.signatureSha256) {
       const sameGeneration =
         JSON.stringify(schema.schemaVersions) === JSON.stringify(next.schemaVersions);
       issues.push(
-        issue(sameGeneration ? "same_schema_literal_changed" : "schema_generation_changed", name, {
-          before: schema.signatureSha256,
-          after: next.signatureSha256,
-        }),
+        issue(
+          sameGeneration ? "same_schema_literal_changed" : "schema_generation_changed",
+          name,
+          schema,
+          next,
+        ),
       );
     }
   }
-  if (JSON.stringify(baseline.problems.codes) !== JSON.stringify(current.problems.codes)) {
-    issues.push(issue("problem_codes_changed", "ProblemCode"));
+  for (const [name, schema] of currentSchemas) {
+    if (!previousSchemas.has(name)) issues.push(issue("schema_added", name, undefined, schema));
   }
-  if (
-    JSON.stringify(baseline.problems.recoveryActions) !==
-    JSON.stringify(current.problems.recoveryActions)
-  ) {
-    issues.push(issue("recovery_actions_changed", "RecoveryAction"));
+
+  for (const [kind, beforeValues, afterValues] of [
+    ["command_type", baseline.commandTypes, current.commandTypes],
+    ["query_type", baseline.queryTypes, current.queryTypes],
+    ["problem_code", baseline.problems.codes, current.problems.codes],
+    ["recovery_action", baseline.problems.recoveryActions, current.problems.recoveryActions],
+  ]) {
+    const before = new Set(beforeValues);
+    const after = new Set(afterValues);
+    for (const value of before) {
+      if (!after.has(value)) issues.push(issue(`${kind}_removed`, value, value));
+    }
+    for (const value of after) {
+      if (!before.has(value)) issues.push(issue(`${kind}_added`, value, undefined, value));
+    }
   }
   return issues.sort((left, right) => left.issueId.localeCompare(right.issueId));
 }
 
-export function validateWaivers(value) {
-  if (value === null || typeof value !== "object" || value.schemaVersion !== 1) {
-    throw new Error("breaking change waiver必须是schemaVersion=1的对象");
+function validateExactRecords(value, collection, label, fields) {
+  if (value === null || typeof value !== "object" || value.schemaVersion !== 2) {
+    throw new Error(`${label}必须是schemaVersion=2的对象`);
   }
-  if (!Array.isArray(value.waivers)) throw new Error("breaking change waiver列表缺失");
+  if (!Array.isArray(value[collection])) throw new Error(`${label}列表缺失`);
   const seen = new Set();
-  for (const waiver of value.waivers) {
+  for (const record of value[collection]) {
     for (const field of [
-      "issueId",
-      "approvedBy",
-      "approvalReference",
-      "detect",
-      "why",
-      "fix",
-      "verify",
-      "rollback",
+      "issueKind",
+      "target",
+      "baseDigest",
+      "currentDigest",
+      "diffSha256",
+      ...fields,
     ]) {
-      if (typeof waiver?.[field] !== "string" || waiver[field].trim() === "") {
-        throw new Error(`breaking change waiver缺少${field}`);
+      if (typeof record?.[field] !== "string" || record[field].trim() === "") {
+        throw new Error(`${label}缺少${field}`);
       }
     }
+    for (const field of ["baseDigest", "currentDigest", "diffSha256"]) {
+      if (!/^[0-9a-f]{64}$/u.test(record[field])) throw new Error(`${label}.${field}不是SHA-256`);
+    }
+    const key = `${record.issueKind}:${record.target}:${record.diffSha256}`;
+    if (seen.has(key)) throw new Error(`重复${label}：${key}`);
+    seen.add(key);
+  }
+  return value[collection];
+}
+
+export function validateWaivers(value) {
+  const waivers = validateExactRecords(value, "waivers", "breaking change waiver", [
+    "approvedBy",
+    "approvalReference",
+    "detect",
+    "why",
+    "fix",
+    "verify",
+    "rollback",
+  ]);
+  for (const waiver of waivers) {
     if (!waiver.approvedBy.startsWith("user:")) {
       throw new Error("breaking change waiver必须记录明确用户批准（approvedBy=user:...）");
     }
-    if (seen.has(waiver.issueId)) throw new Error(`重复breaking change waiver：${waiver.issueId}`);
-    seen.add(waiver.issueId);
   }
-  return value.waivers;
+  return waivers;
 }
 
-export function assertApiSurfaceCompatible(baseline, current, waiverDocument) {
+export function validateCompatibleChangeRecords(value) {
+  return validateExactRecords(value, "changes", "compatible surface change record", [
+    "purpose",
+    "owner",
+    "verification",
+    "rollbackOrRemoval",
+  ]);
+}
+
+function recordMatchesIssue(record, entry) {
+  return (
+    record.issueKind === entry.kind &&
+    record.target === entry.target &&
+    record.baseDigest === entry.baseDigest &&
+    record.currentDigest === entry.currentDigest &&
+    record.diffSha256 === entry.diffSha256
+  );
+}
+
+export function assertApiSurfaceCompatible(
+  baseline,
+  current,
+  waiverDocument,
+  compatibleChangeDocument = { schemaVersion: 2, changes: [] },
+) {
   const issues = diffApiSurface(baseline, current);
   const waivers = validateWaivers(waiverDocument);
-  const waiverIds = new Set(waivers.map((waiver) => waiver.issueId));
-  const missing = issues.filter((entry) => !waiverIds.has(entry.issueId));
-  const stale = waivers.filter(
-    (waiver) => !issues.some((entry) => entry.issueId === waiver.issueId),
+  const changes = validateCompatibleChangeRecords(compatibleChangeDocument);
+  const additive = issues.filter((entry) => ADDITIVE_ISSUES.has(entry.kind));
+  const breaking = issues.filter((entry) => !ADDITIVE_ISSUES.has(entry.kind));
+  const staleWaivers = waivers.filter(
+    (waiver) => !breaking.some((entry) => recordMatchesIssue(waiver, entry)),
   );
-  if (stale.length > 0)
-    throw new Error(`存在过期breaking change waiver：${stale.map((w) => w.issueId).join(", ")}`);
-  if (missing.length > 0) {
+  if (staleWaivers.length > 0) throw new Error("存在摘要或diff已过期的breaking change waiver");
+  const staleChanges = changes.filter(
+    (record) => !additive.some((entry) => recordMatchesIssue(record, entry)),
+  );
+  if (staleChanges.length > 0) throw new Error("存在摘要或diff已过期的compatible change record");
+  const missingChanges = additive.filter(
+    (entry) => !changes.some((record) => recordMatchesIssue(record, entry)),
+  );
+  if (missingChanges.length > 0) {
     throw new Error(
-      `API Surface存在未获用户明确批准的breaking change：\n${missing
+      `API Surface新增缺少精确compatible change record：\n${missingChanges
+        .map((entry) => `- ${entry.issueId}`)
+        .join("\n")}`,
+    );
+  }
+  const missingWaivers = breaking.filter(
+    (entry) => !waivers.some((waiver) => recordMatchesIssue(waiver, entry)),
+  );
+  if (missingWaivers.length > 0) {
+    throw new Error(
+      `API Surface存在未获用户明确批准的breaking change：\n${missingWaivers
         .map((entry) => `- ${entry.issueId}`)
         .join("\n")}`,
     );
@@ -752,16 +1379,25 @@ export function assertApiSurfaceBaselineChain(
   checkedInBaseline,
   current,
   waiverDocument,
+  compatibleChangeDocument = { schemaVersion: 2, changes: [] },
 ) {
   if (json(checkedInBaseline) !== json(current)) {
     throw new Error("API Surface生成结果与checked-in baseline漂移；必须先审查并更新baseline");
   }
   if (baseBaseline === undefined) {
     const waivers = validateWaivers(waiverDocument);
-    if (waivers.length > 0) throw new Error("没有base baseline时不得保留breaking change waiver");
+    const changes = validateCompatibleChangeRecords(compatibleChangeDocument);
+    if (waivers.length > 0 || changes.length > 0) {
+      throw new Error("没有base baseline时不得保留API change record或breaking change waiver");
+    }
     return [];
   }
-  return assertApiSurfaceCompatible(baseBaseline, current, waiverDocument);
+  return assertApiSurfaceCompatible(
+    baseBaseline,
+    current,
+    waiverDocument,
+    compatibleChangeDocument,
+  );
 }
 
 function readableDiff(issues) {
@@ -802,6 +1438,7 @@ async function main() {
     checkedInBaseline,
     current,
     load(WAIVER_PATH),
+    load(CHANGE_RECORD_PATH),
   );
   if (compatibilityBase.sha !== undefined) {
     process.stdout.write(`API Surface compatibility base：${compatibilityBase.sha}\n`);

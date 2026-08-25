@@ -60,6 +60,9 @@ export function validateSupplyChainPolicy(policy) {
   ]) {
     if (!Array.isArray(policy[field])) throw new Error(`supply-chain policy缺少${field}`);
   }
+  if (policy.dshWholeForkAuditPolicy !== "report_only_outside_chat_closure") {
+    throw new Error("DSH whole-fork audit只能作为Chat真实闭包之外的report-only债务");
+  }
   if (new Set(policy.allowedProductionLicenses).size !== policy.allowedProductionLicenses.length) {
     throw new Error("production license allowlist重复");
   }
@@ -251,6 +254,123 @@ function collectLinkedRuntimeLicenseReport(source, checkout) {
   return report;
 }
 
+function linkedWorkspacePaths(source) {
+  return [...new Set(source.linkedPackages.map((linked) => linked.sourcePath))].sort();
+}
+
+function auditWorkspaceKey(path) {
+  return path.split("/").join("__");
+}
+
+function builtArtifactImports(source, checkout) {
+  const imports = new Set();
+  for (const marker of source.runtimeMarkers) {
+    const artifact = resolve(checkout, marker.path);
+    const text = readFileSync(artifact, "utf8");
+    for (const match of text.matchAll(
+      /\brequire\(["']([^"']+)["']\)|\bfrom\s+["']([^"']+)["']/gu,
+    )) {
+      const specifier = match[1] ?? match[2];
+      if (specifier !== undefined && !specifier.startsWith(".") && !specifier.startsWith("node:")) {
+        imports.add(specifier);
+      }
+    }
+  }
+  return [...imports].sort();
+}
+
+function assertBuiltImportsResolveFromChat(source, imports) {
+  const lockfile = readFileSync(resolve(ROOT, "pnpm-lock.yaml"), "utf8");
+  for (const linked of source.linkedPackages) {
+    const checkout = assertManagedSourceIdentity(source, ROOT, { runtime: true });
+    const manifest = loadJson(resolve(checkout, linked.sourcePath, "package.json"));
+    const declared = {
+      ...manifest.dependencies,
+      ...manifest.devDependencies,
+      ...manifest.peerDependencies,
+      ...manifest.optionalDependencies,
+    };
+    for (const specifier of imports) {
+      const packageName = specifier.startsWith("@")
+        ? specifier.split("/").slice(0, 2).join("/")
+        : specifier.split("/")[0];
+      if (declared[packageName] === undefined) {
+        throw new Error(`${source.id}构建产物import未由链接源包声明：${specifier}`);
+      }
+      if (!lockfile.includes(`'${packageName}@`) && !lockfile.includes(`  ${packageName}@`)) {
+        throw new Error(`${source.id}构建产物import未进入Chat锁文件闭包：${specifier}`);
+      }
+    }
+  }
+}
+
+function auditJson(command, args, cwd) {
+  const result = spawnSync(command, args, {
+    cwd,
+    env: createCiSafeEnvironment(process.env),
+    encoding: "utf8",
+    stdio: "pipe",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.error !== undefined) throw result.error;
+  // npm/pnpm在发现漏洞时返回1；网络、锁文件或命令错误不得伪装成漏洞报告。
+  if (![0, 1].includes(result.status ?? -1) || result.stdout.trim() === "") {
+    throw new Error(`${command} ${args.join(" ")} audit执行失败：${result.stderr.trim()}`);
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    throw new Error(`${command} audit未返回合法JSON`);
+  }
+}
+
+function vulnerabilityCounts(report) {
+  const counts = report.metadata?.vulnerabilities ?? {};
+  return Object.fromEntries(
+    ["info", "low", "moderate", "high", "critical"].map((severity) => [
+      severity,
+      Number(counts[severity] ?? 0),
+    ]),
+  );
+}
+
+export function classifyPnpmWorkspaceAudit(report, workspacePaths) {
+  const closureKeys = new Set(workspacePaths.map(auditWorkspaceKey));
+  const inClosure = [];
+  const outsideClosure = [];
+  for (const [advisoryId, advisory] of Object.entries(report.advisories ?? {})) {
+    const paths = (advisory.findings ?? []).flatMap((finding) => finding.paths ?? []);
+    const entry = {
+      advisoryId,
+      moduleName: advisory.module_name,
+      severity: advisory.severity,
+      paths: [...new Set(paths)].sort(),
+    };
+    const target = paths.some((path) => closureKeys.has(String(path).split(">")[0]))
+      ? inClosure
+      : outsideClosure;
+    target.push(entry);
+  }
+  return {
+    workspacePaths: [...workspacePaths].sort(),
+    inClosure: inClosure.sort((left, right) => left.advisoryId.localeCompare(right.advisoryId)),
+    outsideClosure: outsideClosure.sort((left, right) =>
+      left.advisoryId.localeCompare(right.advisoryId),
+    ),
+    wholeForkSeverityCounts: vulnerabilityCounts(report),
+  };
+}
+
+export function assertNoManagedClosureVulnerabilities(classification, sourceId) {
+  if (classification.inClosure.length > 0) {
+    throw new Error(
+      `${sourceId} Chat真实闭包命中${String(classification.inClosure.length)}个漏洞：${classification.inClosure
+        .map((entry) => `${entry.advisoryId}:${entry.moduleName}`)
+        .join(", ")}`,
+    );
+  }
+}
+
 function assertProductionLicenses(policy, manifest) {
   const pi = manifest.sources.find((source) => source.id === "pi");
   const dsh = manifest.sources.find((source) => source.id === "dsh");
@@ -260,12 +380,7 @@ function assertProductionLicenses(policy, manifest) {
   const chatReport = JSON.parse(
     run("pnpm", ["licenses", "list", "--prod", "--json"], { capture: true }),
   );
-  const dshReport = JSON.parse(
-    run("corepack", ["pnpm@11.7.0", "licenses", "list", "--prod", "--json"], {
-      cwd: dshCheckout,
-      capture: true,
-    }),
-  );
+  const dshLinkedReport = collectLinkedRuntimeLicenseReport(dsh, dshCheckout);
   return {
     chat: validateProductionLicenseReport(policy, "chat", chatReport),
     pi: validateProductionLicenseReport(
@@ -273,7 +388,7 @@ function assertProductionLicenses(policy, manifest) {
       "pi",
       collectLinkedRuntimeLicenseReport(pi, piCheckout),
     ),
-    dsh: validateProductionLicenseReport(policy, "dsh", dshReport),
+    dsh: validateProductionLicenseReport(policy, "dsh", dshLinkedReport),
   };
 }
 
@@ -297,15 +412,50 @@ export function runSupplyChainCheck() {
 export function runSupplyChainAudit() {
   const report = runSupplyChainCheck();
   const manifest = loadManagedSourcesManifest();
-  run("pnpm", ["audit", "--prod"]);
-  for (const source of manifest.sources) {
-    const checkout = assertManagedSourceIdentity(source, ROOT, { runtime: true });
-    if (source.id === "pi") run("npm", ["audit", "--omit=dev"], { cwd: checkout });
-    else if (source.id === "dsh") {
-      run("corepack", ["pnpm@11.7.0", "audit", "--prod"], { cwd: checkout });
-    }
+  const chatAudit = auditJson("pnpm", ["audit", "--prod", "--json"], ROOT);
+  if (Object.values(vulnerabilityCounts(chatAudit)).some((count) => count > 0)) {
+    throw new Error("Chat production闭包存在audit漏洞");
   }
-  return report;
+  const pi = manifest.sources.find((source) => source.id === "pi");
+  const dsh = manifest.sources.find((source) => source.id === "dsh");
+  if (pi === undefined || dsh === undefined) throw new Error("Manifest缺少Pi或DSH");
+  const piCheckout = assertManagedSourceIdentity(pi, ROOT, { runtime: true });
+  const dshCheckout = assertManagedSourceIdentity(dsh, ROOT, { runtime: true });
+  const piAudit = auditJson("npm", ["audit", "--omit=dev", "--json"], piCheckout);
+  if (Object.values(vulnerabilityCounts(piAudit)).some((count) => count > 0)) {
+    throw new Error("Pi受管执行闭包存在audit漏洞");
+  }
+
+  const dshImports = builtArtifactImports(dsh, dshCheckout);
+  assertBuiltImportsResolveFromChat(dsh, dshImports);
+  const dshWholeAudit = auditJson(
+    "corepack",
+    ["pnpm@11.7.0", "audit", "--prod", "--json"],
+    dshCheckout,
+  );
+  const dshClassification = classifyPnpmWorkspaceAudit(dshWholeAudit, linkedWorkspacePaths(dsh));
+  assertNoManagedClosureVulnerabilities(dshClassification, "DSH");
+  return {
+    ...report,
+    auditClosures: {
+      chatProduction: { severityCounts: vulnerabilityCounts(chatAudit) },
+      piLinkedExecution: {
+        linkedWorkspacePaths: linkedWorkspacePaths(pi),
+        severityCounts: vulnerabilityCounts(piAudit),
+      },
+      dshLinkedBuiltBundledRuntime: {
+        linkedWorkspacePaths: dshClassification.workspacePaths,
+        builtArtifactImports: dshImports,
+        advisoryCount: dshClassification.inClosure.length,
+      },
+      dshWholeForkDebt: {
+        policy: "report_only_outside_chat_closure",
+        advisoryCount: dshClassification.outsideClosure.length,
+        severityCounts: dshClassification.wholeForkSeverityCounts,
+        advisories: dshClassification.outsideClosure,
+      },
+    },
+  };
 }
 
 async function main() {

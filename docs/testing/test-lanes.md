@@ -49,25 +49,18 @@ pnpm verify:core
 `CHAT_PLANE_CE_API_TOKEN`。普通CI统一清空Provider、GitHub、Plane、SSH和动态模型Key，关闭
 Memory、Workbench、paid与external开关。仅本机存在Key不会触发凭据加载或外部子进程。
 
+父级launcher读取`.env`后会重新清空全部Provider/base URL、Memory、Plane、GitHub/npm/SSH及动态模型Key，
+只恢复本命令声明的精确Credential、全局mode、服务开关和命令名。真实Memory与Bailian入口还在任何Key
+读取、文件删除/写入、子进程或网络之前执行child-side精确命令门；绕过launcher直接运行会非零退出且无副作用。
+
 Browser的18项场景、唯一Harness与子进程环境边界见[确定性Browser lane](./browser-lane.md)。
 
-## Phase 2 基线度量
+## 基线度量
 
-2026-08-24在默认Node Heap、同一开发机上重新盘点：原根门为196个正式测试文件、1,532项
-测试、337.81秒、进程树最大RSS 4,305,469,440字节；其中`packages/testing`单次聚合曾接近
-默认Heap边界。任务04最终代码在2026-08-25的显式根`pnpm test`中，分lane确定性测试为189个
-文件、1,555项、合计399.99秒；单lane结果如下：
-
-| lane | 文件 | 测试 | 墙钟 | 最大RSS |
-| --- | ---: | ---: | ---: | ---: |
-| core | 35 | 235 | 64.41秒 | 956,088,320字节 |
-| contract | 62 | 556 | 95.35秒 | 965,033,984字节 |
-| integration | 64 | 530 | 189.98秒 | 4,401,938,432字节 |
-| compat | 28 | 234 | 50.26秒 | 2,474,262,528字节 |
-
-RSS是每个lane全部受监督子进程的进程树采样总和，不是单个Node Heap上限；所有根门均未设置全局
-`NODE_OPTIONS`。最慢10项保存在被Git忽略的`test-results/test-lanes/<lane>.json`，交付报告以该轮
-实际JSON列出，不沿用文档快照冒充下一轮结果。
+测试文件与项数会随合同测试同步变化，因此文档不维护易漂移的手抄总数。每次运行lane都会生成
+`test-results/test-lanes/<lane>.json`，其中的`fileCount`、`testCount`、`wallMs`、`peakRssBytes`和
+`slowest10`是该commit、该机器、默认Node Heap下的唯一度量证据；最终报告从本轮4个JSON汇总，
+不得沿用历史快照。RSS是受监督子进程树采样总和，不是单个Node Heap上限。
 
 ## 测试瘦身证据
 

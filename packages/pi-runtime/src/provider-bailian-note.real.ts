@@ -1,4 +1,3 @@
-import "../../../scripts/load-env.mjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +5,13 @@ import { describe, expect, it } from "vitest";
 import { PROVIDER_MODEL } from "@chat/contracts";
 import { isBailianReady, loadBailianConfig } from "./config.js";
 import { NOTE_CAPTURE_TOKEN_BUDGET, runPiNoteCapture } from "./note-capture.js";
+import { assertRealTestChildAuthorization } from "../../../scripts/ci/real-test-child-guard.mjs";
+
+assertRealTestChildAuthorization({
+  mode: "paid",
+  commandName: "test:paid:provider:bailian:note",
+  credentials: ["DASHSCOPE_API_KEY"],
+});
 
 /**
  * S5 Note真实Provider最小门：只进行一次百炼请求，只保存调用计数、usage与脱敏请求证据；

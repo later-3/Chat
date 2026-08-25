@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import {
+  assertNoManagedClosureVulnerabilities,
+  classifyPnpmWorkspaceAudit,
   runSupplyChainCheck,
   scanTrackedSecrets,
   validateSupplyChainPolicy,
@@ -21,9 +23,44 @@ test("最低供应链门锁定三仓、lifecycle、secret与production license",
   assert.equal(report.secrets.findingCount, 0);
   assert.ok(report.licenses.chat.packageCount > 100);
   assert.ok(report.licenses.pi.packageCount > 100);
-  assert.ok(report.licenses.dsh.packageCount > 500);
+  assert.ok(report.licenses.dsh.packageCount >= 3);
   assert.deepEqual(Object.keys(report.licenses), ["chat", "pi", "dsh"]);
   assert.deepEqual(report.onlyBuiltDependencies, ["@deepseek-ai/dsh-subprocess-local", "node-pty"]);
+});
+
+test("DSH whole-fork债务与Chat实际链接闭包机械分离，真实闭包注入失败", () => {
+  const report = {
+    metadata: { vulnerabilities: { high: 2 } },
+    advisories: {
+      unrelated: {
+        module_name: "unrelated-vulnerable-package",
+        severity: "high",
+        findings: [{ paths: ["packages__e2b__e2b>unrelated-vulnerable-package"] }],
+      },
+      injected: {
+        module_name: "injected-vulnerable-package",
+        severity: "high",
+        findings: [
+          {
+            paths: ["packages__client__ui-trajectory>injected-vulnerable-package"],
+          },
+        ],
+      },
+    },
+  };
+  const classification = classifyPnpmWorkspaceAudit(report, ["packages/client/ui-trajectory"]);
+  assert.deepEqual(
+    classification.inClosure.map((entry) => entry.advisoryId),
+    ["injected"],
+  );
+  assert.deepEqual(
+    classification.outsideClosure.map((entry) => entry.advisoryId),
+    ["unrelated"],
+  );
+  assert.throws(
+    () => assertNoManagedClosureVulnerabilities(classification, "DSH"),
+    /真实闭包命中1个漏洞/u,
+  );
 });
 
 test("供应链policy拒绝无理由lifecycle和无审查许可证例外", () => {

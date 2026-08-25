@@ -23,6 +23,14 @@ import {
 } from "./fixed-memorycore.mjs";
 import { chatRepoRoot } from "./fixed-memmy.mjs";
 import { findListenerPid } from "../debug/lib.mjs";
+import { assertRealTestChildAuthorization } from "../ci/real-test-child-guard.mjs";
+
+assertRealTestChildAuthorization({
+  mode: "external",
+  commandName: "test:external:memory:memorycore",
+  serviceSwitch: "CHAT_MEMORY_REAL_TEST",
+  credentials: [],
+});
 
 const TOKEN = "chat-memorycore-local-test";
 const SERVICE_ID = "chat-memorycore-service";

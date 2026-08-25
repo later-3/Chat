@@ -12,7 +12,7 @@
 4. 新测试必须在[`config/test-lanes.json`](./config/test-lanes.json)中有且只有一个主要lane。
 5. 公共路由、Schema或export变化先运行`pnpm api-surface:diff`；`api-surface:check`还会对Git base baseline
    复核，不能用同分支更新baseline绕过breaking change；按[兼容政策](./docs/architecture/compatibility-policy.md)
-   取得用户批准。
+   取得用户批准。兼容新增也必须提交绑定精确before/after digest与diff hash的一次性change record。
 6. 跨模块长期决定才使用[ADR](./docs/decisions/README.md)，普通小改动不写ADR。
 
 ## 提交前检查

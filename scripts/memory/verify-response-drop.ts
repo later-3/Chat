@@ -21,6 +21,14 @@ import {
   ensureFixedMemmy,
 } from "./fixed-memmy.mjs";
 import { findListenerPid } from "../debug/lib.mjs";
+import { assertRealTestChildAuthorization } from "../ci/real-test-child-guard.mjs";
+
+assertRealTestChildAuthorization({
+  mode: "external",
+  commandName: "test:external:memory:response-drop",
+  serviceSwitch: "CHAT_MEMORY_REAL_TEST",
+  credentials: [],
+});
 
 const repoRoot = chatRepoRoot();
 const runRoot = assertChatDataPath(

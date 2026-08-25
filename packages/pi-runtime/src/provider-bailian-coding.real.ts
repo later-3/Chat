@@ -1,4 +1,3 @@
-import "../../../scripts/load-env.mjs";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,6 +18,13 @@ import {
   PI_EXECUTOR_PROTOCOL_VERSION,
   startPiExecutorOperationRequestSchema,
 } from "./executor-service-contract.js";
+import { assertRealTestChildAuthorization } from "../../../scripts/ci/real-test-child-guard.mjs";
+
+assertRealTestChildAuthorization({
+  mode: "paid",
+  commandName: "test:paid:provider:bailian:coding",
+  credentials: ["DASHSCOPE_API_KEY"],
+});
 
 /**
  * 显式真实门：在临时Workspace中要求完整AgentSession观察、写入并用bash验证文件。

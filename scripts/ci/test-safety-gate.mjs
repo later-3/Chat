@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { EXTERNAL_OPT_IN_ENV, PROVIDER_AND_CREDENTIAL_ENV } from "./safe-environment.mjs";
+
 function enabled(value) {
   return value?.trim() === "1";
 }
@@ -46,11 +48,28 @@ export async function validateTestSafetyGate(input, loadEnvironment) {
       throw new Error(`缺少精确测试凭据：${name}`);
     }
   }
-  return {
-    ...loaded,
-    ...(input.mode === "paid" ? { CHAT_PAID_TEST_COMMAND_NAME: input.commandName } : {}),
-    ...(input.mode === "external" ? { CHAT_EXTERNAL_TEST_COMMAND_NAME: input.commandName } : {}),
-  };
+  // Loader可以读取仓库.env，但子进程只能得到本次门声明的最小敏感面。先保存精确
+  // 凭据，再清空Provider/base URL、Memory、Plane、GitHub/npm/SSH和动态Provider Key；
+  // 普通PATH/HOME/TMP/toolchain与非敏感测试配置保持不变。
+  const declaredCredentials = Object.fromEntries(
+    input.credentials.map((name) => [name, loaded[name]]),
+  );
+  const dynamicProviderKey = loaded.CHAT_PROJECT_MODEL_API_KEY_ENV?.trim();
+  const child = { ...loaded };
+  for (const name of [...PROVIDER_AND_CREDENTIAL_ENV, ...EXTERNAL_OPT_IN_ENV]) child[name] = "";
+  if (/^[A-Z_][A-Z0-9_]*$/u.test(dynamicProviderKey ?? "")) child[dynamicProviderKey] = "";
+  child.CHAT_EXTERNAL_TEST_COMMAND_NAME = "";
+  child.CHAT_PAID_TEST_COMMAND_NAME = "";
+  Object.assign(child, declaredCredentials);
+  if (input.mode === "paid") {
+    child.CHAT_ALLOW_PAID_TESTS = "1";
+    child.CHAT_PAID_TEST_COMMAND_NAME = input.commandName;
+  } else {
+    child.CHAT_ALLOW_EXTERNAL_WRITES = "1";
+    child.CHAT_EXTERNAL_TEST_COMMAND_NAME = input.commandName;
+    for (const name of input.switches) child[name] = "1";
+  }
+  return child;
 }
 
 export async function executeTestSafetyGate(input, dependencies) {

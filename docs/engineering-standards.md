@@ -129,10 +129,10 @@ Mock只能证明调用合同；真实Workflow、真实pi和真实浏览器证据
 
 ## 11. 公共面、兼容与ADR
 
-1. 公共HTTP、Browser合同和workspace export由`pnpm api-surface:check`从真实组合根生成并与baseline比较；不得手写第二份路由或Schema事实表。
+1. 公共HTTP、Browser合同和workspace export由`pnpm api-surface:check`从真实请求/响应数据流、Application operation和package manifest生成并与baseline比较；不得手写第二份路由或Schema事实表。兼容新增使用精确一次性change record。
 2. 网络、Product Store、Bridge State、Workflow/RunSpec、Direct/Generic Journal、Browser DTO/Event统一执行`read old / write current`。
 3. 同一`schemaVersion`不得原地新增必填、收窄枚举或改变语义；新写语义升代际，旧代只读不能扩权。
-4. breaking change必须有`detect / why / fix / verify / rollback`和用户明确批准；Agent不得自行写waiver。
+4. breaking change必须有`detect / why / fix / verify / rollback`和用户明确批准；waiver绑定精确before/after digest与diff hash，Agent不得自行写waiver。
 5. ADR只用于跨模块、长期且难以从局部代码恢复的决定。普通修复、测试或单包重构不写ADR。
 
 ## 12. 中文注释与当前实现文档

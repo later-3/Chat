@@ -87,6 +87,10 @@ jobs:
         env:
           CHAT_API_SURFACE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         run: pnpm api-surface:check
+      - name: compare compatibility facts with PR/push base
+        env:
+          CHAT_COMPATIBILITY_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: pnpm compatibility:check
       - run: pnpm test:contract
 
   integration:

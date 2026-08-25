@@ -50,6 +50,8 @@
     "api-surface:diff": "node scripts/ci/api-surface.mjs diff",
     "api-surface:update-baseline": "node scripts/ci/api-surface.mjs update-baseline",
     "compatibility:check": "node scripts/ci/compatibility-policy.mjs",
+    "compatibility:facts:generate": "node scripts/ci/compatibility-facts.mjs generate",
+    "compatibility:facts:update": "node scripts/ci/compatibility-facts.mjs update-baseline",
     "adr:check": "node scripts/ci/decision-records.mjs",
     "supply-chain:check": "node scripts/ci/supply-chain.mjs check",
     "supply-chain:audit": "node scripts/ci/supply-chain.mjs audit",

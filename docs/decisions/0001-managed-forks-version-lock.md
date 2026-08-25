@@ -18,10 +18,15 @@ Manifest准备和验证来源；来源、HEAD、dirty、marker、license或link�
 
 Chat不重新引入Pi/DSH package patch，不修改受管稳定分支，也不把Fork源码复制进Chat。
 
+供应链阻断范围按真实消费闭包推导：Chat生产锁文件、Pi三条链接执行闭包，以及DSH的Manifest链接包、
+构建产物import与Chat锁文件解析闭包。DSH整个Monorepo仍做只读audit，但闭包之外的告警作为上游
+whole-fork债务报告，不用静态漏洞白名单阻断Chat；任何告警路径一旦进入真实链接workspace，门立即失败。
+
 ## 后果
 
 干净Runner可只凭Chat与公开固定源完成安装构建；升级必须同时审查Fork能力证据、Manifest与合同测试。
-代价是首次准备需要下载和构建固定工件，且Fork不可用时Chat拒绝退回官方包。
+代价是首次准备需要下载和构建固定工件，且Fork不可用时Chat拒绝退回官方包。Whole-fork报告不等于
+上游仓库安全通过；它只证明当前Chat未执行这些告警路径。
 
 ## 替代方案
 

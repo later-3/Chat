@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   checkDecisionRecords,
   validateDecisionIndex,
+  validateDecisionRelations,
   validateDecisionRecordSource,
 } from "./decision-records.mjs";
 
@@ -36,4 +37,43 @@ test("ADR索引拒绝漏项和状态漂移", () => {
       ]),
     /索引缺失或状态漂移/u,
   );
+});
+
+test("ADR编号全局唯一且superseded必须双向引用真实后继", () => {
+  const base = {
+    filename: "0099-old.md",
+    number: "0099",
+    status: "superseded",
+    supersededBy: "0100",
+    supersedes: [],
+  };
+  assert.throws(
+    () => validateDecisionRelations([base, { ...base, filename: "0099-duplicate.md" }]),
+    /编号重复/u,
+  );
+  assert.throws(() => validateDecisionRelations([base]), /替代者不存在/u);
+  assert.throws(
+    () =>
+      validateDecisionRelations([
+        base,
+        {
+          filename: "0100-new.md",
+          number: "0100",
+          status: "accepted",
+          supersededBy: undefined,
+          supersedes: [],
+        },
+      ]),
+    /未反向记录/u,
+  );
+  validateDecisionRelations([
+    base,
+    {
+      filename: "0100-new.md",
+      number: "0100",
+      status: "accepted",
+      supersededBy: undefined,
+      supersedes: ["0099"],
+    },
+  ]);
 });

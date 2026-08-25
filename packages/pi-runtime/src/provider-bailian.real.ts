@@ -1,4 +1,3 @@
-import "../../../scripts/load-env.mjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -13,6 +12,13 @@ import {
 import { loadBailianConfig, isBailianReady } from "./config.js";
 import { runPiPlanner } from "./planner.js";
 import { runPiExecutor } from "./executor.js";
+import { assertRealTestChildAuthorization } from "../../../scripts/ci/real-test-child-guard.mjs";
+
+assertRealTestChildAuthorization({
+  mode: "paid",
+  commandName: "test:paid:provider:bailian",
+  credentials: ["DASHSCOPE_API_KEY"],
+});
 
 /**
  * 真实Provider付费门：CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:provider:bailian。
