@@ -89,7 +89,7 @@ export function runActivityFromTrace(
         ),
         activityType: "model",
         phase: phase(event.eventName),
-        nodeKind: "executor",
+        nodeKind: event.nodeKind ?? "executor",
         provider: event.provider,
         model: event.model,
         ...(event.providerRequestIndex === undefined

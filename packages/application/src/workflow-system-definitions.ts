@@ -21,8 +21,11 @@ export const LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemplanningv1" as
 export const SYSTEM_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemplanningv2" as const;
 export const SYSTEM_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemplanningv2" as const;
 export const SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID = "wfd_systemsimpleplanningv1" as const;
-export const SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemsimpleplanningv1" as const;
-export const SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemsimpleplanningv1" as const;
+export const LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID =
+  "wfr_systemsimpleplanningv1" as const;
+export const LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemsimpleplanningv1" as const;
+export const SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemsimpleplanningv2" as const;
+export const SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemsimpleplanningv2" as const;
 export const SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID = "wfd_systemmemoryplanningv1" as const;
 export const SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemmemoryplanningv1" as const;
 export const SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemmemoryplanningv1" as const;
@@ -35,8 +38,10 @@ export const LEGACY_SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID = "wvd_systemdirectagen
 export const SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID = "wfr_systemdirectagentv2" as const;
 export const SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID = "wvd_systemdirectagentv2" as const;
 export const CONFIGURABLE_PLANNING_RUNNER_FAMILY = "configurable-planning.v1" as const;
-export const CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION =
+export const LEGACY_CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION =
   "configurable-planning.bundle.v1" as const;
+export const CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION =
+  "configurable-planning.bundle.v2" as const;
 export const NOTE_CAPTURE_RUNNER_FAMILY = "note-capture.v1" as const;
 export const NOTE_CAPTURE_RUNNER_BUNDLE_VERSION = "note-capture.bundle.v1" as const;
 export const DIRECT_AGENT_RUNNER_FAMILY = "direct-agent.v1" as const;
@@ -91,6 +96,41 @@ export function systemPlanningSemanticRoot(): WorkflowSequence {
 
 /** 当前常规对话使用的最小Planning流程；不声明任何Memory或其他可选资源节点。 */
 export function systemSimplePlanningSemanticRoot(): WorkflowSequence {
+  return {
+    kind: "sequence",
+    elements: [
+      {
+        kind: "bounded_loop",
+        body: {
+          kind: "sequence",
+          elements: [
+            systemTask("planning.plan", "agent.plan"),
+            systemTask("planning.review", "human.plan_review"),
+          ],
+        },
+        outcomeFromDefinitionNodeId: "planning.review",
+        continueOutcomes: ["request_revision"],
+        exitOutcomes: ["approved", "rejected"],
+        maxIterations: 5,
+        exceededPolicy: "fail",
+      },
+      {
+        kind: "composite",
+        definitionNodeId: "planning.execute",
+        nodeType: "execute.plan",
+        schemaVersion: 1,
+        config: {},
+      },
+      systemTask("planning.governance-check", "agent.governance_check", {
+        strictEvidence: true,
+      }),
+      systemTask("planning.commit", "product.commit"),
+    ],
+  };
+}
+
+/** v11-v20历史种子；只供迁移和旧Run证据恢复，禁止新会话选择。 */
+export function legacySystemSimplePlanningSemanticRoot(): WorkflowSequence {
   return {
     kind: "sequence",
     elements: [
@@ -299,6 +339,57 @@ export function createSystemSimplePlanningDefinition(createdAt: string): {
     );
   }
   const definition = workflowDefinitionSchema.parse({
+    schemaVersion: "workflow-definition.v2",
+    workflowDefinitionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID,
+    ownerKind: "system",
+    key: "system.simple-planning",
+    title: "规划执行工作流",
+    description: "生成计划、人工审核、执行、独立工程治理检查并提交结果的系统内置流程。",
+    blueprintKey: "planning",
+    blueprintVersion: 1,
+    status: "active",
+    publishedRevisionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+    revision: 2,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  const revision = workflowDefinitionRevisionSchema.parse({
+    schemaVersion: "workflow-definition-revision.v2",
+    workflowDefinitionRevisionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+    workflowDefinitionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID,
+    definitionRevision: 2,
+    state: "published",
+    blueprintKey: "planning",
+    blueprintVersion: 1,
+    title: definition.title,
+    semanticRoot: normalized.normalized.semanticRoot,
+    definitionSha256: normalized.normalized.definitionSha256,
+    revision: 1,
+    createdAt,
+    updatedAt: createdAt,
+    publishedAt: createdAt,
+  });
+  return {
+    definition,
+    revision,
+    view: createSystemSimplePlanningWorkflowView({
+      createdAt,
+      definitionSha256: revision.definitionSha256,
+    }),
+  };
+}
+
+export function createLegacySystemSimplePlanningDefinition(createdAt: string): {
+  readonly definition: WorkflowDefinition;
+  readonly revision: WorkflowDefinitionRevision;
+  readonly view: WorkflowViewDefinition;
+} {
+  const normalized = normalizeWorkflowDefinition(
+    legacySystemSimplePlanningSemanticRoot(),
+    DEFAULT_NODE_CATALOG,
+  );
+  if (!normalized.success) throw new Error("legacy system simple planning definition invalid");
+  const definition = workflowDefinitionSchema.parse({
     schemaVersion: "workflow-definition.v1",
     workflowDefinitionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID,
     ownerKind: "system",
@@ -308,14 +399,14 @@ export function createSystemSimplePlanningDefinition(createdAt: string): {
     blueprintKey: "planning",
     blueprintVersion: 1,
     status: "active",
-    publishedRevisionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+    publishedRevisionId: LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
     revision: 1,
     createdAt,
     updatedAt: createdAt,
   });
   const revision = workflowDefinitionRevisionSchema.parse({
     schemaVersion: "workflow-definition-revision.v1",
-    workflowDefinitionRevisionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+    workflowDefinitionRevisionId: LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
     workflowDefinitionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID,
     definitionRevision: 1,
     state: "published",
@@ -332,7 +423,7 @@ export function createSystemSimplePlanningDefinition(createdAt: string): {
   return {
     definition,
     revision,
-    view: createSystemSimplePlanningWorkflowView({
+    view: createLegacySystemSimplePlanningWorkflowView({
       createdAt,
       definitionSha256: revision.definitionSha256,
     }),
@@ -615,6 +706,48 @@ function createSystemSimplePlanningWorkflowView(input: {
     viewNode("planning.plan", "agent.plan", "生成计划", "task", false),
     viewNode("planning.review", "human.plan_review", "审核计划", "human_review", false),
     viewNode("planning.execute", "execute.plan", "执行计划", "composite", false),
+    viewNode("planning.governance-check", "agent.governance_check", "检查工程规范", "task", false),
+    viewNode("planning.commit", "product.commit", "提交结果", "product_commit", false),
+  ];
+  const edges: readonly WorkflowViewEdgeShape[] = [
+    edge("planning.plan", "planning.review", "control"),
+    edge("planning.review", "planning.plan", "loop_back", "request_revision"),
+    edge("planning.review", "planning.execute", "outcome", "approved"),
+    edge("planning.execute", "planning.governance-check", "control"),
+    edge("planning.governance-check", "planning.commit", "control"),
+  ];
+  const content = {
+    title: "规划执行工作流",
+    source: {
+      kind: "published_definition" as const,
+      workflowDefinitionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID,
+      definitionRevision: 2,
+      definitionSha256: input.definitionSha256,
+      blueprintKey: "planning",
+      blueprintVersion: "1",
+    },
+    nodes,
+    edges,
+  };
+  return workflowViewDefinitionSchema.parse({
+    schemaVersion: "workflow-view-definition.v1",
+    workflowViewDefinitionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID,
+    ...content,
+    sha256: computeWorkflowViewDefinitionSha256(content),
+    revision: 1,
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt,
+  });
+}
+
+function createLegacySystemSimplePlanningWorkflowView(input: {
+  readonly createdAt: string;
+  readonly definitionSha256: string;
+}): WorkflowViewDefinition {
+  const nodes: readonly WorkflowViewNodeShape[] = [
+    viewNode("planning.plan", "agent.plan", "生成计划", "task", false),
+    viewNode("planning.review", "human.plan_review", "审核计划", "human_review", false),
+    viewNode("planning.execute", "execute.plan", "执行计划", "composite", false),
     viewNode("planning.validate", "result.validate", "验证结果", "task", false),
     viewNode("planning.commit", "product.commit", "提交结果", "product_commit", false),
   ];
@@ -640,7 +773,7 @@ function createSystemSimplePlanningWorkflowView(input: {
   };
   return workflowViewDefinitionSchema.parse({
     schemaVersion: "workflow-view-definition.v1",
-    workflowViewDefinitionId: SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID,
+    workflowViewDefinitionId: LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID,
     ...content,
     sha256: computeWorkflowViewDefinitionSha256(content),
     revision: 1,
@@ -807,6 +940,7 @@ function systemTask(
     | "capability.skills"
     | "agent.research"
     | "agent.plan"
+    | "agent.governance_check"
     | "human.plan_review"
     | "human.prompt_review"
     | "result.validate"

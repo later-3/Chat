@@ -1,5 +1,5 @@
 import type {
-  AgentKey,
+  AgentProfileAgentKey,
   AgentProfileDto,
   AgentVersion,
   AgentVersionId,
@@ -25,7 +25,7 @@ export async function resolveCurrentAgentRuntimeBinding(
   deps: ApplicationDeps,
   input: {
     readonly principalId: PrincipalId;
-    readonly agentKey: AgentKey;
+    readonly agentKey: AgentProfileAgentKey;
     readonly agentVersionId?: AgentVersionId | undefined;
     readonly agentVersionSha256?: string | undefined;
     readonly workspaceRootId?: string | undefined;

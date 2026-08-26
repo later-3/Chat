@@ -128,7 +128,8 @@ export interface PromptAssemblyV5Shape {
 
 export interface PromptNodeAssemblyShape {
   readonly definitionNodeId: string;
-  readonly nodeType: "agent.plan" | "agent.direct" | "execute.plan" | "note.extract";
+  readonly nodeType:
+    "agent.plan" | "agent.direct" | "agent.governance_check" | "execute.plan" | "note.extract";
   readonly profileVersion: string;
   readonly regions: readonly PromptAssemblyRegionShape[];
   readonly systemPromptAppend: string;
@@ -159,6 +160,10 @@ export interface PromptAssemblyV3Shape {
   readonly sharedRegions: readonly PromptAssemblyRegionShape[];
   readonly nodes: readonly PromptNodeAssemblyShape[];
   readonly sha256: string;
+}
+
+export interface PromptAssemblyV6Shape extends Omit<PromptAssemblyV3Shape, "schemaVersion"> {
+  readonly schemaVersion: "prompt-assembly.v6";
 }
 
 export interface WorkflowNodePromptOverrideShape {
@@ -251,6 +256,12 @@ export function computePromptAssemblyV3Sha256(
   return hashCanonical("prompt-assembly.v3", input);
 }
 
+export function computePromptAssemblyV6Sha256(
+  input: Omit<PromptAssemblyV6Shape, "sha256">,
+): string {
+  return hashCanonical("prompt-assembly.v6", input);
+}
+
 export function computePromptAssemblyV4Sha256(
   input: Omit<PromptAssemblyV4Shape, "sha256">,
 ): string {
@@ -306,6 +317,7 @@ export function assertPromptAssembly(
     | PromptAssemblyShape
     | PromptAssemblyV2Shape
     | PromptAssemblyV3Shape
+    | PromptAssemblyV6Shape
     | PromptAssemblyV4Shape
     | PromptAssemblyV5Shape,
 ): void {
@@ -349,7 +361,10 @@ export function assertPromptAssembly(
     if (expected !== assembly.sha256) throw new Error("Prompt Assembly V5 Hash不一致");
     return;
   }
-  if (assembly.schemaVersion === "prompt-assembly.v3") {
+  if (
+    assembly.schemaVersion === "prompt-assembly.v3" ||
+    assembly.schemaVersion === "prompt-assembly.v6"
+  ) {
     assertRegions(assembly.sharedRegions);
     for (const node of assembly.nodes) {
       assertRegions(node.regions);
@@ -375,23 +390,41 @@ export function assertPromptAssembly(
         throw new Error(`Prompt节点 ${node.definitionNodeId} Hash不一致`);
       }
     }
-    const expected = computePromptAssemblyV3Sha256({
-      schemaVersion: assembly.schemaVersion,
-      promptAssemblyId: assembly.promptAssemblyId,
-      productSessionId: assembly.productSessionId,
-      productRunId: assembly.productRunId,
-      sourceMessageId: assembly.sourceMessageId,
-      workflowDefinitionRevisionId: assembly.workflowDefinitionRevisionId,
-      profileVersion: assembly.profileVersion,
-      compilerVersion: assembly.compilerVersion,
-      ...(assembly.workspaceRootId === undefined
-        ? {}
-        : { workspaceRootId: assembly.workspaceRootId }),
-      selection: assembly.selection,
-      sharedRegions: assembly.sharedRegions,
-      nodes: assembly.nodes,
-    });
-    if (expected !== assembly.sha256) throw new Error("Prompt Assembly V3 Hash不一致");
+    const expected =
+      assembly.schemaVersion === "prompt-assembly.v6"
+        ? computePromptAssemblyV6Sha256({
+            schemaVersion: assembly.schemaVersion,
+            promptAssemblyId: assembly.promptAssemblyId,
+            productSessionId: assembly.productSessionId,
+            productRunId: assembly.productRunId,
+            sourceMessageId: assembly.sourceMessageId,
+            workflowDefinitionRevisionId: assembly.workflowDefinitionRevisionId,
+            profileVersion: assembly.profileVersion,
+            compilerVersion: assembly.compilerVersion,
+            ...(assembly.workspaceRootId === undefined
+              ? {}
+              : { workspaceRootId: assembly.workspaceRootId }),
+            selection: assembly.selection,
+            sharedRegions: assembly.sharedRegions,
+            nodes: assembly.nodes,
+          })
+        : computePromptAssemblyV3Sha256({
+            schemaVersion: assembly.schemaVersion,
+            promptAssemblyId: assembly.promptAssemblyId,
+            productSessionId: assembly.productSessionId,
+            productRunId: assembly.productRunId,
+            sourceMessageId: assembly.sourceMessageId,
+            workflowDefinitionRevisionId: assembly.workflowDefinitionRevisionId,
+            profileVersion: assembly.profileVersion,
+            compilerVersion: assembly.compilerVersion,
+            ...(assembly.workspaceRootId === undefined
+              ? {}
+              : { workspaceRootId: assembly.workspaceRootId }),
+            selection: assembly.selection,
+            sharedRegions: assembly.sharedRegions,
+            nodes: assembly.nodes,
+          });
+    if (expected !== assembly.sha256) throw new Error("Workflow Prompt Assembly Hash不一致");
     return;
   }
   assertRegions(assembly.regions);

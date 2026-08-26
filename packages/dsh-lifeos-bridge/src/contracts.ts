@@ -271,13 +271,20 @@ export const lifeosWorkflowOptionSchema = z
         z
           .object({
             definitionNodeId: z.string().min(1).max(80),
-            nodeType: z.enum(["agent.plan", "agent.direct", "execute.plan", "note.extract"]),
+            nodeType: z.enum([
+              "agent.plan",
+              "agent.direct",
+              "agent.governance_check",
+              "execute.plan",
+              "note.extract",
+            ]),
             title: z.string().min(1).max(120),
             agentKey: z.enum([
               "planner",
               "direct",
               "project_bootstrap",
               "coding_executor",
+              "governance_reviewer",
               "note_extractor",
             ]),
             profileVersion: z.string().min(1).max(128),

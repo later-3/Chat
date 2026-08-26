@@ -26,6 +26,7 @@ import {
  * - Application Compiler必须直接复用本文件Schema，避免S3实验Schema与持久合同漂移。
  */
 
+/** v1已发布节点枚举；旧导出名保持只读，不能因治理节点加入而原地扩义。 */
 export const workflowDefinitionNodeTypeSchema = z.enum([
   "memory.query",
   "memory.write",
@@ -45,6 +46,12 @@ export const workflowDefinitionNodeTypeSchema = z.enum([
   "note.classify",
   "human.note_review",
   "note.commit",
+]);
+
+export const workflowDefinitionNodeTypeV2Schema = z.enum([
+  ...workflowDefinitionNodeTypeSchema.options.slice(0, 9),
+  "agent.governance_check",
+  ...workflowDefinitionNodeTypeSchema.options.slice(9),
 ]);
 
 export const workflowBlueprintKeySchema = z.enum(["planning", "note", "direct"]);
@@ -172,6 +179,40 @@ export interface WorkflowDefinitionSequence {
   readonly elements: readonly WorkflowDefinitionElement[];
 }
 
+export type WorkflowDefinitionElementV2 =
+  | (Omit<z.infer<typeof taskSchema>, "nodeType"> & {
+      readonly nodeType: z.infer<typeof workflowDefinitionNodeTypeV2Schema>;
+    })
+  | (Omit<z.infer<typeof compositeSchema>, "nodeType"> & {
+      readonly nodeType: z.infer<typeof workflowDefinitionNodeTypeV2Schema>;
+    })
+  | {
+      readonly kind: "sequence";
+      readonly elements: readonly WorkflowDefinitionElementV2[];
+    }
+  | {
+      readonly kind: "choice";
+      readonly fromDefinitionNodeId: string;
+      readonly branches: readonly {
+        readonly outcome: string;
+        readonly body: WorkflowDefinitionSequenceV2;
+      }[];
+    }
+  | {
+      readonly kind: "bounded_loop";
+      readonly body: WorkflowDefinitionSequenceV2;
+      readonly outcomeFromDefinitionNodeId: string;
+      readonly continueOutcomes: readonly string[];
+      readonly exitOutcomes: readonly string[];
+      readonly maxIterations: number;
+      readonly exceededPolicy: "fail" | "request_human";
+    };
+
+export interface WorkflowDefinitionSequenceV2 {
+  readonly kind: "sequence";
+  readonly elements: readonly WorkflowDefinitionElementV2[];
+}
+
 const workflowElementBoundarySchema: z.ZodType<WorkflowDefinitionElement> = z.lazy(() =>
   z.union([
     workflowSequenceBoundarySchema,
@@ -223,71 +264,150 @@ const boundedLoopSchema = z
   })
   .strict();
 
-export const workflowDefinitionRevisionInputSchema = z
+const taskV2Schema = taskSchema.extend({ nodeType: workflowDefinitionNodeTypeV2Schema });
+const compositeV2Schema = compositeSchema.extend({ nodeType: workflowDefinitionNodeTypeV2Schema });
+const workflowElementBoundaryV2Schema: z.ZodType<WorkflowDefinitionElementV2> = z.lazy(() =>
+  z.union([
+    workflowSequenceBoundaryV2Schema,
+    taskV2Schema,
+    choiceV2Schema,
+    boundedLoopV2Schema,
+    compositeV2Schema,
+  ]),
+);
+export const workflowSequenceBoundaryV2Schema: z.ZodType<WorkflowDefinitionSequenceV2> = z.lazy(
+  () =>
+    z
+      .object({
+        kind: z.literal("sequence"),
+        elements: z
+          .array(workflowElementBoundaryV2Schema)
+          .max(WORKFLOW_DEFINITION_CONTRACT_LIMITS.structure.maxNodes * 2),
+      })
+      .strict(),
+);
+const choiceV2Schema = choiceSchema.extend({
+  branches: z
+    .array(z.object({ outcome: outcomeSchema, body: workflowSequenceBoundaryV2Schema }).strict())
+    .min(1)
+    .max(WORKFLOW_DEFINITION_CONTRACT_LIMITS.structure.maxBranches),
+});
+const boundedLoopV2Schema = boundedLoopSchema.extend({ body: workflowSequenceBoundaryV2Schema });
+
+function containsGovernanceNode(sequence: WorkflowDefinitionSequenceV2): boolean {
+  return sequence.elements.some((element) => {
+    if (element.kind === "task" || element.kind === "composite") {
+      return element.nodeType === "agent.governance_check";
+    }
+    if (element.kind === "sequence") return containsGovernanceNode(element);
+    if (element.kind === "choice") {
+      return element.branches.some((branch) => containsGovernanceNode(branch.body));
+    }
+    return containsGovernanceNode(element.body);
+  });
+}
+
+export const workflowDefinitionRevisionInputV2Schema = z
   .object({
-    schemaVersion: z.literal("workflow-definition-revision-input.v1"),
+    schemaVersion: z.literal("workflow-definition-revision-input.v2"),
     workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
     definitionRevision: z.number().int().min(1),
     blueprintKey: workflowBlueprintKeySchema,
     blueprintVersion: z.number().int().min(1).max(32),
-    semanticRoot: workflowSequenceBoundarySchema,
+    semanticRoot: workflowSequenceBoundaryV2Schema,
     expectedSha256: sha256Schema.optional(),
   })
   .strict();
 
-export const workflowDefinitionSchema = z
-  .object({
-    schemaVersion: z.literal("workflow-definition.v1"),
-    workflowDefinitionId: workflowDefinitionIdSchema,
-    ownerKind: z.enum(["system", "principal"]),
-    ownerPrincipalId: principalIdSchema.optional(),
-    key: z
-      .string()
-      .min(1)
-      .max(80)
-      .regex(/^[a-z][a-z0-9_.-]*$/),
-    title: z.string().min(1).max(160),
-    description: z.string().min(1).max(1000),
-    blueprintKey: workflowBlueprintKeySchema,
-    blueprintVersion: z.number().int().min(1).max(32),
-    status: workflowDefinitionStateSchema,
-    publishedRevisionId: workflowDefinitionRevisionIdSchema.optional(),
-    currentDraftRevisionId: workflowDefinitionRevisionIdSchema.optional(),
-    revision: z.number().int().positive(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-  })
-  .strict()
-  .check((ctx) => {
-    if (ctx.value.ownerKind === "system" && ctx.value.ownerPrincipalId !== undefined) {
-      ctx.issues.push({
+export const workflowDefinitionRevisionInputV1Schema = workflowDefinitionRevisionInputV2Schema
+  .extend({ schemaVersion: z.literal("workflow-definition-revision-input.v1") })
+  .superRefine((value, ctx) => {
+    if (containsGovernanceNode(value.semanticRoot)) {
+      ctx.addIssue({
         code: "custom",
-        input: ctx.value,
-        message: "system Definition不得携带ownerPrincipalId",
-        path: ["ownerPrincipalId"],
-      });
-    }
-    if (ctx.value.ownerKind === "system" && ctx.value.currentDraftRevisionId !== undefined) {
-      ctx.issues.push({
-        code: "custom",
-        input: ctx.value,
-        message: "system Definition不得携带可编辑Draft",
-        path: ["currentDraftRevisionId"],
-      });
-    }
-    if (ctx.value.ownerKind === "principal" && ctx.value.ownerPrincipalId === undefined) {
-      ctx.issues.push({
-        code: "custom",
-        input: ctx.value,
-        message: "principal Definition必须携带ownerPrincipalId",
-        path: ["ownerPrincipalId"],
+        path: ["semanticRoot"],
+        message: "Workflow Revision Input v1不支持治理检查节点",
       });
     }
   });
 
-export const workflowDefinitionRevisionSchema = z
+export const workflowDefinitionRevisionInputSchema = z.union([
+  workflowDefinitionRevisionInputV1Schema,
+  workflowDefinitionRevisionInputV2Schema,
+]);
+
+const workflowDefinitionFields = {
+  workflowDefinitionId: workflowDefinitionIdSchema,
+  ownerKind: z.enum(["system", "principal"]),
+  ownerPrincipalId: principalIdSchema.optional(),
+  key: z
+    .string()
+    .min(1)
+    .max(80)
+    .regex(/^[a-z][a-z0-9_.-]*$/),
+  title: z.string().min(1).max(160),
+  description: z.string().min(1).max(1000),
+  blueprintKey: workflowBlueprintKeySchema,
+  blueprintVersion: z.number().int().min(1).max(32),
+  status: workflowDefinitionStateSchema,
+  publishedRevisionId: workflowDefinitionRevisionIdSchema.optional(),
+  currentDraftRevisionId: workflowDefinitionRevisionIdSchema.optional(),
+  revision: z.number().int().positive(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+} as const;
+
+function definitionOwnershipIssues(ctx: {
+  value: z.infer<z.ZodObject<typeof workflowDefinitionFields>>;
+  issues: Array<Record<string, unknown>>;
+}): void {
+  if (ctx.value.ownerKind === "system" && ctx.value.ownerPrincipalId !== undefined) {
+    ctx.issues.push({
+      code: "custom",
+      input: ctx.value,
+      message: "system Definition不得携带ownerPrincipalId",
+      path: ["ownerPrincipalId"],
+    });
+  }
+  if (ctx.value.ownerKind === "system" && ctx.value.currentDraftRevisionId !== undefined) {
+    ctx.issues.push({
+      code: "custom",
+      input: ctx.value,
+      message: "system Definition不得携带可编辑Draft",
+      path: ["currentDraftRevisionId"],
+    });
+  }
+  if (ctx.value.ownerKind === "principal" && ctx.value.ownerPrincipalId === undefined) {
+    ctx.issues.push({
+      code: "custom",
+      input: ctx.value,
+      message: "principal Definition必须携带ownerPrincipalId",
+      path: ["ownerPrincipalId"],
+    });
+  }
+}
+
+export const workflowDefinitionV1Schema = z
   .object({
-    schemaVersion: z.literal("workflow-definition-revision.v1"),
+    schemaVersion: z.literal("workflow-definition.v1"),
+    ...workflowDefinitionFields,
+  })
+  .strict()
+  .check(definitionOwnershipIssues);
+
+export const workflowDefinitionV2Schema = z
+  .object({ schemaVersion: z.literal("workflow-definition.v2"), ...workflowDefinitionFields })
+  .strict()
+  .check(definitionOwnershipIssues);
+
+export const workflowDefinitionSchema = z.union([
+  workflowDefinitionV1Schema,
+  workflowDefinitionV2Schema,
+]);
+
+export const workflowDefinitionRevisionV2Schema = z
+  .object({
+    schemaVersion: z.literal("workflow-definition-revision.v2"),
     workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
     workflowDefinitionId: workflowDefinitionIdSchema,
     definitionRevision: z.number().int().positive(),
@@ -295,7 +415,7 @@ export const workflowDefinitionRevisionSchema = z
     blueprintKey: workflowBlueprintKeySchema,
     blueprintVersion: z.number().int().min(1).max(32),
     title: z.string().min(1).max(160),
-    semanticRoot: workflowSequenceBoundarySchema,
+    semanticRoot: workflowSequenceBoundaryV2Schema,
     definitionSha256: sha256Schema,
     basedOnRevisionId: workflowDefinitionRevisionIdSchema.optional(),
     revision: z.literal(1),
@@ -305,6 +425,23 @@ export const workflowDefinitionRevisionSchema = z
     supersededAt: z.iso.datetime().optional(),
   })
   .strict();
+
+export const workflowDefinitionRevisionV1Schema = workflowDefinitionRevisionV2Schema
+  .extend({ schemaVersion: z.literal("workflow-definition-revision.v1") })
+  .superRefine((value, ctx) => {
+    if (containsGovernanceNode(value.semanticRoot)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["semanticRoot"],
+        message: "Workflow Definition Revision v1不支持治理检查节点",
+      });
+    }
+  });
+
+export const workflowDefinitionRevisionSchema = z.union([
+  workflowDefinitionRevisionV1Schema,
+  workflowDefinitionRevisionV2Schema,
+]);
 
 export type WorkflowResourceKind = "memory" | "project" | "rule" | "skill";
 
@@ -468,7 +605,7 @@ export const workflowRunConfigurationSchema = z
 
 export const workflowExecutorManifestEntrySchema = z
   .object({
-    nodeType: workflowDefinitionNodeTypeSchema,
+    nodeType: workflowDefinitionNodeTypeV2Schema,
     schemaVersion: z.number().int().min(1).max(32),
     executorVersion: z
       .string()
@@ -523,7 +660,7 @@ export const workflowResolvedResourceSchema = z.union([
 export const workflowNodeResolutionSchema = z
   .object({
     definitionNodeId: z.string(),
-    nodeType: workflowDefinitionNodeTypeSchema,
+    nodeType: workflowDefinitionNodeTypeV2Schema,
     schemaVersion: z.number().int().min(1),
     config: z.record(z.string(), z.unknown()),
     activation: z.enum(["enabled", "skipped"]),
@@ -597,9 +734,9 @@ export const workflowKernelLimitsSchema = z
   })
   .strict();
 
-export const workflowRunSpecSchema = z
+export const workflowRunSpecV2Schema = z
   .object({
-    schemaVersion: z.literal("workflow-run-spec.v1"),
+    schemaVersion: z.literal("workflow-run-spec.v2"),
     workflowRunSpecId: workflowRunSpecIdSchema,
     productRunId: productRunIdSchema,
     definitionRef: z
@@ -612,7 +749,7 @@ export const workflowRunSpecSchema = z
       })
       .strict(),
     runner: workflowRunnerEvidenceSchema,
-    semanticRoot: workflowSequenceBoundarySchema,
+    semanticRoot: workflowSequenceBoundaryV2Schema,
     nodeResolutions: z.array(workflowNodeResolutionSchema).max(64),
     resourceResolutions: z.array(workflowResolvedResourceSchema).max(128),
     reviewResolutions: z.array(workflowReviewResolutionSchema).max(16),
@@ -623,6 +760,33 @@ export const workflowRunSpecSchema = z
     createdAt: z.iso.datetime(),
   })
   .strict();
+
+export const workflowRunSpecV1Schema = workflowRunSpecV2Schema
+  .extend({ schemaVersion: z.literal("workflow-run-spec.v1") })
+  .superRefine((value, ctx) => {
+    if (
+      containsGovernanceNode(value.semanticRoot) ||
+      value.nodeResolutions.some((node) => node.nodeType === "agent.governance_check") ||
+      value.executorManifest.some((node) => node.nodeType === "agent.governance_check")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["semanticRoot"],
+        message: "Workflow Run Spec v1不支持治理检查节点",
+      });
+    }
+  });
+
+export const workflowRunSpecSchema = z
+  .union([workflowRunSpecV1Schema, workflowRunSpecV2Schema])
+  .and(
+    z.object({
+      schemaVersion: z.union([
+        z.literal("workflow-run-spec.v1"),
+        z.literal("workflow-run-spec.v2"),
+      ]),
+    }),
+  );
 
 export type WorkflowDefinitionRevisionInput = z.infer<typeof workflowDefinitionRevisionInputSchema>;
 export type WorkflowDefinition = z.infer<typeof workflowDefinitionSchema>;

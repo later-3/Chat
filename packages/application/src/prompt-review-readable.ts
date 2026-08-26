@@ -105,6 +105,7 @@ function assemblySource(
 ): PromptReviewReadableSource | undefined {
   if (
     assembly?.schemaVersion === "prompt-assembly.v3" ||
+    assembly?.schemaVersion === "prompt-assembly.v6" ||
     assembly?.schemaVersion === "prompt-assembly.v5"
   )
     return undefined;

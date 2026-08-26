@@ -310,15 +310,14 @@ export function assertRuns(snapshot: ProductSnapshot, fail: Fail): void {
       }
       const contract = contracts[0];
       const candidate = candidates[0];
-      const passValidations = Object.values(entities.validationResults).filter(
+      const matchingValidations = Object.values(entities.validationResults).filter(
         (validation) =>
           validation.productRunId === run.productRunId &&
           validation.executionContractId === contract?.executionContractId &&
-          validation.executionCandidateId === candidate?.executionCandidateId &&
-          validation.outcome === "pass",
+          validation.executionCandidateId === candidate?.executionCandidateId,
       );
-      if (passValidations.length !== 1) {
-        fail(`run ${run.productRunId} succeeded缺少唯一pass Validation`);
+      if (matchingValidations.length !== 1 || matchingValidations[0]?.outcome !== "pass") {
+        fail(`run ${run.productRunId} succeeded缺少唯一且通过的Validation`);
       }
       const expectedMarkdown = candidate?.finalOutput.sections
         .map((section) => `## ${section.heading}\n\n${section.body}`)

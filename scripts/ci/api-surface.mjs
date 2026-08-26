@@ -1112,6 +1112,26 @@ const ADDITIVE_ISSUES = new Set([
   "recovery_action_added",
 ]);
 
+const VERSIONED_TRANSITION_ISSUES = new Set([
+  "schema_generation_changed",
+  "public_symbol_changed",
+  "route_contract_changed",
+  "package_export_changed",
+  "package_executable_or_entry_changed",
+]);
+
+function isRegisteredVersionedTransition(issues) {
+  if (!issues.some((entry) => entry.kind === "schema_generation_changed")) return false;
+  return !issues.some(
+    (entry) =>
+      entry.kind === "same_schema_literal_changed" ||
+      entry.kind === "required_field_added" ||
+      entry.kind === "enum_narrowed" ||
+      entry.kind.endsWith("_removed") ||
+      entry.kind === "manifest_schema_version_changed",
+  );
+}
+
 function publicContractExpansionIsAdditive(baseline, current) {
   const previousSymbols = mapBy(baseline.publicSymbols, (entry) => entry.name);
   const currentSymbols = mapBy(current.publicSymbols, (entry) => entry.name);
@@ -1572,8 +1592,12 @@ export function assertApiSurfaceCompatible(
   const issues = diffApiSurface(baseline, current);
   const waivers = validateWaivers(waiverDocument);
   const changes = validateCompatibleChangeRecords(compatibleChangeDocument);
-  const additive = issues.filter((entry) => ADDITIVE_ISSUES.has(entry.kind));
-  const breaking = issues.filter((entry) => !ADDITIVE_ISSUES.has(entry.kind));
+  const versionedTransition = isRegisteredVersionedTransition(issues);
+  const isCompatibleIssue = (entry) =>
+    ADDITIVE_ISSUES.has(entry.kind) ||
+    (versionedTransition && VERSIONED_TRANSITION_ISSUES.has(entry.kind));
+  const additive = issues.filter(isCompatibleIssue);
+  const breaking = issues.filter((entry) => !isCompatibleIssue(entry));
   // 记录文件同时是已合入变更的耐久审计历史；旧记录不能授权当前diff（精确digest不匹配），
   // 但也不能因新分支base前进就被删除。当前diff仍必须逐项拥有新的精确记录。
   const missingChanges = additive.filter(

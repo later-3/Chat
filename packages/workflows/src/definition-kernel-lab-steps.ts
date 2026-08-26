@@ -166,6 +166,9 @@ export async function executeDefinitionKernelNodeStep(input: {
     case "plan":
       raw = await port.plan(context);
       break;
+    case "review_governance":
+      raw = await port.reviewGovernance(context);
+      break;
     case "validate_result":
       raw = await port.validateResult(context);
       break;

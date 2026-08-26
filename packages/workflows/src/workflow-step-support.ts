@@ -84,6 +84,7 @@ export interface ProviderEventScope {
   attemptId: string;
   promptTemplateVersion: string;
   modelConfigVersion: string;
+  nodeKind?: "planner" | "executor" | "governance_reviewer" | "note_capture";
 }
 
 export function providerResultTraceDetails(meta: ProviderCallMeta): {
@@ -196,6 +197,7 @@ export function emitProviderTrace(
     model: "qwen3.7-plus" as const,
     endpointHost: ctx.bailian.endpointHost,
     operation: "chat_completion" as const,
+    ...("nodeKind" in scope && scope.nodeKind !== undefined ? { nodeKind: scope.nodeKind } : {}),
   };
   if (eventName === "provider.request.started") {
     if (details.inputManifestSha256 === undefined) {
@@ -267,7 +269,7 @@ export function emitProviderTrace(
 export function emitPiNodeTrace(
   scope: ProviderEventScope | PlanningInputDto,
   eventName: "pi.node.started" | "pi.node.completed" | "pi.node.failed",
-  nodeKind: "planner" | "executor" | "note_capture",
+  nodeKind: "planner" | "executor" | "governance_reviewer" | "note_capture",
   details: {
     durationMs?: number;
     errorCode?: string;

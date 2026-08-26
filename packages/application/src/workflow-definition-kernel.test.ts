@@ -43,8 +43,8 @@ const fixtureKeys = [
 ] as const;
 
 describe("Node Catalog与Blueprint一致性", () => {
-  it("当前18种能力全部使用strict parser且默认配置/公开默认值一致", () => {
-    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(18);
+  it("当前19种能力全部使用strict parser且默认配置/公开默认值一致", () => {
+    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(19);
     for (const descriptor of DEFAULT_NODE_CATALOG.list()) {
       expect(
         DEFAULT_NODE_CATALOG.parseConfig(

@@ -53,6 +53,8 @@ export * from "./capability.js";
 export * from "./tool-execution.js";
 export * from "./supervised-planning-v3.js";
 export * from "./tool-execution-api.js";
+export * from "./governance-review.js";
+export * from "./execution-evidence.js";
 export * from "./agent-configuration.js";
 export * from "./prompt-assembly.js";
 export * from "./direct-agent.js";

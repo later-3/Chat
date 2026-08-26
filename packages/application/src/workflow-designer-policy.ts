@@ -4,7 +4,7 @@ import type {
   WorkflowNodeTypeKey,
   WorkflowSequence,
 } from "@chat/domain";
-import type { WorkflowDesignerSlotDto } from "@chat/contracts";
+import type { WorkflowDesignerSlotV2Dto } from "@chat/contracts";
 import type { WorkflowBlueprint } from "./workflow-blueprints.js";
 import type {
   WorkflowDesignerPolicy,
@@ -38,7 +38,7 @@ export function deriveWorkflowDesignerPolicy(
 export function toWorkflowDesignerSlotDto(
   slot: WorkflowDesignerSlot,
   label: string,
-): WorkflowDesignerSlotDto {
+): WorkflowDesignerSlotV2Dto {
   return {
     slotId: slot.slotId,
     address: slot.address.map((segment) => ({ ...segment })),

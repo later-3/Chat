@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { agentKeySchema } from "./agent-key.js";
+import { agentKeySchema, agentProfileAgentKeySchema } from "./agent-key.js";
 import {
   agentEnabledToolNamesSchema,
   agentResourcesSchema,
@@ -18,9 +18,15 @@ import { promptFragmentScopeSchema } from "./prompt-fragment.js";
 import { capabilityDescriptorSchema, resolvedCapabilityRefSchema } from "./capability.js";
 
 export const LEGACY_AGENT_PROFILE_API_SCHEMA_VERSION = "chat-agent-profile-api.v2";
-export const AGENT_PROFILE_API_SCHEMA_VERSION = "chat-agent-profile-api.v3";
+export const LEGACY_AGENT_PROFILE_V3_API_SCHEMA_VERSION = "chat-agent-profile-api.v3";
+export const AGENT_PROFILE_API_SCHEMA_VERSION = "chat-agent-profile-api.v4";
 
-export { agentKeySchema, type AgentKey } from "./agent-key.js";
+export {
+  agentKeySchema,
+  agentProfileAgentKeySchema,
+  type AgentKey,
+  type AgentProfileAgentKey,
+} from "./agent-key.js";
 
 export const agentToolDefinitionDtoSchema = z
   .object({
@@ -208,7 +214,7 @@ export const agentSystemPromptDtoSchema = z.union([
 export const agentProfileDtoSchema = z
   .object({
     schemaVersion: z.literal(AGENT_PROFILE_API_SCHEMA_VERSION),
-    agentKey: agentKeySchema,
+    agentKey: agentProfileAgentKeySchema,
     title: z.string().min(1).max(160),
     description: z.string().min(1).max(1_000),
     profileVersion: z.string().min(1).max(80),
@@ -238,6 +244,12 @@ export const agentProfileV2DtoSchema = z
   })
   .strict();
 
+/** v3已发布于治理Reviewer之前，只读并拒绝新增Agent key。 */
+export const agentProfileV3DtoSchema = agentProfileDtoSchema.extend({
+  schemaVersion: z.literal(LEGACY_AGENT_PROFILE_V3_API_SCHEMA_VERSION),
+  agentKey: agentKeySchema,
+});
+
 export const agentProfilesDtoSchema = z
   .object({
     schemaVersion: z.literal(AGENT_PROFILE_API_SCHEMA_VERSION),
@@ -249,6 +261,13 @@ export const agentProfilesV2DtoSchema = z
   .object({
     schemaVersion: z.literal(LEGACY_AGENT_PROFILE_API_SCHEMA_VERSION),
     items: z.array(agentProfileV2DtoSchema).max(32),
+  })
+  .strict();
+
+export const agentProfilesV3DtoSchema = z
+  .object({
+    schemaVersion: z.literal(LEGACY_AGENT_PROFILE_V3_API_SCHEMA_VERSION),
+    items: z.array(agentProfileV3DtoSchema).max(32),
   })
   .strict();
 

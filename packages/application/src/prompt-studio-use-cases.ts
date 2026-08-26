@@ -17,7 +17,7 @@ import {
   promptFragmentSchema,
   promptRegionsDtoSchema,
   promptWorkspacesDtoSchema,
-  type AgentKey,
+  type AgentProfileAgentKey as AgentKey,
   type AgentProfileDto,
   type CreateAgentVersionPayload,
   type ChangePromptFragmentArchiveStatusPayload,

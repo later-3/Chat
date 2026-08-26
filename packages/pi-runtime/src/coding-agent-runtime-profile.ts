@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type {
-  AgentKey,
+  AgentProfileAgentKey,
   AgentRuntimeBaselineDto,
   ResolvedCapabilitySnapshot,
 } from "@chat/contracts";
@@ -522,7 +522,7 @@ export function createPiAgentRuntimeProfileReader(
 ) {
   return {
     read(
-      agentKey: AgentKey,
+      agentKey: AgentProfileAgentKey,
       workspaceRootId?: string,
     ): Promise<AgentRuntimeBaselineDto | undefined> {
       const workspaceRoot =

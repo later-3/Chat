@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   EXECUTOR_PROMPT_TEMPLATE_VERSION,
   MODEL_CONFIG_VERSION,
-  agentKeySchema,
+  agentProfileAgentKeySchema,
   agentRuntimeBaselineDtoSchema,
   promptWorkspaceRootIdSchema,
   authorizeExecutorOperationResponseSchema,
@@ -188,7 +188,7 @@ export function createPiExecutorService(options: PiExecutorServiceOptions) {
         throw new PiAgentRuntimeProfileWorkspaceRootNotFoundError(workspaceRootId);
       }
       const profile = await agentRuntimeProfiles.read(
-        agentKeySchema.parse(c.req.param("agentKey")),
+        agentProfileAgentKeySchema.parse(c.req.param("agentKey")),
         workspaceRootId,
       );
       if (profile === undefined)

@@ -13,8 +13,10 @@ export const DEFINITION_KERNEL_RUNNER_BUNDLE_VERSION = "definition-kernel-lab.bu
  * 这个family的新Run，不能把已经创建的Run改标给legacy bundle继续执行。
  */
 export const CONFIGURABLE_PLANNING_RUNNER_FAMILY = "configurable-planning.v1" as const;
-export const CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION =
+export const LEGACY_CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION =
   "configurable-planning.bundle.v1" as const;
+export const CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION =
+  "configurable-planning.bundle.v2" as const;
 export const LEGACY_PLANNING_RUNNER_FAMILY = "legacy-planning.v1" as const;
 export const LEGACY_PLANNING_RUNNER_BUNDLE_VERSION = "legacy-planning.bundle.v1" as const;
 export const NOTE_CAPTURE_RUNNER_FAMILY = "note-capture.v1" as const;
@@ -41,6 +43,7 @@ export interface KernelExecutorRegistration extends WorkflowExecutorManifestEntr
     | "plan"
     | "review_plan"
     | "execute_plan"
+    | "review_governance"
     | "validate_result"
     | "commit_product"
     | "extract_note"
@@ -62,6 +65,7 @@ const REGISTRATIONS: readonly KernelExecutorRegistration[] = [
   entry("agent.plan", "step", "plan"),
   entry("human.plan_review", "human_review", "review_plan"),
   entry("execute.plan", "composite", "execute_plan"),
+  entry("agent.governance_check", "step", "review_governance"),
   entry("result.validate", "step", "validate_result"),
   entry("product.commit", "step", "commit_product"),
   entry("note.extract", "step", "extract_note"),
@@ -112,9 +116,9 @@ export class KernelExecutorRegistry {
 export const DEFINITION_KERNEL_EXECUTORS = new KernelExecutorRegistry(REGISTRATIONS);
 
 // 静态表同时被Workflow函数解释器引用，不能为一个key helper拉入Application或
-// Domain运行时代码（其中含Node crypto，Workflow sandbox不允许）。18是冻结内置集合，
+// Domain运行时代码（其中含Node crypto，Workflow sandbox不允许）。19是冻结内置集合，
 // Catalog/Compiler的完整集合一致性另由definition-kernel conformance测试逐项证明。
-if (DEFINITION_KERNEL_EXECUTORS.list().length !== 18) {
+if (DEFINITION_KERNEL_EXECUTORS.list().length !== 19) {
   throw new Error("workflow.executor_registry.incomplete_builtin_set");
 }
 

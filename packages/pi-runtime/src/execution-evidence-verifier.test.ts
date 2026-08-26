@@ -189,12 +189,16 @@ function verifierFor(
 describe("Planning Execution Evidence authority", () => {
   it("accepts only the exact completed refs derived from the real Pi Journal", async () => {
     const receipt = await validReceipt();
-    await expect(
-      verifierFor(receipt.snapshot, receipt.events).verify({
-        executionAttemptId,
-        evidenceRefs: receipt.evidenceRefs,
-      }),
-    ).resolves.toBeUndefined();
+    const verified = await verifierFor(receipt.snapshot, receipt.events).verify({
+      executionAttemptId,
+      evidenceRefs: receipt.evidenceRefs,
+    });
+    expect(verified).toMatchObject({
+      schemaVersion: "execution-evidence-verification-receipt.v1",
+      executionAttemptId,
+    });
+    expect(verified.evidenceRefsSha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(verified.journalSha256).toMatch(/^[a-f0-9]{64}$/u);
   });
 
   it.each([

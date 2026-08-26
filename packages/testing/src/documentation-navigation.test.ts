@@ -16,6 +16,19 @@ const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
 const readme = read("README.md");
 const interaction = read("docs/architecture/frontend-backend-interaction.md");
 const debugging = read("docs/debug/local-debug.md");
+const agentGovernanceMap = read("docs/agent-governance/README.md");
+const agentGovernanceStandard = read("docs/agent-governance/standards.md");
+const agentGovernanceExemplars = read("docs/agent-governance/exemplars/README.md");
+const agentGovernanceSourceReports = ["pi.md", "nanoclaw.md", "vercel-ai-sdk.md", "openai-codex.md"]
+  .map((name) => read(`docs/agent-governance/exemplars/${name}`))
+  .join("\n");
+const governancePromptPacks = [
+  read("prompts/fragments/rules/controlled-project-change.md"),
+  read("prompts/fragments/requirements/engineering-evidence.md"),
+  read("prompts/fragments/experience/multi-agent-delivery.md"),
+];
+const engineeringStandards = read("docs/engineering-standards.md");
+const engineeringGovernanceSkill = read(".agents/skills/chat-engineering-governance/SKILL.md");
 const navigation = `${interaction}\n${debugging}`;
 
 function collectFiles(root: string, predicate: (path: string) => boolean): string[] {
@@ -79,6 +92,105 @@ describe("当前实现文档与调试导航", () => {
     expect(readme).toContain("./docs/debug/local-debug.md");
   });
 
+  it("README暴露Agent治理Map且Map路由规范、证据与既有事实源", () => {
+    expect(readme).toContain("./docs/agent-governance/README.md");
+    expect(agentGovernanceMap).toContain("agent-governance-map.v0.5");
+    for (const target of [
+      "./standards.md",
+      "./basis-and-evidence.md",
+      "./exemplars/README.md",
+      "../../AGENTS.md",
+      "../../PROJECT_LESSONS.md",
+      "../engineering-standards.md",
+      "../architecture/technology-contract.md",
+    ]) {
+      expect(agentGovernanceMap, `Agent治理Map应路由到 ${target}`).toContain(target);
+    }
+    for (let index = 1; index <= 11; index += 1) {
+      expect(agentGovernanceStandard, `Agent治理规范应保留稳定规则组 S${index}`).toContain(
+        `## S${index} `,
+      );
+    }
+    for (const exemplar of [
+      "./pi.md",
+      "./nanoclaw.md",
+      "./vercel-ai-sdk.md",
+      "./openai-codex.md",
+    ]) {
+      expect(agentGovernanceExemplars, `标杆横向抽取应路由到 ${exemplar}`).toContain(exemplar);
+    }
+  });
+
+  it("仓库Skill以渐进披露方式路由治理事实而不复制S1-S11", () => {
+    expect(engineeringGovernanceSkill).toMatch(
+      /^---\nname: chat-engineering-governance\ndescription: .+\n---\n/u,
+    );
+    for (const target of [
+      "../../../docs/agent-governance/README.md",
+      "../../../docs/engineering-standards.md",
+      "../../../docs/architecture/technology-contract.md",
+      "../../../PROJECT_STATE.md",
+    ]) {
+      expect(engineeringGovernanceSkill, `工程治理Skill应路由到 ${target}`).toContain(target);
+    }
+    expect(engineeringGovernanceSkill).not.toMatch(/^## S(?:[1-9]|1[01])\b/gmu);
+    expect(engineeringGovernanceSkill).toContain("不要在每个内部步骤后要求用户审核");
+  });
+
+  it("精选经验逐项声明目的、场景、动作、检查、固定来源和边界", () => {
+    const ids = ["A1", "A2", "C1", "Q1", "T1", "T2", "M1", "R1", "U1"];
+    const headings = [...agentGovernanceExemplars.matchAll(/^### ([A-Z][0-9]+)\. /gmu)];
+    expect(headings.map((match) => match[1])).toEqual(ids);
+    for (const [index, heading] of headings.entries()) {
+      const start = heading.index!;
+      const end = headings[index + 1]?.index ?? agentGovernanceExemplars.length;
+      const item = agentGovernanceExemplars.slice(start, end);
+      for (const field of [
+        "**目的**",
+        "**场景**",
+        "**执行**",
+        "**Sub-agent 检查**",
+        "**固定来源**",
+        "**边界**",
+      ]) {
+        expect(item, `${heading[1]} 应包含 ${field}`).toContain(field);
+      }
+      const fixedSources = [
+        ...item.matchAll(/https:\/\/github\.com\/[^)\s]+\/(?:blob|tree)\/[a-f0-9]{40}\/[^)\s]+/gu),
+      ].map((match) => match[0]);
+      expect(
+        fixedSources.length,
+        `${heading[1]} 至少需要两个固定源码或文档来源`,
+      ).toBeGreaterThanOrEqual(2);
+      for (const source of fixedSources) {
+        expect(agentGovernanceSourceReports, `${heading[1]} 来源应先存在于固定项目报告`).toContain(
+          source,
+        );
+      }
+    }
+    for (const pack of governancePromptPacks) {
+      const selectedIds = pack.match(/经验索引：([^；]+)/u)?.[1]?.match(/[A-Z][0-9]+/gu) ?? [];
+      expect(selectedIds.length).toBeGreaterThan(0);
+      expect(selectedIds.every((id) => ids.includes(id))).toBe(true);
+    }
+  });
+
+  it("v0.2规范保留Chat具体质量入口和关键反例", () => {
+    expect(agentGovernanceStandard).toContain("agent-engineering-standard.v0.2");
+    for (const heading of [
+      "### 2.1 架构与设计质量门",
+      "### 3.1 代码质量门",
+      "### 8.1 测试用例质量门",
+    ]) {
+      expect(engineeringStandards, `Chat工程规范应包含 ${heading}`).toContain(heading);
+    }
+    for (const rejection of ["第二事实源", "Service-per-method", "巨型Snapshot", "事后合理化"]) {
+      expect(engineeringStandards, `Chat工程规范应保留可判定反例 ${rejection}`).toContain(
+        rejection,
+      );
+    }
+  });
+
   it.each(mainChainSymbols)("$symbol在源码和导航文档中同时存在", ({ file, symbol }) => {
     expect(read(file), `${file} 应保留 ${symbol} 入口`).toContain(symbol);
     expect(navigation, `交互/调试文档应指向 ${symbol}`).toContain(symbol);
@@ -119,6 +231,7 @@ describe("当前实现文档与调试导航", () => {
     const markdownFiles = [
       ...collectFiles(resolve(repoRoot, "docs"), (path) => extname(path) === ".md"),
       ...[
+        ".agents/skills/chat-engineering-governance/SKILL.md",
         "AGENTS.md",
         "PROJECT_CONTEXT.md",
         "PROJECT_LESSONS.md",

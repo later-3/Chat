@@ -42,6 +42,7 @@ const DEFAULT_OUTCOMES: Readonly<Record<string, string>> = {
   "capability.skills": "resolved",
   "agent.research": "researched",
   "agent.plan": "planned",
+  "agent.governance_check": "valid",
   "result.validate": "valid",
   "product.commit": "committed",
   "note.extract": "extracted",
@@ -143,6 +144,8 @@ export class DefinitionKernelFileHarness implements KernelLabRuntimePort {
     this.completeNode(context, "capability.skills");
   research = (context: KernelNodeExecutionContext) => this.completeNode(context, "agent.research");
   plan = (context: KernelNodeExecutionContext) => this.completeNode(context, "agent.plan");
+  reviewGovernance = (context: KernelNodeExecutionContext) =>
+    this.completeNode(context, "agent.governance_check");
   validateResult = (context: KernelNodeExecutionContext) =>
     this.completeNode(context, "result.validate");
   commitProduct = (context: KernelNodeExecutionContext) =>

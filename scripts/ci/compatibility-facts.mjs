@@ -1191,13 +1191,13 @@ function rootedDomainFacts(domain, files) {
           workflowCompiler,
           roots,
         );
-        const record = generationRecord(identity, evidence);
+        const record = generationRecord(identity, evidence, previousExtractorEvidence);
         const previous = mechanicallyGeneratedExtractorMigrationProofs().get(
           `${domain.id}:${identity}`,
         );
-        if (previous === undefined)
+        if (previous === undefined && !currentWriteGenerations.includes(identity))
           throw new Error(`RunSpec extractor migration缺少旧代证明：${identity}`);
-        record.previousExtractorCanonicalSha256 = previous;
+        if (previous !== undefined) record.previousExtractorCanonicalSha256 = previous;
         return record;
       }
 

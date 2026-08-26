@@ -293,6 +293,7 @@ const APPLICATION_OWNS_NODE_TYPES: ReadonlySet<string> = new Set([
   "agent.plan",
   "memory.query",
   "execute.plan",
+  "agent.governance_check",
   "result.validate",
 ]);
 

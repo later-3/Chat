@@ -78,6 +78,7 @@ Note Application按变化原因拆分：公开Query/DTO投影、普通Note维护
 | `policy.rules` | `required`、Rule选择 | `RuleSelection`与Node终态/Manifest同事务；正文只经私有Runtime边界 |
 | `agent.plan` | `maxSteps` | Application发布Plan前再次校验 |
 | `execute.plan` | `maxActions` | Application编译Execution Contract前再次校验，任何Provider调用之前失败 |
+| `agent.governance_check` | `strictEvidence` | 独立Pi Reviewer检查冻结候选与所选规范；Application复核证据并合成唯一Validation事实 |
 | `result.validate` | `strictEvidence` | Application确定性Validation消费并进入产品事实 |
 | `note.extract` | `maxCharacters`、默认kind、建议tags | Definition默认值与本次输入按字段合并后进入RunSpec |
 | `note.classify` | `allowCustomTags` | Workflow早失败 + Application发布Candidate权威复核 |
@@ -102,7 +103,7 @@ Planning包含执行和产品提交，因此`human.plan_review`始终是manual�
 1. 默认Simple Planning：
 
 ```text
-bounded_loop(Plan -> Human Review) -> Execute -> Validate -> Product Commit
+bounded_loop(Plan -> Human Review) -> Execute -> Governance Check -> Product Commit
 ```
 
 2. 独立Memory Planning（仅在DSH显式选择后运行）：
@@ -117,7 +118,7 @@ Memory Query -> Memory Write（本次用户输入） -> Project -> Rules -> Skil
 
 Simple Planning不是Memory流程的前置、后继或被包装子图。Memory Query冻结Provider描述、来源与结果Snapshot，再聚合为唯一`WorkflowMemoryContext`；Memory Write先提交Intent/Result，由同一父Workflow唯一执行，不创建竞争的start Outbox。Plan修订复用同一冻结Memory Context；批准后Execution只解析Approved Step明确引用的三元组。
 
-Plan、Review、Execute、Validate和Commit由各自业务Application用例拥有running/terminal投影；Runner不再用通用命令二次补写不同摘要或outcome。外部执行结果未知进入`outcome_unknown`，不降级成普通失败或自动重试。
+Plan、Review、Execute、Governance Check/历史Validate和Commit由各自业务Application用例拥有running/terminal投影；Runner不再用通用命令二次补写不同摘要或outcome。治理节点不能修改Workspace，只能引用Application列出的Candidate/Step/Tool Result证据键；blocking finding与确定性失败共同阻断Product Commit。外部执行结果未知进入`outcome_unknown`，不降级成普通失败或自动重试。
 
 ### 5.2 Note
 
@@ -155,7 +156,7 @@ Operation Journal中先提交`provider.started`派发栅栏；派发后结果未
 
 ## 8. Store与迁移
 
-Product Store当前为`chat-product-store.v14`：
+Product Store当前为`chat-product-store.v25`；与本节Workflow直接相关的迁移为：
 
 - v6：Workflow View/Node/Transition/Manifest；
 - v7：Definition/Revision/RunSpec；
@@ -167,6 +168,8 @@ Product Store当前为`chat-product-store.v14`：
 - v13：新增独立Direct Agent Run、Prompt Review Request/Decision、Direct Candidate与单个Execution Agent系统Definition；Prompt Review是该节点内部状态，原始Provider请求正文只保存在Product Store一次。
 - v14：新增用户Prompt Fragment/Revision产品事实。
 - v15：新增每个Direct Run唯一Prompt Assembly；本次发送级Workflow配置继续复用既有RunSpec，不增加Store版本。
+- v20：新增Tool Execution Intent/Decision/Result事实。
+- v21：保留Simple Planning v1历史Revision/View并发布v2，默认流程从`result.validate`切换为独立`agent.governance_check`。
 
 迁移按版本串行、可重复打开，并对非空历史Fixture执行Zod、生产完整性、只读Auditor和故障注入。v5→v6使用迁移专用冻结投影，不调用会继续演进的当前Application projector。
 

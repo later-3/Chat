@@ -208,7 +208,6 @@ test("每个Region独立选择模式并把精确Revision按顺序PUT到Bridge", 
 
 test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", async () => {
   let configurationRequest: { selection?: unknown } | undefined;
-  let bridgeRequest: { text?: unknown } | undefined;
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
     if (url === "/lifeos/prompts/regions") {
@@ -244,7 +243,6 @@ test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", a
       });
     }
     if (url.endsWith("/bridge-send-previews")) {
-      bridgeRequest = JSON.parse(String(init?.body)) as typeof bridgeRequest;
       return json({
         schemaVersion: "chat-dsh-bridge-send-preview.v2",
         boundary: "dsh_to_lifeos_bridge",
@@ -320,6 +318,6 @@ test("提示词配置预览与DSH Bridge发送预览保持两个独立边界", a
   assert.equal(bridge?.dshToBridge.userInput.text, "这是一个什么项目？");
   assert.equal(bridge?.bridgeToChat.policy, "direct_prompt_selection");
   assert.equal(bridge?.dshToBridge.adapterRequest.status, "not_captured");
-  assert.equal(bridgeRequest?.text, "这是一个什么项目？");
+  assert.equal(bridge?.bridgeToChat.payload.text, "这是一个什么项目？");
   controller.dispose();
 });

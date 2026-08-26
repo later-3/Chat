@@ -45,6 +45,7 @@ const SESSION_ID = productSessionIdSchema.parse("psn_replay1");
 const MESSAGE_ID = messageIdSchema.parse("msg_replay1");
 const ATTEMPT_ID = runAttemptIdSchema.parse("att_workflow1");
 const PLANNING_ATTEMPT_ID = runAttemptIdSchema.parse("att_planning1");
+const GOVERNANCE_ATTEMPT_ID = runAttemptIdSchema.parse("att_governance1");
 const CONTEXT_REQUEST_ID = contextRequestIdSchema.parse("ctxr_replay1");
 const MEMORY_QUERY_ID = memoryQueryIdSchema.parse("mqy_replay1");
 const MEMORY_BACKEND_ID = memoryBackendIdSchema.parse("mbk_replay1");
@@ -869,6 +870,97 @@ describe("assembleRunReplay", () => {
     );
     expect(view.timeline.some((event) => event.eventName === "pi.node.started")).toBe(false);
     expect(view.failures.some((failure) => failure.includes("终态没有对应started"))).toBe(false);
+  });
+
+  it("独立治理Attempt的正式Pi/Provider事件可被严格Trace Sink与Replay完整证明", () => {
+    const dir = tempDir();
+    const traceDir = join(dir, "traces");
+    const snapshot = minimalSnapshot();
+    snapshot.entities.attempts[GOVERNANCE_ATTEMPT_ID] = {
+      schemaVersion: "run-attempt.v1",
+      attemptId: GOVERNANCE_ATTEMPT_ID,
+      productRunId: RUN_ID,
+      kind: "governance_review",
+      executionContractId: "exc_replaygovernance1" as never,
+      executionCandidateId: "xcd_replaygovernance1" as never,
+      inputManifestSha256: "f".repeat(64),
+      promptTemplateVersion: "governance-review.v1",
+      modelConfigVersion: "bailian.qwen3.7-plus.v1",
+      outcome: "success",
+      revision: 2,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    emitCreated(traceDir, snapshot.entities.runs[RUN_ID]!);
+    const trace = createTraceSink({ dir: traceDir, now: () => new Date(NOW) });
+    const scope = {
+      traceId: "trace_replaygovernance1",
+      productRunId: RUN_ID,
+      attemptId: GOVERNANCE_ATTEMPT_ID,
+      promptTemplateVersion: "governance-review.v1",
+      modelConfigVersion: "bailian.qwen3.7-plus.v1",
+      nodeKind: "governance_reviewer" as const,
+    };
+    trace.emit({
+      ...scope,
+      level: "info",
+      eventName: "pi.node.started",
+      outcome: "unknown",
+      spanId: "span_governance-pi-start",
+    } as TraceEventInput);
+    trace.emit({
+      ...scope,
+      level: "info",
+      eventName: "provider.request.started",
+      outcome: "unknown",
+      spanId: "span_governance-provider-start",
+      provider: "bailian",
+      model: "qwen3.7-plus",
+      endpointHost: "dashscope.aliyuncs.com",
+      operation: "chat_completion",
+      inputManifestSha256: "f".repeat(64),
+    } as TraceEventInput);
+    trace.emit({
+      ...scope,
+      level: "info",
+      eventName: "provider.request.completed",
+      outcome: "success",
+      spanId: "span_governance-provider-complete",
+      provider: "bailian",
+      model: "qwen3.7-plus",
+      endpointHost: "dashscope.aliyuncs.com",
+      operation: "chat_completion",
+      inputManifestSha256: "f".repeat(64),
+      httpStatus: 200,
+      providerRequestId: "req-replay-governance-1",
+      tokenUsage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      durationMs: 12,
+    } as TraceEventInput);
+    trace.emit({
+      ...scope,
+      level: "info",
+      eventName: "pi.node.completed",
+      outcome: "success",
+      spanId: "span_governance-pi-complete",
+      durationMs: 12,
+    } as TraceEventInput);
+
+    const view = assembleRunReplay(
+      {
+        productRunId: RUN_ID,
+        storePath: writeSnapshot(dir, snapshot),
+        traceDir,
+        versionEvidencePath: writeEvidence(dir, {
+          promptTemplateVersions: ["governance-review.v1"],
+          modelConfigVersions: ["bailian.qwen3.7-plus.v1"],
+        }),
+      },
+      deps(),
+    );
+    expect(view.failures.filter((failure) => failure.includes("治理Attempt"))).toEqual([]);
+    expect(
+      view.timeline.filter((event) => event.eventName.startsWith("provider.request.")).length,
+    ).toBe(2);
   });
 
   it("任意单条Trace不能冒充成功Run的完整时间线", () => {

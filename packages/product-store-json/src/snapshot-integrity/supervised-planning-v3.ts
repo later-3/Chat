@@ -372,7 +372,7 @@ export function assertSupervisedPlanningV3(snapshot: ProductSnapshot, fail: Fail
       computeSupervisedStepStateSha256V3(state),
       fail,
     );
-    const { run, epoch, contract, step } = resolveStepIdentity(
+    const { run, epoch, step } = resolveStepIdentity(
       snapshot,
       state.stepIdentity,
       `Step State ${state.supervisedStepStateId}`,

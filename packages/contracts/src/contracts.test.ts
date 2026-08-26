@@ -193,6 +193,27 @@ describe("private runtime attempt contracts", () => {
       ],
     };
     expect(beginRunAttemptResponseSchema.safeParse(response).success).toBe(true);
+    const promptAssemblyRef = {
+      promptAssemblyId: "pma_attempt1",
+      sha256: "e".repeat(64),
+      definitionNodeId: "planning.execute",
+      nodeAssemblySha256: "f".repeat(64),
+    };
+    expect(
+      beginRunAttemptResponseSchema.safeParse({ ...response, promptAssemblyRef }).success,
+    ).toBe(true);
+    expect(
+      beginRunAttemptResponseSchema.safeParse({
+        ...response,
+        promptAssemblyRef: { ...promptAssemblyRef, systemPromptAppend: "不得进入Workflow响应" },
+      }).success,
+    ).toBe(false);
+    expect(
+      beginRunAttemptResponseSchema.safeParse({
+        ...response,
+        promptAssemblyRef: { ...promptAssemblyRef, nodeAssemblySha256: "bad" },
+      }).success,
+    ).toBe(false);
     expect(
       beginRunAttemptResponseSchema.safeParse({
         ...response,

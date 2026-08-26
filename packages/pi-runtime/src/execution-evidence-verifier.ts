@@ -1,4 +1,9 @@
-import type { ExecutionEvidenceRef } from "@chat/contracts";
+import {
+  executionEvidenceVerificationReceiptSchema,
+  type ExecutionEvidenceRef,
+  type ExecutionEvidenceVerificationReceipt,
+} from "@chat/contracts";
+import { hashCanonical } from "@chat/domain";
 import {
   PI_EXECUTOR_PROTOCOL_VERSION,
   PI_EXECUTOR_RUNTIME_HEADER,
@@ -26,7 +31,7 @@ export function createPiExecutionEvidenceVerifier(options: PiExecutionEvidenceVe
     async verify(input: {
       readonly executionAttemptId: string;
       readonly evidenceRefs: readonly ExecutionEvidenceRef[];
-    }): Promise<void> {
+    }): Promise<ExecutionEvidenceVerificationReceipt> {
       if (input.evidenceRefs.some((ref) => ref.outcome !== "completed")) {
         throw new Error("executor.evidence_receipt_mismatch");
       }
@@ -64,6 +69,17 @@ export function createPiExecutionEvidenceVerifier(options: PiExecutionEvidenceVe
       if (JSON.stringify(input.evidenceRefs) !== JSON.stringify(expected)) {
         throw new Error("executor.evidence_receipt_mismatch");
       }
+      return executionEvidenceVerificationReceiptSchema.parse({
+        schemaVersion: "execution-evidence-verification-receipt.v1",
+        executionAttemptId: input.executionAttemptId,
+        evidenceRefsSha256: hashCanonical("execution-evidence-refs.v1", input.evidenceRefs),
+        journalSha256: hashCanonical("pi-executor-evidence-journal.v1", {
+          operationId,
+          request,
+          snapshot,
+          events: page.events,
+        }),
+      });
     },
   };
 }

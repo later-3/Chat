@@ -2,7 +2,7 @@ import type { ZodType } from "zod";
 import {
   workflowExecutionTraceDtoSchema,
   workflowDefinitionsDtoSchema,
-  workflowDefinitionCommandResultDtoSchema,
+  workflowDefinitionCommandResultV2DtoSchema,
   type WorkflowExecutionTraceDto,
   promptRegionsDtoSchema,
   promptFragmentPageDtoSchema,
@@ -27,7 +27,7 @@ import {
   type PreviewPromptTurnPayload,
   type AgentProfilesDto,
   type AgentProfileDto,
-  type AgentKey,
+  type AgentProfileAgentKey,
   type CreateAgentVersionPayload,
   type ReviseAgentPromptPayload,
   type RestoreAgentPromptPayload,
@@ -546,7 +546,7 @@ export class ChatProductClient {
   ) {
     return this.request(
       "/api/workflow/definitions/agent-node-configurations",
-      workflowDefinitionCommandResultDtoSchema,
+      workflowDefinitionCommandResultV2DtoSchema,
       {
         method: "POST",
         body: JSON.stringify({ commandId, payload }),
@@ -829,7 +829,7 @@ export class ChatProductClient {
   }
 
   async reviseAgentPrompt(
-    agentKey: AgentKey,
+    agentKey: AgentProfileAgentKey,
     commandId: string,
     payload: ReviseAgentPromptPayload,
     signal?: AbortSignal,
@@ -846,7 +846,7 @@ export class ChatProductClient {
   }
 
   async createAgentVersion(
-    agentKey: AgentKey,
+    agentKey: AgentProfileAgentKey,
     commandId: string,
     payload: CreateAgentVersionPayload,
     signal?: AbortSignal,
@@ -863,7 +863,7 @@ export class ChatProductClient {
   }
 
   async restoreAgentPrompt(
-    agentKey: AgentKey,
+    agentKey: AgentProfileAgentKey,
     commandId: string,
     payload: RestoreAgentPromptPayload,
     signal?: AbortSignal,

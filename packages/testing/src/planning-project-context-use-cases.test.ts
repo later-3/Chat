@@ -25,10 +25,11 @@ import { SYSTEM_PLANNING_WORKFLOW_REVISION_ID } from "@chat/application/workflow
 import {
   compileProjectMethodSnapshotPolicies,
   computeProjectMethodSnapshotSha256,
+  computeNodeValueManifestSha256,
   computeWorkflowProjectResourceSha256,
   hashCanonical,
 } from "@chat/domain";
-import { JsonProductStore } from "@chat/product-store-json";
+import { assertSnapshotIntegrity, JsonProductStore } from "@chat/product-store-json";
 import { auditProductIntegrity } from "./product-integrity-auditor.js";
 import { createApiApp } from "@chat/api";
 
@@ -82,10 +83,11 @@ function projectIds(): ProjectIdFactory {
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "chat-project-context-"));
+  const filePath = join(directory, "product.json");
   let tick = 0;
   let commandSequence = 0;
   const now = () => new Date(Date.parse(NOW) + tick++ * 1_000).toISOString();
-  const store = await JsonProductStore.open({ filePath: join(directory, "product.json"), now });
+  const store = await JsonProductStore.open({ filePath, now });
   const deps: ApplicationDeps = { store, now, ids: ids(), projectIds: projectIds() };
   const command = () => `cmd_projectctx${(++commandSequence).toString(36)}` as CommandId;
   const policies = compileProjectMethodSnapshotPolicies("small-project.v1");
@@ -148,6 +150,19 @@ async function fixture() {
         principalId: PRINCIPAL,
         displayName: "项目所有者",
         role: "owner",
+        status: "active",
+        revision: 1,
+        createdAt: NOW,
+        updatedAt: NOW,
+      };
+      draft.entities.projectResources["prs_projectcontext1"] = {
+        schemaVersion: "project-resource.v1",
+        projectResourceId: "prs_projectcontext1" as never,
+        projectId: PROJECT_ID,
+        rootId: "root_projectcontext",
+        displayName: "Project Context测试工作区",
+        kind: "workspace",
+        enabledAdapters: ["local-git-workspace.v1"],
         status: "active",
         revision: 1,
         createdAt: NOW,
@@ -217,6 +232,8 @@ async function fixture() {
   }
   return {
     deps,
+    filePath,
+    now,
     store,
     command,
     run,
@@ -379,7 +396,7 @@ describe("Planning Project Context", () => {
             ],
             expectedOutput: "下一阶段任务书",
             successCriteria: ["引用的Project Context三元组完全匹配"],
-            requestedCapabilities: ["markdown_text_compose"],
+            requestedCapabilities: ["workspace_read", "workspace_write"],
             risk: "low",
           },
         ],
@@ -408,6 +425,62 @@ describe("Planning Project Context", () => {
       productRunId: test.run.productRunId,
       approvalDecisionId: decided.decision.decisionId,
     });
+    expect(contract).toMatchObject({
+      capabilityRefs: ["workspace_read", "workspace_write"],
+      workspaceRef: {
+        projectId: PROJECT_ID,
+        projectResourceId: "prs_projectcontext1",
+        rootId: "root_projectcontext",
+        revision: 1,
+      },
+    });
+    const reopened = await JsonProductStore.open({ filePath: test.filePath, now: test.now });
+    const reopenedSnapshot = (await reopened.read({ kind: "committedSnapshot" })).snapshot;
+    expect(reopenedSnapshot.entities.executionContracts[contract.executionContractId]).toEqual(
+      contract,
+    );
+    const forged = structuredClone(reopenedSnapshot);
+    const forgedContract = forged.entities.executionContracts[contract.executionContractId];
+    if (forgedContract?.workspaceRef === undefined) {
+      throw new Error("Workspace Contract回归Fixture缺少Workspace引用");
+    }
+    forgedContract.workspaceRef = { ...forgedContract.workspaceRef, revision: 2 };
+    forgedContract.sha256 = hashCanonical("execution-contract.v1", {
+      productRunId: forgedContract.productRunId,
+      approvedPlanId: forgedContract.approvedPlanId,
+      approvedPlanRevision: forgedContract.approvedPlanRevision,
+      approvedPlanSha256: forgedContract.approvedPlanSha256,
+      approvalDecisionId: forgedContract.approvalDecisionId,
+      steps: forgedContract.steps,
+      completionCriteria: forgedContract.completionCriteria,
+      workspaceRef: forgedContract.workspaceRef,
+      capabilityRefs: forgedContract.capabilityRefs,
+      limits: forgedContract.limits,
+    });
+    for (const manifest of Object.values(forged.entities.nodeValueManifests)) {
+      let changed = false;
+      for (const slot of manifest.slots) {
+        for (const ref of slot.refs) {
+          if (ref.kind === "execution_contract" && ref.id === contract.executionContractId) {
+            ref.sha256 = forgedContract.sha256;
+            changed = true;
+          }
+        }
+      }
+      if (changed) manifest.sha256 = computeNodeValueManifestSha256(manifest);
+    }
+    for (const transition of Object.values(forged.entities.nodeRunTransitions)) {
+      if (
+        transition.relatedProductRef?.kind === "execution_contract" &&
+        transition.relatedProductRef.id === contract.executionContractId
+      ) {
+        transition.relatedProductRef = {
+          ...transition.relatedProductRef,
+          sha256: forgedContract.sha256,
+        };
+      }
+    }
+    expect(() => assertSnapshotIntegrity(forged)).toThrow(/Workspace绑定无效/u);
     const execution = await beginRunAttempt(test.deps, {
       commandId: test.command(),
       productRunId: test.run.productRunId,

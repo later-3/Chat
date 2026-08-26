@@ -1,7 +1,7 @@
 {
   "schemaVersion": "chat-prompt-catalog.v1",
-  "catalogRevision": 9,
-  "publishedAt": "2026-08-22T00:00:00.000Z",
+  "catalogRevision": 13,
+  "publishedAt": "2026-08-26T00:00:00.000Z",
   "regionSource": {
     "relativePath": "prompts/regions/catalog.md",
     "sourceSha256": "13cb1b08ce503fc20daaa68fdeb977c1c056a56ec7e9d277058e7c2d5f6c0f4f"
@@ -86,6 +86,23 @@
         { "name": "edit", "description": "在执行合同授权时精确修改Workspace文件。" },
         { "name": "write", "description": "在执行合同授权时修改Workspace文件。" },
         { "name": "bash", "description": "在执行合同授权时运行受审计命令。" }
+      ]
+    },
+    {
+      "agentKey": "governance_reviewer",
+      "title": "工程治理检查 Agent",
+      "description": "依据本次选中的规范和冻结执行证据，独立给出采用门检查候选。",
+      "profileVersion": "governance-review.v1",
+      "supportedNodeTypes": ["agent.governance_check"],
+      "defaultPrompt": {
+        "kind": "catalog_fragment",
+        "promptFragmentRevisionId": "pfr_builtingovernancereviewerv1"
+      },
+      "tools": [
+        {
+          "name": "submit_governance_review",
+          "description": "提交结构化治理检查候选；Application复核后才形成Validation事实。"
+        }
       ]
     },
     {
@@ -356,6 +373,7 @@
       "regionKey": "agent_identity",
       "title": "通用 Chat Agent 身份（旧版兼容）",
       "description": "仅用于恢复已冻结的旧版Prompt Revision；当前Agent默认与覆盖统一由Agent Profile管理。",
+      "createdAt": "2026-08-22T00:00:00.000Z",
       "relativePath": "prompts/fragments/agent-identity/general-chat-agent.md",
       "sourceSha256": "781a997a9c1d24c3aca2523e2b467e7025bb58600d5513dd5dfaf0b00f5dd441"
     },
@@ -366,6 +384,7 @@
       "regionKey": "agent_identity",
       "title": "项目创建协作 Agent",
       "description": "配合受控Plane CE项目初始化工具收集信息、准备候选并等待用户确认。",
+      "createdAt": "2026-08-22T00:00:00.000Z",
       "relativePath": "prompts/fragments/agent-identity/project-bootstrap-agent.md",
       "sourceSha256": "4e9108f97a86d355efd2c8cd543a95d10b7faee6769f4b0cf086675517712986"
     },
@@ -376,6 +395,7 @@
       "regionKey": "agent_identity",
       "title": "规划 Agent",
       "description": "规划Agent默认的身份与长期职责。",
+      "createdAt": "2026-08-22T00:00:00.000Z",
       "relativePath": "prompts/fragments/agent-identity/planner-agent.md",
       "sourceSha256": "14757a403a4e429c629f6db7c1f744ccbd3e91efa590b2a2dc962ad0f633d8e9"
     },
@@ -386,8 +406,20 @@
       "regionKey": "agent_identity",
       "title": "笔记提取 Agent",
       "description": "笔记提取Agent默认的身份与长期职责。",
+      "createdAt": "2026-08-22T00:00:00.000Z",
       "relativePath": "prompts/fragments/agent-identity/note-extractor-agent.md",
       "sourceSha256": "06a4a8f57f24e6a191624d9a194d5d7dfb90b1d01394456e2fac382f492fd04f"
+    },
+    {
+      "promptFragmentId": "pfg_builtingovernancereviewer",
+      "promptFragmentRevisionId": "pfr_builtingovernancereviewerv1",
+      "revision": 1,
+      "regionKey": "agent_identity",
+      "title": "工程治理检查 Agent",
+      "description": "独立比较执行候选、证据和选中规范，产生采用门检查候选。",
+      "createdAt": "2026-08-26T00:00:00.000Z",
+      "relativePath": "prompts/fragments/agent-identity/governance-reviewer-agent.md",
+      "sourceSha256": "a48d3e3c73b4197af0bd7447efd539c935ca8527237608597cb13bc02c61c98a"
     },
     {
       "promptFragmentId": "pfg_builtintransparentdelivery",
@@ -396,6 +428,7 @@
       "regionKey": "requirements",
       "title": "透明交付要求",
       "description": "要求结果可核验，并明确风险和未完成项。",
+      "createdAt": "2026-08-22T00:00:00.000Z",
       "relativePath": "prompts/fragments/requirements/transparent-delivery.md",
       "sourceSha256": "c838235679c278b52229f22fdbe8b3fe2fe9b4a6af118a284885af3ecd02dd09"
     },
@@ -406,6 +439,7 @@
       "regionKey": "rules",
       "title": "基于证据工作",
       "description": "优先读取权威来源，不把推断冒充事实。",
+      "createdAt": "2026-08-22T00:00:00.000Z",
       "relativePath": "prompts/fragments/rules/evidence-first.md",
       "sourceSha256": "ee78c58ab404560b72f709f0b5ac971a84814c87f49b759b3cf66146e1c8583a"
     },
@@ -416,8 +450,42 @@
       "regionKey": "experience",
       "title": "小纵向交付经验",
       "description": "用可真实体验的小纵向推进复杂产品能力。",
+      "createdAt": "2026-08-22T00:00:00.000Z",
       "relativePath": "prompts/fragments/experience/incremental-delivery.md",
       "sourceSha256": "c9a80a54065a81918df5fa038734a06e7f192ac5071e593980a5df29d1854f99"
+    },
+    {
+      "promptFragmentId": "pfg_builtincontrolledprojectchange",
+      "promptFragmentRevisionId": "pfr_builtincontrolledprojectchangev3",
+      "revision": 3,
+      "regionKey": "rules",
+      "title": "方案、架构与代码变更",
+      "description": "按目的和场景约束核心所有权、公共面、边界代码与项目膨胀。",
+      "createdAt": "2026-08-25T00:00:00.000Z",
+      "relativePath": "prompts/fragments/rules/controlled-project-change.md",
+      "sourceSha256": "e5cc2f7cfec3d9d6f2758e024d0bfc2273a5ba76c01d9f36c4b591bdc32c6457"
+    },
+    {
+      "promptFragmentId": "pfg_builtinengineeringevidence",
+      "promptFragmentRevisionId": "pfr_builtinengineeringevidencev3",
+      "revision": 3,
+      "regionKey": "requirements",
+      "title": "工程验证与交付证据",
+      "description": "按风险选择测试与真实边界证据，并分离检查、采用和交接。",
+      "createdAt": "2026-08-25T00:00:00.000Z",
+      "relativePath": "prompts/fragments/requirements/engineering-evidence.md",
+      "sourceSha256": "25268f682f405bfe97a902875f8aaae732fef482ae443d60482c68bd11e566f1"
+    },
+    {
+      "promptFragmentId": "pfg_builtinmultiagentdelivery",
+      "promptFragmentRevisionId": "pfr_builtinmultiagentdeliveryv3",
+      "revision": 3,
+      "regionKey": "experience",
+      "title": "Sub-agent 协作与汇合",
+      "description": "约束并行边界、写入所有权、父级汇合、检查和最终组合验证。",
+      "createdAt": "2026-08-25T00:00:00.000Z",
+      "relativePath": "prompts/fragments/experience/multi-agent-delivery.md",
+      "sourceSha256": "b0c9e9a8ddbe1678abe933c570a3a62d2ff1d97bc6754383d8e17d91787043e7"
     }
   ]
 }

@@ -64,7 +64,7 @@ const agentVersion = agentVersionSchema.parse({
 });
 
 const agentProfile = agentProfileDtoSchema.parse({
-  schemaVersion: "chat-agent-profile-api.v3",
+  schemaVersion: "chat-agent-profile-api.v4",
   agentKey: "direct",
   title: "执行 Agent",
   description: "用于客户端版本合同测试。",
@@ -353,7 +353,7 @@ test("Agent profile queries and version creation preserve the immutable versions
       return new Response(
         JSON.stringify(
           agentProfilesDtoSchema.parse({
-            schemaVersion: "chat-agent-profile-api.v3",
+            schemaVersion: "chat-agent-profile-api.v4",
             items: [agentProfile],
           }),
         ),

@@ -64,6 +64,8 @@ import {
   preparePlanningProjectContextResponseSchema,
   preparePlanningRulesContextRequestSchema,
   preparePlanningRulesContextResponseSchema,
+  prepareGovernanceReviewInputRequestSchema,
+  prepareGovernanceReviewInputResponseSchema,
   commitRunOutcomeUnknownRuntimeRequestSchema,
   publishNoteCandidateRuntimeRequestSchema,
   publishNoteCandidateRuntimeResponseSchema,
@@ -92,6 +94,7 @@ import {
   type PreparePlanningMemoryContextRequest,
   type PreparePlanningProjectContextRequest,
   type PreparePlanningRulesContextRequest,
+  type PrepareGovernanceReviewInputRequest,
   type PublishNoteCandidateRuntimeRequest,
   type PrepareNoteCaptureInputRuntimeRequest,
   type LoadNoteDecisionRuntimeRequest,
@@ -613,6 +616,20 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         "/internal/runtime/v1/persist-execution-candidate",
         { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, ...input },
         persistExecutionCandidateResponseSchema,
+      );
+    },
+    /** 读取治理检查所需的冻结候选、节点Prompt与证据键；正文只在本次Step内消费。 */
+    prepareGovernanceReviewInput(
+      input: Omit<PrepareGovernanceReviewInputRequest, "schemaVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/prepare-governance-review-input",
+        prepareGovernanceReviewInputRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        prepareGovernanceReviewInputResponseSchema,
       );
     },
     /** 持久化验证结果：保存服务端对执行候选的验证结论（阶段C，persist后调）。 */

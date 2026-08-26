@@ -14,6 +14,8 @@ import {
   createSystemNoteDefinition,
   LEGACY_SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
   LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
+  LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+  LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID,
   SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
   SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_PLANNING_WORKFLOW_VIEW_ID,
@@ -51,23 +53,31 @@ import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
 import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
 import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
+import { migrateProductSnapshotV24ToV25 } from "./migrate-v24-to-v25.js";
 import { productSnapshotV13Schema } from "./legacy-v13.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
-import { computePromptFragmentRevisionSha256 } from "@chat/domain";
+import {
+  computePromptFragmentRevisionSha256,
+  computeWorkflowViewDefinitionSha256,
+  hashCanonical,
+} from "@chat/domain";
+import { productSnapshotV24Schema } from "./legacy-v24.js";
 
 const NOW = "2026-08-10T12:00:00.000Z";
 
 function migrateProductSnapshotV15ToV16(
   snapshot: Parameters<typeof migrateProductSnapshotV15ToV16Legacy>[0],
 ): ProductSnapshot {
-  return migrateProductSnapshotV23ToV24(
-    migrateProductSnapshotV22ToV23(
-      migrateProductSnapshotV21ToV22(
-        migrateProductSnapshotV20ToV21(
-          migrateProductSnapshotV19ToV20(
-            migrateProductSnapshotV18ToV19(
-              migrateProductSnapshotV17ToV18(
-                migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+  return migrateProductSnapshotV24ToV25(
+    migrateProductSnapshotV23ToV24(
+      migrateProductSnapshotV22ToV23(
+        migrateProductSnapshotV21ToV22(
+          migrateProductSnapshotV20ToV21(
+            migrateProductSnapshotV19ToV20(
+              migrateProductSnapshotV18ToV19(
+                migrateProductSnapshotV17ToV18(
+                  migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+                ),
               ),
             ),
           ),
@@ -296,11 +306,13 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
       first.entities.workflowDefinitionRevisions[SYSTEM_PLANNING_WORKFLOW_REVISION_ID],
     ).toMatchObject({ definitionRevision: 2, state: "published" });
     expect(
-      first.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID],
+      first.entities.workflowDefinitionRevisions[
+        LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
+      ],
     ).toMatchObject({ definitionRevision: 1, state: "published" });
     expect(
       first.entities.workflowDefinitionRevisions[
-        SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
+        LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
       ]?.semanticRoot.elements.some(
         (element) => element.kind === "task" && element.nodeType === "context.memory",
       ),
@@ -312,14 +324,14 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     expect(
       first.entities.workflowDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID]
         ?.publishedRevisionId,
-    ).toBe(SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID);
+    ).toBe(LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID);
     expect(first.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID]).toEqual(
       v9.entities.workflowViewDefinitions[LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID],
     );
     expect(
-      first.entities.workflowViewDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID]?.nodes.map(
-        (node) => node.nodeType,
-      ),
+      first.entities.workflowViewDefinitions[
+        LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID
+      ]?.nodes.map((node) => node.nodeType),
     ).toEqual([
       "agent.plan",
       "human.plan_review",
@@ -372,9 +384,11 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     expect(first.entities.memoryWriteIntents).toEqual({});
     expect(first.entities.memoryWriteResults).toEqual({});
     expect(
-      first.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID],
+      first.entities.workflowDefinitionRevisions[
+        LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
+      ],
     ).toEqual(
-      v11.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID],
+      v11.entities.workflowDefinitionRevisions[LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID],
     );
     expect(() =>
       assertSnapshotIntegrity(
@@ -385,6 +399,97 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
         ),
       ),
     ).not.toThrow();
+  });
+
+  it("v24→v25保留Simple Planning v1历史证据并发布独立治理检查节点v2", () => {
+    const v7 = migrateProductSnapshotV6ToV7(emptyV6());
+    const v9 = migrateProductSnapshotV8ToV9(migrateProductSnapshotV7ToV8(v7));
+    const v11 = migrateProductSnapshotV10ToV11(migrateProductSnapshotV9ToV10(v9));
+    const v15 = migrateProductSnapshotV14ToV15(
+      migrateProductSnapshotV13ToV14(
+        migrateProductSnapshotV12ToV13(migrateProductSnapshotV11ToV12(v11)),
+      ),
+    );
+    const v20 = migrateProductSnapshotV19ToV20(
+      migrateProductSnapshotV18ToV19(
+        migrateProductSnapshotV17ToV18(
+          migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(v15)),
+        ),
+      ),
+    );
+    const v24 = migrateProductSnapshotV23ToV24(
+      migrateProductSnapshotV22ToV23(
+        migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(v20)),
+      ),
+    );
+    const first = migrateProductSnapshotV24ToV25(v24);
+    const second = migrateProductSnapshotV24ToV25(structuredClone(v24));
+
+    expect(first).toEqual(second);
+    expect(first.schemaVersion).toBe("chat-product-store.v25");
+    expect(
+      first.entities.workflowDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID]
+        ?.publishedRevisionId,
+    ).toBe(SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID);
+    expect(
+      first.entities.workflowDefinitionRevisions[
+        LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
+      ],
+    ).toMatchObject({ definitionRevision: 1, state: "superseded" });
+    expect(
+      first.entities.workflowDefinitionRevisions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID],
+    ).toMatchObject({ definitionRevision: 2, state: "published" });
+    expect(
+      first.entities.workflowViewDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID]?.nodes.map(
+        (node) => node.nodeType,
+      ),
+    ).toEqual([
+      "agent.plan",
+      "human.plan_review",
+      "execute.plan",
+      "agent.governance_check",
+      "product.commit",
+    ]);
+    expect(
+      first.entities.workflowViewDefinitions[LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID],
+    ).toEqual(v24.entities.workflowViewDefinitions[LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID]);
+    expect(() => assertSnapshotIntegrity(first)).not.toThrow();
+
+    const missingLegacyView = structuredClone(v24);
+    delete missingLegacyView.entities.workflowViewDefinitions[
+      LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID
+    ];
+    expect(() => migrateProductSnapshotV24ToV25(missingLegacyView)).toThrow(
+      "Simple Planning历史事实不完整",
+    );
+
+    const semanticDrift = structuredClone(v24);
+    const driftRevision =
+      semanticDrift.entities.workflowDefinitionRevisions[
+        LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID
+      ]!;
+    const validateNode = driftRevision.semanticRoot.elements.find(
+      (element) => element.kind === "task" && element.nodeType === "result.validate",
+    );
+    if (validateNode?.kind !== "task") throw new Error("fixture缺少legacy Validation节点");
+    validateNode.config = { ...validateNode.config, strictEvidence: false };
+    driftRevision.definitionSha256 = hashCanonical(
+      "workflow-definition.v1",
+      driftRevision.semanticRoot,
+    );
+    const driftView =
+      semanticDrift.entities.workflowViewDefinitions[
+        LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID
+      ]!;
+    if (driftView.source.kind !== "published_definition") {
+      throw new Error("fixture缺少published View来源");
+    }
+    driftView.source.definitionSha256 = driftRevision.definitionSha256;
+    driftView.sha256 = computeWorkflowViewDefinitionSha256(driftView);
+    expect(productSnapshotV24Schema.safeParse(semanticDrift).success).toBe(true);
+    expect(() => migrateProductSnapshotV24ToV25(semanticDrift)).toThrow(
+      "Simple Planning固定历史种子语义不匹配",
+    );
   });
 
   it("v12→v13保留旧事实、种入单节点/16次审核预算的Direct Agent并只新增空集合", () => {

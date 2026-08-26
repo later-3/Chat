@@ -32,7 +32,7 @@ import {
 } from "./product.js";
 import { NOTE_TAG_LABEL_MAX_CHARACTERS, NOTE_TAG_MAX_COUNT, noteKindSchema } from "./note.js";
 import { sha256Schema } from "./hash.js";
-import { agentKeySchema, agentProfileDtoSchema } from "./agent-profile-api.js";
+import { agentProfileAgentKeySchema, agentProfileDtoSchema } from "./agent-profile-api.js";
 import {
   memoryContextSelectionSchema,
   memoryLayerSchema,
@@ -47,6 +47,7 @@ import {
   workflowBlueprintKeySchema,
   workflowDefinitionNodeIdSchema,
   workflowDefinitionNodeTypeSchema,
+  workflowDefinitionNodeTypeV2Schema,
   workflowExecutorKindSchema,
   workflowRiskLevelSchema,
   workflowReviewModeSchema,
@@ -57,6 +58,7 @@ import {
   promptAssemblyV2Schema,
   promptAssemblyV3Schema,
   promptAssemblyV4Schema,
+  promptAssemblyV6Schema,
   promptBearingNodeTypeSchema,
   promptTurnSelectionInputSchema,
 } from "./prompt-assembly.js";
@@ -73,6 +75,8 @@ import {
  */
 
 export const PRODUCT_API_SCHEMA_VERSION = "chat-product-api.v1";
+export const PROMPT_TURN_PREVIEW_API_SCHEMA_VERSION = "chat-prompt-turn-preview-api.v2";
+export const WORKFLOW_PRODUCT_API_SCHEMA_VERSION = "chat-workflow-product-api.v2";
 
 /* ---------- Command payloads ---------- */
 
@@ -157,10 +161,15 @@ export const previewPromptTurnPayloadSchema = z
 
 export const promptTurnPreviewDtoSchema = z
   .object({
-    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    schemaVersion: z.literal(PROMPT_TURN_PREVIEW_API_SCHEMA_VERSION),
     status: z.literal("pre_send"),
     currentInput: z.string().min(1).max(4_000),
-    assembly: z.union([promptAssemblyV2Schema, promptAssemblyV3Schema, promptAssemblyV4Schema]),
+    assembly: z.union([
+      promptAssemblyV2Schema,
+      promptAssemblyV3Schema,
+      promptAssemblyV4Schema,
+      promptAssemblyV6Schema,
+    ]),
     nodes: z
       .array(
         z
@@ -350,28 +359,32 @@ export const workflowNodeCatalogItemDtoSchema = z
   })
   .strict();
 
+export const workflowNodeCatalogItemV2DtoSchema = workflowNodeCatalogItemDtoSchema.extend({
+  nodeType: workflowDefinitionNodeTypeV2Schema,
+});
+
 export const workflowCatalogDtoSchema = z
   .object({
-    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
-    nodes: z.array(workflowNodeCatalogItemDtoSchema).max(64),
+    schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
+    nodes: z.array(workflowNodeCatalogItemV2DtoSchema).max(64),
   })
   .strict();
 
 export const workflowBlueprintDtoSchema = z
   .object({
-    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
     blueprintKey: workflowBlueprintKeySchema,
     blueprintVersion: z.number().int().positive().max(32),
     title: z.string().min(1).max(160),
     description: z.string().min(1).max(1000),
     runnerFamily: workflowRunnerFamilySchema,
-    terminalNodeType: workflowDefinitionNodeTypeSchema,
-    optionalNodeTypes: z.array(workflowDefinitionNodeTypeSchema).max(32),
+    terminalNodeType: workflowDefinitionNodeTypeV2Schema,
+    optionalNodeTypes: z.array(workflowDefinitionNodeTypeV2Schema).max(32),
     loopRules: z
       .array(
         z
           .object({
-            outcomeNodeType: workflowDefinitionNodeTypeSchema,
+            outcomeNodeType: workflowDefinitionNodeTypeV2Schema,
             continueOutcomes: z.array(z.string().min(1).max(64)).min(1).max(16),
             exitOutcomes: z.array(z.string().min(1).max(64)).min(1).max(16),
             maxIterations: z
@@ -387,7 +400,7 @@ export const workflowBlueprintDtoSchema = z
       .array(
         z
           .object({
-            nodeType: workflowDefinitionNodeTypeSchema,
+            nodeType: workflowDefinitionNodeTypeV2Schema,
             fields: z.array(z.enum(["enabled", "selection", "reviewMode"])).max(8),
             configFields: z
               .array(
@@ -412,14 +425,14 @@ export const workflowBlueprintDtoSchema = z
 
 export const workflowBlueprintsDtoSchema = z
   .object({
-    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
     blueprints: z.array(workflowBlueprintDtoSchema).max(16),
   })
   .strict();
 
 export const workflowDefinitionPublishedDtoSchema = z
   .object({
-    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
     workflowDefinitionId: workflowDefinitionIdSchema,
     workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
     definitionRevision: z.number().int().positive(),
@@ -435,7 +448,7 @@ export const workflowDefinitionPublishedDtoSchema = z
         z
           .object({
             definitionNodeId: workflowDefinitionNodeIdSchema,
-            nodeType: workflowDefinitionNodeTypeSchema,
+            nodeType: workflowDefinitionNodeTypeV2Schema,
             schemaVersion: z.number().int().positive().max(32),
             displayName: z.string().min(1).max(120),
             optional: z.boolean(),
@@ -446,7 +459,7 @@ export const workflowDefinitionPublishedDtoSchema = z
             /** Workflow节点只引用独立Agent；会话上下文不改变该绑定。 */
             agentBinding: z
               .object({
-                agentKey: agentKeySchema,
+                agentKey: agentProfileAgentKeySchema,
                 profileVersion: z.string().min(1).max(128),
                 bindingKind: z.enum(["agent_catalog", "agent_version"]),
                 agentVersionId: agentVersionIdSchema.optional(),
@@ -475,14 +488,14 @@ export const workflowDefinitionPublishedDtoSchema = z
 
 export const workflowDefinitionsDtoSchema = z
   .object({
-    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
     definitions: z.array(workflowDefinitionPublishedDtoSchema).max(100),
   })
   .strict();
 
 export const workflowRunConfigSummaryDtoSchema = z
   .object({
-    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
     productRunId: productRunIdSchema,
     workflowRunSpecId: workflowRunSpecIdSchema.optional(),
     runnerFamily: workflowRunnerFamilySchema,

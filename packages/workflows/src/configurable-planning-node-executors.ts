@@ -19,6 +19,7 @@ import type {
   PlanningNodeIdentity,
 } from "./configurable-planning-types.js";
 import { freezeWorkflowMemoryContextStep } from "./workflow-memory-steps.js";
+import { reviewExecutionGovernanceStep } from "./workflow-governance-review-steps.js";
 
 const planDecisionHook = defineHook({
   schema: z
@@ -62,6 +63,8 @@ export async function executePlanningNode(input: {
       return executePlanReview(input.input, input.state);
     case "execute.plan":
       return executeApprovedPlan(input.input, input.state, input.config);
+    case "agent.governance_check":
+      return reviewGovernance(input.input, input.state);
     case "result.validate":
       return validateCandidate(input.input, input.state, input.config);
     case "product.commit":
@@ -266,6 +269,33 @@ async function validateCandidate(
     state.failure = {
       code: "execution.validation_failed",
       summary: "执行结果未通过服务端验证，未提交为正式结果",
+    };
+    return "invalid";
+  }
+  return "valid";
+}
+
+async function reviewGovernance(
+  input: ConfigurablePlanningWorkflowInput,
+  state: PlanningInterpreterState,
+): Promise<"valid" | "invalid"> {
+  if (state.execution === undefined) {
+    throw new Error("configurable_planning.governance_review_without_candidate");
+  }
+  const result = await reviewExecutionGovernanceStep({
+    productRunId: input.productRunId,
+    workflowAttemptId: input.attemptId,
+    workflowRunSpecId: input.workflowRunSpecId,
+    executionCandidateId: state.execution.executionCandidateId,
+  });
+  state.validation = {
+    outcome: result.outcome,
+    validationResultId: result.validationResultId,
+  };
+  if (result.outcome === "fail") {
+    state.failure = {
+      code: "execution.governance_review_failed",
+      summary: "执行结果未通过工程治理检查，未提交为正式结果",
     };
     return "invalid";
   }

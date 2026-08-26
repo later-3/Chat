@@ -90,6 +90,22 @@ export class PiCodingAgentExecutionError extends Error {
   }
 }
 
+/**
+ * 本地Chat进程只把已经授权进入环境的Provider Key注册为Pi内存运行覆盖；
+ * 不写入auth.json、Session、Journal或Operation。Direct与Workflow Coding Executor
+ * 必须共用这一接缝，否则临时agentDir会在Provider请求前静默结束。
+ */
+export async function applyPiRuntimeApiKey(input: {
+  readonly modelRuntime: Pick<ModelRuntime, "setRuntimeApiKey">;
+  readonly environment: Readonly<Record<string, string | undefined>>;
+  readonly providerId: string;
+  readonly signal: AbortSignal;
+}): Promise<void> {
+  const apiKey = input.environment.DASHSCOPE_API_KEY?.trim();
+  if (apiKey === undefined || apiKey === "") return;
+  await input.modelRuntime.setRuntimeApiKey(input.providerId, apiKey, { signal: input.signal });
+}
+
 export function createCodingExecutorJournalState(): CodingExecutorJournalState {
   const now = Date.now();
   return {
@@ -653,8 +669,13 @@ export class AgentSessionPiCodingAgentRunner implements PiCodingAgentRunner {
       this.options.createModelRuntime === undefined
         ? await ModelRuntime.create({ refreshOnCreate: false })
         : await this.options.createModelRuntime();
-    // 执行层直接使用Pi标准models.json/auth.json。命令型apiKey由ModelRuntime
-    // 在Provider请求边界解析，Chat不读取、复制或持久密钥正文。
+    await applyPiRuntimeApiKey({
+      modelRuntime,
+      environment: process.env,
+      providerId: PI_CODING_PROVIDER,
+      signal: input.signal,
+    });
+    // 显式进程环境优先注册为内存runtime override；否则继续使用Pi标准认证。
     const model = this.options.model ?? modelRuntime.getModel(PI_CODING_PROVIDER, PI_CODING_MODEL);
     if (model === undefined)
       throw new PiCodingAgentExecutionError("provider.pre_request.model_missing");

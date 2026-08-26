@@ -1,5 +1,5 @@
 import {
-  agentKeySchema,
+  agentProfileAgentKeySchema,
   changePromptFragmentArchiveStatusPayloadSchema,
   commandIdSchema,
   copyPromptFragmentPayloadSchema,
@@ -65,7 +65,7 @@ export class PromptStudioBridgeService {
 
   reviseAgent(agentKey: string, request: z.infer<typeof agentPromptReviseRequestSchema>) {
     return this.chat.reviseAgentPrompt(
-      agentKeySchema.parse(agentKey),
+      agentProfileAgentKeySchema.parse(agentKey),
       request.commandId,
       request.payload,
     );
@@ -73,7 +73,7 @@ export class PromptStudioBridgeService {
 
   restoreAgent(agentKey: string, request: z.infer<typeof agentPromptRestoreRequestSchema>) {
     return this.chat.restoreAgentPrompt(
-      agentKeySchema.parse(agentKey),
+      agentProfileAgentKeySchema.parse(agentKey),
       request.commandId,
       request.payload,
     );
@@ -81,7 +81,7 @@ export class PromptStudioBridgeService {
 
   createAgentVersion(agentKey: string, request: z.infer<typeof agentVersionCreateRequestSchema>) {
     return this.chat.createAgentVersion(
-      agentKeySchema.parse(agentKey),
+      agentProfileAgentKeySchema.parse(agentKey),
       request.commandId,
       request.payload,
     );

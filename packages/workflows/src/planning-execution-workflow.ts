@@ -335,6 +335,9 @@ export async function planningExecutionWorkflow(
             executionAttemptId: begun.attemptId,
             inputManifestSha256: begun.inputManifestSha256,
             contextItems: begun.contextItems,
+            ...(begun.promptAssemblyRef === undefined
+              ? {}
+              : { promptAssemblyRef: begun.promptAssemblyRef }),
             dependencyResults,
           });
           await completeRunAttemptStep({

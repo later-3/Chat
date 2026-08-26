@@ -8,7 +8,7 @@ import {
 
 test("Prompt Studio service forwards the optional Agent Profile workspace scope to Chat", async () => {
   const calls: unknown[] = [];
-  const response = { schemaVersion: "chat-agent-profile-api.v3", items: [] };
+  const response = { schemaVersion: "chat-agent-profile-api.v4", items: [] };
   const chat = {
     getAgentProfiles: async (workspaceRootId?: string) => {
       calls.push(workspaceRootId);

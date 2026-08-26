@@ -9,6 +9,8 @@ import {
   B2_EXECUTOR_TOKEN_BUDGET_PER_STEP,
   EXECUTOR_PROMPT_TEMPLATE_VERSION,
   MODEL_CONFIG_VERSION,
+  promptAssemblyIdSchema,
+  type BeginRunAttemptResponse,
   type ExecutionContextItemDto,
   type ExecutionContract,
 } from "@chat/contracts";
@@ -29,6 +31,12 @@ const MEMORY_ITEM: ExecutionContextItemDto = {
   layer: "L2",
   tags: ["orchid"],
   content: MEMORY_CONTENT,
+};
+const PROMPT_ASSEMBLY_REF: NonNullable<BeginRunAttemptResponse["promptAssemblyRef"]> = {
+  promptAssemblyId: promptAssemblyIdSchema.parse("pma_workflowmemory1"),
+  sha256: "e".repeat(64),
+  definitionNodeId: "planning.execute",
+  nodeAssemblySha256: "f".repeat(64),
 };
 const CONTRACT: ExecutionContract = {
   schemaVersion: "execution-contract.v1",
@@ -69,7 +77,10 @@ const CONTRACT: ExecutionContract = {
   updatedAt: "2026-08-08T00:00:00.000Z",
 };
 
-function manifestSha256(contextItems: readonly ExecutionContextItemDto[]): string {
+function manifestSha256(
+  contextItems: readonly ExecutionContextItemDto[],
+  promptAssemblyRef?: typeof PROMPT_ASSEMBLY_REF,
+): string {
   return computeExecutionInputManifestSha256({
     executionContractId: CONTRACT.executionContractId,
     approvedPlanSha256: CONTRACT.approvedPlanSha256,
@@ -82,6 +93,7 @@ function manifestSha256(contextItems: readonly ExecutionContextItemDto[]): strin
     dependencyRefs: [],
     promptTemplateVersion: EXECUTOR_PROMPT_TEMPLATE_VERSION,
     modelConfigVersion: MODEL_CONFIG_VERSION,
+    ...(promptAssemblyRef === undefined ? {} : { promptAssemblyRef }),
   });
 }
 
@@ -145,14 +157,36 @@ describe("runPiExecutorStep Memory输入证据", () => {
       contract: CONTRACT,
       stepId: "answer",
       executionAttemptId: "att_workflowmemory1",
-      inputManifestSha256: manifestSha256([MEMORY_ITEM]),
+      inputManifestSha256: manifestSha256([MEMORY_ITEM], PROMPT_ASSEMBLY_REF),
       contextItems: [MEMORY_ITEM],
+      promptAssemblyRef: PROMPT_ASSEMBLY_REF,
       dependencyResults: [],
     });
 
     expect(result.output).toContain("heliotrope");
     expect(executor).toHaveBeenCalledWith(expect.objectContaining({ contextItems: [MEMORY_ITEM] }));
     expect(JSON.stringify(events)).not.toContain(MEMORY_CONTENT);
+  });
+
+  it("Prompt Assembly引用与v3 Manifest不一致时不调用pi", async () => {
+    const executor = vi.fn();
+    installContext(executor, []);
+
+    await expect(
+      runPiExecutorStep({
+        contract: CONTRACT,
+        stepId: "answer",
+        executionAttemptId: "att_workflowmemory_prompt_mismatch",
+        inputManifestSha256: manifestSha256([MEMORY_ITEM], PROMPT_ASSEMBLY_REF),
+        contextItems: [MEMORY_ITEM],
+        promptAssemblyRef: {
+          ...PROMPT_ASSEMBLY_REF,
+          nodeAssemblySha256: "0".repeat(64),
+        },
+        dependencyResults: [],
+      }),
+    ).rejects.toMatchObject({ stableCode: "execution.input_manifest_mismatch" });
+    expect(executor).not.toHaveBeenCalled();
   });
 
   it("伪造revision/Hash与Approved Step不一致时不调用pi", async () => {
@@ -241,8 +275,9 @@ describe("Configurable执行合并Step", () => {
       .mockResolvedValueOnce({ contract: CONTRACT });
     const begin = vi.fn(async () => ({
       attemptId: "att_execute1",
-      inputManifestSha256: manifestSha256([MEMORY_ITEM]),
+      inputManifestSha256: manifestSha256([MEMORY_ITEM], PROMPT_ASSEMBLY_REF),
       contextItems: [MEMORY_ITEM],
+      promptAssemblyRef: PROMPT_ASSEMBLY_REF,
     }));
     const complete = vi.fn(async () => ({ revision: 2 }));
     const persist = vi.fn(async () => ({

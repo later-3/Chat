@@ -1,6 +1,9 @@
 import {
   computeExecutionInputManifestSha256,
+  computeGovernanceReviewInputManifestSha256,
+  governanceEvidenceKeys,
   hashCanonical,
+  resolvePlanningValidationPolicy,
   transitionRunLifecycle,
   validateExecutionCandidate,
   type RunLifecycle,
@@ -12,10 +15,21 @@ import type {
   ExecutionCandidate,
   ExecutionContractId,
   ExecutionContract,
+  ExecutionEvidenceVerificationReceipt,
+  GovernanceReviewCandidate,
+  GovernanceReviewInputDto,
   ApprovalRequestId,
   Message,
   ProductRunId,
   ValidationResultId,
+  ProductSnapshot,
+} from "@chat/contracts";
+import {
+  GOVERNANCE_REVIEW_ACTIVE_TIMEOUT_MS,
+  GOVERNANCE_REVIEW_MAX_TURNS,
+  GOVERNANCE_REVIEW_PROFILE_VERSION,
+  GOVERNANCE_REVIEW_TOKEN_BUDGET,
+  MODEL_CONFIG_VERSION,
 } from "@chat/contracts";
 import type {
   PersistExecutionCandidateRequest,
@@ -28,10 +42,258 @@ import { emitProductRunTransition, settleRunWithoutSuccess } from "./run-settlem
 import { emitRunEvent, safeErrorType } from "./trace-helpers.js";
 import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 import { requirePlanningRun } from "./product-run-kind.js";
+import { workflowNodePromptFor, workflowNodePromptRefFor } from "./prompt-assembly-use-cases.js";
 
 /**
  * 候选持久化、验证结果与Product Commit（任务书§11三道门）。
  */
+
+function assertGovernanceEvidence(
+  candidate: ExecutionCandidate,
+  review: GovernanceReviewCandidate,
+): void {
+  const allowed = new Set(governanceEvidenceKeys(candidate));
+  for (const finding of review.findings) {
+    for (const evidenceKey of finding.evidenceKeys) {
+      if (!allowed.has(evidenceKey)) {
+        throw revisionConflict(`治理检查引用了未知执行证据:${evidenceKey}`);
+      }
+    }
+  }
+}
+
+function governanceFailures(review: GovernanceReviewCandidate) {
+  return review.findings
+    .filter((finding) => finding.severity === "blocking")
+    .map((finding) => ({
+      code: finding.code,
+      detail: `${finding.summary}：${finding.detail}`.slice(0, 500),
+    }));
+}
+
+interface AdoptionEvidenceReceipt {
+  readonly receipts: readonly ExecutionEvidenceVerificationReceipt[];
+  readonly sha256: string;
+}
+
+function stepRequiresRuntimeEvidence(
+  contract: ExecutionContract,
+  step: ExecutionCandidate["stepResults"][number],
+): boolean {
+  const contractStep = contract.steps.find((candidate) => candidate.stepId === step.stepId);
+  if (contractStep === undefined) throw revisionConflict("Execution Step不在合同中");
+  return (
+    contractStep.capabilityRefs.some((capability) => capability !== "markdown_text_compose") ||
+    (step.executionEvidenceRefs?.length ?? 0) > 0
+  );
+}
+
+function assertAdoptionEvidenceReceipt(
+  contract: ExecutionContract,
+  candidate: ExecutionCandidate,
+  adoption: AdoptionEvidenceReceipt,
+): void {
+  const expected = candidate.stepResults
+    .filter((step) => stepRequiresRuntimeEvidence(contract, step))
+    .map((step) => ({
+      executionAttemptId: step.executionAttemptId,
+      evidenceRefsSha256: hashCanonical(
+        "execution-evidence-refs.v1",
+        step.executionEvidenceRefs ?? [],
+      ),
+    }));
+  if (
+    adoption.receipts.length !== expected.length ||
+    adoption.receipts.some(
+      (receipt, index) =>
+        receipt.schemaVersion !== "execution-evidence-verification-receipt.v1" ||
+        receipt.executionAttemptId !== expected[index]?.executionAttemptId ||
+        receipt.evidenceRefsSha256 !== expected[index]?.evidenceRefsSha256 ||
+        !/^[a-f0-9]{64}$/u.test(receipt.journalSha256),
+    ) ||
+    adoption.sha256 !==
+      hashCanonical("product-commit-evidence-receipt.v1", {
+        executionCandidateId: candidate.executionCandidateId,
+        executionCandidateSha256: candidate.sha256,
+        receipts: adoption.receipts,
+      })
+  ) {
+    throw revisionConflict("Product Commit的Pi Journal Evidence Receipt不一致");
+  }
+}
+
+async function verifyAdoptionEvidence(
+  deps: ApplicationDeps,
+  contract: ExecutionContract,
+  candidate: ExecutionCandidate,
+): Promise<AdoptionEvidenceReceipt> {
+  const steps = candidate.stepResults.filter((step) => stepRequiresRuntimeEvidence(contract, step));
+  if (steps.length > 0 && deps.executionEvidenceVerifier === undefined) {
+    throw revisionConflict("Product Commit缺少权威Runtime Evidence Port");
+  }
+  const receipts: ExecutionEvidenceVerificationReceipt[] = [];
+  for (const step of steps) {
+    try {
+      const receipt = await deps.executionEvidenceVerifier!.verify({
+        executionAttemptId: step.executionAttemptId,
+        evidenceRefs: step.executionEvidenceRefs ?? [],
+      });
+      receipts.push(receipt);
+    } catch {
+      throw revisionConflict(`步骤${step.stepId}的Pi Journal Evidence在采用前不可验证`);
+    }
+  }
+  const adoption = {
+    receipts,
+    sha256: hashCanonical("product-commit-evidence-receipt.v1", {
+      executionCandidateId: candidate.executionCandidateId,
+      executionCandidateSha256: candidate.sha256,
+      receipts,
+    }),
+  };
+  assertAdoptionEvidenceReceipt(contract, candidate, adoption);
+  return adoption;
+}
+
+/**
+ * 治理检查Step只按RunSpec和Product Store读取冻结候选、节点Prompt与证据键。
+ * 完整正文只在该Step内交给模型，不写入Workflow checkpoint。
+ */
+function resolveGovernanceReviewContext(
+  snapshot: ProductSnapshot,
+  input: {
+    readonly productRunId: ProductRunId;
+    readonly workflowRunSpecId: string;
+    readonly executionCandidateId: ExecutionCandidateId;
+  },
+): Omit<GovernanceReviewInputDto, "attemptId" | "inputManifestSha256"> & {
+  readonly inputManifestSha256: string;
+} {
+  const storedRun = snapshot.entities.runs[input.productRunId];
+  if (storedRun === undefined) throw notFound("Product Run不存在");
+  const run = requirePlanningRun(storedRun);
+  if (run.workflowRunSpecId !== input.workflowRunSpecId) {
+    throw revisionConflict("治理检查绑定了其他Workflow RunSpec");
+  }
+  const runSpec = snapshot.entities.workflowRunSpecs[input.workflowRunSpecId];
+  if (runSpec === undefined || runSpec.productRunId !== input.productRunId) {
+    throw notFound("Workflow RunSpec不存在");
+  }
+  let policy;
+  try {
+    policy = resolvePlanningValidationPolicy(runSpec);
+  } catch {
+    throw revisionConflict("治理检查Validation策略无效");
+  }
+  if (policy.kind !== "governance_review") {
+    throw revisionConflict("当前Workflow RunSpec没有治理检查节点");
+  }
+  const candidate = snapshot.entities.executionCandidates[input.executionCandidateId];
+  if (candidate === undefined || candidate.productRunId !== input.productRunId) {
+    throw notFound("Execution Candidate不存在");
+  }
+  const contract = snapshot.entities.executionContracts[candidate.executionContractId];
+  if (contract === undefined || contract.productRunId !== input.productRunId) {
+    throw notFound("Execution Contract不存在");
+  }
+  const nodePrompt = workflowNodePromptFor(snapshot, input.productRunId, "agent.governance_check");
+  if (
+    nodePrompt === undefined ||
+    nodePrompt.definitionNodeId !== policy.definitionNodeId ||
+    nodePrompt.profileVersion !== GOVERNANCE_REVIEW_PROFILE_VERSION
+  ) {
+    throw revisionConflict("治理检查节点缺少匹配的冻结Prompt");
+  }
+  const limits = {
+    maxTurns: GOVERNANCE_REVIEW_MAX_TURNS,
+    tokenBudget: GOVERNANCE_REVIEW_TOKEN_BUDGET,
+    timeoutMs: GOVERNANCE_REVIEW_ACTIVE_TIMEOUT_MS,
+  } as const;
+  const allowedEvidenceKeys = governanceEvidenceKeys(candidate);
+  const base = {
+    productRunId: input.productRunId,
+    contract,
+    candidate,
+    nodePrompt,
+    strictEvidence: policy.strictEvidence,
+    allowedEvidenceKeys,
+    limits,
+  };
+  return {
+    ...base,
+    inputManifestSha256: computeGovernanceReviewInputManifestSha256({
+      ...base,
+      workflowRunSpecId: runSpec.workflowRunSpecId,
+      workflowRunSpecSha256: runSpec.sha256,
+      modelConfigVersion: MODEL_CONFIG_VERSION,
+    }),
+  };
+}
+
+export async function prepareGovernanceReviewInput(
+  deps: ApplicationDeps,
+  input: {
+    readonly commandId: CommandId;
+    readonly productRunId: ProductRunId;
+    readonly workflowRunSpecId: string;
+    readonly executionCandidateId: ExecutionCandidateId;
+  },
+): Promise<GovernanceReviewInputDto> {
+  const now = deps.now();
+  const attemptId = deps.ids.attempt();
+  const requestSha256 = hashCanonical("command.prepare-governance-review-input.v1", input);
+  const result = await deps.store.transact({
+    commandId: input.commandId,
+    commandType: "PrepareGovernanceReviewInput",
+    requestSha256,
+    traceContext: { productRunId: input.productRunId },
+    mutate: (draft) => {
+      const prepared = resolveGovernanceReviewContext(draft, input);
+      const existing = Object.values(draft.entities.attempts).find(
+        (attempt) =>
+          attempt.kind === "governance_review" &&
+          attempt.executionCandidateId === input.executionCandidateId,
+      );
+      if (existing !== undefined) {
+        throw revisionConflict("同一Execution Candidate不允许第二个治理检查Attempt");
+      }
+      draft.entities.attempts[attemptId] = {
+        schemaVersion: "run-attempt.v2",
+        attemptId,
+        productRunId: input.productRunId,
+        kind: "governance_review",
+        executionContractId: prepared.contract.executionContractId,
+        executionCandidateId: prepared.candidate.executionCandidateId,
+        inputManifestSha256: prepared.inputManifestSha256,
+        promptTemplateVersion: GOVERNANCE_REVIEW_PROFILE_VERSION,
+        modelConfigVersion: MODEL_CONFIG_VERSION,
+        outcome: "running",
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
+      return { resultRefs: { attemptId } };
+    },
+  });
+  const committedAttemptId = result.resultRefs["attemptId"];
+  if (committedAttemptId === undefined) throw notFound("治理检查Attempt不存在");
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const prepared = resolveGovernanceReviewContext(snapshot, input);
+  const attempt = snapshot.entities.attempts[committedAttemptId as never];
+  if (
+    attempt === undefined ||
+    attempt.kind !== "governance_review" ||
+    attempt.executionCandidateId !== input.executionCandidateId ||
+    attempt.executionContractId !== prepared.contract.executionContractId ||
+    attempt.inputManifestSha256 !== prepared.inputManifestSha256 ||
+    attempt.promptTemplateVersion !== GOVERNANCE_REVIEW_PROFILE_VERSION ||
+    attempt.modelConfigVersion !== MODEL_CONFIG_VERSION
+  ) {
+    throw revisionConflict("治理检查Attempt与冻结输入不一致");
+  }
+  return { ...prepared, attemptId: attempt.attemptId };
+}
 
 export async function persistExecutionCandidate(
   deps: ApplicationDeps,
@@ -157,6 +419,11 @@ export async function persistExecutionCandidate(
         ) {
           throw revisionConflict(`步骤${stepResult.stepId}的依赖结果血缘不合法`);
         }
+        const promptAssemblyRef = workflowNodePromptRefFor(
+          draft,
+          input.productRunId,
+          "execute.plan",
+        );
         const expectedInputManifestSha256 = computeExecutionInputManifestSha256({
           executionContractId: contract.executionContractId,
           approvedPlanSha256: contract.approvedPlanSha256,
@@ -165,6 +432,7 @@ export async function persistExecutionCandidate(
           dependencyRefs: stepResult.dependencyRefs,
           promptTemplateVersion: attempt.promptTemplateVersion,
           modelConfigVersion: attempt.modelConfigVersion,
+          ...(promptAssemblyRef === undefined ? {} : { promptAssemblyRef }),
         });
         if (expectedInputManifestSha256 !== stepResult.inputManifestSha256) {
           throw revisionConflict(`步骤${stepResult.stepId}的输入Manifest不一致`);
@@ -231,6 +499,23 @@ export async function persistValidationResult(
     requestSha256,
     traceContext: { productRunId: input.productRunId },
     mutate: (draft) => {
+      const run = draft.entities.runs[input.productRunId];
+      if (run === undefined) throw notFound("Product Run不存在");
+      const planningRun = requirePlanningRun(run);
+      const runSpec =
+        planningRun.workflowRunSpecId === undefined
+          ? undefined
+          : draft.entities.workflowRunSpecs[planningRun.workflowRunSpecId];
+      if (runSpec === undefined) throw notFound("Workflow RunSpec不存在");
+      let validationPolicy;
+      try {
+        validationPolicy = resolvePlanningValidationPolicy(runSpec);
+      } catch {
+        throw revisionConflict("Validation策略无效");
+      }
+      if (input.strictEvidence !== validationPolicy.strictEvidence) {
+        throw revisionConflict("Validation strictEvidence与冻结RunSpec不一致");
+      }
       const contract = draft.entities.executionContracts[input.executionContractId];
       if (contract === undefined || contract.productRunId !== input.productRunId) {
         throw notFound("Execution Contract不存在");
@@ -239,20 +524,102 @@ export async function persistValidationResult(
       if (candidate === undefined || candidate.executionContractId !== input.executionContractId) {
         throw notFound("Execution Candidate不存在");
       }
-      const failures = validatePersistedCandidate(contract, candidate, input.strictEvidence);
+      const existingValidation = Object.values(draft.entities.validationResults).find(
+        (validation) => validation.executionCandidateId === input.executionCandidateId,
+      );
+      if (existingValidation !== undefined) {
+        throw revisionConflict("同一Execution Candidate不允许第二份Validation事实");
+      }
+      const deterministicFailures = validatePersistedCandidate(
+        contract,
+        candidate,
+        input.strictEvidence,
+      );
+      const governanceReview = (() => {
+        if (validationPolicy.kind === "deterministic") {
+          if (
+            input.governanceReview !== undefined ||
+            input.governanceReviewAttemptId !== undefined ||
+            input.governanceReviewInputManifestSha256 !== undefined
+          ) {
+            throw revisionConflict("确定性Validation节点不允许提交Governance Review");
+          }
+          return undefined;
+        }
+        if (
+          input.governanceReview === undefined ||
+          input.governanceReviewAttemptId === undefined ||
+          input.governanceReviewInputManifestSha256 === undefined
+        ) {
+          throw revisionConflict("治理检查节点必须提交Review、Attempt与输入Manifest");
+        }
+        const prepared = resolveGovernanceReviewContext(draft, {
+          productRunId: input.productRunId,
+          workflowRunSpecId: runSpec.workflowRunSpecId,
+          executionCandidateId: input.executionCandidateId,
+        });
+        const attempt = draft.entities.attempts[input.governanceReviewAttemptId];
+        if (
+          attempt === undefined ||
+          attempt.kind !== "governance_review" ||
+          attempt.productRunId !== input.productRunId ||
+          attempt.executionContractId !== input.executionContractId ||
+          attempt.executionCandidateId !== input.executionCandidateId ||
+          attempt.outcome !== "running" ||
+          attempt.inputManifestSha256 !== prepared.inputManifestSha256 ||
+          input.governanceReviewInputManifestSha256 !== prepared.inputManifestSha256
+        ) {
+          throw revisionConflict("治理检查Attempt与冻结输入不一致或已终止");
+        }
+        assertGovernanceEvidence(candidate, input.governanceReview);
+        const nodePrompt = workflowNodePromptFor(
+          draft,
+          input.productRunId,
+          "agent.governance_check",
+        );
+        if (
+          nodePrompt === undefined ||
+          nodePrompt.profileVersion !== GOVERNANCE_REVIEW_PROFILE_VERSION
+        ) {
+          throw revisionConflict("治理检查Validation缺少冻结节点Prompt");
+        }
+        return {
+          profileVersion: GOVERNANCE_REVIEW_PROFILE_VERSION,
+          attemptId: attempt.attemptId,
+          inputManifestSha256: prepared.inputManifestSha256,
+          promptAssemblyId: nodePrompt.promptAssemblyId,
+          promptAssemblySha256: nodePrompt.promptAssemblySha256,
+          nodeAssemblySha256: nodePrompt.nodeAssemblySha256,
+          candidate: input.governanceReview,
+        } as const;
+      })();
+      const failures = [
+        ...deterministicFailures,
+        ...(governanceReview === undefined ? [] : governanceFailures(governanceReview.candidate)),
+      ];
       draft.entities.validationResults[validationResultId] = {
-        schemaVersion: "validation-result.v1",
+        schemaVersion: "validation-result.v2",
         validationResultId,
         productRunId: input.productRunId,
         executionContractId: input.executionContractId,
         executionCandidateId: input.executionCandidateId,
         strictEvidence: input.strictEvidence,
+        ...(governanceReview === undefined ? {} : { governanceReview }),
         outcome: failures.length === 0 ? "pass" : "fail",
         failures,
         revision: 1,
         createdAt: now,
         updatedAt: now,
       };
+      if (governanceReview !== undefined) {
+        const attempt = draft.entities.attempts[governanceReview.attemptId]!;
+        draft.entities.attempts[attempt.attemptId] = {
+          ...attempt,
+          outcome: "success",
+          revision: attempt.revision + 1,
+          updatedAt: now,
+        };
+      }
       synchronizePlanningWorkflowProjection(draft, input.productRunId, now);
       return { resultRefs: { validationResultId } };
     },
@@ -332,6 +699,20 @@ export async function commitExecutionResult(
   const exactReplay =
     priorReceipt?.commandType === "CommitExecutionResult" &&
     priorReceipt.requestSha256 === requestSha256;
+  let adoptionEvidence: AdoptionEvidenceReceipt | undefined;
+  if (!exactReplay) {
+    const contract = before.entities.executionContracts[input.executionContractId];
+    const candidate = before.entities.executionCandidates[input.executionCandidateId];
+    if (
+      contract === undefined ||
+      contract.productRunId !== input.productRunId ||
+      candidate === undefined ||
+      candidate.executionContractId !== contract.executionContractId
+    ) {
+      throw notFound("Product Commit缺少Execution Contract或Candidate");
+    }
+    adoptionEvidence = await verifyAdoptionEvidence(deps, contract, candidate);
+  }
   if (workflowAttempt !== undefined && !exactReplay) {
     emitRunEvent(deps, input.productRunId, {
       level: "info",
@@ -353,6 +734,17 @@ export async function commitExecutionResult(
         const run = draft.entities.runs[input.productRunId];
         if (run === undefined) throw notFound("Product Run不存在");
         const planningRun = requirePlanningRun(run);
+        const runSpec =
+          planningRun.workflowRunSpecId === undefined
+            ? undefined
+            : draft.entities.workflowRunSpecs[planningRun.workflowRunSpecId];
+        if (runSpec === undefined) throw notFound("Workflow RunSpec不存在");
+        let validationPolicy;
+        try {
+          validationPolicy = resolvePlanningValidationPolicy(runSpec);
+        } catch {
+          throw revisionConflict("Product Commit的Validation策略无效");
+        }
         const contract = draft.entities.executionContracts[input.executionContractId];
         if (contract === undefined || contract.productRunId !== input.productRunId) {
           throw notFound("Execution Contract不存在");
@@ -375,11 +767,65 @@ export async function commitExecutionResult(
         if (validation.outcome !== "pass") {
           throw revisionConflict("验证未通过的候选不能提交为正式结果");
         }
-        const currentFailures = validatePersistedCandidate(
+        const candidateValidations = Object.values(draft.entities.validationResults).filter(
+          (candidateValidation) =>
+            candidateValidation.executionCandidateId === candidate.executionCandidateId,
+        );
+        if (
+          candidateValidations.length !== 1 ||
+          candidateValidations[0]?.validationResultId !== validation.validationResultId
+        ) {
+          throw revisionConflict("Execution Candidate没有唯一Validation事实");
+        }
+        if (validation.strictEvidence !== validationPolicy.strictEvidence) {
+          throw revisionConflict("Validation strictEvidence与冻结RunSpec不一致");
+        }
+        if (
+          (validationPolicy.kind === "governance_review") !==
+          (validation.governanceReview !== undefined)
+        ) {
+          throw revisionConflict("Validation类型与冻结RunSpec不一致");
+        }
+        const deterministicFailures = validatePersistedCandidate(
           contract,
           candidate,
-          validation.strictEvidence ?? true,
+          validationPolicy.strictEvidence,
         );
+        if (validation.governanceReview !== undefined) {
+          assertGovernanceEvidence(candidate, validation.governanceReview.candidate);
+          const nodePrompt = workflowNodePromptFor(
+            draft,
+            input.productRunId,
+            "agent.governance_check",
+          );
+          if (
+            nodePrompt === undefined ||
+            nodePrompt.promptAssemblyId !== validation.governanceReview.promptAssemblyId ||
+            nodePrompt.promptAssemblySha256 !== validation.governanceReview.promptAssemblySha256 ||
+            nodePrompt.nodeAssemblySha256 !== validation.governanceReview.nodeAssemblySha256
+          ) {
+            throw revisionConflict("Governance Review与冻结Prompt不一致");
+          }
+          const governanceAttempt = draft.entities.attempts[validation.governanceReview.attemptId];
+          if (
+            governanceAttempt === undefined ||
+            governanceAttempt.kind !== "governance_review" ||
+            governanceAttempt.productRunId !== input.productRunId ||
+            governanceAttempt.executionContractId !== contract.executionContractId ||
+            governanceAttempt.executionCandidateId !== candidate.executionCandidateId ||
+            governanceAttempt.outcome !== "success" ||
+            governanceAttempt.inputManifestSha256 !==
+              validation.governanceReview.inputManifestSha256
+          ) {
+            throw revisionConflict("Governance Review与独立Attempt不一致");
+          }
+        }
+        const currentFailures = [
+          ...deterministicFailures,
+          ...(validation.governanceReview === undefined
+            ? []
+            : governanceFailures(validation.governanceReview.candidate)),
+        ];
         if (
           currentFailures.length !== 0 ||
           hashCanonical("validation-failures.v1", validation.failures) !==
@@ -387,6 +833,10 @@ export async function commitExecutionResult(
         ) {
           throw revisionConflict("Validation Result与当前持久化候选不一致");
         }
+        if (adoptionEvidence === undefined) {
+          throw revisionConflict("Product Commit缺少采用时Evidence Receipt");
+        }
+        assertAdoptionEvidenceReceipt(contract, candidate, adoptionEvidence);
         const renderedMarkdown = renderCandidateMarkdown(candidate);
 
         let lifecycle: RunLifecycle = { status: planningRun.status, phase: planningRun.phase };
@@ -431,6 +881,7 @@ export async function commitExecutionResult(
           resultRefs: {
             finalMessageId,
             productRunId: input.productRunId,
+            evidenceReceiptSha256: adoptionEvidence.sha256,
             messageSha256: hashCanonical("message.v1", {
               messageId: finalMessageId,
               sessionId: planningRun.sessionId,

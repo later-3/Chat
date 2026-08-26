@@ -716,6 +716,9 @@ function checkTimelineCompleteness(
   const planningAttempts = Object.values(snapshot.entities.attempts).filter(
     (attempt) => attempt.productRunId === productRunId && attempt.kind === "planning",
   );
+  const governanceAttempts = Object.values(snapshot.entities.attempts).filter(
+    (attempt) => attempt.productRunId === productRunId && attempt.kind === "governance_review",
+  );
 
   const startOutbox = Object.values(snapshot.outbox).find(
     (entry) => entry.kind === "workflow_start" && entry.productRunId === productRunId,
@@ -799,6 +802,74 @@ function checkTimelineCompleteness(
       attempt.outcome === "success" ? "pi.node.completed" : "pi.node.failed",
       1,
     );
+  }
+
+  for (const attempt of governanceAttempts) {
+    const scoped = events.filter(
+      (event) => "attemptId" in event && event.attemptId === attempt.attemptId,
+    );
+    const providerEvents = scoped.filter(
+      (event) =>
+        (event.eventName === "provider.request.started" ||
+          event.eventName === "provider.request.completed" ||
+          event.eventName === "provider.request.failed") &&
+        event.nodeKind === "governance_reviewer",
+    );
+    const piEvents = scoped.filter(
+      (event) =>
+        (event.eventName === "pi.node.started" ||
+          event.eventName === "pi.node.completed" ||
+          event.eventName === "pi.node.failed") &&
+        event.nodeKind === "governance_reviewer",
+    );
+    const wrongIdentity = scoped.some(
+      (event) =>
+        ((event.eventName === "provider.request.started" ||
+          event.eventName === "provider.request.completed" ||
+          event.eventName === "provider.request.failed") &&
+          event.nodeKind !== "governance_reviewer") ||
+        ((event.eventName === "pi.node.started" ||
+          event.eventName === "pi.node.completed" ||
+          event.eventName === "pi.node.failed") &&
+          event.nodeKind !== "governance_reviewer"),
+    );
+    if (wrongIdentity) {
+      failures.add(`Trace关联错误：治理Attempt ${attempt.attemptId} 使用了其他节点身份`);
+    }
+    const preRequestFailure = providerEvents.some(
+      (event) =>
+        event.eventName === "provider.request.failed" &&
+        event.inputManifestSha256 === undefined &&
+        event.error.code.startsWith("provider.pre_request."),
+    );
+    requireCount(failures, providerEvents, "provider.request.started", preRequestFailure ? 0 : 1);
+    const completedCount = count(providerEvents, "provider.request.completed");
+    const failedCount = count(providerEvents, "provider.request.failed");
+    if (
+      (attempt.outcome === "success" && (completedCount !== 1 || failedCount !== 0)) ||
+      (attempt.outcome === "failure" && completedCount + failedCount !== 1) ||
+      attempt.outcome === "running"
+    ) {
+      failures.add(`Trace缺口：治理Attempt ${attempt.attemptId} Provider终态与Product终态不一致`);
+    }
+    requireCount(failures, piEvents, "pi.node.started", preRequestFailure ? 0 : 1);
+    requireCount(
+      failures,
+      piEvents,
+      attempt.outcome === "success" ? "pi.node.completed" : "pi.node.failed",
+      1,
+    );
+    const mismatchedManifest = providerEvents.some(
+      (event) =>
+        (event.eventName === "provider.request.started" ||
+          event.eventName === "provider.request.completed" ||
+          (event.eventName === "provider.request.failed" &&
+            event.inputManifestSha256 !== undefined)) &&
+        event.inputManifestSha256 !== attempt.inputManifestSha256,
+    );
+    if (mismatchedManifest) {
+      failures.add(`Trace关联错误：治理Attempt ${attempt.attemptId} Provider Manifest不一致`);
+    }
   }
 
   for (const decision of decisions) {

@@ -1,7 +1,7 @@
 import {
-  agentKeySchema,
+  agentProfileAgentKeySchema,
   agentRuntimeBaselineDtoSchema,
-  type AgentKey,
+  type AgentProfileAgentKey,
   type AgentRuntimeBaselineDto,
 } from "@chat/contracts";
 import { PI_EXECUTOR_RUNTIME_HEADER } from "./executor-service-contract.js";
@@ -21,10 +21,10 @@ export function createPiAgentRuntimeProfileClient(options: PiAgentRuntimeProfile
   const baseUrl = options.baseUrl.replace(/\/$/u, "");
   return {
     read(
-      agentKey: AgentKey,
+      agentKey: AgentProfileAgentKey,
       workspaceRootId?: string,
     ): Promise<AgentRuntimeBaselineDto | undefined> {
-      const parsedAgentKey = agentKeySchema.parse(agentKey);
+      const parsedAgentKey = agentProfileAgentKeySchema.parse(agentKey);
       if (
         parsedAgentKey !== "direct" &&
         parsedAgentKey !== "project_bootstrap" &&

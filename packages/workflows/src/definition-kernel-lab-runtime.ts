@@ -63,6 +63,7 @@ export interface KernelLabRuntimePort {
   resolveSkills(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;
   research(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;
   plan(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;
+  reviewGovernance(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;
   validateResult(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;
   commitProduct(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;
   extractNote(context: KernelNodeExecutionContext): Promise<KernelNodeControlResult>;

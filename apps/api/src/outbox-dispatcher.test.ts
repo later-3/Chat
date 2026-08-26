@@ -235,7 +235,10 @@ async function seed(): Promise<{
       ...process.env,
       CHAT_PLANE_ENABLED: "1",
     }),
-    agentRuntimeProfiles: { read: async (agentKey) => runtimeProfile(agentKey) },
+    agentRuntimeProfiles: {
+      read: async (agentKey) =>
+        agentKey === "governance_reviewer" ? undefined : runtimeProfile(agentKey),
+    },
     trace: (event) => traces.push(event),
     memoryImportBackends: {
       list: () => [importBackend],

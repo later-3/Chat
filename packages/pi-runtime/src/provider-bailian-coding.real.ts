@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   CODING_EXECUTOR_MAX_TURNS_PER_STEP,
@@ -12,6 +12,7 @@ import {
   EXECUTION_CAPABILITY_WORKSPACE_WRITE,
   executionContractSchema,
 } from "@chat/contracts";
+import { hashCanonical } from "@chat/domain";
 import { AgentSessionPiCodingAgentRunner } from "./coding-agent-executor.js";
 import { PiExecutorOperationStore } from "./executor-operation-store.js";
 import {
@@ -32,16 +33,51 @@ assertRealTestChildAuthorization({
  * Provider Payload、凭据或隐藏推理。
  */
 let root: string | undefined;
+const REPO_ROOT = resolve(import.meta.dirname, "../../..");
+const GOVERNANCE_FRAGMENTS = [
+  {
+    promptFragmentRevisionId: "pfr_builtincontrolledprojectchangev3",
+    sha256: "6dcdeed142c38bb6a674e061011b0b4b0693e31409e1c3ef3b56c6e7b4f2a578",
+    path: "prompts/fragments/rules/controlled-project-change.md",
+    marker: "计划、旧任务或模型判断不能扩大范围",
+  },
+  {
+    promptFragmentRevisionId: "pfr_builtinengineeringevidencev3",
+    sha256: "30b7515dbf151a0b55fb6c531f3db0aef69b02692daa6eb5bb8285f7431404f7",
+    path: "prompts/fragments/requirements/engineering-evidence.md",
+    marker: "Mock只证明调用合同",
+  },
+  {
+    promptFragmentRevisionId: "pfr_builtinmultiagentdeliveryv3",
+    sha256: "f761911e1ff73182e7632f569d63a556b5e89fccc27a53f139def0d30879ebcf",
+    path: "prompts/fragments/experience/multi-agent-delivery.md",
+    marker: "多个同模型Agent的一致意见不能按票数",
+  },
+] as const;
 
 afterAll(async () => {
   if (root !== undefined) await rm(root, { recursive: true, force: true });
 });
 
 describe("真实百炼Pi Coding Agent（付费，显式运行）", () => {
-  it("AgentSession开放完整工具集并留下真实文件与bash Journal", async () => {
+  it("3个治理Fragment进入AgentSession并留下真实文件与bash Journal", async () => {
     root = await mkdtemp(join(tmpdir(), "chat-pi-coding-real-"));
     const workspace = join(root, "workspace");
     const marker = `PI_TRACE_GATE_${randomUUID().replaceAll("-", "")}`;
+    const governanceBodies = await Promise.all(
+      GOVERNANCE_FRAGMENTS.map((fragment) => readFile(resolve(REPO_ROOT, fragment.path), "utf8")),
+    );
+    const governanceSystemPromptAppend = governanceBodies.join("\n\n");
+    for (const fragment of GOVERNANCE_FRAGMENTS) {
+      expect(governanceSystemPromptAppend).toContain(fragment.marker);
+    }
+    const governancePromptSha256 = hashCanonical("governance-provider-real-prompt.v1", {
+      fragments: GOVERNANCE_FRAGMENTS.map(({ promptFragmentRevisionId, sha256 }) => ({
+        promptFragmentRevisionId,
+        sha256,
+      })),
+      systemPromptAppend: governanceSystemPromptAppend,
+    });
     await mkdir(workspace);
     await writeFile(
       join(workspace, "TASK.md"),
@@ -115,18 +151,47 @@ describe("真实百炼Pi Coding Agent（付费，显式运行）", () => {
       stepId: "step-1",
       contextItems: [],
       dependencyResults: [],
+      nodePrompt: {
+        promptAssemblyId: "pma_codinggovernancereal",
+        promptAssemblySha256: governancePromptSha256,
+        definitionNodeId: "planning.execute",
+        nodeAssemblySha256: governancePromptSha256,
+        profileVersion: "workflow-agent-prompt-profile.v1",
+        systemPromptAppend: governanceSystemPromptAppend,
+      },
     });
     await store.createOrGet(request);
     await store.markRunning(request.operationId);
     const runner = new AgentSessionPiCodingAgentRunner();
-    const result = await runner.run({
-      request,
-      cwd: workspace,
-      agentDir: join(root, "agent"),
-      sessionsDir: join(root, "sessions"),
-      store,
-      signal: AbortSignal.timeout(CODING_EXECUTOR_TIMEOUT_MS_PER_STEP),
-    });
+    let result: Awaited<ReturnType<typeof runner.run>>;
+    try {
+      result = await runner.run({
+        request,
+        cwd: workspace,
+        agentDir: join(root, "agent"),
+        sessionsDir: join(root, "sessions"),
+        store,
+        signal: AbortSignal.timeout(CODING_EXECUTOR_TIMEOUT_MS_PER_STEP),
+      });
+    } catch (error) {
+      const events = store.getEvents(request.operationId);
+      console.error(
+        `[provider-coding-failure] ${JSON.stringify({
+          errorCode:
+            error instanceof Error && "code" in error ? String(error.code) : "unknown_error",
+          eventTypes: events.map((event) => event.type),
+          providerRequests: events.filter((event) => event.type === "provider.started").length,
+          providerCompletions: events.filter((event) => event.type === "provider.completed").length,
+          toolNames: events.flatMap((event) =>
+            event.type === "tool.intent_persisted" ? [event.toolName] : [],
+          ),
+          messageRoles: events.flatMap((event) =>
+            event.type === "message.completed" ? [event.role] : [],
+          ),
+        })}`,
+      );
+      throw error;
+    }
     await store.complete(request.operationId, result, 0);
 
     expect((await readFile(join(workspace, "result.txt"), "utf8")).trim()).toBe(marker);
@@ -201,6 +266,9 @@ describe("真实百炼Pi Coding Agent（付费，显式运行）", () => {
         provider: "bailian",
         model: "qwen3.7-plus",
         operationId: request.operationId,
+        governanceFragmentRevisionIds: GOVERNANCE_FRAGMENTS.map(
+          (fragment) => fragment.promptFragmentRevisionId,
+        ),
         enabledTools: sessionStarted.enabledTools,
         eventCount: events.length,
         toolNames: tools,

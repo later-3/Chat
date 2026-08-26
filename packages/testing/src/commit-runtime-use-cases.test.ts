@@ -5,13 +5,16 @@ import { describe, expect, it, vi } from "vitest";
 import {
   EXECUTOR_PROMPT_TEMPLATE_VERSION,
   MODEL_CONFIG_VERSION,
+  executionEvidenceVerificationReceiptSchema,
   type CommandId,
   type ExecutionCandidate,
   type PlanContent,
   type PrincipalId,
+  type PromptAssemblyV3,
 } from "@chat/contracts";
 import { computeExecutionInputManifestSha256, hashCanonical } from "@chat/domain";
 import { JsonProductStore } from "@chat/product-store-json";
+import { createFilePromptCatalog } from "@chat/api/prompt-catalog";
 import {
   type ApplicationDeps,
   type IdFactory,
@@ -21,6 +24,7 @@ import {
   commitExecutionResult,
   persistExecutionCandidate,
   persistValidationResult,
+  prepareGovernanceReviewInput,
   compilePlanningInput,
   publishPlanForReview,
   submitPlanDecision,
@@ -98,18 +102,37 @@ async function createDeps(): Promise<{ deps: ApplicationDeps; cmd: () => Command
     filePath: join(directory, "chat-product-store.v1.json"),
     now,
   });
+  const promptCatalog = await createFilePromptCatalog();
+  const runtimeProfiles = (
+    await import("@chat/pi-runtime/coding-executor")
+  ).createPiAgentRuntimeProfileReader();
   return {
     deps: {
       store,
       now,
       ids: ids(),
-      executionEvidenceVerifier: { verify: vi.fn(async () => undefined) },
+      promptCatalog,
+      agentRuntimeProfiles: runtimeProfiles,
+      executionEvidenceVerifier: {
+        verify: vi.fn(async (input) =>
+          executionEvidenceVerificationReceiptSchema.parse({
+            schemaVersion: "execution-evidence-verification-receipt.v1",
+            executionAttemptId: input.executionAttemptId,
+            evidenceRefsSha256: hashCanonical("execution-evidence-refs.v1", input.evidenceRefs),
+            journalSha256: "f".repeat(64),
+          }),
+        ),
+      },
     },
     cmd: commands(),
   };
 }
 
-async function buildCandidate(validEvidence: boolean, strictEvidence = true) {
+async function buildCandidate(
+  validEvidence: boolean,
+  strictEvidence = true,
+  withGovernanceReview = true,
+) {
   const { deps, cmd } = await createDeps();
   const { session } = await createProductSession(deps, {
     principalId: PRINCIPAL,
@@ -153,6 +176,21 @@ async function buildCandidate(validEvidence: boolean, strictEvidence = true) {
     productRunId: run.productRunId,
     approvalDecisionId: approved.decision.decisionId,
   });
+  const promptSnapshot = await deps.store.read({ kind: "committedSnapshot" });
+  const workflowAssembly = Object.values(promptSnapshot.snapshot.entities.promptAssemblies).find(
+    (assembly): assembly is PromptAssemblyV3 =>
+      assembly.schemaVersion === "prompt-assembly.v3" && assembly.productRunId === run.productRunId,
+  );
+  const executorPrompt = workflowAssembly?.nodes.find((node) => node.nodeType === "execute.plan");
+  if (workflowAssembly === undefined || executorPrompt === undefined) {
+    throw new Error("fixture缺少Executor Prompt Assembly");
+  }
+  const promptAssemblyRef = {
+    promptAssemblyId: workflowAssembly.promptAssemblyId,
+    sha256: workflowAssembly.sha256,
+    definitionNodeId: executorPrompt.definitionNodeId,
+    nodeAssemblySha256: executorPrompt.sha256,
+  };
 
   const stepResults: ExecutionCandidate["stepResults"] = [];
   for (const contractStep of contract.steps) {
@@ -171,6 +209,7 @@ async function buildCandidate(validEvidence: boolean, strictEvidence = true) {
       stepId: contractStep.stepId,
       inputRefs: contractStep.inputRefs,
       dependencyRefs,
+      promptAssemblyRef,
       promptTemplateVersion: EXECUTOR_PROMPT_TEMPLATE_VERSION,
       modelConfigVersion: MODEL_CONFIG_VERSION,
     });
@@ -246,12 +285,36 @@ async function buildCandidate(validEvidence: boolean, strictEvidence = true) {
     warnings: stepResults.flatMap((result) => result.warnings),
   } as const;
   const candidate = await persistExecutionCandidate(deps, candidateInput);
+  const snapshotBeforeGovernance = await deps.store.read({ kind: "committedSnapshot" });
+  const storedRun = snapshotBeforeGovernance.snapshot.entities.runs[run.productRunId];
+  if (storedRun?.runKind !== "planning" || storedRun.workflowRunSpecId === undefined) {
+    throw new Error("fixture缺少Planning RunSpec");
+  }
+  const governanceInput = await prepareGovernanceReviewInput(deps, {
+    commandId: cmd(),
+    productRunId: run.productRunId,
+    workflowRunSpecId: storedRun.workflowRunSpecId,
+    executionCandidateId: candidate.executionCandidateId,
+  });
   const validation = await persistValidationResult(deps, {
     commandId: cmd(),
     productRunId: run.productRunId,
     executionContractId: contract.executionContractId,
     executionCandidateId: candidate.executionCandidateId,
     strictEvidence,
+    ...(withGovernanceReview
+      ? {
+          governanceReview: {
+            schemaVersion: "governance-review-candidate.v1" as const,
+            outcome: "pass" as const,
+            summary: "候选满足已选工程治理规范。",
+            findings: [],
+            residualRisks: [],
+          },
+          governanceReviewAttemptId: governanceInput.attemptId,
+          governanceReviewInputManifestSha256: governanceInput.inputManifestSha256,
+        }
+      : {}),
   });
   return {
     deps,
@@ -262,6 +325,7 @@ async function buildCandidate(validEvidence: boolean, strictEvidence = true) {
     candidate,
     candidateInput,
     candidateCommandId,
+    governanceInput,
     validation,
   };
 }
@@ -357,12 +421,71 @@ describe("验证与Product Commit信任边界", () => {
     ).toHaveLength(0);
   });
 
-  it("非严格模式只放宽逐条证据覆盖，且把冻结策略写入Validation事实", async () => {
-    const state = await buildCandidate(false, false);
-    expect(state.validation.outcome).toBe("pass");
+  it("Runtime不能把默认治理流程冻结的strictEvidence从true降级为false", async () => {
+    await expect(buildCandidate(false, false)).rejects.toMatchObject({
+      code: "revision_conflict",
+    });
+  });
+
+  it("默认治理流程缺少Review、独立Attempt或Manifest时拒绝持久化Validation", async () => {
+    await expect(buildCandidate(true, true, false)).rejects.toMatchObject({
+      code: "revision_conflict",
+    });
+  });
+
+  it("同一Execution Candidate不能用新Command写入第二份冲突Validation", async () => {
+    const state = await buildCandidate(true);
+    await expect(
+      persistValidationResult(state.deps, {
+        commandId: state.cmd(),
+        productRunId: state.run.productRunId,
+        executionContractId: state.contract.executionContractId,
+        executionCandidateId: state.candidate.executionCandidateId,
+        strictEvidence: true,
+        governanceReview: {
+          schemaVersion: "governance-review-candidate.v1",
+          outcome: "fail",
+          summary: "试图覆盖既有结论。",
+          findings: [
+            {
+              severity: "blocking",
+              code: "review.conflict",
+              summary: "冲突结论",
+              detail: "同一候选不得重复审查直至通过。",
+              evidenceKeys: [`candidate:${state.candidate.sha256}`],
+            },
+          ],
+          residualRisks: [],
+        },
+        governanceReviewAttemptId: state.governanceInput.attemptId,
+        governanceReviewInputManifestSha256: state.governanceInput.inputManifestSha256,
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
+  });
+
+  it("Candidate落盘后Pi Journal漂移时Product Commit失败且不产生正式Message", async () => {
+    const state = await buildCandidate(true);
+    const driftedDeps: ApplicationDeps = {
+      ...state.deps,
+      executionEvidenceVerifier: {
+        verify: vi.fn(async () => {
+          throw new Error("journal drift");
+        }),
+      },
+    };
+    await expect(
+      commitExecutionResult(driftedDeps, {
+        commandId: state.cmd(),
+        productRunId: state.run.productRunId,
+        executionContractId: state.contract.executionContractId,
+        executionCandidateId: state.candidate.executionCandidateId,
+        validationResultId: state.validation.validationResultId,
+      }),
+    ).rejects.toMatchObject({ code: "revision_conflict" });
     const { snapshot } = await state.deps.store.read({ kind: "committedSnapshot" });
+    expect(snapshot.entities.runs[state.run.productRunId]?.status).toBe("running");
     expect(
-      snapshot.entities.validationResults[state.validation.validationResultId]?.strictEvidence,
-    ).toBe(false);
+      Object.values(snapshot.entities.messages).filter((message) => message.role === "assistant"),
+    ).toHaveLength(0);
   });
 });

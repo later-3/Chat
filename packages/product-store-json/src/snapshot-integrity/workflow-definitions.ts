@@ -607,6 +607,8 @@ function assertNodeProductRef(
           productRunId: target.productRunId,
           executionContractId: target.executionContractId,
           executionCandidateId: target.executionCandidateId,
+          strictEvidence: target.strictEvidence,
+          governanceReview: target.governanceReview,
           outcome: target.outcome,
           failures: target.failures,
         }),

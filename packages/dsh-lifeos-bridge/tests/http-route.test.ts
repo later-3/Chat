@@ -346,7 +346,7 @@ test("same-origin Agent Version routes forward typed create requests and immutab
     createdAt: "2026-08-22T00:00:00.000Z",
   });
   const profile = agentProfileDtoSchema.parse({
-    schemaVersion: "chat-agent-profile-api.v3",
+    schemaVersion: "chat-agent-profile-api.v4",
     agentKey: "direct",
     title: "执行 Agent",
     description: "HTTP路由合同测试。",
@@ -587,7 +587,7 @@ test("same-origin Agent Profile route forwards only validated workspace scopes",
   const studio = {
     agents: async (query: unknown) => {
       calls.push(query);
-      return { schemaVersion: "chat-agent-profile-api.v3", items: [] };
+      return { schemaVersion: "chat-agent-profile-api.v4", items: [] };
     },
   } as unknown as PromptStudioBridgeService;
   const server = createServer(

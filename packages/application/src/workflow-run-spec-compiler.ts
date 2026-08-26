@@ -3,6 +3,7 @@ import {
   workflowExecutorManifestEntrySchema,
   inspectDirectAgentConfigurationSource,
   workflowRunBusinessInputSchema,
+  workflowRunSpecV2Schema,
   workflowRunSpecSchema,
   workflowRunnerEvidenceSchema,
   type WorkflowExecutorManifestEntry,
@@ -214,14 +215,14 @@ export function compileWorkflowRunSpec(
     ),
   };
   const candidate = {
-    schemaVersion: "workflow-run-spec.v1" as const,
+    schemaVersion: "workflow-run-spec.v2" as const,
     workflowRunSpecId: input.workflowRunSpecId,
     productRunId: input.productRunId,
     ...executionPayload,
     sha256: hashCanonical("workflow-run-spec.v1", executionPayload),
     createdAt: input.createdAt,
   };
-  const parsedRunSpec = workflowRunSpecSchema.safeParse(candidate);
+  const parsedRunSpec = workflowRunSpecV2Schema.safeParse(candidate);
   if (!parsedRunSpec.success) {
     return {
       success: false,

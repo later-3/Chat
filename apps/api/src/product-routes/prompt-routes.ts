@@ -3,7 +3,7 @@
  */
 import {
   commandEnvelopeSchema,
-  agentKeySchema,
+  agentProfileAgentKeySchema,
   promptFragmentIdSchema,
   promptFragmentRevisionIdSchema,
   listPromptFragmentsQuerySchema,
@@ -82,7 +82,7 @@ export function registerPromptRoutes(router: ProductRouter, ctx: ProductRouteCon
         "agent-profile",
         await getAgentProfile(ctx.deps, {
           principalId: ctx.principalId,
-          agentKey: agentKeySchema.parse(c.req.param("agentKey")),
+          agentKey: agentProfileAgentKeySchema.parse(c.req.param("agentKey")),
           ...query,
         }),
       );
@@ -97,7 +97,7 @@ export function registerPromptRoutes(router: ProductRouter, ctx: ProductRouteCon
       const result = await reviseAgentPrompt(ctx.deps, {
         principalId: ctx.principalId,
         commandId: envelope.commandId,
-        agentKey: agentKeySchema.parse(c.req.param("agentKey")),
+        agentKey: agentProfileAgentKeySchema.parse(c.req.param("agentKey")),
         payload: reviseAgentPromptPayloadSchema.parse(envelope.payload),
       });
       emitCommandAccepted(ctx, c, {
@@ -117,7 +117,7 @@ export function registerPromptRoutes(router: ProductRouter, ctx: ProductRouteCon
       const result = await restoreAgentPrompt(ctx.deps, {
         principalId: ctx.principalId,
         commandId: envelope.commandId,
-        agentKey: agentKeySchema.parse(c.req.param("agentKey")),
+        agentKey: agentProfileAgentKeySchema.parse(c.req.param("agentKey")),
         payload: restoreAgentPromptPayloadSchema.parse(envelope.payload),
       });
       emitCommandAccepted(ctx, c, {
@@ -137,7 +137,7 @@ export function registerPromptRoutes(router: ProductRouter, ctx: ProductRouteCon
       const result = await createAgentVersion(ctx.deps, {
         principalId: ctx.principalId,
         commandId: envelope.commandId,
-        agentKey: agentKeySchema.parse(c.req.param("agentKey")),
+        agentKey: agentProfileAgentKeySchema.parse(c.req.param("agentKey")),
         payload: createAgentVersionPayloadSchema.parse(envelope.payload),
       });
       emitCommandAccepted(ctx, c, {

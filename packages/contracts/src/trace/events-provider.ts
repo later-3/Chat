@@ -24,6 +24,7 @@ export const providerSharedFields = {
   model: providerModelSchema,
   endpointHost: endpointHostSchema,
   operation: z.enum(["chat_completion"]),
+  nodeKind: z.enum(["planner", "executor", "governance_reviewer", "note_capture"]).optional(),
 };
 
 /** Provider终止原因与工具调用计数只描述代码路径，不包含请求/响应正文。 */

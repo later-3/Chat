@@ -13,6 +13,7 @@ import {
   type ProductSnapshot,
   type ProductRunId,
   type RunAttemptId,
+  type BeginRunAttemptResponse,
   type AuthorizeExecutorOperationRequest,
   type AuthorizeExecutorOperationResponse,
 } from "@chat/contracts";
@@ -20,7 +21,7 @@ import { type ApplicationDeps } from "./deps.js";
 import { notFound, revisionConflict } from "./errors.js";
 import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 import { requirePlanningRun } from "./product-run-kind.js";
-import { workflowNodePromptFor } from "./prompt-assembly-use-cases.js";
+import { workflowNodePromptFor, workflowNodePromptRefFor } from "./prompt-assembly-use-cases.js";
 
 /**
  * Workflow私有Application Command：执行合同、候选、验证与Product Commit。
@@ -302,6 +303,7 @@ export async function beginRunAttempt(
   attemptId: RunAttemptId;
   inputManifestSha256: string;
   contextItems: readonly ExecutionContextItemDto[];
+  promptAssemblyRef?: NonNullable<BeginRunAttemptResponse["promptAssemblyRef"]>;
 }> {
   const now = deps.now();
   const attemptId = deps.ids.attempt();
@@ -337,7 +339,7 @@ export async function beginRunAttempt(
         throw revisionConflict("Execution Step的依赖血缘不完整");
       }
       const resolved = resolveExecutionStepContext(draft, contract, input.stepId);
-      const nodePrompt = workflowNodePromptFor(draft, input.productRunId, "execute.plan");
+      const promptAssemblyRef = workflowNodePromptRefFor(draft, input.productRunId, "execute.plan");
       const inputManifestSha256 = computeExecutionInputManifestSha256({
         executionContractId: contract.executionContractId,
         approvedPlanSha256: contract.approvedPlanSha256,
@@ -346,19 +348,10 @@ export async function beginRunAttempt(
         dependencyRefs: input.dependencyRefs,
         promptTemplateVersion: input.promptTemplateVersion,
         modelConfigVersion: input.modelConfigVersion,
-        ...(nodePrompt === undefined
-          ? {}
-          : {
-              promptAssemblyRef: {
-                promptAssemblyId: nodePrompt.promptAssemblyId,
-                sha256: nodePrompt.promptAssemblySha256,
-                definitionNodeId: nodePrompt.definitionNodeId,
-                nodeAssemblySha256: nodePrompt.nodeAssemblySha256,
-              },
-            }),
+        ...(promptAssemblyRef === undefined ? {} : { promptAssemblyRef }),
       });
       draft.entities.attempts[attemptId] = {
-        schemaVersion: "run-attempt.v1",
+        schemaVersion: "run-attempt.v2",
         attemptId,
         productRunId: input.productRunId,
         kind: "execution",
@@ -394,7 +387,7 @@ export async function beginRunAttempt(
     throw notFound("Execution Attempt或输入证据不存在");
   }
   const resolved = resolveExecutionStepContext(snapshot, contract, input.stepId);
-  const nodePrompt = workflowNodePromptFor(snapshot, input.productRunId, "execute.plan");
+  const promptAssemblyRef = workflowNodePromptRefFor(snapshot, input.productRunId, "execute.plan");
   const expectedManifestSha256 = computeExecutionInputManifestSha256({
     executionContractId: contract.executionContractId,
     approvedPlanSha256: contract.approvedPlanSha256,
@@ -403,16 +396,7 @@ export async function beginRunAttempt(
     dependencyRefs: input.dependencyRefs,
     promptTemplateVersion: input.promptTemplateVersion,
     modelConfigVersion: input.modelConfigVersion,
-    ...(nodePrompt === undefined
-      ? {}
-      : {
-          promptAssemblyRef: {
-            promptAssemblyId: nodePrompt.promptAssemblyId,
-            sha256: nodePrompt.promptAssemblySha256,
-            definitionNodeId: nodePrompt.definitionNodeId,
-            nodeAssemblySha256: nodePrompt.nodeAssemblySha256,
-          },
-        }),
+    ...(promptAssemblyRef === undefined ? {} : { promptAssemblyRef }),
   });
   if (attempt.inputManifestSha256 !== expectedManifestSha256) {
     throw revisionConflict("Execution Attempt的输入Manifest与冻结上下文不一致");
@@ -421,6 +405,7 @@ export async function beginRunAttempt(
     attemptId: committedAttemptId,
     inputManifestSha256: expectedManifestSha256,
     contextItems: resolved.contextItems,
+    ...(promptAssemblyRef === undefined ? {} : { promptAssemblyRef }),
   };
 }
 

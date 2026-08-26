@@ -9,4 +9,10 @@ export const agentKeySchema = z.enum([
   "note_extractor",
 ]);
 
+export const agentProfileAgentKeySchema = z.enum([
+  ...agentKeySchema.options,
+  "governance_reviewer",
+]);
+
 export type AgentKey = z.infer<typeof agentKeySchema>;
+export type AgentProfileAgentKey = z.infer<typeof agentProfileAgentKeySchema>;

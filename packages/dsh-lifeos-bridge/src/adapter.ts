@@ -328,6 +328,7 @@ const DEFINITELY_UNCOMMITTED_MESSAGE_PROBLEM_CODES = new Set([
   "command_id_reused",
   "forbidden",
   "not_found",
+  "policy_denied",
   "revision_conflict",
   "validation_failed",
 ]);

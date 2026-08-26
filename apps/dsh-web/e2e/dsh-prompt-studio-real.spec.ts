@@ -567,3 +567,66 @@ test("会话发送前分别预览Prompt配置与DSH到Bridge的真实发送边�
     debugReviewPanel.getByRole("switch", { name: "DSH → Bridge，当前关闭" }),
   ).toHaveAttribute("aria-checked", "false");
 });
+
+test("工程规范在DSH归类展示、可勾选，并进入独立治理检查节点Prompt", async ({ page }) => {
+  await page.goto("/");
+  await enterPromptStudio(page);
+  const studio = page.getByTestId("lifeos-prompt-studio");
+  for (const title of ["方案、架构与代码变更", "工程验证与交付证据", "Sub-agent 协作与汇合"]) {
+    await expect(studio.getByRole("button", { name: new RegExp(title, "u") })).toBeVisible();
+  }
+
+  const composer = await openReadyConversation(page);
+  await page.getByTestId("lifeos-workflow-current").click();
+  await page.getByRole("menuitem", { name: /^规划执行工作流 规划 · 系统$/u }).click();
+  await page.getByTestId("lifeos-workflow-config-open").click();
+  const workflowDialog = page.getByRole("dialog", { name: /配置 · 规划执行工作流/u });
+  const governanceAgent = workflowDialog.getByTestId(
+    "lifeos-workflow-agent-planning.governance-check",
+  );
+  await expect(governanceAgent).toContainText("工程治理检查 Agent");
+  await expect(governanceAgent).toContainText("只允许提交结构化工程治理检查候选");
+  await workflowDialog.getByRole("button", { name: "关闭工作流配置", exact: true }).click();
+
+  const currentInput = "实现一个保持架构边界并带合同测试的小纵向";
+  await composer.fill(currentInput);
+  await page.getByTestId("lifeos-prompt-composer-open").click();
+  const promptDialog = page.getByRole("dialog", { name: "本次 Prompt" });
+  const choices = [
+    ["rules", "方案、架构与代码变更"],
+    ["requirements", "工程验证与交付证据"],
+    ["experience", "Sub-agent 协作与汇合"],
+  ] as const;
+  for (const [regionKey, title] of choices) {
+    const region = page.getByTestId(`lifeos-prompt-region-${regionKey}`);
+    const row = region.locator(".lifeos-prompt-choice-row").filter({ hasText: title });
+    await expect(row).toBeVisible();
+    const checkbox = row.getByRole("checkbox", { name: `选择${title}` });
+    if (!(await checkbox.isChecked())) await checkbox.click();
+    await expect(checkbox).toBeChecked();
+    await expect(region.getByRole("button", { name: "追加", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  }
+
+  await promptDialog.getByRole("button", { name: "预览提示词配置", exact: true }).click();
+  const configuration = promptDialog.getByTestId("lifeos-prompt-configuration-preview");
+  for (const [, title] of choices) await expect(configuration).toContainText(title);
+  await expect(configuration).toContainText("prompts/fragments/rules/controlled-project-change.md");
+  await expect(configuration).toContainText(
+    "prompts/fragments/requirements/engineering-evidence.md",
+  );
+  await expect(configuration).toContainText("prompts/fragments/experience/multi-agent-delivery.md");
+
+  await promptDialog.getByRole("button", { name: "预览完整 Prompt", exact: true }).click();
+  const preview = promptDialog.getByTestId("lifeos-prompt-turn-preview");
+  await expect(preview).toContainText("planning.governance-check");
+  await expect(preview).toContainText("agent.governance_check");
+  await expect(preview).toContainText("工程治理检查 Agent");
+  const governancePrompt = preview.getByTestId("lifeos-effective-system-planning.governance-check");
+  for (const marker of ["状态/事务Owner", "共享Conformance", "同模型Agent"]) {
+    await expect(governancePrompt).toContainText(marker);
+  }
+  await expect(preview).toContainText(currentInput);
+});

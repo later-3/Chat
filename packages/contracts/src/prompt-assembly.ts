@@ -29,8 +29,10 @@ export const PROMPT_ASSEMBLY_V2_SCHEMA_VERSION = "prompt-assembly.v2";
 export const PROMPT_ASSEMBLY_V3_SCHEMA_VERSION = "prompt-assembly.v3";
 export const PROMPT_ASSEMBLY_V4_SCHEMA_VERSION = "prompt-assembly.v4";
 export const PROMPT_ASSEMBLY_V5_SCHEMA_VERSION = "prompt-assembly.v5";
+export const PROMPT_ASSEMBLY_V6_SCHEMA_VERSION = "prompt-assembly.v6";
 export const WORKFLOW_PROMPT_PROFILE_VERSION = "workflow-agent-prompt-profile.v1";
 export const WORKFLOW_PROMPT_COMPILER_VERSION = "workflow-agent-prompt-compiler.v1";
+export const WORKFLOW_PROMPT_COMPILER_V6_VERSION = "workflow-agent-prompt-compiler.v2";
 export const DIRECT_PROMPT_PROFILE_VERSION = "direct-agent-prompt-profile.v1";
 export const DIRECT_PROMPT_COMPILER_VERSION = "direct-agent-prompt-compiler.v1";
 export const DIRECT_PROMPT_PROFILE_V2_VERSION = "direct-agent-prompt-profile.v2";
@@ -693,11 +695,16 @@ export const promptAssemblyV5Schema = z
     }
   });
 
-export const promptBearingNodeTypeSchema = z.enum([
+export const legacyPromptBearingNodeTypeSchema = z.enum([
   "agent.plan",
   "agent.direct",
   "execute.plan",
   "note.extract",
+]);
+
+export const promptBearingNodeTypeSchema = z.enum([
+  ...legacyPromptBearingNodeTypeSchema.options,
+  "agent.governance_check",
 ]);
 
 /**
@@ -716,6 +723,11 @@ export const promptNodeAssemblySchema = z
   })
   .strict();
 
+/** v3已发布且从未包含治理Reviewer；继续精确读取，不在原literal上扩义。 */
+export const promptNodeAssemblyV3Schema = promptNodeAssemblySchema.extend({
+  nodeType: legacyPromptBearingNodeTypeSchema,
+});
+
 /**
  * 非Direct Workflow在Run创建时冻结的Prompt计划。它不是一次Provider Payload：
  * Planner、Executor和Note会在各自执行时把当前输入/上下文/工具加入Runtime Envelope。
@@ -730,6 +742,46 @@ export const promptAssemblyV3Schema = z
     workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
     profileVersion: z.literal(WORKFLOW_PROMPT_PROFILE_VERSION),
     compilerVersion: z.literal(WORKFLOW_PROMPT_COMPILER_VERSION),
+    workspaceRootId: promptWorkspaceRootIdSchema.optional(),
+    selection: promptTurnSelectionInputV2Schema,
+    sharedRegions: z.array(promptAssemblyRegionSchema).max(32),
+    nodes: z.array(promptNodeAssemblyV3Schema).min(1).max(32),
+    sha256: sha256Schema,
+    createdAt: z.iso.datetime(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.selection.workflowDefinitionRevisionId !== value.workflowDefinitionRevisionId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["selection", "workflowDefinitionRevisionId"],
+        message: "Prompt选择与Workflow Revision不一致",
+      });
+    }
+    if (value.selection.workspaceRootId !== value.workspaceRootId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["selection", "workspaceRootId"],
+        message: "Prompt选择与Assembly Workspace不一致",
+      });
+    }
+    const nodeIds = new Set(value.nodes.map((node) => node.definitionNodeId));
+    if (nodeIds.size !== value.nodes.length) {
+      ctx.addIssue({ code: "custom", path: ["nodes"], message: "Prompt节点Assembly重复" });
+    }
+  });
+
+/** v6首次把Planner、Executor与Governance Reviewer的选择精确冻结为同一Run事实。 */
+export const promptAssemblyV6Schema = z
+  .object({
+    schemaVersion: z.literal(PROMPT_ASSEMBLY_V6_SCHEMA_VERSION),
+    promptAssemblyId: promptAssemblyIdSchema,
+    productSessionId: productSessionIdSchema,
+    productRunId: productRunIdSchema,
+    sourceMessageId: messageIdSchema,
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    profileVersion: z.literal(WORKFLOW_PROMPT_PROFILE_VERSION),
+    compilerVersion: z.literal(WORKFLOW_PROMPT_COMPILER_V6_VERSION),
     workspaceRootId: promptWorkspaceRootIdSchema.optional(),
     selection: promptTurnSelectionInputV2Schema,
     sharedRegions: z.array(promptAssemblyRegionSchema).max(32),
@@ -765,6 +817,7 @@ export const promptAssemblySchema = z.union([
   promptAssemblyV3Schema,
   promptAssemblyV4Schema,
   promptAssemblyV5Schema,
+  promptAssemblyV6Schema,
 ]);
 
 export type PromptCompositionMode = z.infer<typeof promptCompositionModeSchema>;
@@ -786,3 +839,4 @@ export type PromptAssemblyV3 = z.infer<typeof promptAssemblyV3Schema>;
 export type PromptAssemblyV4 = z.infer<typeof promptAssemblyV4Schema>;
 export type SupervisedPromptRoleAssemblyV5 = z.infer<typeof supervisedPromptRoleAssemblyV5Schema>;
 export type PromptAssemblyV5 = z.infer<typeof promptAssemblyV5Schema>;
+export type PromptAssemblyV6 = z.infer<typeof promptAssemblyV6Schema>;

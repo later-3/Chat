@@ -1,5 +1,6 @@
 import {
   PRODUCT_API_SCHEMA_VERSION,
+  WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
   workflowBlueprintsDtoSchema,
   workflowCatalogDtoSchema,
   workflowDefinitionsDtoSchema,
@@ -31,7 +32,7 @@ import {
 export async function getWorkflowCatalog(_deps: ApplicationDeps) {
   return {
     catalog: workflowCatalogDtoSchema.parse({
-      schemaVersion: PRODUCT_API_SCHEMA_VERSION,
+      schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
       nodes: DEFAULT_NODE_CATALOG.list().map((descriptor) => ({
         nodeType: descriptor.nodeType,
         schemaVersion: descriptor.schemaVersion,
@@ -52,9 +53,9 @@ export async function getWorkflowCatalog(_deps: ApplicationDeps) {
 export async function getWorkflowBlueprints(_deps: ApplicationDeps) {
   return {
     blueprints: workflowBlueprintsDtoSchema.parse({
-      schemaVersion: PRODUCT_API_SCHEMA_VERSION,
+      schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
       blueprints: DEFAULT_WORKFLOW_BLUEPRINTS.list().map((blueprint) => ({
-        schemaVersion: PRODUCT_API_SCHEMA_VERSION,
+        schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
         blueprintKey: blueprint.blueprintKey,
         blueprintVersion: blueprint.blueprintVersion,
         title: workflowBlueprintCopy(blueprint.blueprintKey).title,
@@ -103,7 +104,7 @@ export async function getWorkflowDefinitions(
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   return {
     definitions: workflowDefinitionsDtoSchema.parse({
-      schemaVersion: PRODUCT_API_SCHEMA_VERSION,
+      schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
       definitions: Object.values(snapshot.entities.workflowDefinitions)
         .filter(
           (definition) =>
@@ -167,7 +168,7 @@ export async function getWorkflowRunConfigSummary(
         ];
   return {
     summary: workflowRunConfigSummaryDtoSchema.parse({
-      schemaVersion: PRODUCT_API_SCHEMA_VERSION,
+      schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
       productRunId: run.productRunId,
       ...(run.workflowRunSpecId !== undefined ? { workflowRunSpecId: run.workflowRunSpecId } : {}),
       runnerFamily: run.runnerFamily,
@@ -208,7 +209,7 @@ function toPublishedDefinitionDto(
     revision.blueprintVersion,
   );
   return {
-    schemaVersion: PRODUCT_API_SCHEMA_VERSION,
+    schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
     workflowDefinitionId: revision.workflowDefinitionId,
     workflowDefinitionRevisionId: revision.workflowDefinitionRevisionId,
     definitionRevision: revision.definitionRevision,

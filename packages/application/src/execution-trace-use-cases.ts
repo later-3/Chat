@@ -6,7 +6,7 @@ import {
   type WorkflowExecutionTraceDto,
   type WorkflowExecutionTraceValueDto,
   type NodeProductRef,
-  type PiTraceActivityDto,
+  type PiTraceActivityV2Dto as PiTraceActivityDto,
   type PrincipalId,
   type ProductSnapshot,
   type ProductRunId,
@@ -54,6 +54,7 @@ interface PiAttemptBinding {
 const AGENT_LABELS: Record<PiTraceActivityDto["nodeKind"], string> = {
   planner: "规划 Agent",
   executor: "执行 Agent",
+  governance_reviewer: "工程治理检查 Agent",
   direct_agent: "直接 Agent",
   note_capture: "笔记捕获 Agent",
 };

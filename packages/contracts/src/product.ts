@@ -38,6 +38,7 @@ import {
   workflowMemoryContextIdSchema,
 } from "./ids.js";
 import { sha256Schema } from "./hash.js";
+import { governanceReviewRecordSchema } from "./governance-review.js";
 import { B2_MAX_PLAN_STEPS } from "./versions.js";
 import { workflowRunnerFamilySchema } from "./workflow-definition.js";
 
@@ -296,12 +297,21 @@ export const productRunSchema = z.discriminatedUnion("runKind", [
 
 /* ---------- Run Attempt ---------- */
 
-export const runAttemptKindSchema = z.enum(["workflow", "planning", "execution", "direct_agent"]);
+export const legacyRunAttemptKindSchema = z.enum([
+  "workflow",
+  "planning",
+  "execution",
+  "direct_agent",
+]);
+export const runAttemptKindSchema = z.enum([
+  ...legacyRunAttemptKindSchema.options,
+  "governance_review",
+]);
 export const runAttemptOutcomeSchema = z.enum(["running", "success", "failure"]);
 
-export const runAttemptSchema = z
+export const runAttemptV2Schema = z
   .object({
-    schemaVersion: z.literal("run-attempt.v1"),
+    schemaVersion: z.literal("run-attempt.v2"),
     attemptId: runAttemptIdSchema,
     productRunId: productRunIdSchema,
     kind: runAttemptKindSchema,
@@ -311,6 +321,8 @@ export const runAttemptSchema = z
     stepId: z.string().min(1).max(100).optional(),
     /** execution Attempt绑定不可变Execution Contract及已成功依赖血缘。 */
     executionContractId: executionContractIdSchema.optional(),
+    /** governance_review Attempt绑定唯一待审Execution Candidate。 */
+    executionCandidateId: executionCandidateIdSchema.optional(),
     dependencyRefs: z
       .array(
         z
@@ -350,6 +362,18 @@ export const runAttemptSchema = z
     ...entityBaseFields,
   })
   .strict();
+
+/** 已发布v1只读：没有治理Attempt，也没有Execution Candidate绑定。 */
+export const runAttemptV1Schema = runAttemptV2Schema
+  .omit({ executionCandidateId: true })
+  .extend({
+    schemaVersion: z.literal("run-attempt.v1"),
+    kind: legacyRunAttemptKindSchema,
+    executionCandidateId: z.never().optional(),
+  })
+  .strict();
+
+export const runAttemptSchema = z.union([runAttemptV1Schema, runAttemptV2Schema]);
 
 /* ---------- Plan ---------- */
 
@@ -620,15 +644,17 @@ export const executionCandidateSchema = z
 
 /* ---------- Validation Result ---------- */
 
-export const validationResultSchema = z
+export const validationResultV2Schema = z
   .object({
-    schemaVersion: z.literal("validation-result.v1"),
+    schemaVersion: z.literal("validation-result.v2"),
     validationResultId: validationResultIdSchema,
     productRunId: productRunIdSchema,
     executionContractId: executionContractIdSchema,
     executionCandidateId: executionCandidateIdSchema,
     /** 旧固定Runner缺省为true；新Runner必须显式持久化冻结的验证策略。 */
     strictEvidence: z.boolean().optional(),
+    /** 新治理检查节点冻结的语义审查；历史确定性Validation可以缺省。 */
+    governanceReview: governanceReviewRecordSchema.optional(),
     outcome: z.enum(["pass", "fail"]),
     failures: z
       .array(
@@ -646,6 +672,17 @@ export const validationResultSchema = z
     ...entityBaseFields,
   })
   .strict();
+
+/** 已发布v1只读：只记录确定性Validation，不接受治理Reviewer语义。 */
+export const validationResultV1Schema = validationResultV2Schema
+  .omit({ governanceReview: true })
+  .extend({
+    schemaVersion: z.literal("validation-result.v1"),
+    governanceReview: z.never().optional(),
+  })
+  .strict();
+
+export const validationResultSchema = z.union([validationResultV1Schema, validationResultV2Schema]);
 
 /* ---------- Artifact ---------- */
 

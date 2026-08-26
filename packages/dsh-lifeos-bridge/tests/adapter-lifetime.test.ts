@@ -480,39 +480,58 @@ test("v12 unknown A blocks B, Receipt replay binds A, and a definite 4xx alone r
       assert.equal(request?.submissionStatus, "bound");
     }
 
-    // C：跨旧路由/种类仍冲突的Command ID证明A没有可恢复提交，之后B只提交一次普通Workflow。
-    {
-      const statePath = join(directory, "case-c.json");
-      const sessionId = "dsh-v12-matrix-c";
-      const inputA = messageInput(sessionId, "旧项目初始化A确定拒绝");
-      const inputB = messageInput(sessionId, "拒绝后普通消息B");
+    // C：两类确定4xx都证明A没有可恢复提交，之后B只提交一次普通Workflow。
+    for (const rejection of [
+      {
+        suffix: "command",
+        status: 409,
+        code: "command_id_reused",
+        recoveryAction: "contact_support",
+        message: "同ID已被不同Command占用，当前A确定未提交",
+      },
+      {
+        suffix: "policy",
+        status: 422,
+        code: "policy_denied",
+        recoveryAction: "revise_request",
+        message: "Workflow配置被策略拒绝且未提交",
+      },
+    ] as const) {
+      const statePath = join(directory, `case-c-${rejection.suffix}.json`);
+      const sessionId = `dsh-v12-matrix-c-${rejection.suffix}`;
+      const inputA = messageInput(sessionId, `旧项目初始化A确定拒绝-${rejection.suffix}`);
+      const inputB = messageInput(sessionId, `拒绝后普通消息B-${rejection.suffix}`);
       const frozen = await writeV12UnknownFirstRequest(statePath, sessionId, inputA);
       const submittedPlans: BridgeChatDispatchPlan["submitMessage"][] = [];
+      const productSessionId = `psn_v12matrixc${rejection.suffix}1`;
+      const userMessageId = `msg_v12matrixc${rejection.suffix}user1`;
+      const assistantMessageId = `msg_v12matrixc${rejection.suffix}assistant1`;
+      const productRunId = `run_v12matrixc${rejection.suffix}1`;
       const chat = {
         submitFirstMessageFromDispatch: async (plan: BridgeChatDispatchPlan["submitMessage"]) => {
           submittedPlans.push(plan);
           if (submittedPlans.length === 1) {
             throw new ChatProductApiError(
-              409,
-              "command_id_reused",
+              rejection.status,
+              rejection.code,
               false,
-              "contact_support",
-              "同ID已被不同Command占用，当前A确定未提交",
+              rejection.recoveryAction,
+              rejection.message,
             );
           }
           return {
-            session: { sessionId: "psn_v12matrixc1" },
-            message: { messageId: "msg_v12matrixcuser1", sessionId: "psn_v12matrixc1" },
+            session: { sessionId: productSessionId },
+            message: { messageId: userMessageId, sessionId: productSessionId },
             run: {
-              productRunId: "run_v12matrixc1",
-              sourceMessageId: "msg_v12matrixcuser1",
+              productRunId,
+              sourceMessageId: userMessageId,
               status: "succeeded",
-              finalMessageId: "msg_v12matrixcassistant1",
+              finalMessageId: assistantMessageId,
             } as ChatRun,
           };
         },
         getMessage: async () => ({
-          messageId: "msg_v12matrixcassistant1",
+          messageId: assistantMessageId,
           role: "assistant",
           content: { format: "markdown", text: "普通消息只提交一次" },
         }),
@@ -543,7 +562,7 @@ test("v12 unknown A blocks B, Receipt replay binds A, and a definite 4xx alone r
         overrides: [],
       });
       assert.equal(requestB?.submissionStatus, "bound");
-      assert.equal(requestB?.productRunId, "run_v12matrixc1");
+      assert.equal(requestB?.productRunId, productRunId);
     }
   } finally {
     await rm(directory, { recursive: true, force: true });

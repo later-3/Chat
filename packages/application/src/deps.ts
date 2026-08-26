@@ -57,9 +57,10 @@ import type {
   ProjectWorkspaceBindingId,
   ExecutionTracePage,
   RunActivityEvent,
-  AgentKey,
+  AgentProfileAgentKey,
   AgentRuntimeBaselineDto,
   ExecutionEvidenceRef,
+  ExecutionEvidenceVerificationReceipt,
 } from "@chat/contracts";
 import type { PromptFragmentId, PromptFragmentRevisionId } from "@chat/contracts";
 import type { PromptCatalogPort } from "./prompt-catalog-port.js";
@@ -107,7 +108,7 @@ export interface ExecutionEvidenceVerifierPort {
   verify(input: {
     readonly executionAttemptId: string;
     readonly evidenceRefs: readonly ExecutionEvidenceRef[];
-  }): Promise<void>;
+  }): Promise<ExecutionEvidenceVerificationReceipt>;
 }
 
 /**
@@ -194,7 +195,10 @@ export interface PromptFragmentIdFactory {
  * Chat拥有的可写Prompt并排投影，但不会复制或重写上游Agent实现。
  */
 export interface AgentRuntimeProfileReaderPort {
-  read(agentKey: AgentKey, workspaceRootId?: string): Promise<AgentRuntimeBaselineDto | undefined>;
+  read(
+    agentKey: AgentProfileAgentKey,
+    workspaceRootId?: string,
+  ): Promise<AgentRuntimeBaselineDto | undefined>;
 }
 
 export interface ProjectBootstrapIdFactory {

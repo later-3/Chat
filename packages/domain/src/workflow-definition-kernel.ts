@@ -16,6 +16,7 @@ export const WORKFLOW_NODE_TYPES = [
   "agent.research",
   "agent.plan",
   "agent.direct",
+  "agent.governance_check",
   "human.plan_review",
   "human.prompt_review",
   "execute.plan",

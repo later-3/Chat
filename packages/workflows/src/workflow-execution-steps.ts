@@ -2,6 +2,7 @@ import { computeExecutionInputManifestSha256, hashCanonical } from "@chat/domain
 import {
   EXECUTOR_PROMPT_TEMPLATE_VERSION,
   MODEL_CONFIG_VERSION,
+  type BeginRunAttemptResponse,
   type ExecutionContextItemDto,
   type ExecutionContract,
 } from "@chat/contracts";
@@ -31,6 +32,8 @@ export interface DurableExecutorStepCandidate extends ExecutorStepCandidate {
   readonly dependencyRefs: { stepId: string; executionAttemptId: string; sha256: string }[];
   readonly sha256: string;
 }
+
+type ExecutionPromptAssemblyRef = NonNullable<BeginRunAttemptResponse["promptAssemblyRef"]>;
 
 async function compileExecutionContractWithinStep(input: {
   productRunId: string;
@@ -111,6 +114,7 @@ export async function beginExecutionAttemptStep(input: {
   attemptId: string;
   inputManifestSha256: string;
   contextItems: readonly ExecutionContextItemDto[];
+  promptAssemblyRef?: ExecutionPromptAssemblyRef | undefined;
 }> {
   "use step";
   return runStep(input.productRunId, input.attemptId, "begin_execution_attempt", async () => {
@@ -124,6 +128,7 @@ export async function runPiExecutorStep(input: {
   executionAttemptId: string;
   inputManifestSha256: string;
   contextItems: readonly ExecutionContextItemDto[];
+  promptAssemblyRef?: ExecutionPromptAssemblyRef;
   dependencyResults: readonly (ExecutorDependencyResult & {
     executionAttemptId: string;
   })[];
@@ -141,6 +146,7 @@ async function runExecutorWithinStep(input: {
   executionAttemptId: string;
   inputManifestSha256: string;
   contextItems: readonly ExecutionContextItemDto[];
+  promptAssemblyRef?: ExecutionPromptAssemblyRef;
   dependencyResults: readonly (ExecutorDependencyResult & {
     executionAttemptId: string;
   })[];
@@ -175,6 +181,9 @@ async function runExecutorWithinStep(input: {
     })),
     promptTemplateVersion: EXECUTOR_PROMPT_TEMPLATE_VERSION,
     modelConfigVersion: MODEL_CONFIG_VERSION,
+    ...(input.promptAssemblyRef === undefined
+      ? {}
+      : { promptAssemblyRef: input.promptAssemblyRef }),
   });
   if (computedInputManifestSha256 !== input.inputManifestSha256) {
     throw new PiStepFailure("execution.input_manifest_mismatch", "执行输入证据不一致");
@@ -434,6 +443,9 @@ export async function executeAndPersistApprovedPlanStep(input: {
           executionAttemptId: begun.attemptId,
           inputManifestSha256: begun.inputManifestSha256,
           contextItems: begun.contextItems,
+          ...(begun.promptAssemblyRef === undefined
+            ? {}
+            : { promptAssemblyRef: begun.promptAssemblyRef }),
           dependencyResults,
         });
         await completeRunAttemptWithinStep({

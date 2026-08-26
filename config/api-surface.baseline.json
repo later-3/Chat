@@ -6,7 +6,8 @@
     "PromptFragmentCommandResultDto",
     "RuleCommandResultDto",
     "RuleTagCommandResultDto",
-    "WorkflowDefinitionCommandResultDto"
+    "WorkflowDefinitionCommandResultDto",
+    "WorkflowDefinitionCommandResultV2Dto"
   ],
   "deprecated": [],
   "generation": {
@@ -20,7 +21,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [".", "./composition", "./outbox-dispatcher"],
+      "exportPaths": [".", "./composition", "./outbox-dispatcher", "./prompt-catalog"],
       "exports": {
         ".": {
           "import": "./src/app.ts",
@@ -33,6 +34,10 @@
         "./outbox-dispatcher": {
           "import": "./src/outbox-dispatcher.ts",
           "types": "./src/outbox-dispatcher.ts"
+        },
+        "./prompt-catalog": {
+          "import": "./src/prompt-catalog.ts",
+          "types": "./src/prompt-catalog.ts"
         }
       },
       "name": "@chat/api",
@@ -83,6 +88,17 @@
           "target": "./src/outbox-dispatcher.ts",
           "transitiveSignatureSha256": "b3f5cd7ed7ccba304254559fbb96c2b8014394e1c97b68467506fd6a0fc227e9",
           "visibility": "public"
+        },
+        {
+          "conditions": {
+            "import": "./src/prompt-catalog.ts",
+            "types": "./src/prompt-catalog.ts"
+          },
+          "exportedSymbols": ["createFilePromptCatalog"],
+          "key": "./prompt-catalog",
+          "target": "./src/prompt-catalog.ts",
+          "transitiveSignatureSha256": "42a2fd3a8b47aa0249384780d54f07d4296d02f502a5d327ed7840b78d5a5d8e",
+          "visibility": "public"
         }
       ]
     },
@@ -114,7 +130,7 @@
         }
       },
       "name": "@chat/application",
-      "publicEntrySignatureSha256": "c70f439868d2c8df559a1739538079a38c2bd0a190ab53363996b6503c8d1d83",
+      "publicEntrySignatureSha256": "b85696dc242b252721beb4cb9bbbdd1ae36ca53034bd9bb0c911b8fb809df147",
       "subpaths": [
         {
           "conditions": {
@@ -392,6 +408,7 @@
             "PLANNER_LIMITS",
             "PlanningInput",
             "planningMemorySelectionForRun",
+            "prepareGovernanceReviewInput",
             "prepareNoteCaptureInputForRuntime",
             "preparePlaneProjectOperation",
             "preparePlanningMemoryContext",
@@ -560,6 +577,7 @@
             "WorkflowMemoryWriteReconcileInput",
             "WorkflowMemoryWriteReconcileOutput",
             "workflowNodePromptFor",
+            "workflowNodePromptRefFor",
             "WorkflowProductClientPort",
             "WorkflowRequiredRole",
             "WorkflowResumePort",
@@ -569,7 +587,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "c70f439868d2c8df559a1739538079a38c2bd0a190ab53363996b6503c8d1d83",
+          "transitiveSignatureSha256": "b85696dc242b252721beb4cb9bbbdd1ae36ca53034bd9bb0c911b8fb809df147",
           "visibility": "public"
         },
         {
@@ -589,7 +607,7 @@
           ],
           "key": "./workflow-kernel-fixtures",
           "target": "./src/workflow-kernel-fixtures.ts",
-          "transitiveSignatureSha256": "b09a9a43e8d991d69ad392e3397361ea110b0b0dc59c625385357bb6549b67aa",
+          "transitiveSignatureSha256": "64344ed619e01b1a81ebebd75997fa2debbe9ea77aac6244cbe86c99b19b349a",
           "visibility": "public"
         },
         {
@@ -609,7 +627,7 @@
           ],
           "key": "./workflow-run-spec-compiler",
           "target": "./src/workflow-run-spec-compiler.ts",
-          "transitiveSignatureSha256": "ab09235606e8329be0197e23fc0b5de743e38aa13d74bbf698330953766f0b13",
+          "transitiveSignatureSha256": "4d69208577efc164f4a34c073c6f8f29c4bb66c61f04344e944081a8572cd987",
           "visibility": "public"
         },
         {
@@ -621,6 +639,7 @@
             "CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION",
             "CONFIGURABLE_PLANNING_RUNNER_FAMILY",
             "createLegacySystemDirectAgentDefinition",
+            "createLegacySystemSimplePlanningDefinition",
             "createSystemDirectAgentDefinition",
             "createSystemMemoryPlanningDefinition",
             "createSystemNoteDefinition",
@@ -628,13 +647,17 @@
             "createSystemSimplePlanningDefinition",
             "DIRECT_AGENT_RUNNER_BUNDLE_VERSION",
             "DIRECT_AGENT_RUNNER_FAMILY",
+            "LEGACY_CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION",
             "LEGACY_PLANNING_RUNNER_BUNDLE_VERSION",
             "LEGACY_PLANNING_RUNNER_FAMILY",
             "LEGACY_SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID",
             "LEGACY_SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID",
             "LEGACY_SYSTEM_PLANNING_WORKFLOW_REVISION_ID",
             "LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID",
+            "LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID",
+            "LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID",
             "legacySystemDirectAgentSemanticRoot",
+            "legacySystemSimplePlanningSemanticRoot",
             "NOTE_CAPTURE_RUNNER_BUNDLE_VERSION",
             "NOTE_CAPTURE_RUNNER_FAMILY",
             "RETIRED_SYSTEM_WORKFLOW_DEFINITION_IDS",
@@ -661,7 +684,7 @@
           ],
           "key": "./workflow-system-definitions",
           "target": "./src/workflow-system-definitions.ts",
-          "transitiveSignatureSha256": "5b4dcc128caa06c03f8ba30613d9c17b6dc799f9c19406965a2d7eb94a48fa2d",
+          "transitiveSignatureSha256": "9cda08971ccca9f5276e805f383e69136b021ee77b07c2a25c757540eb29a9d3",
           "visibility": "public"
         }
       ]
@@ -685,7 +708,7 @@
         }
       },
       "name": "@chat/contracts",
-      "publicEntrySignatureSha256": "a06d6bfc74a7bb55f7141ec059293f9e30d80fdebf718dd60b3da536bb23394e",
+      "publicEntrySignatureSha256": "cf0fc9a1e1f7dd627d2999f7da8addd6091ff363b2f7af816d86bb559fd8a738",
       "subpaths": [
         {
           "conditions": {
@@ -711,12 +734,16 @@
             "agentKeySchema",
             "AgentPiBuiltinToolName",
             "agentPiBuiltinToolNameSchema",
+            "AgentProfileAgentKey",
+            "agentProfileAgentKeySchema",
             "AgentProfileDto",
             "agentProfileDtoSchema",
             "AgentProfilesDto",
             "agentProfilesDtoSchema",
             "agentProfilesV2DtoSchema",
+            "agentProfilesV3DtoSchema",
             "agentProfileV2DtoSchema",
+            "agentProfileV3DtoSchema",
             "AgentResourceMode",
             "agentResourceModeSchema",
             "AgentResources",
@@ -1058,6 +1085,8 @@
             "executionDependencyRefSchema",
             "ExecutionEvidenceRef",
             "executionEvidenceRefSchema",
+            "ExecutionEvidenceVerificationReceipt",
+            "executionEvidenceVerificationReceiptSchema",
             "ExecutionStepTraceDto",
             "executionStepTraceDtoSchema",
             "executionTraceCursorSchema",
@@ -1080,6 +1109,18 @@
             "getPlaneProjectBindingResponseSchema",
             "getPlaneProjectSnapshotQuerySchema",
             "getPlaneProjectSnapshotResponseSchema",
+            "GOVERNANCE_REVIEW_ACTIVE_TIMEOUT_MS",
+            "GOVERNANCE_REVIEW_MAX_TURNS",
+            "GOVERNANCE_REVIEW_PROFILE_VERSION",
+            "GOVERNANCE_REVIEW_TOKEN_BUDGET",
+            "governanceEvidenceKeySchema",
+            "GovernanceReviewCandidate",
+            "governanceReviewCandidateSchema",
+            "governanceReviewFindingSchema",
+            "GovernanceReviewInputDto",
+            "governanceReviewInputDtoSchema",
+            "GovernanceReviewRecord",
+            "governanceReviewRecordSchema",
             "HandoffProjectWorkPayload",
             "handoffProjectWorkPayloadSchema",
             "inspectDirectAgentConfigurationSource",
@@ -1089,11 +1130,14 @@
             "internalContextPackageRefSchema",
             "internalWorkflowMemoryContextRefSchema",
             "LEGACY_AGENT_PROFILE_API_SCHEMA_VERSION",
+            "LEGACY_AGENT_PROFILE_V3_API_SCHEMA_VERSION",
             "LEGACY_AGENT_VERSION_SCHEMA_VERSION",
             "LEGACY_DIRECT_PROMPT_COMPILER_VERSION",
             "LEGACY_DIRECT_PROMPT_PROFILE_VERSION",
             "legacyAgentVersionV1HashInputSchema",
             "legacyAgentVersionV1Schema",
+            "legacyPromptBearingNodeTypeSchema",
+            "legacyRunAttemptKindSchema",
             "listMemoryProvidersResponseSchema",
             "listMemoryWritesQuerySchema",
             "listMemoryWritesResponseSchema",
@@ -1352,6 +1396,8 @@
             "piTraceActivityDtoSchema",
             "piTraceActivityKindSchema",
             "piTraceActivityStatusSchema",
+            "PiTraceActivityV2Dto",
+            "piTraceActivityV2DtoSchema",
             "planAssumptionSchema",
             "PlanContent",
             "planContentSchema",
@@ -1436,6 +1482,10 @@
             "planRevisionSchema",
             "planRevisionStatusSchema",
             "planStepSchema",
+            "PrepareGovernanceReviewInputRequest",
+            "prepareGovernanceReviewInputRequestSchema",
+            "PrepareGovernanceReviewInputResponse",
+            "prepareGovernanceReviewInputResponseSchema",
             "PrepareNoteCaptureInputRuntimeRequest",
             "prepareNoteCaptureInputRuntimeRequestSchema",
             "PrepareNoteCaptureInputRuntimeResponse",
@@ -1805,9 +1855,11 @@
             "PROMPT_ASSEMBLY_V3_SCHEMA_VERSION",
             "PROMPT_ASSEMBLY_V4_SCHEMA_VERSION",
             "PROMPT_ASSEMBLY_V5_SCHEMA_VERSION",
+            "PROMPT_ASSEMBLY_V6_SCHEMA_VERSION",
             "PROMPT_REVIEW_CANONICAL_PAYLOAD_MAX_BYTES",
             "PROMPT_REVIEW_READABLE_RENDERER_VERSION",
             "PROMPT_STUDIO_API_SCHEMA_VERSION",
+            "PROMPT_TURN_PREVIEW_API_SCHEMA_VERSION",
             "PromptAssembly",
             "PromptAssemblyBudget",
             "promptAssemblyBudgetSchema",
@@ -1830,6 +1882,8 @@
             "promptAssemblyV4Schema",
             "PromptAssemblyV5",
             "promptAssemblyV5Schema",
+            "PromptAssemblyV6",
+            "promptAssemblyV6Schema",
             "PromptBearingNodeType",
             "promptBearingNodeTypeSchema",
             "PromptCompositionMode",
@@ -1877,6 +1931,7 @@
             "promptFragmentSummaryDtoSchema",
             "PromptNodeAssembly",
             "promptNodeAssemblySchema",
+            "promptNodeAssemblyV3Schema",
             "PromptNodeSelectionInput",
             "promptNodeSelectionInputSchema",
             "PromptRegionCompositionInput",
@@ -2112,6 +2167,8 @@
             "runAttemptKindSchema",
             "runAttemptOutcomeSchema",
             "runAttemptSchema",
+            "runAttemptV1Schema",
+            "runAttemptV2Schema",
             "RunContextDto",
             "runContextDtoSchema",
             "runContextMemoryDtoSchema",
@@ -2297,12 +2354,17 @@
             "ValidationResultId",
             "validationResultIdSchema",
             "validationResultSchema",
+            "validationResultV1Schema",
+            "validationResultV2Schema",
             "WORKFLOW_API_SCHEMA_VERSION",
             "WORKFLOW_DEFINITION_CONTRACT_LIMITS",
             "WORKFLOW_DEFINITION_ID",
             "WORKFLOW_DEFINITION_VERSION",
+            "WORKFLOW_DESIGNER_API_SCHEMA_VERSION",
             "WORKFLOW_DISPATCH_SCHEMA_VERSION",
             "WORKFLOW_EXECUTION_TRACE_SCHEMA_VERSION",
+            "WORKFLOW_PRODUCT_API_SCHEMA_VERSION",
+            "WORKFLOW_PROMPT_COMPILER_V6_VERSION",
             "WORKFLOW_PROMPT_COMPILER_VERSION",
             "WORKFLOW_PROMPT_PROFILE_VERSION",
             "WORKFLOW_RUNTIME_TRACE_SCHEMA_VERSION",
@@ -2317,15 +2379,21 @@
             "WorkflowDefinition",
             "WorkflowDefinitionCommandResultDto",
             "workflowDefinitionCommandResultDtoSchema",
+            "WorkflowDefinitionCommandResultV2Dto",
+            "workflowDefinitionCommandResultV2DtoSchema",
             "WorkflowDefinitionDetailDto",
             "workflowDefinitionDetailDtoSchema",
+            "WorkflowDefinitionDetailV2Dto",
+            "workflowDefinitionDetailV2DtoSchema",
             "WorkflowDefinitionElement",
+            "WorkflowDefinitionElementV2",
             "WorkflowDefinitionId",
             "workflowDefinitionIdSchema",
             "WorkflowDefinitionNodeDto",
             "workflowDefinitionNodeDtoSchema",
             "workflowDefinitionNodeIdSchema",
             "workflowDefinitionNodeTypeSchema",
+            "workflowDefinitionNodeTypeV2Schema",
             "WorkflowDefinitionPublishedDto",
             "workflowDefinitionPublishedDtoSchema",
             "WorkflowDefinitionRevision",
@@ -2333,15 +2401,22 @@
             "workflowDefinitionRevisionIdSchema",
             "WorkflowDefinitionRevisionInput",
             "workflowDefinitionRevisionInputSchema",
+            "workflowDefinitionRevisionInputV1Schema",
+            "workflowDefinitionRevisionInputV2Schema",
             "workflowDefinitionRevisionSchema",
             "workflowDefinitionRevisionStateSchema",
             "WorkflowDefinitionRevisionSummaryDto",
             "workflowDefinitionRevisionSummaryDtoSchema",
+            "workflowDefinitionRevisionV1Schema",
+            "workflowDefinitionRevisionV2Schema",
             "workflowDefinitionSchema",
             "WorkflowDefinitionsDto",
             "workflowDefinitionsDtoSchema",
             "WorkflowDefinitionSequence",
+            "WorkflowDefinitionSequenceV2",
             "workflowDefinitionStateSchema",
+            "workflowDefinitionV1Schema",
+            "workflowDefinitionV2Schema",
             "WorkflowDefinitionValidationDto",
             "workflowDefinitionValidationDtoSchema",
             "WorkflowDesignerAddress",
@@ -2354,6 +2429,8 @@
             "workflowDesignerOperationSchema",
             "WorkflowDesignerSlotDto",
             "workflowDesignerSlotDtoSchema",
+            "WorkflowDesignerSlotV2Dto",
+            "workflowDesignerSlotV2DtoSchema",
             "workflowExecutionPathSegmentSchema",
             "WorkflowExecutionTraceDto",
             "workflowExecutionTraceDtoSchema",
@@ -2389,6 +2466,7 @@
             "workflowMemoryWriteNodeConfigSchema",
             "workflowNodeAllowedActionSchema",
             "workflowNodeCatalogItemDtoSchema",
+            "workflowNodeCatalogItemV2DtoSchema",
             "WorkflowNodeDetailDto",
             "workflowNodeDetailDtoSchema",
             "WorkflowNodeDetailInclude",
@@ -2453,6 +2531,8 @@
             "WorkflowRunSpecId",
             "workflowRunSpecIdSchema",
             "workflowRunSpecSchema",
+            "workflowRunSpecV1Schema",
+            "workflowRunSpecV2Schema",
             "WorkflowRuntimeEventType",
             "workflowRuntimeEventTypeSchema",
             "WorkflowRuntimeResourceKind",
@@ -2476,6 +2556,7 @@
             "WorkflowRunViewDto",
             "workflowRunViewDtoSchema",
             "workflowSequenceBoundarySchema",
+            "workflowSequenceBoundaryV2Schema",
             "WorkflowStartRequest",
             "workflowStartRequestSchema",
             "workflowStartResponseSchema",
@@ -2498,7 +2579,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "a06d6bfc74a7bb55f7141ec059293f9e30d80fdebf718dd60b3da536bb23394e",
+          "transitiveSignatureSha256": "cf0fc9a1e1f7dd627d2999f7da8addd6091ff363b2f7af816d86bb559fd8a738",
           "visibility": "public"
         },
         {
@@ -2523,12 +2604,16 @@
             "agentKeySchema",
             "AgentPiBuiltinToolName",
             "agentPiBuiltinToolNameSchema",
+            "AgentProfileAgentKey",
+            "agentProfileAgentKeySchema",
             "AgentProfileDto",
             "agentProfileDtoSchema",
             "AgentProfilesDto",
             "agentProfilesDtoSchema",
             "agentProfilesV2DtoSchema",
+            "agentProfilesV3DtoSchema",
             "agentProfileV2DtoSchema",
+            "agentProfileV3DtoSchema",
             "AgentResourceMode",
             "agentResourceModeSchema",
             "AgentResources",
@@ -2710,6 +2795,7 @@
             "InteractionId",
             "interactionIdSchema",
             "LEGACY_AGENT_PROFILE_API_SCHEMA_VERSION",
+            "LEGACY_AGENT_PROFILE_V3_API_SCHEMA_VERSION",
             "LEGACY_AGENT_VERSION_SCHEMA_VERSION",
             "legacyAgentVersionV1HashInputSchema",
             "legacyAgentVersionV1Schema",
@@ -2813,6 +2899,8 @@
             "piTraceActivityDtoSchema",
             "piTraceActivityKindSchema",
             "piTraceActivityStatusSchema",
+            "PiTraceActivityV2Dto",
+            "piTraceActivityV2DtoSchema",
             "PlanDto",
             "planDtoSchema",
             "PLANE_PROJECT_COORDINATION_SCHEMA_VERSION",
@@ -3082,6 +3170,7 @@
             "projectWorkspaceDtoSchema",
             "projectWorkspaceV3DtoSchema",
             "PROMPT_STUDIO_API_SCHEMA_VERSION",
+            "PROMPT_TURN_PREVIEW_API_SCHEMA_VERSION",
             "PromptAssemblyId",
             "promptAssemblyIdSchema",
             "PromptAssemblyPreviewDto",
@@ -3335,7 +3424,9 @@
             "ValidationResultId",
             "validationResultIdSchema",
             "WORKFLOW_API_SCHEMA_VERSION",
+            "WORKFLOW_DESIGNER_API_SCHEMA_VERSION",
             "WORKFLOW_EXECUTION_TRACE_SCHEMA_VERSION",
+            "WORKFLOW_PRODUCT_API_SCHEMA_VERSION",
             "WORKFLOW_RUNTIME_TRACE_SCHEMA_VERSION",
             "WorkflowBlueprintDto",
             "workflowBlueprintDtoSchema",
@@ -3345,8 +3436,12 @@
             "workflowCatalogDtoSchema",
             "WorkflowDefinitionCommandResultDto",
             "workflowDefinitionCommandResultDtoSchema",
+            "WorkflowDefinitionCommandResultV2Dto",
+            "workflowDefinitionCommandResultV2DtoSchema",
             "WorkflowDefinitionDetailDto",
             "workflowDefinitionDetailDtoSchema",
+            "WorkflowDefinitionDetailV2Dto",
+            "workflowDefinitionDetailV2DtoSchema",
             "WorkflowDefinitionId",
             "workflowDefinitionIdSchema",
             "WorkflowDefinitionNodeDto",
@@ -3371,6 +3466,8 @@
             "workflowDesignerOperationSchema",
             "WorkflowDesignerSlotDto",
             "workflowDesignerSlotDtoSchema",
+            "WorkflowDesignerSlotV2Dto",
+            "workflowDesignerSlotV2DtoSchema",
             "WorkflowExecutionTraceDto",
             "workflowExecutionTraceDtoSchema",
             "WorkflowExecutionTraceValueDto",
@@ -3383,6 +3480,7 @@
             "workflowMemorySnapshotIdSchema",
             "workflowNodeAllowedActionSchema",
             "workflowNodeCatalogItemDtoSchema",
+            "workflowNodeCatalogItemV2DtoSchema",
             "WorkflowNodeDetailDto",
             "workflowNodeDetailDtoSchema",
             "WorkflowNodeDetailInclude",
@@ -3437,7 +3535,7 @@
           ],
           "key": "./public",
           "target": "./src/public.ts",
-          "transitiveSignatureSha256": "47f060a8360867a4eba6ccab852eec8be5ee9490d0c1075e712b867218d72159",
+          "transitiveSignatureSha256": "638996bc922ff1729f8fbd2f267e34cec1a5c5f938079925e6d784e76950fa5e",
           "visibility": "public"
         },
         {
@@ -3467,7 +3565,7 @@
         }
       },
       "name": "@chat/domain",
-      "publicEntrySignatureSha256": "9edbb7165719384ebef36ee3ec404ccadae74bd5625489930b30cb410004f27f",
+      "publicEntrySignatureSha256": "35b47b9f9f372fbbf3db0f9327254972a6b3618aa173c9aea9a5f0242cdbd032",
       "subpaths": [
         {
           "conditions": {
@@ -3556,6 +3654,7 @@
             "computeDirectAgentInputManifestSha256",
             "computeDirectRuntimeOperationRefSha256",
             "computeExecutionInputManifestSha256",
+            "computeGovernanceReviewInputManifestSha256",
             "computeMemoryBackendDescriptorSha256",
             "computeMemoryImportBackendDescriptorSha256",
             "computeMemoryImportRequestSha256",
@@ -3592,6 +3691,7 @@
             "computePromptAssemblyV3Sha256",
             "computePromptAssemblyV4Sha256",
             "computePromptAssemblyV5Sha256",
+            "computePromptAssemblyV6Sha256",
             "computePromptFragmentRevisionSha256",
             "computePromptFragmentRevisionV2Sha256",
             "computePromptNodeAssemblySha256",
@@ -3646,6 +3746,7 @@
             "ExecutionInputManifest",
             "getAllowedRuleLifecycleTransitions",
             "getBuiltInProjectProfileDefinition",
+            "governanceEvidenceKeys",
             "governedUserPromptLayer",
             "hashCanonical",
             "isTerminalDirectAgentRunLifecycle",
@@ -3704,6 +3805,7 @@
             "PlanningMemorySelectionShape",
             "PlanningProjectContextHashInput",
             "PlanningProjectContextShape",
+            "PlanningValidationPolicy",
             "PlanReviewBinding",
             "PlanRevisionStatus",
             "planRevisionStatuses",
@@ -3745,6 +3847,7 @@
             "PromptAssemblyV3Shape",
             "PromptAssemblyV4Shape",
             "PromptAssemblyV5Shape",
+            "PromptAssemblyV6Shape",
             "PromptFragmentContentShape",
             "PromptFragmentDerivedFromShape",
             "PromptFragmentDomainError",
@@ -3767,6 +3870,7 @@
             "resolveMemoryImportContent",
             "resolveMemoryWriteContent",
             "resolveNoteSourceText",
+            "resolvePlanningValidationPolicy",
             "resolveWorkflowDesignerSequence",
             "RuleDecisionActorShape",
             "RuleDomainError",
@@ -3867,7 +3971,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "9edbb7165719384ebef36ee3ec404ccadae74bd5625489930b30cb410004f27f",
+          "transitiveSignatureSha256": "35b47b9f9f372fbbf3db0f9327254972a6b3618aa173c9aea9a5f0242cdbd032",
           "visibility": "public"
         }
       ]
@@ -4005,7 +4109,7 @@
         }
       },
       "name": "@chat/pi-runtime",
-      "publicEntrySignatureSha256": "517743a6bf1c5e22c8c457b8626f4c015b7abd4d1e9ee10f2ca2e1719c21beba",
+      "publicEntrySignatureSha256": "29906e9962b48d4d57fd4368d2d8d418d587bdd48d4ba5f1186e9bfbb78d7514",
       "subpaths": [
         {
           "conditions": {
@@ -4024,6 +4128,7 @@
             "BailianNotReadyError",
             "buildBailianModel",
             "buildExecutorUserPrompt",
+            "buildGovernanceReviewUserPrompt",
             "buildNoteCaptureUserPrompt",
             "buildPlannerUserPrompt",
             "buildProjectModel",
@@ -4102,6 +4207,7 @@
             "runPiExecutor",
             "RunPiExecutorInput",
             "RunPiExecutorServiceInput",
+            "runPiGovernanceReview",
             "runPiNoteCapture",
             "runPiPlanner",
             "RunPiPlannerInput",
@@ -4117,7 +4223,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "517743a6bf1c5e22c8c457b8626f4c015b7abd4d1e9ee10f2ca2e1719c21beba",
+          "transitiveSignatureSha256": "29906e9962b48d4d57fd4368d2d8d418d587bdd48d4ba5f1186e9bfbb78d7514",
           "visibility": "public"
         },
         {
@@ -4131,7 +4237,7 @@
           ],
           "key": "./agent-runtime-profile-client",
           "target": "./src/agent-runtime-profile-client.ts",
-          "transitiveSignatureSha256": "a681059f1d1bf4935b93c87c710749d45c31b543401dd658ae2dc0cbb19922cb",
+          "transitiveSignatureSha256": "1a9d96e519484eddce6187b06025a2ea929101d592b816102656f814bc77f383",
           "visibility": "public"
         },
         {
@@ -4265,7 +4371,7 @@
             "PublishDirectPromptReviewInput",
             "PublishedDirectPromptReview",
             "redacted:641ff0c3874a80a824aad50ad4104717987ec57bdca00f352a64515800c923a4",
-            "redacted:842e7ccf39059dbb1a7e7d4ad8c450ac700e316a9fee1e99cc64ddbe45bd19ca",
+            "redacted:6a62b1509e6cd8d301b272a30d72320292714844f0897d78ecfc21acd27a4c97",
             "ResolvedPiRuntimeManifest",
             "resolvePiRuntimeManifest",
             "settleCodingExecutorFatal",
@@ -4281,7 +4387,7 @@
           ],
           "key": "./coding-executor",
           "target": "./src/coding-executor.ts",
-          "transitiveSignatureSha256": "09a895546b992870450e1d1c4672e1776962ec52a7928c9b0f2c567e614a32b9",
+          "transitiveSignatureSha256": "d4253f5170ecce3d6353f035a0e42c5d58520a39fd78cfb72bceca3fadd9151a",
           "visibility": "public"
         }
       ]
@@ -4297,7 +4403,7 @@
         }
       },
       "name": "@chat/product-store-json",
-      "publicEntrySignatureSha256": "44a4f96d22c417d7ae58271566a6f90fea07affa5ffb212448862654ab353786",
+      "publicEntrySignatureSha256": "e49e416e6cbb091aa2cc827d8b4188815fe4df99d07c7ce09d96e1625dabf4b3",
       "subpaths": [
         {
           "conditions": {
@@ -4324,6 +4430,7 @@
             "migrateProductSnapshotV21ToV22",
             "migrateProductSnapshotV22ToV23",
             "migrateProductSnapshotV23ToV24",
+            "migrateProductSnapshotV24ToV25",
             "migrateProductSnapshotV2ToV3",
             "migrateProductSnapshotV3ToV4",
             "migrateProductSnapshotV4ToV5",
@@ -4370,6 +4477,8 @@
             "productSnapshotV22Schema",
             "ProductSnapshotV23",
             "productSnapshotV23Schema",
+            "ProductSnapshotV24",
+            "productSnapshotV24Schema",
             "productSnapshotV2Schema",
             "ProductSnapshotV3",
             "productSnapshotV3Schema",
@@ -4385,7 +4494,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "44a4f96d22c417d7ae58271566a6f90fea07affa5ffb212448862654ab353786",
+          "transitiveSignatureSha256": "e49e416e6cbb091aa2cc827d8b4188815fe4df99d07c7ce09d96e1625dabf4b3",
           "visibility": "public"
         }
       ]
@@ -4475,7 +4584,7 @@
         }
       },
       "name": "@chat/realtime",
-      "publicEntrySignatureSha256": "a3ea7075514bb86ad128bbb1a93a83dcd39da2ebfef35147270c6dfb95e4ae5b",
+      "publicEntrySignatureSha256": "cddc2a3595a7a3780ecfae8fbde0457f57192c48a0140393586881f9957ab656",
       "subpaths": [
         {
           "conditions": {
@@ -4533,7 +4642,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "a3ea7075514bb86ad128bbb1a93a83dcd39da2ebfef35147270c6dfb95e4ae5b",
+          "transitiveSignatureSha256": "cddc2a3595a7a3780ecfae8fbde0457f57192c48a0140393586881f9957ab656",
           "visibility": "public"
         },
         {
@@ -4590,7 +4699,7 @@
         }
       },
       "name": "@chat/workflows",
-      "publicEntrySignatureSha256": "60514d85c19b388b7d6dec9cd2fd222214c33e144bddf827f27d23184f75796f",
+      "publicEntrySignatureSha256": "0af6d3c230e110a1efb5b4d11d9f559ff0ea4a5c10f60f99b857d3c332df9b75",
       "subpaths": [
         {
           "conditions": {
@@ -4674,6 +4783,7 @@
             "KernelNodeExecutionScope",
             "KernelPreparedComposite",
             "KernelReviewWait",
+            "LEGACY_CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION",
             "LEGACY_PLANNING_RUNNER_BUNDLE_VERSION",
             "LEGACY_PLANNING_RUNNER_FAMILY",
             "loadCommittedDecisionStep",
@@ -4795,7 +4905,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "60514d85c19b388b7d6dec9cd2fd222214c33e144bddf827f27d23184f75796f",
+          "transitiveSignatureSha256": "0af6d3c230e110a1efb5b4d11d9f559ff0ea4a5c10f60f99b857d3c332df9b75",
           "visibility": "public"
         }
       ]
@@ -4944,6 +5054,13 @@
       "signatureSha256": "381e8e8a0901d770ed9a6eac92e8591f991f8dcf694ecc999c2c97e2a76d61d2"
     },
     {
+      "enumValues": ["governance_reviewer"],
+      "name": "agentProfileAgentKeySchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "358fb3298ba0d81b60920b54e57a0fa6660aeee7fa2a77c85a241b398e7d6fc7"
+    },
+    {
       "enumValues": ["create_version", "restore_default", "revise_prompt"],
       "name": "agentProfileDtoSchema",
       "requiredFields": [
@@ -4958,15 +5075,15 @@
         "tools",
         "versions"
       ],
-      "schemaVersions": ["chat-agent-profile-api.v3"],
-      "signatureSha256": "f9e45cf236f74db32f4621275da6b5b96e1c96caa532aa8fca4285775458cfcb"
+      "schemaVersions": ["chat-agent-profile-api.v4"],
+      "signatureSha256": "6ab97bad7a9b937463de2af9d9def55eeacf2063f2d50a4e93c7de17e37d3642"
     },
     {
       "enumValues": [],
       "name": "agentProfilesDtoSchema",
       "requiredFields": ["items", "schemaVersion"],
-      "schemaVersions": ["chat-agent-profile-api.v3"],
-      "signatureSha256": "de30f7fe9c6c6858ebc94d96cc7765ec6aff158b8c194918e7fc79c4c8725661"
+      "schemaVersions": ["chat-agent-profile-api.v4"],
+      "signatureSha256": "d848a772dd9adf71690cb218885f446764901fb65ce30ec8700effd115376812"
     },
     {
       "enumValues": [],
@@ -4974,6 +5091,13 @@
       "requiredFields": ["items", "schemaVersion"],
       "schemaVersions": ["chat-agent-profile-api.v2"],
       "signatureSha256": "3a964adcd9edeb32f1eaff1059391f1b9df6891fccb0df0381201ccb0138dbaf"
+    },
+    {
+      "enumValues": [],
+      "name": "agentProfilesV3DtoSchema",
+      "requiredFields": ["items", "schemaVersion"],
+      "schemaVersions": ["chat-agent-profile-api.v3"],
+      "signatureSha256": "11c68b0b286dce71e9851302403864916a0e1e93d8556348c4d5ebeb22ed167e"
     },
     {
       "enumValues": ["create_version", "restore_default", "revise_prompt"],
@@ -4992,6 +5116,13 @@
       ],
       "schemaVersions": ["chat-agent-profile-api.v2"],
       "signatureSha256": "40bf46c935daac005d8bb1b9f38675c3476c4c9f4e6d1fafb1d2e90f09ccaa51"
+    },
+    {
+      "enumValues": [],
+      "name": "agentProfileV3DtoSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "f71f44cf3a898df5ed2a78a041b3f845b7b6f8cd3403dea5856bb9891f91bd4c"
     },
     {
       "enumValues": ["disabled", "inherit_runtime_default"],
@@ -6472,6 +6603,13 @@
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "3b2810fa9d8215b51ebb85d0d71c109193509518b9d5f4cbda3a91a94dafe4b9"
+    },
+    {
+      "enumValues": ["direct_agent", "executor", "governance_reviewer", "note_capture", "planner"],
+      "name": "piTraceActivityV2DtoSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "6b38f13d61ce1492eaf568a3decb97486549607a08565108af4cc1515439e22c"
     },
     {
       "enumValues": [],
@@ -8362,8 +8500,8 @@
         "status",
         "toolResolution"
       ],
-      "schemaVersions": ["chat-product-api.v1"],
-      "signatureSha256": "a231b7452fd522bfee5b366fcd3959aa7c2cecf3877403efde18a986b7adf271"
+      "schemaVersions": ["chat-prompt-turn-preview-api.v2"],
+      "signatureSha256": "282734c61fa10173b2ff876123d571d379f733f59039ab0bb0ad175441d898a6"
     },
     {
       "enumValues": [],
@@ -9444,22 +9582,22 @@
         "terminalNodeType",
         "title"
       ],
-      "schemaVersions": ["chat-product-api.v1"],
-      "signatureSha256": "911ed3e5b74648b07c60532a39c92e7a002c49493a6582bf12191d95f9d3578e"
+      "schemaVersions": ["chat-workflow-product-api.v2"],
+      "signatureSha256": "f9bf48f12188cec3bab617e8a6182e36ccd451428c8269d9877a82f36f1d5629"
     },
     {
       "enumValues": [],
       "name": "workflowBlueprintsDtoSchema",
       "requiredFields": ["blueprints", "schemaVersion"],
-      "schemaVersions": ["chat-product-api.v1"],
-      "signatureSha256": "52e2a526e4c72b72a2b465a2353a75d5acd9a551066198e51171b80c81c683b6"
+      "schemaVersions": ["chat-workflow-product-api.v2"],
+      "signatureSha256": "7903c3ef37e2a31fecf4b98014058c02d5300ec7aeb18224fede6128752f151f"
     },
     {
       "enumValues": [],
       "name": "workflowCatalogDtoSchema",
       "requiredFields": ["nodes", "schemaVersion"],
-      "schemaVersions": ["chat-product-api.v1"],
-      "signatureSha256": "71df1ca331dd5fa1042461e82b663922e4204fc066e4b11c5bee8304b5314bd0"
+      "schemaVersions": ["chat-workflow-product-api.v2"],
+      "signatureSha256": "3e767057c65817d79a8219d1f1e58517c20baec247e7e43b340c66783a6c5d74"
     },
     {
       "enumValues": [],
@@ -9467,6 +9605,13 @@
       "requiredFields": ["definition"],
       "schemaVersions": [],
       "signatureSha256": "a38398d3e8c667a1c60403234f6822902296e9da050f5db43ccfa305e18afc16"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowDefinitionCommandResultV2DtoSchema",
+      "requiredFields": ["definition"],
+      "schemaVersions": [],
+      "signatureSha256": "219a25afb5a73b65bb920198d889de32bae211a646f6004cee65457fb55b5ba2"
     },
     {
       "enumValues": ["archive", "copy", "publish", "restore", "save", "validate"],
@@ -9484,6 +9629,23 @@
       ],
       "schemaVersions": [],
       "signatureSha256": "b6fbca8dc1ec6c82a89aedf50bc519d997a0c97b5978ef785efce710d1e6c609"
+    },
+    {
+      "enumValues": ["archive", "copy", "publish", "restore", "save", "validate"],
+      "name": "workflowDefinitionDetailV2DtoSchema",
+      "requiredFields": [
+        "allowedActions",
+        "baseDefinitionSha256",
+        "baseRevisionId",
+        "compatibility",
+        "incompatibilityCode",
+        "nodeCount",
+        "nodeTypes",
+        "safeStructureSummary",
+        "semanticRoot"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "6c1081e04a91057e2bb6549bf388f2e1fa612699e1faece46761a6ce29194da2"
     },
     {
       "enumValues": [],
@@ -9551,8 +9713,8 @@
         "workflowDefinitionId",
         "workflowDefinitionRevisionId"
       ],
-      "schemaVersions": ["chat-product-api.v1"],
-      "signatureSha256": "49d19ccb2f6d22ce5903754f6328a82c3d263b2a4cd0eb75fac7fdde5190cd2e"
+      "schemaVersions": ["chat-workflow-product-api.v2"],
+      "signatureSha256": "d03220c9b1d476752b70383abb67d1fb0f8204d37be53971c503135c7b4d5282"
     },
     {
       "enumValues": [],
@@ -9578,8 +9740,8 @@
       "enumValues": [],
       "name": "workflowDefinitionsDtoSchema",
       "requiredFields": ["definitions", "schemaVersion"],
-      "schemaVersions": ["chat-product-api.v1"],
-      "signatureSha256": "48e052a173416c58335f8cf69c1a285def44634b15e35518db38df40eff9c104"
+      "schemaVersions": ["chat-workflow-product-api.v2"],
+      "signatureSha256": "effbf7acbb462b95e19ee864726753b3598fec1e82f58fa913dc22cad7007858"
     },
     {
       "enumValues": [],
@@ -9592,8 +9754,8 @@
         "semanticRoot",
         "valid"
       ],
-      "schemaVersions": ["chat-product-api.v1"],
-      "signatureSha256": "c1f270088158b3de59fd2f36d7e4ffb37ea96f0dbca91d28986834e142b6ad85"
+      "schemaVersions": ["chat-workflow-designer-api.v2"],
+      "signatureSha256": "4594cf81a081972724638ac7f9794466c625af6010b792f2d2dd8fc1cd317916"
     },
     {
       "enumValues": [],
@@ -9671,6 +9833,20 @@
     },
     {
       "enumValues": [],
+      "name": "workflowDesignerSlotV2DtoSchema",
+      "requiredFields": [
+        "address",
+        "allowedNodeTypes",
+        "label",
+        "maximumIndex",
+        "minimumIndex",
+        "slotId"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "04267c5ee055d61545c07530ee9049fdd5533624948437ee6c9548dfdac1c481"
+    },
+    {
+      "enumValues": [],
       "name": "workflowExecutionTraceDtoSchema",
       "requiredFields": [
         "createdAt",
@@ -9690,8 +9866,8 @@
         "updatedAt",
         "workflow"
       ],
-      "schemaVersions": ["chat-workflow-execution-trace.v1"],
-      "signatureSha256": "7098de25d87595819741a9ba353242c5c3b3ae636d0ec5ba0c0a247f855e1dbb"
+      "schemaVersions": ["chat-workflow-execution-trace.v2"],
+      "signatureSha256": "155c71c37416a60c2834ffda52ae4967ba8573321af9b7992b855317619c4630"
     },
     {
       "enumValues": ["json", "markdown", "text"],
@@ -9755,6 +9931,13 @@
       ],
       "schemaVersions": [],
       "signatureSha256": "b7dfd01bd0d54e3e6a7f8c06dedb8d946ab7cf36088be5c296cdad908caa4b2d"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowNodeCatalogItemV2DtoSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "09a675a12eae16d7a293728b7b9d7df009ef6aa51421c65a5a40b6fb3c78d368"
     },
     {
       "enumValues": [],
@@ -9896,8 +10079,8 @@
         "runnerFamily",
         "schemaVersion"
       ],
-      "schemaVersions": ["chat-product-api.v1"],
-      "signatureSha256": "2ae54f961e6610528180145ce03f5eab64c4a84b23bb4e03d786bee7c1695d94"
+      "schemaVersions": ["chat-workflow-product-api.v2"],
+      "signatureSha256": "c03ac604004220318a9b0134ee700c52305b46c7b1ec65562368f67f0e17a85f"
     },
     {
       "enumValues": [],
@@ -10114,7 +10297,7 @@
     {
       "kind": "value",
       "name": "AGENT_PROFILE_API_SCHEMA_VERSION",
-      "signatureSha256": "e2feae3e7cb5baf2edfc613dd553e4f53a7aea12c37011aac8158ac040d2de34"
+      "signatureSha256": "3c497718289f86f432cafb59b4f98a2f5bb6a8c65e3f1a37ce91aad1c6df78dc"
     },
     {
       "kind": "value",
@@ -10148,23 +10331,33 @@
     },
     {
       "kind": "type",
+      "name": "AgentProfileAgentKey",
+      "signatureSha256": "15d50d1c54d5224a36c081b2ec1f84434420d662f666ba3a6deeaf2abb6b5e1f"
+    },
+    {
+      "kind": "schema",
+      "name": "agentProfileAgentKeySchema",
+      "signatureSha256": "358fb3298ba0d81b60920b54e57a0fa6660aeee7fa2a77c85a241b398e7d6fc7"
+    },
+    {
+      "kind": "type",
       "name": "AgentProfileDto",
-      "signatureSha256": "3cf7956a0c3baf994595512fa6df31e726e4dbde61751ffd7d96aea87d50f409"
+      "signatureSha256": "3ba9d77d37652261c574d828c9dc31f9c5863b7b80b6e3c06c223cfc715342cd"
     },
     {
       "kind": "schema",
       "name": "agentProfileDtoSchema",
-      "signatureSha256": "f9e45cf236f74db32f4621275da6b5b96e1c96caa532aa8fca4285775458cfcb"
+      "signatureSha256": "6ab97bad7a9b937463de2af9d9def55eeacf2063f2d50a4e93c7de17e37d3642"
     },
     {
       "kind": "type",
       "name": "AgentProfilesDto",
-      "signatureSha256": "064193bf7a0af222fd45a675ffdda649ed8ac2b019cf3eb6842d617e03bc1741"
+      "signatureSha256": "f12689a88630b80220c80c86cbad5d3ce57aa53c7a084ecfd3ffaa567a92b4b9"
     },
     {
       "kind": "schema",
       "name": "agentProfilesDtoSchema",
-      "signatureSha256": "de30f7fe9c6c6858ebc94d96cc7765ec6aff158b8c194918e7fc79c4c8725661"
+      "signatureSha256": "d848a772dd9adf71690cb218885f446764901fb65ce30ec8700effd115376812"
     },
     {
       "kind": "schema",
@@ -10173,8 +10366,18 @@
     },
     {
       "kind": "schema",
+      "name": "agentProfilesV3DtoSchema",
+      "signatureSha256": "11c68b0b286dce71e9851302403864916a0e1e93d8556348c4d5ebeb22ed167e"
+    },
+    {
+      "kind": "schema",
       "name": "agentProfileV2DtoSchema",
       "signatureSha256": "40bf46c935daac005d8bb1b9f38675c3476c4c9f4e6d1fafb1d2e90f09ccaa51"
+    },
+    {
+      "kind": "schema",
+      "name": "agentProfileV3DtoSchema",
+      "signatureSha256": "f71f44cf3a898df5ed2a78a041b3f845b7b6f8cd3403dea5856bb9891f91bd4c"
     },
     {
       "kind": "type",
@@ -11083,6 +11286,11 @@
     },
     {
       "kind": "value",
+      "name": "LEGACY_AGENT_PROFILE_V3_API_SCHEMA_VERSION",
+      "signatureSha256": "6cfa55bca935a1d20b41dbad6a16554ae914300ffd9626d11624e1bf54fc06be"
+    },
+    {
+      "kind": "value",
       "name": "LEGACY_AGENT_VERSION_SCHEMA_VERSION",
       "signatureSha256": "f77a26f40789d1ddf51575b8a6b058d44f95df001647e5ed065589ef5fe9b4ce"
     },
@@ -11595,6 +11803,16 @@
       "kind": "schema",
       "name": "piTraceActivityStatusSchema",
       "signatureSha256": "3b2810fa9d8215b51ebb85d0d71c109193509518b9d5f4cbda3a91a94dafe4b9"
+    },
+    {
+      "kind": "type",
+      "name": "PiTraceActivityV2Dto",
+      "signatureSha256": "fa080c0a9eee842e608f11ae6239f3225d9f0fe1d73630b57f728f44c1fcfca2"
+    },
+    {
+      "kind": "schema",
+      "name": "piTraceActivityV2DtoSchema",
+      "signatureSha256": "6b38f13d61ce1492eaf568a3decb97486549607a08565108af4cc1515439e22c"
     },
     {
       "kind": "type",
@@ -12942,6 +13160,11 @@
       "signatureSha256": "163ee011b5ad57ec5a68e2a9c517282cd7cd6bb0235f91a463aea3f7f7396275"
     },
     {
+      "kind": "value",
+      "name": "PROMPT_TURN_PREVIEW_API_SCHEMA_VERSION",
+      "signatureSha256": "f813422f68df27ca0119e6da563fa84a3679cc2cc11caa7beab7167c59efd545"
+    },
+    {
       "kind": "type",
       "name": "PromptAssemblyId",
       "signatureSha256": "13946d75976ad0adc47982c504555ea940f20b3f9d0320dad8baa85845179e9d"
@@ -13184,12 +13407,12 @@
     {
       "kind": "type",
       "name": "PromptTurnPreviewDto",
-      "signatureSha256": "d6d78a63d5584c5a03b55abacb9596692a67b938686658716f740c80db40f33c"
+      "signatureSha256": "64531b83fb86c0b384b9ec78740f2b66b9cb89ed9d5f331a938a5ec448ce050c"
     },
     {
       "kind": "schema",
       "name": "promptTurnPreviewDtoSchema",
-      "signatureSha256": "a231b7452fd522bfee5b366fcd3959aa7c2cecf3877403efde18a986b7adf271"
+      "signatureSha256": "282734c61fa10173b2ff876123d571d379f733f59039ab0bb0ad175441d898a6"
     },
     {
       "kind": "type",
@@ -14208,8 +14431,18 @@
     },
     {
       "kind": "value",
+      "name": "WORKFLOW_DESIGNER_API_SCHEMA_VERSION",
+      "signatureSha256": "40898e252da772fa402712435cd6c477586f830051f462368987bd09cea63268"
+    },
+    {
+      "kind": "value",
       "name": "WORKFLOW_EXECUTION_TRACE_SCHEMA_VERSION",
-      "signatureSha256": "29d5c258a083198d853700aba36072628089238440644e1e38e9a6eb4e0ae270"
+      "signatureSha256": "69787dea3b541f960150466b062f8dc7838d2b1482a3e64cfcecbf883d50cfa6"
+    },
+    {
+      "kind": "value",
+      "name": "WORKFLOW_PRODUCT_API_SCHEMA_VERSION",
+      "signatureSha256": "84d2de97cb56f693b2a20ce1f4b6c3c14fac68da19771205fbd86abcad16e4da"
     },
     {
       "kind": "value",
@@ -14219,32 +14452,32 @@
     {
       "kind": "type",
       "name": "WorkflowBlueprintDto",
-      "signatureSha256": "b576ccc27fe3db67bcd7c95f7045e65a5637fee606b392cd496866a5e1160e25"
+      "signatureSha256": "5977914de7b96570bbd39f44e4876d0cd81a916461e701d12b14bfc43b0efce9"
     },
     {
       "kind": "schema",
       "name": "workflowBlueprintDtoSchema",
-      "signatureSha256": "911ed3e5b74648b07c60532a39c92e7a002c49493a6582bf12191d95f9d3578e"
+      "signatureSha256": "f9bf48f12188cec3bab617e8a6182e36ccd451428c8269d9877a82f36f1d5629"
     },
     {
       "kind": "type",
       "name": "WorkflowBlueprintsDto",
-      "signatureSha256": "c648becf441d49e70f22f28945fe27f84d4d0b5f82f15c2da34f675cb35fa074"
+      "signatureSha256": "672ca22999628fa1cf0b258501d3952f1271ae2e3436d4e94167bfde90afe308"
     },
     {
       "kind": "schema",
       "name": "workflowBlueprintsDtoSchema",
-      "signatureSha256": "52e2a526e4c72b72a2b465a2353a75d5acd9a551066198e51171b80c81c683b6"
+      "signatureSha256": "7903c3ef37e2a31fecf4b98014058c02d5300ec7aeb18224fede6128752f151f"
     },
     {
       "kind": "type",
       "name": "WorkflowCatalogDto",
-      "signatureSha256": "9b6363e2939dc19dcb8732bae2e9c221ce21d40f44b7119325e2d0931d926c50"
+      "signatureSha256": "fde5ef760ddfd99ef7342b9c43bdee8515e13e100e7988e5e726836a4d2c6523"
     },
     {
       "kind": "schema",
       "name": "workflowCatalogDtoSchema",
-      "signatureSha256": "71df1ca331dd5fa1042461e82b663922e4204fc066e4b11c5bee8304b5314bd0"
+      "signatureSha256": "3e767057c65817d79a8219d1f1e58517c20baec247e7e43b340c66783a6c5d74"
     },
     {
       "kind": "command-type",
@@ -14257,6 +14490,16 @@
       "signatureSha256": "a38398d3e8c667a1c60403234f6822902296e9da050f5db43ccfa305e18afc16"
     },
     {
+      "kind": "command-type",
+      "name": "WorkflowDefinitionCommandResultV2Dto",
+      "signatureSha256": "104bb723a3415f2e3d4129d6bfb9a37042db00704b4b926e20c645de2f5c1cec"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowDefinitionCommandResultV2DtoSchema",
+      "signatureSha256": "219a25afb5a73b65bb920198d889de32bae211a646f6004cee65457fb55b5ba2"
+    },
+    {
       "kind": "type",
       "name": "WorkflowDefinitionDetailDto",
       "signatureSha256": "ff6b63790ede2d819fd9257868ded00721327fb99ac4824d124b5473e13e1751"
@@ -14265,6 +14508,16 @@
       "kind": "schema",
       "name": "workflowDefinitionDetailDtoSchema",
       "signatureSha256": "b6fbca8dc1ec6c82a89aedf50bc519d997a0c97b5978ef785efce710d1e6c609"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowDefinitionDetailV2Dto",
+      "signatureSha256": "9a2950f0a49b39bf4db42a386e8e9cd165cc5e3a8eefaa9f8f80f50cd20b8be1"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowDefinitionDetailV2DtoSchema",
+      "signatureSha256": "6c1081e04a91057e2bb6549bf388f2e1fa612699e1faece46761a6ce29194da2"
     },
     {
       "kind": "type",
@@ -14289,12 +14542,12 @@
     {
       "kind": "type",
       "name": "WorkflowDefinitionPublishedDto",
-      "signatureSha256": "3d3a6208ca92d60ee8e022d589dc6926b31c0a29cb06f61c2327793969984853"
+      "signatureSha256": "eecef88b0c9d90de91e0c130eb43aa54e5e0730eb7287be989e4e797a13eb7b4"
     },
     {
       "kind": "schema",
       "name": "workflowDefinitionPublishedDtoSchema",
-      "signatureSha256": "49d19ccb2f6d22ce5903754f6328a82c3d263b2a4cd0eb75fac7fdde5190cd2e"
+      "signatureSha256": "d03220c9b1d476752b70383abb67d1fb0f8204d37be53971c503135c7b4d5282"
     },
     {
       "kind": "type",
@@ -14319,22 +14572,22 @@
     {
       "kind": "type",
       "name": "WorkflowDefinitionsDto",
-      "signatureSha256": "75014fbeeae863f851b9edac6fb974ba27e6e332bb6aa7c763a15e50cb9a6776"
+      "signatureSha256": "e190a8a712e2abee9340477eb6eddb5d9e07ac54810606d35497b513955fff73"
     },
     {
       "kind": "schema",
       "name": "workflowDefinitionsDtoSchema",
-      "signatureSha256": "48e052a173416c58335f8cf69c1a285def44634b15e35518db38df40eff9c104"
+      "signatureSha256": "effbf7acbb462b95e19ee864726753b3598fec1e82f58fa913dc22cad7007858"
     },
     {
       "kind": "type",
       "name": "WorkflowDefinitionValidationDto",
-      "signatureSha256": "d5d500ee016382f5cc22be70eff603143a774bf528cb7d7bf6faf20063ae8dd6"
+      "signatureSha256": "06263a5ec9e4556a1255da38f2db1ca47e8dddb26fde907eb4e7f265eeabc8a6"
     },
     {
       "kind": "schema",
       "name": "workflowDefinitionValidationDtoSchema",
-      "signatureSha256": "c1f270088158b3de59fd2f36d7e4ffb37ea96f0dbca91d28986834e142b6ad85"
+      "signatureSha256": "4594cf81a081972724638ac7f9794466c625af6010b792f2d2dd8fc1cd317916"
     },
     {
       "kind": "type",
@@ -14388,13 +14641,23 @@
     },
     {
       "kind": "type",
+      "name": "WorkflowDesignerSlotV2Dto",
+      "signatureSha256": "19fda7a4673592fb55546b1ca4a0d61091c6582f1e62210ce67f59e4968bdb6a"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowDesignerSlotV2DtoSchema",
+      "signatureSha256": "04267c5ee055d61545c07530ee9049fdd5533624948437ee6c9548dfdac1c481"
+    },
+    {
+      "kind": "type",
       "name": "WorkflowExecutionTraceDto",
-      "signatureSha256": "99a414d201ea09a356b47898ac4e16df18a7be3e82a71a8d59c97fe47fb9c94b"
+      "signatureSha256": "08bdc185678b4ba8c0b439c118e03cb7e51cb08d66314af75fc2b33338dba5fc"
     },
     {
       "kind": "schema",
       "name": "workflowExecutionTraceDtoSchema",
-      "signatureSha256": "7098de25d87595819741a9ba353242c5c3b3ae636d0ec5ba0c0a247f855e1dbb"
+      "signatureSha256": "155c71c37416a60c2834ffda52ae4967ba8573321af9b7992b855317619c4630"
     },
     {
       "kind": "type",
@@ -14445,6 +14708,11 @@
       "kind": "schema",
       "name": "workflowNodeCatalogItemDtoSchema",
       "signatureSha256": "b7dfd01bd0d54e3e6a7f8c06dedb8d946ab7cf36088be5c296cdad908caa4b2d"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowNodeCatalogItemV2DtoSchema",
+      "signatureSha256": "09a675a12eae16d7a293728b7b9d7df009ef6aa51421c65a5a40b6fb3c78d368"
     },
     {
       "kind": "type",
@@ -14549,12 +14817,12 @@
     {
       "kind": "type",
       "name": "WorkflowRunConfigSummaryDto",
-      "signatureSha256": "9b87e0bbc90bd0cfeb4c878e814691c7e35715a758e2d3ff888f2d444f6a4e2d"
+      "signatureSha256": "bd808b6d73744e21e6ca8a8a3cd98d6070bab379243a1caca619b9a890dd99e7"
     },
     {
       "kind": "schema",
       "name": "workflowRunConfigSummaryDtoSchema",
-      "signatureSha256": "2ae54f961e6610528180145ce03f5eab64c4a84b23bb4e03d786bee7c1695d94"
+      "signatureSha256": "c03ac604004220318a9b0134ee700c52305b46c7b1ec65562368f67f0e17a85f"
     },
     {
       "kind": "type",
@@ -14797,13 +15065,13 @@
         {
           "identity": "response-expression:GET /api/agent-profiles:1",
           "schemaVersions": [],
-          "signatureSha256": "faa0eb3d867fbea918be234c5952e58d1d309b4e48394bbcb8104c87bf7c19d4"
+          "signatureSha256": "57ae7a4b0d75c50af3cfaf7a1bc588fc71f53aede1f22330ba2849aa18cf71a2"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "faa0eb3d867fbea918be234c5952e58d1d309b4e48394bbcb8104c87bf7c19d4",
+          "signatureSha256": "57ae7a4b0d75c50af3cfaf7a1bc588fc71f53aede1f22330ba2849aa18cf71a2",
           "source": "json",
           "status": "200"
         }
@@ -14820,9 +15088,9 @@
         {
           "name": "agentKey",
           "schema": {
-            "identity": "agentKeySchema",
+            "identity": "agentProfileAgentKeySchema",
             "schemaVersions": [],
-            "signatureSha256": "51770fafba5d10efb2b3bc81572edb2b24cbc593cab2fea55be21360bf81ca54"
+            "signatureSha256": "358fb3298ba0d81b60920b54e57a0fa6660aeee7fa2a77c85a241b398e7d6fc7"
           }
         }
       ],
@@ -14885,29 +15153,29 @@
             "allowedKeys": ["workspaceRootId"],
             "identity": "query-parser:prompt-routes.ts",
             "schemas": [],
-            "signatureSha256": "91ab437e073da204772dda20dcb8399ef737846563e5298a4c75e1397c6e1c01"
+            "signatureSha256": "408c4402a2cb90f07f446cc5e8911a002c7a6ca7db6573343e5f76104bf419f1"
           }
         ],
         "schemas": []
       },
       "requestSchemas": [
         {
-          "identity": "agentKeySchema",
+          "identity": "agentProfileAgentKeySchema",
           "schemaVersions": [],
-          "signatureSha256": "51770fafba5d10efb2b3bc81572edb2b24cbc593cab2fea55be21360bf81ca54"
+          "signatureSha256": "358fb3298ba0d81b60920b54e57a0fa6660aeee7fa2a77c85a241b398e7d6fc7"
         }
       ],
       "responseSchemas": [
         {
           "identity": "response-expression:GET /api/agent-profiles/:agentKey:1",
           "schemaVersions": [],
-          "signatureSha256": "8ca4f521a771f9b37359d77b647976b7abe805461caa2cec74668950c0026231"
+          "signatureSha256": "d7b0f5811ce0b949a2910e6b0e43e12c1a91054cd9a6c4d8fa2c104c06dd815f"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "8ca4f521a771f9b37359d77b647976b7abe805461caa2cec74668950c0026231",
+          "signatureSha256": "d7b0f5811ce0b949a2910e6b0e43e12c1a91054cd9a6c4d8fa2c104c06dd815f",
           "source": "json",
           "status": "200"
         }
@@ -14935,9 +15203,9 @@
         {
           "name": "agentKey",
           "schema": {
-            "identity": "agentKeySchema",
+            "identity": "agentProfileAgentKeySchema",
             "schemaVersions": [],
-            "signatureSha256": "51770fafba5d10efb2b3bc81572edb2b24cbc593cab2fea55be21360bf81ca54"
+            "signatureSha256": "358fb3298ba0d81b60920b54e57a0fa6660aeee7fa2a77c85a241b398e7d6fc7"
           }
         }
       ],
@@ -15000,9 +15268,9 @@
       },
       "requestSchemas": [
         {
-          "identity": "agentKeySchema",
+          "identity": "agentProfileAgentKeySchema",
           "schemaVersions": [],
-          "signatureSha256": "51770fafba5d10efb2b3bc81572edb2b24cbc593cab2fea55be21360bf81ca54"
+          "signatureSha256": "358fb3298ba0d81b60920b54e57a0fa6660aeee7fa2a77c85a241b398e7d6fc7"
         },
         {
           "identity": "commandEnvelopeSchema",
@@ -15019,13 +15287,13 @@
         {
           "identity": "response-expression:POST /api/agent-profiles/:agentKey/prompt-revisions:1",
           "schemaVersions": [],
-          "signatureSha256": "8ca4f521a771f9b37359d77b647976b7abe805461caa2cec74668950c0026231"
+          "signatureSha256": "d7b0f5811ce0b949a2910e6b0e43e12c1a91054cd9a6c4d8fa2c104c06dd815f"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "8ca4f521a771f9b37359d77b647976b7abe805461caa2cec74668950c0026231",
+          "signatureSha256": "d7b0f5811ce0b949a2910e6b0e43e12c1a91054cd9a6c4d8fa2c104c06dd815f",
           "source": "json",
           "status": "200"
         }
@@ -15053,9 +15321,9 @@
         {
           "name": "agentKey",
           "schema": {
-            "identity": "agentKeySchema",
+            "identity": "agentProfileAgentKeySchema",
             "schemaVersions": [],
-            "signatureSha256": "51770fafba5d10efb2b3bc81572edb2b24cbc593cab2fea55be21360bf81ca54"
+            "signatureSha256": "358fb3298ba0d81b60920b54e57a0fa6660aeee7fa2a77c85a241b398e7d6fc7"
           }
         }
       ],
@@ -15118,9 +15386,9 @@
       },
       "requestSchemas": [
         {
-          "identity": "agentKeySchema",
+          "identity": "agentProfileAgentKeySchema",
           "schemaVersions": [],
-          "signatureSha256": "51770fafba5d10efb2b3bc81572edb2b24cbc593cab2fea55be21360bf81ca54"
+          "signatureSha256": "358fb3298ba0d81b60920b54e57a0fa6660aeee7fa2a77c85a241b398e7d6fc7"
         },
         {
           "identity": "commandEnvelopeSchema",
@@ -15137,13 +15405,13 @@
         {
           "identity": "response-expression:POST /api/agent-profiles/:agentKey/restore-default:1",
           "schemaVersions": [],
-          "signatureSha256": "8ca4f521a771f9b37359d77b647976b7abe805461caa2cec74668950c0026231"
+          "signatureSha256": "d7b0f5811ce0b949a2910e6b0e43e12c1a91054cd9a6c4d8fa2c104c06dd815f"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "8ca4f521a771f9b37359d77b647976b7abe805461caa2cec74668950c0026231",
+          "signatureSha256": "d7b0f5811ce0b949a2910e6b0e43e12c1a91054cd9a6c4d8fa2c104c06dd815f",
           "source": "json",
           "status": "200"
         }
@@ -15171,9 +15439,9 @@
         {
           "name": "agentKey",
           "schema": {
-            "identity": "agentKeySchema",
+            "identity": "agentProfileAgentKeySchema",
             "schemaVersions": [],
-            "signatureSha256": "51770fafba5d10efb2b3bc81572edb2b24cbc593cab2fea55be21360bf81ca54"
+            "signatureSha256": "358fb3298ba0d81b60920b54e57a0fa6660aeee7fa2a77c85a241b398e7d6fc7"
           }
         }
       ],
@@ -15236,9 +15504,9 @@
       },
       "requestSchemas": [
         {
-          "identity": "agentKeySchema",
+          "identity": "agentProfileAgentKeySchema",
           "schemaVersions": [],
-          "signatureSha256": "51770fafba5d10efb2b3bc81572edb2b24cbc593cab2fea55be21360bf81ca54"
+          "signatureSha256": "358fb3298ba0d81b60920b54e57a0fa6660aeee7fa2a77c85a241b398e7d6fc7"
         },
         {
           "identity": "commandEnvelopeSchema",
@@ -15255,13 +15523,13 @@
         {
           "identity": "response-expression:POST /api/agent-profiles/:agentKey/versions:1",
           "schemaVersions": [],
-          "signatureSha256": "8ca4f521a771f9b37359d77b647976b7abe805461caa2cec74668950c0026231"
+          "signatureSha256": "d7b0f5811ce0b949a2910e6b0e43e12c1a91054cd9a6c4d8fa2c104c06dd815f"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "8ca4f521a771f9b37359d77b647976b7abe805461caa2cec74668950c0026231",
+          "signatureSha256": "d7b0f5811ce0b949a2910e6b0e43e12c1a91054cd9a6c4d8fa2c104c06dd815f",
           "source": "json",
           "status": "201"
         }
@@ -25660,13 +25928,13 @@
         {
           "identity": "response-expression:POST /api/prompt-turn-previews:1",
           "schemaVersions": [],
-          "signatureSha256": "60c7b4cf87874d8fc608bdc91016d53e11e8aa96fbd77a35a836a4c0241f5f7e"
+          "signatureSha256": "b4621f03a9c7d80cbe4094e035ffac0604d335d79c8fb45f2d3c60bad10a8562"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "60c7b4cf87874d8fc608bdc91016d53e11e8aa96fbd77a35a836a4c0241f5f7e",
+          "signatureSha256": "b4621f03a9c7d80cbe4094e035ffac0604d335d79c8fb45f2d3c60bad10a8562",
           "source": "json",
           "status": "200"
         }
@@ -28269,13 +28537,13 @@
         {
           "identity": "response-expression:GET /api/runs/:productRunId/workflow-config-summary:1",
           "schemaVersions": [],
-          "signatureSha256": "8719567276382c8032c3b7fdfb0f5c383f8c9835ba63a66d163b53d0aa519679"
+          "signatureSha256": "3c9c9e55bc5bd21e6ee585ba5db6167cd22bb26a01f7ae700d38096688561412"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "8719567276382c8032c3b7fdfb0f5c383f8c9835ba63a66d163b53d0aa519679",
+          "signatureSha256": "3c9c9e55bc5bd21e6ee585ba5db6167cd22bb26a01f7ae700d38096688561412",
           "source": "json",
           "status": "200"
         }
@@ -28373,13 +28641,13 @@
         {
           "identity": "response-expression:GET /api/runs/:productRunId/workflow-execution-trace:1",
           "schemaVersions": [],
-          "signatureSha256": "de12c28cd14adac4c43244443e634cf2fdce84c0fbc141361ed80d289a1da7dc"
+          "signatureSha256": "553c9d40c1a729852cab1c65dddb3482f1e1294cc63205ffc7a6343dd50f536f"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "de12c28cd14adac4c43244443e634cf2fdce84c0fbc141361ed80d289a1da7dc",
+          "signatureSha256": "553c9d40c1a729852cab1c65dddb3482f1e1294cc63205ffc7a6343dd50f536f",
           "source": "json",
           "status": "200"
         }
@@ -29820,13 +30088,13 @@
         {
           "identity": "response-expression:GET /api/workflow/blueprints:1",
           "schemaVersions": [],
-          "signatureSha256": "4f603823cd183a588ec8bb9bee94c3e7710181b9d0f9a9c64d429acbd02d44a4"
+          "signatureSha256": "1e1fbf8c2b1d006cb5a0f682b168894404e3474fc88603beca503bca02f959d3"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "4f603823cd183a588ec8bb9bee94c3e7710181b9d0f9a9c64d429acbd02d44a4",
+          "signatureSha256": "1e1fbf8c2b1d006cb5a0f682b168894404e3474fc88603beca503bca02f959d3",
           "source": "json",
           "status": "200"
         }
@@ -29909,13 +30177,13 @@
         {
           "identity": "response-expression:GET /api/workflow/catalog:1",
           "schemaVersions": [],
-          "signatureSha256": "8abe7570b3b501ed4701b1a0535dd1d6585ff1eb43b92304d4283992531bf1ab"
+          "signatureSha256": "e5b2d627eb7ac800b39fdc9023a66170fe81304c96518b16e62e014cd41ee556"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "8abe7570b3b501ed4701b1a0535dd1d6585ff1eb43b92304d4283992531bf1ab",
+          "signatureSha256": "e5b2d627eb7ac800b39fdc9023a66170fe81304c96518b16e62e014cd41ee556",
           "source": "json",
           "status": "200"
         }
@@ -29998,13 +30266,13 @@
         {
           "identity": "response-expression:GET /api/workflow/definitions:1",
           "schemaVersions": [],
-          "signatureSha256": "23539d617f17fa65d5035d1081d4109681d4b1fe47b4142bab6185ac64d7a6d9"
+          "signatureSha256": "47666d825f3bac60ba7a371f5e3fc1387dc3084d9e78d02917c7cfc696709346"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "23539d617f17fa65d5035d1081d4109681d4b1fe47b4142bab6185ac64d7a6d9",
+          "signatureSha256": "47666d825f3bac60ba7a371f5e3fc1387dc3084d9e78d02917c7cfc696709346",
           "source": "json",
           "status": "200"
         }
@@ -30102,13 +30370,13 @@
         {
           "identity": "response-expression:GET /api/workflow/definitions/:workflowDefinitionId:1",
           "schemaVersions": [],
-          "signatureSha256": "8a63e7cf406ee6a86a847df67e8da9f8230d31ab932b57903f4af00923cc7750"
+          "signatureSha256": "5697a3d8a67a89b84dc70da5e1c15fdb10e3ca799c2e2f3aa9a1efacc25ff86e"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "8a63e7cf406ee6a86a847df67e8da9f8230d31ab932b57903f4af00923cc7750",
+          "signatureSha256": "5697a3d8a67a89b84dc70da5e1c15fdb10e3ca799c2e2f3aa9a1efacc25ff86e",
           "source": "json",
           "status": "200"
         }
@@ -30220,13 +30488,13 @@
         {
           "identity": "response-expression:POST /api/workflow/definitions/:workflowDefinitionId/archive-status:1",
           "schemaVersions": [],
-          "signatureSha256": "4bf6a14181afd45c834f4b7b65fd8e3fa5a18d7e1ff74b82952bbe672ce87084"
+          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "4bf6a14181afd45c834f4b7b65fd8e3fa5a18d7e1ff74b82952bbe672ce87084",
+          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6",
           "source": "json",
           "status": "200"
         }
@@ -30338,13 +30606,13 @@
         {
           "identity": "response-expression:POST /api/workflow/definitions/:workflowDefinitionId/drafts:1",
           "schemaVersions": [],
-          "signatureSha256": "4bf6a14181afd45c834f4b7b65fd8e3fa5a18d7e1ff74b82952bbe672ce87084"
+          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "4bf6a14181afd45c834f4b7b65fd8e3fa5a18d7e1ff74b82952bbe672ce87084",
+          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6",
           "source": "json",
           "status": "201"
         }
@@ -30456,13 +30724,13 @@
         {
           "identity": "response-expression:POST /api/workflow/definitions/:workflowDefinitionId/publish:1",
           "schemaVersions": [],
-          "signatureSha256": "4bf6a14181afd45c834f4b7b65fd8e3fa5a18d7e1ff74b82952bbe672ce87084"
+          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "4bf6a14181afd45c834f4b7b65fd8e3fa5a18d7e1ff74b82952bbe672ce87084",
+          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6",
           "source": "json",
           "status": "200"
         }
@@ -30567,13 +30835,13 @@
         {
           "identity": "response-expression:POST /api/workflow/definitions/agent-node-configurations:1",
           "schemaVersions": [],
-          "signatureSha256": "4bf6a14181afd45c834f4b7b65fd8e3fa5a18d7e1ff74b82952bbe672ce87084"
+          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "4bf6a14181afd45c834f4b7b65fd8e3fa5a18d7e1ff74b82952bbe672ce87084",
+          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6",
           "source": "json",
           "status": "201"
         }
@@ -30671,13 +30939,13 @@
         {
           "identity": "response-expression:POST /api/workflow/definitions/copies:1",
           "schemaVersions": [],
-          "signatureSha256": "4bf6a14181afd45c834f4b7b65fd8e3fa5a18d7e1ff74b82952bbe672ce87084"
+          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "4bf6a14181afd45c834f4b7b65fd8e3fa5a18d7e1ff74b82952bbe672ce87084",
+          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6",
           "source": "json",
           "status": "201"
         }
@@ -30765,13 +31033,13 @@
         {
           "identity": "response-expression:POST /api/workflow/definitions/validate:1",
           "schemaVersions": [],
-          "signatureSha256": "2127fb9404c3f260d7c7124ea882c0bed60cbe254bf22e50fe99c3dee2eb8f52"
+          "signatureSha256": "526cf047b74c50f6e0302b287b018e6e1e3f586c100a29d471ce4cd6bbc5c22e"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "2127fb9404c3f260d7c7124ea882c0bed60cbe254bf22e50fe99c3dee2eb8f52",
+          "signatureSha256": "526cf047b74c50f6e0302b287b018e6e1e3f586c100a29d471ce4cd6bbc5c22e",
           "source": "json",
           "status": "200"
         }
@@ -30871,15 +31139,19 @@
   "versionedDtoAndEventSchemas": [
     {
       "identity": "agentProfileDtoSchema",
-      "schemaVersions": ["chat-agent-profile-api.v3"]
+      "schemaVersions": ["chat-agent-profile-api.v4"]
     },
     {
       "identity": "agentProfilesDtoSchema",
-      "schemaVersions": ["chat-agent-profile-api.v3"]
+      "schemaVersions": ["chat-agent-profile-api.v4"]
     },
     {
       "identity": "agentProfilesV2DtoSchema",
       "schemaVersions": ["chat-agent-profile-api.v2"]
+    },
+    {
+      "identity": "agentProfilesV3DtoSchema",
+      "schemaVersions": ["chat-agent-profile-api.v3"]
     },
     {
       "identity": "agentProfileV2DtoSchema",
@@ -31071,7 +31343,7 @@
     },
     {
       "identity": "promptTurnPreviewDtoSchema",
-      "schemaVersions": ["chat-product-api.v1"]
+      "schemaVersions": ["chat-prompt-turn-preview-api.v2"]
     },
     {
       "identity": "promptWorkspaceDtoSchema",
@@ -31155,31 +31427,31 @@
     },
     {
       "identity": "workflowBlueprintDtoSchema",
-      "schemaVersions": ["chat-product-api.v1"]
+      "schemaVersions": ["chat-workflow-product-api.v2"]
     },
     {
       "identity": "workflowBlueprintsDtoSchema",
-      "schemaVersions": ["chat-product-api.v1"]
+      "schemaVersions": ["chat-workflow-product-api.v2"]
     },
     {
       "identity": "workflowCatalogDtoSchema",
-      "schemaVersions": ["chat-product-api.v1"]
+      "schemaVersions": ["chat-workflow-product-api.v2"]
     },
     {
       "identity": "workflowDefinitionPublishedDtoSchema",
-      "schemaVersions": ["chat-product-api.v1"]
+      "schemaVersions": ["chat-workflow-product-api.v2"]
     },
     {
       "identity": "workflowDefinitionsDtoSchema",
-      "schemaVersions": ["chat-product-api.v1"]
+      "schemaVersions": ["chat-workflow-product-api.v2"]
     },
     {
       "identity": "workflowDefinitionValidationDtoSchema",
-      "schemaVersions": ["chat-product-api.v1"]
+      "schemaVersions": ["chat-workflow-designer-api.v2"]
     },
     {
       "identity": "workflowExecutionTraceDtoSchema",
-      "schemaVersions": ["chat-workflow-execution-trace.v1"]
+      "schemaVersions": ["chat-workflow-execution-trace.v2"]
     },
     {
       "identity": "workflowNodeDetailDtoSchema",
@@ -31195,7 +31467,7 @@
     },
     {
       "identity": "workflowRunConfigSummaryDtoSchema",
-      "schemaVersions": ["chat-product-api.v1"]
+      "schemaVersions": ["chat-workflow-product-api.v2"]
     },
     {
       "identity": "workflowRunConfigurationSchema",

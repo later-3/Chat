@@ -416,7 +416,7 @@ export async function compilePlanningInput(
         planningRun.status === "pending" ? planningRun.revision + 1 : planningRun.revision;
 
       draft.entities.attempts[attemptId] = {
-        schemaVersion: "run-attempt.v1",
+        schemaVersion: "run-attempt.v2",
         attemptId,
         productRunId: input.productRunId,
         kind: "planning",

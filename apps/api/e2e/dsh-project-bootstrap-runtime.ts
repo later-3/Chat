@@ -177,7 +177,10 @@ const deps: ApplicationDeps = {
   projectBootstrapIds: createProjectBootstrapIdFactory(),
   projectBootstrapExecutionCoordinator: createInProcessProjectBootstrapExecutionCoordinator(),
   promptCatalog: await createFilePromptCatalog(repoRoot),
-  agentRuntimeProfiles: { read: async (agentKey) => runtimeProfile(agentKey) },
+  agentRuntimeProfiles: {
+    read: async (agentKey) =>
+      agentKey === "governance_reviewer" ? undefined : runtimeProfile(agentKey),
+  },
   projectRoots: {
     list: () => [
       {

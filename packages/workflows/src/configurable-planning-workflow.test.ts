@@ -321,6 +321,30 @@ describe("Configurable Planning固定Runner", () => {
     );
   });
 
+  it("服务端验证失败时阻断Product Commit并以稳定结果关闭Run", async () => {
+    mocked.validateExecution.mockResolvedValueOnce({
+      outcome: "fail",
+      validationResultId: "val_configurable_failed1",
+      failures: [{ code: "evidence_missing", message: "缺少完成门证据" }],
+    });
+
+    const result = await configurablePlanningWorkflow({
+      schemaVersion: "configurable-planning-workflow-input.v1",
+      productRunId: "run_configurabletest1",
+      attemptId: "att_workflow1",
+      workflowRunSpecId: "wrs_configurabletest1",
+    });
+
+    expect(result).toMatchObject({
+      outcome: "failed",
+      errorCode: "execution.validation_failed",
+    });
+    expect(mocked.executePersist).toHaveBeenCalledTimes(1);
+    expect(mocked.validateExecution).toHaveBeenCalledTimes(1);
+    expect(mocked.commitExecutionResult).not.toHaveBeenCalled();
+    expect(mocked.commitRunFailure).toHaveBeenCalledTimes(1);
+  });
+
   it("memory.query按独立耐久边界执行，并在第一个Planner前冻结唯一Context", async () => {
     mocked.loadRunSpec.mockResolvedValue(workflowMemoryRunSpecFixture());
     mocked.freezeWorkflowMemoryContext.mockResolvedValue({

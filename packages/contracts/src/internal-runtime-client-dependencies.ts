@@ -89,6 +89,7 @@ export {
   type PreparePlanningMemoryContextRequest,
   type PreparePlanningProjectContextRequest,
   type PreparePlanningRulesContextRequest,
+  type PrepareGovernanceReviewInputRequest,
   type PublishNoteCandidateRuntimeRequest,
   type PrepareNoteCaptureInputRuntimeRequest,
   type LoadNoteDecisionRuntimeRequest,
@@ -125,6 +126,11 @@ export {
   preparePlanningRulesContextRequestSchema,
   preparePlanningRulesContextResponseSchema,
 } from "./internal-runtime/context-prep.js";
+
+export {
+  prepareGovernanceReviewInputRequestSchema,
+  prepareGovernanceReviewInputResponseSchema,
+} from "./internal-runtime/governance.js";
 
 export {
   DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,

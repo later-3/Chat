@@ -72,6 +72,12 @@ export {
 } from "./internal-runtime/context-prep.js";
 
 export {
+  prepareGovernanceReviewInputRequestSchema,
+  governanceReviewInputDtoSchema,
+  prepareGovernanceReviewInputResponseSchema,
+} from "./internal-runtime/governance.js";
+
+export {
   publishNoteCandidateRuntimeRequestSchema,
   publishNoteCandidateRuntimeResponseSchema,
   prepareNoteCaptureInputRuntimeRequestSchema,
@@ -185,6 +191,9 @@ export {
   type PreparePlanningProjectContextResponse,
   type PreparePlanningRulesContextRequest,
   type PreparePlanningRulesContextResponse,
+  type PrepareGovernanceReviewInputRequest,
+  type PrepareGovernanceReviewInputResponse,
+  type GovernanceReviewInputDto,
   type PublishNoteCandidateRuntimeRequest,
   type PublishNoteCandidateRuntimeResponse,
   type PrepareNoteCaptureInputRuntimeRequest,

@@ -15,7 +15,12 @@ import {
 } from "./foundations.js";
 import { providerStopReasonSchema } from "./events-provider.js";
 
-export const piNodeKindSchema = z.enum(["planner", "executor", "note_capture"]);
+export const piNodeKindSchema = z.enum([
+  "planner",
+  "executor",
+  "governance_reviewer",
+  "note_capture",
+]);
 export const candidateValidationDiagnosticsSchema = z
   .object({
     stage: z.enum(["tool_argument_schema", "candidate_contract", "capability_policy"]),

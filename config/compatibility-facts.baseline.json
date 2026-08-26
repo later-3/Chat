@@ -13,15 +13,18 @@
         }
       ],
       "currentWriteGenerations": [
-        "chat-agent-profile-api.v3",
+        "chat-agent-profile-api.v4",
         "chat-execution-trace.v1",
         "chat-note-api.v1",
         "chat-product-api.v1",
         "chat-project-api.v3",
         "chat-prompt-studio-api.v1",
+        "chat-prompt-turn-preview-api.v2",
         "chat-rules-api.v1",
         "chat-workflow-api.v1",
-        "chat-workflow-execution-trace.v1",
+        "chat-workflow-designer-api.v2",
+        "chat-workflow-execution-trace.v2",
+        "chat-workflow-product-api.v2",
         "content-lab-plane-rollout.v1",
         "plane-project-coordination.v2",
         "project-agent-context.v2",
@@ -42,11 +45,18 @@
           "identity": "chat-agent-profile-api.v2"
         },
         {
-          "canonicalSha256": "badde056332d67a21f567d6161d6eeb25ed5307611c152591ff69113c4176ba3",
-          "evidenceCount": 2,
+          "canonicalSha256": "77c2233dfbab725ecc15fde9a7d870364767f0523ec353171ea35d1b4b77eef6",
+          "evidenceCount": 1,
           "family": "chat-agent-profile-api.",
           "generation": 3,
           "identity": "chat-agent-profile-api.v3"
+        },
+        {
+          "canonicalSha256": "50f7eeb446e6fda6ab4d731899c81b2b05873c555debe9ef080a583347918652",
+          "evidenceCount": 2,
+          "family": "chat-agent-profile-api.",
+          "generation": 4,
+          "identity": "chat-agent-profile-api.v4"
         },
         {
           "canonicalSha256": "2b7a88f472f0cbffa919bce7220d2fa305c77196ee15f5fe71b8ed53ed00638b",
@@ -63,8 +73,8 @@
           "identity": "chat-note-api.v1"
         },
         {
-          "canonicalSha256": "77c8824a282b3d0e45290d3fe3b3f0b707a9207263d5a457078fb5a96a9355a6",
-          "evidenceCount": 23,
+          "canonicalSha256": "7b352385e09a4e5cc61bb73b53afef31fca60c1c58d564535224dd87ab6a9707",
+          "evidenceCount": 15,
           "family": "chat-product-api.",
           "generation": 1,
           "identity": "chat-product-api.v1"
@@ -91,6 +101,13 @@
           "identity": "chat-prompt-studio-api.v1"
         },
         {
+          "canonicalSha256": "703a72c3073b995dc827b896f133f734931015ab77a6983e9ec711bc82d4af7b",
+          "evidenceCount": 1,
+          "family": "chat-prompt-turn-preview-api.",
+          "generation": 2,
+          "identity": "chat-prompt-turn-preview-api.v2"
+        },
+        {
           "canonicalSha256": "60b434f646146f01b38a138dd96410186d3ba6f131942bbad53a790103e60690",
           "evidenceCount": 12,
           "family": "chat-rules-api.",
@@ -105,11 +122,25 @@
           "identity": "chat-workflow-api.v1"
         },
         {
-          "canonicalSha256": "761897957df4ec62e6b103e228475743b86cc958531ae154efc094841267bf69",
+          "canonicalSha256": "5dd2f0b4250c0ec6a661ce3f0097cc710274ceed806e3d6a610ece819a00cb02",
+          "evidenceCount": 1,
+          "family": "chat-workflow-designer-api.",
+          "generation": 2,
+          "identity": "chat-workflow-designer-api.v2"
+        },
+        {
+          "canonicalSha256": "b42932471336cfa51b94f500cd3a1b12719ed49c77d538a1c04bf8b26a7c633a",
           "evidenceCount": 1,
           "family": "chat-workflow-execution-trace.",
-          "generation": 1,
-          "identity": "chat-workflow-execution-trace.v1"
+          "generation": 2,
+          "identity": "chat-workflow-execution-trace.v2"
+        },
+        {
+          "canonicalSha256": "e08a541cb50397086e9a7719add1098bca2c95cd9e8dd7941e1dbbba72de66c5",
+          "evidenceCount": 6,
+          "family": "chat-workflow-product-api.",
+          "generation": 2,
+          "identity": "chat-workflow-product-api.v2"
         },
         {
           "canonicalSha256": "2e686fe96297a9ff558a23b87f68fb7752c68950670b0de49f90151801e2a6a0",
@@ -175,31 +206,42 @@
           "identity": "workspace-instructions-input.v1"
         }
       ],
-      "historicalReadableGenerations": ["chat-agent-profile-api.v2", "chat-project-api.v2"],
+      "historicalReadableGenerations": [
+        "chat-agent-profile-api.v2",
+        "chat-agent-profile-api.v3",
+        "chat-project-api.v2"
+      ],
       "id": "network-contracts",
       "legacyAuthority": {
         "allowedActions": ["decode", "project"],
-        "canonicalSha256": "844391ccde2b6e45413f10bbaeca1563ae2a23432911d68e2028f1916cc69419",
+        "canonicalSha256": "77834b39887ebc6ee33efaa7de9cbb3d3e254917820884114be273db9d44be33",
         "entry": "@chat/contracts/public:decode-old",
-        "generations": ["chat-agent-profile-api.v2", "chat-project-api.v2"],
+        "generations": [
+          "chat-agent-profile-api.v2",
+          "chat-agent-profile-api.v3",
+          "chat-project-api.v2"
+        ],
         "previousExtractorCanonicalSha256": "495e8153e102e66600ad1dbef8b8c365d7c68e4522b04b95aee63f14ca6a14ad"
       },
       "ownerRoots": ["packages/contracts/src", "config/api-surface.baseline.json"],
       "sourceFiles": ["config/api-surface.baseline.json", "packages/contracts/src/public.ts"],
       "writeAuthority": {
         "allowedActions": ["validate", "write_current_response"],
-        "canonicalSha256": "844391ccde2b6e45413f10bbaeca1563ae2a23432911d68e2028f1916cc69419",
+        "canonicalSha256": "77834b39887ebc6ee33efaa7de9cbb3d3e254917820884114be273db9d44be33",
         "entry": "apps/api:createApiApp",
         "generations": [
-          "chat-agent-profile-api.v3",
+          "chat-agent-profile-api.v4",
           "chat-execution-trace.v1",
           "chat-note-api.v1",
           "chat-product-api.v1",
           "chat-project-api.v3",
           "chat-prompt-studio-api.v1",
+          "chat-prompt-turn-preview-api.v2",
           "chat-rules-api.v1",
           "chat-workflow-api.v1",
-          "chat-workflow-execution-trace.v1",
+          "chat-workflow-designer-api.v2",
+          "chat-workflow-execution-trace.v2",
+          "chat-workflow-product-api.v2",
           "content-lab-plane-rollout.v1",
           "plane-project-coordination.v2",
           "project-agent-context.v2",
@@ -219,8 +261,8 @@
       "authorityCanonicalVersion": 1,
       "compatibilityEntries": [
         {
-          "canonicalSha256": "1096713a152eee736325fde0d90ebe8ea4e8aaafefa997694c5fc132b4d16281",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v1->chat-product-store.v24",
+          "canonicalSha256": "2a9e42b32ee4d0a08098150696977d681f072d7989cdf891d486213ecd77f7b8",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v1->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v1",
@@ -246,12 +288,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "44ee90e679fc89903cfaf72925e4513761b59c291a0551a43329a80a099e4ae6",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v10->chat-product-store.v24",
+          "canonicalSha256": "54eb4a0c38ec0b7dedd03e02ff8daa32dac71c7c8cdac973a905a4839c51d1f7",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v10->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v10",
@@ -268,12 +310,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "c2efd1e98bc40daf32bf13659c336584659f00cb7bd148eab65d76cd2a5e9494",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v11->chat-product-store.v24",
+          "canonicalSha256": "46aff87d81d8308c42a9f4b13308690b5f581895d6c619dd0e641ab2433184a4",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v11->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v11",
@@ -289,12 +331,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "aca071e0f649c33ffbe4ce7df93ecc6c805c444eac92bd08bd832b1cd65efd97",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v12->chat-product-store.v24",
+          "canonicalSha256": "b7a2ef4fa2b6f5129971cc8c9463d950167ff2d847ee9334f3652943ccf98fcd",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v12->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v12",
@@ -309,12 +351,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "c4c709c4d481c5dc9f539e972576cbd45c5c6ce1065100a29fd4cc629edfef0c",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v13->chat-product-store.v24",
+          "canonicalSha256": "962e55aedbf34586d76b18bf2e0088c21401e5e67ca306c531897d60e91377be",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v13->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v13",
@@ -328,12 +370,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "7a7415feb4b72c87b9ef4e259b3da92cf529ddb13c2d6a64a954884a6f500743",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v14->chat-product-store.v24",
+          "canonicalSha256": "bf30f31c318da371d4f0cf4f9b8cc643d51ded3352dcd7757d96163e484a68fc",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v14->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v14",
@@ -346,12 +388,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "ff120b63302486d932baab76f71fb23657edba21245f52099204dccc4403c72f",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v15->chat-product-store.v24",
+          "canonicalSha256": "2273cac3009677110cc4ccb6f8a0541d12b436cc5e5eb84740c6ebbe855a34ec",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v15->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v15",
@@ -363,12 +405,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "e7366ec70fb59daa3c895854e7cb19be2e016acce3ff456546a5cd3e19011876",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v16->chat-product-store.v24",
+          "canonicalSha256": "d4c84945369130f1f8df978807d0ecac08ec50abf23df3bdb9d43c021244d57a",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v16->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v16",
@@ -379,12 +421,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "5da2942b3d5e9f58dc877b5201d775b13b87088b9d3d75c30bbc92b124fea18a",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v17->chat-product-store.v24",
+          "canonicalSha256": "247124ea247bb71846840956c7682bdb3c7b28e54eea827dea99bedfe4a0d188",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v17->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v17",
@@ -394,12 +436,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "54caaef72ca086d827ea5ad9426cc67eb9d9cfd2c8df651c63f1b5122e3184cf",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v18->chat-product-store.v24",
+          "canonicalSha256": "70e4747b9a0031d37a50d5fe29d280cbcb5df30b36f413de4d1a606e104a9fa1",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v18->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v18",
@@ -408,12 +450,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "951c0477c1540594b00f0235861cf8b034f5e4d7b2d33aaa0e6ba0ead2da9e91",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v19->chat-product-store.v24",
+          "canonicalSha256": "7b449cbeb4730f9d56a09e27ff6070aadf0fa115db5845a824c09828fdcfd583",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v19->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v19",
@@ -421,12 +463,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "ec629a535e5de87cf3a1e03c2ed77900b4d9f9926f6832815f4a3de628c84c14",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v2->chat-product-store.v24",
+          "canonicalSha256": "72852472c0c8e1746c543b4090e0450921b727757bed92304cdad564e8637195",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v2->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v2",
@@ -451,62 +493,68 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "7d46e360b57d3cdab42d045c65d1b79d679c893050cde23c67037a2592e8236f",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v20->chat-product-store.v24",
+          "canonicalSha256": "642ddba5d13cd50c4158e38bf84d5c40f8f460290e4974339b4e9cae435fbfb8",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v20->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v20",
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "7f86d840c3f0f70c8a01147c23586d35478c87371d8c04897148122f9c6ad358",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v20->chat-product-store.v24:capability-lineage",
+          "canonicalSha256": "07e8ba02dd32e54bb7300bf31d533883f9eabba0340c5f3af89ac8ba90d1e5c1",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v20->chat-product-store.v25:capability-lineage",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v20",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "470dd9d04ef28ee81169437bc8689cb6c0102cf7a728950f2fdbe22adeeadf4c",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v21->chat-product-store.v24",
+          "canonicalSha256": "6cfbd01d57b308322ca62ebae65e5e7e83ef8d9badf08919cda181a1d2891e03",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v21->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "1f7f7a852d2e2f0e61c0d78ca874950bb430aaa1c50345bb3c8b25686ff53c44",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v22->chat-product-store.v24",
+          "canonicalSha256": "5cbdd4f32a3ce57ca19c7881ea3113458aefab765856311bd7b964d0c7b1e80b",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v22->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "d837351383b58ecebc1c4c027d57523ebc98cdf575dc5d8164c327ffebae49ba",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v23->chat-product-store.v24",
+          "canonicalSha256": "8e5ac5cfc259e966ae3c201f1b3610d1266b3073a9ca86c5e682814be5a8a914",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v23->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
-          "generations": ["chat-product-store.v23", "chat-product-store.v24"]
+          "generations": ["chat-product-store.v23", "chat-product-store.v25"]
         },
         {
-          "canonicalSha256": "29a6e89200daaaf473a5a33c2a67d4ad7a11c046bc912d5cc76c17d84968c11a",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v3->chat-product-store.v24",
+          "canonicalSha256": "523c48d30f7e1d40a4e3b6205fc6b8474162658eb9fa6c32609e1974cb83cc97",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v24->chat-product-store.v25",
+          "evidenceKind": "resolved-call-migration-path",
+          "generations": ["chat-product-store.v24", "chat-product-store.v25"]
+        },
+        {
+          "canonicalSha256": "c60ff41cf7b9d15eccfa7fe922890a1617427f314bcaaefa5e093c832b250f9c",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v3->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v3",
@@ -530,12 +578,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "cd0f5fbd2d9ca37dbb26fce6118ecbb53462f78e6f1575aecdfed1cd5d258b8c",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v4->chat-product-store.v24",
+          "canonicalSha256": "28e288c55f8729c1fa98bdb6d909e22dad12fbf8f3be2dbe78a206cd39e7f8ce",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v4->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v4",
@@ -558,12 +606,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "09d2f96144fb7dbc6925b68a3fbb1b0b288660714fe4e7133755e395d041d54c",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v5->chat-product-store.v24",
+          "canonicalSha256": "a3f358b88467dd17e2531b6adc6a1c045861d4d2d7a2977b5aa50f3b9d53c14e",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v5->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v5",
@@ -585,12 +633,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "108e9fac4034c53b5f568b16ed9b91e4179c3be2887fc03c3be8d0a48458ceba",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v6->chat-product-store.v24",
+          "canonicalSha256": "f073364df03476ced52ffc6681c57baa6effb0a7a3bac564e3cdf4692186411f",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v6->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v6",
@@ -611,12 +659,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "de6810e0918b6a788739b8ca5e737e5425c5b759f3aa85bf230659059bd6ff54",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v7->chat-product-store.v24",
+          "canonicalSha256": "bf70d1d73cc141a0b09599e506cd7173f5eadcd0030ed5b6e4b0c279c44d9dcb",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v7->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v7",
@@ -636,12 +684,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "8a7ef140f786e80d923e70aeca6ef1882466fee6fea5520adf5b8c9924ef295f",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v8->chat-product-store.v24",
+          "canonicalSha256": "655d4353fc95b007d34632a121ab6960ee994340bad4498ccf3d441f5dc053a9",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v8->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v8",
@@ -660,12 +708,12 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
         },
         {
-          "canonicalSha256": "d7509d94d34516bd0188219828c5a9f0bd10026bbcf6279c7d3bd5f627f0b06a",
-          "entry": "JsonProductStore.open:migration-path:chat-product-store.v9->chat-product-store.v24",
+          "canonicalSha256": "82938e459dab32741a70d519864fb3e36942674b29bb9d2c986921e6653554fc",
+          "entry": "JsonProductStore.open:migration-path:chat-product-store.v9->chat-product-store.v25",
           "evidenceKind": "resolved-call-migration-path",
           "generations": [
             "chat-product-store.v9",
@@ -683,8 +731,14 @@
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
-            "chat-product-store.v24"
+            "chat-product-store.v25"
           ]
+        },
+        {
+          "canonicalSha256": "3d9f208685aa34c18d34c7aeed8679e4b911bfbfd49ac08cc5a3ce91dd1a680e",
+          "entry": "packages/product-store-json/src/json-product-store.ts:migrateProductSnapshotV23ToCurrent",
+          "evidenceKind": "resolved-call-input-output",
+          "generations": ["chat-product-store.v23", "chat-product-store.v25"]
         },
         {
           "canonicalSha256": "0d0595175462b42bf7a1c388ac9b5d8085975a3558e4031c01751ccb12821a28",
@@ -693,7 +747,7 @@
           "generations": ["chat-product-store.v1", "chat-product-store.v2"]
         },
         {
-          "canonicalSha256": "098010e8e1e1427da7d8843553f4f80d9843005cccc53891ccb4e74045a931f3",
+          "canonicalSha256": "5643ba9860be4e1bacfd39380c4670fe2b2294b011d5e896c3c29c19205cd8ed",
           "entry": "packages/product-store-json/src/migrate-v10-to-v11.ts:migrateProductSnapshotV10ToV11",
           "evidenceKind": "resolved-call-input-output",
           "generations": ["chat-product-store.v10", "chat-product-store.v11"]
@@ -783,10 +837,10 @@
           "generations": ["chat-product-store.v22", "chat-product-store.v23"]
         },
         {
-          "canonicalSha256": "0cb8cb0197e600d6dc62f6def1e5fd7b6d82d7a7cb3e3fb445366111b43e0576",
-          "entry": "packages/product-store-json/src/migrate-v23-to-v24.ts:migrateProductSnapshotV23ToV24",
+          "canonicalSha256": "938c96e7615bfab3fbb220c4414b9d5d1509e925fdfb31baaa5f31237ff4ff9a",
+          "entry": "packages/product-store-json/src/migrate-v24-to-v25.ts:migrateProductSnapshotV24ToV25",
           "evidenceKind": "resolved-call-input-output",
-          "generations": ["chat-product-store.v23", "chat-product-store.v24"]
+          "generations": ["chat-product-store.v24", "chat-product-store.v25"]
         },
         {
           "canonicalSha256": "ebfa3c77b05b78b59965dfff14d022aa123aafc3aa616713e52895f4f30ba6e4",
@@ -831,200 +885,208 @@
           "generations": ["chat-product-store.v9", "chat-product-store.v10"]
         }
       ],
-      "currentWriteGenerations": ["chat-product-store.v24"],
+      "currentWriteGenerations": ["chat-product-store.v25"],
       "generationCanonicalVersion": 3,
       "generations": [
         {
-          "canonicalSha256": "09f430761746f9db6b9eeb2ff60bdef6898b58e947fec493e534c8eb30988cc6",
-          "evidenceCount": 59,
+          "canonicalSha256": "1b53c48e92f93144b143f1146edd59e0dc920b29448713a9e32400c963cc5e44",
+          "evidenceCount": 68,
           "family": "chat-product-store.",
           "generation": 1,
           "identity": "chat-product-store.v1",
           "previousExtractorCanonicalSha256": "09f430761746f9db6b9eeb2ff60bdef6898b58e947fec493e534c8eb30988cc6"
         },
         {
-          "canonicalSha256": "8534dd5c3c5257367b7d483d6798a9fec2309ec2b8034b6e715d45eceb433e9c",
-          "evidenceCount": 99,
+          "canonicalSha256": "e52cb67987dcb4563915c01a777f9371eb401f28016656fb632ef02cdfbc1d40",
+          "evidenceCount": 111,
           "family": "chat-product-store.",
           "generation": 2,
           "identity": "chat-product-store.v2",
           "previousExtractorCanonicalSha256": "8534dd5c3c5257367b7d483d6798a9fec2309ec2b8034b6e715d45eceb433e9c"
         },
         {
-          "canonicalSha256": "a2e48ca1400d378b871338d86349d3f3f4501c4813c22dfe47671eadc1a9f60a",
-          "evidenceCount": 192,
+          "canonicalSha256": "db23cf83e146c9bee4333876416c706ee0f6e1f1c5dc01bf26e2de2213b1a62d",
+          "evidenceCount": 204,
           "family": "chat-product-store.",
           "generation": 3,
           "identity": "chat-product-store.v3",
           "previousExtractorCanonicalSha256": "a2e48ca1400d378b871338d86349d3f3f4501c4813c22dfe47671eadc1a9f60a"
         },
         {
-          "canonicalSha256": "665828d6206f6cf2bb978a3c090c4deda799a0eda127510ec000b7c8c7ab5520",
-          "evidenceCount": 190,
+          "canonicalSha256": "c13f420dd096f135d6c8f19f3fbe2c4a38f385319cf2d520564b60ad8f5d5986",
+          "evidenceCount": 202,
           "family": "chat-product-store.",
           "generation": 4,
           "identity": "chat-product-store.v4",
           "previousExtractorCanonicalSha256": "665828d6206f6cf2bb978a3c090c4deda799a0eda127510ec000b7c8c7ab5520"
         },
         {
-          "canonicalSha256": "f306d8c8dea41979db5793f7df281fe7eb7c42b70f209ee949d027094ef269b9",
-          "evidenceCount": 181,
+          "canonicalSha256": "18ec6ac00e521df952aee4c9bafdc5f4acae1c0aa2ae812647ed54f59a04783d",
+          "evidenceCount": 193,
           "family": "chat-product-store.",
           "generation": 5,
           "identity": "chat-product-store.v5",
           "previousExtractorCanonicalSha256": "f306d8c8dea41979db5793f7df281fe7eb7c42b70f209ee949d027094ef269b9"
         },
         {
-          "canonicalSha256": "1617bd26e13b59b0f4503b8afd87a676cb6dea911ecf9aba07b7a5f906c68782",
-          "evidenceCount": 209,
+          "canonicalSha256": "073b7431eb485c82f4281b2f7b8a168f37837fa5715e0e54f1d8407f0a398d8e",
+          "evidenceCount": 221,
           "family": "chat-product-store.",
           "generation": 6,
           "identity": "chat-product-store.v6",
           "previousExtractorCanonicalSha256": "1617bd26e13b59b0f4503b8afd87a676cb6dea911ecf9aba07b7a5f906c68782"
         },
         {
-          "canonicalSha256": "73ae505719c1c2d7846a0def0787f25effe34859e9bda0e0d4aed5a40065d9e0",
-          "evidenceCount": 252,
+          "canonicalSha256": "109b93a5555d227918336759fe27ccc46eed7fbf176133344825a46cac95c324",
+          "evidenceCount": 282,
           "family": "chat-product-store.",
           "generation": 7,
           "identity": "chat-product-store.v7",
           "previousExtractorCanonicalSha256": "73ae505719c1c2d7846a0def0787f25effe34859e9bda0e0d4aed5a40065d9e0"
         },
         {
-          "canonicalSha256": "00b138192f09e52bac78f16fbb8dc5c34cd4277333cbbdce8222169c4471fa2f",
-          "evidenceCount": 272,
+          "canonicalSha256": "8f07f1b409a1f89c9b848eea0392c45b0f6076454b049928cbcdf6ea66995bdd",
+          "evidenceCount": 302,
           "family": "chat-product-store.",
           "generation": 8,
           "identity": "chat-product-store.v8",
           "previousExtractorCanonicalSha256": "00b138192f09e52bac78f16fbb8dc5c34cd4277333cbbdce8222169c4471fa2f"
         },
         {
-          "canonicalSha256": "b94d71c4615708e327394dced7e424aa4514a282865f25df856d127bd33d225f",
-          "evidenceCount": 319,
+          "canonicalSha256": "3d25c9e1e25c1b99cea05ff3eddb4efbfcc1a2e73278473893d0df67ac706061",
+          "evidenceCount": 349,
           "family": "chat-product-store.",
           "generation": 9,
           "identity": "chat-product-store.v9",
           "previousExtractorCanonicalSha256": "b94d71c4615708e327394dced7e424aa4514a282865f25df856d127bd33d225f"
         },
         {
-          "canonicalSha256": "a68965a7f54b2b5467bd70427003e14599353fca2894edd3073fd27a3451028f",
-          "evidenceCount": 325,
+          "canonicalSha256": "15e38ee6a9d8f437d444f84594e3799c24d52d473a6fc02733ec5ac284fd1dbe",
+          "evidenceCount": 355,
           "family": "chat-product-store.",
           "generation": 10,
           "identity": "chat-product-store.v10",
           "previousExtractorCanonicalSha256": "a68965a7f54b2b5467bd70427003e14599353fca2894edd3073fd27a3451028f"
         },
         {
-          "canonicalSha256": "681b9e03d0ebdf89997e8c3f023b3cc4e2cfe89ff3815e83821a9f265674f90e",
-          "evidenceCount": 326,
+          "canonicalSha256": "8f8f1942a98ddfe08485b9838fad6aa941fb3767002efa52ad07add2a29a676f",
+          "evidenceCount": 356,
           "family": "chat-product-store.",
           "generation": 11,
           "identity": "chat-product-store.v11",
           "previousExtractorCanonicalSha256": "681b9e03d0ebdf89997e8c3f023b3cc4e2cfe89ff3815e83821a9f265674f90e"
         },
         {
-          "canonicalSha256": "934c4ace67f2a5afeb269f1fbbdcc9540a45eb40f1cc6c4dd6ddb07aa2183ea4",
-          "evidenceCount": 350,
+          "canonicalSha256": "269f2583e5a57e03545361f9fabdc046d5f4ddcc4df1f478ea8374d2f6e83a4d",
+          "evidenceCount": 380,
           "family": "chat-product-store.",
           "generation": 12,
           "identity": "chat-product-store.v12",
           "previousExtractorCanonicalSha256": "934c4ace67f2a5afeb269f1fbbdcc9540a45eb40f1cc6c4dd6ddb07aa2183ea4"
         },
         {
-          "canonicalSha256": "29b7076cc5fd40942d247d632ac430549b29d19258c361e4b2532593eddc20fc",
-          "evidenceCount": 377,
+          "canonicalSha256": "e48d42b01f6e9389faec53ee7cd1e08fb82d9d1a856c5a3cba5e71d5253a5b89",
+          "evidenceCount": 407,
           "family": "chat-product-store.",
           "generation": 13,
           "identity": "chat-product-store.v13",
           "previousExtractorCanonicalSha256": "29b7076cc5fd40942d247d632ac430549b29d19258c361e4b2532593eddc20fc"
         },
         {
-          "canonicalSha256": "55faaa5ba355a30b877a81d57e88e381dacd52b148edfcd37b657acbd4bc2cc0",
-          "evidenceCount": 391,
+          "canonicalSha256": "63abd76e232787644c407dfeacfb6313a9cf87a64c6d165f3909cc4090648285",
+          "evidenceCount": 421,
           "family": "chat-product-store.",
           "generation": 14,
           "identity": "chat-product-store.v14",
           "previousExtractorCanonicalSha256": "55faaa5ba355a30b877a81d57e88e381dacd52b148edfcd37b657acbd4bc2cc0"
         },
         {
-          "canonicalSha256": "313e1d141295e3c4b18f870e913b6885f1ba779159a3ace6231b3208f1c93373",
-          "evidenceCount": 514,
+          "canonicalSha256": "6d6f81ef883f59f6ca97e28cbff8a53f5ac896556ad5c92b42a20b55ab8a19f9",
+          "evidenceCount": 548,
           "family": "chat-product-store.",
           "generation": 15,
           "identity": "chat-product-store.v15",
           "previousExtractorCanonicalSha256": "8f57e5b9bf389ad15f5afb84ae20df260927ea91c969b9809e472e2c9b8f8606"
         },
         {
-          "canonicalSha256": "366468c3ca89e949fc5ca37ad67b616e245c72d367bdd551d6227cf9a93df763",
-          "evidenceCount": 514,
+          "canonicalSha256": "2dfd6213f8921b57db68fad581caa4fda4d14a128019883bb65fe40c2c0347ae",
+          "evidenceCount": 548,
           "family": "chat-product-store.",
           "generation": 16,
           "identity": "chat-product-store.v16",
           "previousExtractorCanonicalSha256": "fd84545483665c3b15c3760584392685e736111abb599f49bac5975dd41c3c3b"
         },
         {
-          "canonicalSha256": "0dbc5f99a5673b133a91a40ae9bed8ea9a4e8c0cfb543d388e7fe102dc127073",
-          "evidenceCount": 512,
+          "canonicalSha256": "5d999fee7c6fa1de3624237153576e9ba34bbe90fca6f5caf7a9d2aa15f36e3e",
+          "evidenceCount": 546,
           "family": "chat-product-store.",
           "generation": 17,
           "identity": "chat-product-store.v17",
           "previousExtractorCanonicalSha256": "0009e959155f53ec62fa0e6a74ebd6d438ba47d365723e764765edebc9ee4b28"
         },
         {
-          "canonicalSha256": "2bb7981b70831d293cb4d8aed3359cd251f9670369e5e0ea3fbe5f30b3fdb7b9",
-          "evidenceCount": 513,
+          "canonicalSha256": "423763a346e4e28b32a834dfba4110f8f3b18f25fd58bafac80ed26dbb6aba99",
+          "evidenceCount": 547,
           "family": "chat-product-store.",
           "generation": 18,
           "identity": "chat-product-store.v18",
           "previousExtractorCanonicalSha256": "fe44dd16b48b7eb7abc75a6bc3016c46a49f1126f3005de59d64b54049b4d9c3"
         },
         {
-          "canonicalSha256": "72b3735b6e1ee42a7313be83dfe6c80ca1c46ceb99eda44792335ead1ed4f01f",
-          "evidenceCount": 512,
+          "canonicalSha256": "bfc7483a36f87942abe80b974cbc1b990477f79fc5ee99379e7e518c5b7992d4",
+          "evidenceCount": 546,
           "family": "chat-product-store.",
           "generation": 19,
           "identity": "chat-product-store.v19",
           "previousExtractorCanonicalSha256": "66aa890f8d1394492080d9a844951a4813d1b007474bcbdaecc7fa710d8fb9f3"
         },
         {
-          "canonicalSha256": "a1aba0050a7188ee6b1d22461bade20844eff2bf2f9d22b0461968bfcc2b89b6",
-          "evidenceCount": 510,
+          "canonicalSha256": "8d5067ca637d1f1892f5e823965686b6d0a19c34f11372834cbcbc1a942e0d3b",
+          "evidenceCount": 544,
           "family": "chat-product-store.",
           "generation": 20,
           "identity": "chat-product-store.v20",
           "previousExtractorCanonicalSha256": "8d88d6e09f1683cada5ae2298fe97467fed6d0b079f32427110c5246270441ef"
         },
         {
-          "canonicalSha256": "b4a6da08cbca524697d112d3c7f8205d8cca6850e1517feecc0b81a6e8f6ca23",
-          "evidenceCount": 707,
+          "canonicalSha256": "841d0e7433f1c58fcc2310b70ec6a14fc9cf4aa7943d62c5e817bbd002caf499",
+          "evidenceCount": 741,
           "family": "chat-product-store.",
           "generation": 21,
           "identity": "chat-product-store.v21",
           "previousExtractorCanonicalSha256": "fc2f7c56e625b803ed8c3c057a897689f6e157a4d7960f7ddb10482ccca47a57"
         },
         {
-          "canonicalSha256": "31834e97b0c5bfe0a87c810cee3061f1783aabd1bd118edf3d9b9f75ff3e1882",
-          "evidenceCount": 707,
+          "canonicalSha256": "d467842ea3bc3a7f65f04783382667d004109130ce0ec3f5023dff9494304b12",
+          "evidenceCount": 741,
           "family": "chat-product-store.",
           "generation": 22,
           "identity": "chat-product-store.v22",
           "previousExtractorCanonicalSha256": "f5d11d73223b3d6933934a95d7df9b8fc84cc0c1fa38e99b5401e1a2bc2cacfb"
         },
         {
-          "canonicalSha256": "2ad831fc7242102d4c0ec5611f05327fde6b27a9b2665f5332a6cd2161aebf9d",
-          "evidenceCount": 707,
+          "canonicalSha256": "f86febb80b269190ca077abc0df45b2209e53c627d4272503db6e2bc298a7c11",
+          "evidenceCount": 741,
           "family": "chat-product-store.",
           "generation": 23,
           "identity": "chat-product-store.v23",
           "previousExtractorCanonicalSha256": "17ac4b05307a03c77e95435a8666a89f0c8880f35bad4d63b88149847523ebdb"
         },
         {
-          "canonicalSha256": "37cdf11050bd38635f66b59db0dc59f614b556273af8e32a4c0ec0e13c2723fe",
-          "evidenceCount": 704,
+          "canonicalSha256": "cd52407cdc7dcac022ab889f9cb6bdd83447913e883d404d8d268f248ac047a4",
+          "evidenceCount": 741,
           "family": "chat-product-store.",
           "generation": 24,
           "identity": "chat-product-store.v24",
-          "previousExtractorCanonicalSha256": "ca6991f988ee178db56437e839433f4a924303d7279db5e10ce8aacae3a1a9e2"
+          "previousExtractorCanonicalSha256": "4eac5563ca8e8a5ba53218e3adf72b6438f7dcb359b005176af1cc5bb8eae6f5"
+        },
+        {
+          "canonicalSha256": "b9056c56a0b422e7d87b9d475c1513652c3dc66ff631d9941e117f78a9d085c3",
+          "evidenceCount": 738,
+          "family": "chat-product-store.",
+          "generation": 25,
+          "identity": "chat-product-store.v25",
+          "previousExtractorCanonicalSha256": "363e9e8fc27e38fa5ccf7f7212abf04f35bb20d1683feada170a6fe90c2104f0"
         }
       ],
       "historicalReadableGenerations": [
@@ -1044,6 +1106,7 @@
         "chat-product-store.v21",
         "chat-product-store.v22",
         "chat-product-store.v23",
+        "chat-product-store.v24",
         "chat-product-store.v3",
         "chat-product-store.v4",
         "chat-product-store.v5",
@@ -1055,7 +1118,7 @@
       "id": "product-store",
       "legacyAuthority": {
         "allowedActions": ["parse", "migrate"],
-        "canonicalSha256": "fcca9b6bd7ff2de2f1fde396d74af76f5da6f34267d73539ce5da146f9dceae6",
+        "canonicalSha256": "649ef7987bda5f8f5a21d3a0dfbf15df674698f88f9f6d4ae2162c55611d528f",
         "entry": "JsonProductStore.open",
         "generations": [
           "chat-product-store.v1",
@@ -1074,6 +1137,7 @@
           "chat-product-store.v21",
           "chat-product-store.v22",
           "chat-product-store.v23",
+          "chat-product-store.v24",
           "chat-product-store.v3",
           "chat-product-store.v4",
           "chat-product-store.v5",
@@ -1137,6 +1201,7 @@
         "packages/product-store-json/src/legacy-v21.ts",
         "packages/product-store-json/src/legacy-v22.ts",
         "packages/product-store-json/src/legacy-v23.ts",
+        "packages/product-store-json/src/legacy-v24.ts",
         "packages/product-store-json/src/legacy-v4.ts",
         "packages/product-store-json/src/legacy-v5.ts",
         "packages/product-store-json/src/legacy-v6.ts",
@@ -1160,6 +1225,7 @@
         "packages/product-store-json/src/migrate-v21-to-v22.ts",
         "packages/product-store-json/src/migrate-v22-to-v23.ts",
         "packages/product-store-json/src/migrate-v23-to-v24.ts",
+        "packages/product-store-json/src/migrate-v24-to-v25.ts",
         "packages/product-store-json/src/migrate-v3-to-v4.ts",
         "packages/product-store-json/src/migrate-v4-to-v5.ts",
         "packages/product-store-json/src/migrate-v5-to-v6.ts",
@@ -1191,7 +1257,7 @@
         "allowedActions": ["validate", "atomic_persist"],
         "canonicalSha256": "a02654b1b10d084c52290660d93bcf3feea7c4ec720e74e28b1efc23fb0ed8d6",
         "entry": "JsonProductStore.doTransact->persist",
-        "generations": ["chat-product-store.v24"]
+        "generations": ["chat-product-store.v25"]
       }
     },
     {
@@ -1408,26 +1474,41 @@
       "authorityBoundarySha256": "48a308702296fc0a42aa342d2791a21087c20a9e4b72ec83f57f40b6738d73c2",
       "authorityBoundaryVersion": 2,
       "authorityCanonicalVersion": 1,
-      "compatibilityEntries": [],
-      "currentWriteGenerations": ["workflow-run-spec.v1"],
+      "compatibilityEntries": [
+        {
+          "canonicalSha256": "5e92c22d3ef909fa2e9b9a32c4943786be32135306403dd087d44be540a09c4c",
+          "entry": "workflow-run-spec:read:workflow-run-spec.v1",
+          "evidenceKind": "schema-reader-validator-binding",
+          "generations": ["workflow-run-spec.v1", "workflow-run-spec.v2"]
+        }
+      ],
+      "currentWriteGenerations": ["workflow-run-spec.v2"],
       "generationCanonicalVersion": 2,
       "generations": [
         {
-          "canonicalSha256": "fd091126b970a10259a829e82526b93c55a5b0c8b2c2ed2bfc6c25910038e44a",
-          "evidenceCount": 797,
+          "canonicalSha256": "fc989a62ea61f625485cd48e923f460ca0008ca4aa5792aacf507fa0c15bcefe",
+          "evidenceCount": 823,
           "family": "workflow-run-spec.",
           "generation": 1,
           "identity": "workflow-run-spec.v1",
           "previousExtractorCanonicalSha256": "c7c350b779becdbbaf37f4e06fe35ff03f80e53861bcc3574c8dfd2c63474dd0"
+        },
+        {
+          "canonicalSha256": "fc989a62ea61f625485cd48e923f460ca0008ca4aa5792aacf507fa0c15bcefe",
+          "evidenceCount": 823,
+          "family": "workflow-run-spec.",
+          "generation": 2,
+          "identity": "workflow-run-spec.v2",
+          "previousExtractorCanonicalSha256": "c37c3ce4a5f30244f49e5a99af0fe115030b73b7d18c7b84a4c08dc2681657e4"
         }
       ],
-      "historicalReadableGenerations": [],
+      "historicalReadableGenerations": ["workflow-run-spec.v1"],
       "id": "workflow-run-spec",
       "legacyAuthority": {
         "allowedActions": ["parse", "validate"],
-        "canonicalSha256": "8a4da4d5fd4e5503cf1a37546216b565875f10dec0fa9d5a3612fe235a4fefe4",
+        "canonicalSha256": "929b4e785c1c927c91cf169d4160777b1185b9e609d03d1c64e0de966de5ef32",
         "entry": "workflow-run-spec:reader-validator",
-        "generations": []
+        "generations": ["workflow-run-spec.v1"]
       },
       "ownerRoots": [
         "packages/application/src/workflow-run-spec-compiler.ts",
@@ -1445,9 +1526,9 @@
       ],
       "writeAuthority": {
         "allowedActions": ["validate", "persist_current"],
-        "canonicalSha256": "b24920ff5eb87b654e89dbe8f4a8dc1825e402c44041fc06cd53e4888d8fa2a4",
+        "canonicalSha256": "85e0b832ac45e41c86d295dfdd808e773fde8d61f8f066c9126dd914c8979b28",
         "entry": "workflow-run-spec:current-writer",
-        "generations": ["workflow-run-spec.v1"]
+        "generations": ["workflow-run-spec.v2"]
       }
     },
     {
@@ -1652,15 +1733,18 @@
         }
       ],
       "currentWriteGenerations": [
-        "chat-agent-profile-api.v3",
+        "chat-agent-profile-api.v4",
         "chat-execution-trace.v1",
         "chat-note-api.v1",
         "chat-product-api.v1",
         "chat-project-api.v3",
         "chat-prompt-studio-api.v1",
+        "chat-prompt-turn-preview-api.v2",
         "chat-rules-api.v1",
         "chat-workflow-api.v1",
-        "chat-workflow-execution-trace.v1",
+        "chat-workflow-designer-api.v2",
+        "chat-workflow-execution-trace.v2",
+        "chat-workflow-product-api.v2",
         "content-lab-plane-rollout.v1",
         "plane-project-coordination.v2",
         "project-agent-context.v2",
@@ -1681,11 +1765,18 @@
           "identity": "chat-agent-profile-api.v2"
         },
         {
-          "canonicalSha256": "badde056332d67a21f567d6161d6eeb25ed5307611c152591ff69113c4176ba3",
-          "evidenceCount": 2,
+          "canonicalSha256": "77c2233dfbab725ecc15fde9a7d870364767f0523ec353171ea35d1b4b77eef6",
+          "evidenceCount": 1,
           "family": "chat-agent-profile-api.",
           "generation": 3,
           "identity": "chat-agent-profile-api.v3"
+        },
+        {
+          "canonicalSha256": "50f7eeb446e6fda6ab4d731899c81b2b05873c555debe9ef080a583347918652",
+          "evidenceCount": 2,
+          "family": "chat-agent-profile-api.",
+          "generation": 4,
+          "identity": "chat-agent-profile-api.v4"
         },
         {
           "canonicalSha256": "2b7a88f472f0cbffa919bce7220d2fa305c77196ee15f5fe71b8ed53ed00638b",
@@ -1702,8 +1793,8 @@
           "identity": "chat-note-api.v1"
         },
         {
-          "canonicalSha256": "77c8824a282b3d0e45290d3fe3b3f0b707a9207263d5a457078fb5a96a9355a6",
-          "evidenceCount": 23,
+          "canonicalSha256": "7b352385e09a4e5cc61bb73b53afef31fca60c1c58d564535224dd87ab6a9707",
+          "evidenceCount": 15,
           "family": "chat-product-api.",
           "generation": 1,
           "identity": "chat-product-api.v1"
@@ -1730,6 +1821,13 @@
           "identity": "chat-prompt-studio-api.v1"
         },
         {
+          "canonicalSha256": "703a72c3073b995dc827b896f133f734931015ab77a6983e9ec711bc82d4af7b",
+          "evidenceCount": 1,
+          "family": "chat-prompt-turn-preview-api.",
+          "generation": 2,
+          "identity": "chat-prompt-turn-preview-api.v2"
+        },
+        {
           "canonicalSha256": "60b434f646146f01b38a138dd96410186d3ba6f131942bbad53a790103e60690",
           "evidenceCount": 12,
           "family": "chat-rules-api.",
@@ -1744,11 +1842,25 @@
           "identity": "chat-workflow-api.v1"
         },
         {
-          "canonicalSha256": "761897957df4ec62e6b103e228475743b86cc958531ae154efc094841267bf69",
+          "canonicalSha256": "5dd2f0b4250c0ec6a661ce3f0097cc710274ceed806e3d6a610ece819a00cb02",
+          "evidenceCount": 1,
+          "family": "chat-workflow-designer-api.",
+          "generation": 2,
+          "identity": "chat-workflow-designer-api.v2"
+        },
+        {
+          "canonicalSha256": "b42932471336cfa51b94f500cd3a1b12719ed49c77d538a1c04bf8b26a7c633a",
           "evidenceCount": 1,
           "family": "chat-workflow-execution-trace.",
-          "generation": 1,
-          "identity": "chat-workflow-execution-trace.v1"
+          "generation": 2,
+          "identity": "chat-workflow-execution-trace.v2"
+        },
+        {
+          "canonicalSha256": "e08a541cb50397086e9a7719add1098bca2c95cd9e8dd7941e1dbbba72de66c5",
+          "evidenceCount": 6,
+          "family": "chat-workflow-product-api.",
+          "generation": 2,
+          "identity": "chat-workflow-product-api.v2"
         },
         {
           "canonicalSha256": "2e686fe96297a9ff558a23b87f68fb7752c68950670b0de49f90151801e2a6a0",
@@ -1814,13 +1926,21 @@
           "identity": "workspace-instructions-input.v1"
         }
       ],
-      "historicalReadableGenerations": ["chat-agent-profile-api.v2", "chat-project-api.v2"],
+      "historicalReadableGenerations": [
+        "chat-agent-profile-api.v2",
+        "chat-agent-profile-api.v3",
+        "chat-project-api.v2"
+      ],
       "id": "browser-dto-events",
       "legacyAuthority": {
         "allowedActions": ["decode", "project"],
         "canonicalSha256": "c1e15fc9a626d2c2fc8c151fcf3c582b2b76443420a93f91f1f5179baac8cae6",
         "entry": "@chat/contracts/public:decode-old",
-        "generations": ["chat-agent-profile-api.v2", "chat-project-api.v2"],
+        "generations": [
+          "chat-agent-profile-api.v2",
+          "chat-agent-profile-api.v3",
+          "chat-project-api.v2"
+        ],
         "previousExtractorCanonicalSha256": "c1e15fc9a626d2c2fc8c151fcf3c582b2b76443420a93f91f1f5179baac8cae6"
       },
       "ownerRoots": ["packages/contracts/src", "packages/dsh-lifeos-bridge/src/client"],
@@ -1834,15 +1954,18 @@
         "canonicalSha256": "c1e15fc9a626d2c2fc8c151fcf3c582b2b76443420a93f91f1f5179baac8cae6",
         "entry": "apps/api:createApiApp",
         "generations": [
-          "chat-agent-profile-api.v3",
+          "chat-agent-profile-api.v4",
           "chat-execution-trace.v1",
           "chat-note-api.v1",
           "chat-product-api.v1",
           "chat-project-api.v3",
           "chat-prompt-studio-api.v1",
+          "chat-prompt-turn-preview-api.v2",
           "chat-rules-api.v1",
           "chat-workflow-api.v1",
-          "chat-workflow-execution-trace.v1",
+          "chat-workflow-designer-api.v2",
+          "chat-workflow-execution-trace.v2",
+          "chat-workflow-product-api.v2",
           "content-lab-plane-rollout.v1",
           "plane-project-coordination.v2",
           "project-agent-context.v2",

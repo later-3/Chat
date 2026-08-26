@@ -8,7 +8,7 @@ import {
 import type { HostObservable, InjectFace, PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
 import {
-  agentKeySchema,
+  agentProfileAgentKeySchema,
   agentProfileDtoSchema,
   agentProfilesDtoSchema,
   type AgentProfileDto,
@@ -51,6 +51,7 @@ const AGENT_LABEL: Record<LifeosWorkflowOption["agentNodes"][number]["agentKey"]
   direct: "Pi Coding Agent · 直接执行",
   project_bootstrap: "项目初始化 Agent",
   coding_executor: "Pi Coding Agent · 规划步骤执行",
+  governance_reviewer: "工程治理检查 Agent",
   note_extractor: "笔记提取 Agent",
 };
 
@@ -592,7 +593,7 @@ function AgentNodeConfiguration({
     (field): field is Extract<ConfigField, { type: "long_text" }> =>
       field.name === "agentPromptOverride" && field.type === "long_text",
   );
-  const parsedAgentKey = agentKeySchema.safeParse(
+  const parsedAgentKey = agentProfileAgentKeySchema.safeParse(
     agentKeyField === undefined
       ? node.agentKey
       : fieldValue(configuration, node.definitionNodeId, agentKeyField),
@@ -807,9 +808,13 @@ function AgentNodeConfiguration({
         <span data-source={sourceLabel}>{sourceLabel}</span>
       </header>
       <div className="lifeos-workflow-agent-lineage">
-        <span>Pi默认基线</span>
+        <span>{profile?.runtimeBaseline === undefined ? "Catalog固定Profile" : "Pi默认基线"}</span>
         <i aria-hidden="true">→</i>
-        <span>Agent Version / Workflow节点</span>
+        <span>
+          {profile?.runtimeBaseline === undefined
+            ? "Workflow节点Prompt"
+            : "Agent Version / Workflow节点"}
+        </span>
         <i aria-hidden="true">→</i>
         <span>本次会话</span>
       </div>
@@ -833,7 +838,7 @@ function AgentNodeConfiguration({
             onChange={(event) => setField(agentKeyField, event.currentTarget.value)}
           >
             {agentKeyField.options.map((option) => {
-              const parsed = agentKeySchema.safeParse(option);
+              const parsed = agentProfileAgentKeySchema.safeParse(option);
               return parsed.success ? (
                 <option key={option} value={option}>
                   {AGENT_LABEL[parsed.data]}
@@ -1077,9 +1082,11 @@ function AgentNodeConfiguration({
           </dd>
         </div>
         <div>
-          <dt>Agent Version</dt>
+          <dt>{profile?.runtimeBaseline === undefined ? "配置来源" : "Agent Version"}</dt>
           <dd>
-            {selectedVersion === null ? (
+            {profile?.runtimeBaseline === undefined ? (
+              "Catalog固定Profile（无Pi Runtime基线）"
+            ) : selectedVersion === null ? (
               "Pi默认基线"
             ) : (
               <>

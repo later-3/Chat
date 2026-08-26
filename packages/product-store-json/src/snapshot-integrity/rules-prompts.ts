@@ -477,7 +477,9 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
         : entities.workflowRunSpecs[run.workflowRunSpecId];
     const definitionRevision =
       entities.workflowDefinitionRevisions[assembly.workflowDefinitionRevisionId];
-    const isV3 = assembly.schemaVersion === "prompt-assembly.v3";
+    const isV3 =
+      assembly.schemaVersion === "prompt-assembly.v3" ||
+      assembly.schemaVersion === "prompt-assembly.v6";
     const isV5 = assembly.schemaVersion === "prompt-assembly.v5";
     const isWorkflowAssembly = isV3 || isV5;
     if (
@@ -915,6 +917,7 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
   for (const run of Object.values(entities.runs)) {
     const count = assembliesByRun.get(run.productRunId)?.length ?? 0;
     // 历史Planning/Note Run允许没有V3；新命令会原子冻结一个。Direct自v1起强制1:1。
+    // 治理Run只有在创建治理Attempt后才强制Prompt；该原子时序由Attempt/Validation完整性负责。
     if (run.runKind === "direct_agent" ? count !== 1 : count > 1) {
       fail(`run ${run.productRunId} 的Prompt Assembly数量无效`);
     }

@@ -207,7 +207,7 @@ describe("Workflow Designer公开合同", () => {
 
   it("validation valid/normalized/error诊断组合不能自相矛盾", () => {
     const valid = workflowDefinitionValidationDtoSchema.parse({
-      schemaVersion: "chat-product-api.v1",
+      schemaVersion: "chat-workflow-designer-api.v2",
       valid: true,
       diagnostics: [],
       normalized: { semanticRoot: ROOT, definitionSha256: HASH, nodeCount: 3 },

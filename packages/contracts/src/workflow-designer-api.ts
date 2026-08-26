@@ -14,10 +14,14 @@ import {
   workflowDefaultActivationSchema,
   workflowDefinitionNodeIdSchema,
   workflowDefinitionNodeTypeSchema,
+  workflowDefinitionNodeTypeV2Schema,
   workflowDefinitionRevisionStateSchema,
   workflowDefinitionStateSchema,
   workflowSequenceBoundarySchema,
+  workflowSequenceBoundaryV2Schema,
 } from "./workflow-definition.js";
+
+export const WORKFLOW_DESIGNER_API_SCHEMA_VERSION = "chat-workflow-designer-api.v2";
 
 /**
  * S6公开合同只允许操作受限semanticRoot。React Flow坐标、edge、Executor身份、
@@ -179,6 +183,22 @@ export const workflowDesignerSlotDtoSchema = z
     path: ["maximumIndex"],
   });
 
+export const workflowDesignerSlotV2DtoSchema = z
+  .object({
+    slotId: z.string().regex(/^[a-z][a-z0-9_.-]{0,79}$/u),
+    address: z.array(workflowDesignerAddressSegmentSchema).max(12),
+    label: z.string().min(1).max(120),
+    allowedNodeTypes: z.array(workflowDefinitionNodeTypeV2Schema).min(1).max(32),
+    minimumIndex: z.number().int().nonnegative().max(127),
+    maximumIndex: z.number().int().nonnegative().max(127),
+    maximumElements: z.number().int().positive().max(128).optional(),
+  })
+  .strict()
+  .refine((slot) => slot.minimumIndex <= slot.maximumIndex, {
+    message: "slot minimumIndex不能大于maximumIndex",
+    path: ["maximumIndex"],
+  });
+
 export const workflowDesignerDiagnosticSeveritySchema = z.enum(["error", "warning", "info"]);
 
 const diagnosticParamSchema = z.union([z.string().max(200), z.number().finite(), z.boolean()]);
@@ -205,6 +225,26 @@ export const workflowDefinitionRevisionSummaryDtoSchema = z
   })
   .strict();
 
+const definitionDetailV2Base = {
+  schemaVersion: z.literal(WORKFLOW_DESIGNER_API_SCHEMA_VERSION),
+  workflowDefinitionId: workflowDefinitionIdSchema,
+  ownerKind: z.enum(["system", "principal"]),
+  ownerPrincipalId: principalIdSchema.optional(),
+  key: z.string().min(1).max(80),
+  title: z.string().min(1).max(160),
+  description: z.string().min(1).max(1_000),
+  blueprintKey: workflowBlueprintKeySchema,
+  blueprintVersion: z.number().int().positive().max(32),
+  status: workflowDefinitionStateSchema,
+  revision: z.number().int().positive(),
+  publishedRevision: workflowDefinitionRevisionSummaryDtoSchema.optional(),
+  currentDraftRevision: workflowDefinitionRevisionSummaryDtoSchema.optional(),
+  slots: z.array(workflowDesignerSlotV2DtoSchema).max(64),
+  allowedChoiceSourceTypes: z.array(workflowDefinitionNodeTypeV2Schema).max(32),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+};
+
 const definitionDetailBase = {
   schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
   workflowDefinitionId: workflowDefinitionIdSchema,
@@ -224,6 +264,35 @@ const definitionDetailBase = {
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 };
+
+export const workflowDefinitionDetailV2DtoSchema = z.discriminatedUnion("compatibility", [
+  z
+    .object({
+      ...definitionDetailV2Base,
+      compatibility: z.literal("editable"),
+      semanticRoot: workflowSequenceBoundaryV2Schema,
+      baseRevisionId: workflowDefinitionRevisionIdSchema,
+      baseDefinitionSha256: sha256Schema,
+      allowedActions: z.array(
+        z.enum(["copy", "save", "validate", "publish", "archive", "restore"]),
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ...definitionDetailV2Base,
+      compatibility: z.literal("read_only_incompatible"),
+      safeStructureSummary: z
+        .object({
+          nodeCount: z.number().int().nonnegative().max(128),
+          nodeTypes: z.array(workflowDefinitionNodeTypeV2Schema).max(64),
+        })
+        .strict(),
+      incompatibilityCode: z.string().regex(/^[a-z][a-z0-9_.-]{0,119}$/u),
+      allowedActions: z.tuple([]),
+    })
+    .strict(),
+]);
 
 export const workflowDefinitionDetailDtoSchema = z.discriminatedUnion("compatibility", [
   z
@@ -335,12 +404,12 @@ export const changeWorkflowDefinitionArchiveStatusPayloadSchema = z
 
 export const workflowDefinitionValidationDtoSchema = z
   .object({
-    schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
+    schemaVersion: z.literal(WORKFLOW_DESIGNER_API_SCHEMA_VERSION),
     valid: z.boolean(),
     diagnostics: z.array(workflowDesignerDiagnosticDtoSchema).max(256),
     normalized: z
       .object({
-        semanticRoot: workflowSequenceBoundarySchema,
+        semanticRoot: workflowSequenceBoundaryV2Schema,
         definitionSha256: sha256Schema,
         nodeCount: z.number().int().nonnegative().max(128),
       })
@@ -374,7 +443,15 @@ export const workflowDefinitionCommandResultDtoSchema = z
   })
   .strict();
 
+export const workflowDefinitionCommandResultV2DtoSchema = z
+  .object({
+    definition: workflowDefinitionDetailV2DtoSchema,
+    affectedRevision: workflowDefinitionRevisionSummaryDtoSchema.optional(),
+  })
+  .strict();
+
 export type WorkflowDesignerSlotDto = z.infer<typeof workflowDesignerSlotDtoSchema>;
+export type WorkflowDesignerSlotV2Dto = z.infer<typeof workflowDesignerSlotV2DtoSchema>;
 export type WorkflowDesignerAddress = z.infer<typeof workflowDesignerAddressSchema>;
 export type WorkflowDesignerOperation = z.infer<typeof workflowDesignerOperationSchema>;
 export type WorkflowDesignerDiagnosticDto = z.infer<typeof workflowDesignerDiagnosticDtoSchema>;
@@ -382,6 +459,7 @@ export type WorkflowDefinitionRevisionSummaryDto = z.infer<
   typeof workflowDefinitionRevisionSummaryDtoSchema
 >;
 export type WorkflowDefinitionDetailDto = z.infer<typeof workflowDefinitionDetailDtoSchema>;
+export type WorkflowDefinitionDetailV2Dto = z.infer<typeof workflowDefinitionDetailV2DtoSchema>;
 export type CreateWorkflowDefinitionCopyPayload = z.infer<
   typeof createWorkflowDefinitionCopyPayloadSchema
 >;
@@ -403,4 +481,7 @@ export type ChangeWorkflowDefinitionArchiveStatusPayload = z.infer<
 export type WorkflowDefinitionValidationDto = z.infer<typeof workflowDefinitionValidationDtoSchema>;
 export type WorkflowDefinitionCommandResultDto = z.infer<
   typeof workflowDefinitionCommandResultDtoSchema
+>;
+export type WorkflowDefinitionCommandResultV2Dto = z.infer<
+  typeof workflowDefinitionCommandResultV2DtoSchema
 >;

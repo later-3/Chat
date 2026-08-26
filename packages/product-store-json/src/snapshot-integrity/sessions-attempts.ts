@@ -2,13 +2,22 @@ import {
   DIRECT_AGENT_ACTIVE_TIMEOUT_MS,
   DIRECT_AGENT_MAX_PROVIDER_REQUESTS,
   DIRECT_AGENT_TOKEN_BUDGET,
+  GOVERNANCE_REVIEW_ACTIVE_TIMEOUT_MS,
+  GOVERNANCE_REVIEW_MAX_TURNS,
+  GOVERNANCE_REVIEW_PROFILE_VERSION,
+  GOVERNANCE_REVIEW_TOKEN_BUDGET,
+  MODEL_CONFIG_VERSION,
   type PromptAssemblyV3,
+  type PromptAssemblyV6,
   type ProductSnapshot,
 } from "@chat/contracts";
 import {
   hashCanonical,
   computePlanningInputManifestSha256,
   computeDirectAgentInputManifestSha256,
+  computeGovernanceReviewInputManifestSha256,
+  governanceEvidenceKeys,
+  resolvePlanningValidationPolicy,
 } from "@chat/domain";
 import type { Fail } from "./shared.js";
 
@@ -52,6 +61,7 @@ export function assertSessionsAndMessages(snapshot: ProductSnapshot, fail: Fail)
 
 export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
   const { entities } = snapshot;
+  const governanceAttemptCandidates = new Set<string>();
   for (const attempt of Object.values(entities.attempts)) {
     const run = entities.runs[attempt.productRunId];
     if (run === undefined) fail(`attempt ${attempt.attemptId} 悬空productRunId`);
@@ -76,7 +86,9 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
       ) {
         fail(`planning attempt ${attempt.attemptId} 缺少输入与版本证据`);
       }
-      if (attempt.stepId !== undefined) fail(`planning attempt ${attempt.attemptId} 不允许stepId`);
+      if (attempt.stepId !== undefined || attempt.executionCandidateId !== undefined) {
+        fail(`planning attempt ${attempt.attemptId} 不允许Execution身份`);
+      }
       if (run.sourceMessageId === undefined)
         fail(`planning attempt ${attempt.attemptId} 缺少源消息`);
       const source = entities.messages[run.sourceMessageId];
@@ -192,8 +204,9 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         fail(`planning attempt ${attempt.attemptId} 修订轮缺少上一版Plan或Revision Input`);
       }
       const workflowPromptAssembly = Object.values(entities.promptAssemblies).find(
-        (assembly): assembly is PromptAssemblyV3 =>
-          assembly.schemaVersion === "prompt-assembly.v3" &&
+        (assembly): assembly is PromptAssemblyV3 | PromptAssemblyV6 =>
+          (assembly.schemaVersion === "prompt-assembly.v3" ||
+            assembly.schemaVersion === "prompt-assembly.v6") &&
           assembly.productRunId === attempt.productRunId,
       );
       const plannerPrompt = workflowPromptAssembly?.nodes.find(
@@ -308,9 +321,127 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         attempt.planningProjectContextId !== undefined ||
         attempt.planningProjectContextSha256 !== undefined ||
         attempt.ruleSelectionId !== undefined ||
-        attempt.ruleSelectionSha256 !== undefined
+        attempt.ruleSelectionSha256 !== undefined ||
+        attempt.executionCandidateId !== undefined
       ) {
         fail(`execution attempt ${attempt.attemptId} 不允许planning输入证据`);
+      }
+    } else if (attempt.kind === "governance_review") {
+      const runSpec =
+        run?.runKind === "planning" && run.workflowRunSpecId !== undefined
+          ? entities.workflowRunSpecs[run.workflowRunSpecId]
+          : undefined;
+      const contract =
+        attempt.executionContractId === undefined
+          ? undefined
+          : entities.executionContracts[attempt.executionContractId];
+      const candidate =
+        attempt.executionCandidateId === undefined
+          ? undefined
+          : entities.executionCandidates[attempt.executionCandidateId];
+      if (
+        run?.runKind !== "planning" ||
+        runSpec === undefined ||
+        contract === undefined ||
+        candidate === undefined ||
+        contract.productRunId !== attempt.productRunId ||
+        candidate.productRunId !== attempt.productRunId ||
+        candidate.executionContractId !== contract.executionContractId ||
+        attempt.inputManifestSha256 === undefined ||
+        attempt.promptTemplateVersion !== GOVERNANCE_REVIEW_PROFILE_VERSION ||
+        attempt.modelConfigVersion !== MODEL_CONFIG_VERSION
+      ) {
+        fail(`governance_review attempt ${attempt.attemptId} 缺少冻结输入身份`);
+      }
+      let validationPolicy;
+      try {
+        validationPolicy = resolvePlanningValidationPolicy(runSpec);
+      } catch {
+        fail(`governance_review attempt ${attempt.attemptId} 的Validation策略无效`);
+      }
+      if (validationPolicy.kind !== "governance_review") {
+        fail(`governance_review attempt ${attempt.attemptId} 不属于治理检查RunSpec`);
+      }
+      const assemblies = Object.values(entities.promptAssemblies).filter(
+        (assembly): assembly is PromptAssemblyV3 | PromptAssemblyV6 =>
+          (assembly.schemaVersion === "prompt-assembly.v3" ||
+            assembly.schemaVersion === "prompt-assembly.v6") &&
+          assembly.productRunId === attempt.productRunId,
+      );
+      const assembly = assemblies[0];
+      const governanceNodes =
+        assembly?.schemaVersion === "prompt-assembly.v6" ? assembly.nodes : [];
+      const node = governanceNodes.find(
+        (item) =>
+          item.nodeType === "agent.governance_check" &&
+          item.definitionNodeId === validationPolicy.definitionNodeId,
+      );
+      if (
+        assemblies.length !== 1 ||
+        assembly === undefined ||
+        node === undefined ||
+        node.profileVersion !== GOVERNANCE_REVIEW_PROFILE_VERSION
+      ) {
+        fail(`governance_review attempt ${attempt.attemptId} 缺少唯一治理Prompt`);
+      }
+      const expectedManifest = computeGovernanceReviewInputManifestSha256({
+        productRunId: attempt.productRunId,
+        workflowRunSpecId: runSpec.workflowRunSpecId,
+        workflowRunSpecSha256: runSpec.sha256,
+        contract,
+        candidate,
+        nodePrompt: {
+          promptAssemblyId: assembly.promptAssemblyId,
+          promptAssemblySha256: assembly.sha256,
+          definitionNodeId: node.definitionNodeId,
+          nodeAssemblySha256: node.sha256,
+          profileVersion: node.profileVersion,
+        },
+        strictEvidence: validationPolicy.strictEvidence,
+        allowedEvidenceKeys: governanceEvidenceKeys(candidate),
+        limits: {
+          maxTurns: GOVERNANCE_REVIEW_MAX_TURNS,
+          tokenBudget: GOVERNANCE_REVIEW_TOKEN_BUDGET,
+          timeoutMs: GOVERNANCE_REVIEW_ACTIVE_TIMEOUT_MS,
+        },
+        modelConfigVersion: MODEL_CONFIG_VERSION,
+      });
+      if (attempt.inputManifestSha256 !== expectedManifest) {
+        fail(`governance_review attempt ${attempt.attemptId} 输入Manifest不一致`);
+      }
+      if (
+        attempt.stepId !== undefined ||
+        attempt.planRevision !== undefined ||
+        attempt.inputRunRevision !== undefined ||
+        attempt.sourceMessageSha256 !== undefined ||
+        attempt.dependencyRefs !== undefined ||
+        attempt.priorPlanRevisionId !== undefined ||
+        attempt.revisionInputId !== undefined ||
+        attempt.contextPackageId !== undefined ||
+        attempt.contextPackageSha256 !== undefined ||
+        attempt.planningMemorySelectionId !== undefined ||
+        attempt.planningMemorySelectionSha256 !== undefined ||
+        attempt.workflowMemoryContextId !== undefined ||
+        attempt.workflowMemoryContextSha256 !== undefined ||
+        attempt.planningProjectContextId !== undefined ||
+        attempt.planningProjectContextSha256 !== undefined ||
+        attempt.ruleSelectionId !== undefined ||
+        attempt.ruleSelectionSha256 !== undefined
+      ) {
+        fail(`governance_review attempt ${attempt.attemptId} 携带了其他节点输入证据`);
+      }
+      if (governanceAttemptCandidates.has(candidate.executionCandidateId)) {
+        fail(`candidate ${candidate.executionCandidateId} 存在多个治理检查Attempt`);
+      }
+      governanceAttemptCandidates.add(candidate.executionCandidateId);
+      const linkedValidations = Object.values(entities.validationResults).filter(
+        (validation) => validation.governanceReview?.attemptId === attempt.attemptId,
+      );
+      if (
+        (attempt.outcome === "success" && linkedValidations.length !== 1) ||
+        (attempt.outcome !== "success" && linkedValidations.length !== 0)
+      ) {
+        fail(`governance_review attempt ${attempt.attemptId} 终态与Validation事实不一致`);
       }
     } else if (attempt.kind === "direct_agent") {
       const source = run === undefined ? undefined : entities.messages[run.sourceMessageId];
@@ -352,7 +483,8 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         attempt.planningProjectContextId !== undefined ||
         attempt.planningProjectContextSha256 !== undefined ||
         attempt.ruleSelectionId !== undefined ||
-        attempt.ruleSelectionSha256 !== undefined
+        attempt.ruleSelectionSha256 !== undefined ||
+        attempt.executionCandidateId !== undefined
       ) {
         fail(`direct_agent attempt ${attempt.attemptId} 不允许Plan/Execution Contract证据`);
       }
@@ -415,6 +547,7 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
       attempt.planningProjectContextSha256 !== undefined ||
       attempt.ruleSelectionId !== undefined ||
       attempt.ruleSelectionSha256 !== undefined ||
+      attempt.executionCandidateId !== undefined ||
       versionEvidence.some((value) => value !== undefined)
     ) {
       fail(`workflow attempt ${attempt.attemptId} 不允许节点输入证据`);

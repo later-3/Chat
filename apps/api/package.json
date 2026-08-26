@@ -15,6 +15,10 @@
     "./composition": {
       "types": "./src/composition.ts",
       "import": "./src/composition.ts"
+    },
+    "./prompt-catalog": {
+      "types": "./src/prompt-catalog.ts",
+      "import": "./src/prompt-catalog.ts"
     }
   },
   "scripts": {

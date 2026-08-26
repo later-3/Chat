@@ -4,7 +4,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PROMPT_STUDIO_API_SCHEMA_VERSION,
-  agentKeySchema,
+  agentProfileAgentKeySchema,
   promptFragmentIdSchema,
   promptFragmentRevisionIdSchema,
   promptRegionDefinitionDtoSchema,
@@ -57,7 +57,7 @@ const manifestSchema = z
     agents: z.array(
       z
         .object({
-          agentKey: agentKeySchema,
+          agentKey: agentProfileAgentKeySchema,
           title: z.string().min(1).max(160),
           description: z.string().min(1).max(1_000),
           profileVersion: z.string().min(1).max(80),
@@ -115,6 +115,7 @@ const manifestSchema = z
           regionKey: z.string(),
           title: z.string(),
           description: z.string().optional(),
+          createdAt: z.iso.datetime().optional(),
           relativePath: relativePathSchema,
           sourceSha256: sha256Schema,
         })
@@ -197,6 +198,7 @@ export async function createFilePromptCatalog(
     if (sha256(bodyMarkdown) !== fragment.sourceSha256) {
       throw new Error(`Builtin Prompt正文Hash漂移:${fragment.relativePath}`);
     }
+    const { createdAt, ...revisionIdentity } = fragment;
     builtinFragments.push({
       promptFragmentId: fragment.promptFragmentId,
       promptFragmentRevisionId: fragment.promptFragmentRevisionId,
@@ -207,11 +209,11 @@ export async function createFilePromptCatalog(
       content: { kind: "markdown", bodyMarkdown },
       scope: { kind: "global" },
       sha256: hashCanonical("builtin-prompt-fragment-revision.v1", {
-        ...fragment,
+        ...revisionIdentity,
         content: bodyMarkdown,
       }),
       sourceRelativePath: fragment.relativePath,
-      createdAt: manifest.publishedAt,
+      createdAt: createdAt ?? manifest.publishedAt,
     });
   }
 

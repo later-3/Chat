@@ -12,7 +12,7 @@
 
 当前有多个独立用户结果和3种Planning配置，因此分别冻结耐久生命周期与Definition：
 
-1. 默认“规划执行工作流”：一条消息的规划、人工修订/批准、执行、验证和正式提交；冻结Definition不含Memory。
+1. 默认“规划执行工作流”：一条消息的规划、人工修订/批准、执行、独立工程治理检查和正式提交；冻结Definition不含Memory。
 2. “Memory 增强规划与执行”：用户显式选择后，在同一个父Workflow中执行`memory.query → memory.write →`完整Planning链。
 3. 历史完整上下文Planning：已从公开目录移除；底层仅保留兼容和既有冻结RunSpec恢复能力。
 4. `MemoryWriteWorkflow`：直接Memory Write Command产生的一次外部写入或一次只读对账；Memory Planning节点只复用其Application状态机，不启动第二个Workflow。
@@ -379,7 +379,7 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 
 1. Chat公开SSE Cursor Runtime Journal。
 2. Project Context进入Planning Workflow的节点；PS1已实现Project、初始Stage、Work/Action和资源观察，但尚未注入任务规划。
-3. 用户规则选择与规划注入节点。
+3. 更细粒度的治理规则组合、例外和项目Overlay；当前三个可选组件已经通过Prompt Assembly进入Planner、Executor与独立Governance Reviewer。
 4. 生产多实例Store、正式身份、Worker生产接管和后端部署拓扑。
 5. 外部副作用Tool与通用Workflow编辑器。
 

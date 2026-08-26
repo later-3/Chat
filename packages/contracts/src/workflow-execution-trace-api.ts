@@ -7,7 +7,7 @@ import { workflowNodeRunSummaryDtoSchema } from "./workflow-api.js";
 import { nodeProductRefSchema } from "./workflow-run.js";
 import { resolvedCapabilitySnapshotSchema } from "./capability.js";
 
-export const WORKFLOW_EXECUTION_TRACE_SCHEMA_VERSION = "chat-workflow-execution-trace.v1";
+export const WORKFLOW_EXECUTION_TRACE_SCHEMA_VERSION = "chat-workflow-execution-trace.v2";
 
 export const workflowExecutionTraceValueDtoSchema = z
   .object({
@@ -104,6 +104,10 @@ export const piTraceActivityDtoSchema = z
   })
   .strict();
 
+export const piTraceActivityV2DtoSchema = piTraceActivityDtoSchema.extend({
+  nodeKind: z.enum(["planner", "executor", "governance_reviewer", "direct_agent", "note_capture"]),
+});
+
 export const workflowExecutionTraceDtoSchema = z
   .object({
     schemaVersion: z.literal(WORKFLOW_EXECUTION_TRACE_SCHEMA_VERSION),
@@ -130,12 +134,13 @@ export const workflowExecutionTraceDtoSchema = z
       })
       .strict(),
     runtime: workflowRuntimeTraceDtoSchema,
-    piActivities: z.array(piTraceActivityDtoSchema).max(500),
+    piActivities: z.array(piTraceActivityV2DtoSchema).max(500),
     truncated: z.boolean(),
   })
   .strict();
 
 export type PiTraceActivityDto = z.infer<typeof piTraceActivityDtoSchema>;
+export type PiTraceActivityV2Dto = z.infer<typeof piTraceActivityV2DtoSchema>;
 export type WorkflowExecutionTraceDto = z.infer<typeof workflowExecutionTraceDtoSchema>;
 export type WorkflowExecutionTraceValueDto = z.infer<typeof workflowExecutionTraceValueDtoSchema>;
 export type WorkflowNodeTraceDetailDto = z.infer<typeof workflowNodeTraceDetailDtoSchema>;

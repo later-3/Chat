@@ -11,6 +11,7 @@ import type {
   ExecutorStepCandidate,
   RunPiExecutorServiceInput,
   runPiNoteCapture,
+  runPiGovernanceReview,
   runPiPlanner,
 } from "@chat/pi-runtime";
 import type { RuntimeApiClient } from "@chat/contracts";
@@ -41,6 +42,7 @@ export interface WorkflowRuntimeContext {
   readonly bailian: BailianConfig;
   readonly planner: typeof runPiPlanner;
   readonly noteCapture: typeof runPiNoteCapture;
+  readonly governanceReview?: typeof runPiGovernanceReview;
   /**
    * 生产为独立Pi Executor Service Client；测试可继续注入旧单轮Executor结果，
    * 直到旧测试fixture完成迁移。两者只在本组合根Port兼容，不形成第二套产品事实。

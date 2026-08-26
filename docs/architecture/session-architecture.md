@@ -122,8 +122,8 @@ Request提交状态只允许以下转换：
 
 任一其他`prepared/outcome_unknown` Request都会阻止新消息，因而两个并发或连续DSH消息不能在审核等待、HTTP调用、
 响应解析或本地落盘窗口越过A。transport、任意5xx和2xx合同损坏都不能证明未提交，继续保持
-`outcome_unknown`；兼容普通/专用种类与first/existing旧Hash域后仍返回的`command_id_reused`，则证明A没有可恢复
-提交并转为`definitely_uncommitted`。所有v1-v14旧Request只按一条可证明事实迁移：有`productRunId`即`bound`，没有即
+`outcome_unknown`；兼容普通/专用种类与first/existing旧Hash域后仍返回的`command_id_reused`，或Message事务前返回的
+`policy_denied`，都证明A没有可恢复提交并转为`definitely_uncommitted`。所有v1-v14旧Request只按一条可证明事实迁移：有`productRunId`即`bound`，没有即
 `outcome_unknown`；迁移不查询Product、不从`chatSessionId`、JSON顺序、`currentRequestKey`或lifecycle猜测，
 也不删除Request、改写冻结payload或制造lifecycle。
 

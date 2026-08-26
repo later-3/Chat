@@ -49,6 +49,8 @@ import {
   preparePlanningProjectContextResponseSchema,
   preparePlanningRulesContextRequestSchema,
   preparePlanningRulesContextResponseSchema,
+  prepareGovernanceReviewInputRequestSchema,
+  prepareGovernanceReviewInputResponseSchema,
   beginWorkflowMemoryQueryRequestSchema,
   beginWorkflowMemoryQueryResponseSchema,
   persistWorkflowMemoryQueryResultRequestSchema,
@@ -103,6 +105,7 @@ import {
   expireApproval,
   loadCommittedDecision,
   persistExecutionCandidate,
+  prepareGovernanceReviewInput,
   persistValidationResult,
   publishPlanForReview,
   beginRunAttempt,
@@ -749,6 +752,9 @@ export function createInternalRuntimeRouter(
         attemptId: result.attemptId,
         inputManifestSha256: result.inputManifestSha256,
         contextItems: result.contextItems,
+        ...(result.promptAssemblyRef === undefined
+          ? {}
+          : { promptAssemblyRef: result.promptAssemblyRef }),
       };
     }),
   );
@@ -782,6 +788,18 @@ export function createInternalRuntimeRouter(
         executionCandidateId: result.executionCandidateId,
         sha256: result.sha256,
       };
+    }),
+  );
+
+  router.post(
+    "/prepare-governance-review-input",
+    handle(200, async (c) => {
+      const request = prepareGovernanceReviewInputRequestSchema.parse(await parseInternalBody(c));
+      const reviewInput = await prepareGovernanceReviewInput(options.deps, request);
+      return prepareGovernanceReviewInputResponseSchema.parse({
+        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+        reviewInput,
+      });
     }),
   );
 

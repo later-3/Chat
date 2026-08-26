@@ -5,7 +5,7 @@ import {
   agentProfileDtoSchema,
   agentProfilesDtoSchema,
   promptWorkspacesDtoSchema,
-  type AgentKey,
+  type AgentProfileAgentKey,
   type AgentProfileDto,
   type AgentResources,
   type AgentVersion,
@@ -83,7 +83,7 @@ export function AgentProfiles({ usePromptStudio, openSourceFile }: AgentProfiles
   const [items, setItems] = useState<readonly AgentProfileDto[]>([]);
   const [workspaces, setWorkspaces] = useState<readonly PromptWorkspaceDto[]>([]);
   const [profileWorkspaceRootId, setProfileWorkspaceRootId] = useState<string | null>(null);
-  const [selectedKey, setSelectedKey] = useState<AgentKey | null>(null);
+  const [selectedKey, setSelectedKey] = useState<AgentProfileAgentKey | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [runtimeVariantKey, setRuntimeVariantKey] = useState<string | null>(null);

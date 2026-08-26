@@ -2,7 +2,7 @@ import type {
   ExecutionStepTraceDto,
   WorkflowExecutionTraceDto,
   WorkflowExecutionTraceValueDto,
-  PiTraceActivityDto,
+  PiTraceActivityV2Dto as PiTraceActivityDto,
 } from "@chat/contracts/public";
 import type { LifeosExecutionTrace } from "../contracts.ts";
 import type {
@@ -72,6 +72,7 @@ const STATUS_LABEL: Record<string, string> = {
 const AGENT_ROLE_LABEL: Record<PiTraceActivityDto["nodeKind"], string> = {
   planner: "规划",
   executor: "执行",
+  governance_reviewer: "工程治理检查",
   direct_agent: "直接执行",
   note_capture: "笔记",
 };

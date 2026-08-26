@@ -1,5 +1,6 @@
 import {
   CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+  LEGACY_CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
   CONFIGURABLE_PLANNING_RUNNER_FAMILY,
   LEGACY_PLANNING_RUNNER_BUNDLE_VERSION,
   LEGACY_PLANNING_RUNNER_FAMILY,
@@ -24,7 +25,9 @@ export type PlanningRunnerDispatch =
     }
   | {
       readonly runnerFamily: typeof CONFIGURABLE_PLANNING_RUNNER_FAMILY;
-      readonly runnerBundleVersion: typeof CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION;
+      readonly runnerBundleVersion:
+        | typeof CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION
+        | typeof LEGACY_CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION;
       readonly workflowRunSpecId: string;
     };
 
@@ -81,7 +84,8 @@ export function resolveProductWorkflowRunnerDispatch(
   }
   if (input.runnerFamily === CONFIGURABLE_PLANNING_RUNNER_FAMILY) {
     if (
-      input.runnerBundleVersion !== CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION ||
+      (input.runnerBundleVersion !== CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION &&
+        input.runnerBundleVersion !== LEGACY_CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION) ||
       input.workflowRunSpecId === undefined ||
       !/^wrs_[A-Za-z0-9]+$/.test(input.workflowRunSpecId)
     ) {
@@ -89,7 +93,7 @@ export function resolveProductWorkflowRunnerDispatch(
     }
     return {
       runnerFamily: CONFIGURABLE_PLANNING_RUNNER_FAMILY,
-      runnerBundleVersion: CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
+      runnerBundleVersion: input.runnerBundleVersion,
       workflowRunSpecId: input.workflowRunSpecId,
     };
   }

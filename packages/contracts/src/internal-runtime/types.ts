@@ -51,6 +51,11 @@ import {
   preparePlanningRulesContextResponseSchema,
 } from "./context-prep.js";
 import {
+  governanceReviewInputDtoSchema,
+  prepareGovernanceReviewInputRequestSchema,
+  prepareGovernanceReviewInputResponseSchema,
+} from "./governance.js";
+import {
   publishNoteCandidateRuntimeRequestSchema,
   publishNoteCandidateRuntimeResponseSchema,
   prepareNoteCaptureInputRuntimeRequestSchema,
@@ -175,6 +180,13 @@ export type PreparePlanningRulesContextRequest = z.infer<
 export type PreparePlanningRulesContextResponse = z.infer<
   typeof preparePlanningRulesContextResponseSchema
 >;
+export type PrepareGovernanceReviewInputRequest = z.infer<
+  typeof prepareGovernanceReviewInputRequestSchema
+>;
+export type PrepareGovernanceReviewInputResponse = z.infer<
+  typeof prepareGovernanceReviewInputResponseSchema
+>;
+export type GovernanceReviewInputDto = z.infer<typeof governanceReviewInputDtoSchema>;
 export type PublishNoteCandidateRuntimeRequest = z.infer<
   typeof publishNoteCandidateRuntimeRequestSchema
 >;

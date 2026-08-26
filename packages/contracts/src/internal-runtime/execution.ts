@@ -21,22 +21,25 @@ import {
   workflowRunSpecIdSchema,
   planningProjectContextIdSchema,
   projectIdSchema,
+  promptAssemblyIdSchema,
   ruleIdSchema,
   ruleRevisionIdSchema,
   workflowMemorySnapshotIdSchema,
 } from "../ids.js";
+import { workflowDefinitionNodeIdSchema } from "../workflow-definition.js";
 import {
   decisionKindSchema,
   executionCandidateSchema,
   executionContractSchema,
   planContentSchema,
-  validationResultSchema,
+  validationResultV2Schema,
 } from "../product.js";
 import { sha256Schema } from "../hash.js";
 import { memoryLayerSchema, memoryResultSnapshotSchema } from "../context.js";
 import { workflowRunSpecSchema } from "../workflow-definition.js";
 import { planningProjectSnapshotSchema } from "../planning-project-context.js";
 import { workflowMemoryCategorySchema } from "../workflow-memory.js";
+import { governanceReviewCandidateSchema } from "../governance-review.js";
 import {
   versioned,
   stableRuntimeErrorCodeSchema,
@@ -147,15 +150,34 @@ export const persistValidationResultRequestSchema = z
     executionCandidateId: executionCandidateIdSchema,
     /** 由冻结Node config解析；浏览器不能调用或覆盖此私有验证策略。 */
     strictEvidence: z.boolean(),
+    /** 仅治理检查节点提交；Application会复核证据键并绑定冻结节点Prompt。 */
+    governanceReview: governanceReviewCandidateSchema.optional(),
+    governanceReviewAttemptId: runAttemptIdSchema.optional(),
+    governanceReviewInputManifestSha256: sha256Schema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    const governanceFields = [
+      request.governanceReview,
+      request.governanceReviewAttemptId,
+      request.governanceReviewInputManifestSha256,
+    ];
+    const present = governanceFields.filter((value) => value !== undefined).length;
+    if (present !== 0 && present !== governanceFields.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["governanceReview"],
+        message: "治理检查候选、Attempt与输入Manifest必须同时提供",
+      });
+    }
+  });
 
 export const persistValidationResultResponseSchema = z
   .object({
     ...versioned,
     validationResultId: validationResultIdSchema,
-    outcome: validationResultSchema.shape.outcome,
-    failures: validationResultSchema.shape.failures,
+    outcome: validationResultV2Schema.shape.outcome,
+    failures: validationResultV2Schema.shape.failures,
   })
   .strict();
 
@@ -333,6 +355,16 @@ export const beginRunAttemptResponseSchema = z
     attemptId: runAttemptIdSchema,
     inputManifestSha256: sha256Schema,
     contextItems: z.array(executionContextItemDtoSchema).max(50),
+    /** Workflow只需复算Manifest；完整冻结Prompt仍由Executor按Attempt回查。 */
+    promptAssemblyRef: z
+      .object({
+        promptAssemblyId: promptAssemblyIdSchema,
+        sha256: sha256Schema,
+        definitionNodeId: workflowDefinitionNodeIdSchema,
+        nodeAssemblySha256: sha256Schema,
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

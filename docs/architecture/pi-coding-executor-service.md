@@ -142,7 +142,7 @@ Direct Operation另有一条更窄的恢复政策：`preparing_prompt_review/wai
 ## 6. 上游采用与退出路径
 
 - 当前直接链接`later-3/pi`的稳定集成分支`codex/later-custom`下`packages/agent`、`packages/ai`和`packages/coding-agent`源码构建；三者来自同一个Fork工作树，包内上游基线仍为`0.84.2`。Fork公开`providerRequestGate`、`resumePendingTurn()`和运行时能力标记，其余继续使用`createAgentSession`、`DefaultResourceLoader`、`SessionManager`、`ModelRuntime`和Extension API。
-- ModelRuntime直接读取Pi标准`models.json/auth.json`配置链；当前固定选择`dashscope-coding/qwen3.7-plus`并校验百炼HTTPS Host。命令型`apiKey`只在Pi Provider边界解析，Chat不读取、复制或持久化密钥明文。
+- 当前固定选择`dashscope-coding/qwen3.7-plus`并校验百炼HTTPS Host。Chat本地进程若已由安装配置显式获得`DASHSCOPE_API_KEY`，Direct与Workflow Coding Executor会把它注册为Pi进程内`ModelRuntime`覆盖；该值不写入`auth.json`、Session、Journal或Operation。环境未配置时仍保留Pi标准`models.json/auth.json`配置链，命令型`apiKey`只在Pi Provider边界解析。
 - Pi源码权威维护面是公开`later-3/pi`的`codex/later-custom`及功能分支；官方remote只读。Chat本地开发按根`AGENTS.md`登记的同级checkout直接链接稳定分支，启动时验证能力标记。
 - 两个窄接缝都保持通用：Gate只传最终Payload/Model并传播拒绝，Resume只恢复AgentSession生命周期；Pi Fork不包含Chat Product ID、审核、权限或UI，Chat仓库不再维护等价Pi patch。
 - 替换Pi时保留Operation协议、Capability政策、Journal、Trace投影和Candidate Port，替换`AgentSessionPiCodingAgentRunner`即可。

@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   planContentSchema,
+  promptTurnSelectionInputV2Schema,
   type ExecutionContract,
+  type GovernanceReviewCandidate,
+  type GovernanceReviewInputDto,
   type PlanContent,
   type PlanningInputDto,
   type TraceEventInput,
@@ -23,9 +26,13 @@ import {
   type MemoryBackendRegistryPort,
   type RuleIdFactory,
 } from "@chat/application";
-import { SYSTEM_PLANNING_WORKFLOW_REVISION_ID } from "@chat/application/workflow-system-definitions";
+import {
+  SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
+  SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
+} from "@chat/application/workflow-system-definitions";
 import {
   compileProjectMethodSnapshotPolicies,
+  computeExecutionInputManifestSha256,
   computeProjectMethodSnapshotSha256,
   computeWorkflowProjectResourceSha256,
   hashCanonical,
@@ -33,6 +40,7 @@ import {
 import { JsonProductStore } from "@chat/product-store-json";
 import { createWorkflowMemoryProviderRegistry } from "@chat/memory-runtime";
 import { createApiApp } from "@chat/api";
+import { createFilePromptCatalog } from "@chat/api/prompt-catalog";
 import { OutboxDispatcher } from "@chat/api/outbox-dispatcher";
 import {
   createWorkflowRuntimeServer,
@@ -80,10 +88,49 @@ const PLAN_V2: PlanContent = planContentSchema.parse({
   summary: "v2：风险单独成节，含三个行动项",
 });
 
+const GOVERNANCE_PROMPT_COMPONENTS = [
+  {
+    regionKey: "rules",
+    promptFragmentRevisionId: "pfr_builtincontrolledprojectchangev3",
+    sha256: "6dcdeed142c38bb6a674e061011b0b4b0693e31409e1c3ef3b56c6e7b4f2a578",
+  },
+  {
+    regionKey: "requirements",
+    promptFragmentRevisionId: "pfr_builtinengineeringevidencev3",
+    sha256: "30b7515dbf151a0b55fb6c531f3db0aef69b02692daa6eb5bb8285f7431404f7",
+  },
+  {
+    regionKey: "experience",
+    promptFragmentRevisionId: "pfr_builtinmultiagentdeliveryv3",
+    sha256: "f761911e1ff73182e7632f569d63a556b5e89fccc27a53f139def0d30879ebcf",
+  },
+] as const;
+
+function governancePromptSelection(workflowDefinitionRevisionId: string) {
+  return promptTurnSelectionInputV2Schema.parse({
+    schemaVersion: "prompt-turn-selection-input.v2",
+    workflowDefinitionRevisionId,
+    regions: GOVERNANCE_PROMPT_COMPONENTS.map((component) => ({
+      regionKey: component.regionKey,
+      mode: "append",
+      selected: [
+        {
+          promptFragmentRevisionId: component.promptFragmentRevisionId,
+          sha256: component.sha256,
+        },
+      ],
+    })),
+    nodeSelections: [],
+  });
+}
+
 interface FakePi {
   plannerCalls: number;
   planningInputs: PlanningInputDto[];
   executorCalls: string[];
+  governanceReviewCalls: number;
+  governanceReviewInputs: GovernanceReviewInputDto[];
+  governanceReviewOutcome: "pass" | "fail";
   planner: (input: {
     config: BailianConfig;
     planningInput: PlanningInputDto;
@@ -93,6 +140,10 @@ interface FakePi {
     contract: ExecutionContract;
     stepId: string;
   }) => Promise<AgentRunResult<ExecutorStepCandidate>>;
+  governanceReview: (input: {
+    reviewInput: GovernanceReviewInputDto;
+    onProviderRequestStart?: () => void;
+  }) => Promise<AgentRunResult<GovernanceReviewCandidate>>;
 }
 
 function createFakePi(): FakePi {
@@ -100,6 +151,9 @@ function createFakePi(): FakePi {
     plannerCalls: 0,
     planningInputs: [],
     executorCalls: [],
+    governanceReviewCalls: 0,
+    governanceReviewInputs: [],
+    governanceReviewOutcome: "pass",
     planner: async ({ planningInput }) => {
       state.plannerCalls += 1;
       state.planningInputs.push(structuredClone(planningInput));
@@ -132,6 +186,41 @@ function createFakePi(): FakePi {
         durationMs: 5,
         providerCallCount: 1,
         providerMeta: { httpStatus: 200, providerRequestId: "req-fake-2" },
+      };
+    },
+    governanceReview: async ({ reviewInput, onProviderRequestStart }) => {
+      state.governanceReviewCalls += 1;
+      state.governanceReviewInputs.push(structuredClone(reviewInput));
+      onProviderRequestStart?.();
+      const blocking = state.governanceReviewOutcome === "fail";
+      return {
+        kind: "candidate",
+        candidate: {
+          schemaVersion: "governance-review-candidate.v1",
+          outcome: blocking ? "fail" : "pass",
+          summary: blocking ? "必要工程门未满足。" : "满足本次选中规范。",
+          findings: blocking
+            ? [
+                {
+                  severity: "blocking",
+                  code: "tests.required_gate_missing",
+                  summary: "测试证据不足",
+                  detail: "确定性E2E注入的阻断结论。",
+                  evidenceKeys: [reviewInput.allowedEvidenceKeys[0]!],
+                },
+              ]
+            : [],
+          residualRisks: [],
+        },
+        usage: { inputTokens: 60, outputTokens: 20 },
+        durationMs: 5,
+        providerCallCount: 1,
+        providerMeta: {
+          httpStatus: 200,
+          providerRequestId: `req-fake-governance-${String(state.governanceReviewCalls)}`,
+          providerStopReason: "toolUse",
+          toolCallCount: 1,
+        },
       };
     },
   };
@@ -276,12 +365,27 @@ async function startStack(fakePi: FakePi): Promise<TestStack> {
     filePath: join(dir, "product.json"),
     now: () => new Date().toISOString(),
   });
+  const promptCatalog = await createFilePromptCatalog();
+  let runtimeProfiles:
+    | ReturnType<
+        typeof import("@chat/pi-runtime/coding-executor").createPiAgentRuntimeProfileReader
+      >
+    | undefined;
   const deps: ApplicationDeps = {
     store,
     now: () => new Date().toISOString(),
     ids: testIds(),
     ruleIds: testRuleIds(),
     workflowMemoryProviders: createWorkflowMemoryProviderRegistry({}),
+    promptCatalog,
+    agentRuntimeProfiles: {
+      read: async (agentKey, workspaceRootId) => {
+        runtimeProfiles ??= (
+          await import("@chat/pi-runtime/coding-executor")
+        ).createPiAgentRuntimeProfileReader();
+        return runtimeProfiles.read(agentKey, workspaceRootId);
+      },
+    },
     trace,
   };
 
@@ -313,6 +417,7 @@ async function startStack(fakePi: FakePi): Promise<TestStack> {
       },
       planner: fakePi.planner as never,
       executor: fakePi.executor as never,
+      governanceReview: fakePi.governanceReview as never,
     },
   } as const;
   let workflowRuntime = await createWorkflowRuntimeServer(workflowOptions);
@@ -375,7 +480,10 @@ async function seedRun(deps: ApplicationDeps, text = "根据我的项目进展�
     principalId: "usr_debug" as never,
     sessionId: session.sessionId,
     commandId: nextCmd() as never,
-    payload: { text },
+    payload: {
+      text,
+      promptSelection: governancePromptSelection(SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID),
+    },
   });
   return { session, run };
 }
@@ -530,6 +638,7 @@ async function seedProjectAndRuleRun(deps: ApplicationDeps) {
     commandId: nextCmd() as never,
     payload: {
       text: "结合冻结Project与Rule给出下一步计划",
+      promptSelection: governancePromptSelection(definition.workflowDefinitionRevisionId),
       workflowSelection: {
         kind: "published_revision",
         workflowDefinitionRevisionId: definition.workflowDefinitionRevisionId,
@@ -781,11 +890,170 @@ describe("M2后端闭环（真实Workflow运行时 + Hook + 确定性pi）", () 
     current = await readRun(stack.deps, run.productRunId);
     expect(current.run?.phase).toBe("completed");
     expect(stack.fakePi.executorCalls).toEqual(["step-1"]);
+    expect(stack.fakePi.governanceReviewCalls).toBe(1);
     expect(current.messages).toHaveLength(1);
     expect(current.messages[0]?.role).toBe("assistant");
     expect(current.messages[0]?.content.text).toContain("风险与下一步");
     expect(current.run?.finalMessageId).toBe(current.messages[0]?.messageId);
     expect(stack.fakePi.plannerCalls).toBe(2);
+    const promptAssembly = Object.values(current.snapshot.entities.promptAssemblies).find(
+      (candidate) =>
+        candidate.productRunId === run.productRunId &&
+        candidate.schemaVersion === "prompt-assembly.v3",
+    );
+    expect(promptAssembly?.schemaVersion).toBe("prompt-assembly.v3");
+    if (promptAssembly?.schemaVersion !== "prompt-assembly.v3") {
+      throw new Error("治理Prompt没有形成Workflow Assembly v3");
+    }
+    expect(
+      promptAssembly.sharedRegions
+        .flatMap((region) => region.fragments)
+        .map((fragment) => ({
+          promptFragmentRevisionId: fragment.promptFragmentRevisionId,
+          sha256: fragment.sha256,
+        })),
+    ).toEqual(
+      expect.arrayContaining(
+        GOVERNANCE_PROMPT_COMPONENTS.map((component) => ({
+          promptFragmentRevisionId: component.promptFragmentRevisionId,
+          sha256: component.sha256,
+        })),
+      ),
+    );
+    for (const clause of ["状态/事务Owner", "共享Conformance", "同模型Agent"]) {
+      expect(stack.fakePi.planningInputs.at(-1)?.nodePrompt?.systemPromptAppend).toContain(clause);
+      expect(stack.fakePi.governanceReviewInputs.at(-1)?.nodePrompt.systemPromptAppend).toContain(
+        clause,
+      );
+      expect(
+        promptAssembly.nodes.find((node) => node.nodeType === "execute.plan")?.systemPromptAppend,
+      ).toContain(clause);
+    }
+    const governanceNode = promptAssembly.nodes.find(
+      (node) => node.nodeType === "agent.governance_check",
+    );
+    expect(governanceNode?.profileVersion).toBe("governance-review.v1");
+    const governanceValidation = Object.values(current.snapshot.entities.validationResults).find(
+      (validation) => validation.productRunId === run.productRunId,
+    );
+    expect(governanceValidation).toMatchObject({
+      outcome: "pass",
+      governanceReview: {
+        profileVersion: "governance-review.v1",
+        promptAssemblyId: promptAssembly.promptAssemblyId,
+        candidate: { outcome: "pass" },
+      },
+    });
+    const executionAttempt = Object.values(current.snapshot.entities.attempts).find(
+      (attempt) => attempt.productRunId === run.productRunId && attempt.kind === "execution",
+    );
+    if (
+      executionAttempt === undefined ||
+      executionAttempt.kind !== "execution" ||
+      executionAttempt.executionContractId === undefined ||
+      executionAttempt.inputManifestSha256 === undefined ||
+      executionAttempt.promptTemplateVersion === undefined ||
+      executionAttempt.modelConfigVersion === undefined
+    ) {
+      throw new Error("治理Workflow缺少Execution Attempt证据");
+    }
+    const contract =
+      current.snapshot.entities.executionContracts[executionAttempt.executionContractId];
+    const contractStep = contract?.steps.find((step) => step.stepId === executionAttempt.stepId);
+    const executeNode = promptAssembly.nodes.find((node) => node.nodeType === "execute.plan");
+    if (contract === undefined || contractStep === undefined || executeNode === undefined) {
+      throw new Error("治理Workflow的Contract或执行Prompt节点缺失");
+    }
+    const promptAssemblyRef = {
+      promptAssemblyId: promptAssembly.promptAssemblyId,
+      sha256: promptAssembly.sha256,
+      definitionNodeId: executeNode.definitionNodeId,
+      nodeAssemblySha256: executeNode.sha256,
+    };
+    expect(executionAttempt.inputManifestSha256).toBe(
+      computeExecutionInputManifestSha256({
+        executionContractId: contract.executionContractId,
+        approvedPlanSha256: contract.approvedPlanSha256,
+        stepId: contractStep.stepId,
+        inputRefs: contractStep.inputRefs,
+        dependencyRefs: executionAttempt.dependencyRefs ?? [],
+        promptTemplateVersion: executionAttempt.promptTemplateVersion,
+        modelConfigVersion: executionAttempt.modelConfigVersion,
+        promptAssemblyRef,
+      }),
+    );
+    expect(executionAttempt.inputManifestSha256).not.toBe(
+      computeExecutionInputManifestSha256({
+        executionContractId: contract.executionContractId,
+        approvedPlanSha256: contract.approvedPlanSha256,
+        stepId: contractStep.stepId,
+        inputRefs: contractStep.inputRefs,
+        dependencyRefs: executionAttempt.dependencyRefs ?? [],
+        promptTemplateVersion: executionAttempt.promptTemplateVersion,
+        modelConfigVersion: executionAttempt.modelConfigVersion,
+      }),
+    );
+  }, 90_000);
+
+  it("治理Reviewer给出blocking后独立节点阻断Product Commit且不生成Assistant Message", async () => {
+    stack.fakePi.governanceReviewOutcome = "fail";
+    const governanceCallsBefore = stack.fakePi.governanceReviewCalls;
+    try {
+      const { run } = await seedRun(stack.deps, "验证治理检查阻断采用");
+      await stack.dispatcher.tick();
+      await waitForCondition(() => reviewCheckpointReady(stack, run.productRunId));
+      const current = await readRun(stack.deps, run.productRunId);
+      const approval = current.approvals.find((candidate) => candidate.status === "open");
+      const currentPlan = current.plans[0];
+      await submitPlanDecision(stack.deps, {
+        principalId: "usr_debug" as never,
+        productRunId: run.productRunId as never,
+        commandId: nextCmd() as never,
+        expectedRunRevision: current.run?.revision ?? 0,
+        payload: {
+          approvalRequestId: approval?.approvalRequestId as never,
+          planId: currentPlan?.planId as never,
+          planRevision: 1,
+          planSha256: currentPlan?.sha256 ?? "",
+          kind: "approve",
+        },
+      });
+      await stack.dispatcher.tick();
+      await waitForCondition(
+        async () => (await readRun(stack.deps, run.productRunId)).run?.status === "failed",
+      );
+      const failed = await readRun(stack.deps, run.productRunId);
+      expect(stack.fakePi.governanceReviewCalls).toBe(governanceCallsBefore + 1);
+      expect(failed.run?.failure?.code).toBe("execution.governance_review_failed");
+      expect(failed.messages).toHaveLength(0);
+      const validation = Object.values(failed.snapshot.entities.validationResults).find(
+        (candidate) => candidate.productRunId === run.productRunId,
+      );
+      expect(validation).toMatchObject({
+        outcome: "fail",
+        failures: [{ code: "tests.required_gate_missing" }],
+        governanceReview: { candidate: { outcome: "fail" } },
+      });
+      expect(
+        Object.values(failed.snapshot.entities.workflowNodeRuns).find(
+          (node) =>
+            node.productRunId === run.productRunId && node.nodeType === "agent.governance_check",
+        ),
+      ).toMatchObject({
+        status: "failed",
+        error: {
+          code: "validation.failed",
+          summary: "候选结果未通过工程治理检查",
+        },
+      });
+      expect(
+        Object.values(failed.snapshot.entities.artifacts).filter(
+          (artifact) => artifact.productRunId === run.productRunId,
+        ),
+      ).toHaveLength(0);
+    } finally {
+      stack.fakePi.governanceReviewOutcome = "pass";
+    }
   }, 90_000);
 
   it("reject恢复同一Workflow进入cancelled，Executor调用数为0", async () => {

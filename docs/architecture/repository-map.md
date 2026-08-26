@@ -36,6 +36,7 @@ config/
   compatibility-facts.baseline.json 六类真实Owner源码生成的代际指纹
   supply-chain-policy.json 生产许可证例外与安装lifecycle白名单
 docs/
+  agent-governance/        Agent推进项目的规范、路由与理论证据
   getting-started/        全新克隆、固定工件准备与本地安装
   architecture/           当前合同与as-built
   product/                稳定产品原则

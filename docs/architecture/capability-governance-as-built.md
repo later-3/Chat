@@ -18,9 +18,9 @@
 
 | 边界 | 当前写版本 | 历史读取 | 升级与降级政策 |
 | --- | --- | --- | --- |
-| Product Store | `chat-product-store.v20` | v1–v19 | main 的 v18→v19 先保留 Project Bootstrap Outbox；v19→v20 只增加 Tool Intent/Decision/Result 空集合。严格 v19 不接受 donor 私有歧义 Tool 集合；迁移原子落盘、重启字节幂等，未知/损坏失败关闭 |
+| Product Store | `chat-product-store.v25` | v1–v24 | v24→v25保留Simple Planning v1历史证据并发布带独立治理检查的v2；donor v21从未进入主历史链。固定种子、目标ID碰撞、未知或损坏输入均失败关闭；迁移原子落盘、重启字节幂等 |
 | DSH Bridge State | `chat-dsh-lifeos-state.v16` | v1–v15 | v15 保留新会话偏好、Message 提交状态和 bootstrap lifecycle；v15→v16 只允许每条 Request 增加 `pendingToolExecutionDecision` 本地重试投影。pending逐字段绑定Run、Intent、revision、完整Capability、input、scope、kind和explanation；Product Tool事实不进入Bridge |
-| Agent Profile API / Agent Version | `chat-agent-profile-api.v3` / `agent-version.v2` | Profile v2、Version v1 严格只读 | v2 Profile保持原字段集；v1 Version禁止qualified扩权。新Version必须显式携带`enabledCapabilityRefs`，合法零Tool用空数组表达 |
+| Agent Profile API / Agent Version | `chat-agent-profile-api.v4` / `agent-version.v2` | Profile v2/v3、Version v1 严格只读 | Profile v3不接受治理Reviewer key；v1 Version禁止qualified扩权。新Version必须显式携带`enabledCapabilityRefs`，合法零Tool用空数组表达 |
 | Direct Prompt Assembly | `prompt-assembly.v4` / compiler v4 | v1/v2 历史读取；v3 属于多节点 Workflow | v4 强制冻结 `runtimeProfileSha256`、Workspace Grant 配对、完整 Resolved Capability Snapshot 和 Resources；历史裸名 Run 不能新建 Tool Intent |
 | Pi Direct Protocol / Store | `pi-direct-executor.v2` / `pi-direct-executor-operation-store.v2` | v1 文件只读投影 | Service入口只接受v2；v1文件不原地改写，任何恢复写入失败关闭。Client把首次request hash写入Workflow checkpoint，逐次核对POST、Events、Event和Snapshot的Operation/Request身份；v2→v1降级失败 |
 | Planning/Coding Journal | `pi-executor-operation-store.v2` / `full-operation.v3` | 外层v1中的真正旧记录与`full-operation.v2`只读 | 新外层代际强制v3，删除integrity、settled、visible hash或Capability不能降级。Client钉住首次代际，v3→v2/v1失败 |
@@ -36,7 +36,7 @@
 | DSH Tool Review | 直接采用到 Bridge v16 | 独立 Tool 卡片显示 qualified ID、来源、effect、scope、输入摘要和 Hash；拒绝映射 `tool.blocked` |
 | Planning 结构化 Evidence | 采用并修复旁路 | `strictEvidence` 只控制文字逐条匹配；结构化 Evidence 永远开启并按 Attempt、Capability、toolCallId、Result Hash 验证 |
 | 非付费真实纵向 | 基于 main 重新接线 | 独立 455xx 端口与数据根；真实 DSH/Router/Workflow/Pi AgentSession，进程内 Faux Provider；显式环境白名单、响应丢失、拒绝和 Pi 进程重启 |
-| donor 私有 Product v19 / Bridge v13 | 明确淘汰 | 不兼容未部署歧义格式；使用 Product v20、Bridge v16 |
+| donor 私有 Product v19 / Bridge v13 | 明确淘汰 | 不兼容未部署歧义格式；使用 Product v21、Bridge v16 |
 
 ## 4. Capability 身份与 Scope
 

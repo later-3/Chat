@@ -21,6 +21,7 @@ import {
   productRunIdSchema,
   productSessionIdSchema,
   promptTurnPreviewDtoSchema,
+  PROMPT_TURN_PREVIEW_API_SCHEMA_VERSION,
   workflowRunSpecIdSchema,
 } from "@chat/contracts";
 import type {
@@ -534,7 +535,7 @@ export async function previewPromptTurn(
       const directAssembly = promptAssembly.schemaVersion === "prompt-assembly.v4";
       const nodeAssembly = directAssembly
         ? promptAssembly
-        : promptAssembly.schemaVersion === "prompt-assembly.v3"
+        : promptAssembly.schemaVersion === "prompt-assembly.v6"
           ? promptAssembly.nodes.find(
               (candidate) => candidate.definitionNodeId === node.definitionNodeId,
             )
@@ -575,7 +576,7 @@ export async function previewPromptTurn(
     }),
   );
   return promptTurnPreviewDtoSchema.parse({
-    schemaVersion: "chat-product-api.v1",
+    schemaVersion: PROMPT_TURN_PREVIEW_API_SCHEMA_VERSION,
     status: "pre_send",
     currentInput: input.payload.message.text,
     assembly: prepared.promptAssembly,
@@ -1325,7 +1326,7 @@ async function submitUserMessageInternal(
             };
       // 一个Product Run对应一个Workflow执行Attempt（Trace关联与生命周期看护）
       draft.entities.attempts[workflowAttemptId] = {
-        schemaVersion: "run-attempt.v1",
+        schemaVersion: "run-attempt.v2",
         attemptId: workflowAttemptId,
         productRunId,
         kind: "workflow",
@@ -1606,7 +1607,7 @@ function resolvePublishedWorkflowRevision(
 
 function revisionToCompilerInput(revision: WorkflowDefinitionRevision) {
   return {
-    schemaVersion: "workflow-definition-revision-input.v1" as const,
+    schemaVersion: "workflow-definition-revision-input.v2" as const,
     workflowDefinitionRevisionId: revision.workflowDefinitionRevisionId,
     definitionRevision: revision.definitionRevision,
     blueprintKey: revision.blueprintKey,

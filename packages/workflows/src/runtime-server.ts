@@ -13,6 +13,7 @@ import {
   createPiExecutorServiceClient,
   loadBailianConfig,
   runPiNoteCapture,
+  runPiGovernanceReview,
   runPiPlanner,
 } from "@chat/pi-runtime";
 import {
@@ -74,6 +75,7 @@ export interface WorkflowRuntimeServerOptions {
       | "bailian"
       | "planner"
       | "noteCapture"
+      | "governanceReview"
       | "executor"
       | "directExecutor"
       | "now"
@@ -150,6 +152,7 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       bailian: loadBailianConfig(process.env),
       planner: runPiPlanner,
       noteCapture: runPiNoteCapture,
+      governanceReview: runPiGovernanceReview,
       executor: executorClient,
       directExecutor: directExecutorClient,
       ...options.runtimeOverrides,

@@ -168,7 +168,7 @@ export async function beginDirectAgentAttempt(
         },
       });
       draft.entities.attempts[directAgentAttemptId] = {
-        schemaVersion: "run-attempt.v1",
+        schemaVersion: "run-attempt.v2",
         attemptId: directAgentAttemptId,
         productRunId: input.productRunId,
         kind: "direct_agent",
@@ -280,6 +280,7 @@ export async function authorizeDirectAgentOperation(
   const promptAssembly = directPromptAssembly(snapshot.entities, input.productRunId);
   if (
     promptAssembly.schemaVersion === "prompt-assembly.v3" ||
+    promptAssembly.schemaVersion === "prompt-assembly.v6" ||
     promptAssembly.schemaVersion === "prompt-assembly.v5"
   ) {
     throw revisionConflict("Direct Agent不能使用Workflow或监督执行Prompt计划");

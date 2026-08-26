@@ -1,6 +1,6 @@
 # Prompt Studio 与系统级 Prompt Assembly As-built
 
-> 状态：会话Prompt管理、独立Agent Profile、Workflow节点Agent配置与本次Session/Run临时覆盖、全局/Workspace Markdown版本、统一发送前完整Prompt预览、DSH→Bridge与Bridge→Chat调试审核、Workflow Prompt Assembly v3、Direct Prompt Assembly v4、近期正式会话历史和Direct Provider前逐次审核均已打通。完整Agent版本管理的唯一事实源见[Chat Agent管理](./agent-management-as-built.md)；Capability冻结、动作授权与证据恢复的唯一事实源见[Capability治理](./capability-governance-as-built.md)。Provider逐请求人工审核仍只由Direct节点开放。
+> 状态：会话Prompt管理、独立Agent Profile、Workflow节点Agent配置与本次Session/Run临时覆盖、全局/Workspace Markdown版本、统一发送前完整Prompt预览、DSH→Bridge与Bridge→Chat调试审核、Workflow Prompt Assembly v3、Direct Prompt Assembly v4、近期正式会话历史、独立工程治理检查节点和Direct Provider前逐次审核均已打通。完整Agent版本管理的唯一事实源见[Chat Agent管理](./agent-management-as-built.md)；Capability冻结、动作授权与证据恢复的唯一事实源见[Capability治理](./capability-governance-as-built.md)。Provider逐请求人工审核仍只由Direct节点开放。
 
 ## 1. 用户结果
 
@@ -9,7 +9,7 @@
 3. 「提示词配置预览」只回答当前会话Region怎样组成；「预览完整 Prompt」调用`POST /api/prompt-turn-previews`，与正式Submit Message共用Application的Workflow预编译和Prompt编译路径，再附加DSH请求与Bridge→Chat命令映射。它是只读预发送模型，不创建Session、Message、Run或执行授权，也不是最终Provider请求。
 4. Composer的「调试审核」面板有两个独立开关：DSH→Bridge审核真实`GenerateOptions`；Bridge→Chat审核筛选后将实际交给`fetch`的完整Command Plan。两项关闭时自动发送；开启时必须依序批准。第二道批准前Chat Session/Message写入数为零。
 5. Message Command在创建Run的同一事务中冻结Prompt Assembly：Pi-backed节点明确冻结`piSystemPrompt=inherit|replace`；`inherit`由Pi使用自己的默认动态System，`replace`把用户/Workflow/Run选出的完整正文作为Pi `customPrompt`。只有显式受限或专用Workflow声明的Chat Runtime Contract才会追加，本轮会话上下文则按Assembly继续进入System。Direct v4在v2四路输入上继续冻结qualified Capability Snapshot、Runtime Profile和Workspace Grant；多节点Workflow用v3冻结每个节点的同一解析结果。配置随后被修改、归档或页面刷新，都不能改变该Run。
-6. Planner、Coding Executor与Note Extractor只接收Application从同一冻结v3 Assembly授权出的节点Prompt；节点Hash进入Planning/Execution Input Manifest，不从当前Bridge草稿或文件重新推导。
+6. Planner、Coding Executor、Governance Reviewer与Note Extractor只接收Application从同一冻结v3 Assembly授权出的节点Prompt；节点Hash进入对应Input/Validation事实，不从当前Bridge草稿或文件重新推导。
 7. Pi Agent仍负责单次节点内的Agent/Tool Loop。Direct的`pi_cli_default`直接继承Pi真实Context Files、Skills、Prompt Templates与Extensions发现；用户派生的受限Version可逐项关闭。Planning Coding Executor仍按已批准Execution Contract隔离这些自动来源；显式选择的Chat会话Prompt组件继续由Prompt Assembly进入请求。
 8. Direct Provider Gate在每次真实模型请求前暂停。Raw是Provider Adapter将发送的Canonical Payload；Friendly只增加来源、区域、Revision、Hash、Scope和JSON Pointer，不添加模型可见正文。Planner、Executor与Note当前使用已冻结Prompt，但没有新增Provider人工审核语义。
 9. 前端提供三层Chat配置：DSH「设置 → Agent」为已经完成执行消费纵向的Direct Agent管理Principal不可变AgentVersion；Workflow配置页精确绑定Version ID/Hash；发送前还可为当前DSH Session形成结构化临时配置，并在每次Run创建时冻结。选择Workspace Scope或打开会话配置时，页面按受权`workspaceRootId`重新读取Pi Settings、Extension、Tool与资源目录。Pi-backed Agent的无覆盖默认值直接引用Pi真实运行时基线，不复制成Chat Fragment；自定义正文完整替换Pi基础System，Tools精确冻结，四类资源当前按类别继承或关闭。Project Bootstrap、Coding Executor等未完成逐字段Version消费的Agent只读显示真实基线，不提供假保存入口。系统Workflow保存时派生个人版本，个人Workflow保存时原子发布下一Revision；任何Prompt文字都不能增加Tool或Workspace授权。
@@ -25,7 +25,7 @@ prompts/catalog.json + prompts/**/*.md
 <Workspace>/.chat/prompts/**/*.md
   └── 用户Prompt正文与人可读版本文件
 
-Product Store v20
+Product Store v21
   ├── PromptFragment（owner/scope/status/current/CAS）
   ├── PromptFragmentRevision（不可变元数据、内容Hash、MD路径/文件Hash）
   ├── AgentVersion（完整配置、Scope、来源版本与Hash，不可变）
@@ -71,6 +71,7 @@ Bridge按`CHAT_PROJECT_ROOTS_JSON`把DSH当前打开目录映射为Chat `rootId`
 - `v17 → v18`：新增不可变AgentVersion集合，并发布继承Pi CLI默认能力的Direct Workflow v2；历史只读Workflow Revision/View继续保留。
 - `v18 → v19`：新增Project Bootstrap Outbox事实；
 - `v19 → v20`：只新增Tool Execution Intent/Decision/Result事实，严格拒绝与任务02格式冲突的歧义v19。
+- `v20 → v21`：保留Simple Planning v1 Revision/View供历史Run恢复，发布Simple Planning v2；新流程用独立`agent.governance_check`替代旧`result.validate`节点。
 
 历史v1用户正文仍可读取；首次读取时会生成一个可见的兼容Markdown文件，之后继续通过同一文件Port访问。历史Direct Run保留原Assembly语义，迁移不会把当时不存在的选择伪造成新上下文。
 
@@ -164,9 +165,18 @@ DSH发送审核使用实际Adapter入口捕获的完整可序列化`GenerateOpti
 | `agent.plan` | `planner-prompt.v3` | Planner默认或节点/Run差异 + 会话上下文 |
 | `agent.direct` | `direct-agent-prompt.v1` | Direct/Project Bootstrap默认或节点/Run差异 + 会话上下文 |
 | `execute.plan` | `executor-coding-agent-prompt.v1` | Coding Executor默认或节点/Run差异 + 会话上下文 |
+| `agent.governance_check` | `governance-review.v1` | Governance Reviewer默认或节点/Run差异 + 会话上下文 |
 | `note.extract` | `note-capture.v1` | Note Extractor默认或节点/Run差异 + 会话上下文 |
 
-### 6.1 Direct Prompt Assembly v4
+### 6.1 工程治理检查节点
+
+默认Simple Planning v2在`execute.plan`与`product.commit`之间运行独立`agent.governance_check`。它使用一次、最多4096 Token的Pi Agent调用，只暴露`submit_governance_review`结构化提交工具；不能修改Workspace、不能授予能力，也不拥有产品终态。
+
+Application先从冻结RunSpec派生唯一Validation策略，再为Reviewer创建绑定Contract、Candidate、完整Prompt Assembly、规范Profile、证据键、限制和模型版本的独立`governance_review` Attempt。Reviewer只产生`pass/fail`候选、`blocking/advisory` findings和剩余风险；正式Trace使用该独立Attempt上的`governance_reviewer` Pi/Provider事件。Application重跑确定性校验、拒绝未知证据键，并把确定性失败与blocking finding合成同一Candidate唯一的`ValidationResult`；新Command不能用第二份Validation覆盖既有结论。`product.commit`在采用前再次读取权威Pi Journal并绑定内容寻址Receipt，Journal缺失或漂移时不提交正式Message。历史Simple Planning v1继续使用`result.validate`，迁移不改写旧RunSpec。
+
+2026-08-26真实DSH浏览器门证明三个Git内置治理组件分别在规则、要求和经验Region中可见并可勾选，配置预览保留原文路径；完整Prompt预览同时显示`planning.governance-check / agent.governance_check`，三组选中正文均进入该节点。对应命令为`CHAT_DSH_E2E_MODE=prompt-studio-only playwright test --grep '工程规范在DSH归类展示'`。
+
+### 6.2 Direct Prompt Assembly v4
 
 Direct固定Profile为：
 

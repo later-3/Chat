@@ -76,7 +76,8 @@ import { productSnapshotV20Schema } from "./legacy-v20.js";
 import { productSnapshotV20CapabilitySchema } from "./internal-compat/legacy-v20-capability-reader.js";
 import { productSnapshotV21Schema } from "./legacy-v21.js";
 import { productSnapshotV22Schema } from "./legacy-v22.js";
-import { productSnapshotV23Schema } from "./legacy-v23.js";
+import { productSnapshotV23Schema, type ProductSnapshotV23 } from "./legacy-v23.js";
+import { productSnapshotV24Schema } from "./legacy-v24.js";
 import { migrateProductSnapshotV4ToV5 } from "./internal-compat/migrate-v4-to-v5.js";
 import { migrateProductSnapshotV5ToV6 } from "./internal-compat/migrate-v5-to-v6.js";
 import { migrateProductSnapshotV6ToV7 } from "./internal-compat/migrate-v6-to-v7.js";
@@ -100,6 +101,11 @@ import { migrateProductSnapshotV20CapabilityToV22 } from "./migrate-v20-capabili
 import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
 import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
 import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
+import { migrateProductSnapshotV24ToV25 } from "./migrate-v24-to-v25.js";
+
+function migrateProductSnapshotV23ToCurrent(snapshot: ProductSnapshotV23): ProductSnapshot {
+  return migrateProductSnapshotV24ToV25(migrateProductSnapshotV23ToV24(snapshot));
+}
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -240,9 +246,18 @@ export class JsonProductStore implements ProductStorePort {
       return new JsonProductStore(options, current.data);
     }
 
+    const legacyV24 = productSnapshotV24Schema.safeParse(parsedJson);
+    if (legacyV24.success) {
+      const migrated = migrateProductSnapshotV24ToV25(legacyV24.data);
+      assertSnapshotIntegrity(migrated);
+      const store = new JsonProductStore(options, migrated);
+      await store.persist(migrated);
+      return store;
+    }
+
     const legacyV23 = productSnapshotV23Schema.safeParse(parsedJson);
     if (legacyV23.success) {
-      const migrated = migrateProductSnapshotV23ToV24(legacyV23.data);
+      const migrated = migrateProductSnapshotV23ToCurrent(legacyV23.data);
       assertSnapshotIntegrity(migrated);
       const store = new JsonProductStore(options, migrated);
       await store.persist(migrated);
@@ -251,7 +266,7 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV22 = productSnapshotV22Schema.safeParse(parsedJson);
     if (legacyV22.success) {
-      const migrated = migrateProductSnapshotV23ToV24(
+      const migrated = migrateProductSnapshotV23ToCurrent(
         migrateProductSnapshotV22ToV23(legacyV22.data),
       );
       assertSnapshotIntegrity(migrated);
@@ -262,7 +277,7 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV21 = productSnapshotV21Schema.safeParse(parsedJson);
     if (legacyV21.success) {
-      const migrated = migrateProductSnapshotV23ToV24(
+      const migrated = migrateProductSnapshotV23ToCurrent(
         migrateProductSnapshotV22ToV23(migrateProductSnapshotV21ToV22(legacyV21.data)),
       );
       assertSnapshotIntegrity(migrated);
@@ -273,7 +288,7 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV20Capability = productSnapshotV20CapabilitySchema.safeParse(parsedJson);
     if (legacyV20Capability.success) {
-      const migrated = migrateProductSnapshotV23ToV24(
+      const migrated = migrateProductSnapshotV23ToCurrent(
         migrateProductSnapshotV22ToV23(
           migrateProductSnapshotV20CapabilityToV22(legacyV20Capability.data),
         ),
@@ -286,7 +301,7 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV20 = productSnapshotV20Schema.safeParse(parsedJson);
     if (legacyV20.success) {
-      const migrated = migrateProductSnapshotV23ToV24(
+      const migrated = migrateProductSnapshotV23ToCurrent(
         migrateProductSnapshotV22ToV23(
           migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(legacyV20.data)),
         ),
@@ -299,7 +314,7 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV19 = productSnapshotV19Schema.safeParse(parsedJson);
     if (legacyV19.success) {
-      const migrated = migrateProductSnapshotV23ToV24(
+      const migrated = migrateProductSnapshotV23ToCurrent(
         migrateProductSnapshotV22ToV23(
           migrateProductSnapshotV21ToV22(
             migrateProductSnapshotV20ToV21(migrateProductSnapshotV19ToV20(legacyV19.data)),
@@ -314,7 +329,7 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV18 = productSnapshotV18Schema.safeParse(parsedJson);
     if (legacyV18.success) {
-      const migrated = migrateProductSnapshotV23ToV24(
+      const migrated = migrateProductSnapshotV23ToCurrent(
         migrateProductSnapshotV22ToV23(
           migrateProductSnapshotV21ToV22(
             migrateProductSnapshotV20ToV21(
@@ -447,7 +462,7 @@ export class JsonProductStore implements ProductStorePort {
       }
       v17 = migrateProductSnapshotV16ToV17(v16);
     }
-    const migrated = migrateProductSnapshotV23ToV24(
+    const migrated = migrateProductSnapshotV23ToCurrent(
       migrateProductSnapshotV22ToV23(
         migrateProductSnapshotV21ToV22(
           migrateProductSnapshotV20ToV21(

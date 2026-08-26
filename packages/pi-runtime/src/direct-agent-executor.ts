@@ -19,7 +19,11 @@ import {
   type ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { assertAllowedBailianHost } from "./config.js";
-import { assertExecutorWorkspacePath, toObservableTraceDisplay } from "./coding-agent-executor.js";
+import {
+  applyPiRuntimeApiKey,
+  assertExecutorWorkspacePath,
+  toObservableTraceDisplay,
+} from "./coding-agent-executor.js";
 import type { PiDirectExecutorOperationStore } from "./direct-executor-operation-store.js";
 import type { StartPiDirectExecutorOperationRequest } from "./direct-executor-service-contract.js";
 import type { ProjectBootstrapProductPort } from "./direct-executor-service.js";
@@ -115,22 +119,6 @@ export interface AgentSessionPiDirectAgentRunnerOptions {
   /** 仅供确定性合同/E2E注入已注册的本地Provider；生产缺省始终使用Pi标准配置链。 */
   readonly createModelRuntime?: () => Promise<ModelRuntime>;
   readonly model?: Model<string>;
-}
-
-/**
- * Chat本地安装以仓库.env的DASHSCOPE_API_KEY作为Provider就绪事实；Pi仍负责
- * 实际认证，但必须把该值注册为进程内runtime override。这样用户目录里过期的
- * command型models.json认证不会覆盖Chat显式配置，密钥也不会写入Pi Session或Store。
- */
-export async function applyDirectAgentRuntimeApiKey(input: {
-  readonly modelRuntime: Pick<ModelRuntime, "setRuntimeApiKey">;
-  readonly environment: Readonly<Record<string, string | undefined>>;
-  readonly providerId: string;
-  readonly signal: AbortSignal;
-}): Promise<void> {
-  const apiKey = input.environment.DASHSCOPE_API_KEY?.trim();
-  if (apiKey === undefined || apiKey === "") return;
-  await input.modelRuntime.setRuntimeApiKey(input.providerId, apiKey, { signal: input.signal });
 }
 
 function assistantText(message: AgentMessage | undefined): string | undefined {
@@ -354,7 +342,7 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       this.options.createModelRuntime === undefined
         ? await ModelRuntime.create({ refreshOnCreate: false })
         : await this.options.createModelRuntime();
-    await applyDirectAgentRuntimeApiKey({
+    await applyPiRuntimeApiKey({
       modelRuntime,
       environment: process.env,
       providerId: input.requestOptions.providerId,

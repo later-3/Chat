@@ -4,11 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { DirectAgentRunInput, DirectAgentRunner } from "./direct-agent-executor.js";
-import {
-  applyDirectAgentRuntimeApiKey,
-  DirectAgentSuspendedError,
-  P1_DIRECT_AGENT_PROFILE,
-} from "./direct-agent-executor.js";
+import { DirectAgentSuspendedError, P1_DIRECT_AGENT_PROFILE } from "./direct-agent-executor.js";
+import { applyPiRuntimeApiKey } from "./coding-agent-executor.js";
 import { operationIdForDirectAgentAttempt } from "./direct-executor-identity.js";
 import { PiDirectExecutorOperationStore } from "./direct-executor-operation-store.js";
 import { createPiDirectExecutorServiceClient } from "./direct-executor-service-client.js";
@@ -759,10 +756,10 @@ describe("Pi Direct Executor Service + Client", () => {
     });
   });
 
-  it("Chat显式百炼Key只注册为Pi进程内runtime override", async () => {
+  it("Direct与Workflow共享的显式百炼Key只注册为Pi进程内runtime override", async () => {
     const setRuntimeApiKey = vi.fn(async () => undefined);
     const signal = new AbortController().signal;
-    await applyDirectAgentRuntimeApiKey({
+    await applyPiRuntimeApiKey({
       modelRuntime: { setRuntimeApiKey },
       environment: { DASHSCOPE_API_KEY: "  e2e-runtime-key  " },
       providerId: "dashscope-coding",
@@ -773,9 +770,9 @@ describe("Pi Direct Executor Service + Client", () => {
     });
   });
 
-  it("未配置Chat百炼Key时保留Pi自己的认证链", async () => {
+  it("Direct与Workflow未配置Chat百炼Key时保留Pi自己的认证链", async () => {
     const setRuntimeApiKey = vi.fn(async () => undefined);
-    await applyDirectAgentRuntimeApiKey({
+    await applyPiRuntimeApiKey({
       modelRuntime: { setRuntimeApiKey },
       environment: { DASHSCOPE_API_KEY: "  " },
       providerId: "dashscope-coding",

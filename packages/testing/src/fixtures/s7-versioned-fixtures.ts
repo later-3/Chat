@@ -202,7 +202,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "active",
     compatibility: "current",
     objectCount: 33,
-    contentSha256: "145ef0348dec97042fbba593f20aa0e083ae5e0135044f440900185a02366443",
+    contentSha256: "a394808f16cc8f6d78779f63c4ada8c8c88232776da509bae56497806d168061",
   },
   {
     fixtureId: "v10-new-planning-waiting",
@@ -213,7 +213,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "waiting",
     compatibility: "resumable",
     objectCount: 45,
-    contentSha256: "4abaa4b1eb0174376a43c3944d0a88506f30c58e48cf1d6879f1b37e3bc9d651",
+    contentSha256: "7418e203bc5a0832ebfb95a92000601d4bfd38ba42ca7a060c7334aaaa21460e",
   },
   {
     fixtureId: "v10-new-planning-terminal",
@@ -224,7 +224,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "terminal",
     compatibility: "read_only_history",
     objectCount: 54,
-    contentSha256: "666f8cf6fa9409775c89b22b27bedf450c36dca00257357084703dae2be8e3a4",
+    contentSha256: "90b3fbdccb1a5a4fb040632d87ce0e2b1e246c2b46b8a8af6b507e1c21f706a9",
   },
   {
     fixtureId: "v10-note-capture-active",
@@ -235,7 +235,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "active",
     compatibility: "current",
     objectCount: 15,
-    contentSha256: "86f74b404d03e5e97d21e0e2dddf06ef567779a138b8cfe4f03c4c78e677c9c1",
+    contentSha256: "dc112339a4a635b0bdc893a45d540f3742460fba466217050880563b636f48b1",
   },
   {
     fixtureId: "v10-note-capture-waiting",
@@ -246,7 +246,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "waiting",
     compatibility: "resumable",
     objectCount: 22,
-    contentSha256: "a48fc18afb45a5f022650ce73103371e38dac1b423527873c385301e7dded6c5",
+    contentSha256: "4e336e883980d313d13d00abb9457c5d1c957c3b59f1afc0b3f0cb8baa5243a1",
   },
   {
     fixtureId: "v10-note-capture-terminal",
@@ -257,7 +257,7 @@ export const S7_VERSIONED_FIXTURE_MANIFEST: readonly S7VersionedFixtureManifestE
     lifecycle: "terminal",
     compatibility: "read_only_history",
     objectCount: 38,
-    contentSha256: "c8d30c2f5150563a48902f34b032d8abb2db258d1d0b1b3fc0b57db9924d14dc",
+    contentSha256: "f0b4c62ca617a6f09bda7593adaf406a44b22b414599622f4495046f1266f175",
   },
 ];
 

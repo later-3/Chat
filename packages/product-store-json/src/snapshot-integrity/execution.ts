@@ -1,11 +1,15 @@
 import {
+  EXECUTION_CAPABILITIES,
   EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
+  GOVERNANCE_REVIEW_PROFILE_VERSION,
   type PromptAssemblyV3,
   type ProductSnapshot,
 } from "@chat/contracts";
 import {
   computeExecutionInputManifestSha256,
+  governanceEvidenceKeys,
   hashCanonical,
+  resolvePlanningValidationPolicy,
   validateExecutionCandidate,
 } from "@chat/domain";
 import type { Fail } from "./shared.js";
@@ -53,13 +57,49 @@ export function assertExecution(snapshot: ProductSnapshot, fail: Fail): void {
     const expectedCapabilities = [
       ...new Set(plan.content.steps.flatMap((step) => step.requestedCapabilities)),
     ];
+    const allowedCapabilities = new Set<string>(EXECUTION_CAPABILITIES);
     if (
       JSON.stringify(contract.capabilityRefs) !== JSON.stringify(expectedCapabilities) ||
-      contract.capabilityRefs.some(
-        (capability) => capability !== EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
-      )
+      contract.capabilityRefs.some((capability) => !allowedCapabilities.has(capability))
     ) {
       fail(`contract ${contract.executionContractId} Capability扩大或不一致`);
+    }
+    const requiresWorkspace = contract.capabilityRefs.some(
+      (capability) => capability !== EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
+    );
+    if (requiresWorkspace) {
+      const planningAttempt = entities.attempts[plan.planningAttemptId];
+      const projectContext =
+        planningAttempt?.planningProjectContextId === undefined
+          ? undefined
+          : entities.planningProjectContexts[planningAttempt.planningProjectContextId];
+      const workspaces =
+        projectContext === undefined
+          ? []
+          : Object.values(entities.projectResources).filter(
+              (resource) =>
+                resource.projectId === projectContext.projectId &&
+                resource.kind === "workspace" &&
+                resource.status === "active",
+            );
+      const workspace = workspaces[0];
+      if (
+        planningAttempt?.kind !== "planning" ||
+        projectContext === undefined ||
+        projectContext.productRunId !== contract.productRunId ||
+        projectContext.sha256 !== planningAttempt.planningProjectContextSha256 ||
+        workspaces.length !== 1 ||
+        workspace === undefined ||
+        contract.workspaceRef === undefined ||
+        contract.workspaceRef.projectId !== workspace.projectId ||
+        contract.workspaceRef.projectResourceId !== workspace.projectResourceId ||
+        contract.workspaceRef.rootId !== workspace.rootId ||
+        contract.workspaceRef.revision !== workspace.revision
+      ) {
+        fail(`contract ${contract.executionContractId} Workspace绑定无效`);
+      }
+    } else if (contract.workspaceRef !== undefined) {
+      fail(`contract ${contract.executionContractId} 无Workspace能力却携带Workspace绑定`);
     }
     const hash = hashCanonical("execution-contract.v1", {
       productRunId: contract.productRunId,
@@ -69,6 +109,7 @@ export function assertExecution(snapshot: ProductSnapshot, fail: Fail): void {
       approvalDecisionId: contract.approvalDecisionId,
       steps: contract.steps,
       completionCriteria: contract.completionCriteria,
+      ...(contract.workspaceRef === undefined ? {} : { workspaceRef: contract.workspaceRef }),
       capabilityRefs: contract.capabilityRefs,
       limits: contract.limits,
     });
@@ -132,7 +173,8 @@ export function assertExecution(snapshot: ProductSnapshot, fail: Fail): void {
         ...(() => {
           const assembly = Object.values(entities.promptAssemblies).find(
             (candidate): candidate is PromptAssemblyV3 =>
-              candidate.schemaVersion === "prompt-assembly.v3" &&
+              (candidate.schemaVersion === "prompt-assembly.v3" ||
+                candidate.schemaVersion === "prompt-assembly.v6") &&
               candidate.productRunId === attempt.productRunId,
           );
           const node = assembly?.nodes.find((candidate) => candidate.nodeType === "execute.plan");
@@ -196,17 +238,45 @@ export function assertExecution(snapshot: ProductSnapshot, fail: Fail): void {
     }
   }
 
+  const validatedCandidateIds = new Set<string>();
   for (const validation of Object.values(entities.validationResults)) {
     const contract = entities.executionContracts[validation.executionContractId];
     const candidate = entities.executionCandidates[validation.executionCandidateId];
+    const run = entities.runs[validation.productRunId];
     if (
       contract === undefined ||
       candidate === undefined ||
+      run?.runKind !== "planning" ||
       contract.productRunId !== validation.productRunId ||
       candidate.productRunId !== validation.productRunId ||
       candidate.executionContractId !== validation.executionContractId
     ) {
       fail(`validation ${validation.validationResultId} 与Contract/Candidate/Run不一致`);
+    }
+    if (validatedCandidateIds.has(candidate.executionCandidateId)) {
+      fail(`candidate ${candidate.executionCandidateId} 存在多份Validation事实`);
+    }
+    validatedCandidateIds.add(candidate.executionCandidateId);
+    let policyKind: "deterministic" | "governance_review" = "deterministic";
+    let policyDefinitionNodeId: string | undefined;
+    let strictEvidence = true;
+    if (run.workflowRunSpecId !== undefined) {
+      const runSpec = entities.workflowRunSpecs[run.workflowRunSpecId];
+      if (runSpec === undefined) fail(`validation ${validation.validationResultId} 缺少RunSpec`);
+      let policy;
+      try {
+        policy = resolvePlanningValidationPolicy(runSpec);
+      } catch {
+        fail(`validation ${validation.validationResultId} 的冻结Validation策略无效`);
+      }
+      policyKind = policy.kind;
+      policyDefinitionNodeId = policy.definitionNodeId;
+      strictEvidence = policy.strictEvidence;
+      if (validation.strictEvidence !== strictEvidence) {
+        fail(`validation ${validation.validationResultId} strictEvidence与RunSpec不一致`);
+      }
+    } else if ((validation.strictEvidence ?? true) !== true) {
+      fail(`legacy validation ${validation.validationResultId} 不允许降级strictEvidence`);
     }
     if ((validation.outcome === "pass") !== (validation.failures.length === 0)) {
       fail(`validation ${validation.validationResultId} outcome与failures不一致`);
@@ -226,10 +296,60 @@ export function assertExecution(snapshot: ProductSnapshot, fail: Fail): void {
         finalOutputSections: candidate.finalOutput.sections,
         completionCriteriaEvidence: candidate.completionCriteriaEvidence,
       },
-      { strictEvidence: validation.strictEvidence ?? true },
+      { strictEvidence },
     );
-    if (JSON.stringify(validation.failures) !== JSON.stringify(expectedFailures)) {
+    const governanceReview = validation.governanceReview;
+    if ((policyKind === "governance_review") !== (governanceReview !== undefined)) {
+      fail(`validation ${validation.validationResultId} 的Governance Review与RunSpec不一致`);
+    }
+    const governanceFailures =
+      governanceReview?.candidate.findings
+        .filter((finding) => finding.severity === "blocking")
+        .map((finding) => ({
+          code: finding.code,
+          detail: `${finding.summary}：${finding.detail}`.slice(0, 500),
+        })) ?? [];
+    if (
+      JSON.stringify(validation.failures) !==
+      JSON.stringify([...expectedFailures, ...governanceFailures])
+    ) {
       fail(`validation ${validation.validationResultId} 不是服务端确定性验证结果`);
+    }
+    if (governanceReview !== undefined) {
+      const assembly = entities.promptAssemblies[governanceReview.promptAssemblyId];
+      const governanceNode =
+        assembly?.schemaVersion === "prompt-assembly.v3" ||
+        assembly?.schemaVersion === "prompt-assembly.v6"
+          ? assembly.nodes.find((node) => node.nodeType === "agent.governance_check")
+          : undefined;
+      const attempt = entities.attempts[governanceReview.attemptId];
+      if (
+        assembly === undefined ||
+        assembly.productRunId !== validation.productRunId ||
+        assembly.sha256 !== governanceReview.promptAssemblySha256 ||
+        governanceNode === undefined ||
+        governanceNode.definitionNodeId !== policyDefinitionNodeId ||
+        governanceNode.sha256 !== governanceReview.nodeAssemblySha256 ||
+        governanceNode.profileVersion !== governanceReview.profileVersion ||
+        governanceReview.profileVersion !== GOVERNANCE_REVIEW_PROFILE_VERSION ||
+        attempt === undefined ||
+        attempt.kind !== "governance_review" ||
+        attempt.productRunId !== validation.productRunId ||
+        attempt.executionContractId !== validation.executionContractId ||
+        attempt.executionCandidateId !== validation.executionCandidateId ||
+        attempt.outcome !== "success" ||
+        attempt.inputManifestSha256 !== governanceReview.inputManifestSha256
+      ) {
+        fail(`validation ${validation.validationResultId} 治理检查Prompt/Attempt绑定不一致`);
+      }
+      const allowedEvidence = new Set(governanceEvidenceKeys(candidate));
+      if (
+        governanceReview.candidate.findings.some((finding) =>
+          finding.evidenceKeys.some((evidenceKey) => !allowedEvidence.has(evidenceKey)),
+        )
+      ) {
+        fail(`validation ${validation.validationResultId} 治理检查引用未知执行证据`);
+      }
     }
   }
 
@@ -266,8 +386,14 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
     CompleteRunAttempt: [],
     CompileExecutionContract: ["executionContractId"],
     PersistExecutionCandidate: ["executionCandidateId"],
+    PrepareGovernanceReviewInput: ["attemptId"],
     PersistValidationResult: ["validationResultId"],
-    CommitExecutionResult: ["finalMessageId", "productRunId", "messageSha256"],
+    CommitExecutionResult: [
+      "finalMessageId",
+      "productRunId",
+      "messageSha256",
+      "evidenceReceiptSha256",
+    ],
     BeginDirectAgentAttempt: ["attemptId"],
     PublishPromptReviewRequest: ["productRunId", "promptReviewRequestId"],
     SubmitPromptReviewDecision: ["productRunId", "promptReviewDecisionId", "promptReviewRequestId"],
@@ -828,7 +954,12 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
                                                                                                                                       "expired" ||
                                                                                                                                     value ===
                                                                                                                                       "already_decided"
-                                                                                                                                  : false);
+                                                                                                                                  : key ===
+                                                                                                                                      "evidenceReceiptSha256"
+                                                                                                                                    ? /^[a-f0-9]{64}$/.test(
+                                                                                                                                        value,
+                                                                                                                                      )
+                                                                                                                                    : false);
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
     }
     const receiptDefinitionId = receipt.resultRefs["workflowDefinitionId"];

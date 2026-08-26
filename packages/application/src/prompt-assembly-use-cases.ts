@@ -5,9 +5,9 @@ import {
   DIRECT_PROMPT_METER_VERSION,
   DIRECT_PROMPT_PROFILE_V2_VERSION,
   DIRECT_PROMPT_TOOL_TOKEN_RESERVE,
-  PROMPT_ASSEMBLY_V3_SCHEMA_VERSION,
+  PROMPT_ASSEMBLY_V6_SCHEMA_VERSION,
   PROMPT_ASSEMBLY_V4_SCHEMA_VERSION,
-  WORKFLOW_PROMPT_COMPILER_VERSION,
+  WORKFLOW_PROMPT_COMPILER_V6_VERSION,
   WORKFLOW_PROMPT_PROFILE_VERSION,
   promptTurnSelectionInputV2Schema,
   agentTemporaryConfigurationSchema,
@@ -20,13 +20,14 @@ import {
   promptAssemblyPreviewDtoSchema,
   promptAssemblySchema,
   type PrincipalId,
-  type AgentKey,
+  type AgentProfileAgentKey as AgentKey,
   type AgentProfileDto,
   type AgentVersion,
   type AgentVersionId,
   type PromptAssembly,
   type PromptAssemblyV2,
   type PromptAssemblyV3,
+  type PromptAssemblyV6,
   type PromptAssemblyV4,
   type PiSystemPromptResolution,
   type PromptBearingNodeType,
@@ -46,7 +47,7 @@ import {
 } from "@chat/contracts";
 import {
   computePromptAssemblyRegionSha256,
-  computePromptAssemblyV3Sha256,
+  computePromptAssemblyV6Sha256,
   computePromptAssemblyV4Sha256,
   computePromptNodeAssemblySha256,
   computeWorkflowNodePromptOverrideIdentitySha256,
@@ -529,6 +530,10 @@ export const AGENT_BINDINGS_BY_NODE_TYPE: Readonly<
 > = {
   "agent.plan": { agentKey: "planner", profileVersion: "planner-prompt.v3" },
   "agent.direct": { agentKey: "direct", profileVersion: "direct-agent-prompt.v1" },
+  "agent.governance_check": {
+    agentKey: "governance_reviewer",
+    profileVersion: "governance-review.v1",
+  },
   "execute.plan": {
     agentKey: "coding_executor",
     profileVersion: "executor-coding-agent-prompt.v1",
@@ -541,6 +546,7 @@ const AGENT_PROFILE_VERSION_BY_KEY: Readonly<Record<AgentKey, string>> = {
   direct: "direct-agent-prompt.v1",
   project_bootstrap: "project-bootstrap-agent.v1",
   coding_executor: "executor-coding-agent-prompt.v1",
+  governance_reviewer: "governance-review.v1",
   note_extractor: "note-capture.v1",
 };
 
@@ -631,38 +637,43 @@ export function agentNodeBindingDescriptor(
   const toolPolicy =
     nodeType === "agent.plan"
       ? { summary: "只允许提交结构化计划候选", defaultTools: ["submit_plan_candidate"] }
-      : nodeType === "note.extract"
-        ? { summary: "只允许提交结构化笔记候选", defaultTools: ["submit_note_candidate"] }
-        : nodeType === "agent.direct"
-          ? {
-              summary:
-                typeof config["agentVersionId"] === "string"
-                  ? "由绑定的不可变Agent Version决定"
-                  : config["capabilityMode"] === "project_bootstrap"
-                    ? "可准备受控项目初始化候选"
-                    : config["capabilityMode"] === "read_only"
-                      ? "显式只读Agent版本"
-                      : config["capabilityMode"] === "custom"
-                        ? "由本次会话的Agent配置决定"
-                        : "继承Pi CLI默认编码能力；调用审批另行治理",
-              defaultTools:
-                typeof config["agentVersionId"] === "string"
-                  ? []
-                  : config["capabilityMode"] === "project_bootstrap"
-                    ? ["project_bootstrap_prepare"]
-                    : config["capabilityMode"] === "read_only"
-                      ? ["read", "grep", "find", "ls"]
-                      : config["capabilityMode"] === "custom" &&
-                          Array.isArray(config["enabledToolNames"])
-                        ? config["enabledToolNames"].filter(
-                            (name): name is string => typeof name === "string",
-                          )
-                        : ["read", "bash", "edit", "write"],
-            }
-          : {
-              summary: "由批准的Execution Contract能力引用在运行时冻结",
-              defaultTools: [],
-            };
+      : nodeType === "agent.governance_check"
+        ? {
+            summary: "只允许提交结构化工程治理检查候选",
+            defaultTools: ["submit_governance_review"],
+          }
+        : nodeType === "note.extract"
+          ? { summary: "只允许提交结构化笔记候选", defaultTools: ["submit_note_candidate"] }
+          : nodeType === "agent.direct"
+            ? {
+                summary:
+                  typeof config["agentVersionId"] === "string"
+                    ? "由绑定的不可变Agent Version决定"
+                    : config["capabilityMode"] === "project_bootstrap"
+                      ? "可准备受控项目初始化候选"
+                      : config["capabilityMode"] === "read_only"
+                        ? "显式只读Agent版本"
+                        : config["capabilityMode"] === "custom"
+                          ? "由本次会话的Agent配置决定"
+                          : "继承Pi CLI默认编码能力；调用审批另行治理",
+                defaultTools:
+                  typeof config["agentVersionId"] === "string"
+                    ? []
+                    : config["capabilityMode"] === "project_bootstrap"
+                      ? ["project_bootstrap_prepare"]
+                      : config["capabilityMode"] === "read_only"
+                        ? ["read", "grep", "find", "ls"]
+                        : config["capabilityMode"] === "custom" &&
+                            Array.isArray(config["enabledToolNames"])
+                          ? config["enabledToolNames"].filter(
+                              (name): name is string => typeof name === "string",
+                            )
+                          : ["read", "bash", "edit", "write"],
+              }
+            : {
+                summary: "由批准的Execution Contract能力引用在运行时冻结",
+                defaultTools: [],
+              };
   const binding = agentBindingForNode(nodeType, config);
   return {
     agentKey: binding.agentKey,
@@ -749,7 +760,7 @@ export async function compileWorkflowPromptAssembly(
     readonly nodeResolutions: readonly WorkflowNodeResolution[];
     readonly createdAt: string;
   },
-): Promise<PromptAssemblyV3> {
+): Promise<PromptAssemblyV6> {
   const nodes = promptBearingNodes(input.nodeResolutions);
   if (nodes.length === 0) {
     throw revisionConflict("当前Workflow没有可组装Prompt的模型节点");
@@ -795,14 +806,14 @@ export async function compileWorkflowPromptAssembly(
     `pma_${hashCanonical("id.prompt-assembly.v1", { productRunId: input.productRunId }).slice(0, 32)}`,
   );
   const body = {
-    schemaVersion: PROMPT_ASSEMBLY_V3_SCHEMA_VERSION,
+    schemaVersion: PROMPT_ASSEMBLY_V6_SCHEMA_VERSION,
     promptAssemblyId,
     productSessionId: input.productSessionId,
     productRunId: input.productRunId,
     sourceMessageId: input.sourceMessageId,
     workflowDefinitionRevisionId: input.workflowDefinitionRevisionId,
     profileVersion: WORKFLOW_PROMPT_PROFILE_VERSION,
-    compilerVersion: WORKFLOW_PROMPT_COMPILER_VERSION,
+    compilerVersion: WORKFLOW_PROMPT_COMPILER_V6_VERSION,
     ...(selection.workspaceRootId === undefined
       ? {}
       : { workspaceRootId: selection.workspaceRootId }),
@@ -812,9 +823,9 @@ export async function compileWorkflowPromptAssembly(
   } as const;
   return promptAssemblySchema.parse({
     ...body,
-    sha256: computePromptAssemblyV3Sha256(body),
+    sha256: computePromptAssemblyV6Sha256(body),
     createdAt: input.createdAt,
-  }) as PromptAssemblyV3;
+  }) as PromptAssemblyV6;
 }
 
 function userPromptFor(messageContext: string, text: string): string {
@@ -1157,7 +1168,7 @@ export async function previewDirectPromptConfiguration(
         : DIRECT_PROMPT_PROFILE_V2_VERSION,
     compilerVersion:
       input.selection.schemaVersion === "prompt-turn-selection-input.v2"
-        ? WORKFLOW_PROMPT_COMPILER_VERSION
+        ? WORKFLOW_PROMPT_COMPILER_V6_VERSION
         : DIRECT_PROMPT_COMPILER_V2_VERSION,
     ...configuration,
     sha256: hashCanonical("prompt-configuration-preview.v1", {
@@ -1366,7 +1377,8 @@ export function assertPromptAssemblySourcesCurrent(
       : [];
   });
   const regions =
-    assembly.schemaVersion === "prompt-assembly.v3"
+    assembly.schemaVersion === "prompt-assembly.v3" ||
+    assembly.schemaVersion === "prompt-assembly.v6"
       ? [...assembly.sharedRegions, ...assembly.nodes.flatMap((node) => node.regions)]
       : assembly.regions;
   for (const fragment of regions.flatMap((region) => region.fragments)) {
@@ -1411,8 +1423,10 @@ export function workflowNodePromptFor(
   nodeType: PromptBearingNodeType,
 ) {
   const assemblies = Object.values(snapshot.entities.promptAssemblies).filter(
-    (assembly): assembly is PromptAssemblyV3 =>
-      assembly.productRunId === productRunId && assembly.schemaVersion === "prompt-assembly.v3",
+    (assembly): assembly is PromptAssemblyV3 | PromptAssemblyV6 =>
+      assembly.productRunId === productRunId &&
+      (assembly.schemaVersion === "prompt-assembly.v3" ||
+        assembly.schemaVersion === "prompt-assembly.v6"),
   );
   if (assemblies.length > 1)
     throw revisionConflict("Product Run绑定了多个Workflow Prompt Assembly");
@@ -1430,4 +1444,24 @@ export function workflowNodePromptFor(
     systemPromptAppend: node.systemPromptAppend,
     ...(node.piSystemPrompt === undefined ? {} : { piSystemPrompt: node.piSystemPrompt }),
   };
+}
+
+/**
+ * Workflow和Application复算Execution Manifest时只传不可变引用，不把Prompt正文写入
+ * Workflow checkpoint；Executor仍通过Attempt授权取得完整冻结正文。
+ */
+export function workflowNodePromptRefFor(
+  snapshot: ProductSnapshot,
+  productRunId: ProductRunId,
+  nodeType: PromptBearingNodeType,
+) {
+  const nodePrompt = workflowNodePromptFor(snapshot, productRunId, nodeType);
+  return nodePrompt === undefined
+    ? undefined
+    : {
+        promptAssemblyId: nodePrompt.promptAssemblyId,
+        sha256: nodePrompt.promptAssemblySha256,
+        definitionNodeId: nodePrompt.definitionNodeId,
+        nodeAssemblySha256: nodePrompt.nodeAssemblySha256,
+      };
 }

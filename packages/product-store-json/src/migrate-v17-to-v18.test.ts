@@ -19,6 +19,7 @@ import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
 import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
 import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
+import { migrateProductSnapshotV24ToV25 } from "./migrate-v24-to-v25.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-22T08:00:00.000Z";
@@ -26,9 +27,11 @@ const NOW = "2026-08-22T08:00:00.000Z";
 const migrateProductSnapshotV20ToCurrent = (
   snapshot: Parameters<typeof migrateProductSnapshotV20ToV21>[0],
 ) =>
-  migrateProductSnapshotV23ToV24(
-    migrateProductSnapshotV22ToV23(
-      migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(snapshot)),
+  migrateProductSnapshotV24ToV25(
+    migrateProductSnapshotV23ToV24(
+      migrateProductSnapshotV22ToV23(
+        migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(snapshot)),
+      ),
     ),
   );
 

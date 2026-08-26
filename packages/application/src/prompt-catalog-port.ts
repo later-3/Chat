@@ -1,5 +1,5 @@
 import type {
-  AgentKey,
+  AgentProfileAgentKey,
   PromptFragmentContent,
   PromptFragmentId,
   PromptFragmentRevisionId,
@@ -8,7 +8,7 @@ import type {
 } from "@chat/contracts";
 
 export interface PromptAgentDefinition {
-  readonly agentKey: AgentKey;
+  readonly agentKey: AgentProfileAgentKey;
   readonly title: string;
   readonly description: string;
   readonly profileVersion: string;

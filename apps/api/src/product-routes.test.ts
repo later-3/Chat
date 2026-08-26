@@ -30,7 +30,8 @@ import {
   workflowRunViewDtoSchema,
   workflowNodeDetailDtoSchema,
   workflowDefinitionsDtoSchema,
-  workflowDefinitionCommandResultDtoSchema,
+  workflowSequenceBoundarySchema,
+  workflowDefinitionCommandResultV2DtoSchema,
   currentPromptReviewResponseSchema,
   promptAssemblyPreviewDtoSchema,
   promptConfigurationPreviewDtoSchema,
@@ -383,7 +384,10 @@ async function testApp(): Promise<{
     agentRuntimeProfiles: {
       read: async (agentKey, workspaceRootId) => {
         if (runtimeProfileUnavailable && agentKey === "direct") return undefined;
-        const profile = testPiRuntimeBaseline(agentKey, workspaceRootId);
+        const profile =
+          agentKey === "governance_reviewer"
+            ? undefined
+            : testPiRuntimeBaseline(agentKey, workspaceRootId);
         if (!runtimeProfileDrifted || profile === undefined || agentKey !== "direct")
           return profile;
         return agentRuntimeBaselineDtoSchema.parse({
@@ -714,7 +718,7 @@ describe("公开产品API", () => {
       payload: {
         baseRevisionId: copied.definition.baseRevisionId,
         baseDefinitionSha256: copied.definition.baseDefinitionSha256,
-        semanticRoot: bootstrapRoot,
+        semanticRoot: workflowSequenceBoundarySchema.parse(bootstrapRoot),
       },
     });
     const draft = saved.definition.currentDraftRevision;
@@ -1583,7 +1587,7 @@ describe("公开产品API", () => {
       "planning.plan",
       "planning.review",
       "planning.execute",
-      "planning.validate",
+      "planning.governance-check",
       "planning.commit",
     ]);
     const reviewNode = workflowView.nodeRuns.find(
@@ -2702,7 +2706,7 @@ describe("公开产品API", () => {
       },
     );
     expect(bindResponse.status, await bindResponse.clone().text()).toBe(201);
-    const bound = workflowDefinitionCommandResultDtoSchema.parse(await bindResponse.json());
+    const bound = workflowDefinitionCommandResultV2DtoSchema.parse(await bindResponse.json());
     expect(bound.affectedRevision?.state).toBe("published");
     expect(bound.affectedRevision?.definitionRevision).toBe(1);
     expect(bound.definition.ownerKind).toBe("principal");
@@ -2770,6 +2774,8 @@ describe("公开产品API", () => {
     expect(Object.keys(afterMixedRun.entities.messages)).toEqual(
       Object.keys(beforeMixedRun.entities.messages),
     );
+    expect(afterMixedRun.storeRevision).toBe(beforeMixedRun.storeRevision);
+    expect(afterMixedRun.commandReceipts).toEqual(beforeMixedRun.commandReceipts);
 
     const exerciseVersionRun = async (input: {
       readonly suffix: string;
@@ -3286,6 +3292,7 @@ describe("公开产品API", () => {
       "direct",
       "project_bootstrap",
       "coding_executor",
+      "governance_reviewer",
       "note_extractor",
     ]);
     const directProfile = profiles.items.find((item) => item.agentKey === "direct");
@@ -3489,7 +3496,10 @@ describe("公开产品API", () => {
     if (planning === undefined) throw new Error("缺少Planning Workflow");
     const planningNode = planning.nodes.find((node) => node.nodeType === "agent.plan");
     const executionNode = planning.nodes.find((node) => node.nodeType === "execute.plan");
-    if (planningNode === undefined || executionNode === undefined) {
+    const governanceNode = planning.nodes.find(
+      (node) => node.nodeType === "agent.governance_check",
+    );
+    if (planningNode === undefined || executionNode === undefined || governanceNode === undefined) {
       throw new Error("Planning Workflow缺少Prompt节点");
     }
     const planningSessionResponse = await postJson(app, "/api/sessions", {
@@ -3542,12 +3552,16 @@ describe("公开产品API", () => {
     const workflowAssembly = Object.values(afterPlanning.entities.promptAssemblies).find(
       (candidate) => candidate.productSessionId === planningSession.sessionId,
     );
-    expect(workflowAssembly?.schemaVersion).toBe("prompt-assembly.v3");
-    if (workflowAssembly?.schemaVersion !== "prompt-assembly.v3") {
-      throw new Error("Planning提交没有形成V3 Assembly");
+    expect(workflowAssembly?.schemaVersion).toBe("prompt-assembly.v6");
+    if (workflowAssembly?.schemaVersion !== "prompt-assembly.v6") {
+      throw new Error("Planning提交没有形成V6 Assembly");
     }
     expect(workflowAssembly.nodes.map((node) => node.definitionNodeId).sort()).toEqual(
-      [planningNode.definitionNodeId, executionNode.definitionNodeId].sort(),
+      [
+        planningNode.definitionNodeId,
+        executionNode.definitionNodeId,
+        governanceNode.definitionNodeId,
+      ].sort(),
     );
     expect(
       workflowAssembly.nodes.find(
@@ -3594,9 +3608,9 @@ describe("公开产品API", () => {
     const noSelectionAssembly = Object.values(afterNoSelection.entities.promptAssemblies).find(
       (candidate) => candidate.productSessionId === noSelectionSession.sessionId,
     );
-    expect(noSelectionAssembly?.schemaVersion).toBe("prompt-assembly.v3");
-    if (noSelectionAssembly?.schemaVersion !== "prompt-assembly.v3") {
-      throw new Error("省略Prompt Selection没有形成V3 Assembly");
+    expect(noSelectionAssembly?.schemaVersion).toBe("prompt-assembly.v6");
+    if (noSelectionAssembly?.schemaVersion !== "prompt-assembly.v6") {
+      throw new Error("省略Prompt Selection没有形成V6 Assembly");
     }
     expect(
       noSelectionAssembly.nodes.find(

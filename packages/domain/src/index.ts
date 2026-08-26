@@ -33,3 +33,4 @@ export * from "./tool-execution.js";
 export * from "./supervised-planning-v3.js";
 export * from "./project-bootstrap.js";
 export * from "./workspace-grant.js";
+export * from "./governance-validation.js";

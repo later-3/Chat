@@ -457,7 +457,7 @@ function fixture(): {
 }
 
 describe("Direct Prompt Assembly", () => {
-  it("V3为不同Agent注入各自System Prompt并共享同一会话上下文", async () => {
+  it("V6为Planner、Executor与Reviewer冻结各自Prompt并共享同一会话上下文", async () => {
     const { deps, globalRevision, workspaceRevision } = fixture();
     const assembly = await compileWorkflowPromptAssembly(deps, {
       principalId: "usr_promptassembly" as never,
@@ -519,7 +519,7 @@ describe("Direct Prompt Assembly", () => {
       createdAt: NOW,
     });
 
-    expect(assembly.schemaVersion).toBe("prompt-assembly.v3");
+    expect(assembly.schemaVersion).toBe("prompt-assembly.v6");
     expect(assembly.nodes.map((node) => node.definitionNodeId)).toEqual([
       "planning.plan",
       "planning.execute",

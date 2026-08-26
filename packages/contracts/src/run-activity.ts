@@ -22,7 +22,13 @@ const stableErrorCodeSchema = z
   .string()
   .regex(/^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*$/u)
   .max(80);
-const nodeKindSchema = z.enum(["planner", "executor", "direct_agent", "note_capture"]);
+const nodeKindSchema = z.enum([
+  "planner",
+  "executor",
+  "governance_reviewer",
+  "direct_agent",
+  "note_capture",
+]);
 const displaySchema = z.string().max(32_000);
 const providerSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/u);
 const modelSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u);

@@ -49,7 +49,7 @@ export function promptTurnPreviewFixture(text = "审核后发送"): PromptTurnPr
           note: "这是Workflow节点发送前冻结的Chat管理层；节点固定Runtime System在执行时解析。",
         },
         agent: {
-          schemaVersion: "chat-agent-profile-api.v3",
+          schemaVersion: "chat-agent-profile-api.v4",
           agentKey: "planner",
           title: "规划 Agent",
           description: "生成计划候选。",

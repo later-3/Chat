@@ -1,7 +1,7 @@
 import {
-  PRODUCT_API_SCHEMA_VERSION,
-  workflowDefinitionCommandResultDtoSchema,
-  workflowDefinitionDetailDtoSchema,
+  WORKFLOW_DESIGNER_API_SCHEMA_VERSION,
+  workflowDefinitionCommandResultV2DtoSchema,
+  workflowDefinitionDetailV2DtoSchema,
   workflowDefinitionIdSchema,
   workflowDefinitionRevisionIdSchema,
   workflowDefinitionRevisionSchema,
@@ -17,11 +17,11 @@ import {
   type SaveWorkflowAgentNodeConfigurationPayload,
   type ValidateWorkflowDefinitionPayload,
   type WorkflowDefinition,
-  type WorkflowDefinitionCommandResultDto,
-  type WorkflowDefinitionDetailDto,
+  type WorkflowDefinitionCommandResultV2Dto,
+  type WorkflowDefinitionDetailV2Dto,
   type WorkflowDefinitionId,
   type WorkflowDefinitionRevision,
-  type WorkflowDefinitionElement,
+  type WorkflowDefinitionElementV2 as WorkflowDefinitionElement,
   type WorkflowDefinitionRevisionSummaryDto,
   type WorkflowDefinitionValidationDto,
 } from "@chat/contracts";
@@ -43,7 +43,7 @@ type CommandId = Parameters<ApplicationDeps["store"]["transact"]>[0]["commandId"
 export async function getWorkflowDefinitionDetail(
   deps: ApplicationDeps,
   input: { readonly principalId: PrincipalId; readonly workflowDefinitionId: WorkflowDefinitionId },
-): Promise<WorkflowDefinitionDetailDto> {
+): Promise<WorkflowDefinitionDetailV2Dto> {
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   return definitionDetail(snapshot, input.principalId, input.workflowDefinitionId);
 }
@@ -77,7 +77,7 @@ export async function createWorkflowDefinitionCopy(
     readonly commandId: CommandId;
     readonly payload: CreateWorkflowDefinitionCopyPayload;
   },
-): Promise<WorkflowDefinitionCommandResultDto> {
+): Promise<WorkflowDefinitionCommandResultV2Dto> {
   const now = deps.now();
   const workflowDefinitionId = derivedDefinitionId(input.commandId);
   const workflowDefinitionRevisionId = derivedRevisionId(input.commandId, workflowDefinitionId);
@@ -100,7 +100,7 @@ export async function createWorkflowDefinitionCopy(
       const validated = validateDesignerRootFor(source.semanticRoot, source);
       if (!validated.success) throw invalidDefinition(validated.diagnostics);
       const definition = workflowDefinitionSchema.parse({
-        schemaVersion: "workflow-definition.v1",
+        schemaVersion: "workflow-definition.v2",
         workflowDefinitionId,
         ownerKind: "principal",
         ownerPrincipalId: input.principalId,
@@ -118,7 +118,7 @@ export async function createWorkflowDefinitionCopy(
         updatedAt: now,
       });
       const revision = workflowDefinitionRevisionSchema.parse({
-        schemaVersion: "workflow-definition-revision.v1",
+        schemaVersion: "workflow-definition-revision.v2",
         workflowDefinitionRevisionId,
         workflowDefinitionId,
         definitionRevision: 1,
@@ -148,7 +148,7 @@ export async function saveWorkflowAgentNodeConfiguration(
     readonly commandId: CommandId;
     readonly payload: SaveWorkflowAgentNodeConfigurationPayload;
   },
-): Promise<WorkflowDefinitionCommandResultDto> {
+): Promise<WorkflowDefinitionCommandResultV2Dto> {
   if (
     input.payload.agentVersionId !== undefined &&
     input.payload.promptOverrideMarkdown !== undefined &&
@@ -209,7 +209,7 @@ export async function saveWorkflowAgentNodeConfiguration(
           ? `${source.title.slice(0, 152)} · 我的配置`
           : sourceDefinition.title;
       const revision = workflowDefinitionRevisionSchema.parse({
-        schemaVersion: "workflow-definition-revision.v1",
+        schemaVersion: "workflow-definition-revision.v2",
         workflowDefinitionRevisionId,
         workflowDefinitionId,
         definitionRevision,
@@ -228,7 +228,7 @@ export async function saveWorkflowAgentNodeConfiguration(
 
       if (sourceDefinition.ownerKind === "system") {
         draft.entities.workflowDefinitions[workflowDefinitionId] = workflowDefinitionSchema.parse({
-          schemaVersion: "workflow-definition.v1",
+          schemaVersion: "workflow-definition.v2",
           workflowDefinitionId,
           ownerKind: "principal",
           ownerPrincipalId: input.principalId,
@@ -294,7 +294,12 @@ function configureAgentNode(
         throw revisionConflict(`Agent ${payload.agentKey}不支持节点${element.nodeType}`);
       }
       const currentBinding = agentNodeBindingDescriptor(
-        element.nodeType as "agent.plan" | "agent.direct" | "execute.plan" | "note.extract",
+        element.nodeType as
+          | "agent.plan"
+          | "agent.direct"
+          | "agent.governance_check"
+          | "execute.plan"
+          | "note.extract",
         element.config,
       );
       const currentOverride =
@@ -367,6 +372,7 @@ function configureAgentNode(
 const AGENT_NODE_SUPPORT: Readonly<Record<string, readonly string[]>> = {
   "agent.plan": ["planner"],
   "agent.direct": ["direct", "project_bootstrap"],
+  "agent.governance_check": ["governance_reviewer"],
   "execute.plan": ["coding_executor"],
   "note.extract": ["note_extractor"],
 };
@@ -409,7 +415,7 @@ export async function saveWorkflowDefinitionDraft(
     readonly expectedRevision: number;
     readonly payload: SaveWorkflowDefinitionDraftPayload;
   },
-): Promise<WorkflowDefinitionCommandResultDto> {
+): Promise<WorkflowDefinitionCommandResultV2Dto> {
   const now = deps.now();
   const nextRevisionId = derivedRevisionId(input.commandId, input.workflowDefinitionId);
   const requestSha256 = hashCanonical("command.save-workflow-definition-draft.v1", input);
@@ -452,7 +458,7 @@ export async function saveWorkflowDefinitionDraft(
       }
       const definitionRevision = nextDefinitionRevision(draft, definition.workflowDefinitionId);
       const revision = workflowDefinitionRevisionSchema.parse({
-        schemaVersion: "workflow-definition-revision.v1",
+        schemaVersion: "workflow-definition-revision.v2",
         workflowDefinitionRevisionId: nextRevisionId,
         workflowDefinitionId: definition.workflowDefinitionId,
         definitionRevision,
@@ -495,7 +501,7 @@ export async function publishWorkflowDefinition(
     readonly expectedRevision: number;
     readonly payload: PublishWorkflowDefinitionPayload;
   },
-): Promise<WorkflowDefinitionCommandResultDto> {
+): Promise<WorkflowDefinitionCommandResultV2Dto> {
   const now = deps.now();
   const requestSha256 = hashCanonical("command.publish-workflow-definition.v1", input);
   const transaction = await deps.store.transact({
@@ -590,7 +596,7 @@ export async function changeWorkflowDefinitionArchiveStatus(
     readonly expectedRevision: number;
     readonly payload: ChangeWorkflowDefinitionArchiveStatusPayload;
   },
-): Promise<WorkflowDefinitionCommandResultDto> {
+): Promise<WorkflowDefinitionCommandResultV2Dto> {
   const now = deps.now();
   const requestSha256 = hashCanonical(
     "command.change-workflow-definition-archive-status.v1",
@@ -705,7 +711,7 @@ function definitionDetail(
   snapshot: ProductSnapshot,
   principalId: PrincipalId,
   definitionId: WorkflowDefinitionId,
-): WorkflowDefinitionDetailDto {
+): WorkflowDefinitionDetailV2Dto {
   const definition = snapshot.entities.workflowDefinitions[definitionId];
   if (definition === undefined) throw notFound("Workflow Definition不存在");
   assertDefinitionReadable(definition, principalId);
@@ -718,7 +724,7 @@ function definitionDetail(
     definition.blueprintVersion,
   );
   const common = {
-    schemaVersion: PRODUCT_API_SCHEMA_VERSION,
+    schemaVersion: WORKFLOW_DESIGNER_API_SCHEMA_VERSION,
     workflowDefinitionId: definition.workflowDefinitionId,
     ownerKind: definition.ownerKind,
     ...(definition.ownerPrincipalId === undefined
@@ -737,7 +743,7 @@ function definitionDetail(
     updatedAt: definition.updatedAt,
   } as const;
   if (blueprint === undefined) {
-    return workflowDefinitionDetailDtoSchema.parse({
+    return workflowDefinitionDetailV2DtoSchema.parse({
       ...common,
       compatibility: "read_only_incompatible",
       safeStructureSummary: {
@@ -763,7 +769,7 @@ function definitionDetail(
             ...(draft === undefined ? [] : (["publish"] as const)),
             ...(published === undefined ? [] : (["archive"] as const)),
           ] as const);
-  return workflowDefinitionDetailDtoSchema.parse({
+  return workflowDefinitionDetailV2DtoSchema.parse({
     ...common,
     compatibility: "editable",
     semanticRoot: base.semanticRoot,
@@ -783,7 +789,7 @@ function validationDto(
   const blueprint = DEFAULT_WORKFLOW_BLUEPRINTS.get(blueprintKey, blueprintVersion);
   if (blueprint === undefined) {
     return workflowDefinitionValidationDtoSchema.parse({
-      schemaVersion: PRODUCT_API_SCHEMA_VERSION,
+      schemaVersion: WORKFLOW_DESIGNER_API_SCHEMA_VERSION,
       valid: false,
       diagnostics: [
         {
@@ -799,13 +805,13 @@ function validationDto(
   const result = validateDesignerRoot(semanticRoot, blueprint, DEFAULT_NODE_CATALOG);
   if (!result.success) {
     return workflowDefinitionValidationDtoSchema.parse({
-      schemaVersion: PRODUCT_API_SCHEMA_VERSION,
+      schemaVersion: WORKFLOW_DESIGNER_API_SCHEMA_VERSION,
       valid: false,
       diagnostics: result.diagnostics.map(publicDiagnostic),
     });
   }
   return workflowDefinitionValidationDtoSchema.parse({
-    schemaVersion: PRODUCT_API_SCHEMA_VERSION,
+    schemaVersion: WORKFLOW_DESIGNER_API_SCHEMA_VERSION,
     valid: true,
     diagnostics: [],
     normalized: {
@@ -844,7 +850,7 @@ async function commandResult(
   deps: ApplicationDeps,
   principalId: PrincipalId,
   resultRefs: Readonly<Record<string, string>>,
-): Promise<WorkflowDefinitionCommandResultDto> {
+): Promise<WorkflowDefinitionCommandResultV2Dto> {
   const definitionId = workflowDefinitionIdSchema.parse(resultRefs["workflowDefinitionId"]);
   const revisionId = workflowDefinitionRevisionIdSchema.parse(
     resultRefs["workflowDefinitionRevisionId"],
@@ -852,7 +858,7 @@ async function commandResult(
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const affected = snapshot.entities.workflowDefinitionRevisions[revisionId];
   if (affected === undefined) throw notFound("Workflow Definition Revision不存在");
-  return workflowDefinitionCommandResultDtoSchema.parse({
+  return workflowDefinitionCommandResultV2DtoSchema.parse({
     definition: definitionDetail(snapshot, principalId, definitionId),
     affectedRevision: revisionSummary(affected),
   });

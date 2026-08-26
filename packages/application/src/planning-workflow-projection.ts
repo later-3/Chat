@@ -165,6 +165,8 @@ const validationRef = (
     productRunId: validation.productRunId,
     executionContractId: validation.executionContractId,
     executionCandidateId: validation.executionCandidateId,
+    strictEvidence: validation.strictEvidence,
+    governanceReview: validation.governanceReview,
     outcome: validation.outcome,
     failures: validation.failures,
   }),
@@ -194,6 +196,15 @@ function desiredPlanningNodes(
   const run = snapshot.entities.runs[runId];
   if (run === undefined) return [];
   if ("runKind" in run && run.runKind !== "planning") return [];
+  const runSpec =
+    run.workflowRunSpecId === undefined
+      ? undefined
+      : snapshot.entities.workflowRunSpecs[run.workflowRunSpecId];
+  const validationNodeType = runSpec?.nodeResolutions.some(
+    (node) => node.nodeType === "agent.governance_check" && node.activation === "enabled",
+  )
+    ? "agent.governance_check"
+    : "result.validate";
   const message = messageRef(snapshot, run.sourceMessageId);
   const context = contextPackageRef(snapshot, runId);
   const plans = Object.values(snapshot.entities.plans)
@@ -473,25 +484,41 @@ function desiredPlanningNodes(
         ? "failed"
         : run.phase === "validating" && run.status === "running"
           ? "running"
-          : terminalStatusFor("result.validate") !== undefined && rank >= phaseRank.validating
-            ? terminalStatusFor("result.validate")!
+          : terminalStatusFor(validationNodeType) !== undefined && rank >= phaseRank.validating
+            ? terminalStatusFor(validationNodeType)!
             : "queued";
   desired.push({
     definitionNodeId: nodeId("validate"),
-    nodeType: nodeType("result.validate"),
+    nodeType: nodeType(validationNodeType),
     executionPath: [],
     attemptNumber: 1,
     status: validationStatus,
     publicSummary:
       validation === undefined
         ? validationStatus === "running"
-          ? "正在验证结果"
-          : "等待验证"
+          ? validationNodeType === "agent.governance_check"
+            ? "正在检查工程规范"
+            : "正在验证结果"
+          : validationNodeType === "agent.governance_check"
+            ? "等待工程治理检查"
+            : "等待验证"
         : validation.outcome === "pass"
-          ? "验证通过"
-          : "验证未通过",
+          ? validation.governanceReview === undefined
+            ? "验证通过"
+            : "工程治理检查通过"
+          : validation.governanceReview === undefined
+            ? "验证未通过"
+            : "工程治理检查未通过",
     ...(validation?.outcome === "fail"
-      ? { error: { code: "validation.failed", summary: "候选结果未通过确定性验证" } }
+      ? {
+          error: {
+            code: "validation.failed",
+            summary:
+              validation.governanceReview === undefined
+                ? "候选结果未通过确定性验证"
+                : "候选结果未通过工程治理检查",
+          },
+        }
       : {}),
     inputs: slots("candidate", [
       candidate === undefined
@@ -816,6 +843,7 @@ function configurableFactDesiredNodes(
     "agent.plan",
     "human.plan_review",
     "execute.plan",
+    "agent.governance_check",
     "result.validate",
     "product.commit",
   ]);

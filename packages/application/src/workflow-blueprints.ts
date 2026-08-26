@@ -17,6 +17,8 @@ export type WorkflowBlueprintKey = "planning" | "note" | "direct";
 export interface WorkflowRequiredRole {
   readonly role: string;
   readonly nodeType: WorkflowNodeTypeKey;
+  /** 同一职责允许的向后兼容实现；计数按主类型与替代类型合并。 */
+  readonly alternativeNodeTypes?: readonly WorkflowNodeTypeKey[];
   readonly exactlyOnce: boolean;
 }
 
@@ -94,6 +96,7 @@ const PLANNING_NODE_TYPES: readonly WorkflowNodeTypeKey[] = [
   "agent.plan",
   "human.plan_review",
   "execute.plan",
+  "agent.governance_check",
   "result.validate",
   "product.commit",
 ];
@@ -125,7 +128,12 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
       { role: "planner", nodeType: "agent.plan", exactlyOnce: true },
       { role: "plan_reviewer", nodeType: "human.plan_review", exactlyOnce: true },
       { role: "executor", nodeType: "execute.plan", exactlyOnce: true },
-      { role: "validator", nodeType: "result.validate", exactlyOnce: true },
+      {
+        role: "validator",
+        nodeType: "result.validate",
+        alternativeNodeTypes: ["agent.governance_check"],
+        exactlyOnce: true,
+      },
       { role: "terminal_commit", nodeType: "product.commit", exactlyOnce: true },
     ],
     loopRules: [
@@ -307,7 +315,8 @@ export function validateDefinitionAgainstBlueprint(
   }
 
   for (const role of blueprint.requiredRoles) {
-    const count = nodes.filter((node) => node.nodeType === role.nodeType).length;
+    const roleNodeTypes = new Set([role.nodeType, ...(role.alternativeNodeTypes ?? [])]);
+    const count = nodes.filter((node) => roleNodeTypes.has(node.nodeType)).length;
     if (count === 0 || (role.exactlyOnce && count !== 1)) {
       diagnostics.push(
         invalid("blueprint.required_role_mismatch", "$", { role: role.role, count }),
@@ -386,6 +395,9 @@ function assertBlueprintConformance(blueprint: WorkflowBlueprint, catalog: NodeC
       throw new Error(`workflow.blueprint.duplicate_role:${blueprint.blueprintKey}:${role.role}`);
     roles.add(role.role);
     assertCatalogSupport(blueprint, role.nodeType, catalog);
+    for (const alternative of role.alternativeNodeTypes ?? []) {
+      assertCatalogSupport(blueprint, alternative, catalog);
+    }
   }
   for (const nodeType of blueprint.allowedNodeTypes)
     assertCatalogSupport(blueprint, nodeType, catalog);
