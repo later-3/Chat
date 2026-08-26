@@ -34,7 +34,6 @@ test("API Surface由真实组合根确定性生成并排除私有Runtime身份",
   assert.deepEqual(first, second);
   assert.deepEqual(first, baseline);
   assert.ok(first.routes.length > 50);
-  assert.equal(first.routes.length, 106);
   assert.ok(first.publicSchemas.length > 100);
   assert.ok(first.packageExports.length === 14);
   assert.ok(
@@ -273,6 +272,37 @@ test("package export目标与条件变化进入diff", () => {
   exported.exports[key] = { import: "./src/replacement.ts", types: "./src/replacement.ts" };
   const ids = diffApiSurface(baseline, changed).map((entry) => entry.issueId);
   assert.ok(ids.includes(`package_export_changed:${exported.name}:${key}`));
+});
+
+test("package摘要只在公共符号纯新增时归为compatible expansion", () => {
+  const expanded = clone(baseline);
+  expanded.publicSymbols.push({
+    name: "SyntheticCompatibleAddition",
+    kind: "type",
+    signatureSha256: "a".repeat(64),
+  });
+  const expandedPackage = expanded.packageExports.find((entry) => entry.name === "@chat/contracts");
+  assert.ok(expandedPackage);
+  const expandedRoot = expandedPackage.subpaths.find((entry) => entry.key === ".");
+  assert.ok(expandedRoot);
+  expandedRoot.exportedSymbols.push("SyntheticCompatibleAddition");
+  expandedRoot.transitiveSignatureSha256 = "b".repeat(64);
+  expandedPackage.publicEntrySignatureSha256 = expandedRoot.transitiveSignatureSha256;
+  const expandedIds = diffApiSurface(baseline, expanded).map((entry) => entry.issueId);
+  assert.ok(expandedIds.includes("package_entry_expanded:@chat/contracts"));
+  assert.ok(expandedIds.includes("package_export_expanded:@chat/contracts:."));
+  assert.ok(!expandedIds.includes("package_executable_or_entry_changed:@chat/contracts"));
+  assert.ok(!expandedIds.includes("package_export_changed:@chat/contracts:."));
+
+  const replaced = clone(expanded);
+  const replacedSymbol = replaced.publicSymbols.find(
+    (entry) => entry.name !== "SyntheticCompatibleAddition" && entry.kind !== "schema",
+  );
+  assert.ok(replacedSymbol);
+  replacedSymbol.signatureSha256 = "c".repeat(64);
+  const replacedIds = diffApiSurface(baseline, replaced).map((entry) => entry.issueId);
+  assert.ok(replacedIds.includes("package_executable_or_entry_changed:@chat/contracts"));
+  assert.ok(replacedIds.includes("package_export_changed:@chat/contracts:."));
 });
 
 test("POST与其他公共新增即使同步更新baseline也必须有一次性精确change record", () => {

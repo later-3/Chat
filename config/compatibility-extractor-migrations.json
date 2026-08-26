@@ -7,6 +7,37 @@
       "toCanonicalVersion": 2,
       "baseCommit": "ac8f9c066c2ab4403d7b172a5d918996b0775596",
       "identities": ["workflow-run-spec.v1"]
+    },
+    {
+      "domainId": "product-store",
+      "fromCanonicalVersion": 2,
+      "toCanonicalVersion": 3,
+      "baseCommit": "24f23887e1746e797e57fcc7651d9d3b042eeda2",
+      "identities": [
+        "chat-product-store.v1",
+        "chat-product-store.v2",
+        "chat-product-store.v3",
+        "chat-product-store.v4",
+        "chat-product-store.v5",
+        "chat-product-store.v6",
+        "chat-product-store.v7",
+        "chat-product-store.v8",
+        "chat-product-store.v9",
+        "chat-product-store.v10",
+        "chat-product-store.v11",
+        "chat-product-store.v12",
+        "chat-product-store.v13",
+        "chat-product-store.v14",
+        "chat-product-store.v15",
+        "chat-product-store.v16",
+        "chat-product-store.v17",
+        "chat-product-store.v18",
+        "chat-product-store.v19",
+        "chat-product-store.v20",
+        "chat-product-store.v21",
+        "chat-product-store.v22",
+        "chat-product-store.v23"
+      ]
     }
   ],
   "authorityProofs": [
@@ -14,6 +45,20 @@
       "domainId": "direct-generic-journals",
       "baseCommit": "ac8f9c066c2ab4403d7b172a5d918996b0775596",
       "authorities": ["legacyAuthority"]
+    },
+    {
+      "domainId": "network-contracts",
+      "fromCanonicalVersion": 2,
+      "toCanonicalVersion": 3,
+      "baseCommit": "24f23887e1746e797e57fcc7651d9d3b042eeda2",
+      "authorities": ["legacyAuthority", "writeAuthority"]
+    },
+    {
+      "domainId": "browser-dto-events",
+      "fromCanonicalVersion": 2,
+      "toCanonicalVersion": 3,
+      "baseCommit": "24f23887e1746e797e57fcc7651d9d3b042eeda2",
+      "authorities": ["legacyAuthority", "writeAuthority"]
     }
   ]
 }

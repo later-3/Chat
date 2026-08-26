@@ -655,7 +655,12 @@ function productStoreFacts(domain, files) {
         previousExtractorEvidence.add(`writer:${normalized(transact)}`);
         previousExtractorEvidence.add(`persist:${normalized(persist)}`);
       }
-      return generationRecord(identity, evidence, previousExtractorEvidence);
+      const record = generationRecord(identity, evidence, previousExtractorEvidence);
+      const previous = mechanicallyGeneratedExtractorMigrationProofs().get(
+        `${domain.id}:${identity}`,
+      );
+      if (previous !== undefined) record.previousExtractorCanonicalSha256 = previous;
+      return record;
     })
     .sort((left, right) => left.generation - right.generation);
   const historicalReadableGenerations = generations
@@ -693,7 +698,7 @@ function productStoreFacts(domain, files) {
           currentWriteGenerations,
         ),
       ],
-      generationCanonicalVersion: 2,
+      generationCanonicalVersion: 3,
     },
   );
 }
@@ -858,6 +863,14 @@ function mechanicallyGeneratedBaseFacts(baseCommit) {
       maxBuffer: 128 * 1024 * 1024,
     });
     if (extracted.status !== 0) throw new Error("无法解包compat extractor base源码");
+    // 归档目录仍需只读访问当前仓库对象库，旧提取器才能继续验证其已登记的上一代证明。
+    // 所有读取都使用显式commit；不会把当前工作树源码混入归档事实。
+    const gitCommonDirectory = git(["rev-parse", "--git-common-dir"]);
+    writeFileSync(
+      resolve(directory, ".git"),
+      `gitdir: ${resolve(ROOT, gitCommonDirectory)}\n`,
+      "utf8",
+    );
     const extractedNodeModules = resolve(directory, "node_modules");
     mkdirSync(extractedNodeModules);
     for (const entry of readdirSync(resolve(ROOT, "node_modules"), { withFileTypes: true })) {
@@ -930,8 +943,9 @@ function mechanicallyGeneratedExtractorMigrationProofs() {
   for (const migration of loadExtractorProofRegistry().migrations) {
     if (
       typeof migration.domainId !== "string" ||
-      migration.fromCanonicalVersion !== 1 ||
-      migration.toCanonicalVersion !== 2 ||
+      !Number.isInteger(migration.fromCanonicalVersion) ||
+      migration.fromCanonicalVersion < 1 ||
+      migration.toCanonicalVersion !== migration.fromCanonicalVersion + 1 ||
       !Array.isArray(migration.identities) ||
       migration.identities.length === 0
     ) {
@@ -954,8 +968,13 @@ function mechanicallyGeneratedAuthorityProofs() {
   if (authorityProofCache !== undefined) return authorityProofCache;
   const proofs = new Map();
   for (const proof of loadExtractorProofRegistry().authorityProofs) {
+    const fromCanonicalVersion = proof.fromCanonicalVersion ?? 1;
+    const toCanonicalVersion = proof.toCanonicalVersion ?? 2;
     if (
       typeof proof.domainId !== "string" ||
+      !Number.isInteger(fromCanonicalVersion) ||
+      fromCanonicalVersion < 1 ||
+      toCanonicalVersion !== fromCanonicalVersion + 1 ||
       !Array.isArray(proof.authorities) ||
       proof.authorities.length === 0 ||
       proof.authorities.some((name) => !["legacyAuthority", "writeAuthority"].includes(name))
@@ -1084,7 +1103,9 @@ function rootedDomainFacts(domain, files) {
     }
     schemas = reachableSchemaDeclarations(checker, schemas, roots);
     for (const file of program.getSourceFiles()) {
+      const sourcePath = relative(ROOT, file.fileName).split(sep).join("/");
       if (
+        sourcePath === "packages/contracts/src/supervised-planning-v3.ts" ||
         !roots.some((root) => file.fileName === root || file.fileName.startsWith(`${root}${sep}`))
       ) {
         continue;
@@ -1297,9 +1318,15 @@ function domainFacts(
 function observableApiAuthorityProjection(api) {
   const projection = structuredClone(api);
   // 提取器、组合根和源码定位是治理实现，不是网络/浏览器对外合同。
-  // 真正的外部事实仍由routes、schemas、problems、DTO/Event与exports承担。
+  // Package/export/public-symbol扩张由API Surface自己的精确change record看护；这里
+  // 只冻结实际网络路由、Problem、命令/查询以及带代际的Browser DTO/Event，避免一次
+  // 兼容导出新增被误判为网络Writer原地改写。
   delete projection.schemaVersion;
   delete projection.generation;
+  delete projection.packageExports;
+  delete projection.publicSymbols;
+  delete projection.publicSchemas;
+  delete projection.deprecated;
   for (const route of projection.routes ?? []) {
     delete route.applicationOperations;
     delete route.applicationOperationContracts;
@@ -1362,6 +1389,25 @@ export function generateCompatibilityFacts(policy) {
         ? `api-surface:${json(observableApi)}`
         : ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true),
     );
+    const legacyAuthority = authority(
+      `${api.generation.browserContractEntry}:decode-old`,
+      historicalReadableGenerations,
+      ["decode", "project"],
+      authorityEvidence,
+    );
+    const writeAuthority = authority(
+      api.generation.apiCompositionRoot,
+      currentWriteGenerations,
+      ["validate", "write_current_response"],
+      authorityEvidence,
+    );
+    for (const [name, value] of [
+      ["legacyAuthority", legacyAuthority],
+      ["writeAuthority", writeAuthority],
+    ]) {
+      const previous = mechanicallyGeneratedAuthorityProofs().get(`${domain.id}:${name}`);
+      if (previous !== undefined) value.previousExtractorCanonicalSha256 = previous;
+    }
     return domainFacts(
       domain,
       files,
@@ -1369,18 +1415,8 @@ export function generateCompatibilityFacts(policy) {
       currentWriteGenerations,
       historicalReadableGenerations,
       {
-        legacyAuthority: authority(
-          `${api.generation.browserContractEntry}:decode-old`,
-          historicalReadableGenerations,
-          ["decode", "project"],
-          authorityEvidence,
-        ),
-        writeAuthority: authority(
-          api.generation.apiCompositionRoot,
-          currentWriteGenerations,
-          ["validate", "write_current_response"],
-          authorityEvidence,
-        ),
+        legacyAuthority,
+        writeAuthority,
         compatibilityEntries: api.publicSchemas
           .filter((schema) => schema.schemaVersions.length > 1)
           .map((schema) => ({
@@ -1389,7 +1425,7 @@ export function generateCompatibilityFacts(policy) {
             evidenceKind: "public-declaration-route-contract",
             canonicalSha256: schema.signatureSha256,
           })),
-        authorityCanonicalVersion: 2,
+        authorityCanonicalVersion: 3,
       },
     );
   });
@@ -1416,8 +1452,7 @@ export function assertCompatibilityFactsCompatible(baseline, current) {
         throw new Error(`${previous.id}删除历史代际：${generation.identity}`);
       const sameCanonical = candidate.canonicalSha256 === generation.canonicalSha256;
       const provenExtractorUpgrade =
-        previousCanonicalVersion === 1 &&
-        nextCanonicalVersion === 2 &&
+        nextCanonicalVersion === previousCanonicalVersion + 1 &&
         candidate.previousExtractorCanonicalSha256 === generation.canonicalSha256;
       if (!extractorUpgrade && !sameCanonical && !provenExtractorUpgrade) {
         throw new Error(`${previous.id}同一schema literal原地语义漂移：${generation.identity}`);
@@ -1425,7 +1460,7 @@ export function assertCompatibilityFactsCompatible(baseline, current) {
     }
     if (
       previousCanonicalVersion !== nextCanonicalVersion &&
-      !(previousCanonicalVersion === 1 && nextCanonicalVersion === 2)
+      nextCanonicalVersion !== previousCanonicalVersion + 1
     ) {
       throw new Error(`${previous.id} generation canonical提取器无可验证migration`);
     }
@@ -1461,8 +1496,17 @@ function stringSetEqual(left, right) {
 function assertAuthorityPolicyCompatible(previous, next) {
   const previousCanonicalVersion = previous.authorityCanonicalVersion ?? 1;
   const nextCanonicalVersion = next.authorityCanonicalVersion ?? 1;
+  const authorityExtractorUpgrade = nextCanonicalVersion === previousCanonicalVersion + 1;
+  const provenLegacyAuthorityUpgrade =
+    authorityExtractorUpgrade &&
+    next.legacyAuthority.previousExtractorCanonicalSha256 ===
+      previous.legacyAuthority.canonicalSha256;
+  const provenWriteAuthorityUpgrade =
+    authorityExtractorUpgrade &&
+    next.writeAuthority.previousExtractorCanonicalSha256 ===
+      previous.writeAuthority.canonicalSha256;
   const provenAuthorityExtractorUpgrade =
-    previousCanonicalVersion === 1 && nextCanonicalVersion === 2;
+    provenLegacyAuthorityUpgrade && provenWriteAuthorityUpgrade;
   if (previousCanonicalVersion !== nextCanonicalVersion && !provenAuthorityExtractorUpgrade) {
     throw new Error(`${previous.id} authority canonical提取器无可验证migration`);
   }
@@ -1501,7 +1545,7 @@ function assertAuthorityPolicyCompatible(previous, next) {
   if (
     !writeGenerationsChanged &&
     previous.writeAuthority.canonicalSha256 !== next.writeAuthority.canonicalSha256 &&
-    !provenAuthorityExtractorUpgrade
+    !provenWriteAuthorityUpgrade
   ) {
     throw new Error(`${previous.id} writer implementation未升代际漂移`);
   }
@@ -1512,7 +1556,7 @@ function assertAuthorityPolicyCompatible(previous, next) {
   if (
     !historicalGenerationsChanged &&
     previous.legacyAuthority.canonicalSha256 !== next.legacyAuthority.canonicalSha256 &&
-    !provenAuthorityExtractorUpgrade
+    !provenLegacyAuthorityUpgrade
   ) {
     throw new Error(`${previous.id} reader implementation未升代际漂移`);
   }
@@ -1521,21 +1565,29 @@ function assertAuthorityPolicyCompatible(previous, next) {
 function assertDomainFactsWellFormed(domain) {
   const generations = new Map(domain.generations.map((entry) => [entry.identity, entry]));
   if (generations.size !== domain.generations.length) throw new Error(`${domain.id}代际重复`);
-  if (![1, 2].includes(domain.authorityCanonicalVersion ?? 1)) {
+  if (![1, 2, 3].includes(domain.authorityCanonicalVersion ?? 1)) {
     throw new Error(`${domain.id} authority canonical提取器版本非法`);
+  }
+  if (
+    domain.authorityCanonicalVersion === 3 &&
+    [domain.legacyAuthority, domain.writeAuthority].some(
+      (value) => !/^[0-9a-f]{64}$/u.test(value.previousExtractorCanonicalSha256 ?? ""),
+    )
+  ) {
+    throw new Error(`${domain.id} authority canonical v3缺少旧提取器机械证明`);
   }
   for (const entry of domain.generations) {
     if (
       !/^[0-9a-f]{64}$/u.test(entry.canonicalSha256) ||
       entry.evidenceCount < 1 ||
-      (domain.generationCanonicalVersion === 2 &&
+      ((domain.generationCanonicalVersion ?? 1) >= 2 &&
         !/^[0-9a-f]{64}$/u.test(entry.previousExtractorCanonicalSha256))
     ) {
       throw new Error(`${domain.id}:${entry.identity}缺少真实合同闭包证据`);
     }
   }
   if (
-    ![1, 2].includes(domain.generationCanonicalVersion) ||
+    ![1, 2, 3].includes(domain.generationCanonicalVersion) ||
     domain.authorityBoundaryVersion !== 2 ||
     !Array.isArray(domain.ownerRoots) ||
     domain.ownerRoots.length === 0 ||

@@ -9,6 +9,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const BASELINE_PATH = join(ROOT, "config/api-surface.baseline.json");
 const WAIVER_PATH = join(ROOT, "config/api-breaking-change-waivers.json");
 const CHANGE_RECORD_PATH = join(ROOT, "config/api-compatible-change-records.json");
+const GIT_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 const CONTRACTS_ROOT = join(ROOT, "packages/contracts/src");
 const FORBIDDEN_PUBLIC_NAME =
   /(?:HookToken|WorkflowRunId|Pi(?:Runtime)?SessionId|RuntimeCredential|ProviderCredential|ApiKey)/u;
@@ -1101,6 +1102,8 @@ export function generateApiSurface() {
 const ADDITIVE_ISSUES = new Set([
   "route_added",
   "package_export_added",
+  "package_export_expanded",
+  "package_entry_expanded",
   "public_symbol_added",
   "schema_added",
   "command_type_added",
@@ -1108,6 +1111,44 @@ const ADDITIVE_ISSUES = new Set([
   "problem_code_added",
   "recovery_action_added",
 ]);
+
+function publicContractExpansionIsAdditive(baseline, current) {
+  const previousSymbols = mapBy(baseline.publicSymbols, (entry) => entry.name);
+  const currentSymbols = mapBy(current.publicSymbols, (entry) => entry.name);
+  const previousSchemas = mapBy(baseline.publicSchemas, (entry) => entry.name);
+  const currentSchemas = mapBy(current.publicSchemas, (entry) => entry.name);
+  const existingSymbolsStable = [...previousSymbols].every(([name, before]) => {
+    const after = currentSymbols.get(name);
+    return (
+      after !== undefined &&
+      before.kind === after.kind &&
+      (before.kind === "schema" || before.signatureSha256 === after.signatureSha256)
+    );
+  });
+  const existingSchemasStable = [...previousSchemas].every(([name, before]) => {
+    const after = currentSchemas.get(name);
+    return after !== undefined && before.signatureSha256 === after.signatureSha256;
+  });
+  const hasAddition =
+    [...currentSymbols.keys()].some((name) => !previousSymbols.has(name)) ||
+    [...currentSchemas.keys()].some((name) => !previousSchemas.has(name));
+  return existingSymbolsStable && existingSchemasStable && hasAddition;
+}
+
+function packageSubpathExpansionIsAdditive(before, after, publicContractExpansion) {
+  if (!publicContractExpansion) return false;
+  if (
+    before.visibility !== after.visibility ||
+    before.target !== after.target ||
+    digest(before.conditions) !== digest(after.conditions) ||
+    !Array.isArray(before.exportedSymbols) ||
+    !Array.isArray(after.exportedSymbols)
+  ) {
+    return false;
+  }
+  const afterSymbols = new Set(after.exportedSymbols);
+  return before.exportedSymbols.every((name) => afterSymbols.has(name));
+}
 
 function digest(value) {
   return sha256(json(value));
@@ -1241,6 +1282,7 @@ export function diffApiSurface(baseline, current) {
   );
   baseline = normalizeApiSurface(baseline);
   current = normalizeApiSurface(current);
+  const additivePublicContractExpansion = publicContractExpansionIsAdditive(baseline, current);
   const issues = [];
   if (baselineSchemaVersion !== currentSchemaVersion) {
     issues.push(
@@ -1301,13 +1343,29 @@ export function diffApiSurface(baseline, current) {
         );
       }
     }
-    if (
-      next !== undefined &&
-      (digest(entry.bin) !== digest(next.bin) ||
-        (baselineHadSubpaths &&
-          entry.publicEntrySignatureSha256 !== next.publicEntrySignatureSha256))
-    ) {
-      issues.push(issue("package_executable_or_entry_changed", name, entry, next));
+    if (next !== undefined) {
+      const binChanged = digest(entry.bin) !== digest(next.bin);
+      const entrySignatureChanged =
+        baselineHadSubpaths && entry.publicEntrySignatureSha256 !== next.publicEntrySignatureSha256;
+      if (binChanged || entrySignatureChanged) {
+        const beforeRoot = normalizedSubpaths(entry).find((subpath) => subpath.key === ".");
+        const afterRoot = normalizedSubpaths(next).find((subpath) => subpath.key === ".");
+        const additiveEntryExpansion =
+          !binChanged &&
+          beforeRoot !== undefined &&
+          afterRoot !== undefined &&
+          packageSubpathExpansionIsAdditive(beforeRoot, afterRoot, additivePublicContractExpansion);
+        issues.push(
+          issue(
+            additiveEntryExpansion
+              ? "package_entry_expanded"
+              : "package_executable_or_entry_changed",
+            name,
+            entry,
+            next,
+          ),
+        );
+      }
     }
   }
   for (const [name, entry] of currentPackages) {
@@ -1359,7 +1417,16 @@ export function diffApiSurface(baseline, current) {
       if (digest(comparableBefore) !== digest(comparableAfter)) {
         const target = `${name}:${key}`;
         if (!issues.some((entry) => entry.issueId === `package_export_changed:${target}`)) {
-          issues.push(issue("package_export_changed", target, before, after));
+          issues.push(
+            issue(
+              packageSubpathExpansionIsAdditive(before, after, additivePublicContractExpansion)
+                ? "package_export_expanded"
+                : "package_export_changed",
+              target,
+              before,
+              after,
+            ),
+          );
         }
       }
     }
@@ -1507,14 +1574,8 @@ export function assertApiSurfaceCompatible(
   const changes = validateCompatibleChangeRecords(compatibleChangeDocument);
   const additive = issues.filter((entry) => ADDITIVE_ISSUES.has(entry.kind));
   const breaking = issues.filter((entry) => !ADDITIVE_ISSUES.has(entry.kind));
-  const staleWaivers = waivers.filter(
-    (waiver) => !breaking.some((entry) => recordMatchesIssue(waiver, entry)),
-  );
-  if (staleWaivers.length > 0) throw new Error("存在摘要或diff已过期的breaking change waiver");
-  const staleChanges = changes.filter(
-    (record) => !additive.some((entry) => recordMatchesIssue(record, entry)),
-  );
-  if (staleChanges.length > 0) throw new Error("存在摘要或diff已过期的compatible change record");
+  // 记录文件同时是已合入变更的耐久审计历史；旧记录不能授权当前diff（精确digest不匹配），
+  // 但也不能因新分支base前进就被删除。当前diff仍必须逐项拥有新的精确记录。
   const missingChanges = additive.filter(
     (entry) => !changes.some((record) => recordMatchesIssue(record, entry)),
   );
@@ -1547,6 +1608,7 @@ function git(args, { allowFailure = false } = {}) {
     cwd: ROOT,
     encoding: "utf8",
     stdio: "pipe",
+    maxBuffer: GIT_MAX_BUFFER_BYTES,
   });
   if (result.error !== undefined) throw result.error;
   if (result.status !== 0) {
@@ -1619,7 +1681,7 @@ export function assertApiSurfaceBaselineChain(
 function readableDiff(issues) {
   return issues.length === 0
     ? "API Surface与checked-in baseline一致。\n"
-    : `API Surface breaking diff（${String(issues.length)}）：\n${issues
+    : `API Surface compatibility diff（${String(issues.length)}）：\n${issues
         .map((entry) => `- ${entry.issueId}`)
         .join("\n")}\n`;
 }

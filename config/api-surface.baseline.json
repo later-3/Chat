@@ -114,7 +114,7 @@
         }
       },
       "name": "@chat/application",
-      "publicEntrySignatureSha256": "b096f5858e2c52791a114fe2bef73eb1cc7cd5c6a194443d34220a222d520fb5",
+      "publicEntrySignatureSha256": "c70f439868d2c8df559a1739538079a38c2bd0a190ab53363996b6503c8d1d83",
       "subpaths": [
         {
           "conditions": {
@@ -569,7 +569,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "b096f5858e2c52791a114fe2bef73eb1cc7cd5c6a194443d34220a222d520fb5",
+          "transitiveSignatureSha256": "c70f439868d2c8df559a1739538079a38c2bd0a190ab53363996b6503c8d1d83",
           "visibility": "public"
         },
         {
@@ -685,7 +685,7 @@
         }
       },
       "name": "@chat/contracts",
-      "publicEntrySignatureSha256": "53591d3103210af7682d25f487a05608c9170d5309db426388f32e2f86af4e10",
+      "publicEntrySignatureSha256": "a06d6bfc74a7bb55f7141ec059293f9e30d80fdebf718dd60b3da536bb23394e",
       "subpaths": [
         {
           "conditions": {
@@ -1804,6 +1804,7 @@
             "PROMPT_ASSEMBLY_V2_SCHEMA_VERSION",
             "PROMPT_ASSEMBLY_V3_SCHEMA_VERSION",
             "PROMPT_ASSEMBLY_V4_SCHEMA_VERSION",
+            "PROMPT_ASSEMBLY_V5_SCHEMA_VERSION",
             "PROMPT_REVIEW_CANONICAL_PAYLOAD_MAX_BYTES",
             "PROMPT_REVIEW_READABLE_RENDERER_VERSION",
             "PROMPT_STUDIO_API_SCHEMA_VERSION",
@@ -1827,6 +1828,8 @@
             "promptAssemblyV3Schema",
             "PromptAssemblyV4",
             "promptAssemblyV4Schema",
+            "PromptAssemblyV5",
+            "promptAssemblyV5Schema",
             "PromptBearingNodeType",
             "promptBearingNodeTypeSchema",
             "PromptCompositionMode",
@@ -2155,6 +2158,78 @@
             "submitPromptReviewDecisionPayloadSchema",
             "SubmitToolExecutionDecisionPayload",
             "submitToolExecutionDecisionPayloadSchema",
+            "SUPERVISED_PLANNING_V3_FOUNDATION_VERSION",
+            "SUPERVISED_PROMPT_COMPILER_V5_VERSION",
+            "SUPERVISED_PROMPT_PROFILE_VERSION",
+            "supervisedAgentAttemptRefV3Schema",
+            "SupervisedAgentAttemptV3",
+            "supervisedAgentAttemptV3Schema",
+            "SupervisedAgentObservationId",
+            "supervisedAgentObservationIdSchema",
+            "supervisedAgentOutcomeObservationRefV3Schema",
+            "SupervisedAgentOutcomeObservationV3",
+            "supervisedAgentOutcomeObservationV3Schema",
+            "SupervisedAgentRoleV3",
+            "supervisedAgentRoleV3Schema",
+            "supervisedAgentVersionRefV3Schema",
+            "supervisedApprovedPlanRefV3Schema",
+            "SupervisedCapabilityManifestV3",
+            "supervisedCapabilityManifestV3Schema",
+            "SupervisedCarryForwardId",
+            "supervisedCarryForwardIdSchema",
+            "supervisedCarryForwardRefV3Schema",
+            "SupervisedCarryForwardV3",
+            "supervisedCarryForwardV3Schema",
+            "supervisedExecutionContractRefV3Schema",
+            "supervisedExecutionLimitsV3Schema",
+            "SupervisedExecutionResultId",
+            "supervisedExecutionResultIdSchema",
+            "SupervisedExecutionResultV3",
+            "supervisedExecutionResultV3Schema",
+            "SupervisedPlannerVerdictId",
+            "supervisedPlannerVerdictIdSchema",
+            "supervisedPlannerVerdictKindV3Schema",
+            "supervisedPlannerVerdictRefV3Schema",
+            "SupervisedPlannerVerdictV3",
+            "supervisedPlannerVerdictV3Schema",
+            "SupervisedPlanningEpochId",
+            "supervisedPlanningEpochIdSchema",
+            "supervisedPlanningEpochRefV3Schema",
+            "SupervisedPlanningEpochV3",
+            "supervisedPlanningEpochV3Schema",
+            "supervisedProductReviewKindV3Schema",
+            "supervisedPromptAssemblyRoleRefV3Schema",
+            "SupervisedPromptRoleAssemblyV5",
+            "supervisedPromptRoleAssemblyV5Schema",
+            "SupervisedStepCandidateId",
+            "supervisedStepCandidateIdSchema",
+            "supervisedStepCandidateRefV3Schema",
+            "SupervisedStepCandidateV3",
+            "supervisedStepCandidateV3Schema",
+            "supervisedStepCriterionRefV3Schema",
+            "SupervisedStepDecisionId",
+            "supervisedStepDecisionIdSchema",
+            "supervisedStepDecisionRefV3Schema",
+            "SupervisedStepEvidenceId",
+            "supervisedStepEvidenceIdSchema",
+            "supervisedStepEvidenceRefV3Schema",
+            "SupervisedStepEvidenceV3",
+            "supervisedStepEvidenceV3Schema",
+            "SupervisedStepHumanDecisionV3",
+            "supervisedStepHumanDecisionV3Schema",
+            "SupervisedStepIdentityV3",
+            "supervisedStepIdentityV3Schema",
+            "SupervisedStepReviewRequestId",
+            "supervisedStepReviewRequestIdSchema",
+            "supervisedStepReviewRequestRefV3Schema",
+            "SupervisedStepReviewRequestV3",
+            "supervisedStepReviewRequestV3Schema",
+            "SupervisedStepStateId",
+            "supervisedStepStateIdSchema",
+            "SupervisedStepStateV3",
+            "supervisedStepStateV3Schema",
+            "supervisedStepStateVersionRefV3Schema",
+            "supervisedToolExecutionResultRefV2Schema",
             "syncPlaneProjectPayloadSchema",
             "syncPlaneProjectResponseSchema",
             "temporaryAgentSystemPromptSchema",
@@ -2423,7 +2498,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "53591d3103210af7682d25f487a05608c9170d5309db426388f32e2f86af4e10",
+          "transitiveSignatureSha256": "a06d6bfc74a7bb55f7141ec059293f9e30d80fdebf718dd60b3da536bb23394e",
           "visibility": "public"
         },
         {
@@ -3205,6 +3280,26 @@
             "submitPromptReviewDecisionPayloadSchema",
             "SubmitToolExecutionDecisionPayload",
             "submitToolExecutionDecisionPayloadSchema",
+            "SupervisedAgentObservationId",
+            "supervisedAgentObservationIdSchema",
+            "SupervisedCarryForwardId",
+            "supervisedCarryForwardIdSchema",
+            "SupervisedExecutionResultId",
+            "supervisedExecutionResultIdSchema",
+            "SupervisedPlannerVerdictId",
+            "supervisedPlannerVerdictIdSchema",
+            "SupervisedPlanningEpochId",
+            "supervisedPlanningEpochIdSchema",
+            "SupervisedStepCandidateId",
+            "supervisedStepCandidateIdSchema",
+            "SupervisedStepDecisionId",
+            "supervisedStepDecisionIdSchema",
+            "SupervisedStepEvidenceId",
+            "supervisedStepEvidenceIdSchema",
+            "SupervisedStepReviewRequestId",
+            "supervisedStepReviewRequestIdSchema",
+            "SupervisedStepStateId",
+            "supervisedStepStateIdSchema",
             "syncPlaneProjectPayloadSchema",
             "syncPlaneProjectResponseSchema",
             "toAgentVersionHashInput",
@@ -3342,7 +3437,7 @@
           ],
           "key": "./public",
           "target": "./src/public.ts",
-          "transitiveSignatureSha256": "d05654857b835ffec5c9cdc9cae2b8b65f56dda40f8fcf8f5b00b8b73bc421cf",
+          "transitiveSignatureSha256": "47f060a8360867a4eba6ccab852eec8be5ee9490d0c1075e712b867218d72159",
           "visibility": "public"
         },
         {
@@ -3372,7 +3467,7 @@
         }
       },
       "name": "@chat/domain",
-      "publicEntrySignatureSha256": "37bd663a6a3d5e8892c0942bb772c21d41dcd8b3fe4b82660306df503034063e",
+      "publicEntrySignatureSha256": "9edbb7165719384ebef36ee3ec404ccadae74bd5625489930b30cb410004f27f",
       "subpaths": [
         {
           "conditions": {
@@ -3435,6 +3530,9 @@
             "assertSingleOpenApproval",
             "assertSingleOpenPromptReview",
             "assertSinglePlanUnderReview",
+            "assertSupervisedAgentAttemptTransitionV3",
+            "assertSupervisedStepReviewRequestTransitionV3",
+            "assertSupervisedStepStateTransitionV3",
             "assertToolExecutionIntentTransition",
             "assertWorkflowMemoryContextOrder",
             "assertWorkflowNodeRunTimestamps",
@@ -3493,6 +3591,7 @@
             "computePromptAssemblyV2Sha256",
             "computePromptAssemblyV3Sha256",
             "computePromptAssemblyV4Sha256",
+            "computePromptAssemblyV5Sha256",
             "computePromptFragmentRevisionSha256",
             "computePromptFragmentRevisionV2Sha256",
             "computePromptNodeAssemblySha256",
@@ -3502,6 +3601,23 @@
             "computeRuleRevisionSha256",
             "computeRuleSelectionSha256",
             "computeRunContextRequestSha256",
+            "computeSupervisedAgentAttemptSha256V3",
+            "computeSupervisedAgentOutcomeObservationSha256V3",
+            "computeSupervisedAssistantVisibleTextSha256V3",
+            "computeSupervisedCapabilityManifestSha256",
+            "computeSupervisedCapabilityManifestSha256V3",
+            "computeSupervisedCarryForwardSha256V3",
+            "computeSupervisedExecutionResultSha256V3",
+            "computeSupervisedExecutionStepResultSha256V3",
+            "computeSupervisedPlannerVerdictSha256V3",
+            "computeSupervisedPlanningEpochSha256V3",
+            "computeSupervisedPromptRoleAssemblyV5Sha256",
+            "computeSupervisedStepCandidateSha256V3",
+            "computeSupervisedStepCriterionSha256V3",
+            "computeSupervisedStepEvidenceSha256V3",
+            "computeSupervisedStepHumanDecisionSha256V3",
+            "computeSupervisedStepReviewRequestSha256V3",
+            "computeSupervisedStepStateSha256V3",
             "computeToolExecutionDecisionSha256",
             "computeWorkflowMemoryContextSha256",
             "computeWorkflowMemoryMessageSha256",
@@ -3628,6 +3744,7 @@
             "PromptAssemblyV2Shape",
             "PromptAssemblyV3Shape",
             "PromptAssemblyV4Shape",
+            "PromptAssemblyV5Shape",
             "PromptFragmentContentShape",
             "PromptFragmentDerivedFromShape",
             "PromptFragmentDomainError",
@@ -3679,6 +3796,11 @@
             "selectRules",
             "sha256Hex",
             "sortWorkflowDiagnostics",
+            "SupervisedAgentAttemptV3Shape",
+            "SupervisedPromptRoleAssemblyV5Shape",
+            "SupervisedStepReviewRequestV3Shape",
+            "SupervisedStepStateV3Shape",
+            "SupervisedStepStatusV3",
             "ToolExecutionIntentStatus",
             "transitionDirectAgentRunLifecycle",
             "transitionPromptReviewStatus",
@@ -3745,7 +3867,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "37bd663a6a3d5e8892c0942bb772c21d41dcd8b3fe4b82660306df503034063e",
+          "transitiveSignatureSha256": "9edbb7165719384ebef36ee3ec404ccadae74bd5625489930b30cb410004f27f",
           "visibility": "public"
         }
       ]
@@ -3883,7 +4005,7 @@
         }
       },
       "name": "@chat/pi-runtime",
-      "publicEntrySignatureSha256": "74666212e5ba5ff846cb50eeca0c344479a434777bd7af33cc4d7ca10ce525f5",
+      "publicEntrySignatureSha256": "517743a6bf1c5e22c8c457b8626f4c015b7abd4d1e9ee10f2ca2e1719c21beba",
       "subpaths": [
         {
           "conditions": {
@@ -3995,7 +4117,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "74666212e5ba5ff846cb50eeca0c344479a434777bd7af33cc4d7ca10ce525f5",
+          "transitiveSignatureSha256": "517743a6bf1c5e22c8c457b8626f4c015b7abd4d1e9ee10f2ca2e1719c21beba",
           "visibility": "public"
         },
         {
@@ -4159,7 +4281,7 @@
           ],
           "key": "./coding-executor",
           "target": "./src/coding-executor.ts",
-          "transitiveSignatureSha256": "0393fa45abe10dfaaec066b56bf812a33cefa9c9fe1d7f03f715aca379060eaa",
+          "transitiveSignatureSha256": "09a895546b992870450e1d1c4672e1776962ec52a7928c9b0f2c567e614a32b9",
           "visibility": "public"
         }
       ]
@@ -4175,7 +4297,7 @@
         }
       },
       "name": "@chat/product-store-json",
-      "publicEntrySignatureSha256": "f8e6d6f2849a73aade4681c0d8764a22c87fa7b8479e5469927e584cd1e0d2de",
+      "publicEntrySignatureSha256": "44a4f96d22c417d7ae58271566a6f90fea07affa5ffb212448862654ab353786",
       "subpaths": [
         {
           "conditions": {
@@ -4201,6 +4323,7 @@
             "migrateProductSnapshotV20ToV21",
             "migrateProductSnapshotV21ToV22",
             "migrateProductSnapshotV22ToV23",
+            "migrateProductSnapshotV23ToV24",
             "migrateProductSnapshotV2ToV3",
             "migrateProductSnapshotV3ToV4",
             "migrateProductSnapshotV4ToV5",
@@ -4245,6 +4368,8 @@
             "productSnapshotV21Schema",
             "ProductSnapshotV22",
             "productSnapshotV22Schema",
+            "ProductSnapshotV23",
+            "productSnapshotV23Schema",
             "productSnapshotV2Schema",
             "ProductSnapshotV3",
             "productSnapshotV3Schema",
@@ -4260,7 +4385,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "f8e6d6f2849a73aade4681c0d8764a22c87fa7b8479e5469927e584cd1e0d2de",
+          "transitiveSignatureSha256": "44a4f96d22c417d7ae58271566a6f90fea07affa5ffb212448862654ab353786",
           "visibility": "public"
         }
       ]
@@ -9069,6 +9194,76 @@
     },
     {
       "enumValues": [],
+      "name": "supervisedAgentObservationIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "4a3a17c133061aef82195c9506d53d59b78b1cbe1b6273279b8fa1c06142885e"
+    },
+    {
+      "enumValues": [],
+      "name": "supervisedCarryForwardIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "00dd5f3bd3993d655b3746f93ac375006e6a86008d9785ce269b276223f6b6d6"
+    },
+    {
+      "enumValues": [],
+      "name": "supervisedExecutionResultIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "ce82c67c78e6474c6a2cc51b9db85baafc5bb02af7dce6bc355e5444766f49ca"
+    },
+    {
+      "enumValues": [],
+      "name": "supervisedPlannerVerdictIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "3e087f9849599bf5871c986845659e3d293aa441e0937d6c1f42fedb6984e272"
+    },
+    {
+      "enumValues": [],
+      "name": "supervisedPlanningEpochIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "6621a94ffad14a8f6668b42c1afe6ce488b177950b6e63a72b8f346c89ca4315"
+    },
+    {
+      "enumValues": [],
+      "name": "supervisedStepCandidateIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "15de16f476e382c5e7e268db90fb1d45aa20e93b5be30b3fb32c6f39a6732d86"
+    },
+    {
+      "enumValues": [],
+      "name": "supervisedStepDecisionIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "30623a8d23132e2ae2ac8e365ec1925e6feae478d4e305460cc4071648cf2d71"
+    },
+    {
+      "enumValues": [],
+      "name": "supervisedStepEvidenceIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "cdb4deb474b99f89d6b2bed61366e3227ece3ad9f69810de3cdae14b77a115d5"
+    },
+    {
+      "enumValues": [],
+      "name": "supervisedStepReviewRequestIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "93e78d50046fd7216bcf06f4de01c9a457c0a539bfcf1ce10d20f74a638f5ae9"
+    },
+    {
+      "enumValues": [],
+      "name": "supervisedStepStateIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "7b9ef6886895a86a8193838504e986854607f41a4b46c29a6021a206e1c4ac0f"
+    },
+    {
+      "enumValues": [],
       "name": "syncPlaneProjectPayloadSchema",
       "requiredFields": ["planeProjectBindingId"],
       "schemaVersions": [],
@@ -13735,6 +13930,106 @@
       "kind": "schema",
       "name": "submitToolExecutionDecisionPayloadSchema",
       "signatureSha256": "e1729d1860b0fee85d55bf9265a4abb74f40eaaa818250e87e501c13046ca84e"
+    },
+    {
+      "kind": "type",
+      "name": "SupervisedAgentObservationId",
+      "signatureSha256": "dfbcb08b108582dabd885d376d0426ec51a875019c2099282d2d6c7169e5ad51"
+    },
+    {
+      "kind": "schema",
+      "name": "supervisedAgentObservationIdSchema",
+      "signatureSha256": "4a3a17c133061aef82195c9506d53d59b78b1cbe1b6273279b8fa1c06142885e"
+    },
+    {
+      "kind": "type",
+      "name": "SupervisedCarryForwardId",
+      "signatureSha256": "d2ca299138fc86c4d2d98b4bbbadfad6f05b4ffb9ca014180b766180c2b399aa"
+    },
+    {
+      "kind": "schema",
+      "name": "supervisedCarryForwardIdSchema",
+      "signatureSha256": "00dd5f3bd3993d655b3746f93ac375006e6a86008d9785ce269b276223f6b6d6"
+    },
+    {
+      "kind": "type",
+      "name": "SupervisedExecutionResultId",
+      "signatureSha256": "1dd503ebcf1e644ef1f20aaf06bc85b6f7f5d1acfd62386e4b078562b63ae1b1"
+    },
+    {
+      "kind": "schema",
+      "name": "supervisedExecutionResultIdSchema",
+      "signatureSha256": "ce82c67c78e6474c6a2cc51b9db85baafc5bb02af7dce6bc355e5444766f49ca"
+    },
+    {
+      "kind": "type",
+      "name": "SupervisedPlannerVerdictId",
+      "signatureSha256": "81fe73abe3e43d120c834871a1f5fc60a9de29a9e28f94f211488c303b486d1d"
+    },
+    {
+      "kind": "schema",
+      "name": "supervisedPlannerVerdictIdSchema",
+      "signatureSha256": "3e087f9849599bf5871c986845659e3d293aa441e0937d6c1f42fedb6984e272"
+    },
+    {
+      "kind": "type",
+      "name": "SupervisedPlanningEpochId",
+      "signatureSha256": "715041026b18faddecf684fc40a224174ce836130aa1203cd0e85d6c0e7fc9e0"
+    },
+    {
+      "kind": "schema",
+      "name": "supervisedPlanningEpochIdSchema",
+      "signatureSha256": "6621a94ffad14a8f6668b42c1afe6ce488b177950b6e63a72b8f346c89ca4315"
+    },
+    {
+      "kind": "type",
+      "name": "SupervisedStepCandidateId",
+      "signatureSha256": "8e4e31b17fb1e761a98924e153dca1b80e08d0b8a8b8116524e31faf6647d37a"
+    },
+    {
+      "kind": "schema",
+      "name": "supervisedStepCandidateIdSchema",
+      "signatureSha256": "15de16f476e382c5e7e268db90fb1d45aa20e93b5be30b3fb32c6f39a6732d86"
+    },
+    {
+      "kind": "type",
+      "name": "SupervisedStepDecisionId",
+      "signatureSha256": "fe9554eacd6c3b7d645bb9515feb672f940a810efe93adbee411170bd56f4d0f"
+    },
+    {
+      "kind": "schema",
+      "name": "supervisedStepDecisionIdSchema",
+      "signatureSha256": "30623a8d23132e2ae2ac8e365ec1925e6feae478d4e305460cc4071648cf2d71"
+    },
+    {
+      "kind": "type",
+      "name": "SupervisedStepEvidenceId",
+      "signatureSha256": "86a57411f3d7fab4ef2442bfef70bdc8d5582c69974f98380a2a8b935d6d848e"
+    },
+    {
+      "kind": "schema",
+      "name": "supervisedStepEvidenceIdSchema",
+      "signatureSha256": "cdb4deb474b99f89d6b2bed61366e3227ece3ad9f69810de3cdae14b77a115d5"
+    },
+    {
+      "kind": "type",
+      "name": "SupervisedStepReviewRequestId",
+      "signatureSha256": "6b2dba1ee7bf4220ed7f00f2e1ef8b18536b7a180e5c88c13222cb23e372c371"
+    },
+    {
+      "kind": "schema",
+      "name": "supervisedStepReviewRequestIdSchema",
+      "signatureSha256": "93e78d50046fd7216bcf06f4de01c9a457c0a539bfcf1ce10d20f74a638f5ae9"
+    },
+    {
+      "kind": "type",
+      "name": "SupervisedStepStateId",
+      "signatureSha256": "ba2821d048dadd624f2b30c58325a807881124a9df8b27e90db24c2dc73ecfb9"
+    },
+    {
+      "kind": "schema",
+      "name": "supervisedStepStateIdSchema",
+      "signatureSha256": "7b9ef6886895a86a8193838504e986854607f41a4b46c29a6021a206e1c4ac0f"
     },
     {
       "kind": "schema",

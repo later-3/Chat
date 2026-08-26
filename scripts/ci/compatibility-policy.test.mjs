@@ -107,16 +107,16 @@ test("新代际没有read-old/migration入口时失败", () => {
   const changed = structuredClone(factsBaseline);
   const product = changed.domains.find((domain) => domain.id === "product-store");
   const previous = product.generations.find(
-    (generation) => generation.identity === "chat-product-store.v23",
+    (generation) => generation.identity === "chat-product-store.v24",
   );
   product.generations.push({
     ...previous,
-    identity: "chat-product-store.v24",
-    generation: 24,
+    identity: "chat-product-store.v25",
+    generation: 25,
     canonicalSha256: "e".repeat(64),
   });
-  product.currentWriteGenerations = ["chat-product-store.v24"];
-  product.writeAuthority.generations = ["chat-product-store.v24"];
+  product.currentWriteGenerations = ["chat-product-store.v25"];
+  product.writeAuthority.generations = ["chat-product-store.v25"];
   assert.throws(
     () => assertCompatibilityFactsCompatible(factsBaseline, changed),
     /缺少read-old\/migration/u,
@@ -153,7 +153,7 @@ function promoteGeneration(domain, currentIdentity, nextIdentity) {
 test("合法Writer升代不冒充Owner漂移，缺兼容边或read-old仍失败", () => {
   const valid = structuredClone(factsBaseline);
   const product = valid.domains.find((domain) => domain.id === "product-store");
-  promoteGeneration(product, "chat-product-store.v23", "chat-product-store.v24");
+  promoteGeneration(product, "chat-product-store.v24", "chat-product-store.v25");
   assert.deepEqual(assertCompatibilityFactsCompatible(factsBaseline, valid), valid);
 
   const missingMigration = structuredClone(valid);
@@ -162,7 +162,7 @@ test("合法Writer升代不冒充Owner漂移，缺兼容边或read-old仍失败"
   );
   missingMigrationProduct.compatibilityEntries =
     missingMigrationProduct.compatibilityEntries.filter(
-      (entry) => !entry.generations.includes("chat-product-store.v24"),
+      (entry) => !entry.generations.includes("chat-product-store.v25"),
     );
   assert.throws(
     () => assertCompatibilityFactsCompatible(factsBaseline, missingMigration),
@@ -175,7 +175,7 @@ test("合法Writer升代不冒充Owner漂移，缺兼容边或read-old仍失败"
   );
   missingReadOldProduct.historicalReadableGenerations =
     missingReadOldProduct.historicalReadableGenerations.filter(
-      (identity) => identity !== "chat-product-store.v23",
+      (identity) => identity !== "chat-product-store.v24",
     );
   missingReadOldProduct.legacyAuthority.generations = [
     ...missingReadOldProduct.historicalReadableGenerations,
@@ -240,13 +240,17 @@ test("Direct/Generic新增v4保持v1-v3 canonical hash并通过read-old/migratio
   assert.deepEqual(assertCompatibilityFactsCompatible(factsBaseline, changed), changed);
 });
 
-test("Authority外部投影提取器只允许一次性v1到v2迁移", () => {
+test("Authority外部投影提取器只允许有机械证明的连续迁移", () => {
   const previous = structuredClone(factsBaseline);
   for (const id of ["network-contracts", "browser-dto-events"]) {
     const domain = previous.domains.find((entry) => entry.id === id);
-    domain.authorityCanonicalVersion = 1;
-    domain.legacyAuthority.canonicalSha256 = "1".repeat(64);
-    domain.writeAuthority.canonicalSha256 = "1".repeat(64);
+    domain.authorityCanonicalVersion = 2;
+    domain.legacyAuthority.canonicalSha256 = factsBaseline.domains.find(
+      (entry) => entry.id === id,
+    ).legacyAuthority.previousExtractorCanonicalSha256;
+    domain.writeAuthority.canonicalSha256 = factsBaseline.domains.find(
+      (entry) => entry.id === id,
+    ).writeAuthority.previousExtractorCanonicalSha256;
   }
   assert.deepEqual(assertCompatibilityFactsCompatible(previous, factsBaseline), factsBaseline);
 
@@ -262,7 +266,7 @@ test("Authority外部投影提取器只允许一次性v1到v2迁移", () => {
   const unprovenUpgrade = structuredClone(factsBaseline);
   unprovenUpgrade.domains.find(
     (entry) => entry.id === "network-contracts",
-  ).authorityCanonicalVersion = 3;
+  ).authorityCanonicalVersion = 4;
   assert.throws(
     () => assertCompatibilityFactsCompatible(factsBaseline, unprovenUpgrade),
     /authority canonical提取器/u,
@@ -272,14 +276,14 @@ test("Authority外部投影提取器只允许一次性v1到v2迁移", () => {
 test("compat事实绑定真实Schema闭包、writer authority与resolved migration edge", () => {
   const product = factsBaseline.domains.find((domain) => domain.id === "product-store");
   const current = product.generations.find(
-    (generation) => generation.identity === "chat-product-store.v23",
+    (generation) => generation.identity === "chat-product-store.v24",
   );
   assert.ok(
     current.evidenceCount > 100,
-    "v20必须包含productEntities及Imported Tool/Agent Schema闭包",
+    "v24必须包含productEntities及Imported Tool/Agent Schema闭包",
   );
-  assert.deepEqual(product.currentWriteGenerations, ["chat-product-store.v23"]);
-  assert.deepEqual(product.writeAuthority.generations, ["chat-product-store.v23"]);
+  assert.deepEqual(product.currentWriteGenerations, ["chat-product-store.v24"]);
+  assert.deepEqual(product.writeAuthority.generations, ["chat-product-store.v24"]);
   assert.equal(product.writeAuthority.entry, "JsonProductStore.doTransact->persist");
   const directMigrationEntries = product.compatibilityEntries.filter((entry) =>
     entry.entry.startsWith("packages/product-store-json/src/migrate-"),
@@ -292,7 +296,7 @@ test("compat事实绑定真实Schema闭包、writer authority与resolved migrati
     product.compatibilityEntries.some(
       (entry) =>
         entry.entry ===
-          "JsonProductStore.open:migration-path:chat-product-store.v20->chat-product-store.v23" &&
+          "JsonProductStore.open:migration-path:chat-product-store.v20->chat-product-store.v24" &&
         entry.evidenceKind === "resolved-call-migration-path" &&
         JSON.stringify(entry.generations) ===
           JSON.stringify([
@@ -300,6 +304,7 @@ test("compat事实绑定真实Schema闭包、writer authority与resolved migrati
             "chat-product-store.v21",
             "chat-product-store.v22",
             "chat-product-store.v23",
+            "chat-product-store.v24",
           ]),
     ),
     "Writer升代必须由真实resolved migration edge组成read-old path",
@@ -308,18 +313,19 @@ test("compat事实绑定真实Schema闭包、writer authority与resolved migrati
     product.compatibilityEntries.some(
       (entry) =>
         entry.entry ===
-          "JsonProductStore.open:migration-path:chat-product-store.v20->chat-product-store.v23:capability-lineage" &&
+          "JsonProductStore.open:migration-path:chat-product-store.v20->chat-product-store.v24:capability-lineage" &&
         JSON.stringify(entry.generations) ===
           JSON.stringify([
             "chat-product-store.v20",
             "chat-product-store.v22",
             "chat-product-store.v23",
+            "chat-product-store.v24",
           ]),
     ),
     "同literal的Capability v20必须保留独立真实迁移链，不能与Content v20串线",
   );
   assert.equal(
-    product.generations.some((generation) => generation.identity === "chat-product-store.v24"),
+    product.generations.some((generation) => generation.identity === "chat-product-store.v25"),
     false,
     "未被reader/writer采用的version literal不得产生generation",
   );
@@ -328,10 +334,10 @@ test("compat事实绑定真实Schema闭包、writer authority与resolved migrati
   const mismatch = writerMismatch.domains.find((domain) => domain.id === "product-store");
   mismatch.generations.push({
     ...current,
-    identity: "chat-product-store.v24",
-    generation: 24,
+    identity: "chat-product-store.v25",
+    generation: 25,
   });
-  mismatch.currentWriteGenerations = ["chat-product-store.v24"];
+  mismatch.currentWriteGenerations = ["chat-product-store.v25"];
   assert.throws(
     () => assertCompatibilityFactsCompatible(factsBaseline, writerMismatch),
     /writeAuthority与真实入口漂移/u,
@@ -342,7 +348,7 @@ test("compat事实绑定真实Schema闭包、writer authority与resolved migrati
     .find((domain) => domain.id === "product-store")
     .compatibilityEntries.push({
       entry: "packages/product-store-json/src/migrate-v20-to-v21.ts",
-      generations: ["chat-product-store.v23"],
+      generations: ["chat-product-store.v24"],
       canonicalSha256: "a".repeat(64),
     });
   assert.throws(
