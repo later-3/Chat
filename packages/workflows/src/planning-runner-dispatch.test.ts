@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION,
   CONFIGURABLE_PLANNING_RUNNER_FAMILY,
+  DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+  DIRECT_AGENT_RUNNER_FAMILY,
   LEGACY_PLANNING_RUNNER_BUNDLE_VERSION,
   LEGACY_PLANNING_RUNNER_FAMILY,
   NOTE_CAPTURE_RUNNER_BUNDLE_VERSION,
   NOTE_CAPTURE_RUNNER_FAMILY,
+  MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_DIRECT_RUNNER_FAMILY,
+  MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
 } from "./definition-kernel-executor-registry.js";
 import {
   PlanningRunnerDispatchError,
@@ -52,6 +58,45 @@ describe("Planning Runner静态分派", () => {
       resolveProductWorkflowRunnerDispatch({
         ...request,
         runnerBundleVersion: "note-capture.bundle.future",
+      }),
+    ).toThrow(PlanningRunnerDispatchError);
+  });
+
+  it("Direct、Memory Direct与Memory Agent Direct使用独立family/bundle并都要求RunSpec", () => {
+    const direct = {
+      runnerFamily: DIRECT_AGENT_RUNNER_FAMILY,
+      runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+      workflowRunSpecId: "wrs_directdispatch1",
+    } as const;
+    const memoryDirect = {
+      runnerFamily: MEMORY_DIRECT_RUNNER_FAMILY,
+      runnerBundleVersion: MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+      workflowRunSpecId: "wrs_memorydirectdispatch1",
+    } as const;
+    const memoryAgentDirect = {
+      runnerFamily: MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
+      runnerBundleVersion: MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+      workflowRunSpecId: "wrs_memoryagentdirectdispatch1",
+    } as const;
+    expect(resolveProductWorkflowRunnerDispatch(direct)).toEqual(direct);
+    expect(resolveProductWorkflowRunnerDispatch(memoryDirect)).toEqual(memoryDirect);
+    expect(resolveProductWorkflowRunnerDispatch(memoryAgentDirect)).toEqual(memoryAgentDirect);
+    expect(() =>
+      resolveProductWorkflowRunnerDispatch({
+        ...memoryDirect,
+        runnerBundleVersion: DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
+      }),
+    ).toThrow(PlanningRunnerDispatchError);
+    expect(() =>
+      resolveProductWorkflowRunnerDispatch({
+        ...memoryAgentDirect,
+        runnerBundleVersion: MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+      }),
+    ).toThrow(PlanningRunnerDispatchError);
+    expect(() =>
+      resolveProductWorkflowRunnerDispatch({
+        runnerFamily: MEMORY_DIRECT_RUNNER_FAMILY,
+        runnerBundleVersion: MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
       }),
     ).toThrow(PlanningRunnerDispatchError);
   });

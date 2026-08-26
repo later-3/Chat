@@ -485,6 +485,92 @@ test("Prompt Studio forwards workspace, scope filters, and semantic preview cont
   });
 });
 
+test("Memory候选客户端使用公开API路径、命令信封与观察到的CAS", async () => {
+  const SHA = "a".repeat(64);
+  const NOW = "2026-08-24T09:00:00.000Z";
+  const candidate = {
+    schemaVersion: "memory-agent-write-candidate.v1",
+    memoryAgentWriteCandidateId: "mwc_1",
+    memoryAgentOperationId: "mao_1",
+    operationResultSha256: SHA,
+    productRunId: "run_1",
+    productSessionId: "psn_1",
+    providerId: "mbk_1",
+    evidenceSha256: SHA,
+    evidenceManifest: [{ kind: "message", messageId: "msg_1", messageSha256: SHA, role: "user" }],
+    status: "pending_review",
+    items: [
+      {
+        itemKey: "item-1",
+        title: "发布前检查",
+        category: "procedure",
+        content: "发布前执行合同测试。",
+        labels: ["release"],
+        evidenceRefs: [{ kind: "message", messageId: "msg_1", messageSha256: SHA, role: "user" }],
+        sha256: SHA,
+      },
+    ],
+    sha256: SHA,
+    revision: 1,
+    createdAt: NOW,
+    updatedAt: NOW,
+  } as const;
+  const requests: Array<{ url: URL; method: string; body?: unknown }> = [];
+  const client = new ChatProductClient(new URL("http://127.0.0.1:1"), async (input, init) => {
+    const url = new URL(String(input));
+    requests.push({
+      url,
+      method: init?.method ?? "GET",
+      ...(init?.body === undefined ? {} : { body: JSON.parse(String(init.body)) }),
+    });
+    if (url.pathname.endsWith("/decisions")) {
+      return new Response(
+        JSON.stringify({
+          candidate: {
+            ...candidate,
+            status: "approved",
+            decisionId: "mwd_1",
+            memoryWriteIntentIds: ["mwi_1"],
+          },
+          decision: {
+            schemaVersion: "memory-agent-write-decision.v1",
+            memoryAgentWriteDecisionId: "mwd_1",
+            memoryAgentWriteCandidateId: candidate.memoryAgentWriteCandidateId,
+            candidateRevision: 1,
+            candidateSha256: SHA,
+            kind: "approve",
+            principalId: "usr_1",
+            commandId: "cmd_1",
+            revision: 1,
+            createdAt: NOW,
+          },
+        }),
+        { status: 201 },
+      );
+    }
+    return new Response(JSON.stringify({ candidate }), { status: 200 });
+  });
+  await client.getMemoryAgentWriteCandidate(candidate.memoryAgentWriteCandidateId);
+  await client.decideMemoryAgentWriteCandidate(candidate.memoryAgentWriteCandidateId, "cmd_1", {
+    kind: "approve",
+    expectedCandidateRevision: candidate.revision,
+    expectedCandidateSha256: candidate.sha256,
+  });
+  assert.equal(requests[0]?.url.pathname, "/api/memory/write-candidates/mwc_1");
+  assert.deepEqual(requests[1], {
+    url: new URL("http://127.0.0.1:1/api/memory/write-candidates/mwc_1/decisions"),
+    method: "POST",
+    body: {
+      commandId: "cmd_1",
+      payload: {
+        kind: "approve",
+        expectedCandidateRevision: 1,
+        expectedCandidateSha256: SHA,
+      },
+    },
+  });
+});
+
 test("发送前完整Prompt预览使用专用只读Chat Query", async () => {
   const requests: Array<{ url: URL; method: string; body: unknown }> = [];
   const responseBody = promptTurnPreviewFixture("检查当前项目");

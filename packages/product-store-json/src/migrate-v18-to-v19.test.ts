@@ -43,6 +43,10 @@ function v18Entities(entities: Record<string, unknown>): Record<string, unknown>
     "supervisedStepHumanDecisions",
     "supervisedAgentOutcomeObservations",
     "supervisedExecutionResults",
+    "memorySessionImports",
+    "memoryAgentOperations",
+    "memoryAgentWriteCandidates",
+    "memoryAgentWriteDecisions",
   ]) {
     delete legacy[key];
   }

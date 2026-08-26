@@ -71,10 +71,11 @@ describe("Direct Agent Workflow Steps", () => {
           runnerFamily: "direct-agent.v1",
           runnerBundleVersion: "direct-agent.bundle.v1",
         },
-        definitionRef: { blueprintKey: "direct" },
+        definitionRef: { blueprintKey: "direct", blueprintVersion: 1 },
         businessInput: { kind: "direct_agent_message" },
         nodeResolutions: [
           {
+            definitionNodeId: "direct.agent",
             nodeType: "agent.direct",
             activation: "enabled",
             config: { capabilityMode: "pi_cli_default", promptReviewMode: "manual" },
@@ -110,6 +111,84 @@ describe("Direct Agent Workflow Steps", () => {
     const serialized = JSON.stringify({ result, events: trace.mock.calls });
     expect(serialized).not.toContain("canonicalPayloadJson");
     expect(serialized).not.toContain("sourceMessage");
+  });
+
+  it("direct@3仅接受Memory Agent Direct冻结family、bundle与三节点RunSpec", async () => {
+    const runSpec = {
+      productRunId: "run_memoryagentdirectstep1",
+      workflowRunSpecId: "wrs_memoryagentdirectstep1",
+      sha256: SHA_A,
+      runner: {
+        runnerFamily: "memory-agent-direct.v1",
+        runnerBundleVersion: "memory-agent-direct.bundle.v1",
+      },
+      definitionRef: { blueprintKey: "direct", blueprintVersion: 3 },
+      businessInput: { kind: "direct_agent_message" },
+      nodeResolutions: [
+        {
+          definitionNodeId: "memory-agent.retrieve",
+          nodeType: "agent.memory_retrieve",
+          schemaVersion: 1,
+          activation: "enabled",
+          config: {},
+        },
+        {
+          definitionNodeId: "direct.agent",
+          nodeType: "agent.direct",
+          schemaVersion: 1,
+          activation: "enabled",
+          config: { capabilityMode: "pi_cli_default", promptReviewMode: "manual" },
+        },
+        {
+          definitionNodeId: "memory-agent.write",
+          nodeType: "agent.memory_write",
+          schemaVersion: 1,
+          activation: "enabled",
+          config: {},
+        },
+      ],
+    };
+    let loadedRunSpec = runSpec;
+    const loadWorkflowRunSpec = vi.fn(async () => ({ runSpec: loadedRunSpec }));
+    const beginDirectAgentAttempt = vi.fn(async () => ({
+      directAgentAttemptId: "att_memoryagentdirectstep1",
+      inputManifestSha256: SHA_B,
+      runRevision: 2,
+    }));
+    installContext({ api: { loadWorkflowRunSpec, beginDirectAgentAttempt } });
+
+    await expect(
+      prepareDirectAgentOperationStep({
+        productRunId: runSpec.productRunId,
+        workflowAttemptId: "att_memoryagentdirectworkflowstep1",
+        workflowRunSpecId: runSpec.workflowRunSpecId,
+      }),
+    ).resolves.toEqual({
+      directAgentAttemptId: "att_memoryagentdirectstep1",
+      workflowRunSpecSha256: SHA_A,
+      inputManifestSha256: SHA_B,
+    });
+
+    for (const [index, incompatible] of [
+      { ...runSpec, runner: { ...runSpec.runner, runnerBundleVersion: "direct-agent.bundle.v1" } },
+      { ...runSpec, definitionRef: { ...runSpec.definitionRef, blueprintVersion: 2 } },
+      {
+        ...runSpec,
+        nodeResolutions: runSpec.nodeResolutions.map((node, index) =>
+          index === 0 ? { ...node, nodeType: "memory.query" } : node,
+        ),
+      },
+    ].entries()) {
+      loadedRunSpec = incompatible;
+      await expect(
+        prepareDirectAgentOperationStep({
+          productRunId: runSpec.productRunId,
+          workflowAttemptId: `att_memoryagentdirectworkflowstep${String(index + 2)}`,
+          workflowRunSpecId: runSpec.workflowRunSpecId,
+        }),
+      ).rejects.toThrow();
+    }
+    expect(beginDirectAgentAttempt).toHaveBeenCalledTimes(1);
   });
 
   it("Hook Binding只保存Request引用/版本/Hash，并从Product Store重载Decision引用", async () => {

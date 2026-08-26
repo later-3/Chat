@@ -83,7 +83,7 @@ export const commitMemoryImportMaterializedRequestSchema = z
   .object({
     ...memoryImportResultCommandBase,
     accepted: memoryImportAcceptedSchema,
-    verificationKind: z.enum(["read_by_id_and_search", "l0_and_session_l1"]),
+    verificationKind: z.enum(["read_by_id", "read_by_id_and_search", "l0_and_session_l1"]),
     verificationSha256: sha256Schema,
     reconciled: z.boolean().optional(),
   })

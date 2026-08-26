@@ -18,11 +18,11 @@ import {
 } from "@chat/domain";
 import { assertWorkflowNodeExecutionIdentity } from "./configurable-workflow-runtime-use-cases.js";
 import { revisionConflict } from "./errors.js";
-import type { PlanningProductRun } from "./product-run-kind.js";
+import type { WorkflowMemoryProductRun } from "./product-run-kind.js";
 
 type DraftSnapshot = ProductSnapshot;
 type PlanningContextNodeType =
-  "memory.query" | "context.memory" | "context.project" | "policy.rules";
+  "memory.query" | "agent.memory_retrieve" | "context.memory" | "context.project" | "policy.rules";
 
 const deriveNodeRunId = (input: {
   readonly productRunId: string;
@@ -89,7 +89,7 @@ function persistImmutableManifest(
 export function commitPlanningContextNodeFact(
   draft: DraftSnapshot,
   input: {
-    readonly run: PlanningProductRun;
+    readonly run: WorkflowMemoryProductRun;
     readonly runSpec: WorkflowRunSpec;
     readonly definitionNodeId: string;
     readonly nodeType: PlanningContextNodeType;

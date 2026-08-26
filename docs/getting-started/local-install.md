@@ -4,7 +4,7 @@
 本地运行，不复制产品边界。
 
 本文是全新克隆后的唯一安装入口。当前产品前端是固定DeepSeek Harness Web，后端由
-Chat API、Vercel Workflow与可选Code Workbench组成；Memory Provider代码暂时保留但默认关闭。不要再安装
+Chat API、Vercel Workflow与可选Code Workbench组成；Memory Agent与Provider Adapter已经接入，运行默认关闭。不要再安装
 旧`apps/web`或Agent Canvas。当前开发阶段必须同时检出Later维护的Pi与DSH Fork稳定分支；不要检出官方上游替代它们。
 
 Code Workbench当前为Beta：本地实现与固定工件继续保留，但不进入通用CI/CD，也不进入远程部署。
@@ -85,8 +85,7 @@ pnpm run setup --workbench=off
    Bundle与LifeOS Bridge，再准备固定DSH Web Profile；
 4. 只生成可重建缓存，不启动任何服务。
 
-当前不准备Memory；统一setup没有启用参数。固定commit/tree、lock和原生工件Hash代码继续
-保留，未来决定恢复Memory时再重新接入组合根与启动图。
+统一setup不准备第三方Memory服务，也没有Memory启用参数。Memory Agent产品合同与组合根已接入；需要真实Provider的部署必须单独显式配置，普通安装不会读取其凭据或启动sidecar。
 
 如果同一仓库已有本地服务或Workbench在运行，setup只报告占用并失败，不会替用户停止
 进程，也不会修改活动Product Run；先显式运行`pnpm dev:stop`后再准备。
@@ -150,8 +149,8 @@ pnpm dev --memory=off --workbench=code-server
 这会增加code-server wrapper和child，基线共7个OS进程；每个Terminal另有子进程。
 当前只使用Chat/PWA时保持前文的`--workbench=off`。
 
-当前不启动或装配Memory。`18960`与`18970`在整个运行期间都应保持空闲；统一启动器
-拒绝`--memory=all|memmy|memorycore`，避免环境变量或历史命令静默恢复Memory。
+统一启动器当前不启动第三方Memory服务。`18960`与`18970`在整个运行期间都应保持空闲；它仍
+拒绝`--memory=all|memmy|memorycore`，避免环境变量或历史命令静默恢复Memory。显式Memory Workflow在未部署Provider时会在Provider边界失败关闭。
 
 `431xx`只属于production；分支worktree、VS Code F5和测试不得占用。CLI/VS Code debug固定
 使用`441xx`，Playwright真实浏览器门固定使用`451xx/452xx/453xx`。测试专属端口被占用时

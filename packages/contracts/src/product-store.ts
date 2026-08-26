@@ -34,6 +34,7 @@ import {
   runContextRequestSchema,
 } from "./context.js";
 import { memoryImportIntentSchema, memoryImportResultSchema } from "./memory-import.js";
+import { memorySessionImportSchema } from "./memory-session-import.js";
 import { directAgentCandidateSchema } from "./direct-agent.js";
 import { promptReviewDecisionSchema, promptReviewRequestSchema } from "./prompt-review.js";
 import { promptFragmentRevisionSchema, promptFragmentSchema } from "./prompt-fragment.js";
@@ -73,6 +74,11 @@ import {
   workflowMemoryQuerySchema,
   workflowMemorySnapshotSchema,
 } from "./workflow-memory.js";
+import {
+  memoryAgentOperationSchema,
+  memoryAgentWriteCandidateSchema,
+  memoryAgentWriteDecisionSchema,
+} from "./memory-agent.js";
 import {
   projectBootstrapCandidateSchema,
   projectBootstrapDecisionSchema,
@@ -132,7 +138,7 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v25";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v26";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -181,6 +187,7 @@ const productEntitiesSchema = z
     contextPackages: z.record(idKeySchema, contextPackageSchema),
     memoryImportIntents: z.record(idKeySchema, memoryImportIntentSchema),
     memoryImportResults: z.record(idKeySchema, memoryImportResultSchema),
+    memorySessionImports: z.record(idKeySchema, memorySessionImportSchema),
     projects: z.record(idKeySchema, projectSchema),
     projectMethodSnapshots: z.record(idKeySchema, projectMethodSnapshotSchema),
     projectStages: z.record(idKeySchema, projectStageSchema),
@@ -237,6 +244,9 @@ const productEntitiesSchema = z
     workflowMemoryContexts: z.record(idKeySchema, workflowMemoryContextSchema),
     memoryWriteIntents: z.record(idKeySchema, memoryWriteIntentSchema),
     memoryWriteResults: z.record(idKeySchema, memoryWriteResultSchema),
+    memoryAgentOperations: z.record(idKeySchema, memoryAgentOperationSchema),
+    memoryAgentWriteCandidates: z.record(idKeySchema, memoryAgentWriteCandidateSchema),
+    memoryAgentWriteDecisions: z.record(idKeySchema, memoryAgentWriteDecisionSchema),
   })
   .strict();
 
@@ -307,6 +317,7 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       contextPackages: {},
       memoryImportIntents: {},
       memoryImportResults: {},
+      memorySessionImports: {},
       projects: {},
       projectMethodSnapshots: {},
       projectStages: {},
@@ -363,6 +374,9 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       workflowMemoryContexts: {},
       memoryWriteIntents: {},
       memoryWriteResults: {},
+      memoryAgentOperations: {},
+      memoryAgentWriteCandidates: {},
+      memoryAgentWriteDecisions: {},
       projectBootstrapCandidates: {},
       projectBootstrapDecisions: {},
       projectBootstrapOperations: {},

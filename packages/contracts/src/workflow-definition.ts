@@ -54,6 +54,14 @@ export const workflowDefinitionNodeTypeV2Schema = z.enum([
   ...workflowDefinitionNodeTypeSchema.options.slice(9),
 ]);
 
+/** v3只增加Memory Agent节点；v1/v2枚举保持已发布字节不变。 */
+export const workflowDefinitionNodeTypeV3Schema = z.enum([
+  ...workflowDefinitionNodeTypeV2Schema.options.slice(0, 2),
+  "agent.memory_retrieve",
+  "agent.memory_write",
+  ...workflowDefinitionNodeTypeV2Schema.options.slice(2),
+]);
+
 export const workflowBlueprintKeySchema = z.enum(["planning", "note", "direct"]);
 export const workflowDefinitionStateSchema = z.enum(["active", "archived"]);
 export const workflowDefinitionRevisionStateSchema = z.enum(["draft", "published", "superseded"]);
@@ -80,6 +88,14 @@ export const workflowRunnerFamilySchema = z.enum([
   "direct-agent.v1",
 ]);
 
+export const workflowRunnerFamilyV2Schema = workflowRunnerFamilySchema;
+
+export const workflowRunnerFamilyV3Schema = z.enum([
+  ...workflowRunnerFamilySchema.options,
+  "memory-direct.v1",
+  "memory-agent-direct.v1",
+]);
+
 export const workflowRunnerEvidenceSchema = z
   .object({
     runnerFamily: workflowRunnerFamilySchema,
@@ -90,6 +106,10 @@ export const workflowRunnerEvidenceSchema = z
       .regex(/^[A-Za-z0-9._-]+$/),
   })
   .strict();
+
+export const workflowRunnerEvidenceV3Schema = workflowRunnerEvidenceSchema.extend({
+  runnerFamily: workflowRunnerFamilyV3Schema,
+});
 
 export const WORKFLOW_DEFINITION_CONTRACT_LIMITS = Object.freeze({
   request: { maxDefinitionBytes: 128 * 1024 },
@@ -213,6 +233,40 @@ export interface WorkflowDefinitionSequenceV2 {
   readonly elements: readonly WorkflowDefinitionElementV2[];
 }
 
+export type WorkflowDefinitionElementV3 =
+  | (Omit<z.infer<typeof taskSchema>, "nodeType"> & {
+      readonly nodeType: z.infer<typeof workflowDefinitionNodeTypeV3Schema>;
+    })
+  | (Omit<z.infer<typeof compositeSchema>, "nodeType"> & {
+      readonly nodeType: z.infer<typeof workflowDefinitionNodeTypeV3Schema>;
+    })
+  | {
+      readonly kind: "sequence";
+      readonly elements: readonly WorkflowDefinitionElementV3[];
+    }
+  | {
+      readonly kind: "choice";
+      readonly fromDefinitionNodeId: string;
+      readonly branches: readonly {
+        readonly outcome: string;
+        readonly body: WorkflowDefinitionSequenceV3;
+      }[];
+    }
+  | {
+      readonly kind: "bounded_loop";
+      readonly body: WorkflowDefinitionSequenceV3;
+      readonly outcomeFromDefinitionNodeId: string;
+      readonly continueOutcomes: readonly string[];
+      readonly exitOutcomes: readonly string[];
+      readonly maxIterations: number;
+      readonly exceededPolicy: "fail" | "request_human";
+    };
+
+export interface WorkflowDefinitionSequenceV3 {
+  readonly kind: "sequence";
+  readonly elements: readonly WorkflowDefinitionElementV3[];
+}
+
 const workflowElementBoundarySchema: z.ZodType<WorkflowDefinitionElement> = z.lazy(() =>
   z.union([
     workflowSequenceBoundarySchema,
@@ -294,6 +348,36 @@ const choiceV2Schema = choiceSchema.extend({
 });
 const boundedLoopV2Schema = boundedLoopSchema.extend({ body: workflowSequenceBoundaryV2Schema });
 
+const taskV3Schema = taskSchema.extend({ nodeType: workflowDefinitionNodeTypeV3Schema });
+const compositeV3Schema = compositeSchema.extend({ nodeType: workflowDefinitionNodeTypeV3Schema });
+const workflowElementBoundaryV3Schema: z.ZodType<WorkflowDefinitionElementV3> = z.lazy(() =>
+  z.union([
+    workflowSequenceBoundaryV3Schema,
+    taskV3Schema,
+    choiceV3Schema,
+    boundedLoopV3Schema,
+    compositeV3Schema,
+  ]),
+);
+export const workflowSequenceBoundaryV3Schema: z.ZodType<WorkflowDefinitionSequenceV3> = z.lazy(
+  () =>
+    z
+      .object({
+        kind: z.literal("sequence"),
+        elements: z
+          .array(workflowElementBoundaryV3Schema)
+          .max(WORKFLOW_DEFINITION_CONTRACT_LIMITS.structure.maxNodes * 2),
+      })
+      .strict(),
+);
+const choiceV3Schema = choiceSchema.extend({
+  branches: z
+    .array(z.object({ outcome: outcomeSchema, body: workflowSequenceBoundaryV3Schema }).strict())
+    .min(1)
+    .max(WORKFLOW_DEFINITION_CONTRACT_LIMITS.structure.maxBranches),
+});
+const boundedLoopV3Schema = boundedLoopSchema.extend({ body: workflowSequenceBoundaryV3Schema });
+
 function containsGovernanceNode(sequence: WorkflowDefinitionSequenceV2): boolean {
   return sequence.elements.some((element) => {
     if (element.kind === "task" || element.kind === "composite") {
@@ -319,6 +403,18 @@ export const workflowDefinitionRevisionInputV2Schema = z
   })
   .strict();
 
+export const workflowDefinitionRevisionInputV3Schema = z
+  .object({
+    schemaVersion: z.literal("workflow-definition-revision-input.v3"),
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    definitionRevision: z.number().int().min(1),
+    blueprintKey: workflowBlueprintKeySchema,
+    blueprintVersion: z.number().int().min(1).max(32),
+    semanticRoot: workflowSequenceBoundaryV3Schema,
+    expectedSha256: sha256Schema.optional(),
+  })
+  .strict();
+
 export const workflowDefinitionRevisionInputV1Schema = workflowDefinitionRevisionInputV2Schema
   .extend({ schemaVersion: z.literal("workflow-definition-revision-input.v1") })
   .superRefine((value, ctx) => {
@@ -334,6 +430,7 @@ export const workflowDefinitionRevisionInputV1Schema = workflowDefinitionRevisio
 export const workflowDefinitionRevisionInputSchema = z.union([
   workflowDefinitionRevisionInputV1Schema,
   workflowDefinitionRevisionInputV2Schema,
+  workflowDefinitionRevisionInputV3Schema,
 ]);
 
 const workflowDefinitionFields = {
@@ -400,9 +497,15 @@ export const workflowDefinitionV2Schema = z
   .strict()
   .check(definitionOwnershipIssues);
 
+export const workflowDefinitionV3Schema = z
+  .object({ schemaVersion: z.literal("workflow-definition.v3"), ...workflowDefinitionFields })
+  .strict()
+  .check(definitionOwnershipIssues);
+
 export const workflowDefinitionSchema = z.union([
   workflowDefinitionV1Schema,
   workflowDefinitionV2Schema,
+  workflowDefinitionV3Schema,
 ]);
 
 export const workflowDefinitionRevisionV2Schema = z
@@ -416,6 +519,27 @@ export const workflowDefinitionRevisionV2Schema = z
     blueprintVersion: z.number().int().min(1).max(32),
     title: z.string().min(1).max(160),
     semanticRoot: workflowSequenceBoundaryV2Schema,
+    definitionSha256: sha256Schema,
+    basedOnRevisionId: workflowDefinitionRevisionIdSchema.optional(),
+    revision: z.literal(1),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+    publishedAt: z.iso.datetime().optional(),
+    supersededAt: z.iso.datetime().optional(),
+  })
+  .strict();
+
+export const workflowDefinitionRevisionV3Schema = z
+  .object({
+    schemaVersion: z.literal("workflow-definition-revision.v3"),
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    workflowDefinitionId: workflowDefinitionIdSchema,
+    definitionRevision: z.number().int().positive(),
+    state: workflowDefinitionRevisionStateSchema,
+    blueprintKey: workflowBlueprintKeySchema,
+    blueprintVersion: z.number().int().min(1).max(32),
+    title: z.string().min(1).max(160),
+    semanticRoot: workflowSequenceBoundaryV3Schema,
     definitionSha256: sha256Schema,
     basedOnRevisionId: workflowDefinitionRevisionIdSchema.optional(),
     revision: z.literal(1),
@@ -441,6 +565,7 @@ export const workflowDefinitionRevisionV1Schema = workflowDefinitionRevisionV2Sc
 export const workflowDefinitionRevisionSchema = z.union([
   workflowDefinitionRevisionV1Schema,
   workflowDefinitionRevisionV2Schema,
+  workflowDefinitionRevisionV3Schema,
 ]);
 
 export type WorkflowResourceKind = "memory" | "project" | "rule" | "skill";
@@ -615,6 +740,10 @@ export const workflowExecutorManifestEntrySchema = z
   })
   .strict();
 
+export const workflowExecutorManifestEntryV3Schema = workflowExecutorManifestEntrySchema.extend({
+  nodeType: workflowDefinitionNodeTypeV3Schema,
+});
+
 const resolvedResourceBase = {
   definitionNodeId: z.string(),
   resourceKind: z.enum(["memory", "project", "rule", "skill"]),
@@ -667,6 +796,10 @@ export const workflowNodeResolutionSchema = z
     skipOutcome: z.string().optional(),
   })
   .strict();
+
+export const workflowNodeResolutionV3Schema = workflowNodeResolutionSchema.extend({
+  nodeType: workflowDefinitionNodeTypeV3Schema,
+});
 
 export const workflowReviewResolutionSchema = z
   .object({
@@ -761,6 +894,33 @@ export const workflowRunSpecV2Schema = z
   })
   .strict();
 
+export const workflowRunSpecV3Schema = z
+  .object({
+    schemaVersion: z.literal("workflow-run-spec.v3"),
+    workflowRunSpecId: workflowRunSpecIdSchema,
+    productRunId: productRunIdSchema,
+    definitionRef: z
+      .object({
+        workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+        definitionRevision: z.number().int().min(1),
+        definitionSha256: sha256Schema,
+        blueprintKey: workflowBlueprintKeySchema,
+        blueprintVersion: z.number().int().min(1),
+      })
+      .strict(),
+    runner: workflowRunnerEvidenceV3Schema,
+    semanticRoot: workflowSequenceBoundaryV3Schema,
+    nodeResolutions: z.array(workflowNodeResolutionV3Schema).max(64),
+    resourceResolutions: z.array(workflowResolvedResourceSchema).max(128),
+    reviewResolutions: z.array(workflowReviewResolutionSchema).max(16),
+    businessInput: workflowRunBusinessInputSchema.optional(),
+    limits: workflowKernelLimitsSchema,
+    executorManifest: z.array(workflowExecutorManifestEntryV3Schema).max(64),
+    sha256: sha256Schema,
+    createdAt: z.iso.datetime(),
+  })
+  .strict();
+
 export const workflowRunSpecV1Schema = workflowRunSpecV2Schema
   .extend({ schemaVersion: z.literal("workflow-run-spec.v1") })
   .superRefine((value, ctx) => {
@@ -778,12 +938,13 @@ export const workflowRunSpecV1Schema = workflowRunSpecV2Schema
   });
 
 export const workflowRunSpecSchema = z
-  .union([workflowRunSpecV1Schema, workflowRunSpecV2Schema])
+  .union([workflowRunSpecV1Schema, workflowRunSpecV2Schema, workflowRunSpecV3Schema])
   .and(
     z.object({
       schemaVersion: z.union([
         z.literal("workflow-run-spec.v1"),
         z.literal("workflow-run-spec.v2"),
+        z.literal("workflow-run-spec.v3"),
       ]),
     }),
   );
@@ -795,10 +956,10 @@ export type WorkflowFrozenResource = z.infer<typeof workflowFrozenResourceSchema
 export type WorkflowPrincipalSnapshot = z.infer<typeof workflowPrincipalSnapshotSchema>;
 export type WorkflowRunOverride = z.infer<typeof workflowRunOverrideSchema>;
 export type WorkflowRunConfiguration = z.infer<typeof workflowRunConfigurationSchema>;
-export type WorkflowExecutorManifestEntry = z.infer<typeof workflowExecutorManifestEntrySchema>;
-export type WorkflowRunnerEvidence = z.infer<typeof workflowRunnerEvidenceSchema>;
+export type WorkflowExecutorManifestEntry = z.infer<typeof workflowExecutorManifestEntryV3Schema>;
+export type WorkflowRunnerEvidence = z.infer<typeof workflowRunnerEvidenceV3Schema>;
 export type WorkflowResolvedResource = z.infer<typeof workflowResolvedResourceSchema>;
-export type WorkflowNodeResolution = z.infer<typeof workflowNodeResolutionSchema>;
+export type WorkflowNodeResolution = z.infer<typeof workflowNodeResolutionV3Schema>;
 export type WorkflowReviewResolution = z.infer<typeof workflowReviewResolutionSchema>;
 export type WorkflowRunBusinessInput = z.infer<typeof workflowRunBusinessInputSchema>;
 export type WorkflowRunSpec = z.infer<typeof workflowRunSpecSchema>;

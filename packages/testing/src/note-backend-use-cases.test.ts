@@ -336,6 +336,9 @@ describe("Note后端用例与持久完整性", () => {
         const current = draft.entities.workflowRunSpecs[workflowRunSpecId];
         const currentRun = draft.entities.runs[productRunId];
         if (current === undefined || currentRun === undefined) throw new Error("fixture损坏");
+        if (current.schemaVersion !== "workflow-run-spec.v3") {
+          throw new Error("当前Note fixture必须使用Workflow RunSpec v3");
+        }
         draft.entities.workflowRunSpecs[workflowRunSpecId] = recomputeRunSpecSha256({
           ...current,
           nodeResolutions: current.nodeResolutions.map((resolution) =>

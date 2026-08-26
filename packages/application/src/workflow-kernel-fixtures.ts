@@ -115,7 +115,7 @@ export function kernelDefinitionFixture(
     mixed: PLANNING_MIXED_ROOT,
   };
   return {
-    schemaVersion: "workflow-definition-revision-input.v1",
+    schemaVersion: "workflow-definition-revision-input.v3",
     workflowDefinitionRevisionId: `wfr_fixture${key.replace("_", "")}` as never,
     definitionRevision: 1,
     blueprintKey: note ? "note" : "planning",

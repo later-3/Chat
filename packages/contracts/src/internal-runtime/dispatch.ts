@@ -15,7 +15,7 @@ import {
   promptReviewRequestIdSchema,
 } from "../ids.js";
 import { sha256Schema } from "../hash.js";
-import { workflowRunnerFamilySchema } from "../workflow-definition.js";
+import { workflowRunnerFamilyV3Schema } from "../workflow-definition.js";
 
 export const WORKFLOW_DISPATCH_SCHEMA_VERSION = "chat-workflow-dispatch.v1";
 
@@ -24,7 +24,7 @@ export const workflowStartRequestSchema = z
     schemaVersion: z.literal(WORKFLOW_DISPATCH_SCHEMA_VERSION),
     productRunId: productRunIdSchema,
     workflowRunSpecId: workflowRunSpecIdSchema.optional(),
-    runnerFamily: workflowRunnerFamilySchema.optional(),
+    runnerFamily: workflowRunnerFamilyV3Schema.optional(),
     runnerBundleVersion: z
       .string()
       .min(1)
@@ -51,7 +51,9 @@ export const workflowStartRequestSchema = z
     if (
       (value.runnerFamily === "configurable-planning.v1" ||
         value.runnerFamily === "note-capture.v1" ||
-        value.runnerFamily === "direct-agent.v1") &&
+        value.runnerFamily === "direct-agent.v1" ||
+        value.runnerFamily === "memory-direct.v1" ||
+        value.runnerFamily === "memory-agent-direct.v1") &&
       value.workflowRunSpecId === undefined
     ) {
       ctx.issues.push({

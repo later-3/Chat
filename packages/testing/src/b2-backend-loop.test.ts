@@ -899,11 +899,11 @@ describe("M2后端闭环（真实Workflow运行时 + Hook + 确定性pi）", () 
     const promptAssembly = Object.values(current.snapshot.entities.promptAssemblies).find(
       (candidate) =>
         candidate.productRunId === run.productRunId &&
-        candidate.schemaVersion === "prompt-assembly.v3",
+        candidate.schemaVersion === "prompt-assembly.v6",
     );
-    expect(promptAssembly?.schemaVersion).toBe("prompt-assembly.v3");
-    if (promptAssembly?.schemaVersion !== "prompt-assembly.v3") {
-      throw new Error("治理Prompt没有形成Workflow Assembly v3");
+    expect(promptAssembly?.schemaVersion).toBe("prompt-assembly.v6");
+    if (promptAssembly?.schemaVersion !== "prompt-assembly.v6") {
+      throw new Error("治理Prompt没有形成Workflow Assembly v6");
     }
     expect(
       promptAssembly.sharedRegions

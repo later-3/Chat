@@ -40,7 +40,7 @@ import {
 import { sha256Schema } from "./hash.js";
 import { governanceReviewRecordSchema } from "./governance-review.js";
 import { B2_MAX_PLAN_STEPS } from "./versions.js";
-import { workflowRunnerFamilySchema } from "./workflow-definition.js";
+import { workflowRunnerFamilyV3Schema } from "./workflow-definition.js";
 
 /**
  * B2产品持久化实体合同（任务书§8.3、§9）。
@@ -213,7 +213,7 @@ export const planningProductRunSchema = z
     sourceMessageId: messageIdSchema,
     workflowViewDefinitionId: workflowViewDefinitionIdSchema,
     workflowRunSpecId: workflowRunSpecIdSchema.optional(),
-    runnerFamily: workflowRunnerFamilySchema,
+    runnerFamily: workflowRunnerFamilyV3Schema,
     runnerBundleVersion: z
       .string()
       .min(1)
@@ -244,7 +244,7 @@ export const noteCaptureProductRunSchema = z
     sourceMessageId: messageIdSchema,
     workflowViewDefinitionId: workflowViewDefinitionIdSchema,
     workflowRunSpecId: workflowRunSpecIdSchema.optional(),
-    runnerFamily: workflowRunnerFamilySchema,
+    runnerFamily: workflowRunnerFamilyV3Schema,
     runnerBundleVersion: z
       .string()
       .min(1)
@@ -271,7 +271,7 @@ export const directAgentProductRunSchema = z
     sourceMessageId: messageIdSchema,
     workflowViewDefinitionId: workflowViewDefinitionIdSchema,
     workflowRunSpecId: workflowRunSpecIdSchema,
-    runnerFamily: z.literal("direct-agent.v1"),
+    runnerFamily: z.enum(["direct-agent.v1", "memory-direct.v1", "memory-agent-direct.v1"]),
     runnerBundleVersion: z
       .string()
       .min(1)
@@ -766,7 +766,7 @@ export const outboxEntrySchema = z.discriminatedUnion("kind", [
       kind: z.literal("workflow_start"),
       productRunId: productRunIdSchema,
       workflowRunSpecId: workflowRunSpecIdSchema.optional(),
-      runnerFamily: workflowRunnerFamilySchema.optional(),
+      runnerFamily: workflowRunnerFamilyV3Schema.optional(),
       runnerBundleVersion: z
         .string()
         .min(1)
@@ -788,7 +788,7 @@ export const outboxEntrySchema = z.discriminatedUnion("kind", [
       promptReviewRequestId: promptReviewRequestIdSchema.optional(),
       promptReviewDecisionId: promptReviewDecisionIdSchema.optional(),
       workflowRunSpecId: workflowRunSpecIdSchema.optional(),
-      runnerFamily: workflowRunnerFamilySchema.optional(),
+      runnerFamily: workflowRunnerFamilyV3Schema.optional(),
       runnerBundleVersion: z
         .string()
         .min(1)

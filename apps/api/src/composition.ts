@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import {
   approvalRequestIdSchema,
   artifactIdSchema,
@@ -84,7 +85,11 @@ import {
   createProjectResourceRegistry,
   createProjectWorkspaceProvisioner,
 } from "@chat/project-runtime";
-import { createWorkflowMemoryProviderRegistry } from "@chat/memory-runtime";
+import {
+  createCodexSessionSourceRegistry,
+  createMemoryRegistrySet,
+  parseMemoryMode,
+} from "@chat/memory-runtime";
 import {
   loadProjectModelProfile,
   PiProjectAdvancementUnderstandingAdapter,
@@ -225,10 +230,32 @@ export async function openProductStore(
   });
 }
 
+/**
+ * API与Workflow Runtime必须从同一个显式开关冻结同一组Provider描述。
+ *
+ * 这里先严格解析mode，再把解析后的值交给Registry；因此遗留Provider凭据不能在
+ * `off`时自行激活Adapter，空值或未知值也会在组合根启动阶段失败关闭。
+ */
+export function composeApiMemoryRegistries(env: NodeJS.ProcessEnv) {
+  const mode = parseMemoryMode(env);
+  const { memoryBackends, workflowMemoryProviders } = createMemoryRegistrySet(env, { mode });
+  return { memoryBackends, workflowMemoryProviders } as const;
+}
+
+/** @deprecated 新组合根应一次取得完整Registry set，避免重复实例化Adapter。 */
+export function composeApiWorkflowMemoryProviders(env: NodeJS.ProcessEnv) {
+  return composeApiMemoryRegistries(env).workflowMemoryProviders;
+}
+
 export async function createApplicationDeps(
   filePath?: string,
   trace?: ApplicationDeps["trace"],
 ): Promise<ApplicationDeps> {
+  // 配置错误必须在打开Product Store或装配其他外部边界前失败关闭。
+  const { memoryBackends, workflowMemoryProviders } = composeApiMemoryRegistries(process.env);
+  const memorySessionSources = createCodexSessionSourceRegistry(
+    process.env.CODEX_HOME ?? join(homedir(), ".codex"),
+  );
   const store = await openProductStore(filePath, trace);
   const projectRoots = await createProjectResourceRegistry(process.env);
   const planeEnabled = process.env.CHAT_PLANE_ENABLED === "1";
@@ -254,7 +281,6 @@ export async function createApplicationDeps(
   const advancementUnderstanding = new PiProjectAdvancementUnderstandingAdapter(
     projectModelProfile,
   );
-  const workflowMemoryProviders = createWorkflowMemoryProviderRegistry(process.env);
   const promptCatalog = await createFilePromptCatalog();
   const promptFiles = await createPromptFileLibrary({
     repoRoot: process.env.CHAT_REPO_ROOT ?? resolve(process.cwd(), "../.."),
@@ -264,7 +290,9 @@ export async function createApplicationDeps(
     store,
     now: () => new Date().toISOString(),
     ids: createIdFactory(),
+    memoryBackends,
     workflowMemoryProviders,
+    memorySessionSources,
     projectRoots,
     projectIntakeUnderstanding: projectUnderstanding,
     projectAdvancementUnderstanding: advancementUnderstanding,

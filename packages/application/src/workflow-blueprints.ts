@@ -39,7 +39,12 @@ export interface WorkflowRunOverrideRule {
 export interface WorkflowBlueprint {
   readonly blueprintKey: WorkflowBlueprintKey;
   readonly blueprintVersion: number;
-  readonly runnerFamily: "configurable-planning.v1" | "note-capture.v1" | "direct-agent.v1";
+  readonly runnerFamily:
+    | "configurable-planning.v1"
+    | "note-capture.v1"
+    | "direct-agent.v1"
+    | "memory-direct.v1"
+    | "memory-agent-direct.v1";
   readonly allowedNodeTypes: readonly WorkflowNodeTypeKey[];
   readonly optionalNodeTypes: readonly WorkflowNodeTypeKey[];
   readonly repeatableNodeTypes: readonly {
@@ -109,6 +114,16 @@ const NOTE_NODE_TYPES: readonly WorkflowNodeTypeKey[] = [
 ];
 
 const DIRECT_NODE_TYPES: readonly WorkflowNodeTypeKey[] = ["agent.direct"];
+const MEMORY_DIRECT_NODE_TYPES: readonly WorkflowNodeTypeKey[] = [
+  "memory.query",
+  "agent.direct",
+  "memory.write",
+];
+const MEMORY_AGENT_DIRECT_NODE_TYPES: readonly WorkflowNodeTypeKey[] = [
+  "agent.memory_retrieve",
+  "agent.direct",
+  "agent.memory_write",
+];
 
 export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
   {
@@ -228,6 +243,145 @@ export const WORKFLOW_BLUEPRINTS: readonly WorkflowBlueprint[] = [
     // Direct流程没有独立product.commit图节点；Agent完成候选后仍由Application提交正式Message。
     // 结构终点就是唯一的agent.direct；审核等待与恢复均投影为该NodeRun的内部状态。
     terminalNodeType: "agent.direct",
+  },
+  {
+    blueprintKey: "direct",
+    blueprintVersion: 2,
+    runnerFamily: "memory-direct.v1",
+    allowedNodeTypes: MEMORY_DIRECT_NODE_TYPES,
+    optionalNodeTypes: [],
+    repeatableNodeTypes: [],
+    requiredRoles: [
+      { role: "memory_retriever", nodeType: "memory.query", exactlyOnce: true },
+      { role: "direct_agent", nodeType: "agent.direct", exactlyOnce: true },
+      { role: "memory_writer", nodeType: "memory.write", exactlyOnce: true },
+    ],
+    loopRules: [],
+    perRunOverrides: [
+      {
+        nodeType: "memory.query",
+        fields: [],
+        configFields: ["providerId", "required", "maxResults", "maxContextCharacters"],
+      },
+      {
+        nodeType: "agent.direct",
+        fields: [],
+        configFields: ["agentKey", "agentPromptOverride", "capabilityMode", "promptReviewMode"],
+      },
+      {
+        nodeType: "memory.write",
+        fields: [],
+        configFields: ["providerId", "required"],
+      },
+    ],
+    immutableMinimumRisk: {
+      "memory.query": "read_context",
+      "agent.direct": "generate_candidate",
+      "memory.write": "external_effect",
+    },
+    mandatoryManualReviewTypes: [],
+    // Product Message仍由Direct候选提交；结构终点是随后执行的Memory写回。
+    terminalNodeType: "memory.write",
+  },
+  {
+    blueprintKey: "direct",
+    blueprintVersion: 3,
+    runnerFamily: "memory-agent-direct.v1",
+    allowedNodeTypes: MEMORY_AGENT_DIRECT_NODE_TYPES,
+    optionalNodeTypes: [],
+    repeatableNodeTypes: [],
+    requiredRoles: [
+      { role: "memory_retrieval_agent", nodeType: "agent.memory_retrieve", exactlyOnce: true },
+      { role: "direct_agent", nodeType: "agent.direct", exactlyOnce: true },
+      { role: "memory_write_agent", nodeType: "agent.memory_write", exactlyOnce: true },
+    ],
+    loopRules: [],
+    perRunOverrides: [
+      {
+        nodeType: "agent.memory_retrieve",
+        fields: [],
+        configFields: ["providerId", "required", "maxResults", "maxContextCharacters"],
+      },
+      {
+        nodeType: "agent.direct",
+        fields: [],
+        configFields: ["agentKey", "agentPromptOverride", "capabilityMode", "promptReviewMode"],
+      },
+      {
+        nodeType: "agent.memory_write",
+        fields: [],
+        configFields: ["providerId", "required", "maxSourceMessages", "maxItems", "reviewMode"],
+      },
+    ],
+    immutableMinimumRisk: {
+      "agent.memory_retrieve": "generate_candidate",
+      "agent.direct": "generate_candidate",
+      "agent.memory_write": "generate_candidate",
+    },
+    mandatoryManualReviewTypes: ["agent.memory_write"],
+    terminalNodeType: "agent.memory_write",
+  },
+  {
+    blueprintKey: "direct",
+    blueprintVersion: 4,
+    runnerFamily: "memory-agent-direct.v1",
+    allowedNodeTypes: MEMORY_AGENT_DIRECT_NODE_TYPES,
+    optionalNodeTypes: [],
+    repeatableNodeTypes: [],
+    requiredRoles: [
+      { role: "memory_retrieval_agent", nodeType: "agent.memory_retrieve", exactlyOnce: true },
+      { role: "direct_agent", nodeType: "agent.direct", exactlyOnce: true },
+    ],
+    loopRules: [],
+    perRunOverrides: [
+      {
+        nodeType: "agent.memory_retrieve",
+        fields: [],
+        configFields: ["providerId", "required", "maxResults", "maxContextCharacters"],
+      },
+      {
+        nodeType: "agent.direct",
+        fields: [],
+        configFields: ["agentKey", "agentPromptOverride", "capabilityMode", "promptReviewMode"],
+      },
+    ],
+    immutableMinimumRisk: {
+      "agent.memory_retrieve": "generate_candidate",
+      "agent.direct": "generate_candidate",
+    },
+    mandatoryManualReviewTypes: [],
+    terminalNodeType: "agent.direct",
+  },
+  {
+    blueprintKey: "direct",
+    blueprintVersion: 5,
+    runnerFamily: "memory-agent-direct.v1",
+    allowedNodeTypes: MEMORY_AGENT_DIRECT_NODE_TYPES,
+    optionalNodeTypes: [],
+    repeatableNodeTypes: [],
+    requiredRoles: [
+      { role: "direct_agent", nodeType: "agent.direct", exactlyOnce: true },
+      { role: "memory_write_agent", nodeType: "agent.memory_write", exactlyOnce: true },
+    ],
+    loopRules: [],
+    perRunOverrides: [
+      {
+        nodeType: "agent.direct",
+        fields: [],
+        configFields: ["agentKey", "agentPromptOverride", "capabilityMode", "promptReviewMode"],
+      },
+      {
+        nodeType: "agent.memory_write",
+        fields: [],
+        configFields: ["providerId", "required", "maxSourceMessages", "maxItems", "reviewMode"],
+      },
+    ],
+    immutableMinimumRisk: {
+      "agent.direct": "generate_candidate",
+      "agent.memory_write": "generate_candidate",
+    },
+    mandatoryManualReviewTypes: ["agent.memory_write"],
+    terminalNodeType: "agent.memory_write",
   },
 ] satisfies readonly WorkflowBlueprint[];
 
@@ -405,25 +559,31 @@ function assertBlueprintConformance(blueprint: WorkflowBlueprint, catalog: NodeC
     throw new Error(`workflow.blueprint.terminal_not_allowed:${blueprint.blueprintKey}`);
   }
   for (const [nodeType, minimum] of Object.entries(blueprint.immutableMinimumRisk)) {
-    const descriptor = catalog.get(nodeType as WorkflowNodeTypeKey, 1);
-    if (descriptor === undefined || !workflowRiskAtLeast(descriptor.riskPolicy, minimum)) {
+    const descriptors = catalogSupport(blueprint, nodeType as WorkflowNodeTypeKey, catalog);
+    if (
+      descriptors.length === 0 ||
+      descriptors.some((descriptor) => !workflowRiskAtLeast(descriptor.riskPolicy, minimum))
+    ) {
       throw new Error(`workflow.blueprint.risk_lowered:${blueprint.blueprintKey}:${nodeType}`);
     }
   }
   for (const rule of blueprint.perRunOverrides) {
-    const descriptor = catalog.get(rule.nodeType, 1);
-    if (descriptor === undefined)
+    const descriptors = catalogSupport(blueprint, rule.nodeType, catalog);
+    if (descriptors.length === 0)
       throw new Error(`workflow.blueprint.override_unknown_type:${rule.nodeType}`);
-    const publicNames = new Set(descriptor.publicConfigFields.map((field) => field.name));
+    const isPublicInEverySupportedVersion = (fieldName: string): boolean =>
+      descriptors.every((descriptor) =>
+        descriptor.publicConfigFields.some((field) => field.name === fieldName),
+      );
     for (const field of rule.fields) {
       const projectedName =
         field === "enabled" ? undefined : field === "selection" ? "selection" : "reviewMode";
-      if (projectedName !== undefined && !publicNames.has(projectedName)) {
+      if (projectedName !== undefined && !isPublicInEverySupportedVersion(projectedName)) {
         throw new Error(`workflow.blueprint.override_not_public:${rule.nodeType}:${field}`);
       }
     }
     for (const field of rule.configFields ?? []) {
-      if (!publicNames.has(field)) {
+      if (!isPublicInEverySupportedVersion(field)) {
         throw new Error(`workflow.blueprint.override_not_public:${rule.nodeType}:${field}`);
       }
     }
@@ -437,15 +597,27 @@ function assertCatalogSupport(
   blueprint: WorkflowBlueprint,
   nodeType: WorkflowNodeTypeKey,
   catalog: NodeCatalog,
-): NodeCatalogDescriptor {
-  const descriptor = catalog.get(nodeType, 1);
-  if (
-    descriptor === undefined ||
-    !descriptor.supportedBlueprints.includes(blueprint.blueprintKey)
-  ) {
+): readonly NodeCatalogDescriptor[] {
+  const descriptors = catalogSupport(blueprint, nodeType, catalog);
+  if (descriptors.length === 0) {
     throw new Error(`workflow.blueprint.catalog_mismatch:${blueprint.blueprintKey}:${nodeType}`);
   }
-  return descriptor;
+  return descriptors;
+}
+
+/** Blueprint允许的是业务节点类型；实际Definition再用schemaVersion选择精确合同。 */
+function catalogSupport(
+  blueprint: WorkflowBlueprint,
+  nodeType: WorkflowNodeTypeKey,
+  catalog: NodeCatalog,
+): readonly NodeCatalogDescriptor[] {
+  return catalog
+    .list()
+    .filter(
+      (descriptor) =>
+        descriptor.nodeType === nodeType &&
+        descriptor.supportedBlueprints.includes(blueprint.blueprintKey),
+    );
 }
 
 function sameSet(left: readonly string[], right: readonly string[]): boolean {

@@ -15,6 +15,10 @@
     "./runtime-credential": {
       "types": "./src/runtime-credential.ts",
       "import": "./src/runtime-credential.ts"
+    },
+    "./memory-agent": {
+      "types": "./src/memory-agent.ts",
+      "import": "./src/memory-agent.ts"
     }
   },
   "chatApiSurface": {

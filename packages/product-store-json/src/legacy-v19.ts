@@ -172,6 +172,10 @@ const productSnapshotV19EntitiesSchema = productSnapshotSchema.shape.entities
     supervisedStepHumanDecisions: true,
     supervisedAgentOutcomeObservations: true,
     supervisedExecutionResults: true,
+    memorySessionImports: true,
+    memoryAgentOperations: true,
+    memoryAgentWriteCandidates: true,
+    memoryAgentWriteDecisions: true,
   })
   .extend({
     /** v19只能按当时已发布代际解释，不能借当前union反向改写历史语义。 */

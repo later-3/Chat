@@ -2,23 +2,24 @@
 
 > 文档类型：当前实现（as-built）
 >
-> 当前公开系统Definition只有“规划执行工作流”和“Memory 增强规划与执行”。旧“默认规划工作流”和“默认笔记工作流”不再进入产品选择器；对应Runner与稳定证据为历史恢复及兼容调用保留。其他内部耐久流程包括`memory-write-workflow.v1`、历史兼容`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`。
+> 当前公开系统Definition包括“规划执行工作流”、原“Memory 增强规划与执行”、普通Direct，以及四个显式Memory Direct变体：“Memory 增强执行 Agent”“Memory Agent 增强执行”“只查询 Memory 后回答”“只整理为 Memory 候选”。旧“默认规划工作流”和“默认笔记工作流”不再进入产品选择器；对应Runner与稳定证据为历史恢复及兼容调用保留。其他内部耐久流程包括`memory-write-workflow.v1`、历史兼容`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`。
 >
 > 产品事实源：Product Store；Workflow返回值和Runtime状态不是产品终态。
 >
-> 当前默认产品Profile选择独立的“规划执行工作流”，其Definition只含“规划—审核—执行—验证—提交”，不包含Memory节点。Memory已暂停：增强Definition、历史完整上下文Planning、Adapter和Workflow代码只为旧事实读取、迁移、兼容测试与后续明确授权的重新接入保留；当前组合根不装配可用Memory Provider，统一启动也不准备或启动第三方服务。
+> 当前默认产品Profile仍选择独立的“规划执行工作流”，其Definition只含“规划—审核—执行—验证—提交”，不包含Memory节点。Memory能力由显式Workflow选择和部署配置共同开启：缺省`CHAT_MEMORY_MODE=off`时组合根不装配Provider，统一启动也不准备或启动第三方服务。检索/整理模型输出不是产品事实；写入候选只有经Application复核和人工Decision后才形成外部写Intent。
 
 ## 1. 为什么有多套Workflow
 
-当前有多个独立用户结果和3种Planning配置，因此分别冻结耐久生命周期与Definition：
+当前有多个独立用户结果和多种显式Planning/Direct配置，因此分别冻结耐久生命周期与Definition：
 
 1. 默认“规划执行工作流”：一条消息的规划、人工修订/批准、执行、独立工程治理检查和正式提交；冻结Definition不含Memory。
 2. “Memory 增强规划与执行”：用户显式选择后，在同一个父Workflow中执行`memory.query → memory.write →`完整Planning链。
-3. 历史完整上下文Planning：已从公开目录移除；底层仅保留兼容和既有冻结RunSpec恢复能力。
-4. `MemoryWriteWorkflow`：直接Memory Write Command产生的一次外部写入或一次只读对账；Memory Planning节点只复用其Application状态机，不启动第二个Workflow。
-5. 历史`MemoryImportWorkflow`：只保留旧事实兼容。
-6. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
-7. `ProjectAdvancementWorkflow`：现有Project的一次Stage/Milestone/负责人Update理解、候选修订和确认。
+3. 普通Direct与四个Memory Direct变体：分别冻结“查询后回答”“检索Agent后回答”“回答后整理候选”及完整组合。检索Agent只选择允许的Memory结果；写入Agent只生成证据绑定候选，均不拥有Product Commit或外部写权限。
+4. 历史完整上下文Planning：已从公开目录移除；底层仅保留兼容和既有冻结RunSpec恢复能力。
+5. `MemoryWriteWorkflow`：直接Memory Write Command产生的一次外部写入或一次只读对账；Memory Planning节点只复用其Application状态机，不启动第二个Workflow。
+6. 历史`MemoryImportWorkflow`：只保留旧事实兼容。
+7. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
+8. `ProjectAdvancementWorkflow`：现有Project的一次Stage/Milestone/负责人Update理解、候选修订和确认。
 
 旧`NoteCaptureWorkflow`不再由产品选择器提供；实现与绑定解析暂留，避免已有等待审核、兼容调用或恢复中的Run失去证据链。
 

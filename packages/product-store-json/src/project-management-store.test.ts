@@ -152,6 +152,10 @@ describe("Product Store v23全项目生命周期事实", () => {
       "supervisedStepHumanDecisions",
       "supervisedAgentOutcomeObservations",
       "supervisedExecutionResults",
+      "memorySessionImports",
+      "memoryAgentOperations",
+      "memoryAgentWriteCandidates",
+      "memoryAgentWriteDecisions",
     ]) {
       delete entities[key];
     }

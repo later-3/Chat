@@ -1,15 +1,15 @@
 import {
   PRODUCT_API_SCHEMA_VERSION,
-  WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
-  workflowBlueprintsDtoSchema,
-  workflowCatalogDtoSchema,
-  workflowDefinitionsDtoSchema,
+  WORKFLOW_PRODUCT_API_V3_SCHEMA_VERSION,
+  workflowBlueprintsV3DtoSchema,
+  workflowCatalogV3DtoSchema,
+  workflowDefinitionsV3DtoSchema,
   workflowResourcesDtoSchema,
-  workflowRunConfigSummaryDtoSchema,
+  workflowRunConfigSummaryV3DtoSchema,
   type PrincipalId,
   type ProductRunId,
   type ProductSnapshot,
-  type WorkflowDefinitionPublishedDto,
+  type WorkflowDefinitionPublishedV3Dto,
 } from "@chat/contracts";
 import type { WorkflowElement, WorkflowSequence } from "@chat/domain";
 import type { ApplicationDeps } from "./deps.js";
@@ -31,8 +31,8 @@ import {
 
 export async function getWorkflowCatalog(_deps: ApplicationDeps) {
   return {
-    catalog: workflowCatalogDtoSchema.parse({
-      schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
+    catalog: workflowCatalogV3DtoSchema.parse({
+      schemaVersion: WORKFLOW_PRODUCT_API_V3_SCHEMA_VERSION,
       nodes: DEFAULT_NODE_CATALOG.list().map((descriptor) => ({
         nodeType: descriptor.nodeType,
         schemaVersion: descriptor.schemaVersion,
@@ -52,14 +52,15 @@ export async function getWorkflowCatalog(_deps: ApplicationDeps) {
 
 export async function getWorkflowBlueprints(_deps: ApplicationDeps) {
   return {
-    blueprints: workflowBlueprintsDtoSchema.parse({
-      schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
+    blueprints: workflowBlueprintsV3DtoSchema.parse({
+      schemaVersion: WORKFLOW_PRODUCT_API_V3_SCHEMA_VERSION,
       blueprints: DEFAULT_WORKFLOW_BLUEPRINTS.list().map((blueprint) => ({
-        schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
+        schemaVersion: WORKFLOW_PRODUCT_API_V3_SCHEMA_VERSION,
         blueprintKey: blueprint.blueprintKey,
         blueprintVersion: blueprint.blueprintVersion,
-        title: workflowBlueprintCopy(blueprint.blueprintKey).title,
-        description: workflowBlueprintCopy(blueprint.blueprintKey).description,
+        title: workflowBlueprintCopy(blueprint.blueprintKey, blueprint.blueprintVersion).title,
+        description: workflowBlueprintCopy(blueprint.blueprintKey, blueprint.blueprintVersion)
+          .description,
         runnerFamily: blueprint.runnerFamily,
         terminalNodeType: blueprint.terminalNodeType,
         optionalNodeTypes: blueprint.optionalNodeTypes,
@@ -77,7 +78,10 @@ export async function getWorkflowBlueprints(_deps: ApplicationDeps) {
   };
 }
 
-function workflowBlueprintCopy(blueprintKey: "planning" | "note" | "direct"): {
+function workflowBlueprintCopy(
+  blueprintKey: "planning" | "note" | "direct",
+  blueprintVersion: number,
+): {
   readonly title: string;
   readonly description: string;
 } {
@@ -90,6 +94,30 @@ function workflowBlueprintCopy(blueprintKey: "planning" | "note" | "direct"): {
     case "note":
       return { title: "笔记工作流", description: "抽取、分类并提交笔记。" };
     case "direct":
+      if (blueprintVersion === 5) {
+        return {
+          title: "只整理为 Memory 候选",
+          description: "执行Agent完成当前回答，写入Agent生成待审核候选；批准后才写入Memory。",
+        };
+      }
+      if (blueprintVersion === 4) {
+        return {
+          title: "只查询 Memory 后回答",
+          description: "检索Agent筛选相关记忆，执行Agent使用冻结上下文回答，不写入Memory。",
+        };
+      }
+      if (blueprintVersion === 3) {
+        return {
+          title: "Memory Agent 增强执行",
+          description: "检索Agent筛选相关记忆，执行Agent完成任务，写入Agent产生待审核候选。",
+        };
+      }
+      if (blueprintVersion === 2) {
+        return {
+          title: "Memory 增强执行 Agent",
+          description: "查询并冻结相关记忆，执行Agent，再按本次配置写回Memory。",
+        };
+      }
       return {
         title: "执行 Agent（逐次提示词审核）",
         description: "单节点推进Execution Agent，并在每次Provider请求发送前进入人工审核。",
@@ -103,8 +131,8 @@ export async function getWorkflowDefinitions(
 ) {
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
   return {
-    definitions: workflowDefinitionsDtoSchema.parse({
-      schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
+    definitions: workflowDefinitionsV3DtoSchema.parse({
+      schemaVersion: WORKFLOW_PRODUCT_API_V3_SCHEMA_VERSION,
       definitions: Object.values(snapshot.entities.workflowDefinitions)
         .filter(
           (definition) =>
@@ -167,8 +195,8 @@ export async function getWorkflowRunConfigSummary(
           runSpec.definitionRef.workflowDefinitionRevisionId
         ];
   return {
-    summary: workflowRunConfigSummaryDtoSchema.parse({
-      schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
+    summary: workflowRunConfigSummaryV3DtoSchema.parse({
+      schemaVersion: WORKFLOW_PRODUCT_API_V3_SCHEMA_VERSION,
       productRunId: run.productRunId,
       ...(run.workflowRunSpecId !== undefined ? { workflowRunSpecId: run.workflowRunSpecId } : {}),
       runnerFamily: run.runnerFamily,
@@ -201,7 +229,7 @@ export async function getWorkflowRunConfigSummary(
 function toPublishedDefinitionDto(
   snapshot: ProductSnapshot,
   revision: ProductSnapshot["entities"]["workflowDefinitionRevisions"][string],
-): WorkflowDefinitionPublishedDto {
+): WorkflowDefinitionPublishedV3Dto {
   const definition = snapshot.entities.workflowDefinitions[revision.workflowDefinitionId];
   if (definition === undefined) throw notFound("Workflow Definition不存在");
   const blueprint = DEFAULT_WORKFLOW_BLUEPRINTS.get(
@@ -209,7 +237,7 @@ function toPublishedDefinitionDto(
     revision.blueprintVersion,
   );
   return {
-    schemaVersion: WORKFLOW_PRODUCT_API_SCHEMA_VERSION,
+    schemaVersion: WORKFLOW_PRODUCT_API_V3_SCHEMA_VERSION,
     workflowDefinitionId: revision.workflowDefinitionId,
     workflowDefinitionRevisionId: revision.workflowDefinitionRevisionId,
     definitionRevision: revision.definitionRevision,
@@ -260,7 +288,7 @@ function toPublishedDefinitionDto(
 function configuredPublicField(
   field: PublicConfigField,
   configuredDefault: unknown,
-): WorkflowDefinitionPublishedDto["nodes"][number]["runConfigFields"][number] {
+): WorkflowDefinitionPublishedV3Dto["nodes"][number]["runConfigFields"][number] {
   if (field.type === "boolean") {
     if (configuredDefault !== undefined && typeof configuredDefault !== "boolean") {
       throw new Error(`Workflow节点配置默认值类型错误:${field.name}`);

@@ -38,6 +38,15 @@ export {
   persistWorkflowMemoryQueryResultResponseSchema,
   freezeWorkflowMemoryContextRequestSchema,
   freezeWorkflowMemoryContextResponseSchema,
+  prepareMemoryWriteAgentInputRequestSchema,
+  prepareMemoryWriteAgentInputResponseSchema,
+  persistMemoryWriteAgentCandidateRequestSchema,
+  persistMemoryWriteAgentCandidateResponseSchema,
+  beginMemoryAgentOperationRequestSchema,
+  beginMemoryAgentOperationResponseSchema,
+  completeMemoryAgentOperationRequestSchema,
+  markMemoryAgentOperationOutcomeUnknownRequestSchema,
+  memoryAgentOperationResponseSchema,
 } from "./internal-runtime/planning.js";
 
 export { problemDetailSchema } from "./problem-detail.js";
@@ -98,6 +107,11 @@ export {
   type BeginWorkflowMemoryWriteRequest,
   type PersistWorkflowMemoryQueryResultRequest,
   type FreezeWorkflowMemoryContextRequest,
+  type PrepareMemoryWriteAgentInputRequest,
+  type PersistMemoryWriteAgentCandidateRequest,
+  type BeginMemoryAgentOperationRequest,
+  type CompleteMemoryAgentOperationRequest,
+  type MarkMemoryAgentOperationOutcomeUnknownRequest,
 } from "./internal-runtime/types.js";
 
 export {

@@ -20,6 +20,7 @@ import {
   type WorkflowMemoryQueryExecutionResult,
   type WorkflowMemorySnapshot,
 } from "@chat/contracts";
+import { memoryAgentRetrieveNodeConfigSchema } from "@chat/contracts/memory-agent";
 import {
   assertWorkflowMemoryContextOrder,
   computeMemoryProviderDescriptorSha256,
@@ -34,7 +35,7 @@ import {
 import type { ApplicationDeps } from "./deps.js";
 import { ApplicationError, notFound, revisionConflict } from "./errors.js";
 import { commitPlanningContextNodeFact } from "./planning-context-node-facts.js";
-import { requirePlanningRun } from "./product-run-kind.js";
+import { requireWorkflowMemoryRun } from "./product-run-kind.js";
 import { validateWorkflowRunSpecIntegrity } from "./workflow-run-spec-compiler.js";
 import { emitWorkflowMemoryNodeTrace } from "./workflow-memory-trace.js";
 
@@ -78,6 +79,7 @@ function dispatchDto(
     productSessionId: query.productSessionId,
     principalId: query.requestedByPrincipalId,
     workflowRunSpecId: query.workflowRunSpecId,
+    workflowRunSpecSha256: query.workflowRunSpecSha256,
     definitionNodeId: query.definitionNodeId,
     providerId: query.providerId,
     providerDescriptor: query.providerDescriptor,
@@ -126,17 +128,17 @@ export async function beginWorkflowMemoryQuery(
   }
 
   const run = before.entities.runs[input.productRunId];
-  if (run === undefined) throw notFound("Planning Run不存在");
-  const planningRun = requirePlanningRun(run);
-  const session = before.entities.sessions[planningRun.sessionId];
-  const message = before.entities.messages[planningRun.sourceMessageId];
+  if (run === undefined) throw notFound("Product Run不存在");
+  const memoryRun = requireWorkflowMemoryRun(run);
+  const session = before.entities.sessions[memoryRun.sessionId];
+  const message = before.entities.messages[memoryRun.sourceMessageId];
   const rawRunSpec = before.entities.workflowRunSpecs[input.workflowRunSpecId];
   const validated =
     rawRunSpec === undefined ? undefined : validateWorkflowRunSpecIntegrity(rawRunSpec);
   if (
     session === undefined ||
     message === undefined ||
-    planningRun.workflowRunSpecId !== input.workflowRunSpecId ||
+    memoryRun.workflowRunSpecId !== input.workflowRunSpecId ||
     rawRunSpec?.productRunId !== input.productRunId ||
     validated === undefined ||
     !validated.success
@@ -146,19 +148,25 @@ export async function beginWorkflowMemoryQuery(
   const node = validated.runSpec.nodeResolutions.find(
     (candidate) => candidate.definitionNodeId === input.definitionNodeId,
   );
-  if (node?.nodeType !== "memory.query" || node.activation === "skipped") {
+  if (
+    (node?.nodeType !== "memory.query" && node?.nodeType !== "agent.memory_retrieve") ||
+    node.activation === "skipped"
+  ) {
     throw new ApplicationError({
       code: "validation_failed",
       httpStatus: 422,
-      message: "指定节点不是可执行的memory.query节点",
+      message: "指定节点不是可执行的Memory查询节点",
     });
   }
-  const parsedConfig = workflowMemoryQueryNodeConfigSchema.safeParse(node.config);
+  const parsedConfig =
+    node.nodeType === "agent.memory_retrieve"
+      ? memoryAgentRetrieveNodeConfigSchema.safeParse(node.config)
+      : workflowMemoryQueryNodeConfigSchema.safeParse(node.config);
   if (!parsedConfig.success) {
     throw new ApplicationError({
       code: "store_corrupted",
       httpStatus: 500,
-      message: "memory.query冻结配置损坏",
+      message: "Memory查询冻结配置损坏",
       recoveryAction: "contact_support",
     });
   }
@@ -194,7 +202,7 @@ export async function beginWorkflowMemoryQuery(
     workflowMemoryQueryId,
     operationId: workflowMemoryQueryId,
     productRunId: input.productRunId,
-    productSessionId: planningRun.sessionId,
+    productSessionId: memoryRun.sessionId,
     requestedByPrincipalId: session.ownerPrincipalId,
     workflowRunSpecId: input.workflowRunSpecId,
     workflowRunSpecSha256: validated.runSpec.sha256,
@@ -329,11 +337,16 @@ export async function persistWorkflowMemoryQueryResult(
       const current = draft.entities.workflowMemoryQueries[input.workflowMemoryQueryId];
       if (current === undefined) throw notFound("Workflow Memory Query不存在");
       const run = draft.entities.runs[input.productRunId];
-      if (run === undefined) throw notFound("Planning Run不存在");
-      const planningRun = requirePlanningRun(run);
+      if (run === undefined) throw notFound("Product Run不存在");
+      const memoryRun = requireWorkflowMemoryRun(run);
       const rawRunSpec = draft.entities.workflowRunSpecs[input.workflowRunSpecId];
       const validated =
         rawRunSpec === undefined ? undefined : validateWorkflowRunSpecIntegrity(rawRunSpec);
+      const executedNode = validated?.success
+        ? validated.runSpec.nodeResolutions.find(
+            (candidate) => candidate.definitionNodeId === input.definitionNodeId,
+          )
+        : undefined;
       if (
         validated === undefined ||
         !validated.success ||
@@ -341,7 +354,9 @@ export async function persistWorkflowMemoryQueryResult(
         current.workflowRunSpecId !== input.workflowRunSpecId ||
         current.definitionNodeId !== input.definitionNodeId ||
         current.attemptNumber !== input.attemptNumber ||
-        JSON.stringify(current.executionPath) !== JSON.stringify(input.executionPath)
+        JSON.stringify(current.executionPath) !== JSON.stringify(input.executionPath) ||
+        (executedNode?.nodeType !== "memory.query" &&
+          executedNode?.nodeType !== "agent.memory_retrieve")
       ) {
         throw revisionConflict("Workflow Memory Query执行身份不一致");
       }
@@ -455,10 +470,10 @@ export async function persistWorkflowMemoryQueryResult(
           : "可选Memory查询失败，继续执行工作流";
       }
       const nodeRun = commitPlanningContextNodeFact(draft, {
-        run: planningRun,
+        run: memoryRun,
         runSpec: validated.runSpec,
         definitionNodeId: input.definitionNodeId,
-        nodeType: "memory.query",
+        nodeType: executedNode.nodeType,
         executionPath: input.executionPath,
         attemptNumber: input.attemptNumber,
         terminal,

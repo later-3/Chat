@@ -81,6 +81,15 @@ import {
   persistWorkflowMemoryQueryResultResponseSchema,
   freezeWorkflowMemoryContextRequestSchema,
   freezeWorkflowMemoryContextResponseSchema,
+  prepareMemoryWriteAgentInputRequestSchema,
+  prepareMemoryWriteAgentInputResponseSchema,
+  persistMemoryWriteAgentCandidateRequestSchema,
+  persistMemoryWriteAgentCandidateResponseSchema,
+  beginMemoryAgentOperationRequestSchema,
+  beginMemoryAgentOperationResponseSchema,
+  completeMemoryAgentOperationRequestSchema,
+  markMemoryAgentOperationOutcomeUnknownRequestSchema,
+  memoryAgentOperationResponseSchema,
   DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
   DIRECT_AGENT_RUNTIME_PATHS,
   beginDirectAgentAttemptRuntimeRequestSchema,
@@ -103,6 +112,11 @@ import {
   type BeginWorkflowMemoryWriteRequest,
   type PersistWorkflowMemoryQueryResultRequest,
   type FreezeWorkflowMemoryContextRequest,
+  type PrepareMemoryWriteAgentInputRequest,
+  type PersistMemoryWriteAgentCandidateRequest,
+  type BeginMemoryAgentOperationRequest,
+  type CompleteMemoryAgentOperationRequest,
+  type MarkMemoryAgentOperationOutcomeUnknownRequest,
   type BeginDirectAgentAttemptRuntimeRequest,
   type LoadPromptReviewDecisionRuntimeRequest,
   type CommitDirectAgentResultRuntimeRequest,
@@ -304,6 +318,74 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
           ...input,
         }),
         freezeWorkflowMemoryContextResponseSchema,
+      );
+    },
+    /** 读取有界对话与Direct候选，供Memory写入Agent生成待审核候选。 */
+    prepareMemoryWriteAgentInput(
+      input: Omit<PrepareMemoryWriteAgentInputRequest, "schemaVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/prepare-memory-write-agent-input",
+        prepareMemoryWriteAgentInputRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        prepareMemoryWriteAgentInputResponseSchema,
+      );
+    },
+    /** 持久化模型候选或明确的空结果；本命令不调用外部Memory Provider。 */
+    persistMemoryWriteAgentCandidate(
+      input: Omit<PersistMemoryWriteAgentCandidateRequest, "schemaVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/persist-memory-write-agent-candidate",
+        persistMemoryWriteAgentCandidateRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        persistMemoryWriteAgentCandidateResponseSchema,
+      );
+    },
+    /** 在任何Memory Agent付费模型调用前建立耐久派发栅栏。 */
+    beginMemoryAgentOperation(input: Omit<BeginMemoryAgentOperationRequest, "schemaVersion">) {
+      return call(
+        options,
+        "/internal/runtime/v1/begin-memory-agent-operation",
+        beginMemoryAgentOperationRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        beginMemoryAgentOperationResponseSchema,
+      );
+    },
+    /** 持久化模型操作的确定性结果；恢复只能复用本结果，不能重新付费调用。 */
+    completeMemoryAgentOperation(
+      input: Omit<CompleteMemoryAgentOperationRequest, "schemaVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/complete-memory-agent-operation",
+        completeMemoryAgentOperationRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        memoryAgentOperationResponseSchema,
+      );
+    },
+    /** Provider边界后结果无法确认时显式封闭操作，禁止盲目重放。 */
+    markMemoryAgentOperationOutcomeUnknown(
+      input: Omit<MarkMemoryAgentOperationOutcomeUnknownRequest, "schemaVersion">,
+    ) {
+      return call(
+        options,
+        "/internal/runtime/v1/mark-memory-agent-operation-outcome-unknown",
+        markMemoryAgentOperationOutcomeUnknownRequestSchema.parse({
+          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
+          ...input,
+        }),
+        memoryAgentOperationResponseSchema,
       );
     },
     /** 准备规划Memory上下文：为可配置规划工作流预读Memory层上下文。 */
@@ -894,7 +976,7 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         externalStatus?: string;
         responseSha256: string;
       };
-      verificationKind: "read_by_id_and_search" | "l0_and_session_l1";
+      verificationKind: "read_by_id" | "read_by_id_and_search" | "l0_and_session_l1";
       verificationSha256: string;
       reconciled?: boolean;
     }) {

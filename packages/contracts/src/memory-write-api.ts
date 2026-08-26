@@ -9,6 +9,8 @@ import {
 import {
   memoryProviderDescriptorSchema,
   memoryWriteResultSchema,
+  memoryWriteSessionImportSourceSelectionSchema,
+  memoryWriteAgentCandidateSourceSelectionSchema,
   memoryWriteSourceSelectionSchema,
 } from "./workflow-memory.js";
 
@@ -25,17 +27,36 @@ export const createMemoryWriteCommandSchema = commandEnvelopeSchema.extend({
   payload: createMemoryWritePayloadSchema,
 });
 
-export const memoryWriteDtoSchema = z
-  .object({
-    memoryWriteIntentId: memoryWriteIntentIdSchema,
-    memoryWriteResultId: memoryWriteResultIdSchema,
-    productSessionId: productSessionIdSchema,
-    providerId: memoryBackendIdSchema,
-    sourceSelection: memoryWriteSourceSelectionSchema,
-    result: memoryWriteResultSchema,
-    canReconcile: z.boolean(),
-  })
-  .strict();
+const memoryWriteDtoBase = {
+  memoryWriteIntentId: memoryWriteIntentIdSchema,
+  memoryWriteResultId: memoryWriteResultIdSchema,
+  providerId: memoryBackendIdSchema,
+  result: memoryWriteResultSchema,
+  canReconcile: z.boolean(),
+};
+
+export const memoryWriteDtoSchema = z.union([
+  z
+    .object({
+      ...memoryWriteDtoBase,
+      productSessionId: productSessionIdSchema,
+      sourceSelection: memoryWriteSourceSelectionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...memoryWriteDtoBase,
+      sourceSelection: memoryWriteSessionImportSourceSelectionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...memoryWriteDtoBase,
+      productSessionId: productSessionIdSchema,
+      sourceSelection: memoryWriteAgentCandidateSourceSelectionSchema,
+    })
+    .strict(),
+]);
 
 export const memoryWriteResponseSchema = z.object({ memoryWrite: memoryWriteDtoSchema }).strict();
 

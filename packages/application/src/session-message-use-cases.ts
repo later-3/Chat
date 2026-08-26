@@ -1607,7 +1607,7 @@ function resolvePublishedWorkflowRevision(
 
 function revisionToCompilerInput(revision: WorkflowDefinitionRevision) {
   return {
-    schemaVersion: "workflow-definition-revision-input.v2" as const,
+    schemaVersion: "workflow-definition-revision-input.v3" as const,
     workflowDefinitionRevisionId: revision.workflowDefinitionRevisionId,
     definitionRevision: revision.definitionRevision,
     blueprintKey: revision.blueprintKey,

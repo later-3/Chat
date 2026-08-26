@@ -8,6 +8,10 @@ import type { DirectPromptReviewRef, PiDirectExecutorClientOutcome } from "@chat
 import {
   DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
   DIRECT_AGENT_RUNNER_FAMILY,
+  MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_DIRECT_RUNNER_FAMILY,
+  MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
 } from "./definition-kernel-executor-registry.js";
 import { getWorkflowRuntimeContext } from "./runtime-context.js";
 import { cmdId, PiStepFailure, runStep, wrapApiError } from "./workflow-step-support.js";
@@ -56,12 +60,27 @@ export async function prepareDirectAgentOperationStep(
           productRunId: input.productRunId as never,
           workflowRunSpecId: input.workflowRunSpecId as never,
         });
+        const directRunner = runSpec.runner.runnerFamily === DIRECT_AGENT_RUNNER_FAMILY;
+        const memoryDirectRunner = runSpec.runner.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY;
+        const memoryAgentDirectRunner =
+          runSpec.runner.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY;
+        const blueprintVersion = runSpec.definitionRef.blueprintVersion;
+        const memoryAgentHasRetrieve = memoryAgentDirectRunner && [3, 4].includes(blueprintVersion);
+        const memoryAgentHasWrite = memoryAgentDirectRunner && [3, 5].includes(blueprintVersion);
         if (
           runSpec.productRunId !== input.productRunId ||
           runSpec.workflowRunSpecId !== input.workflowRunSpecId ||
-          runSpec.runner.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY ||
-          runSpec.runner.runnerBundleVersion !== DIRECT_AGENT_RUNNER_BUNDLE_VERSION ||
+          (!directRunner && !memoryDirectRunner && !memoryAgentDirectRunner) ||
+          (directRunner &&
+            runSpec.runner.runnerBundleVersion !== DIRECT_AGENT_RUNNER_BUNDLE_VERSION) ||
+          (memoryDirectRunner &&
+            runSpec.runner.runnerBundleVersion !== MEMORY_DIRECT_RUNNER_BUNDLE_VERSION) ||
+          (memoryAgentDirectRunner &&
+            runSpec.runner.runnerBundleVersion !== MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION) ||
           runSpec.definitionRef.blueprintKey !== "direct" ||
+          (memoryAgentDirectRunner
+            ? ![3, 4, 5].includes(blueprintVersion)
+            : blueprintVersion !== (memoryDirectRunner ? 2 : 1)) ||
           runSpec.businessInput?.kind !== "direct_agent_message"
         ) {
           throw new FatalError("run_spec.direct_agent_binding_incompatible");
@@ -69,12 +88,34 @@ export async function prepareDirectAgentOperationStep(
         const directNode = runSpec.nodeResolutions.find(
           (node) => node.nodeType === "agent.direct" && node.activation === "enabled",
         );
+        const memoryRetrieveNode = runSpec.nodeResolutions.find(
+          (node) => node.definitionNodeId === "memory-agent.retrieve",
+        );
+        const memoryWriteNode = runSpec.nodeResolutions.find(
+          (node) => node.definitionNodeId === "memory-agent.write",
+        );
         if (
-          runSpec.nodeResolutions.length !== 1 ||
+          runSpec.nodeResolutions.length !==
+            (memoryDirectRunner
+              ? 3
+              : memoryAgentDirectRunner
+                ? blueprintVersion === 3
+                  ? 3
+                  : 2
+                : 1) ||
           directNode === undefined ||
+          directNode.definitionNodeId !== "direct.agent" ||
           !directAgentCapabilityModeSchema.safeParse(directNode.config["capabilityMode"]).success ||
           (directNode.config["promptReviewMode"] !== "manual" &&
-            directNode.config["promptReviewMode"] !== "off")
+            directNode.config["promptReviewMode"] !== "off") ||
+          (memoryAgentHasRetrieve &&
+            (memoryRetrieveNode?.nodeType !== "agent.memory_retrieve" ||
+              memoryRetrieveNode.activation !== "enabled" ||
+              memoryRetrieveNode.schemaVersion !== 1)) ||
+          (memoryAgentHasWrite &&
+            (memoryWriteNode?.nodeType !== "agent.memory_write" ||
+              memoryWriteNode.activation !== "enabled" ||
+              memoryWriteNode.schemaVersion !== 1))
         ) {
           throw new FatalError("run_spec.direct_agent_nodes_incompatible");
         }
@@ -146,7 +187,9 @@ export async function claimPromptReviewHookStep(
       const workflowBinding = ctx.bindings.getWorkflowBinding(input.productRunId as never);
       if (
         workflowBinding === undefined ||
-        workflowBinding.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY
+        (workflowBinding.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY &&
+          workflowBinding.runnerFamily !== MEMORY_DIRECT_RUNNER_FAMILY &&
+          workflowBinding.runnerFamily !== MEMORY_AGENT_DIRECT_RUNNER_FAMILY)
       ) {
         throw new FatalError("direct_agent.workflow_binding_missing");
       }

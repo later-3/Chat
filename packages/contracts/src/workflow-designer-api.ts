@@ -15,13 +15,16 @@ import {
   workflowDefinitionNodeIdSchema,
   workflowDefinitionNodeTypeSchema,
   workflowDefinitionNodeTypeV2Schema,
+  workflowDefinitionNodeTypeV3Schema,
   workflowDefinitionRevisionStateSchema,
   workflowDefinitionStateSchema,
   workflowSequenceBoundarySchema,
   workflowSequenceBoundaryV2Schema,
+  workflowSequenceBoundaryV3Schema,
 } from "./workflow-definition.js";
 
 export const WORKFLOW_DESIGNER_API_SCHEMA_VERSION = "chat-workflow-designer-api.v2";
+export const WORKFLOW_DESIGNER_API_V3_SCHEMA_VERSION = "chat-workflow-designer-api.v3";
 
 /**
  * S6公开合同只允许操作受限semanticRoot。React Flow坐标、edge、Executor身份、
@@ -199,6 +202,22 @@ export const workflowDesignerSlotV2DtoSchema = z
     path: ["maximumIndex"],
   });
 
+export const workflowDesignerSlotV3DtoSchema = z
+  .object({
+    slotId: z.string().regex(/^[a-z][a-z0-9_.-]{0,79}$/u),
+    address: z.array(workflowDesignerAddressSegmentSchema).max(12),
+    label: z.string().min(1).max(120),
+    allowedNodeTypes: z.array(workflowDefinitionNodeTypeV3Schema).min(1).max(32),
+    minimumIndex: z.number().int().nonnegative().max(127),
+    maximumIndex: z.number().int().nonnegative().max(127),
+    maximumElements: z.number().int().positive().max(128).optional(),
+  })
+  .strict()
+  .refine((slot) => slot.minimumIndex <= slot.maximumIndex, {
+    message: "slot minimumIndex不能大于maximumIndex",
+    path: ["maximumIndex"],
+  });
+
 export const workflowDesignerDiagnosticSeveritySchema = z.enum(["error", "warning", "info"]);
 
 const diagnosticParamSchema = z.union([z.string().max(200), z.number().finite(), z.boolean()]);
@@ -245,6 +264,13 @@ const definitionDetailV2Base = {
   updatedAt: z.iso.datetime(),
 };
 
+const definitionDetailV3Base = {
+  ...definitionDetailV2Base,
+  schemaVersion: z.literal(WORKFLOW_DESIGNER_API_V3_SCHEMA_VERSION),
+  slots: z.array(workflowDesignerSlotV3DtoSchema).max(64),
+  allowedChoiceSourceTypes: z.array(workflowDefinitionNodeTypeV3Schema).max(32),
+};
+
 const definitionDetailBase = {
   schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
   workflowDefinitionId: workflowDefinitionIdSchema,
@@ -286,6 +312,35 @@ export const workflowDefinitionDetailV2DtoSchema = z.discriminatedUnion("compati
         .object({
           nodeCount: z.number().int().nonnegative().max(128),
           nodeTypes: z.array(workflowDefinitionNodeTypeV2Schema).max(64),
+        })
+        .strict(),
+      incompatibilityCode: z.string().regex(/^[a-z][a-z0-9_.-]{0,119}$/u),
+      allowedActions: z.tuple([]),
+    })
+    .strict(),
+]);
+
+export const workflowDefinitionDetailV3DtoSchema = z.discriminatedUnion("compatibility", [
+  z
+    .object({
+      ...definitionDetailV3Base,
+      compatibility: z.literal("editable"),
+      semanticRoot: workflowSequenceBoundaryV3Schema,
+      baseRevisionId: workflowDefinitionRevisionIdSchema,
+      baseDefinitionSha256: sha256Schema,
+      allowedActions: z.array(
+        z.enum(["copy", "save", "validate", "publish", "archive", "restore"]),
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ...definitionDetailV3Base,
+      compatibility: z.literal("read_only_incompatible"),
+      safeStructureSummary: z
+        .object({
+          nodeCount: z.number().int().nonnegative().max(128),
+          nodeTypes: z.array(workflowDefinitionNodeTypeV3Schema).max(64),
         })
         .strict(),
       incompatibilityCode: z.string().regex(/^[a-z][a-z0-9_.-]{0,119}$/u),
@@ -376,6 +431,14 @@ export const saveWorkflowDefinitionDraftPayloadSchema = z
   })
   .strict();
 
+export const saveWorkflowDefinitionDraftV3PayloadSchema = z
+  .object({
+    baseRevisionId: workflowDefinitionRevisionIdSchema,
+    baseDefinitionSha256: sha256Schema,
+    semanticRoot: workflowSequenceBoundaryV3Schema,
+  })
+  .strict();
+
 export const validateWorkflowDefinitionPayloadSchema = z
   .object({
     workflowDefinitionId: workflowDefinitionIdSchema.optional(),
@@ -384,6 +447,17 @@ export const validateWorkflowDefinitionPayloadSchema = z
     blueprintKey: workflowBlueprintKeySchema,
     blueprintVersion: z.number().int().positive().max(32),
     semanticRoot: workflowSequenceBoundarySchema,
+  })
+  .strict();
+
+export const validateWorkflowDefinitionV3PayloadSchema = z
+  .object({
+    workflowDefinitionId: workflowDefinitionIdSchema.optional(),
+    baseRevisionId: workflowDefinitionRevisionIdSchema,
+    baseDefinitionSha256: sha256Schema,
+    blueprintKey: workflowBlueprintKeySchema,
+    blueprintVersion: z.number().int().positive().max(32),
+    semanticRoot: workflowSequenceBoundaryV3Schema,
   })
   .strict();
 
@@ -436,6 +510,40 @@ export const workflowDefinitionValidationDtoSchema = z
     }
   });
 
+export const workflowDefinitionValidationV3DtoSchema = z
+  .object({
+    schemaVersion: z.literal(WORKFLOW_DESIGNER_API_V3_SCHEMA_VERSION),
+    valid: z.boolean(),
+    diagnostics: z.array(workflowDesignerDiagnosticDtoSchema).max(256),
+    normalized: z
+      .object({
+        semanticRoot: workflowSequenceBoundaryV3Schema,
+        definitionSha256: sha256Schema,
+        nodeCount: z.number().int().nonnegative().max(128),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .check((ctx) => {
+    if (ctx.value.valid !== (ctx.value.normalized !== undefined)) {
+      ctx.issues.push({
+        code: "custom",
+        input: ctx.value,
+        message: "valid与normalized必须同时成立",
+        path: ["normalized"],
+      });
+    }
+    if (ctx.value.valid && ctx.value.diagnostics.some((item) => item.severity === "error")) {
+      ctx.issues.push({
+        code: "custom",
+        input: ctx.value,
+        message: "valid结果不能含error诊断",
+        path: ["diagnostics"],
+      });
+    }
+  });
+
 export const workflowDefinitionCommandResultDtoSchema = z
   .object({
     definition: workflowDefinitionDetailDtoSchema,
@@ -450,8 +558,16 @@ export const workflowDefinitionCommandResultV2DtoSchema = z
   })
   .strict();
 
+export const workflowDefinitionCommandResultV3DtoSchema = z
+  .object({
+    definition: workflowDefinitionDetailV3DtoSchema,
+    affectedRevision: workflowDefinitionRevisionSummaryDtoSchema.optional(),
+  })
+  .strict();
+
 export type WorkflowDesignerSlotDto = z.infer<typeof workflowDesignerSlotDtoSchema>;
 export type WorkflowDesignerSlotV2Dto = z.infer<typeof workflowDesignerSlotV2DtoSchema>;
+export type WorkflowDesignerSlotV3Dto = z.infer<typeof workflowDesignerSlotV3DtoSchema>;
 export type WorkflowDesignerAddress = z.infer<typeof workflowDesignerAddressSchema>;
 export type WorkflowDesignerOperation = z.infer<typeof workflowDesignerOperationSchema>;
 export type WorkflowDesignerDiagnosticDto = z.infer<typeof workflowDesignerDiagnosticDtoSchema>;
@@ -460,6 +576,7 @@ export type WorkflowDefinitionRevisionSummaryDto = z.infer<
 >;
 export type WorkflowDefinitionDetailDto = z.infer<typeof workflowDefinitionDetailDtoSchema>;
 export type WorkflowDefinitionDetailV2Dto = z.infer<typeof workflowDefinitionDetailV2DtoSchema>;
+export type WorkflowDefinitionDetailV3Dto = z.infer<typeof workflowDefinitionDetailV3DtoSchema>;
 export type CreateWorkflowDefinitionCopyPayload = z.infer<
   typeof createWorkflowDefinitionCopyPayloadSchema
 >;
@@ -469,8 +586,14 @@ export type SaveWorkflowAgentNodeConfigurationPayload = z.infer<
 export type SaveWorkflowDefinitionDraftPayload = z.infer<
   typeof saveWorkflowDefinitionDraftPayloadSchema
 >;
+export type SaveWorkflowDefinitionDraftV3Payload = z.infer<
+  typeof saveWorkflowDefinitionDraftV3PayloadSchema
+>;
 export type ValidateWorkflowDefinitionPayload = z.infer<
   typeof validateWorkflowDefinitionPayloadSchema
+>;
+export type ValidateWorkflowDefinitionV3Payload = z.infer<
+  typeof validateWorkflowDefinitionV3PayloadSchema
 >;
 export type PublishWorkflowDefinitionPayload = z.infer<
   typeof publishWorkflowDefinitionPayloadSchema
@@ -479,9 +602,15 @@ export type ChangeWorkflowDefinitionArchiveStatusPayload = z.infer<
   typeof changeWorkflowDefinitionArchiveStatusPayloadSchema
 >;
 export type WorkflowDefinitionValidationDto = z.infer<typeof workflowDefinitionValidationDtoSchema>;
+export type WorkflowDefinitionValidationV3Dto = z.infer<
+  typeof workflowDefinitionValidationV3DtoSchema
+>;
 export type WorkflowDefinitionCommandResultDto = z.infer<
   typeof workflowDefinitionCommandResultDtoSchema
 >;
 export type WorkflowDefinitionCommandResultV2Dto = z.infer<
   typeof workflowDefinitionCommandResultV2DtoSchema
+>;
+export type WorkflowDefinitionCommandResultV3Dto = z.infer<
+  typeof workflowDefinitionCommandResultV3DtoSchema
 >;

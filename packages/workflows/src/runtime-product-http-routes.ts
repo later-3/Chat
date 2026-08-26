@@ -14,6 +14,8 @@ import { planningExecutionWorkflowInputSchema } from "./workflow-input.js";
 import {
   CONFIGURABLE_PLANNING_RUNNER_FAMILY,
   DIRECT_AGENT_RUNNER_FAMILY,
+  MEMORY_DIRECT_RUNNER_FAMILY,
+  MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
   LEGACY_PLANNING_RUNNER_FAMILY,
   NOTE_CAPTURE_RUNNER_FAMILY,
 } from "./definition-kernel-executor-registry.js";
@@ -150,14 +152,32 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
                     workflowRunSpecId: runnerDispatch.workflowRunSpecId,
                   }),
                 ])
-              : await start({ workflowId: world.workflowId }, [
-                  planningExecutionWorkflowInputSchema.parse({
-                    schemaVersion: "planning-execution-workflow-input.v1",
-                    productRunId: request.productRunId,
-                    attemptId: request.attemptId,
-                    maxPlanRevisions: 5,
-                  }),
-                ]);
+              : runnerDispatch.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY
+                ? await start({ workflowId: world.memoryDirectAgentWorkflowId }, [
+                    directAgentWorkflowInputSchema.parse({
+                      schemaVersion: "direct-agent-workflow-input.v1",
+                      productRunId: request.productRunId,
+                      workflowAttemptId: request.attemptId,
+                      workflowRunSpecId: runnerDispatch.workflowRunSpecId,
+                    }),
+                  ])
+                : runnerDispatch.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY
+                  ? await start({ workflowId: world.memoryAgentDirectWorkflowId }, [
+                      directAgentWorkflowInputSchema.parse({
+                        schemaVersion: "direct-agent-workflow-input.v1",
+                        productRunId: request.productRunId,
+                        workflowAttemptId: request.attemptId,
+                        workflowRunSpecId: runnerDispatch.workflowRunSpecId,
+                      }),
+                    ])
+                  : await start({ workflowId: world.workflowId }, [
+                      planningExecutionWorkflowInputSchema.parse({
+                        schemaVersion: "planning-execution-workflow-input.v1",
+                        productRunId: request.productRunId,
+                        attemptId: request.attemptId,
+                        maxPlanRevisions: 5,
+                      }),
+                    ]);
       await bindings.claimWorkflowBinding({
         productRunId: request.productRunId,
         outboxId: request.outboxId as never,
@@ -233,7 +253,9 @@ export function registerProductWorkflowHttpRoutes(context: WorkflowRuntimeHttpRo
       (isNoteResume
         ? workflowBinding.runnerFamily !== NOTE_CAPTURE_RUNNER_FAMILY
         : isPromptReviewResume
-          ? workflowBinding.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY
+          ? workflowBinding.runnerFamily !== DIRECT_AGENT_RUNNER_FAMILY &&
+            workflowBinding.runnerFamily !== MEMORY_DIRECT_RUNNER_FAMILY &&
+            workflowBinding.runnerFamily !== MEMORY_AGENT_DIRECT_RUNNER_FAMILY
           : !isSupportedPlanningRunnerFamily(workflowBinding.runnerFamily))
     ) {
       return c.json({ code: "revision_conflict", title: "Workflow Runner绑定缺失" }, 409);

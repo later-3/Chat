@@ -8,6 +8,10 @@ import {
   NOTE_CAPTURE_RUNNER_FAMILY,
   DIRECT_AGENT_RUNNER_BUNDLE_VERSION,
   DIRECT_AGENT_RUNNER_FAMILY,
+  MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_DIRECT_RUNNER_FAMILY,
+  MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+  MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
   type PlanningRunnerFamily,
   type ProductWorkflowRunnerFamily,
 } from "./definition-kernel-executor-registry.js";
@@ -42,6 +46,16 @@ export type ProductWorkflowRunnerDispatch =
       readonly runnerFamily: typeof DIRECT_AGENT_RUNNER_FAMILY;
       readonly runnerBundleVersion: typeof DIRECT_AGENT_RUNNER_BUNDLE_VERSION;
       readonly workflowRunSpecId: string;
+    }
+  | {
+      readonly runnerFamily: typeof MEMORY_DIRECT_RUNNER_FAMILY;
+      readonly runnerBundleVersion: typeof MEMORY_DIRECT_RUNNER_BUNDLE_VERSION;
+      readonly workflowRunSpecId: string;
+    }
+  | {
+      readonly runnerFamily: typeof MEMORY_AGENT_DIRECT_RUNNER_FAMILY;
+      readonly runnerBundleVersion: typeof MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION;
+      readonly workflowRunSpecId: string;
     };
 
 export class PlanningRunnerDispatchError extends Error {
@@ -62,7 +76,9 @@ export function resolvePlanningRunnerDispatch(
   const dispatch = resolveProductWorkflowRunnerDispatch(input);
   if (
     dispatch.runnerFamily === NOTE_CAPTURE_RUNNER_FAMILY ||
-    dispatch.runnerFamily === DIRECT_AGENT_RUNNER_FAMILY
+    dispatch.runnerFamily === DIRECT_AGENT_RUNNER_FAMILY ||
+    dispatch.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY ||
+    dispatch.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY
   ) {
     throw new PlanningRunnerDispatchError();
   }
@@ -125,6 +141,34 @@ export function resolveProductWorkflowRunnerDispatch(
       workflowRunSpecId: input.workflowRunSpecId,
     };
   }
+  if (input.runnerFamily === MEMORY_DIRECT_RUNNER_FAMILY) {
+    if (
+      input.runnerBundleVersion !== MEMORY_DIRECT_RUNNER_BUNDLE_VERSION ||
+      input.workflowRunSpecId === undefined ||
+      !/^wrs_[A-Za-z0-9]+$/.test(input.workflowRunSpecId)
+    ) {
+      throw new PlanningRunnerDispatchError();
+    }
+    return {
+      runnerFamily: MEMORY_DIRECT_RUNNER_FAMILY,
+      runnerBundleVersion: MEMORY_DIRECT_RUNNER_BUNDLE_VERSION,
+      workflowRunSpecId: input.workflowRunSpecId,
+    };
+  }
+  if (input.runnerFamily === MEMORY_AGENT_DIRECT_RUNNER_FAMILY) {
+    if (
+      input.runnerBundleVersion !== MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION ||
+      input.workflowRunSpecId === undefined ||
+      !/^wrs_[A-Za-z0-9]+$/.test(input.workflowRunSpecId)
+    ) {
+      throw new PlanningRunnerDispatchError();
+    }
+    return {
+      runnerFamily: MEMORY_AGENT_DIRECT_RUNNER_FAMILY,
+      runnerBundleVersion: MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION,
+      workflowRunSpecId: input.workflowRunSpecId,
+    };
+  }
   throw new PlanningRunnerDispatchError();
 }
 
@@ -138,7 +182,9 @@ export function isSupportedProductWorkflowRunnerFamily(
   return (
     isSupportedPlanningRunnerFamily(value) ||
     value === NOTE_CAPTURE_RUNNER_FAMILY ||
-    value === DIRECT_AGENT_RUNNER_FAMILY
+    value === DIRECT_AGENT_RUNNER_FAMILY ||
+    value === MEMORY_DIRECT_RUNNER_FAMILY ||
+    value === MEMORY_AGENT_DIRECT_RUNNER_FAMILY
   );
 }
 

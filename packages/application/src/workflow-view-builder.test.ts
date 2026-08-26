@@ -10,7 +10,7 @@ function revision(root: typeof NOTE_CHOICE_ROOT, blueprintKey: "note" | "plannin
   const normalized = normalizeWorkflowDefinition(root, DEFAULT_NODE_CATALOG);
   if (!normalized.success) throw new Error("fixture invalid");
   return {
-    schemaVersion: "workflow-definition-revision.v1" as const,
+    schemaVersion: "workflow-definition-revision.v3" as const,
     workflowDefinitionRevisionId: "wfr_viewbuilder1" as never,
     workflowDefinitionId: "wfd_viewbuilder1" as never,
     definitionRevision: 1,

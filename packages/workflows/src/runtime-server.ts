@@ -15,11 +15,10 @@ import {
   runPiNoteCapture,
   runPiGovernanceReview,
   runPiPlanner,
+  runPiMemoryRetrievalAgent,
+  runPiMemoryWriteAgent,
 } from "@chat/pi-runtime";
-import {
-  createEmptyMemoryBackendRegistry,
-  createWorkflowMemoryProviderRegistry,
-} from "@chat/memory-runtime";
+import { createMemoryRegistrySet, parseMemoryMode } from "@chat/memory-runtime";
 import { ZodError } from "zod";
 import { createRuntimeApiClient } from "@chat/contracts";
 import { RuntimeBindingStore } from "./runtime-bindings.js";
@@ -76,6 +75,8 @@ export interface WorkflowRuntimeServerOptions {
       | "planner"
       | "noteCapture"
       | "governanceReview"
+      | "memoryRetrievalAgent"
+      | "memoryWriteAgent"
       | "executor"
       | "directExecutor"
       | "now"
@@ -83,7 +84,23 @@ export interface WorkflowRuntimeServerOptions {
   >;
 }
 
+/**
+ * 与API组合根共享`CHAT_MEMORY_MODE`的唯一解析合同。缺省/off返回真正空Registry，
+ * 避免遗留凭据或endpoint让基础Runtime隐式启用Memory。
+ */
+export function composeRuntimeMemoryRegistries(env: NodeJS.ProcessEnv) {
+  const mode = parseMemoryMode(env);
+  return createMemoryRegistrySet(env, { mode });
+}
+
+/** @deprecated 新组合根应一次取得完整Registry set，避免重复实例化Adapter。 */
+export function composeRuntimeWorkflowMemoryProviders(env: NodeJS.ProcessEnv) {
+  return composeRuntimeMemoryRegistries(env).workflowMemoryProviders;
+}
+
 export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServerOptions) {
+  const { memoryBackends, memoryImportBackends, workflowMemoryProviders } =
+    composeRuntimeMemoryRegistries(process.env);
   // Provider可能在world.start恢复活动Run时立即发请求，因此必须在读取/恢复任何
   // Runtime状态之前装配连接策略。策略属于进程网络边界，不进入Product Store。
   const networkPolicy = installWorkflowNetworkPolicy();
@@ -120,9 +137,6 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       }
     };
 
-    // Workflow合同仍需要Registry Port，但当前统一运行图冻结为空，不实例化任何外部Adapter。
-    const memoryRegistry = createEmptyMemoryBackendRegistry();
-    const workflowMemoryProviders = createWorkflowMemoryProviderRegistry(process.env);
     const executorClient = createPiExecutorServiceClient({
       baseUrl: options.executorBaseUrl ?? "http://127.0.0.1:43115",
       credential: options.credential,
@@ -134,7 +148,8 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
     setWorkflowRuntimeContext({
       api: createRuntimeApiClient({ baseUrl: options.apiBaseUrl, credential: options.credential }),
       bindings,
-      memoryBackends: memoryRegistry,
+      memoryBackends,
+      memoryImportBackends,
       workflowMemoryProviders,
       trace,
       activity: (event) => {
@@ -153,6 +168,8 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
       planner: runPiPlanner,
       noteCapture: runPiNoteCapture,
       governanceReview: runPiGovernanceReview,
+      memoryRetrievalAgent: runPiMemoryRetrievalAgent,
+      memoryWriteAgent: runPiMemoryWriteAgent,
       executor: executorClient,
       directExecutor: directExecutorClient,
       ...options.runtimeOverrides,

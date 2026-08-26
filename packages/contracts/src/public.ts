@@ -83,6 +83,11 @@ export {
 export * from "./rules-api.js";
 export * from "./note-api.js";
 export { memoryBackendIdSchema, type MemoryBackendId } from "./ids.js";
+export * from "./memory-agent.js";
+/** 浏览器可读的 Memory 管理 DTO；不导出 Provider 私有配置或运行时 Port。 */
+export * from "./memory-session-import.js";
+export * from "./memory-provider-comparison.js";
+export { listMemoryProvidersResponseSchema, type MemoryWriteDto } from "./memory-write-api.js";
 export {
   memoryContextSelectionSchema,
   memoryLayerSchema,

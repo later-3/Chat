@@ -1,4 +1,3 @@
-import { productSnapshotSchema, type ProductSnapshot } from "@chat/contracts";
 import {
   createLegacySystemSimplePlanningDefinition,
   createSystemSimplePlanningDefinition,
@@ -8,13 +7,14 @@ import {
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID,
 } from "@chat/application/workflow-system-definitions";
+import { productSnapshotV25Schema, type ProductSnapshotV25 } from "./legacy-v25.js";
 import type { ProductSnapshotV24 } from "./legacy-v24.js";
 
 /**
  * v25发布Simple Planning治理Revision。v24事实保持原ID/Hash并转为superseded；迁移只从
  * 已提交对象和固定系统种子推导，绝不读取DSH草稿、Workspace、Pi Journal或模型输出。
  */
-export function migrateProductSnapshotV24ToV25(snapshot: ProductSnapshotV24): ProductSnapshot {
+export function migrateProductSnapshotV24ToV25(snapshot: ProductSnapshotV24): ProductSnapshotV25 {
   const migratedAt = snapshot.committedAt;
   const existingDefinition =
     snapshot.entities.workflowDefinitions[SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID];
@@ -47,7 +47,7 @@ export function migrateProductSnapshotV24ToV25(snapshot: ProductSnapshotV24): Pr
     throw new Error("v24→v25的Simple Planning固定历史种子语义不匹配");
   }
   const seed = createSystemSimplePlanningDefinition(migratedAt);
-  return productSnapshotSchema.parse({
+  return productSnapshotV25Schema.parse({
     ...snapshot,
     schemaVersion: "chat-product-store.v25",
     entities: {

@@ -48,11 +48,13 @@ import {
   workflowDefinitionNodeIdSchema,
   workflowDefinitionNodeTypeSchema,
   workflowDefinitionNodeTypeV2Schema,
+  workflowDefinitionNodeTypeV3Schema,
   workflowExecutorKindSchema,
   workflowRiskLevelSchema,
   workflowReviewModeSchema,
   workflowRunConfigurationSchema,
   workflowRunnerFamilySchema,
+  workflowRunnerFamilyV3Schema,
 } from "./workflow-definition.js";
 import {
   promptAssemblyV2Schema,
@@ -76,7 +78,9 @@ import {
 
 export const PRODUCT_API_SCHEMA_VERSION = "chat-product-api.v1";
 export const PROMPT_TURN_PREVIEW_API_SCHEMA_VERSION = "chat-prompt-turn-preview-api.v2";
-export const WORKFLOW_PRODUCT_API_SCHEMA_VERSION = "chat-workflow-product-api.v2";
+export const LEGACY_WORKFLOW_PRODUCT_API_SCHEMA_VERSION = "chat-workflow-product-api.v2";
+export const WORKFLOW_PRODUCT_API_SCHEMA_VERSION = "chat-workflow-product-api.v3";
+export const WORKFLOW_PRODUCT_API_V3_SCHEMA_VERSION = WORKFLOW_PRODUCT_API_SCHEMA_VERSION;
 
 /* ---------- Command payloads ---------- */
 
@@ -363,16 +367,29 @@ export const workflowNodeCatalogItemV2DtoSchema = workflowNodeCatalogItemDtoSche
   nodeType: workflowDefinitionNodeTypeV2Schema,
 });
 
-export const workflowCatalogDtoSchema = z
+export const workflowCatalogV2DtoSchema = z
   .object({
-    schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
+    schemaVersion: z.literal(LEGACY_WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
     nodes: z.array(workflowNodeCatalogItemV2DtoSchema).max(64),
   })
   .strict();
 
-export const workflowBlueprintDtoSchema = z
+export const workflowNodeCatalogItemV3DtoSchema = workflowNodeCatalogItemDtoSchema.extend({
+  nodeType: workflowDefinitionNodeTypeV3Schema,
+});
+
+export const workflowCatalogDtoSchema = z
   .object({
     schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
+    nodes: z.array(workflowNodeCatalogItemV3DtoSchema).max(64),
+  })
+  .strict();
+
+export const workflowCatalogV3DtoSchema = workflowCatalogDtoSchema;
+
+export const workflowBlueprintV2DtoSchema = z
+  .object({
+    schemaVersion: z.literal(LEGACY_WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
     blueprintKey: workflowBlueprintKeySchema,
     blueprintVersion: z.number().int().positive().max(32),
     title: z.string().min(1).max(160),
@@ -423,6 +440,68 @@ export const workflowBlueprintDtoSchema = z
   })
   .strict();
 
+export const workflowBlueprintDtoSchema = z
+  .object({
+    schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
+    blueprintKey: workflowBlueprintKeySchema,
+    blueprintVersion: z.number().int().positive().max(32),
+    title: z.string().min(1).max(160),
+    description: z.string().min(1).max(1000),
+    runnerFamily: workflowRunnerFamilyV3Schema,
+    terminalNodeType: workflowDefinitionNodeTypeV3Schema,
+    optionalNodeTypes: z.array(workflowDefinitionNodeTypeV3Schema).max(32),
+    loopRules: z
+      .array(
+        z
+          .object({
+            outcomeNodeType: workflowDefinitionNodeTypeV3Schema,
+            continueOutcomes: z.array(z.string().min(1).max(64)).min(1).max(16),
+            exitOutcomes: z.array(z.string().min(1).max(64)).min(1).max(16),
+            maxIterations: z
+              .number()
+              .int()
+              .positive()
+              .max(WORKFLOW_DEFINITION_CONTRACT_LIMITS.structure.maxLoopIterations),
+          })
+          .strict(),
+      )
+      .max(8),
+    perRunOverrides: z
+      .array(
+        z
+          .object({
+            nodeType: workflowDefinitionNodeTypeV3Schema,
+            fields: z.array(z.enum(["enabled", "selection", "reviewMode"])).max(8),
+            configFields: z
+              .array(
+                z
+                  .string()
+                  .min(1)
+                  .max(64)
+                  .regex(/^[A-Za-z][A-Za-z0-9]*$/),
+              )
+              .max(16)
+              .default([]),
+          })
+          .strict()
+          .refine((value) => value.fields.length > 0 || value.configFields.length > 0, {
+            message: "每个per-run override规则至少开放一个字段",
+          }),
+      )
+      .max(32),
+    reviewModes: z.array(workflowReviewModeSchema).min(1).max(3),
+  })
+  .strict();
+
+export const workflowBlueprintV3DtoSchema = workflowBlueprintDtoSchema;
+
+export const workflowBlueprintsV2DtoSchema = z
+  .object({
+    schemaVersion: z.literal(LEGACY_WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
+    blueprints: z.array(workflowBlueprintV2DtoSchema).max(16),
+  })
+  .strict();
+
 export const workflowBlueprintsDtoSchema = z
   .object({
     schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
@@ -430,9 +509,11 @@ export const workflowBlueprintsDtoSchema = z
   })
   .strict();
 
-export const workflowDefinitionPublishedDtoSchema = z
+export const workflowBlueprintsV3DtoSchema = workflowBlueprintsDtoSchema;
+
+export const workflowDefinitionPublishedV2DtoSchema = z
   .object({
-    schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
+    schemaVersion: z.literal(LEGACY_WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
     workflowDefinitionId: workflowDefinitionIdSchema,
     workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
     definitionRevision: z.number().int().positive(),
@@ -486,10 +567,112 @@ export const workflowDefinitionPublishedDtoSchema = z
   })
   .strict();
 
+export const workflowDefinitionPublishedDtoSchema = z
+  .object({
+    schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
+    workflowDefinitionId: workflowDefinitionIdSchema,
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    definitionRevision: z.number().int().positive(),
+    title: z.string().min(1).max(160),
+    description: z.string().min(1).max(1000),
+    blueprintKey: workflowBlueprintKeySchema,
+    blueprintVersion: z.number().int().positive().max(32),
+    definitionSha256: sha256Schema,
+    ownerKind: z.enum(["system", "principal"]),
+    isDefault: z.boolean(),
+    nodes: z
+      .array(
+        z
+          .object({
+            definitionNodeId: workflowDefinitionNodeIdSchema,
+            nodeType: workflowDefinitionNodeTypeV3Schema,
+            schemaVersion: z.number().int().positive().max(32),
+            displayName: z.string().min(1).max(120),
+            optional: z.boolean(),
+            defaultActivation: z.enum(["enabled", "skipped"]),
+            publicConfigFields: z.array(publicConfigFieldSchema).max(16),
+            runConfigFields: z.array(publicConfigFieldSchema).max(16).default([]),
+            agentBinding: z
+              .object({
+                agentKey: agentProfileAgentKeySchema,
+                profileVersion: z.string().min(1).max(128),
+                bindingKind: z.enum(["agent_catalog", "agent_version"]),
+                agentVersionId: agentVersionIdSchema.optional(),
+                agentVersionSha256: sha256Schema.optional(),
+                promptPolicy: z.literal("agent_profile_plus_session_context"),
+                promptSource: z.enum(["agent_default", "agent_version", "workflow_override"]),
+                promptOverrideMarkdown: z.string().max(65_536).optional(),
+                toolPolicy: z
+                  .object({
+                    kind: z.enum(["runtime_locked", "agent_configuration"]),
+                    summary: z.string().min(1).max(300),
+                    defaultTools: z.array(z.string().min(1).max(80)).max(16),
+                  })
+                  .strict(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict(),
+      )
+      .max(100),
+    publishedAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+
+export const workflowDefinitionPublishedV3DtoSchema = workflowDefinitionPublishedDtoSchema;
+
+export const workflowDefinitionsV2DtoSchema = z
+  .object({
+    schemaVersion: z.literal(LEGACY_WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
+    definitions: z.array(workflowDefinitionPublishedV2DtoSchema).max(100),
+  })
+  .strict();
+
 export const workflowDefinitionsDtoSchema = z
   .object({
     schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
     definitions: z.array(workflowDefinitionPublishedDtoSchema).max(100),
+  })
+  .strict();
+
+export const workflowDefinitionsV3DtoSchema = workflowDefinitionsDtoSchema;
+
+export const workflowRunConfigSummaryV2DtoSchema = z
+  .object({
+    schemaVersion: z.literal(LEGACY_WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
+    productRunId: productRunIdSchema,
+    workflowRunSpecId: workflowRunSpecIdSchema.optional(),
+    runnerFamily: workflowRunnerFamilySchema,
+    runnerBundleVersion: z.string().min(1).max(128),
+    definition: workflowDefinitionPublishedV2DtoSchema.optional(),
+    definitionSha256: sha256Schema.optional(),
+    nodeCount: z.number().int().nonnegative().max(100),
+    resourceSummary: z
+      .array(
+        z
+          .object({
+            definitionNodeId: workflowDefinitionNodeIdSchema,
+            resourceKind: z.enum(["memory", "project", "rule", "skill"]),
+            resolution: z.enum(["included", "excluded"]),
+            reason: z.string().min(1).max(64).optional(),
+          })
+          .strict(),
+      )
+      .max(128),
+    reviewSummary: z
+      .array(
+        z
+          .object({
+            definitionNodeId: workflowDefinitionNodeIdSchema,
+            mode: workflowReviewModeSchema,
+            actor: z.enum(["user", "system_policy"]),
+          })
+          .strict(),
+      )
+      .max(16),
+    createdAt: z.iso.datetime(),
   })
   .strict();
 
@@ -498,7 +681,7 @@ export const workflowRunConfigSummaryDtoSchema = z
     schemaVersion: z.literal(WORKFLOW_PRODUCT_API_SCHEMA_VERSION),
     productRunId: productRunIdSchema,
     workflowRunSpecId: workflowRunSpecIdSchema.optional(),
-    runnerFamily: workflowRunnerFamilySchema,
+    runnerFamily: workflowRunnerFamilyV3Schema,
     runnerBundleVersion: z.string().min(1).max(128),
     definition: workflowDefinitionPublishedDtoSchema.optional(),
     definitionSha256: sha256Schema.optional(),
@@ -530,6 +713,8 @@ export const workflowRunConfigSummaryDtoSchema = z
   })
   .strict();
 
+export const workflowRunConfigSummaryV3DtoSchema = workflowRunConfigSummaryDtoSchema;
+
 export const workflowResourceRefDtoSchema = z
   .object({
     schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
@@ -555,11 +740,27 @@ export const workflowResourcesDtoSchema = z
   .strict();
 
 export type WorkflowCatalogDto = z.infer<typeof workflowCatalogDtoSchema>;
+export type WorkflowCatalogV2Dto = z.infer<typeof workflowCatalogV2DtoSchema>;
+export type WorkflowCatalogV3Dto = z.infer<typeof workflowCatalogV3DtoSchema>;
 export type WorkflowBlueprintDto = z.infer<typeof workflowBlueprintDtoSchema>;
+export type WorkflowBlueprintV2Dto = z.infer<typeof workflowBlueprintV2DtoSchema>;
+export type WorkflowBlueprintV3Dto = z.infer<typeof workflowBlueprintV3DtoSchema>;
 export type WorkflowBlueprintsDto = z.infer<typeof workflowBlueprintsDtoSchema>;
+export type WorkflowBlueprintsV2Dto = z.infer<typeof workflowBlueprintsV2DtoSchema>;
+export type WorkflowBlueprintsV3Dto = z.infer<typeof workflowBlueprintsV3DtoSchema>;
 export type WorkflowDefinitionPublishedDto = z.infer<typeof workflowDefinitionPublishedDtoSchema>;
+export type WorkflowDefinitionPublishedV2Dto = z.infer<
+  typeof workflowDefinitionPublishedV2DtoSchema
+>;
+export type WorkflowDefinitionPublishedV3Dto = z.infer<
+  typeof workflowDefinitionPublishedV3DtoSchema
+>;
 export type WorkflowDefinitionsDto = z.infer<typeof workflowDefinitionsDtoSchema>;
+export type WorkflowDefinitionsV2Dto = z.infer<typeof workflowDefinitionsV2DtoSchema>;
+export type WorkflowDefinitionsV3Dto = z.infer<typeof workflowDefinitionsV3DtoSchema>;
 export type WorkflowRunConfigSummaryDto = z.infer<typeof workflowRunConfigSummaryDtoSchema>;
+export type WorkflowRunConfigSummaryV2Dto = z.infer<typeof workflowRunConfigSummaryV2DtoSchema>;
+export type WorkflowRunConfigSummaryV3Dto = z.infer<typeof workflowRunConfigSummaryV3DtoSchema>;
 export type WorkflowResourceRefDto = z.infer<typeof workflowResourceRefDtoSchema>;
 export type WorkflowResourcesDto = z.infer<typeof workflowResourcesDtoSchema>;
 

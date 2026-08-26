@@ -95,7 +95,7 @@ describe("受限RunSpec控制解释器", () => {
   it("循环上限和Node预算都在下一业务调用前失败关闭", async () => {
     let calls = 0;
     const limitedBase = fixture("note");
-    const limited: WorkflowRunSpec = {
+    const limited = {
       ...limitedBase,
       semanticRoot: {
         ...limitedBase.semanticRoot,
@@ -105,7 +105,7 @@ describe("受限RunSpec控制解释器", () => {
             : element,
         ),
       },
-    };
+    } as WorkflowRunSpec;
     const result = await interpretRestrictedRunSpec({
       runSpec: limited,
       executeNode: async ({ registration }) => {
@@ -120,13 +120,13 @@ describe("受限RunSpec控制解释器", () => {
     expect(calls).toBe(2);
 
     const budgetedBase = fixture("planning");
-    const budgeted: WorkflowRunSpec = {
+    const budgeted = {
       ...budgetedBase,
       limits: {
         ...budgetedBase.limits,
         runtime: { ...budgetedBase.limits.runtime, maxNodeExecutions: 1 },
       },
-    };
+    } as WorkflowRunSpec;
     await expect(
       interpretRestrictedRunSpec({
         runSpec: budgeted,

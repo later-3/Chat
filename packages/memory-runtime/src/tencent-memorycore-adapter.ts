@@ -315,8 +315,8 @@ function stableImportSession(operationId: string): string {
   return `chat-import:${operationId}`;
 }
 
-function chatSession(productSessionId: string): string {
-  return `chat-session:${productSessionId}`;
+function chatQuerySession(sessionKey: string): string {
+  return `chat-session:${sessionKey}`;
 }
 
 function mappedKind(type: string): MemoryQuerySection["kind"] {
@@ -329,11 +329,13 @@ function mappedKind(type: string): MemoryQuerySection["kind"] {
 function legacyWriteInput(
   input: WorkflowMemoryWriteInput | WorkflowMemoryWriteReconcileInput,
 ): MemoryImportInput {
+  const sessionKey = "sessionKey" in input ? input.sessionKey : input.productSessionId;
+  const turnKey = "turnKey" in input ? input.turnKey : input.sourceMessageId;
   const shape = {
     kind: "tencent_conversation_capture" as const,
     content: input.content,
     layer: "L0" as const,
-    turnId: input.sourceMessageId,
+    turnId: turnKey,
   };
   return {
     // 旧Port的品牌只约束旧产品ID；网络协议实际接受稳定字符串。新operationId保持原样，
@@ -345,8 +347,9 @@ function legacyWriteInput(
     title: "conversation_turn",
     tags: [],
     source: "chat.explicit_import",
-    sessionId: input.productSessionId,
-    turnId: input.sourceMessageId,
+    // 旧Import Port仍带ProductSession品牌；MemoryCore协议实际接受稳定session字符串。
+    sessionId: sessionKey as never,
+    turnId: turnKey,
   };
 }
 
@@ -472,7 +475,9 @@ export class TencentMemoryCoreAdapter
         query: { maxResults: 20, maxContextCharacters: 32_000 },
         write: {
           maxContentCharacters: 8_192,
-          materialization: "asynchronous",
+          // 固定本地Profile没有模型或抽取Worker，只承诺L0耐久接收。该声明禁止
+          // Workflow/UI把accepted描述成“物化中”；未来只读发现真实L1仍可提交materialized。
+          materialization: "accepted_only",
           // 固定版本没有调用方幂等Key；Chat用稳定session做只读对账。
           idempotency: "chat_reconcile",
         },
@@ -496,16 +501,13 @@ export class TencentMemoryCoreAdapter
       });
     }
     try {
-      const output = await this.query({
-        operationId: input.operationId,
-        productRunId: input.productRunId,
-        productSessionId: input.productSessionId,
+      const sessionKey = "sessionKey" in input ? input.sessionKey : input.productSessionId;
+      const output = await this.queryForSession({
         query: input.query,
-        tags: [],
-        layers: ["L1"],
         limit: input.maxResults,
         // 旧Adapter内部仍使用保守token门；新Application会再按字符预算裁剪。
         contextBudget: 8_192,
+        sessionId: chatQuerySession(sessionKey),
       });
       return {
         externalQueryId: output.externalQueryId,
@@ -642,7 +644,6 @@ export class TencentMemoryCoreAdapter
 
   /** 查询只有读取副作用；能力越权必须在发出HTTP前失败。 */
   async query(input: MemoryQueryInput): Promise<MemoryQueryOutput> {
-    const config = this.requireConfiguration("query");
     if (input.tags.length > 0 || input.layers.some((layer) => layer !== "L1")) {
       throw new MemoryBackendError({
         code: "memory.backend.capability_unsupported",
@@ -650,6 +651,21 @@ export class TencentMemoryCoreAdapter
         retryable: false,
       });
     }
+    return this.queryForSession({
+      query: input.query,
+      limit: input.limit,
+      contextBudget: input.contextBudget,
+      sessionId: chatQuerySession(input.productSessionId),
+    });
+  }
+
+  private async queryForSession(input: {
+    readonly query: string;
+    readonly limit: number;
+    readonly contextBudget: number;
+    readonly sessionId: string;
+  }): Promise<MemoryQueryOutput> {
+    const config = this.requireConfiguration("query");
     const body = {
       team_id: config.teamId,
       agent_id: config.agentId,
@@ -661,7 +677,7 @@ export class TencentMemoryCoreAdapter
       "/v3/atomic/search",
       body,
       atomicSearchDataSchema,
-      chatSession(input.productSessionId),
+      input.sessionId,
     );
     const sections: MemoryQuerySection[] = [];
     let tokenEstimate = 0;
@@ -756,8 +772,9 @@ export class TencentMemoryCoreAdapter
 
   /**
    * 对账严格只读：先证明稳定session中存在完全一致的L0，再检查同session的L1。
-   * L0存在只能证明accepted；只有L1真实存在才返回materialized。任何查询故障保持
-   * outcome_unknown，既不补造成功，也不调用atomic/update或再次add。
+   * 当前本地无模型Profile是accepted_only，L0存在只能证明accepted；只有Provider数据面
+   * 已经真实存在L1才返回materialized。任何查询故障保持outcome_unknown，既不补造成功，
+   * 也不调用atomic/update或再次add。
    */
   async reconcile(input: MemoryImportReconcileInput): Promise<MemoryImportReconcileOutput> {
     const config = this.requireImportConfiguration();

@@ -4,16 +4,20 @@ import { sha256Schema } from "./hash.js";
 import {
   commandIdSchema,
   directAgentCandidateIdSchema,
+  memoryBackendIdSchema,
   messageIdSchema,
   productRunIdSchema,
   promptReviewDecisionIdSchema,
   promptReviewRequestIdSchema,
   promptAssemblyIdSchema,
   runAttemptIdSchema,
+  workflowMemoryContextIdSchema,
+  workflowMemorySnapshotIdSchema,
   workflowRunSpecIdSchema,
   toolExecutionIntentIdSchema,
   toolExecutionDecisionIdSchema,
 } from "./ids.js";
+import { workflowMemoryCategorySchema } from "./workflow-memory.js";
 import {
   capabilityEffectSchema,
   capabilityScopeRefSchema,
@@ -172,6 +176,30 @@ export const authorizeDirectAgentOperationRuntimeResponseSchema = z
         })
         .strict(),
     ]),
+    memoryContext: z
+      .object({
+        workflowMemoryContextId: workflowMemoryContextIdSchema,
+        revision: z.literal(1),
+        sha256: sha256Schema,
+        items: z
+          .array(
+            z
+              .object({
+                workflowMemorySnapshotId: workflowMemorySnapshotIdSchema,
+                providerId: memoryBackendIdSchema,
+                title: z.string().min(1).max(200),
+                category: workflowMemoryCategorySchema,
+                content: z.string().min(1).max(50_000),
+                labels: z.array(z.string().min(1).max(64)).max(50),
+                revision: z.literal(1),
+                sha256: sha256Schema,
+              })
+              .strict(),
+          )
+          .max(100),
+      })
+      .strict()
+      .optional(),
     capabilityMode: z.enum(["pi_cli_default", "custom", "read_only", "project_bootstrap"]),
     projectBootstrapContext: z
       .object({

@@ -43,8 +43,8 @@ const fixtureKeys = [
 ] as const;
 
 describe("Node Catalog与Blueprint一致性", () => {
-  it("当前19种能力全部使用strict parser且默认配置/公开默认值一致", () => {
-    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(19);
+  it("当前22个版本化节点合同全部使用strict parser且默认配置/公开默认值一致", () => {
+    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(22);
     for (const descriptor of DEFAULT_NODE_CATALOG.list()) {
       expect(
         DEFAULT_NODE_CATALOG.parseConfig(
@@ -135,6 +135,32 @@ describe("Node Catalog与Blueprint一致性", () => {
       repeatableNodeTypes: [],
       mandatoryManualReviewTypes: [],
     });
+    expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 2)).toMatchObject({
+      runnerFamily: "memory-direct.v1",
+      terminalNodeType: "memory.write",
+      allowedNodeTypes: ["memory.query", "agent.direct", "memory.write"],
+      optionalNodeTypes: [],
+      repeatableNodeTypes: [],
+      mandatoryManualReviewTypes: [],
+    });
+    expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 3)).toMatchObject({
+      runnerFamily: "memory-agent-direct.v1",
+      terminalNodeType: "agent.memory_write",
+      allowedNodeTypes: ["agent.memory_retrieve", "agent.direct", "agent.memory_write"],
+      optionalNodeTypes: [],
+      repeatableNodeTypes: [],
+      mandatoryManualReviewTypes: ["agent.memory_write"],
+    });
+    expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 4)).toMatchObject({
+      runnerFamily: "memory-agent-direct.v1",
+      terminalNodeType: "agent.direct",
+      mandatoryManualReviewTypes: [],
+    });
+    expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("direct", 5)).toMatchObject({
+      runnerFamily: "memory-agent-direct.v1",
+      terminalNodeType: "agent.memory_write",
+      mandatoryManualReviewTypes: ["agent.memory_write"],
+    });
     expect(DEFAULT_WORKFLOW_BLUEPRINTS.get("planning", 99)).toBeUndefined();
   });
 
@@ -143,38 +169,42 @@ describe("Node Catalog与Blueprint一致性", () => {
     const { blueprints } = await getWorkflowBlueprints(undefined as never);
     const directNodes = catalog.nodes.filter((node) => node.supportedBlueprints.includes("direct"));
 
-    expect(directNodes).toMatchObject([
-      {
-        nodeType: "agent.direct",
-        executorKind: "composite",
-        riskPolicy: "generate_candidate",
-        publicConfigFields: [
-          {
-            name: "agentKey",
-            type: "enum_select",
-            defaultValue: "direct",
-            options: ["direct"],
-          },
-          {
-            name: "agentPromptOverride",
-            type: "long_text",
-            defaultValue: "",
-            maximumLength: 65_536,
-          },
-          {
-            name: "capabilityMode",
-            defaultValue: "pi_cli_default",
-            options: ["pi_cli_default", "read_only"],
-          },
-          {
-            name: "promptReviewMode",
-            defaultValue: "manual",
-            options: ["manual", "off"],
-          },
-        ],
-        outcomes: ["completed"],
-      },
+    expect(directNodes.map((node) => node.nodeType)).toEqual([
+      "agent.direct",
+      "agent.memory_retrieve",
+      "agent.memory_write",
+      "memory.query",
+      "memory.write",
     ]);
+    expect(directNodes.find((node) => node.nodeType === "agent.direct")).toMatchObject({
+      executorKind: "composite",
+      riskPolicy: "generate_candidate",
+      publicConfigFields: [
+        {
+          name: "agentKey",
+          type: "enum_select",
+          defaultValue: "direct",
+          options: ["direct"],
+        },
+        {
+          name: "agentPromptOverride",
+          type: "long_text",
+          defaultValue: "",
+          maximumLength: 65_536,
+        },
+        {
+          name: "capabilityMode",
+          defaultValue: "pi_cli_default",
+          options: ["pi_cli_default", "read_only"],
+        },
+        {
+          name: "promptReviewMode",
+          defaultValue: "manual",
+          options: ["manual", "off"],
+        },
+      ],
+      outcomes: ["completed"],
+    });
     expect(
       blueprints.blueprints.find((blueprint) => blueprint.blueprintKey === "direct"),
     ).toMatchObject({

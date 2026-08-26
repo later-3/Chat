@@ -47,6 +47,7 @@ import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
 import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
 import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
 import { migrateProductSnapshotV24ToV25 } from "./migrate-v24-to-v25.js";
+import { migrateProductSnapshotV25ToV26 } from "./migrate-v25-to-v26.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-19T12:00:00.000Z";
@@ -65,6 +66,10 @@ function removeV24SupervisedEntities(entities: Record<string, unknown>): void {
     "supervisedStepHumanDecisions",
     "supervisedAgentOutcomeObservations",
     "supervisedExecutionResults",
+    "memorySessionImports",
+    "memoryAgentOperations",
+    "memoryAgentWriteCandidates",
+    "memoryAgentWriteDecisions",
   ]) {
     delete entities[key];
   }
@@ -376,15 +381,19 @@ describe("Prompt Review Product Snapshot完整性", () => {
       );
       expect(() =>
         assertSnapshotIntegrity(
-          migrateProductSnapshotV24ToV25(
-            migrateProductSnapshotV23ToV24(
-              migrateProductSnapshotV22ToV23(
-                migrateProductSnapshotV21ToV22(
-                  migrateProductSnapshotV20ToV21(
-                    migrateProductSnapshotV19ToV20(
-                      migrateProductSnapshotV18ToV19(
-                        migrateProductSnapshotV17ToV18(
-                          migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16(migrated)),
+          migrateProductSnapshotV25ToV26(
+            migrateProductSnapshotV24ToV25(
+              migrateProductSnapshotV23ToV24(
+                migrateProductSnapshotV22ToV23(
+                  migrateProductSnapshotV21ToV22(
+                    migrateProductSnapshotV20ToV21(
+                      migrateProductSnapshotV19ToV20(
+                        migrateProductSnapshotV18ToV19(
+                          migrateProductSnapshotV17ToV18(
+                            migrateProductSnapshotV16ToV17(
+                              migrateProductSnapshotV15ToV16(migrated),
+                            ),
+                          ),
                         ),
                       ),
                     ),

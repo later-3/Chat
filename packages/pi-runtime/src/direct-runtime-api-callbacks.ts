@@ -140,6 +140,7 @@ export function createDirectAgentRuntimeApiCallbacks(
       runRevision: response.runRevision,
       sourceMessage: response.sourceMessage,
       promptAssembly,
+      ...(response.memoryContext === undefined ? {} : { memoryContext: response.memoryContext }),
       capabilityMode: response.capabilityMode,
       ...(response.projectBootstrapContext === undefined
         ? {}

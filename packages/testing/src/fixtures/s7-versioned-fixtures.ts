@@ -64,11 +64,15 @@ import {
   migrateProductSnapshotV20ToV21,
   migrateProductSnapshotV21ToV22,
   migrateProductSnapshotV22ToV23,
+  migrateProductSnapshotV23ToV24,
+  migrateProductSnapshotV24ToV25,
+  migrateProductSnapshotV25ToV26,
   productSnapshotV1Schema,
   productSnapshotV10Schema,
   type ProductSnapshotV10,
   type ProductSnapshotV16,
   type ProductSnapshotV18,
+  type ProductSnapshotV23,
   type ProductSnapshotV1,
 } from "@chat/product-store-json";
 
@@ -118,6 +122,7 @@ export type S7VersionedFixtureSnapshot =
   | ProductSnapshotV15Fixture
   | ProductSnapshotV16
   | ProductSnapshotV18
+  | ProductSnapshotV23
   | ProductSnapshot;
 
 export interface S7VersionedFixtureManifestEntry {
@@ -274,7 +279,6 @@ export async function buildS7VersionedFixture(
 }
 
 export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot): ProductSnapshot {
-  if (snapshot.schemaVersion === "chat-product-store.v23") return structuredClone(snapshot);
   const v2 =
     snapshot.schemaVersion === "chat-product-store.v1"
       ? migrateProductSnapshotV1ToV2(snapshot)
@@ -311,8 +315,14 @@ export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot):
     v20.schemaVersion === "chat-product-store.v20" ? migrateProductSnapshotV20ToV21(v20) : v20;
   const v22 =
     v21.schemaVersion === "chat-product-store.v21" ? migrateProductSnapshotV21ToV22(v21) : v21;
+  const v23 =
+    v22.schemaVersion === "chat-product-store.v22" ? migrateProductSnapshotV22ToV23(v22) : v22;
+  const v24 =
+    v23.schemaVersion === "chat-product-store.v23" ? migrateProductSnapshotV23ToV24(v23) : v23;
+  const v25 =
+    v24.schemaVersion === "chat-product-store.v24" ? migrateProductSnapshotV24ToV25(v24) : v24;
   return productSnapshotSchema.parse(
-    v22.schemaVersion === "chat-product-store.v22" ? migrateProductSnapshotV22ToV23(v22) : v22,
+    v25.schemaVersion === "chat-product-store.v25" ? migrateProductSnapshotV25ToV26(v25) : v25,
   );
 }
 

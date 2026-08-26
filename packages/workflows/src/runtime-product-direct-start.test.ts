@@ -48,6 +48,7 @@ describe("Product Workflow Direct Agent start分发", () => {
       bindings,
       world: {
         directAgentWorkflowId: "workflow//direct-agent",
+        memoryDirectAgentWorkflowId: "workflow//memory-direct-agent",
         configurablePlanningWorkflowId: "workflow//planning",
         noteCaptureWorkflowId: "workflow//note",
         workflowId: "workflow//legacy",
@@ -93,6 +94,122 @@ describe("Product Workflow Direct Agent start分发", () => {
         workflowRunId: "wrun_private_direct1",
         runnerFamily: "direct-agent.v1",
         workflowRunSpecId: "wrs_directstart1",
+      }),
+    );
+  });
+
+  it("Memory Direct family只启动新增Workflow ID，checkpoint输入仍只有产品引用", async () => {
+    const app = new Hono();
+    const bindings = {
+      claimStartIntent: vi.fn().mockResolvedValue("claimed"),
+      claimWorkflowBinding: vi.fn().mockResolvedValue({ alreadyExisted: false }),
+      markStartOutcomeUnknown: vi.fn(),
+    };
+    registerProductWorkflowHttpRoutes({
+      app,
+      workflowDataDir: "/tmp/workflow-memory-direct-start-test",
+      credential: "rtk_memory_direct_start",
+      bindings,
+      world: {
+        directAgentWorkflowId: "workflow//direct-agent",
+        memoryDirectAgentWorkflowId: "workflow//memory-direct-agent",
+        configurablePlanningWorkflowId: "workflow//planning",
+        noteCaptureWorkflowId: "workflow//note",
+        workflowId: "workflow//legacy",
+      },
+      buildEvidence: {},
+      trace: vi.fn(),
+    } as never);
+
+    const response = await app.request("http://runtime/internal/workflow/v1/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        schemaVersion: "chat-workflow-dispatch.v1",
+        productRunId: "run_memorydirectstart1",
+        attemptId: "att_memorydirectstart1",
+        workflowRunSpecId: "wrs_memorydirectstart1",
+        runnerFamily: "memory-direct.v1",
+        runnerBundleVersion: "memory-direct.bundle.v1",
+        workflowDefinitionVersion: "memory-direct.bundle.v1",
+        outboxId: "obx_memorydirectstart1",
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(mocked.start).toHaveBeenCalledWith({ workflowId: "workflow//memory-direct-agent" }, [
+      {
+        schemaVersion: "direct-agent-workflow-input.v1",
+        productRunId: "run_memorydirectstart1",
+        workflowAttemptId: "att_memorydirectstart1",
+        workflowRunSpecId: "wrs_memorydirectstart1",
+      },
+    ]);
+    const serializedInput = JSON.stringify(mocked.start.mock.calls[0]);
+    expect(serializedInput).not.toContain("memoryContext");
+    expect(serializedInput).not.toContain("sourceMessage");
+    expect(bindings.claimWorkflowBinding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productRunId: "run_memorydirectstart1",
+        runnerFamily: "memory-direct.v1",
+        workflowRunSpecId: "wrs_memorydirectstart1",
+      }),
+    );
+  });
+
+  it("Memory Agent Direct family只启动direct@3专属Workflow ID，checkpoint输入仍只有产品引用", async () => {
+    const app = new Hono();
+    const bindings = {
+      claimStartIntent: vi.fn().mockResolvedValue("claimed"),
+      claimWorkflowBinding: vi.fn().mockResolvedValue({ alreadyExisted: false }),
+      markStartOutcomeUnknown: vi.fn(),
+    };
+    registerProductWorkflowHttpRoutes({
+      app,
+      workflowDataDir: "/tmp/workflow-memory-agent-direct-start-test",
+      credential: "rtk_memory_agent_direct_start",
+      bindings,
+      world: {
+        directAgentWorkflowId: "workflow//direct-agent",
+        memoryDirectAgentWorkflowId: "workflow//memory-direct-agent",
+        memoryAgentDirectWorkflowId: "workflow//memory-agent-direct",
+        configurablePlanningWorkflowId: "workflow//planning",
+        noteCaptureWorkflowId: "workflow//note",
+        workflowId: "workflow//legacy",
+      },
+      buildEvidence: {},
+      trace: vi.fn(),
+    } as never);
+
+    const response = await app.request("http://runtime/internal/workflow/v1/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        schemaVersion: "chat-workflow-dispatch.v1",
+        productRunId: "run_memoryagentdirectstart1",
+        attemptId: "att_memoryagentdirectstart1",
+        workflowRunSpecId: "wrs_memoryagentdirectstart1",
+        runnerFamily: "memory-agent-direct.v1",
+        runnerBundleVersion: "memory-agent-direct.bundle.v1",
+        workflowDefinitionVersion: "memory-agent-direct.bundle.v1",
+        outboxId: "obx_memoryagentdirectstart1",
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(mocked.start).toHaveBeenCalledWith({ workflowId: "workflow//memory-agent-direct" }, [
+      {
+        schemaVersion: "direct-agent-workflow-input.v1",
+        productRunId: "run_memoryagentdirectstart1",
+        workflowAttemptId: "att_memoryagentdirectstart1",
+        workflowRunSpecId: "wrs_memoryagentdirectstart1",
+      },
+    ]);
+    expect(bindings.claimWorkflowBinding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productRunId: "run_memoryagentdirectstart1",
+        runnerFamily: "memory-agent-direct.v1",
+        workflowRunSpecId: "wrs_memoryagentdirectstart1",
       }),
     );
   });

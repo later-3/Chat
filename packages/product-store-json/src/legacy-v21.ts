@@ -36,6 +36,10 @@ const projectCoordinationV21EntitiesSchema = productSnapshotSchema.shape.entitie
     supervisedStepHumanDecisions: true,
     supervisedAgentOutcomeObservations: true,
     supervisedExecutionResults: true,
+    memorySessionImports: true,
+    memoryAgentOperations: true,
+    memoryAgentWriteCandidates: true,
+    memoryAgentWriteDecisions: true,
   })
   .extend({
     promptAssemblies: z.record(

@@ -12,6 +12,7 @@ import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
 import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
 import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
 import { migrateProductSnapshotV24ToV25 } from "./migrate-v24-to-v25.js";
+import { migrateProductSnapshotV25ToV26 } from "./migrate-v25-to-v26.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-24T08:00:00.000Z";
@@ -19,10 +20,12 @@ const NOW = "2026-08-24T08:00:00.000Z";
 const migrateProductSnapshotV20ToCurrent = (
   snapshot: Parameters<typeof migrateProductSnapshotV20ToV21>[0],
 ) =>
-  migrateProductSnapshotV24ToV25(
-    migrateProductSnapshotV23ToV24(
-      migrateProductSnapshotV22ToV23(
-        migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(snapshot)),
+  migrateProductSnapshotV25ToV26(
+    migrateProductSnapshotV24ToV25(
+      migrateProductSnapshotV23ToV24(
+        migrateProductSnapshotV22ToV23(
+          migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(snapshot)),
+        ),
       ),
     ),
   );
@@ -67,6 +70,10 @@ async function nonEmptyV19() {
     "supervisedStepHumanDecisions",
     "supervisedAgentOutcomeObservations",
     "supervisedExecutionResults",
+    "memorySessionImports",
+    "memoryAgentOperations",
+    "memoryAgentWriteCandidates",
+    "memoryAgentWriteDecisions",
   ]) {
     delete entities[key];
   }
@@ -316,8 +323,10 @@ describe("Product Store v19到v20内容协调内核迁移", () => {
     expect(migrated.entities.toolExecutionResults).toEqual({});
     expect(() =>
       assertSnapshotIntegrity(
-        migrateProductSnapshotV24ToV25(
-          migrateProductSnapshotV23ToV24(migrateProductSnapshotV22ToV23(migrated)),
+        migrateProductSnapshotV25ToV26(
+          migrateProductSnapshotV24ToV25(
+            migrateProductSnapshotV23ToV24(migrateProductSnapshotV22ToV23(migrated)),
+          ),
         ),
       ),
     ).not.toThrow();

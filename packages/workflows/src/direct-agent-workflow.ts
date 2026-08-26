@@ -31,6 +31,16 @@ export interface DirectAgentWorkflowResult {
   readonly errorCode?: string;
 }
 
+export interface DirectAgentCandidateReady {
+  readonly outcome: "candidate_ready";
+  readonly productRunId: string;
+  readonly directAgentAttemptId: string;
+  readonly directAgentCandidateId: string;
+  readonly candidateSha256: string;
+}
+
+export type DirectAgentWorkflowCoreResult = DirectAgentWorkflowResult | DirectAgentCandidateReady;
+
 function failureCode(error: unknown, fallback: string): string {
   return error instanceof Error && STABLE_ERROR_CODE.test(error.message) ? error.message : fallback;
 }
@@ -107,16 +117,23 @@ async function settleRejected(
   };
 }
 
-/**
- * Direct Agent固定Runner：一个Workflow Run、一个Direct Attempt、一个Pi Operation。
- * 每次Pi抵达Provider边界都会创建该Request独有的Hook；批准只恢复同一个Operation，
- * 不创建第二个AgentSession，也不把Provider Payload正文带进Workflow checkpoint。
- */
 export async function directAgentWorkflow(
   input: DirectAgentWorkflowInput,
 ): Promise<DirectAgentWorkflowResult> {
   "use workflow";
 
+  const result = await runDirectAgentWorkflowCore(input);
+  if (result.outcome !== "candidate_ready") return result;
+  return commitDirectAgentCandidate(input, result);
+}
+
+/**
+ * Direct Agent核心循环：一个Direct Attempt、一个Pi Operation。它只生成已持久化候选，
+ * 由外层Workflow决定是否先执行附加产品节点，再调用唯一Product Commit。
+ */
+export async function runDirectAgentWorkflowCore(
+  input: DirectAgentWorkflowInput,
+): Promise<DirectAgentWorkflowCoreResult> {
   let prepared;
   try {
     prepared = await prepareDirectAgentOperationStep({
@@ -207,28 +224,13 @@ export async function directAgentWorkflow(
         } catch (error) {
           return commitFailure(input, failureCode(error, "direct_agent.node_projection_failed"));
         }
-        try {
-          await commitDirectAgentResultStep({
-            productRunId: input.productRunId,
-            workflowAttemptId: input.workflowAttemptId,
-            directAgentAttemptId: prepared.directAgentAttemptId,
-            directAgentCandidateId: terminal.result.directAgentCandidateId,
-            candidateSha256: terminal.result.sha256,
-          });
-          return { outcome: "product_committed", productRunId: input.productRunId };
-        } catch (error) {
-          // Product Commit使用稳定commandId可安全重放；重试耗尽后不猜测是否已经提交。
-          const code = failureCode(error, "direct_agent.product_commit_unknown");
-          try {
-            return await commitOutcomeUnknown(input, code);
-          } catch {
-            return {
-              outcome: "outcome_unknown",
-              productRunId: input.productRunId,
-              errorCode: code,
-            };
-          }
-        }
+        return {
+          outcome: "candidate_ready",
+          productRunId: input.productRunId,
+          directAgentAttemptId: prepared.directAgentAttemptId,
+          directAgentCandidateId: terminal.result.directAgentCandidateId,
+          candidateSha256: terminal.result.sha256,
+        };
       }
       if (terminal.kind === "outcome_unknown") {
         try {
@@ -533,4 +535,33 @@ export async function directAgentWorkflow(
 
   // 合法Executor不会发布第17个Request；若边界漂移，失败关闭且不再恢复Operation。
   return commitFailure(input, "direct_agent.prompt_review_limit_reached");
+}
+
+/** 候选已经由Executor持久化；只有这个幂等边界把它采用为正式Assistant Message。 */
+export async function commitDirectAgentCandidate(
+  input: DirectAgentWorkflowInput,
+  candidate: DirectAgentCandidateReady,
+): Promise<DirectAgentWorkflowResult> {
+  try {
+    await commitDirectAgentResultStep({
+      productRunId: input.productRunId,
+      workflowAttemptId: input.workflowAttemptId,
+      directAgentAttemptId: candidate.directAgentAttemptId,
+      directAgentCandidateId: candidate.directAgentCandidateId,
+      candidateSha256: candidate.candidateSha256,
+    });
+    return { outcome: "product_committed", productRunId: input.productRunId };
+  } catch (error) {
+    // Product Commit使用稳定commandId可安全重放；重试耗尽后不猜测是否已经提交。
+    const code = failureCode(error, "direct_agent.product_commit_unknown");
+    try {
+      return await commitOutcomeUnknown(input, code);
+    } catch {
+      return {
+        outcome: "outcome_unknown",
+        productRunId: input.productRunId,
+        errorCode: code,
+      };
+    }
+  }
 }

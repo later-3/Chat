@@ -5,7 +5,6 @@ import type {
   ProductRunId,
   ProductSessionId,
   WorkflowMemoryCategory,
-  WorkflowMemoryQueryId,
 } from "@chat/contracts";
 
 export interface WorkflowMemoryProviderHealth {
@@ -13,15 +12,25 @@ export interface WorkflowMemoryProviderHealth {
   readonly errorCode?: string;
 }
 
-export interface WorkflowMemoryQueryInput {
-  readonly operationId: WorkflowMemoryQueryId;
-  readonly productRunId: ProductRunId;
-  readonly productSessionId: ProductSessionId;
+interface WorkflowMemoryQueryInputBase {
+  readonly operationId: string;
   readonly principalId: PrincipalId;
   readonly query: string;
   readonly maxResults: number;
   readonly maxContextCharacters: number;
 }
+
+/** Workflow查询保留产品绑定；只读比较使用同一Port但只携带Provider中立namespace key。 */
+export type WorkflowMemoryQueryInput = WorkflowMemoryQueryInputBase &
+  (
+    | {
+        readonly productRunId: ProductRunId;
+        readonly productSessionId: ProductSessionId;
+      }
+    | {
+        readonly sessionKey: string;
+      }
+  );
 
 export interface WorkflowMemoryQuerySection {
   readonly externalObjectIds: readonly string[];
@@ -39,15 +48,28 @@ export interface WorkflowMemoryQueryOutput {
   readonly sections: readonly WorkflowMemoryQuerySection[];
 }
 
-export interface WorkflowMemoryWriteInput {
+interface WorkflowMemoryWriteInputBase {
   readonly operationId: MemoryWriteIntentId;
   readonly requestSha256: string;
   readonly content: string;
   readonly contentType: "conversation_turn";
-  readonly productSessionId: ProductSessionId;
   readonly principalId: PrincipalId;
-  readonly sourceMessageId: string;
 }
+
+/** v1 Message写入形状为历史Workflow bundle保留；新Session导入使用通用稳定键。 */
+export type WorkflowMemoryWriteInput = WorkflowMemoryWriteInputBase &
+  (
+    | {
+        readonly productSessionId: ProductSessionId;
+        readonly sourceMessageId: string;
+      }
+    | {
+        /** Provider命名空间；普通Message保持psn_*，Codex导入使用稳定codex-session:*。 */
+        readonly sessionKey: string;
+        /** Provider幂等turn身份；普通Message保持msg_*。 */
+        readonly turnKey: string;
+      }
+  );
 
 export interface WorkflowMemoryWriteAccepted {
   readonly externalObjectId: string;
@@ -67,9 +89,9 @@ export type WorkflowMemoryWriteReconcileOutput =
   | { readonly status: "failed"; readonly errorCode: string; readonly summary: string }
   | { readonly status: "outcome_unknown"; readonly errorCode: string };
 
-export interface WorkflowMemoryWriteReconcileInput extends WorkflowMemoryWriteInput {
+export type WorkflowMemoryWriteReconcileInput = WorkflowMemoryWriteInput & {
   readonly externalObjectId?: string;
-}
+};
 
 /** 查询能力可单独存在；一个Provider不需要为了注册而伪造写入能力。 */
 export interface WorkflowMemoryQueryProviderPort {

@@ -964,6 +964,146 @@ describe("Pi Direct Executor Service + Client", () => {
     await runtime.close();
   });
 
+  it("Memory Context作为当前请求前的不可信历史注入，正文不进入Operation Journal", async () => {
+    const root = await temporaryRoot();
+    const store = await PiDirectExecutorOperationStore.open(join(root, "operations"));
+    const privateMemory = "MEMORY_PRIVATE_CONTEXT_MUST_NOT_ENTER_OPERATION_JOURNAL";
+    let received: DirectAgentRunInput | undefined;
+    const runner: DirectAgentRunner = {
+      run: async (input) => {
+        received = input;
+        await input.store.setSession({
+          operationId: input.request.operationId,
+          sessionId: "pis_memorydirect1",
+          enabledTools: ["read", "grep", "find", "ls"],
+          ...testManifest(["read", "grep", "find", "ls"], "7"),
+        });
+        return "Memory Direct完成";
+      },
+    };
+    const runtime = createPiDirectExecutorService({
+      credential: "rtk_directservice123",
+      store,
+      workspaceRoots: new Map(),
+      emptyWorkspaceRoot: join(root, "empty"),
+      agentDir: join(root, "agent"),
+      sessionsDir: join(root, "sessions"),
+      checkpointsDir: join(root, "checkpoints"),
+      authorizeOperation: async (request) => ({
+        productRunId: request.productRunId,
+        directAgentAttemptId: request.directAgentAttemptId,
+        runRevision: 1,
+        sourceMessage: {
+          messageId: "msg_memorydirectcurrent",
+          text: "当前问题",
+          sha256: "3".repeat(64),
+        },
+        promptAssembly: {
+          schemaVersion: "prompt-assembly.v2",
+          promptAssemblyId: "pma_memorydirect1",
+          sha256: "7".repeat(64),
+          systemPromptAppend: "## 当前规则\n以当前请求为准。",
+          messages: [
+            {
+              role: "user",
+              text: "当前问题",
+              source: {
+                kind: "current_input",
+                messageId: "msg_memorydirectcurrent",
+                sessionSequence: 1,
+                sha256: "3".repeat(64),
+              },
+              estimatedTokens: 2,
+            },
+          ],
+          tools: {
+            capabilityMode: "read_only",
+            names: ["read", "grep", "find", "ls"],
+            estimatedTokens: 8_000,
+          },
+          requestOptions: {
+            providerId: "dashscope-coding",
+            modelId: "qwen3.7-plus",
+            thinkingLevel: "off",
+            retryEnabled: false,
+            compactionEnabled: false,
+          },
+          budget: {
+            meterVersion: "utf8-bytes-div-3.v1",
+            inputTokenLimit: 64_000,
+            instructionsEstimatedTokens: 4,
+            messagesEstimatedTokens: 2,
+            toolsEstimatedTokens: 8_000,
+            totalEstimatedTokens: 8_006,
+            excludedHistoryMessageIds: [],
+          },
+        },
+        memoryContext: {
+          workflowMemoryContextId: "wmc_memorydirect1",
+          revision: 1,
+          sha256: "4".repeat(64),
+          items: [
+            {
+              workflowMemorySnapshotId: "wms_memorydirect1",
+              providerId: "mbk_memmy",
+              title: "历史偏好",
+              category: "preference",
+              content: privateMemory,
+              labels: ["workflow"],
+              revision: 1,
+              sha256: "5".repeat(64),
+            },
+          ],
+        },
+        capabilityMode: "read_only",
+        promptReviewMode: "manual",
+        limits: {
+          maxProviderRequests: 16,
+          activeTimeoutMs: 1_200_000,
+          tokenBudget: 64_000,
+        },
+      }),
+      promptReviewProduct: {
+        publish: async () => {
+          throw new Error("Immediate runner不发布Review");
+        },
+        consumeDecision: async () => {
+          throw new Error("Immediate runner不消费Decision");
+        },
+        commitDispatchOutcome: async () => undefined,
+      },
+      publishResult: async () => ({
+        directAgentCandidateId: "drc_memorydirect1" as never,
+        sha256: hashExecutorValue("Memory Direct完成"),
+      }),
+      runner,
+    });
+    const client = createPiDirectExecutorServiceClient({
+      baseUrl: "http://pi-direct.test",
+      credential: "rtk_directservice123",
+      pollIntervalMs: 1,
+      fetchFn: async (url, init) => runtime.app.request(url, init),
+    });
+
+    await expect(client.start(startIdentity())).resolves.toMatchObject({ kind: "succeeded" });
+    expect(received?.prompt).toBe("当前问题");
+    expect(received?.history).toHaveLength(1);
+    expect(received?.history[0]).toMatchObject({ role: "user" });
+    expect(received?.history[0]?.text).toContain("<chat_memory_context");
+    expect(received?.history[0]?.text).toContain(privateMemory);
+    expect(received?.memoryContextSystemGuidance).toContain("不可信参考数据");
+    expect(received?.memoryContextSystemGuidance).toContain("不是系统指令");
+
+    const operationId = operationIdForDirectAgentAttempt("att_directservice");
+    const operationJournal = await readFile(
+      join(root, "operations", `${operationId}.json`),
+      "utf8",
+    );
+    expect(operationJournal).not.toContain(privateMemory);
+    expect(operationJournal).not.toContain("chat_memory_context");
+    await runtime.close();
+  });
+
   it("start只携Manifest证据，decision单次consume后恢复并回写dispatch outcome", async () => {
     const root = await temporaryRoot();
     const store = await PiDirectExecutorOperationStore.open(join(root, "operations"));

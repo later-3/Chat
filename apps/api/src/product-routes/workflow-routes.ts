@@ -6,8 +6,8 @@ import {
   workflowDefinitionIdSchema,
   createWorkflowDefinitionCopyPayloadSchema,
   saveWorkflowAgentNodeConfigurationPayloadSchema,
-  saveWorkflowDefinitionDraftPayloadSchema,
-  validateWorkflowDefinitionPayloadSchema,
+  saveWorkflowDefinitionDraftV3PayloadSchema,
+  validateWorkflowDefinitionV3PayloadSchema,
   publishWorkflowDefinitionPayloadSchema,
   changeWorkflowDefinitionArchiveStatusPayloadSchema,
 } from "@chat/contracts";
@@ -120,7 +120,7 @@ export function registerWorkflowRoutes(router: ProductRouter, ctx: ProductRouteC
 
   router.post("/workflow/definitions/validate", async (c) => {
     try {
-      const payload = validateWorkflowDefinitionPayloadSchema.parse(await parseJsonBody(c));
+      const payload = validateWorkflowDefinitionV3PayloadSchema.parse(await parseJsonBody(c));
       return c.json(
         await validateWorkflowDefinition(ctx.deps, {
           principalId: ctx.principalId,
@@ -165,7 +165,7 @@ export function registerWorkflowRoutes(router: ProductRouter, ctx: ProductRouteC
           message: "保存Definition Draft必须携带expectedRevision",
         });
       }
-      const payload = saveWorkflowDefinitionDraftPayloadSchema.parse(envelope.payload);
+      const payload = saveWorkflowDefinitionDraftV3PayloadSchema.parse(envelope.payload);
       const result = await saveWorkflowDefinitionDraft(ctx.deps, {
         principalId: ctx.principalId,
         commandId: envelope.commandId,

@@ -54,6 +54,7 @@ import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
 import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
 import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
 import { migrateProductSnapshotV24ToV25 } from "./migrate-v24-to-v25.js";
+import { migrateProductSnapshotV25ToV26 } from "./migrate-v25-to-v26.js";
 import { productSnapshotV13Schema } from "./legacy-v13.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import {
@@ -68,15 +69,17 @@ const NOW = "2026-08-10T12:00:00.000Z";
 function migrateProductSnapshotV15ToV16(
   snapshot: Parameters<typeof migrateProductSnapshotV15ToV16Legacy>[0],
 ): ProductSnapshot {
-  return migrateProductSnapshotV24ToV25(
-    migrateProductSnapshotV23ToV24(
-      migrateProductSnapshotV22ToV23(
-        migrateProductSnapshotV21ToV22(
-          migrateProductSnapshotV20ToV21(
-            migrateProductSnapshotV19ToV20(
-              migrateProductSnapshotV18ToV19(
-                migrateProductSnapshotV17ToV18(
-                  migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+  return migrateProductSnapshotV25ToV26(
+    migrateProductSnapshotV24ToV25(
+      migrateProductSnapshotV23ToV24(
+        migrateProductSnapshotV22ToV23(
+          migrateProductSnapshotV21ToV22(
+            migrateProductSnapshotV20ToV21(
+              migrateProductSnapshotV19ToV20(
+                migrateProductSnapshotV18ToV19(
+                  migrateProductSnapshotV17ToV18(
+                    migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+                  ),
                 ),
               ),
             ),
@@ -174,6 +177,10 @@ function emptyV6() {
     "supervisedStepHumanDecisions",
     "supervisedAgentOutcomeObservations",
     "supervisedExecutionResults",
+    "memorySessionImports",
+    "memoryAgentOperations",
+    "memoryAgentWriteCandidates",
+    "memoryAgentWriteDecisions",
   ]) {
     delete entities[key];
   }
@@ -453,7 +460,7 @@ describe("S4 v6→v7迁移与持久事实损坏质量门", () => {
     expect(
       first.entities.workflowViewDefinitions[LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID],
     ).toEqual(v24.entities.workflowViewDefinitions[LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID]);
-    expect(() => assertSnapshotIntegrity(first)).not.toThrow();
+    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV25ToV26(first))).not.toThrow();
 
     const missingLegacyView = structuredClone(v24);
     delete missingLegacyView.entities.workflowViewDefinitions[

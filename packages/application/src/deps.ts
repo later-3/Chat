@@ -70,6 +70,7 @@ import type { ProductStorePort } from "./product-store-port.js";
 import type { MemoryBackendRegistryPort } from "./memory-ports.js";
 import type { MemoryImportBackendRegistryPort } from "./memory-import-ports.js";
 import type { WorkflowMemoryProviderRegistryPort } from "./workflow-memory-ports.js";
+import type { MemorySessionSourceRegistryPort } from "./memory-session-source-port.js";
 import type {
   ProjectIntakeUnderstandingPort,
   ProjectAdvancementUnderstandingPort,
@@ -226,12 +227,14 @@ export interface ApplicationDeps {
   readonly executionEvidenceVerifier?: ExecutionEvidenceVerifierPort;
   /** Vercel Workflow World的脱敏只读投影；不暴露任何Runtime私有身份。 */
   readonly workflowRuntimeTrace?: WorkflowRuntimeTraceReaderPort;
-  /** 配置在服务端组合根；浏览器只能选择公开 backendId。 */
+  /** 遗留Memory query Port；由服务端组合根按mode与新Provider共用同一Adapter实例。 */
   readonly memoryBackends?: MemoryBackendRegistryPort;
-  /** 外部写入能力与Query分离，避免调用方忽略outcome_unknown。 */
+  /** 遗留import Port；只在Workflow Runtime装配，避免API直接跨越外部写副作用。 */
   readonly memoryImportBackends?: MemoryImportBackendRegistryPort;
-  /** 当前Workflow Memory稳定边界；首期活动Provider只有Tencent MemoryCore。 */
+  /** 当前Workflow query/write稳定边界；Provider集合由CHAT_MEMORY_MODE显式冻结。 */
   readonly workflowMemoryProviders?: WorkflowMemoryProviderRegistryPort;
+  /** Chat Session由Product Store读取；Codex等外部Session只经按需只读Adapter进入。 */
+  readonly memorySessionSources?: MemorySessionSourceRegistryPort;
   readonly projectRoots?: ProjectResourceRootRegistryPort;
   readonly projectIntakeUnderstanding?: ProjectIntakeUnderstandingPort;
   readonly projectAdvancementUnderstanding?: ProjectAdvancementUnderstandingPort;

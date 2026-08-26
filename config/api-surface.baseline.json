@@ -7,7 +7,8 @@
     "RuleCommandResultDto",
     "RuleTagCommandResultDto",
     "WorkflowDefinitionCommandResultDto",
-    "WorkflowDefinitionCommandResultV2Dto"
+    "WorkflowDefinitionCommandResultV2Dto",
+    "WorkflowDefinitionCommandResultV3Dto"
   ],
   "deprecated": [],
   "generation": {
@@ -60,6 +61,8 @@
             "types": "./src/composition.ts"
           },
           "exportedSymbols": [
+            "composeApiMemoryRegistries",
+            "composeApiWorkflowMemoryProviders",
             "createApplicationDeps",
             "createDirectAgentIdFactory",
             "createIdFactory",
@@ -75,7 +78,7 @@
           ],
           "key": "./composition",
           "target": "./src/composition.ts",
-          "transitiveSignatureSha256": "c9355ae73e8167fd8df1963b8b40562445a47e5d85c123e601f90f78425b43ad",
+          "transitiveSignatureSha256": "66c06fb7652ad34b3ee46fcc5eb1691378dbf57ea237d7cde16e4bad911a3d0f",
           "visibility": "public"
         },
         {
@@ -130,7 +133,7 @@
         }
       },
       "name": "@chat/application",
-      "publicEntrySignatureSha256": "b85696dc242b252721beb4cb9bbbdd1ae36ca53034bd9bb0c911b8fb809df147",
+      "publicEntrySignatureSha256": "caaa1618362fc94637a8d8a461029bbdc98593667da4ae907ecbc83a72763b21",
       "subpaths": [
         {
           "conditions": {
@@ -157,6 +160,7 @@
             "AuthorizedWorkflowResource",
             "authorizeExecutorOperation",
             "beginDirectAgentAttempt",
+            "beginMemoryAgentOperation",
             "beginPlanningContext",
             "BeginPlanningContextCommand",
             "beginProjectAdvancement",
@@ -212,6 +216,7 @@
             "compileProjectAgentContext",
             "compileProjectAgentContextV2",
             "compileWorkflowPromptAssembly",
+            "completeMemoryAgentOperation",
             "completeRunAttempt",
             "CompleteRunAttemptCommand",
             "computePlanSha256",
@@ -225,6 +230,7 @@
             "createManagedProject",
             "createMemoryImport",
             "CreateMemoryImportInput",
+            "createMemorySessionImport",
             "createMemoryWrite",
             "CreateMemoryWriteInput",
             "createProductSession",
@@ -237,6 +243,7 @@
             "createRuleTag",
             "createWorkflowDefinitionCopy",
             "CurrentAgentRuntimeBinding",
+            "decideMemoryAgentWriteCandidate",
             "decideProjectAdvancementCandidate",
             "decideProjectBootstrapCandidate",
             "decideProjectCandidate",
@@ -273,7 +280,9 @@
             "getCurrentProjectBootstrapForSession",
             "getCurrentProjectCandidate",
             "getCurrentPromptReview",
+            "getMemoryAgentWriteCandidate",
             "getMemoryImport",
+            "getMemorySessionImport",
             "getMemoryWrite",
             "getNote",
             "getNoteHistory",
@@ -317,7 +326,10 @@
             "isPromptBearingNodeType",
             "listAgentProfiles",
             "listAuthorizedWorkflowResources",
+            "listMemoryAgentWriteCandidates",
             "listMemoryBackends",
+            "listMemorySessionImports",
+            "listMemorySessionSources",
             "listMemoryWrites",
             "listNotes",
             "listPlaneProjectBindings",
@@ -339,10 +351,12 @@
             "LoadedMemoryImport",
             "LoadedMemoryWrite",
             "loadMemoryImportForRuntime",
+            "loadMemorySessionSourceSnapshot",
             "loadMemoryWriteForRuntime",
             "loadNoteDecisionForRuntime",
             "loadPromptReviewDecisionForRuntime",
             "manuallyDisposePlaneProjectOperation",
+            "markMemoryAgentOperationOutcomeUnknown",
             "markMemoryImportDispatching",
             "markMemoryWriteDispatching",
             "markPromptReviewDispatching",
@@ -366,6 +380,11 @@
             "MemoryQueryInput",
             "MemoryQueryOutput",
             "MemoryQuerySection",
+            "MemorySessionSourceDescriptor",
+            "memorySessionSourceId",
+            "memorySessionSourceKey",
+            "MemorySessionSourcePort",
+            "MemorySessionSourceRegistryPort",
             "MemoryWriteOutboxEntry",
             "memoryWriteOutboxForIntent",
             "newSpanId",
@@ -381,6 +400,7 @@
             "observeProjectResource",
             "persistDirectAgentCandidate",
             "persistExecutionCandidate",
+            "persistMemoryWriteAgentCandidate",
             "persistPlanningContextResult",
             "PersistPlanningContextResultCommand",
             "persistValidationResult",
@@ -409,6 +429,7 @@
             "PlanningInput",
             "planningMemorySelectionForRun",
             "prepareGovernanceReviewInput",
+            "prepareMemoryWriteAgentInput",
             "prepareNoteCaptureInputForRuntime",
             "preparePlaneProjectOperation",
             "preparePlanningMemoryContext",
@@ -422,6 +443,8 @@
             "previewContentLabPlaneRollout",
             "previewDirectPromptAssembly",
             "previewDirectPromptConfiguration",
+            "previewMemoryProviderComparison",
+            "previewMemorySessionImport",
             "previewPromptTurn",
             "ProductCommandIdentity",
             "ProductMutationResult",
@@ -587,7 +610,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "b85696dc242b252721beb4cb9bbbdd1ae36ca53034bd9bb0c911b8fb809df147",
+          "transitiveSignatureSha256": "caaa1618362fc94637a8d8a461029bbdc98593667da4ae907ecbc83a72763b21",
           "visibility": "public"
         },
         {
@@ -607,7 +630,7 @@
           ],
           "key": "./workflow-kernel-fixtures",
           "target": "./src/workflow-kernel-fixtures.ts",
-          "transitiveSignatureSha256": "64344ed619e01b1a81ebebd75997fa2debbe9ea77aac6244cbe86c99b19b349a",
+          "transitiveSignatureSha256": "c78431f38c5d672dd7f664b4608fd777f284c22ac2172a79065d92810fc67ae0",
           "visibility": "public"
         },
         {
@@ -627,7 +650,7 @@
           ],
           "key": "./workflow-run-spec-compiler",
           "target": "./src/workflow-run-spec-compiler.ts",
-          "transitiveSignatureSha256": "4d69208577efc164f4a34c073c6f8f29c4bb66c61f04344e944081a8572cd987",
+          "transitiveSignatureSha256": "cd34a5bc3e00966db4fa6b8e86d0e10c8ab85dca8c76b16eda7bbeb017e2925d",
           "visibility": "public"
         },
         {
@@ -641,7 +664,11 @@
             "createLegacySystemDirectAgentDefinition",
             "createLegacySystemSimplePlanningDefinition",
             "createSystemDirectAgentDefinition",
+            "createSystemMemoryAgentDirectDefinition",
+            "createSystemMemoryDirectDefinition",
             "createSystemMemoryPlanningDefinition",
+            "createSystemMemoryReadDirectDefinition",
+            "createSystemMemoryWriteDirectDefinition",
             "createSystemNoteDefinition",
             "createSystemPlanningDefinition",
             "createSystemSimplePlanningDefinition",
@@ -658,15 +685,31 @@
             "LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID",
             "legacySystemDirectAgentSemanticRoot",
             "legacySystemSimplePlanningSemanticRoot",
+            "MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION",
+            "MEMORY_AGENT_DIRECT_RUNNER_FAMILY",
+            "MEMORY_DIRECT_RUNNER_BUNDLE_VERSION",
+            "MEMORY_DIRECT_RUNNER_FAMILY",
             "NOTE_CAPTURE_RUNNER_BUNDLE_VERSION",
             "NOTE_CAPTURE_RUNNER_FAMILY",
             "RETIRED_SYSTEM_WORKFLOW_DEFINITION_IDS",
             "SYSTEM_DIRECT_AGENT_WORKFLOW_DEFINITION_ID",
             "SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID",
             "SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID",
+            "SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_DEFINITION_ID",
+            "SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_REVISION_ID",
+            "SYSTEM_MEMORY_AGENT_DIRECT_WORKFLOW_VIEW_ID",
+            "SYSTEM_MEMORY_DIRECT_WORKFLOW_DEFINITION_ID",
+            "SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID",
+            "SYSTEM_MEMORY_DIRECT_WORKFLOW_VIEW_ID",
             "SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID",
             "SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID",
             "SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID",
+            "SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_DEFINITION_ID",
+            "SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_REVISION_ID",
+            "SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_VIEW_ID",
+            "SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_DEFINITION_ID",
+            "SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_REVISION_ID",
+            "SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_VIEW_ID",
             "SYSTEM_NOTE_WORKFLOW_DEFINITION_ID",
             "SYSTEM_NOTE_WORKFLOW_REVISION_ID",
             "SYSTEM_NOTE_WORKFLOW_VIEW_ID",
@@ -677,14 +720,18 @@
             "SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID",
             "SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID",
             "systemDirectAgentSemanticRoot",
+            "systemMemoryAgentDirectSemanticRoot",
+            "systemMemoryDirectSemanticRoot",
             "systemMemoryPlanningSemanticRoot",
+            "systemMemoryReadDirectSemanticRoot",
+            "systemMemoryWriteDirectSemanticRoot",
             "systemNoteSemanticRoot",
             "systemPlanningSemanticRoot",
             "systemSimplePlanningSemanticRoot"
           ],
           "key": "./workflow-system-definitions",
           "target": "./src/workflow-system-definitions.ts",
-          "transitiveSignatureSha256": "9cda08971ccca9f5276e805f383e69136b021ee77b07c2a25c757540eb29a9d3",
+          "transitiveSignatureSha256": "03328b918986ebbc2ed96c73097f1b446b4196c704b5b86fa1e44257b6c07e0a",
           "visibility": "public"
         }
       ]
@@ -692,11 +739,15 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [".", "./public", "./runtime-credential"],
+      "exportPaths": [".", "./memory-agent", "./public", "./runtime-credential"],
       "exports": {
         ".": {
           "import": "./src/index.ts",
           "types": "./src/index.ts"
+        },
+        "./memory-agent": {
+          "import": "./src/memory-agent.ts",
+          "types": "./src/memory-agent.ts"
         },
         "./public": {
           "import": "./src/public.ts",
@@ -708,7 +759,7 @@
         }
       },
       "name": "@chat/contracts",
-      "publicEntrySignatureSha256": "cf0fc9a1e1f7dd627d2999f7da8addd6091ff363b2f7af816d86bb559fd8a738",
+      "publicEntrySignatureSha256": "08bc5c990c2ca3e305d01077a7f58d60ea83d1f7c831b2da69fbcc1b3fb62228",
       "subpaths": [
         {
           "conditions": {
@@ -815,6 +866,10 @@
             "beginDirectAgentAttemptRuntimeRequestSchema",
             "BeginDirectAgentAttemptRuntimeResponse",
             "beginDirectAgentAttemptRuntimeResponseSchema",
+            "BeginMemoryAgentOperationRequest",
+            "beginMemoryAgentOperationRequestSchema",
+            "BeginMemoryAgentOperationResponse",
+            "beginMemoryAgentOperationResponseSchema",
             "BeginPlanningContextResponse",
             "beginPlanningContextResponseSchema",
             "BeginProjectAdvancementPayload",
@@ -874,6 +929,8 @@
             "claimToolExecutionDecisionRuntimeRequestSchema",
             "ClaimToolExecutionDecisionRuntimeResponse",
             "claimToolExecutionDecisionRuntimeResponseSchema",
+            "CodexSessionId",
+            "codexSessionIdSchema",
             "CODING_EXECUTOR_MAX_TURNS_PER_STEP",
             "CODING_EXECUTOR_TIMEOUT_MS_PER_STEP",
             "CODING_EXECUTOR_TOKEN_BUDGET_PER_STEP",
@@ -927,6 +984,8 @@
             "compileExecutionContractResponseSchema",
             "CompilePlanningInputRequest",
             "compilePlanningInputRequestSchema",
+            "CompleteMemoryAgentOperationRequest",
+            "completeMemoryAgentOperationRequestSchema",
             "CompleteRunAttemptRequest",
             "completeRunAttemptRequestSchema",
             "ConsumePromptReviewDecisionRuntimeRequest",
@@ -989,6 +1048,8 @@
             "createManagedProjectPayloadSchema",
             "CreateMemoryImportPayload",
             "createMemoryImportPayloadSchema",
+            "CreateMemorySessionImportPayload",
+            "createMemorySessionImportPayloadSchema",
             "createMemoryWriteCommandSchema",
             "CreateMemoryWritePayload",
             "createMemoryWritePayloadSchema",
@@ -1016,6 +1077,8 @@
             "CursorPageRequest",
             "cursorPageRequestSchema",
             "cursorPageSchema",
+            "DecideMemoryAgentWriteCandidatePayload",
+            "decideMemoryAgentWriteCandidatePayloadSchema",
             "DecideProjectWorkTransitionPayload",
             "decideProjectWorkTransitionPayloadSchema",
             "Decision",
@@ -1058,6 +1121,7 @@
             "directAgentRunPhaseSchema",
             "DirectAgentToolName",
             "directAgentToolNameSchema",
+            "dispatchingMemoryAgentOperationSchema",
             "ensurePlaneWorkItemIntentSchema",
             "ExcludedRuleRevisionRef",
             "excludedRuleRevisionRefSchema",
@@ -1099,6 +1163,7 @@
             "ExpireApprovalRequest",
             "expireApprovalRequestSchema",
             "expireApprovalResponseSchema",
+            "failedMemoryAgentOperationSchema",
             "FreezeWorkflowMemoryContextRequest",
             "freezeWorkflowMemoryContextRequestSchema",
             "FreezeWorkflowMemoryContextResponse",
@@ -1134,11 +1199,17 @@
             "LEGACY_AGENT_VERSION_SCHEMA_VERSION",
             "LEGACY_DIRECT_PROMPT_COMPILER_VERSION",
             "LEGACY_DIRECT_PROMPT_PROFILE_VERSION",
+            "LEGACY_WORKFLOW_PRODUCT_API_SCHEMA_VERSION",
             "legacyAgentVersionV1HashInputSchema",
             "legacyAgentVersionV1Schema",
             "legacyPromptBearingNodeTypeSchema",
             "legacyRunAttemptKindSchema",
+            "listMemoryAgentWriteCandidatesQuerySchema",
+            "listMemoryAgentWriteCandidatesResponseSchema",
             "listMemoryProvidersResponseSchema",
+            "listMemorySessionImportsQuerySchema",
+            "listMemorySessionImportsResponseSchema",
+            "listMemorySessionSourcesResponseSchema",
             "listMemoryWritesQuerySchema",
             "listMemoryWritesResponseSchema",
             "ListNotesQuery",
@@ -1189,16 +1260,45 @@
             "ManuallyDisposePlaneProjectOperationPayload",
             "manuallyDisposePlaneProjectOperationPayloadSchema",
             "markdownSectionSchema",
+            "MarkMemoryAgentOperationOutcomeUnknownRequest",
+            "markMemoryAgentOperationOutcomeUnknownRequestSchema",
             "markMemoryImportDispatchingRequestSchema",
             "MarkMemoryWriteDispatchingRequest",
             "markMemoryWriteDispatchingRequestSchema",
             "MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION",
+            "MEMORY_RETRIEVAL_AGENT_PROMPT_VERSION",
+            "MEMORY_WRITE_AGENT_PROMPT_VERSION",
             "MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION",
             "memoryAdapterContractVersionSchema",
             "MemoryAdoption",
             "MemoryAdoptionId",
             "memoryAdoptionIdSchema",
             "memoryAdoptionSchema",
+            "MemoryAgentEvidenceRef",
+            "memoryAgentEvidenceRefSchema",
+            "MemoryAgentOperation",
+            "MemoryAgentOperationId",
+            "memoryAgentOperationIdSchema",
+            "MemoryAgentOperationResponse",
+            "memoryAgentOperationResponseSchema",
+            "MemoryAgentOperationResult",
+            "memoryAgentOperationResultSchema",
+            "memoryAgentOperationSchema",
+            "memoryAgentRetrieveNodeConfigSchema",
+            "memoryAgentSearchSectionSchema",
+            "MemoryAgentWriteCandidate",
+            "MemoryAgentWriteCandidateId",
+            "memoryAgentWriteCandidateIdSchema",
+            "MemoryAgentWriteCandidateItem",
+            "memoryAgentWriteCandidateItemSchema",
+            "memoryAgentWriteCandidateResponseSchema",
+            "memoryAgentWriteCandidateSchema",
+            "MemoryAgentWriteDecision",
+            "MemoryAgentWriteDecisionId",
+            "memoryAgentWriteDecisionIdSchema",
+            "memoryAgentWriteDecisionResponseSchema",
+            "memoryAgentWriteDecisionSchema",
+            "memoryAgentWriteNodeConfigSchema",
             "memoryBackendAuthModeSchema",
             "memoryBackendCapabilitiesSchema",
             "MemoryBackendDescriptor",
@@ -1238,9 +1338,16 @@
             "memoryLayerSchema",
             "MemoryProviderCapabilities",
             "memoryProviderCapabilitiesSchema",
+            "memoryProviderComparisonItemSchema",
+            "MemoryProviderComparisonOutcome",
+            "memoryProviderComparisonOutcomeSchema",
+            "MemoryProviderComparisonPreview",
+            "memoryProviderComparisonPreviewSchema",
             "MemoryProviderDescriptor",
             "memoryProviderDescriptorSchema",
             "memoryProviderKindSchema",
+            "MemoryProviderPairwiseComparison",
+            "memoryProviderPairwiseComparisonSchema",
             "memoryProviderTransportSchema",
             "MemoryQuery",
             "MemoryQueryDispatchDto",
@@ -1257,20 +1364,49 @@
             "MemoryResultSnapshotId",
             "memoryResultSnapshotIdSchema",
             "memoryResultSnapshotSchema",
+            "MemoryRetrievalAgentSelection",
+            "memoryRetrievalAgentSelectionSchema",
+            "memorySessionConversionVersionSchema",
+            "MemorySessionImport",
+            "MemorySessionImportDto",
+            "memorySessionImportDtoSchema",
+            "MemorySessionImportId",
+            "memorySessionImportIdSchema",
+            "memorySessionImportItemRefSchema",
+            "MemorySessionImportPreview",
+            "memorySessionImportPreviewItemSchema",
+            "memorySessionImportPreviewSchema",
+            "memorySessionImportResponseSchema",
+            "memorySessionImportSchema",
+            "memorySessionSourceDescriptorSchema",
+            "memorySessionSourceListQuerySchema",
+            "MemorySessionSourceRef",
+            "memorySessionSourceRefSchema",
             "memoryWriteAcceptedSchema",
             "memoryWriteAdapterInputSchema",
+            "memoryWriteAgentCandidateSourceSelectionSchema",
+            "MemoryWriteAgentProposal",
+            "memoryWriteAgentProposalItemSchema",
+            "memoryWriteAgentProposalSchema",
             "MemoryWriteDto",
             "memoryWriteDtoSchema",
             "MemoryWriteIntent",
             "MemoryWriteIntentId",
             "memoryWriteIntentIdSchema",
             "memoryWriteIntentSchema",
+            "MemoryWriteIntentSourceSelection",
+            "memoryWriteIntentSourceSelectionSchema",
+            "memoryWriteIntentV1Schema",
+            "memoryWriteIntentV2Schema",
+            "memoryWriteIntentV3Schema",
             "memoryWriteResponseSchema",
             "MemoryWriteResult",
             "MemoryWriteResultId",
             "memoryWriteResultIdSchema",
             "memoryWriteResultResponseSchema",
             "memoryWriteResultSchema",
+            "MemoryWriteSessionImportSourceSelection",
+            "memoryWriteSessionImportSourceSelectionSchema",
             "MemoryWriteSourceSelection",
             "memoryWriteSourceSelectionSchema",
             "memoryWriteWorkflowDispatchRequestSchema",
@@ -1371,6 +1507,7 @@
             "outboxEntryKindSchema",
             "outboxEntrySchema",
             "outboxEntryStatusSchema",
+            "outcomeUnknownMemoryAgentOperationSchema",
             "PersistDirectAgentCandidateRuntimeRequest",
             "persistDirectAgentCandidateRuntimeRequestSchema",
             "PersistDirectAgentCandidateRuntimeResponse",
@@ -1378,6 +1515,10 @@
             "PersistExecutionCandidateRequest",
             "persistExecutionCandidateRequestSchema",
             "persistExecutionCandidateResponseSchema",
+            "PersistMemoryWriteAgentCandidateRequest",
+            "persistMemoryWriteAgentCandidateRequestSchema",
+            "PersistMemoryWriteAgentCandidateResponse",
+            "persistMemoryWriteAgentCandidateResponseSchema",
             "PersistPlanningContextResultRequest",
             "persistPlanningContextResultRequestSchema",
             "PersistValidationResultRequest",
@@ -1486,6 +1627,10 @@
             "prepareGovernanceReviewInputRequestSchema",
             "PrepareGovernanceReviewInputResponse",
             "prepareGovernanceReviewInputResponseSchema",
+            "PrepareMemoryWriteAgentInputRequest",
+            "prepareMemoryWriteAgentInputRequestSchema",
+            "PrepareMemoryWriteAgentInputResponse",
+            "prepareMemoryWriteAgentInputResponseSchema",
             "PrepareNoteCaptureInputRuntimeRequest",
             "prepareNoteCaptureInputRuntimeRequestSchema",
             "PrepareNoteCaptureInputRuntimeResponse",
@@ -1517,6 +1662,11 @@
             "prepareProjectBootstrapRuntimeResponseSchema",
             "PrepareProjectCandidateRequest",
             "prepareProjectCandidateRequestSchema",
+            "PreviewMemoryProviderComparisonPayload",
+            "previewMemoryProviderComparisonPayloadSchema",
+            "previewMemoryProviderComparisonResponseSchema",
+            "previewMemorySessionImportPayloadSchema",
+            "previewMemorySessionImportResponseSchema",
             "PreviewPromptAssemblyPayload",
             "previewPromptAssemblyPayloadSchema",
             "PreviewPromptConfigurationPayload",
@@ -2188,6 +2338,8 @@
             "saveWorkflowAgentNodeConfigurationPayloadSchema",
             "SaveWorkflowDefinitionDraftPayload",
             "saveWorkflowDefinitionDraftPayloadSchema",
+            "SaveWorkflowDefinitionDraftV3Payload",
+            "saveWorkflowDefinitionDraftV3PayloadSchema",
             "SelectedRuleRevisionRef",
             "selectedRuleRevisionRefSchema",
             "ServiceStatus",
@@ -2215,6 +2367,7 @@
             "submitPromptReviewDecisionPayloadSchema",
             "SubmitToolExecutionDecisionPayload",
             "submitToolExecutionDecisionPayloadSchema",
+            "succeededMemoryAgentOperationSchema",
             "SUPERVISED_PLANNING_V3_FOUNDATION_VERSION",
             "SUPERVISED_PROMPT_COMPILER_V5_VERSION",
             "SUPERVISED_PROMPT_PROFILE_VERSION",
@@ -2350,6 +2503,8 @@
             "updateRuleTagPayloadSchema",
             "ValidateWorkflowDefinitionPayload",
             "validateWorkflowDefinitionPayloadSchema",
+            "ValidateWorkflowDefinitionV3Payload",
+            "validateWorkflowDefinitionV3PayloadSchema",
             "ValidationResult",
             "ValidationResultId",
             "validationResultIdSchema",
@@ -2361,9 +2516,11 @@
             "WORKFLOW_DEFINITION_ID",
             "WORKFLOW_DEFINITION_VERSION",
             "WORKFLOW_DESIGNER_API_SCHEMA_VERSION",
+            "WORKFLOW_DESIGNER_API_V3_SCHEMA_VERSION",
             "WORKFLOW_DISPATCH_SCHEMA_VERSION",
             "WORKFLOW_EXECUTION_TRACE_SCHEMA_VERSION",
             "WORKFLOW_PRODUCT_API_SCHEMA_VERSION",
+            "WORKFLOW_PRODUCT_API_V3_SCHEMA_VERSION",
             "WORKFLOW_PROMPT_COMPILER_V6_VERSION",
             "WORKFLOW_PROMPT_COMPILER_VERSION",
             "WORKFLOW_PROMPT_PROFILE_VERSION",
@@ -2373,20 +2530,37 @@
             "workflowBlueprintKeySchema",
             "WorkflowBlueprintsDto",
             "workflowBlueprintsDtoSchema",
+            "WorkflowBlueprintsV2Dto",
+            "workflowBlueprintsV2DtoSchema",
+            "WorkflowBlueprintsV3Dto",
+            "workflowBlueprintsV3DtoSchema",
+            "WorkflowBlueprintV2Dto",
+            "workflowBlueprintV2DtoSchema",
+            "WorkflowBlueprintV3Dto",
+            "workflowBlueprintV3DtoSchema",
             "WorkflowCatalogDto",
             "workflowCatalogDtoSchema",
+            "WorkflowCatalogV2Dto",
+            "workflowCatalogV2DtoSchema",
+            "WorkflowCatalogV3Dto",
+            "workflowCatalogV3DtoSchema",
             "workflowDefaultActivationSchema",
             "WorkflowDefinition",
             "WorkflowDefinitionCommandResultDto",
             "workflowDefinitionCommandResultDtoSchema",
             "WorkflowDefinitionCommandResultV2Dto",
             "workflowDefinitionCommandResultV2DtoSchema",
+            "WorkflowDefinitionCommandResultV3Dto",
+            "workflowDefinitionCommandResultV3DtoSchema",
             "WorkflowDefinitionDetailDto",
             "workflowDefinitionDetailDtoSchema",
             "WorkflowDefinitionDetailV2Dto",
             "workflowDefinitionDetailV2DtoSchema",
+            "WorkflowDefinitionDetailV3Dto",
+            "workflowDefinitionDetailV3DtoSchema",
             "WorkflowDefinitionElement",
             "WorkflowDefinitionElementV2",
+            "WorkflowDefinitionElementV3",
             "WorkflowDefinitionId",
             "workflowDefinitionIdSchema",
             "WorkflowDefinitionNodeDto",
@@ -2394,8 +2568,13 @@
             "workflowDefinitionNodeIdSchema",
             "workflowDefinitionNodeTypeSchema",
             "workflowDefinitionNodeTypeV2Schema",
+            "workflowDefinitionNodeTypeV3Schema",
             "WorkflowDefinitionPublishedDto",
             "workflowDefinitionPublishedDtoSchema",
+            "WorkflowDefinitionPublishedV2Dto",
+            "workflowDefinitionPublishedV2DtoSchema",
+            "WorkflowDefinitionPublishedV3Dto",
+            "workflowDefinitionPublishedV3DtoSchema",
             "WorkflowDefinitionRevision",
             "WorkflowDefinitionRevisionId",
             "workflowDefinitionRevisionIdSchema",
@@ -2403,22 +2582,32 @@
             "workflowDefinitionRevisionInputSchema",
             "workflowDefinitionRevisionInputV1Schema",
             "workflowDefinitionRevisionInputV2Schema",
+            "workflowDefinitionRevisionInputV3Schema",
             "workflowDefinitionRevisionSchema",
             "workflowDefinitionRevisionStateSchema",
             "WorkflowDefinitionRevisionSummaryDto",
             "workflowDefinitionRevisionSummaryDtoSchema",
             "workflowDefinitionRevisionV1Schema",
             "workflowDefinitionRevisionV2Schema",
+            "workflowDefinitionRevisionV3Schema",
             "workflowDefinitionSchema",
             "WorkflowDefinitionsDto",
             "workflowDefinitionsDtoSchema",
             "WorkflowDefinitionSequence",
             "WorkflowDefinitionSequenceV2",
+            "WorkflowDefinitionSequenceV3",
             "workflowDefinitionStateSchema",
+            "WorkflowDefinitionsV2Dto",
+            "workflowDefinitionsV2DtoSchema",
+            "WorkflowDefinitionsV3Dto",
+            "workflowDefinitionsV3DtoSchema",
             "workflowDefinitionV1Schema",
             "workflowDefinitionV2Schema",
+            "workflowDefinitionV3Schema",
             "WorkflowDefinitionValidationDto",
             "workflowDefinitionValidationDtoSchema",
+            "WorkflowDefinitionValidationV3Dto",
+            "workflowDefinitionValidationV3DtoSchema",
             "WorkflowDesignerAddress",
             "workflowDesignerAddressSchema",
             "workflowDesignerAddressSegmentSchema",
@@ -2431,6 +2620,8 @@
             "workflowDesignerSlotDtoSchema",
             "WorkflowDesignerSlotV2Dto",
             "workflowDesignerSlotV2DtoSchema",
+            "WorkflowDesignerSlotV3Dto",
+            "workflowDesignerSlotV3DtoSchema",
             "workflowExecutionPathSegmentSchema",
             "WorkflowExecutionTraceDto",
             "workflowExecutionTraceDtoSchema",
@@ -2439,6 +2630,7 @@
             "workflowExecutorKindSchema",
             "WorkflowExecutorManifestEntry",
             "workflowExecutorManifestEntrySchema",
+            "workflowExecutorManifestEntryV3Schema",
             "WorkflowFrozenResource",
             "workflowFrozenResourceSchema",
             "workflowKernelLimitsSchema",
@@ -2464,9 +2656,12 @@
             "workflowMemorySnapshotSchema",
             "WorkflowMemoryWriteNodeConfig",
             "workflowMemoryWriteNodeConfigSchema",
+            "WorkflowMemoryWriteNodeConfigV2",
+            "workflowMemoryWriteNodeConfigV2Schema",
             "workflowNodeAllowedActionSchema",
             "workflowNodeCatalogItemDtoSchema",
             "workflowNodeCatalogItemV2DtoSchema",
+            "workflowNodeCatalogItemV3DtoSchema",
             "WorkflowNodeDetailDto",
             "workflowNodeDetailDtoSchema",
             "WorkflowNodeDetailInclude",
@@ -2477,6 +2672,7 @@
             "workflowNodePublicErrorSchema",
             "WorkflowNodeResolution",
             "workflowNodeResolutionSchema",
+            "workflowNodeResolutionV3Schema",
             "WorkflowNodeRun",
             "WorkflowNodeRunId",
             "workflowNodeRunIdSchema",
@@ -2520,11 +2716,18 @@
             "workflowRunBusinessInputSchema",
             "WorkflowRunConfigSummaryDto",
             "workflowRunConfigSummaryDtoSchema",
+            "WorkflowRunConfigSummaryV2Dto",
+            "workflowRunConfigSummaryV2DtoSchema",
+            "WorkflowRunConfigSummaryV3Dto",
+            "workflowRunConfigSummaryV3DtoSchema",
             "WorkflowRunConfiguration",
             "workflowRunConfigurationSchema",
             "WorkflowRunnerEvidence",
             "workflowRunnerEvidenceSchema",
+            "workflowRunnerEvidenceV3Schema",
             "workflowRunnerFamilySchema",
+            "workflowRunnerFamilyV2Schema",
+            "workflowRunnerFamilyV3Schema",
             "WorkflowRunOverride",
             "workflowRunOverrideSchema",
             "WorkflowRunSpec",
@@ -2533,6 +2736,7 @@
             "workflowRunSpecSchema",
             "workflowRunSpecV1Schema",
             "workflowRunSpecV2Schema",
+            "workflowRunSpecV3Schema",
             "WorkflowRuntimeEventType",
             "workflowRuntimeEventTypeSchema",
             "WorkflowRuntimeResourceKind",
@@ -2557,6 +2761,7 @@
             "workflowRunViewDtoSchema",
             "workflowSequenceBoundarySchema",
             "workflowSequenceBoundaryV2Schema",
+            "workflowSequenceBoundaryV3Schema",
             "WorkflowStartRequest",
             "workflowStartRequestSchema",
             "workflowStartResponseSchema",
@@ -2579,7 +2784,51 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "cf0fc9a1e1f7dd627d2999f7da8addd6091ff363b2f7af816d86bb559fd8a738",
+          "transitiveSignatureSha256": "08bc5c990c2ca3e305d01077a7f58d60ea83d1f7c831b2da69fbcc1b3fb62228",
+          "visibility": "public"
+        },
+        {
+          "conditions": {
+            "import": "./src/memory-agent.ts",
+            "types": "./src/memory-agent.ts"
+          },
+          "exportedSymbols": [
+            "DecideMemoryAgentWriteCandidatePayload",
+            "decideMemoryAgentWriteCandidatePayloadSchema",
+            "dispatchingMemoryAgentOperationSchema",
+            "failedMemoryAgentOperationSchema",
+            "listMemoryAgentWriteCandidatesQuerySchema",
+            "listMemoryAgentWriteCandidatesResponseSchema",
+            "MEMORY_RETRIEVAL_AGENT_PROMPT_VERSION",
+            "MEMORY_WRITE_AGENT_PROMPT_VERSION",
+            "MemoryAgentEvidenceRef",
+            "memoryAgentEvidenceRefSchema",
+            "MemoryAgentOperation",
+            "MemoryAgentOperationResult",
+            "memoryAgentOperationResultSchema",
+            "memoryAgentOperationSchema",
+            "memoryAgentRetrieveNodeConfigSchema",
+            "memoryAgentSearchSectionSchema",
+            "MemoryAgentWriteCandidate",
+            "MemoryAgentWriteCandidateItem",
+            "memoryAgentWriteCandidateItemSchema",
+            "memoryAgentWriteCandidateResponseSchema",
+            "memoryAgentWriteCandidateSchema",
+            "MemoryAgentWriteDecision",
+            "memoryAgentWriteDecisionResponseSchema",
+            "memoryAgentWriteDecisionSchema",
+            "memoryAgentWriteNodeConfigSchema",
+            "MemoryRetrievalAgentSelection",
+            "memoryRetrievalAgentSelectionSchema",
+            "MemoryWriteAgentProposal",
+            "memoryWriteAgentProposalItemSchema",
+            "memoryWriteAgentProposalSchema",
+            "outcomeUnknownMemoryAgentOperationSchema",
+            "succeededMemoryAgentOperationSchema"
+          ],
+          "key": "./memory-agent",
+          "target": "./src/memory-agent.ts",
+          "transitiveSignatureSha256": "d4b92981d5f9490f876726e30e702ef5f59d040b6f031b65ace8a8a00dc33f47",
           "visibility": "public"
         },
         {
@@ -2694,6 +2943,8 @@
             "changeWorkflowDefinitionArchiveStatusPayloadSchema",
             "ClaimProjectWorkPayload",
             "claimProjectWorkPayloadSchema",
+            "CodexSessionId",
+            "codexSessionIdSchema",
             "CommandAccepted",
             "commandAcceptedSchema",
             "CommandEnvelope",
@@ -2733,6 +2984,8 @@
             "createManagedProjectPayloadSchema",
             "CreateMemoryImportPayload",
             "createMemoryImportPayloadSchema",
+            "CreateMemorySessionImportPayload",
+            "createMemorySessionImportPayloadSchema",
             "CreateProjectActionPayload",
             "createProjectActionPayloadSchema",
             "CreateProjectWorkPayload",
@@ -2756,6 +3009,8 @@
             "CursorPageRequest",
             "cursorPageRequestSchema",
             "cursorPageSchema",
+            "DecideMemoryAgentWriteCandidatePayload",
+            "decideMemoryAgentWriteCandidatePayloadSchema",
             "DecideProjectWorkTransitionPayload",
             "decideProjectWorkTransitionPayloadSchema",
             "DecisionDto",
@@ -2766,6 +3021,7 @@
             "directAgentCandidateIdSchema",
             "DirectAgentConfigurationSource",
             "DirectAgentConfigurationSourceInspection",
+            "dispatchingMemoryAgentOperationSchema",
             "ensurePlaneWorkItemIntentSchema",
             "executePlaneProjectOperationCommandSchema",
             "ExecutePlaneProjectOperationPayload",
@@ -2783,6 +3039,7 @@
             "ExecutionTracePage",
             "executionTracePageSchema",
             "executionTraceToolNameSchema",
+            "failedMemoryAgentOperationSchema",
             "GetNoteHistoryQuery",
             "getNoteHistoryQuerySchema",
             "getPlaneProjectBindingQuerySchema",
@@ -2797,8 +3054,15 @@
             "LEGACY_AGENT_PROFILE_API_SCHEMA_VERSION",
             "LEGACY_AGENT_PROFILE_V3_API_SCHEMA_VERSION",
             "LEGACY_AGENT_VERSION_SCHEMA_VERSION",
+            "LEGACY_WORKFLOW_PRODUCT_API_SCHEMA_VERSION",
             "legacyAgentVersionV1HashInputSchema",
             "legacyAgentVersionV1Schema",
+            "listMemoryAgentWriteCandidatesQuerySchema",
+            "listMemoryAgentWriteCandidatesResponseSchema",
+            "listMemoryProvidersResponseSchema",
+            "listMemorySessionImportsQuerySchema",
+            "listMemorySessionImportsResponseSchema",
+            "listMemorySessionSourcesResponseSchema",
             "ListNotesQuery",
             "listNotesQuerySchema",
             "ListPlaneProjectBindingsQuery",
@@ -2822,8 +3086,33 @@
             "manuallyDisposePlaneProjectOperationCommandSchema",
             "ManuallyDisposePlaneProjectOperationPayload",
             "manuallyDisposePlaneProjectOperationPayloadSchema",
+            "MEMORY_RETRIEVAL_AGENT_PROMPT_VERSION",
+            "MEMORY_WRITE_AGENT_PROMPT_VERSION",
             "MemoryAdoptionId",
             "memoryAdoptionIdSchema",
+            "MemoryAgentEvidenceRef",
+            "memoryAgentEvidenceRefSchema",
+            "MemoryAgentOperation",
+            "MemoryAgentOperationId",
+            "memoryAgentOperationIdSchema",
+            "MemoryAgentOperationResult",
+            "memoryAgentOperationResultSchema",
+            "memoryAgentOperationSchema",
+            "memoryAgentRetrieveNodeConfigSchema",
+            "memoryAgentSearchSectionSchema",
+            "MemoryAgentWriteCandidate",
+            "MemoryAgentWriteCandidateId",
+            "memoryAgentWriteCandidateIdSchema",
+            "MemoryAgentWriteCandidateItem",
+            "memoryAgentWriteCandidateItemSchema",
+            "memoryAgentWriteCandidateResponseSchema",
+            "memoryAgentWriteCandidateSchema",
+            "MemoryAgentWriteDecision",
+            "MemoryAgentWriteDecisionId",
+            "memoryAgentWriteDecisionIdSchema",
+            "memoryAgentWriteDecisionResponseSchema",
+            "memoryAgentWriteDecisionSchema",
+            "memoryAgentWriteNodeConfigSchema",
             "MemoryBackendId",
             "memoryBackendIdSchema",
             "MemoryBackendProfileDto",
@@ -2839,12 +3128,41 @@
             "memoryImportResultIdSchema",
             "MemoryLayer",
             "memoryLayerSchema",
+            "memoryProviderComparisonItemSchema",
+            "MemoryProviderComparisonOutcome",
+            "memoryProviderComparisonOutcomeSchema",
+            "MemoryProviderComparisonPreview",
+            "memoryProviderComparisonPreviewSchema",
+            "MemoryProviderPairwiseComparison",
+            "memoryProviderPairwiseComparisonSchema",
             "MemoryQueryId",
             "memoryQueryIdSchema",
             "MemoryRequirement",
             "memoryRequirementSchema",
             "MemoryResultSnapshotId",
             "memoryResultSnapshotIdSchema",
+            "MemoryRetrievalAgentSelection",
+            "memoryRetrievalAgentSelectionSchema",
+            "memorySessionConversionVersionSchema",
+            "MemorySessionImport",
+            "MemorySessionImportDto",
+            "memorySessionImportDtoSchema",
+            "MemorySessionImportId",
+            "memorySessionImportIdSchema",
+            "memorySessionImportItemRefSchema",
+            "MemorySessionImportPreview",
+            "memorySessionImportPreviewItemSchema",
+            "memorySessionImportPreviewSchema",
+            "memorySessionImportResponseSchema",
+            "memorySessionImportSchema",
+            "memorySessionSourceDescriptorSchema",
+            "memorySessionSourceListQuerySchema",
+            "MemorySessionSourceRef",
+            "memorySessionSourceRefSchema",
+            "MemoryWriteAgentProposal",
+            "memoryWriteAgentProposalItemSchema",
+            "memoryWriteAgentProposalSchema",
+            "MemoryWriteDto",
             "MemoryWriteIntentId",
             "memoryWriteIntentIdSchema",
             "MemoryWriteResultId",
@@ -2894,6 +3212,7 @@
             "noteTagDtoSchema",
             "OutboxEntryId",
             "outboxEntryIdSchema",
+            "outcomeUnknownMemoryAgentOperationSchema",
             "PI_BUILTIN_TOOL_NAMES",
             "PiTraceActivityDto",
             "piTraceActivityDtoSchema",
@@ -2963,6 +3282,11 @@
             "preparePlaneProjectOperationCommandSchema",
             "PreparePlaneProjectOperationPayload",
             "preparePlaneProjectOperationPayloadSchema",
+            "PreviewMemoryProviderComparisonPayload",
+            "previewMemoryProviderComparisonPayloadSchema",
+            "previewMemoryProviderComparisonResponseSchema",
+            "previewMemorySessionImportPayloadSchema",
+            "previewMemorySessionImportResponseSchema",
             "PreviewPromptAssemblyPayload",
             "previewPromptAssemblyPayloadSchema",
             "PreviewPromptConfigurationPayload",
@@ -3346,6 +3670,8 @@
             "saveWorkflowAgentNodeConfigurationPayloadSchema",
             "SaveWorkflowDefinitionDraftPayload",
             "saveWorkflowDefinitionDraftPayloadSchema",
+            "SaveWorkflowDefinitionDraftV3Payload",
+            "saveWorkflowDefinitionDraftV3PayloadSchema",
             "ServiceStatus",
             "serviceStatusSchema",
             "SessionDto",
@@ -3369,6 +3695,7 @@
             "submitPromptReviewDecisionPayloadSchema",
             "SubmitToolExecutionDecisionPayload",
             "submitToolExecutionDecisionPayloadSchema",
+            "succeededMemoryAgentOperationSchema",
             "SupervisedAgentObservationId",
             "supervisedAgentObservationIdSchema",
             "SupervisedCarryForwardId",
@@ -3421,41 +3748,71 @@
             "updateRuleTagPayloadSchema",
             "ValidateWorkflowDefinitionPayload",
             "validateWorkflowDefinitionPayloadSchema",
+            "ValidateWorkflowDefinitionV3Payload",
+            "validateWorkflowDefinitionV3PayloadSchema",
             "ValidationResultId",
             "validationResultIdSchema",
             "WORKFLOW_API_SCHEMA_VERSION",
             "WORKFLOW_DESIGNER_API_SCHEMA_VERSION",
+            "WORKFLOW_DESIGNER_API_V3_SCHEMA_VERSION",
             "WORKFLOW_EXECUTION_TRACE_SCHEMA_VERSION",
             "WORKFLOW_PRODUCT_API_SCHEMA_VERSION",
+            "WORKFLOW_PRODUCT_API_V3_SCHEMA_VERSION",
             "WORKFLOW_RUNTIME_TRACE_SCHEMA_VERSION",
             "WorkflowBlueprintDto",
             "workflowBlueprintDtoSchema",
             "WorkflowBlueprintsDto",
             "workflowBlueprintsDtoSchema",
+            "WorkflowBlueprintsV2Dto",
+            "workflowBlueprintsV2DtoSchema",
+            "WorkflowBlueprintsV3Dto",
+            "workflowBlueprintsV3DtoSchema",
+            "WorkflowBlueprintV2Dto",
+            "workflowBlueprintV2DtoSchema",
+            "WorkflowBlueprintV3Dto",
+            "workflowBlueprintV3DtoSchema",
             "WorkflowCatalogDto",
             "workflowCatalogDtoSchema",
+            "WorkflowCatalogV2Dto",
+            "workflowCatalogV2DtoSchema",
+            "WorkflowCatalogV3Dto",
+            "workflowCatalogV3DtoSchema",
             "WorkflowDefinitionCommandResultDto",
             "workflowDefinitionCommandResultDtoSchema",
             "WorkflowDefinitionCommandResultV2Dto",
             "workflowDefinitionCommandResultV2DtoSchema",
+            "WorkflowDefinitionCommandResultV3Dto",
+            "workflowDefinitionCommandResultV3DtoSchema",
             "WorkflowDefinitionDetailDto",
             "workflowDefinitionDetailDtoSchema",
             "WorkflowDefinitionDetailV2Dto",
             "workflowDefinitionDetailV2DtoSchema",
+            "WorkflowDefinitionDetailV3Dto",
+            "workflowDefinitionDetailV3DtoSchema",
             "WorkflowDefinitionId",
             "workflowDefinitionIdSchema",
             "WorkflowDefinitionNodeDto",
             "workflowDefinitionNodeDtoSchema",
             "WorkflowDefinitionPublishedDto",
             "workflowDefinitionPublishedDtoSchema",
+            "WorkflowDefinitionPublishedV2Dto",
+            "workflowDefinitionPublishedV2DtoSchema",
+            "WorkflowDefinitionPublishedV3Dto",
+            "workflowDefinitionPublishedV3DtoSchema",
             "WorkflowDefinitionRevisionId",
             "workflowDefinitionRevisionIdSchema",
             "WorkflowDefinitionRevisionSummaryDto",
             "workflowDefinitionRevisionSummaryDtoSchema",
             "WorkflowDefinitionsDto",
             "workflowDefinitionsDtoSchema",
+            "WorkflowDefinitionsV2Dto",
+            "workflowDefinitionsV2DtoSchema",
+            "WorkflowDefinitionsV3Dto",
+            "workflowDefinitionsV3DtoSchema",
             "WorkflowDefinitionValidationDto",
             "workflowDefinitionValidationDtoSchema",
+            "WorkflowDefinitionValidationV3Dto",
+            "workflowDefinitionValidationV3DtoSchema",
             "WorkflowDesignerAddress",
             "workflowDesignerAddressSchema",
             "workflowDesignerAddressSegmentSchema",
@@ -3468,6 +3825,8 @@
             "workflowDesignerSlotDtoSchema",
             "WorkflowDesignerSlotV2Dto",
             "workflowDesignerSlotV2DtoSchema",
+            "WorkflowDesignerSlotV3Dto",
+            "workflowDesignerSlotV3DtoSchema",
             "WorkflowExecutionTraceDto",
             "workflowExecutionTraceDtoSchema",
             "WorkflowExecutionTraceValueDto",
@@ -3481,6 +3840,7 @@
             "workflowNodeAllowedActionSchema",
             "workflowNodeCatalogItemDtoSchema",
             "workflowNodeCatalogItemV2DtoSchema",
+            "workflowNodeCatalogItemV3DtoSchema",
             "WorkflowNodeDetailDto",
             "workflowNodeDetailDtoSchema",
             "WorkflowNodeDetailInclude",
@@ -3503,6 +3863,10 @@
             "workflowResourcesDtoSchema",
             "WorkflowRunConfigSummaryDto",
             "workflowRunConfigSummaryDtoSchema",
+            "WorkflowRunConfigSummaryV2Dto",
+            "workflowRunConfigSummaryV2DtoSchema",
+            "WorkflowRunConfigSummaryV3Dto",
+            "workflowRunConfigSummaryV3DtoSchema",
             "WorkflowRunConfiguration",
             "workflowRunConfigurationSchema",
             "WorkflowRunOverride",
@@ -3535,7 +3899,7 @@
           ],
           "key": "./public",
           "target": "./src/public.ts",
-          "transitiveSignatureSha256": "638996bc922ff1729f8fbd2f267e34cec1a5c5f938079925e6d784e76950fa5e",
+          "transitiveSignatureSha256": "3b7bc6780d0818ded9017c5a879530e8d531ee07bea1a713396ee9314df22b55",
           "visibility": "public"
         },
         {
@@ -3565,7 +3929,7 @@
         }
       },
       "name": "@chat/domain",
-      "publicEntrySignatureSha256": "35b47b9f9f372fbbf3db0f9327254972a6b3618aa173c9aea9a5f0242cdbd032",
+      "publicEntrySignatureSha256": "4e4676fbc49ff48fafad58724a6dba1fa72125867e4160b2d458f88e5b659580",
       "subpaths": [
         {
           "conditions": {
@@ -3579,6 +3943,7 @@
             "assertCanonicalNoteTags",
             "assertDecisionBinding",
             "assertHighImpactToolExecutionsClosed",
+            "assertMemoryAgentWriteCandidateIntegrity",
             "assertMemoryImportTransition",
             "assertMemoryWriteTransition",
             "assertNoteAggregateIntegrity",
@@ -3636,6 +4001,7 @@
             "assertWorkflowNodeRunTimestamps",
             "assertWorkflowPolicyResolutionIntegrity",
             "assertWorkflowViewDefinition",
+            "buildMemoryProviderPairwiseComparisons",
             "BuiltInProjectProfileKey",
             "CanonicalJsonError",
             "canonicalJsonStringify",
@@ -3645,6 +4011,7 @@
             "canTransitionPromptReviewStatus",
             "canTransitionRunLifecycle",
             "canTransitionRunStatus",
+            "ComparableMemoryProviderOutcome",
             "compileBuiltInProjectProfileRevision",
             "compileProjectIntakeProposal",
             "compileProjectMethodSnapshotPolicies",
@@ -3655,13 +4022,26 @@
             "computeDirectRuntimeOperationRefSha256",
             "computeExecutionInputManifestSha256",
             "computeGovernanceReviewInputManifestSha256",
+            "computeMemoryAgentEvidenceManifestSha256",
+            "computeMemoryAgentOperationInputSha256",
+            "computeMemoryAgentOperationResultSha256",
+            "computeMemoryAgentWriteCandidateItemSha256",
+            "computeMemoryAgentWriteCandidateSha256",
             "computeMemoryBackendDescriptorSha256",
             "computeMemoryImportBackendDescriptorSha256",
             "computeMemoryImportRequestSha256",
             "computeMemoryImportSemanticDedupeSha256",
+            "computeMemoryProviderComparisonSha256",
             "computeMemoryProviderDescriptorSha256",
             "computeMemoryQueryResultSha256",
             "computeMemoryResultSnapshotSha256",
+            "computeMemoryRetrievalAgentSourceSha256",
+            "computeMemorySessionSnapshotSha256",
+            "computeMemoryWriteAgentCandidateRequestSha256",
+            "computeMemoryWriteAgentCandidateSemanticDedupeSha256",
+            "computeMemoryWriteAgentEvidenceSha256",
+            "computeMemoryWriteImportRequestSha256",
+            "computeMemoryWriteImportSemanticDedupeSha256",
             "computeMemoryWriteRequestSha256",
             "computeMemoryWriteSemanticDedupeSha256",
             "computeMessageSha256",
@@ -3732,15 +4112,23 @@
             "computeWorkspaceGrantSha256",
             "computeWorkspaceInstructionItemSha256",
             "computeWorkspaceInstructionsSha256",
+            "ConvertedMemorySessionItem",
+            "convertMemorySessionToItems",
             "createLegacyPlanningWorkflowView",
             "createNodeValueManifest",
             "createWorkflowNodeRun",
             "CreateWorkflowNodeRunInput",
             "DecisionBindingInput",
+            "deriveMemoryAgentOperationId",
+            "deriveMemoryAgentWriteCandidateId",
             "deriveProjectBootstrapOutcome",
+            "DIRECT_AGENT_MEMORY_CONTEXT_SYSTEM_GUIDANCE",
+            "DirectAgentMemoryContextShape",
             "DirectAgentRunLifecycle",
             "DomainInvariantError",
+            "estimateDirectPromptTokens",
             "estimateMemorySectionTokens",
+            "evaluateDirectAgentMemoryPromptBudget",
             "evaluateNoteLowRiskAutoPolicy",
             "ExcludedRuleRevisionShape",
             "ExecutionInputManifest",
@@ -3756,15 +4144,24 @@
             "isTerminalRunStatus",
             "isToolExecutionIntentClosed",
             "LEGACY_PLANNING_VIEW_ID",
+            "MAX_MEMORY_SESSION_IMPORT_ITEMS",
             "MAX_PROMPT_REVIEW_REQUESTS_PER_ATTEMPT",
+            "MEMORY_SESSION_CONVERSION_VERSION",
+            "MemoryAgentEvidenceRefShape",
+            "MemoryAgentWriteCandidateItemShape",
+            "MemoryAgentWriteCandidateShape",
             "MemoryImportInvariantError",
             "MemoryImportRequestShape",
+            "MemoryProviderPairwiseComparisonShape",
+            "MemorySessionConversionError",
             "nextPlanRevision",
             "NodeProductRefShape",
             "NodeRunTransitionShape",
             "NodeValueManifestShape",
             "NodeValueManifestSlotShape",
             "NormalizedMemorySection",
+            "NormalizedMemorySessionMessage",
+            "NormalizedMemorySessionSnapshot",
             "normalizeMemoryImportTags",
             "normalizeMemoryImportTitle",
             "normalizeNoteTagLabel",
@@ -3864,11 +4261,15 @@
             "PromptReviewRequestStatus",
             "promptReviewRequestStatuses",
             "redactPromptReviewHiddenReasoning",
+            "renderDirectAgentMemoryContext",
+            "renderMemoryAgentWriteCandidateItem",
             "renderPromptAssemblyRegion",
             "renderPromptReviewReadable",
             "RequestedRuleRevisionShape",
             "resolveMemoryImportContent",
+            "resolveMemoryWriteAgentCandidateContent",
             "resolveMemoryWriteContent",
+            "resolveMemoryWriteImportContent",
             "resolveNoteSourceText",
             "resolvePlanningValidationPolicy",
             "resolveWorkflowDesignerSequence",
@@ -3971,7 +4372,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "35b47b9f9f372fbbf3db0f9327254972a6b3618aa173c9aea9a5f0242cdbd032",
+          "transitiveSignatureSha256": "4e4676fbc49ff48fafad58724a6dba1fa72125867e4160b2d458f88e5b659580",
           "visibility": "public"
         }
       ]
@@ -3991,16 +4392,16 @@
         "./package.json": "./package.json"
       },
       "name": "@chat/dsh-lifeos-bridge",
-      "publicEntrySignatureSha256": "b9665e391634d82b228192626c28ccbad2a5dd3f12f2fa0dbe6dd2334a492d17",
+      "publicEntrySignatureSha256": "f1d2a1051d15d503fd61f5f151e1af798de9970f82f9ea5a0a01c7ee86a71e48",
       "subpaths": [
         {
           "conditions": {
             "default": "./dist/dsh-bundle.js"
           },
-          "exportedSymbols": [],
+          "exportedSymbols": ["apply", "inject", "name"],
           "key": ".",
           "target": "./dist/dsh-bundle.js",
-          "transitiveSignatureSha256": "b9665e391634d82b228192626c28ccbad2a5dd3f12f2fa0dbe6dd2334a492d17",
+          "transitiveSignatureSha256": "f1d2a1051d15d503fd61f5f151e1af798de9970f82f9ea5a0a01c7ee86a71e48",
           "visibility": "public"
         },
         {
@@ -4010,7 +4411,7 @@
           "exportedSymbols": [],
           "key": "./client",
           "target": "./dist/client.js",
-          "transitiveSignatureSha256": "75b0145f8627320c22d1818810f1dabe3444870896c03d43a17b35c92b6e0ae9",
+          "transitiveSignatureSha256": "1c2934c01bff2bb8ce56fd0e2a54f05b3ed7d81f381ff5176546cb42043bc13b",
           "visibility": "public"
         },
         {
@@ -4051,7 +4452,7 @@
         }
       },
       "name": "@chat/memory-runtime",
-      "publicEntrySignatureSha256": "9dd240bd00eaf509c73fe9bb918196bb7d77b99723681e7fa34798aaa9b01531",
+      "publicEntrySignatureSha256": "33292251748019b4391dca805598aa6f0d78b10cd283f67d293270520fb36a7b",
       "subpaths": [
         {
           "conditions": {
@@ -4059,15 +4460,23 @@
             "types": "./src/index.ts"
           },
           "exportedSymbols": [
+            "CodexSessionSourceAdapter",
+            "CodexSessionSourceError",
+            "createCodexSessionSourceRegistry",
             "createEmptyMemoryBackendRegistry",
             "createEmptyWorkflowMemoryProviderRegistry",
             "createMemoryBackendRegistry",
+            "createMemoryRegistrySet",
             "createWorkflowMemoryProviderRegistry",
             "MEMMY_BACKEND_ID",
             "MEMMY_DEFAULT_BASE_URL",
             "MemmyAdapterOptions",
             "MemmyMemoryAdapter",
             "MemoryBackendRegistry",
+            "MemoryRegistrySet",
+            "MemoryRuntimeMode",
+            "memoryRuntimeModeSchema",
+            "parseMemoryMode",
             "TENCENT_MEMORYCORE_BACKEND_ID",
             "TENCENT_MEMORYCORE_DEFAULT_BASE_URL",
             "TencentMemoryCoreAdapter",
@@ -4076,7 +4485,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "9dd240bd00eaf509c73fe9bb918196bb7d77b99723681e7fa34798aaa9b01531",
+          "transitiveSignatureSha256": "33292251748019b4391dca805598aa6f0d78b10cd283f67d293270520fb36a7b",
           "visibility": "public"
         }
       ]
@@ -4109,7 +4518,7 @@
         }
       },
       "name": "@chat/pi-runtime",
-      "publicEntrySignatureSha256": "29906e9962b48d4d57fd4368d2d8d418d587bdd48d4ba5f1186e9bfbb78d7514",
+      "publicEntrySignatureSha256": "0ec0090983b8eb67479ad7409bf1bc8d70d83d3df33c49651ba4259a2a4afbaf",
       "subpaths": [
         {
           "conditions": {
@@ -4129,6 +4538,7 @@
             "buildBailianModel",
             "buildExecutorUserPrompt",
             "buildGovernanceReviewUserPrompt",
+            "buildMemoryWriteAgentUserPrompt",
             "buildNoteCaptureUserPrompt",
             "buildPlannerUserPrompt",
             "buildProjectModel",
@@ -4159,6 +4569,14 @@
             "legacyStartPiDirectExecutorOperationRequestSchema",
             "loadBailianConfig",
             "loadProjectModelProfile",
+            "MEMORY_RETRIEVAL_AGENT_PROMPT_VERSION",
+            "MEMORY_RETRIEVAL_AGENT_TOKEN_BUDGET",
+            "MEMORY_WRITE_AGENT_PROMPT_VERSION",
+            "MEMORY_WRITE_AGENT_TOKEN_BUDGET",
+            "MemoryAgentSearchOutput",
+            "MemoryAgentSearchSection",
+            "MemoryRetrievalAgentResult",
+            "MemoryWriteAgentEvidenceInput",
             "NOTE_CAPTURE_PROMPT_TEMPLATE_VERSION",
             "NOTE_CAPTURE_TOKEN_BUDGET",
             "NoteCaptureModelInput",
@@ -4208,6 +4626,8 @@
             "RunPiExecutorInput",
             "RunPiExecutorServiceInput",
             "runPiGovernanceReview",
+            "runPiMemoryRetrievalAgent",
+            "runPiMemoryWriteAgent",
             "runPiNoteCapture",
             "runPiPlanner",
             "RunPiPlannerInput",
@@ -4223,7 +4643,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "29906e9962b48d4d57fd4368d2d8d418d587bdd48d4ba5f1186e9bfbb78d7514",
+          "transitiveSignatureSha256": "0ec0090983b8eb67479ad7409bf1bc8d70d83d3df33c49651ba4259a2a4afbaf",
           "visibility": "public"
         },
         {
@@ -4387,7 +4807,7 @@
           ],
           "key": "./coding-executor",
           "target": "./src/coding-executor.ts",
-          "transitiveSignatureSha256": "d4253f5170ecce3d6353f035a0e42c5d58520a39fd78cfb72bceca3fadd9151a",
+          "transitiveSignatureSha256": "9d39549345be1f94d1e3578cf314ca64f0566149ce77596c129b816cfd38286c",
           "visibility": "public"
         }
       ]
@@ -4403,7 +4823,7 @@
         }
       },
       "name": "@chat/product-store-json",
-      "publicEntrySignatureSha256": "e49e416e6cbb091aa2cc827d8b4188815fe4df99d07c7ce09d96e1625dabf4b3",
+      "publicEntrySignatureSha256": "ffba66949d4459151f8a0514dd8b1b98403bcc4e182c67b6bc4565626a3e257d",
       "subpaths": [
         {
           "conditions": {
@@ -4431,6 +4851,7 @@
             "migrateProductSnapshotV22ToV23",
             "migrateProductSnapshotV23ToV24",
             "migrateProductSnapshotV24ToV25",
+            "migrateProductSnapshotV25ToV26",
             "migrateProductSnapshotV2ToV3",
             "migrateProductSnapshotV3ToV4",
             "migrateProductSnapshotV4ToV5",
@@ -4479,6 +4900,8 @@
             "productSnapshotV23Schema",
             "ProductSnapshotV24",
             "productSnapshotV24Schema",
+            "ProductSnapshotV25",
+            "productSnapshotV25Schema",
             "productSnapshotV2Schema",
             "ProductSnapshotV3",
             "productSnapshotV3Schema",
@@ -4494,7 +4917,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "e49e416e6cbb091aa2cc827d8b4188815fe4df99d07c7ce09d96e1625dabf4b3",
+          "transitiveSignatureSha256": "ffba66949d4459151f8a0514dd8b1b98403bcc4e182c67b6bc4565626a3e257d",
           "visibility": "public"
         }
       ]
@@ -4699,7 +5122,7 @@
         }
       },
       "name": "@chat/workflows",
-      "publicEntrySignatureSha256": "0af6d3c230e110a1efb5b4d11d9f559ff0ea4a5c10f60f99b857d3c332df9b75",
+      "publicEntrySignatureSha256": "750e90ee78d5af4d98d9021551f618a0829043192ed144ac510db4c1e6413b34",
       "subpaths": [
         {
           "conditions": {
@@ -4720,6 +5143,7 @@
             "claimNoteDecisionHookStep",
             "claimPromptReviewHookStep",
             "commitConfirmedNoteStep",
+            "commitDirectAgentCandidate",
             "commitDirectAgentResultStep",
             "commitExecutionResultStep",
             "commitMemoryImportAcceptedStep",
@@ -4733,6 +5157,8 @@
             "compilePlanningInputStep",
             "completeDefinitionKernelCompositeStep",
             "completeRunAttemptStep",
+            "composeRuntimeMemoryRegistries",
+            "composeRuntimeWorkflowMemoryProviders",
             "CONFIGURABLE_PLANNING_RUNNER_BUNDLE_VERSION",
             "CONFIGURABLE_PLANNING_RUNNER_FAMILY",
             "ConfigurablePlanningNodeTransition",
@@ -4750,7 +5176,9 @@
             "DefinitionKernelLabWorkflowResult",
             "DIRECT_AGENT_RUNNER_BUNDLE_VERSION",
             "DIRECT_AGENT_RUNNER_FAMILY",
+            "DirectAgentCandidateReady",
             "directAgentWorkflow",
+            "DirectAgentWorkflowCoreResult",
             "DirectAgentWorkflowInput",
             "directAgentWorkflowInputSchema",
             "DirectAgentWorkflowResult",
@@ -4760,6 +5188,8 @@
             "executeDefinitionKernelCompositeChildStep",
             "executeDefinitionKernelNodeStep",
             "executeLoadedMemoryWrite",
+            "executeMemoryRetrievalAgentStep",
+            "executeMemoryWriteAgentStep",
             "ExecutionCheckpointRefs",
             "expireApprovalStep",
             "freezeWorkflowMemoryContextStep",
@@ -4793,6 +5223,8 @@
             "loadDefinitionKernelRunSpecStep",
             "LoadedKernelRunSpec",
             "LoadedMemoryImportStepResult",
+            "loadMemoryAgentDirectRunSpecStep",
+            "loadMemoryDirectRunSpecStep",
             "loadMemoryImportStep",
             "loadNoteCaptureRunSpecStep",
             "loadNoteDecisionStep",
@@ -4800,12 +5232,19 @@
             "LocalVersionRecoveryOptions",
             "markDefinitionKernelReviewHookReadyStep",
             "markMemoryImportDispatchingStep",
+            "MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION",
+            "MEMORY_AGENT_DIRECT_RUNNER_FAMILY",
+            "MEMORY_DIRECT_RUNNER_BUNDLE_VERSION",
+            "MEMORY_DIRECT_RUNNER_FAMILY",
+            "memoryAgentDirectWorkflow",
+            "memoryDirectAgentWorkflow",
             "MemoryImportCallOutcome",
             "memoryImportWorkflow",
             "MemoryImportWorkflowBinding",
             "MemoryImportWorkflowInput",
             "memoryImportWorkflowInputSchema",
             "MemoryImportWorkflowResult",
+            "MemoryWriteAgentStepResult",
             "memoryWriteWorkflow",
             "MemoryWriteWorkflowBinding",
             "MemoryWriteWorkflowInput",
@@ -4875,6 +5314,7 @@
             "RestrictedIrResult",
             "resumeDefinitionKernelLabReview",
             "resumeHook",
+            "runDirectAgentWorkflowCore",
             "runPiExecutorStep",
             "runPiPlannerStep",
             "RuntimeBindingError",
@@ -4905,7 +5345,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "0af6d3c230e110a1efb5b4d11d9f559ff0ea4a5c10f60f99b857d3c332df9b75",
+          "transitiveSignatureSha256": "750e90ee78d5af4d98d9021551f618a0829043192ed144ac510db4c1e6413b34",
           "visibility": "public"
         }
       ]
@@ -5580,6 +6020,13 @@
     },
     {
       "enumValues": [],
+      "name": "codexSessionIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "18b83a3ef535f474610bc4ace8891b814623cd0f3af36e51086680a9a982997f"
+    },
+    {
+      "enumValues": [],
       "name": "commandAcceptedSchema",
       "requiredFields": ["revision"],
       "schemaVersions": [],
@@ -5876,6 +6323,13 @@
     },
     {
       "enumValues": [],
+      "name": "createMemorySessionImportPayloadSchema",
+      "requiredFields": ["previewSha256", "providerId", "source", "sourceSnapshotSha256"],
+      "schemaVersions": [],
+      "signatureSha256": "d003c25d1c119a415338cd834780a8cc171f7faf8bafc67d15ae2dce529d477c"
+    },
+    {
+      "enumValues": [],
       "name": "createProjectActionPayloadSchema",
       "requiredFields": ["ownerParticipantId", "title", "workId"],
       "schemaVersions": [],
@@ -5964,6 +6418,13 @@
       "signatureSha256": "683137395f5526f8ca12cc7f4aa9e7b80e8865df341451f32173b94a74e0b9af"
     },
     {
+      "enumValues": [],
+      "name": "decideMemoryAgentWriteCandidatePayloadSchema",
+      "requiredFields": ["expectedCandidateRevision", "expectedCandidateSha256", "kind"],
+      "schemaVersions": [],
+      "signatureSha256": "d4bfacda09fb3047a1f82f87d18d94dc138fd61c95ab133074e9228c1758f2d6"
+    },
+    {
       "enumValues": [
         "approved",
         "cancelled",
@@ -6013,6 +6474,13 @@
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "a58f54fc6db28bd4c2c8be9c44b4adf9244b091575260fe5e168ad52009721b7"
+    },
+    {
+      "enumValues": [],
+      "name": "dispatchingMemoryAgentOperationSchema",
+      "requiredFields": ["providerRequestCount", "revision", "status"],
+      "schemaVersions": [],
+      "signatureSha256": "12b002bbde41220462b811c10d58ba96d63f54dbe2dcbe99f8c6253f384cfb13"
     },
     {
       "enumValues": ["backlog", "started", "unstarted"],
@@ -6095,6 +6563,13 @@
     },
     {
       "enumValues": [],
+      "name": "failedMemoryAgentOperationSchema",
+      "requiredFields": ["completedAt", "errorCode", "providerRequestCount", "revision", "status"],
+      "schemaVersions": [],
+      "signatureSha256": "b45f0547a232024883349f67b98a806c78fb1a6a523233d71bf594f0e6ac984b"
+    },
+    {
+      "enumValues": [],
       "name": "getNoteHistoryQuerySchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -6163,6 +6638,48 @@
       "requiredFields": ["sha256"],
       "schemaVersions": [],
       "signatureSha256": "d80844a2e61d9f97b885d137e1df0dcb35d83bcdd6246eb79342a86008b650bd"
+    },
+    {
+      "enumValues": ["approved", "pending_review", "rejected"],
+      "name": "listMemoryAgentWriteCandidatesQuerySchema",
+      "requiredFields": ["limit"],
+      "schemaVersions": [],
+      "signatureSha256": "9163d640847853b61284d5c2b080e2f597b4abcfdfddb191a0adc4c895b6c7e8"
+    },
+    {
+      "enumValues": [],
+      "name": "listMemoryAgentWriteCandidatesResponseSchema",
+      "requiredFields": ["candidates"],
+      "schemaVersions": [],
+      "signatureSha256": "99eb1c21914d1d301fbe61a0843b4cf56e20e9b62f1d2e6a52d39a4760265237"
+    },
+    {
+      "enumValues": [],
+      "name": "listMemoryProvidersResponseSchema",
+      "requiredFields": ["providers"],
+      "schemaVersions": [],
+      "signatureSha256": "4839b1aa872a6d3c25c8f29be735d6d7e6eb52716ab9cc88e8f7e3b5e8daa89d"
+    },
+    {
+      "enumValues": [],
+      "name": "listMemorySessionImportsQuerySchema",
+      "requiredFields": ["limit"],
+      "schemaVersions": [],
+      "signatureSha256": "a13ff472ce32fd8349af16e26562566bb4d0c2cf809667b79d9615b1ee2062df"
+    },
+    {
+      "enumValues": [],
+      "name": "listMemorySessionImportsResponseSchema",
+      "requiredFields": ["memorySessionImports"],
+      "schemaVersions": [],
+      "signatureSha256": "50896d0761e4581e396d0d25683225b65f9030fc74ce83b2e50339245519221c"
+    },
+    {
+      "enumValues": [],
+      "name": "listMemorySessionSourcesResponseSchema",
+      "requiredFields": ["sources"],
+      "schemaVersions": [],
+      "signatureSha256": "d81b02b472503e93dc6e490263ebce10487c7efb7efb62d33f464edb8588306b"
     },
     {
       "enumValues": [],
@@ -6263,6 +6780,130 @@
       "signatureSha256": "91f82879bd70408a68a2d68267bdc897498d6515d9f692eb63b0ffa33d1fa5b4"
     },
     {
+      "enumValues": ["assistant", "user"],
+      "name": "memoryAgentEvidenceRefSchema",
+      "requiredFields": [
+        "candidateSha256",
+        "directAgentCandidateId",
+        "kind",
+        "messageId",
+        "messageSha256",
+        "role"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "2af264be481c5f83e2e6f82d956e94e972b4bb7e6a4430eed065d046c1e420e6"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentOperationIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "a9b8502eda243b7ed01323e16fa97958cc7b268d8497ac3d73a74d32d3f1943f"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentOperationResultSchema",
+      "requiredFields": ["externalQueryId", "hitCount", "kind", "proposal", "sections"],
+      "schemaVersions": [],
+      "signatureSha256": "b638689e22b6db18e957fd0383fff90b8a2c882d084b1c0d7123a325768771f8"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentOperationSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "61e871647dfdbdbcee577ba9c59e637d2549e57dba7151e855666d2fbca01e97"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentRetrieveNodeConfigSchema",
+      "requiredFields": ["maxContextCharacters", "maxResults", "providerId", "required"],
+      "schemaVersions": [],
+      "signatureSha256": "04f59fdf5c7bce82064662d4417d33bcee31e85581f18a2b49ea1dba7a6a507b"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentSearchSectionSchema",
+      "requiredFields": ["category", "content", "externalObjectIds", "labels", "title"],
+      "schemaVersions": [],
+      "signatureSha256": "e838ab146e9537f3d2ee827032ed9d8d0333444ea47f039a1c582ff17ee43030"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentWriteCandidateIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "5c3aaad35a3edf43e4e6240b88314c8cd7bd9e0626b334b2ea5b567836767f58"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentWriteCandidateItemSchema",
+      "requiredFields": [
+        "category",
+        "content",
+        "evidenceRefs",
+        "itemKey",
+        "labels",
+        "sha256",
+        "title"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "336f3b0e8d7280a4ed6430d9096719c27e41c770ad6c3d400cf9a96ecd9492e1"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentWriteCandidateResponseSchema",
+      "requiredFields": ["candidate"],
+      "schemaVersions": [],
+      "signatureSha256": "1c9b94ae2863c3126a22fbd9ff3ac0e7c4c84383ff52bd1344e3112bafa78c3f"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentWriteCandidateSchema",
+      "requiredFields": ["decisionId", "memoryWriteIntentIds", "status"],
+      "schemaVersions": [],
+      "signatureSha256": "1ec04638fe145d1c9f3f0c00fe90bade5d5b674214999b4c21f7f04ff39156c5"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentWriteDecisionIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "4eee46d7a9548c2845790300e282086eeadfd5dca00151e5dd6f7ba455f3c13e"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentWriteDecisionResponseSchema",
+      "requiredFields": ["candidate", "decision"],
+      "schemaVersions": [],
+      "signatureSha256": "698c722b1993699e506169650c18079f5f6c4bcb3edd99db66fde0ba9d34cfb7"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentWriteDecisionSchema",
+      "requiredFields": [
+        "candidateRevision",
+        "candidateSha256",
+        "commandId",
+        "createdAt",
+        "kind",
+        "memoryAgentWriteCandidateId",
+        "memoryAgentWriteDecisionId",
+        "principalId",
+        "revision",
+        "schemaVersion"
+      ],
+      "schemaVersions": ["memory-agent-write-decision.v1"],
+      "signatureSha256": "b3f70e41cd296a21141d93a0c71573385789c83c8e8a339b9044f639b5d9836a"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryAgentWriteNodeConfigSchema",
+      "requiredFields": ["maxItems", "maxSourceMessages", "providerId", "required", "reviewMode"],
+      "schemaVersions": [],
+      "signatureSha256": "d11df2f3eefb791625d6eb00c62eb735acf6c5f22bc033037b0740079e2de216"
+    },
+    {
       "enumValues": [],
       "name": "memoryBackendIdSchema",
       "requiredFields": [],
@@ -6341,6 +6982,64 @@
     },
     {
       "enumValues": [],
+      "name": "memoryProviderComparisonItemSchema",
+      "requiredFields": ["category", "content", "contentSha256", "labels", "title"],
+      "schemaVersions": [],
+      "signatureSha256": "2bba0515b14936816b49305598536213bde006491e6e4a80a8022e4055ebad3d"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryProviderComparisonOutcomeSchema",
+      "requiredFields": [
+        "errorCode",
+        "hitCount",
+        "items",
+        "resultSetSha256",
+        "retryable",
+        "selectedCharacters",
+        "selectedCount",
+        "status"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "e9bfe2f2180aad29110a3df91bfeba9080c963822f06ac81c13df82cea7ffb06"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryProviderComparisonPreviewSchema",
+      "requiredFields": [
+        "comparisonSha256",
+        "generatedAt",
+        "maxContextCharacters",
+        "maxResults",
+        "pairwise",
+        "providers",
+        "querySha256",
+        "schemaVersion",
+        "source",
+        "sourceSnapshotSha256",
+        "sourceTitle",
+        "sourceUpdatedAt"
+      ],
+      "schemaVersions": ["memory-provider-comparison-preview.v1"],
+      "signatureSha256": "af23f601bb7449c240532ca3c0b8e1def9a614455c43e59077690e43712b9042"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryProviderPairwiseComparisonSchema",
+      "requiredFields": [
+        "exactContentOverlapCount",
+        "leftProviderId",
+        "leftUniqueContentCount",
+        "rightProviderId",
+        "rightUniqueContentCount",
+        "scoreComparisonAllowed",
+        "sharedLabels"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "360fe7506422492c9cf3565f701d22a09b454b067a583eddc9b0a3ee2c985ab7"
+    },
+    {
+      "enumValues": [],
       "name": "memoryQueryIdSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -6359,6 +7058,168 @@
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "6e12af1e8df56f3b1aeb745ecaa74be54e593c39110ba817f94daa1c3989ef26"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryRetrievalAgentSelectionSchema",
+      "requiredFields": ["selectedIndexes"],
+      "schemaVersions": [],
+      "signatureSha256": "ec21eed69e98dfdd18ad91dc5c32221e9428cb110e421c57f4de7e727b6e2994"
+    },
+    {
+      "enumValues": [],
+      "name": "memorySessionConversionVersionSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "5dd26ae47441f30e4ba799234d035325818aaf9cbb4e99f7256a1adb856632d5"
+    },
+    {
+      "enumValues": ["completed", "needs_attention", "no_changes", "processing"],
+      "name": "memorySessionImportDtoSchema",
+      "requiredFields": [
+        "conversionVersion",
+        "createdAt",
+        "createdItemCount",
+        "existingItemCount",
+        "items",
+        "memorySessionImportId",
+        "previewSha256",
+        "providerDisplayName",
+        "providerId",
+        "resultCounts",
+        "source",
+        "sourceSnapshotSha256",
+        "sourceTitle",
+        "sourceUpdatedAt",
+        "status",
+        "updatedAt"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "cb2f1b1d9ff5a2d0d73b7c6f7054715e9dfe03ee049227bb9ceaf04b58d2970b"
+    },
+    {
+      "enumValues": [],
+      "name": "memorySessionImportIdSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "b91bc2b2b85c6c0a9a2fc7f68c97f393c6a6e90f3721e4b8dd77895176122082"
+    },
+    {
+      "enumValues": ["created", "existing"],
+      "name": "memorySessionImportItemRefSchema",
+      "requiredFields": [
+        "contentCharacters",
+        "disposition",
+        "memoryWriteIntentId",
+        "sourceItemKey",
+        "sourceItemSha256",
+        "title"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "f43335843f2853d605a44c4fcf61f462ba5ec71e7d403592c8b057f9c838ae58"
+    },
+    {
+      "enumValues": [],
+      "name": "memorySessionImportPreviewItemSchema",
+      "requiredFields": [
+        "alreadyImported",
+        "contentCharacters",
+        "contentPreview",
+        "sourceItemKey",
+        "sourceItemSha256",
+        "title"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "8d4fd44d72f88449e5d23320e10a892a4cee27484f5a6e15a5c1c85c5b0ee9c4"
+    },
+    {
+      "enumValues": [],
+      "name": "memorySessionImportPreviewSchema",
+      "requiredFields": [
+        "conversionVersion",
+        "existingItemCount",
+        "items",
+        "newItemCount",
+        "previewSha256",
+        "providerDisplayName",
+        "providerId",
+        "schemaVersion",
+        "source",
+        "sourceSnapshotSha256",
+        "sourceTitle",
+        "sourceUpdatedAt"
+      ],
+      "schemaVersions": ["memory-session-import-preview.v1"],
+      "signatureSha256": "284cc67005c577848fe67735f82b7fb0959dc52246cfc8a51c4244565e6790ea"
+    },
+    {
+      "enumValues": [],
+      "name": "memorySessionImportResponseSchema",
+      "requiredFields": ["memorySessionImport"],
+      "schemaVersions": [],
+      "signatureSha256": "b56f3ff430b982ce84908298ddbc98c68f3b8b3c2fa3d9463ba581532036ca8d"
+    },
+    {
+      "enumValues": [],
+      "name": "memorySessionImportSchema",
+      "requiredFields": [
+        "conversionVersion",
+        "createdAt",
+        "createdItemCount",
+        "existingItemCount",
+        "items",
+        "memorySessionImportId",
+        "previewSha256",
+        "providerDescriptor",
+        "providerDescriptorSha256",
+        "providerId",
+        "requestedByPrincipalId",
+        "revision",
+        "schemaVersion",
+        "semanticDedupeSha256",
+        "source",
+        "sourceSnapshotSha256",
+        "sourceTitle",
+        "sourceUpdatedAt",
+        "updatedAt"
+      ],
+      "schemaVersions": ["memory-session-import.v1"],
+      "signatureSha256": "531a70613294b41b5c3abf04fda8e777ee9a1c6236770ed3af059230dc5f992a"
+    },
+    {
+      "enumValues": [],
+      "name": "memorySessionSourceDescriptorSchema",
+      "requiredFields": ["source", "title", "updatedAt"],
+      "schemaVersions": [],
+      "signatureSha256": "e82111bddccb344507501f90dcba50e9c3032172ea8871b9e109d66a2c0532df"
+    },
+    {
+      "enumValues": ["chat", "codex"],
+      "name": "memorySessionSourceListQuerySchema",
+      "requiredFields": ["kind", "limit"],
+      "schemaVersions": [],
+      "signatureSha256": "75e684ab40d8a781d77082176738efb582b9991c5f796f00b3d90f70187f8609"
+    },
+    {
+      "enumValues": [],
+      "name": "memorySessionSourceRefSchema",
+      "requiredFields": ["codexSessionId", "kind", "productSessionId"],
+      "schemaVersions": [],
+      "signatureSha256": "0cabcd8f41ddfc3d41534da7d0855236e95fc757c5707b25f3ec0f4c217be60e"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryWriteAgentProposalItemSchema",
+      "requiredFields": ["category", "content", "evidenceIndexes", "labels", "title"],
+      "schemaVersions": [],
+      "signatureSha256": "595d086f53701ac748d2796b361edc8e1526b9c26b6607fd3f531268bcc8752d"
+    },
+    {
+      "enumValues": [],
+      "name": "memoryWriteAgentProposalSchema",
+      "requiredFields": ["items"],
+      "schemaVersions": [],
+      "signatureSha256": "8a0c237ae33730667efcd6498848ae8abd7d3d5c0f8e6bdc73c037bd8fdcc6db"
     },
     {
       "enumValues": [],
@@ -6573,6 +7434,13 @@
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "0acb1ef44f476a7d77a7fa85147c9301eb084af4332afe7f885022735c2c0d70"
+    },
+    {
+      "enumValues": [],
+      "name": "outcomeUnknownMemoryAgentOperationSchema",
+      "requiredFields": ["completedAt", "errorCode", "providerRequestCount", "revision", "status"],
+      "schemaVersions": [],
+      "signatureSha256": "5836ef0f5b19d67779cca1a6827487548de02ee03aee9a5fb219d597f5e36bb3"
     },
     {
       "enumValues": ["direct_agent", "executor", "note_capture", "planner"],
@@ -6995,6 +7863,34 @@
       "requiredFields": ["intent", "planeProjectBindingId"],
       "schemaVersions": [],
       "signatureSha256": "e6917e24f5d4a1aabeef6cfd9dbdc39256d01c9048d84d3f8d6c4c93b013c602"
+    },
+    {
+      "enumValues": [],
+      "name": "previewMemoryProviderComparisonPayloadSchema",
+      "requiredFields": ["maxContextCharacters", "maxResults", "providerIds", "query", "source"],
+      "schemaVersions": [],
+      "signatureSha256": "169d0dd359f204c36278f5bd97fb96c45589af6d7cea10d8e60fb73b75e19786"
+    },
+    {
+      "enumValues": [],
+      "name": "previewMemoryProviderComparisonResponseSchema",
+      "requiredFields": ["comparison"],
+      "schemaVersions": [],
+      "signatureSha256": "ac49c5bf9e93bcfd95f6e934f9a1929513eda9c8a335497e137f1d6c30ebb12e"
+    },
+    {
+      "enumValues": [],
+      "name": "previewMemorySessionImportPayloadSchema",
+      "requiredFields": ["providerId", "source"],
+      "schemaVersions": [],
+      "signatureSha256": "5a4fafb85a36d8088624ca823f5e2b3fc051362f3fea19c513c3d01c5adba6a6"
+    },
+    {
+      "enumValues": [],
+      "name": "previewMemorySessionImportResponseSchema",
+      "requiredFields": ["preview"],
+      "schemaVersions": [],
+      "signatureSha256": "cd04154e3e115fcd64b3d5498ce2a07ff5b3b36cca6d97a30c80255f491b8444"
     },
     {
       "enumValues": [],
@@ -9219,6 +10115,13 @@
     },
     {
       "enumValues": [],
+      "name": "saveWorkflowDefinitionDraftV3PayloadSchema",
+      "requiredFields": ["baseDefinitionSha256", "baseRevisionId", "semanticRoot"],
+      "schemaVersions": [],
+      "signatureSha256": "8f29ce84e835eb55188907a14ed33bfac7e29dfdc9e33596fe15d17a63b2689f"
+    },
+    {
+      "enumValues": [],
       "name": "serviceStatusSchema",
       "requiredFields": ["service", "status"],
       "schemaVersions": [],
@@ -9329,6 +10232,20 @@
       ],
       "schemaVersions": [],
       "signatureSha256": "e1729d1860b0fee85d55bf9265a4abb74f40eaaa818250e87e501c13046ca84e"
+    },
+    {
+      "enumValues": [],
+      "name": "succeededMemoryAgentOperationSchema",
+      "requiredFields": [
+        "completedAt",
+        "providerRequestCount",
+        "result",
+        "resultSha256",
+        "revision",
+        "status"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "30c99d84b70c7fbf527c7250f9f713d59f73102744358749ded9a825db2902fa"
     },
     {
       "enumValues": [],
@@ -9554,6 +10471,19 @@
     },
     {
       "enumValues": [],
+      "name": "validateWorkflowDefinitionV3PayloadSchema",
+      "requiredFields": [
+        "baseDefinitionSha256",
+        "baseRevisionId",
+        "blueprintKey",
+        "blueprintVersion",
+        "semanticRoot"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "7490bcfdf26107b14f2284d455401c22f4de883bd17e42e8cd69a88cb36c7145"
+    },
+    {
+      "enumValues": [],
       "name": "validationResultIdSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -9582,22 +10512,83 @@
         "terminalNodeType",
         "title"
       ],
-      "schemaVersions": ["chat-workflow-product-api.v2"],
-      "signatureSha256": "f9bf48f12188cec3bab617e8a6182e36ccd451428c8269d9877a82f36f1d5629"
+      "schemaVersions": ["chat-workflow-product-api.v3"],
+      "signatureSha256": "2195d7ad520d320bd9cd4ca9920b8b99f0b757ef0c800361dc94e5ed105e1075"
     },
     {
       "enumValues": [],
       "name": "workflowBlueprintsDtoSchema",
       "requiredFields": ["blueprints", "schemaVersion"],
+      "schemaVersions": ["chat-workflow-product-api.v3"],
+      "signatureSha256": "8260e01829c68ee47c7077be7bbb0c889165409ca7edea83e2fa29f90c8c99e7"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowBlueprintsV2DtoSchema",
+      "requiredFields": ["blueprints", "schemaVersion"],
       "schemaVersions": ["chat-workflow-product-api.v2"],
-      "signatureSha256": "7903c3ef37e2a31fecf4b98014058c02d5300ec7aeb18224fede6128752f151f"
+      "signatureSha256": "7255c14640f6e60e88beaf23207203071ddaf7192705eb1b907f47c39307c6a1"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowBlueprintsV3DtoSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "ec883d29f2490043f12d169c59ed0e8bd790f3b4ddef32a57599fe6137a273e0"
+    },
+    {
+      "enumValues": ["enabled", "reviewMode", "selection"],
+      "name": "workflowBlueprintV2DtoSchema",
+      "requiredFields": [
+        "blueprintKey",
+        "blueprintVersion",
+        "configFields",
+        "continueOutcomes",
+        "description",
+        "exitOutcomes",
+        "fields",
+        "loopRules",
+        "maxIterations",
+        "nodeType",
+        "optionalNodeTypes",
+        "outcomeNodeType",
+        "perRunOverrides",
+        "reviewModes",
+        "runnerFamily",
+        "schemaVersion",
+        "terminalNodeType",
+        "title"
+      ],
+      "schemaVersions": ["chat-workflow-product-api.v2"],
+      "signatureSha256": "da254dc24f5b76e533dcbb832ccafc4239e1e691f5e4d31a8cfd5436625b6334"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowBlueprintV3DtoSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "f147e7edf8718c72f6ecb91b08f98b22412fb3bc84a1f8ef75a8493275d7a5d1"
     },
     {
       "enumValues": [],
       "name": "workflowCatalogDtoSchema",
       "requiredFields": ["nodes", "schemaVersion"],
+      "schemaVersions": ["chat-workflow-product-api.v3"],
+      "signatureSha256": "29dd00f5bb654133c99f113cccc76061ed9570d89102a3cf505c48fca604f102"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowCatalogV2DtoSchema",
+      "requiredFields": ["nodes", "schemaVersion"],
       "schemaVersions": ["chat-workflow-product-api.v2"],
-      "signatureSha256": "3e767057c65817d79a8219d1f1e58517c20baec247e7e43b340c66783a6c5d74"
+      "signatureSha256": "e9e2bfd807aaed55cdde6bb421b58f4bd4f4a48e3b2b59049ec816f3e841c241"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowCatalogV3DtoSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "f4eb9cf3d6b2b60f5919307d4fe4dd4cc172961177b0b7268b62a564fd7b4f3e"
     },
     {
       "enumValues": [],
@@ -9612,6 +10603,13 @@
       "requiredFields": ["definition"],
       "schemaVersions": [],
       "signatureSha256": "219a25afb5a73b65bb920198d889de32bae211a646f6004cee65457fb55b5ba2"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowDefinitionCommandResultV3DtoSchema",
+      "requiredFields": ["definition"],
+      "schemaVersions": [],
+      "signatureSha256": "4adf8c438ca9e57b7ef450b33256fe7a19a40e267405babac2308a2c45f00a55"
     },
     {
       "enumValues": ["archive", "copy", "publish", "restore", "save", "validate"],
@@ -9646,6 +10644,23 @@
       ],
       "schemaVersions": [],
       "signatureSha256": "6c1081e04a91057e2bb6549bf388f2e1fa612699e1faece46761a6ce29194da2"
+    },
+    {
+      "enumValues": ["archive", "copy", "publish", "restore", "save", "validate"],
+      "name": "workflowDefinitionDetailV3DtoSchema",
+      "requiredFields": [
+        "allowedActions",
+        "baseDefinitionSha256",
+        "baseRevisionId",
+        "compatibility",
+        "incompatibilityCode",
+        "nodeCount",
+        "nodeTypes",
+        "safeStructureSummary",
+        "semanticRoot"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "20f47feaa53880011f5f2cd36a13c617f8d23bc38157acac18eebfec0475e34d"
     },
     {
       "enumValues": [],
@@ -9713,8 +10728,63 @@
         "workflowDefinitionId",
         "workflowDefinitionRevisionId"
       ],
+      "schemaVersions": ["chat-workflow-product-api.v3"],
+      "signatureSha256": "3aafcac06abaef58e7cd35024c814bb4326072fb51a7c4fe503cad9fae8d8640"
+    },
+    {
+      "enumValues": [
+        "agent_catalog",
+        "agent_configuration",
+        "agent_default",
+        "agent_version",
+        "enabled",
+        "principal",
+        "runtime_locked",
+        "skipped",
+        "system",
+        "workflow_override"
+      ],
+      "name": "workflowDefinitionPublishedV2DtoSchema",
+      "requiredFields": [
+        "agentKey",
+        "bindingKind",
+        "blueprintKey",
+        "blueprintVersion",
+        "defaultActivation",
+        "defaultTools",
+        "definitionNodeId",
+        "definitionRevision",
+        "definitionSha256",
+        "description",
+        "displayName",
+        "isDefault",
+        "kind",
+        "nodeType",
+        "optional",
+        "ownerKind",
+        "profileVersion",
+        "promptPolicy",
+        "promptSource",
+        "publicConfigFields",
+        "publishedAt",
+        "runConfigFields",
+        "schemaVersion",
+        "summary",
+        "title",
+        "toolPolicy",
+        "updatedAt",
+        "workflowDefinitionId",
+        "workflowDefinitionRevisionId"
+      ],
       "schemaVersions": ["chat-workflow-product-api.v2"],
-      "signatureSha256": "d03220c9b1d476752b70383abb67d1fb0f8204d37be53971c503135c7b4d5282"
+      "signatureSha256": "f7be093ed7a5a0a32f0ac68b21101a084b1e8053d2a339996907808e00c71b61"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowDefinitionPublishedV3DtoSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "181b3c3a491f48349e708d5d9fec14f83c5adf8abc7e56fc29070a08e3a97462"
     },
     {
       "enumValues": [],
@@ -9740,8 +10810,22 @@
       "enumValues": [],
       "name": "workflowDefinitionsDtoSchema",
       "requiredFields": ["definitions", "schemaVersion"],
+      "schemaVersions": ["chat-workflow-product-api.v3"],
+      "signatureSha256": "326905bc668ef5978df8a971ffcc3025ad8ffe0bbca31954805bf49f883dd990"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowDefinitionsV2DtoSchema",
+      "requiredFields": ["definitions", "schemaVersion"],
       "schemaVersions": ["chat-workflow-product-api.v2"],
-      "signatureSha256": "effbf7acbb462b95e19ee864726753b3598fec1e82f58fa913dc22cad7007858"
+      "signatureSha256": "7b91859a4da15bd257333524597e4153ede1010de7f20bec69aab12616151569"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowDefinitionsV3DtoSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "4f698d7d03271d7dab9e7a47ac84dbd7ef9dee256156389a7f152b7819ecaec9"
     },
     {
       "enumValues": [],
@@ -9756,6 +10840,20 @@
       ],
       "schemaVersions": ["chat-workflow-designer-api.v2"],
       "signatureSha256": "4594cf81a081972724638ac7f9794466c625af6010b792f2d2dd8fc1cd317916"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowDefinitionValidationV3DtoSchema",
+      "requiredFields": [
+        "definitionSha256",
+        "diagnostics",
+        "nodeCount",
+        "schemaVersion",
+        "semanticRoot",
+        "valid"
+      ],
+      "schemaVersions": ["chat-workflow-designer-api.v3"],
+      "signatureSha256": "f829dc40f3ba6eeea96712727118018216743f00578196e40aee601baa649ae1"
     },
     {
       "enumValues": [],
@@ -9844,6 +10942,20 @@
       ],
       "schemaVersions": [],
       "signatureSha256": "04267c5ee055d61545c07530ee9049fdd5533624948437ee6c9548dfdac1c481"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowDesignerSlotV3DtoSchema",
+      "requiredFields": [
+        "address",
+        "allowedNodeTypes",
+        "label",
+        "maximumIndex",
+        "minimumIndex",
+        "slotId"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "d0fb6f734de742c14e085f90f288b199bc085b44f381293696708ef3a2e124f8"
     },
     {
       "enumValues": [],
@@ -9938,6 +11050,13 @@
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "09a675a12eae16d7a293728b7b9d7df009ef6aa51421c65a5a40b6fb3c78d368"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowNodeCatalogItemV3DtoSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "ef6e7f46f3f59c81138f2a36150d77e47168fcddb2dddb7bce85874986a1f660"
     },
     {
       "enumValues": [],
@@ -10079,8 +11198,44 @@
         "runnerFamily",
         "schemaVersion"
       ],
+      "schemaVersions": ["chat-workflow-product-api.v3"],
+      "signatureSha256": "238a1dcb15e671a31c1e1733c2db6f28aa1aced19f95631bca59f6f5df049cc8"
+    },
+    {
+      "enumValues": [
+        "excluded",
+        "included",
+        "memory",
+        "project",
+        "rule",
+        "skill",
+        "system_policy",
+        "user"
+      ],
+      "name": "workflowRunConfigSummaryV2DtoSchema",
+      "requiredFields": [
+        "actor",
+        "createdAt",
+        "definitionNodeId",
+        "mode",
+        "nodeCount",
+        "productRunId",
+        "resolution",
+        "resourceKind",
+        "reviewSummary",
+        "runnerBundleVersion",
+        "runnerFamily",
+        "schemaVersion"
+      ],
       "schemaVersions": ["chat-workflow-product-api.v2"],
-      "signatureSha256": "c03ac604004220318a9b0134ee700c52305b46c7b1ec65562368f67f0e17a85f"
+      "signatureSha256": "903194070d033847860c5902ea4780fcad198a7975eca149f5a68c34b71eb50d"
+    },
+    {
+      "enumValues": [],
+      "name": "workflowRunConfigSummaryV3DtoSchema",
+      "requiredFields": [],
+      "schemaVersions": [],
+      "signatureSha256": "0152f66c3168919d95896e82fa8509e9c421e3ac6413af4c164b3ad4bda0f633"
     },
     {
       "enumValues": [],
@@ -10780,6 +11935,16 @@
       "signatureSha256": "e5c50d237d97c9760373e5b64a273a38f3aaf85a7ccaa597b97b7215506d0851"
     },
     {
+      "kind": "type",
+      "name": "CodexSessionId",
+      "signatureSha256": "cea71ca9b083deaa1c96912d3b154f96097d95af1b303744cbec25e8e54951d1"
+    },
+    {
+      "kind": "schema",
+      "name": "codexSessionIdSchema",
+      "signatureSha256": "18b83a3ef535f474610bc4ace8891b814623cd0f3af36e51086680a9a982997f"
+    },
+    {
       "kind": "command-type",
       "name": "CommandAccepted",
       "signatureSha256": "c5bf871bbfa238151a0aa4ee8f9de7c977b709db0c31076e31b7ce4db89934a4"
@@ -10976,6 +12141,16 @@
     },
     {
       "kind": "type",
+      "name": "CreateMemorySessionImportPayload",
+      "signatureSha256": "6e208cd854633c69dab29d948eeab29aa6476f3653a7a76e04ab373e377a17e6"
+    },
+    {
+      "kind": "schema",
+      "name": "createMemorySessionImportPayloadSchema",
+      "signatureSha256": "d003c25d1c119a415338cd834780a8cc171f7faf8bafc67d15ae2dce529d477c"
+    },
+    {
+      "kind": "type",
       "name": "CreateProjectActionPayload",
       "signatureSha256": "a7d372c6a840bd48eaa278433430b4aadf9592797fa91c9f37940367d5e60ae8"
     },
@@ -11091,6 +12266,16 @@
     },
     {
       "kind": "type",
+      "name": "DecideMemoryAgentWriteCandidatePayload",
+      "signatureSha256": "e60aa7ae2a8fefdb72c5716796193fe140e1100fd2ea3b969cfd9c3f2a146480"
+    },
+    {
+      "kind": "schema",
+      "name": "decideMemoryAgentWriteCandidatePayloadSchema",
+      "signatureSha256": "d4bfacda09fb3047a1f82f87d18d94dc138fd61c95ab133074e9228c1758f2d6"
+    },
+    {
+      "kind": "type",
       "name": "DecideProjectWorkTransitionPayload",
       "signatureSha256": "76113a4ea0151e6e5172a911801471ee283d04361976d2192c043ec888e778b0"
     },
@@ -11138,6 +12323,11 @@
       "kind": "type",
       "name": "DirectAgentConfigurationSourceInspection",
       "signatureSha256": "cc776a4f6f601e846baee6d2cbec9b39b20e97c4ba7ad1fc59b3afa2f061f49b"
+    },
+    {
+      "kind": "schema",
+      "name": "dispatchingMemoryAgentOperationSchema",
+      "signatureSha256": "12b002bbde41220462b811c10d58ba96d63f54dbe2dcbe99f8c6253f384cfb13"
     },
     {
       "kind": "schema",
@@ -11225,6 +12415,11 @@
       "signatureSha256": "479294e3fedf440a64bde43352901c8a2530d5741027b46171b6416dbb521451"
     },
     {
+      "kind": "schema",
+      "name": "failedMemoryAgentOperationSchema",
+      "signatureSha256": "b45f0547a232024883349f67b98a806c78fb1a6a523233d71bf594f0e6ac984b"
+    },
+    {
       "kind": "query-type",
       "name": "GetNoteHistoryQuery",
       "signatureSha256": "2cc5802d52ec389cdcf075b85131531c6cd9df38681644705c667ae5a6ba373c"
@@ -11295,6 +12490,11 @@
       "signatureSha256": "f77a26f40789d1ddf51575b8a6b058d44f95df001647e5ed065589ef5fe9b4ce"
     },
     {
+      "kind": "value",
+      "name": "LEGACY_WORKFLOW_PRODUCT_API_SCHEMA_VERSION",
+      "signatureSha256": "7cb1e082665e93eafaa219d84d846e9df17637fed6973bf96687c1ac42e44cf3"
+    },
+    {
       "kind": "schema",
       "name": "legacyAgentVersionV1HashInputSchema",
       "signatureSha256": "685957946c3e3b879ce8dd740c18fcf05a19c82427e06da10dcd107597c723aa"
@@ -11303,6 +12503,36 @@
       "kind": "schema",
       "name": "legacyAgentVersionV1Schema",
       "signatureSha256": "d80844a2e61d9f97b885d137e1df0dcb35d83bcdd6246eb79342a86008b650bd"
+    },
+    {
+      "kind": "schema",
+      "name": "listMemoryAgentWriteCandidatesQuerySchema",
+      "signatureSha256": "9163d640847853b61284d5c2b080e2f597b4abcfdfddb191a0adc4c895b6c7e8"
+    },
+    {
+      "kind": "schema",
+      "name": "listMemoryAgentWriteCandidatesResponseSchema",
+      "signatureSha256": "99eb1c21914d1d301fbe61a0843b4cf56e20e9b62f1d2e6a52d39a4760265237"
+    },
+    {
+      "kind": "schema",
+      "name": "listMemoryProvidersResponseSchema",
+      "signatureSha256": "4839b1aa872a6d3c25c8f29be735d6d7e6eb52716ab9cc88e8f7e3b5e8daa89d"
+    },
+    {
+      "kind": "schema",
+      "name": "listMemorySessionImportsQuerySchema",
+      "signatureSha256": "a13ff472ce32fd8349af16e26562566bb4d0c2cf809667b79d9615b1ee2062df"
+    },
+    {
+      "kind": "schema",
+      "name": "listMemorySessionImportsResponseSchema",
+      "signatureSha256": "50896d0761e4581e396d0d25683225b65f9030fc74ce83b2e50339245519221c"
+    },
+    {
+      "kind": "schema",
+      "name": "listMemorySessionSourcesResponseSchema",
+      "signatureSha256": "d81b02b472503e93dc6e490263ebce10487c7efb7efb62d33f464edb8588306b"
     },
     {
       "kind": "query-type",
@@ -11420,6 +12650,16 @@
       "signatureSha256": "1f3291c4a44ded237c6df8143bb786d5c53b7872d915f6792f653ad6a4afbeaa"
     },
     {
+      "kind": "value",
+      "name": "MEMORY_RETRIEVAL_AGENT_PROMPT_VERSION",
+      "signatureSha256": "3fc467f0ee5674e19ead96e01f13bab94d9228b4b74ad3d8f169194cb0ed37e7"
+    },
+    {
+      "kind": "value",
+      "name": "MEMORY_WRITE_AGENT_PROMPT_VERSION",
+      "signatureSha256": "2c1a31dc5f75a1c65731c8886eeae7f753062939ff9068df0cccbcc427234afa"
+    },
+    {
       "kind": "type",
       "name": "MemoryAdoptionId",
       "signatureSha256": "83d1d9413bbd0ba954ef26ea7a3e0f5901703ed31da7179842f955ff798a9c41"
@@ -11428,6 +12668,121 @@
       "kind": "schema",
       "name": "memoryAdoptionIdSchema",
       "signatureSha256": "91f82879bd70408a68a2d68267bdc897498d6515d9f692eb63b0ffa33d1fa5b4"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryAgentEvidenceRef",
+      "signatureSha256": "514d810551760a70dbfbd456c97d0d52fe588af216c0935f4d0251fe05591640"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentEvidenceRefSchema",
+      "signatureSha256": "2af264be481c5f83e2e6f82d956e94e972b4bb7e6a4430eed065d046c1e420e6"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryAgentOperation",
+      "signatureSha256": "e5058ca497f8c830cd7ebb1d733f55c39b105a1bda7d6a24c78ee0cb0ebef378"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryAgentOperationId",
+      "signatureSha256": "7b0587e2e343a89588cbcf914163177d0d1fd24c0fc5b7df90e1d8840013aede"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentOperationIdSchema",
+      "signatureSha256": "a9b8502eda243b7ed01323e16fa97958cc7b268d8497ac3d73a74d32d3f1943f"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryAgentOperationResult",
+      "signatureSha256": "beb9b7264e084f4ed1e4a682befcd3bfff80884e0bda004a239e0bc43ab8cd55"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentOperationResultSchema",
+      "signatureSha256": "b638689e22b6db18e957fd0383fff90b8a2c882d084b1c0d7123a325768771f8"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentOperationSchema",
+      "signatureSha256": "61e871647dfdbdbcee577ba9c59e637d2549e57dba7151e855666d2fbca01e97"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentRetrieveNodeConfigSchema",
+      "signatureSha256": "04f59fdf5c7bce82064662d4417d33bcee31e85581f18a2b49ea1dba7a6a507b"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentSearchSectionSchema",
+      "signatureSha256": "e838ab146e9537f3d2ee827032ed9d8d0333444ea47f039a1c582ff17ee43030"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryAgentWriteCandidate",
+      "signatureSha256": "f64d5c3ca2c05d9fe2cdf48b181476199c17fa7ac6dad97593ea381219ac5bdb"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryAgentWriteCandidateId",
+      "signatureSha256": "4d7395d8bef69f1296c16eaf86a63e29b1bb28f0cddc7c1bb83a2908c5efc758"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentWriteCandidateIdSchema",
+      "signatureSha256": "5c3aaad35a3edf43e4e6240b88314c8cd7bd9e0626b334b2ea5b567836767f58"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryAgentWriteCandidateItem",
+      "signatureSha256": "558f7336021679e035903ac72938433ba77b8b2543c3633bc4203dba3d99d4d2"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentWriteCandidateItemSchema",
+      "signatureSha256": "336f3b0e8d7280a4ed6430d9096719c27e41c770ad6c3d400cf9a96ecd9492e1"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentWriteCandidateResponseSchema",
+      "signatureSha256": "1c9b94ae2863c3126a22fbd9ff3ac0e7c4c84383ff52bd1344e3112bafa78c3f"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentWriteCandidateSchema",
+      "signatureSha256": "1ec04638fe145d1c9f3f0c00fe90bade5d5b674214999b4c21f7f04ff39156c5"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryAgentWriteDecision",
+      "signatureSha256": "e019ab62bb1df3151faae917ac72ddaa6aa75e93828ab72eb77339b42182507d"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryAgentWriteDecisionId",
+      "signatureSha256": "3b3ad569833ae6bc712e3e0ead8d92845076e7a8fa626d0e7f0bc482cca926d7"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentWriteDecisionIdSchema",
+      "signatureSha256": "4eee46d7a9548c2845790300e282086eeadfd5dca00151e5dd6f7ba455f3c13e"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentWriteDecisionResponseSchema",
+      "signatureSha256": "698c722b1993699e506169650c18079f5f6c4bcb3edd99db66fde0ba9d34cfb7"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentWriteDecisionSchema",
+      "signatureSha256": "b3f70e41cd296a21141d93a0c71573385789c83c8e8a339b9044f639b5d9836a"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryAgentWriteNodeConfigSchema",
+      "signatureSha256": "d11df2f3eefb791625d6eb00c62eb735acf6c5f22bc033037b0740079e2de216"
     },
     {
       "kind": "type",
@@ -11505,6 +12860,41 @@
       "signatureSha256": "2aa9954ade84b0739ef8f131329f80a313ff99300e396e6de99268d1f6c404df"
     },
     {
+      "kind": "schema",
+      "name": "memoryProviderComparisonItemSchema",
+      "signatureSha256": "2bba0515b14936816b49305598536213bde006491e6e4a80a8022e4055ebad3d"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryProviderComparisonOutcome",
+      "signatureSha256": "7d6a1e1f61f2e43554c6449f93c75edddd97b321b2832642c1a8720113f01b44"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryProviderComparisonOutcomeSchema",
+      "signatureSha256": "e9bfe2f2180aad29110a3df91bfeba9080c963822f06ac81c13df82cea7ffb06"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryProviderComparisonPreview",
+      "signatureSha256": "8254cafcd7c1c25cec9ef5814b6f753f691c4e1c3a325ee2ef3c0d547d0ad5f2"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryProviderComparisonPreviewSchema",
+      "signatureSha256": "af23f601bb7449c240532ca3c0b8e1def9a614455c43e59077690e43712b9042"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryProviderPairwiseComparison",
+      "signatureSha256": "16ed074a597217e316b402fd97c401422bdc508a187440c91c88542b889eae80"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryProviderPairwiseComparisonSchema",
+      "signatureSha256": "360fe7506422492c9cf3565f701d22a09b454b067a583eddc9b0a3ee2c985ab7"
+    },
+    {
       "kind": "query-type",
       "name": "MemoryQueryId",
       "signatureSha256": "78004376229d461e53c3c0721b44b78be60ecf0e3d0f0a9297ef182ecb35083a"
@@ -11533,6 +12923,116 @@
       "kind": "schema",
       "name": "memoryResultSnapshotIdSchema",
       "signatureSha256": "6e12af1e8df56f3b1aeb745ecaa74be54e593c39110ba817f94daa1c3989ef26"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryRetrievalAgentSelection",
+      "signatureSha256": "c5c2cd27db45bf59f6a467d9d6559e2e78293dbf05c8a3b94b5b5dcbb2a505e0"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryRetrievalAgentSelectionSchema",
+      "signatureSha256": "ec21eed69e98dfdd18ad91dc5c32221e9428cb110e421c57f4de7e727b6e2994"
+    },
+    {
+      "kind": "schema",
+      "name": "memorySessionConversionVersionSchema",
+      "signatureSha256": "5dd26ae47441f30e4ba799234d035325818aaf9cbb4e99f7256a1adb856632d5"
+    },
+    {
+      "kind": "type",
+      "name": "MemorySessionImport",
+      "signatureSha256": "abae58755c6e02eeeaffff3ad5ae46927815ea8879500419f5b72c0dfa30c3a2"
+    },
+    {
+      "kind": "type",
+      "name": "MemorySessionImportDto",
+      "signatureSha256": "50ba680341ca94f90c5cab1177481fe67eeb77ad6592fcf7963dd86d15ee701f"
+    },
+    {
+      "kind": "schema",
+      "name": "memorySessionImportDtoSchema",
+      "signatureSha256": "cb2f1b1d9ff5a2d0d73b7c6f7054715e9dfe03ee049227bb9ceaf04b58d2970b"
+    },
+    {
+      "kind": "type",
+      "name": "MemorySessionImportId",
+      "signatureSha256": "1692ffeb129ddd71e76370108f00ae597e539c7e8c168bb5c2a0b1d723bc1f31"
+    },
+    {
+      "kind": "schema",
+      "name": "memorySessionImportIdSchema",
+      "signatureSha256": "b91bc2b2b85c6c0a9a2fc7f68c97f393c6a6e90f3721e4b8dd77895176122082"
+    },
+    {
+      "kind": "schema",
+      "name": "memorySessionImportItemRefSchema",
+      "signatureSha256": "f43335843f2853d605a44c4fcf61f462ba5ec71e7d403592c8b057f9c838ae58"
+    },
+    {
+      "kind": "type",
+      "name": "MemorySessionImportPreview",
+      "signatureSha256": "53ee104abaaf2f551ede9bed7e70dff0dd82e44d7839a85daacec083c7a208b6"
+    },
+    {
+      "kind": "schema",
+      "name": "memorySessionImportPreviewItemSchema",
+      "signatureSha256": "8d4fd44d72f88449e5d23320e10a892a4cee27484f5a6e15a5c1c85c5b0ee9c4"
+    },
+    {
+      "kind": "schema",
+      "name": "memorySessionImportPreviewSchema",
+      "signatureSha256": "284cc67005c577848fe67735f82b7fb0959dc52246cfc8a51c4244565e6790ea"
+    },
+    {
+      "kind": "schema",
+      "name": "memorySessionImportResponseSchema",
+      "signatureSha256": "b56f3ff430b982ce84908298ddbc98c68f3b8b3c2fa3d9463ba581532036ca8d"
+    },
+    {
+      "kind": "schema",
+      "name": "memorySessionImportSchema",
+      "signatureSha256": "531a70613294b41b5c3abf04fda8e777ee9a1c6236770ed3af059230dc5f992a"
+    },
+    {
+      "kind": "schema",
+      "name": "memorySessionSourceDescriptorSchema",
+      "signatureSha256": "e82111bddccb344507501f90dcba50e9c3032172ea8871b9e109d66a2c0532df"
+    },
+    {
+      "kind": "schema",
+      "name": "memorySessionSourceListQuerySchema",
+      "signatureSha256": "75e684ab40d8a781d77082176738efb582b9991c5f796f00b3d90f70187f8609"
+    },
+    {
+      "kind": "type",
+      "name": "MemorySessionSourceRef",
+      "signatureSha256": "9a005c8a5f050659060181371c547a519c749a05a991773c4890e4364e98ddb5"
+    },
+    {
+      "kind": "schema",
+      "name": "memorySessionSourceRefSchema",
+      "signatureSha256": "0cabcd8f41ddfc3d41534da7d0855236e95fc757c5707b25f3ec0f4c217be60e"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryWriteAgentProposal",
+      "signatureSha256": "93a636217ed36e10e710b94e93f6849a1a8f5b1de673554c69252f9d43da7af5"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryWriteAgentProposalItemSchema",
+      "signatureSha256": "595d086f53701ac748d2796b361edc8e1526b9c26b6607fd3f531268bcc8752d"
+    },
+    {
+      "kind": "schema",
+      "name": "memoryWriteAgentProposalSchema",
+      "signatureSha256": "8a0c237ae33730667efcd6498848ae8abd7d3d5c0f8e6bdc73c037bd8fdcc6db"
+    },
+    {
+      "kind": "type",
+      "name": "MemoryWriteDto",
+      "signatureSha256": "aab68a515ac231460e389f48ae92fd627d3617a0acf5f4ba043526ec4bc893c8"
     },
     {
       "kind": "type",
@@ -11778,6 +13278,11 @@
       "kind": "schema",
       "name": "outboxEntryIdSchema",
       "signatureSha256": "0acb1ef44f476a7d77a7fa85147c9301eb084af4332afe7f885022735c2c0d70"
+    },
+    {
+      "kind": "schema",
+      "name": "outcomeUnknownMemoryAgentOperationSchema",
+      "signatureSha256": "5836ef0f5b19d67779cca1a6827487548de02ee03aee9a5fb219d597f5e36bb3"
     },
     {
       "kind": "value",
@@ -12123,6 +13628,31 @@
       "kind": "schema",
       "name": "preparePlaneProjectOperationPayloadSchema",
       "signatureSha256": "e6917e24f5d4a1aabeef6cfd9dbdc39256d01c9048d84d3f8d6c4c93b013c602"
+    },
+    {
+      "kind": "type",
+      "name": "PreviewMemoryProviderComparisonPayload",
+      "signatureSha256": "ea5a1966fe6720aff39a67e27e1df341ae064b02a0d46bbbc15819d8dcff645c"
+    },
+    {
+      "kind": "schema",
+      "name": "previewMemoryProviderComparisonPayloadSchema",
+      "signatureSha256": "169d0dd359f204c36278f5bd97fb96c45589af6d7cea10d8e60fb73b75e19786"
+    },
+    {
+      "kind": "schema",
+      "name": "previewMemoryProviderComparisonResponseSchema",
+      "signatureSha256": "ac49c5bf9e93bcfd95f6e934f9a1929513eda9c8a335497e137f1d6c30ebb12e"
+    },
+    {
+      "kind": "schema",
+      "name": "previewMemorySessionImportPayloadSchema",
+      "signatureSha256": "5a4fafb85a36d8088624ca823f5e2b3fc051362f3fea19c513c3d01c5adba6a6"
+    },
+    {
+      "kind": "schema",
+      "name": "previewMemorySessionImportResponseSchema",
+      "signatureSha256": "cd04154e3e115fcd64b3d5498ce2a07ff5b3b36cca6d97a30c80255f491b8444"
     },
     {
       "kind": "type",
@@ -14041,6 +15571,16 @@
     },
     {
       "kind": "type",
+      "name": "SaveWorkflowDefinitionDraftV3Payload",
+      "signatureSha256": "b9d9a8ea95b2f1541d6a7cf5f6e1521b39d8fb07d969d86d9d945e9f8ceeb86a"
+    },
+    {
+      "kind": "schema",
+      "name": "saveWorkflowDefinitionDraftV3PayloadSchema",
+      "signatureSha256": "8f29ce84e835eb55188907a14ed33bfac7e29dfdc9e33596fe15d17a63b2689f"
+    },
+    {
+      "kind": "type",
       "name": "ServiceStatus",
       "signatureSha256": "cb5b2484ad420598933cc0c76e817b17af3d319e0fc1e749d3928fd1c58eaa22"
     },
@@ -14153,6 +15693,11 @@
       "kind": "schema",
       "name": "submitToolExecutionDecisionPayloadSchema",
       "signatureSha256": "e1729d1860b0fee85d55bf9265a4abb74f40eaaa818250e87e501c13046ca84e"
+    },
+    {
+      "kind": "schema",
+      "name": "succeededMemoryAgentOperationSchema",
+      "signatureSha256": "30c99d84b70c7fbf527c7250f9f713d59f73102744358749ded9a825db2902fa"
     },
     {
       "kind": "type",
@@ -14416,6 +15961,16 @@
     },
     {
       "kind": "type",
+      "name": "ValidateWorkflowDefinitionV3Payload",
+      "signatureSha256": "8ab7f8906b4b17c24faf8321abf408d7f0488f1c87afe69bf9e426bb2c3ec7e1"
+    },
+    {
+      "kind": "schema",
+      "name": "validateWorkflowDefinitionV3PayloadSchema",
+      "signatureSha256": "7490bcfdf26107b14f2284d455401c22f4de883bd17e42e8cd69a88cb36c7145"
+    },
+    {
+      "kind": "type",
       "name": "ValidationResultId",
       "signatureSha256": "6fa802b460c377d7e20722b418704281fa179f3afa2b03be424115414232e31e"
     },
@@ -14436,13 +15991,23 @@
     },
     {
       "kind": "value",
+      "name": "WORKFLOW_DESIGNER_API_V3_SCHEMA_VERSION",
+      "signatureSha256": "13451bcaf650d49b4dc225b1ebfd5ce614437da962810f6745393f1097810a3d"
+    },
+    {
+      "kind": "value",
       "name": "WORKFLOW_EXECUTION_TRACE_SCHEMA_VERSION",
       "signatureSha256": "69787dea3b541f960150466b062f8dc7838d2b1482a3e64cfcecbf883d50cfa6"
     },
     {
       "kind": "value",
       "name": "WORKFLOW_PRODUCT_API_SCHEMA_VERSION",
-      "signatureSha256": "84d2de97cb56f693b2a20ce1f4b6c3c14fac68da19771205fbd86abcad16e4da"
+      "signatureSha256": "05a729a12ce60c2cd0eb7d6462fb6fb974757e7a8f8f0f01287a37734b86623f"
+    },
+    {
+      "kind": "value",
+      "name": "WORKFLOW_PRODUCT_API_V3_SCHEMA_VERSION",
+      "signatureSha256": "66f677d55ec43cd811eb915a07bb926f75ec28784cf58a5a66d1f668d17caf52"
     },
     {
       "kind": "value",
@@ -14452,32 +16017,92 @@
     {
       "kind": "type",
       "name": "WorkflowBlueprintDto",
-      "signatureSha256": "5977914de7b96570bbd39f44e4876d0cd81a916461e701d12b14bfc43b0efce9"
+      "signatureSha256": "3594ec1790e42ce897e9101e483d4bf5e47f3769c63af6b1dc41e0ba5375ebf2"
     },
     {
       "kind": "schema",
       "name": "workflowBlueprintDtoSchema",
-      "signatureSha256": "f9bf48f12188cec3bab617e8a6182e36ccd451428c8269d9877a82f36f1d5629"
+      "signatureSha256": "2195d7ad520d320bd9cd4ca9920b8b99f0b757ef0c800361dc94e5ed105e1075"
     },
     {
       "kind": "type",
       "name": "WorkflowBlueprintsDto",
-      "signatureSha256": "672ca22999628fa1cf0b258501d3952f1271ae2e3436d4e94167bfde90afe308"
+      "signatureSha256": "8af3b2e20f5fba18d7b117c1437ce64782e450634814d9a67adc4f3a12132ff6"
     },
     {
       "kind": "schema",
       "name": "workflowBlueprintsDtoSchema",
-      "signatureSha256": "7903c3ef37e2a31fecf4b98014058c02d5300ec7aeb18224fede6128752f151f"
+      "signatureSha256": "8260e01829c68ee47c7077be7bbb0c889165409ca7edea83e2fa29f90c8c99e7"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowBlueprintsV2Dto",
+      "signatureSha256": "3b6a2a934e8b46469fed23532711d0b72fb3f4cab2bcf9f23c5358aa962ddff1"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowBlueprintsV2DtoSchema",
+      "signatureSha256": "7255c14640f6e60e88beaf23207203071ddaf7192705eb1b907f47c39307c6a1"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowBlueprintsV3Dto",
+      "signatureSha256": "31776f0ad0a5948340ac8bcedb68f825ef406d42f977479c6c013ead4fa8c4f7"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowBlueprintsV3DtoSchema",
+      "signatureSha256": "ec883d29f2490043f12d169c59ed0e8bd790f3b4ddef32a57599fe6137a273e0"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowBlueprintV2Dto",
+      "signatureSha256": "7e2cd0c0b5474d6100dff86adf4adb363d028ca6e4996b91a989d73b3d3ac6c6"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowBlueprintV2DtoSchema",
+      "signatureSha256": "da254dc24f5b76e533dcbb832ccafc4239e1e691f5e4d31a8cfd5436625b6334"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowBlueprintV3Dto",
+      "signatureSha256": "671ad6b87563909e9e28565439a7fed9ef136ad68cc77ed954f242e379fa441a"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowBlueprintV3DtoSchema",
+      "signatureSha256": "f147e7edf8718c72f6ecb91b08f98b22412fb3bc84a1f8ef75a8493275d7a5d1"
     },
     {
       "kind": "type",
       "name": "WorkflowCatalogDto",
-      "signatureSha256": "fde5ef760ddfd99ef7342b9c43bdee8515e13e100e7988e5e726836a4d2c6523"
+      "signatureSha256": "fb331e30b59369898dbd36701d2321f663f95fa931c7e830f38418b3dfc71e82"
     },
     {
       "kind": "schema",
       "name": "workflowCatalogDtoSchema",
-      "signatureSha256": "3e767057c65817d79a8219d1f1e58517c20baec247e7e43b340c66783a6c5d74"
+      "signatureSha256": "29dd00f5bb654133c99f113cccc76061ed9570d89102a3cf505c48fca604f102"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowCatalogV2Dto",
+      "signatureSha256": "0555141e654ddecd2ed627bd29b1c327cc896f29ab54df8a708093c99c1f3eb4"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowCatalogV2DtoSchema",
+      "signatureSha256": "e9e2bfd807aaed55cdde6bb421b58f4bd4f4a48e3b2b59049ec816f3e841c241"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowCatalogV3Dto",
+      "signatureSha256": "bfddf8f61f114e4106da8d995b3ebf6507f291262855bf874de244bd4db239b7"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowCatalogV3DtoSchema",
+      "signatureSha256": "f4eb9cf3d6b2b60f5919307d4fe4dd4cc172961177b0b7268b62a564fd7b4f3e"
     },
     {
       "kind": "command-type",
@@ -14500,6 +16125,16 @@
       "signatureSha256": "219a25afb5a73b65bb920198d889de32bae211a646f6004cee65457fb55b5ba2"
     },
     {
+      "kind": "command-type",
+      "name": "WorkflowDefinitionCommandResultV3Dto",
+      "signatureSha256": "f4bade7a6393c18d4a5b3e67471dd82fc07f3dc4da91b2bbda352f7dab8166ba"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowDefinitionCommandResultV3DtoSchema",
+      "signatureSha256": "4adf8c438ca9e57b7ef450b33256fe7a19a40e267405babac2308a2c45f00a55"
+    },
+    {
       "kind": "type",
       "name": "WorkflowDefinitionDetailDto",
       "signatureSha256": "ff6b63790ede2d819fd9257868ded00721327fb99ac4824d124b5473e13e1751"
@@ -14518,6 +16153,16 @@
       "kind": "schema",
       "name": "workflowDefinitionDetailV2DtoSchema",
       "signatureSha256": "6c1081e04a91057e2bb6549bf388f2e1fa612699e1faece46761a6ce29194da2"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowDefinitionDetailV3Dto",
+      "signatureSha256": "80216bc0b2ac6e2dc209adb3d734e970663e1199792a18c522bc674639204acd"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowDefinitionDetailV3DtoSchema",
+      "signatureSha256": "20f47feaa53880011f5f2cd36a13c617f8d23bc38157acac18eebfec0475e34d"
     },
     {
       "kind": "type",
@@ -14542,12 +16187,32 @@
     {
       "kind": "type",
       "name": "WorkflowDefinitionPublishedDto",
-      "signatureSha256": "eecef88b0c9d90de91e0c130eb43aa54e5e0730eb7287be989e4e797a13eb7b4"
+      "signatureSha256": "58cc14b5da93cd1fcbf43fbd2f6ef73364d97183cd8f4eb4c2fb4ba9cd3b1262"
     },
     {
       "kind": "schema",
       "name": "workflowDefinitionPublishedDtoSchema",
-      "signatureSha256": "d03220c9b1d476752b70383abb67d1fb0f8204d37be53971c503135c7b4d5282"
+      "signatureSha256": "3aafcac06abaef58e7cd35024c814bb4326072fb51a7c4fe503cad9fae8d8640"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowDefinitionPublishedV2Dto",
+      "signatureSha256": "c5d8051773efff77a926e335c516edbf2318fcb57921e9e9d2e9c86ad0de2c43"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowDefinitionPublishedV2DtoSchema",
+      "signatureSha256": "f7be093ed7a5a0a32f0ac68b21101a084b1e8053d2a339996907808e00c71b61"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowDefinitionPublishedV3Dto",
+      "signatureSha256": "e0f8910e158dd70c4d602cd845b96fb8e1508661a4b16d85a405e4537da13ac9"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowDefinitionPublishedV3DtoSchema",
+      "signatureSha256": "181b3c3a491f48349e708d5d9fec14f83c5adf8abc7e56fc29070a08e3a97462"
     },
     {
       "kind": "type",
@@ -14572,12 +16237,32 @@
     {
       "kind": "type",
       "name": "WorkflowDefinitionsDto",
-      "signatureSha256": "e190a8a712e2abee9340477eb6eddb5d9e07ac54810606d35497b513955fff73"
+      "signatureSha256": "0990273483db0dca6924945b2e5c5279a869a4d0da53091838537c662c19e1cd"
     },
     {
       "kind": "schema",
       "name": "workflowDefinitionsDtoSchema",
-      "signatureSha256": "effbf7acbb462b95e19ee864726753b3598fec1e82f58fa913dc22cad7007858"
+      "signatureSha256": "326905bc668ef5978df8a971ffcc3025ad8ffe0bbca31954805bf49f883dd990"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowDefinitionsV2Dto",
+      "signatureSha256": "43dc9bc5c3fc0fb20f4dd93b032dbb4cc5d2edec77e30a3f3b05465e34c0ccf7"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowDefinitionsV2DtoSchema",
+      "signatureSha256": "7b91859a4da15bd257333524597e4153ede1010de7f20bec69aab12616151569"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowDefinitionsV3Dto",
+      "signatureSha256": "0ddc7498b577b80c465ffdb6d3d99bd3129783142e5f7a7d9a2383659b09dd81"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowDefinitionsV3DtoSchema",
+      "signatureSha256": "4f698d7d03271d7dab9e7a47ac84dbd7ef9dee256156389a7f152b7819ecaec9"
     },
     {
       "kind": "type",
@@ -14588,6 +16273,16 @@
       "kind": "schema",
       "name": "workflowDefinitionValidationDtoSchema",
       "signatureSha256": "4594cf81a081972724638ac7f9794466c625af6010b792f2d2dd8fc1cd317916"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowDefinitionValidationV3Dto",
+      "signatureSha256": "a734f73fa29345ba520c2d254138a7b2b4001938393e95774cd7d052bda46308"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowDefinitionValidationV3DtoSchema",
+      "signatureSha256": "f829dc40f3ba6eeea96712727118018216743f00578196e40aee601baa649ae1"
     },
     {
       "kind": "type",
@@ -14648,6 +16343,16 @@
       "kind": "schema",
       "name": "workflowDesignerSlotV2DtoSchema",
       "signatureSha256": "04267c5ee055d61545c07530ee9049fdd5533624948437ee6c9548dfdac1c481"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowDesignerSlotV3Dto",
+      "signatureSha256": "1ce8384620ea509a88c02f66d0b902e32455e5a324a98d1d82ecb9d2f46d4c41"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowDesignerSlotV3DtoSchema",
+      "signatureSha256": "d0fb6f734de742c14e085f90f288b199bc085b44f381293696708ef3a2e124f8"
     },
     {
       "kind": "type",
@@ -14713,6 +16418,11 @@
       "kind": "schema",
       "name": "workflowNodeCatalogItemV2DtoSchema",
       "signatureSha256": "09a675a12eae16d7a293728b7b9d7df009ef6aa51421c65a5a40b6fb3c78d368"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowNodeCatalogItemV3DtoSchema",
+      "signatureSha256": "ef6e7f46f3f59c81138f2a36150d77e47168fcddb2dddb7bce85874986a1f660"
     },
     {
       "kind": "type",
@@ -14817,12 +16527,32 @@
     {
       "kind": "type",
       "name": "WorkflowRunConfigSummaryDto",
-      "signatureSha256": "bd808b6d73744e21e6ca8a8a3cd98d6070bab379243a1caca619b9a890dd99e7"
+      "signatureSha256": "6249e8a1080e7daaedfc7bf8addf5c52a31ae9cfb73aebfe78b16a5921118286"
     },
     {
       "kind": "schema",
       "name": "workflowRunConfigSummaryDtoSchema",
-      "signatureSha256": "c03ac604004220318a9b0134ee700c52305b46c7b1ec65562368f67f0e17a85f"
+      "signatureSha256": "238a1dcb15e671a31c1e1733c2db6f28aa1aced19f95631bca59f6f5df049cc8"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowRunConfigSummaryV2Dto",
+      "signatureSha256": "500419d22ab66de1c9b5844e5433fb4c76d624dec5b67e1386bcc32cb2b96b9e"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowRunConfigSummaryV2DtoSchema",
+      "signatureSha256": "903194070d033847860c5902ea4780fcad198a7975eca149f5a68c34b71eb50d"
+    },
+    {
+      "kind": "type",
+      "name": "WorkflowRunConfigSummaryV3Dto",
+      "signatureSha256": "c327c372ad1d95b43641d907622304df27e4eb5fb751a95596348393e093ca5b"
+    },
+    {
+      "kind": "schema",
+      "name": "workflowRunConfigSummaryV3DtoSchema",
+      "signatureSha256": "0152f66c3168919d95896e82fa8509e9c421e3ac6413af4c164b3ad4bda0f633"
     },
     {
       "kind": "type",
@@ -16584,6 +18314,110 @@
     },
     {
       "body": {
+        "schemas": [
+          {
+            "identity": "previewMemoryProviderComparisonPayloadSchema",
+            "schemaVersions": [],
+            "signatureSha256": "169d0dd359f204c36278f5bd97fb96c45589af6d7cea10d8e60fb73b75e19786"
+          },
+          {
+            "identity": "previewMemoryProviderComparisonResponseSchema",
+            "schemaVersions": [],
+            "signatureSha256": "ac49c5bf9e93bcfd95f6e934f9a1929513eda9c8a335497e137f1d6c30ebb12e"
+          }
+        ]
+      },
+      "kind": "command",
+      "method": "POST",
+      "path": "/api/memory/provider-comparison-previews",
+      "pathParameters": [],
+      "problemContract": {
+        "codes": [
+          "approval_already_decided",
+          "approval_expired",
+          "command_id_reused",
+          "definition_stale",
+          "forbidden",
+          "internal_error",
+          "memory_context_required_failed",
+          "memory_import_backend_unavailable",
+          "memory_import_failed",
+          "memory_import_idempotency_conflict",
+          "memory_import_source_invalid",
+          "model_candidate_invalid",
+          "not_found",
+          "outcome_unknown",
+          "plan_hash_conflict",
+          "policy_denied",
+          "product_commit_failed",
+          "prompt_review_already_decided",
+          "prompt_review_hash_conflict",
+          "prompt_review_payload_hash_conflict",
+          "provider_auth_failed",
+          "provider_rate_limited",
+          "provider_stream_interrupted",
+          "provider_timeout",
+          "resource_stale",
+          "revision_conflict",
+          "store_corrupted",
+          "unauthenticated",
+          "validation_failed",
+          "workflow_dispatch_unknown",
+          "workflow_resume_unknown"
+        ],
+        "problemCodeSchema": {
+          "identity": "problemCodeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ffd0c2d6cf0881b5ee465b5823f0a38fe17644a5a5088fdff963b887f944eb4f"
+        },
+        "recoveryActions": [
+          "contact_support",
+          "none",
+          "reauthenticate",
+          "rehydrate_and_retry",
+          "retry_same_command",
+          "wait_for_reconciliation"
+        ],
+        "recoveryActionSchema": {
+          "identity": "recoveryActionSchema",
+          "schemaVersions": [],
+          "signatureSha256": "7517fb6e8480b3566cc9aa74d618b944a63fc675278fddd6446a15292bd2569e"
+        }
+      },
+      "query": {
+        "parsers": [],
+        "schemas": []
+      },
+      "requestSchemas": [
+        {
+          "identity": "previewMemoryProviderComparisonPayloadSchema",
+          "schemaVersions": [],
+          "signatureSha256": "169d0dd359f204c36278f5bd97fb96c45589af6d7cea10d8e60fb73b75e19786"
+        },
+        {
+          "identity": "previewMemoryProviderComparisonResponseSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ac49c5bf9e93bcfd95f6e934f9a1929513eda9c8a335497e137f1d6c30ebb12e"
+        }
+      ],
+      "responseSchemas": [
+        {
+          "identity": "response-expression:POST /api/memory/provider-comparison-previews:1",
+          "schemaVersions": [],
+          "signatureSha256": "ebad13222ff243c125cd354f96ed4e6d958d6250d584bda6fd608fbaf6b93a05"
+        }
+      ],
+      "successfulResponses": [
+        {
+          "explicitSchemas": [],
+          "signatureSha256": "ebad13222ff243c125cd354f96ed4e6d958d6250d584bda6fd608fbaf6b93a05",
+          "source": "json",
+          "status": "200"
+        }
+      ]
+    },
+    {
+      "body": {
         "schemas": []
       },
       "kind": "query",
@@ -16659,7 +18493,7 @@
         {
           "identity": "listMemoryProvidersResponseSchema",
           "schemaVersions": [],
-          "signatureSha256": "2ca1a3850a61f0e8c0e0a683d1948988970ce8c69def84de013ab395e9183052"
+          "signatureSha256": "4839b1aa872a6d3c25c8f29be735d6d7e6eb52716ab9cc88e8f7e3b5e8daa89d"
         }
       ],
       "successfulResponses": [
@@ -16668,12 +18502,899 @@
             {
               "identity": "listMemoryProvidersResponseSchema",
               "schemaVersions": [],
-              "signatureSha256": "2ca1a3850a61f0e8c0e0a683d1948988970ce8c69def84de013ab395e9183052"
+              "signatureSha256": "4839b1aa872a6d3c25c8f29be735d6d7e6eb52716ab9cc88e8f7e3b5e8daa89d"
             }
           ],
-          "signatureSha256": "07ae7868ea38395d4ced9c448d2b1c65478ea3edbdd72d3688695beffdf58a52",
+          "signatureSha256": "76314e296841ff6d982ec301fa1d49314b25c35b010cdab9300012d4e3bdf0e3",
           "source": "json",
           "status": "200"
+        }
+      ]
+    },
+    {
+      "body": {
+        "schemas": [
+          {
+            "identity": "previewMemorySessionImportPayloadSchema",
+            "schemaVersions": [],
+            "signatureSha256": "5a4fafb85a36d8088624ca823f5e2b3fc051362f3fea19c513c3d01c5adba6a6"
+          },
+          {
+            "identity": "previewMemorySessionImportResponseSchema",
+            "schemaVersions": [],
+            "signatureSha256": "cd04154e3e115fcd64b3d5498ce2a07ff5b3b36cca6d97a30c80255f491b8444"
+          }
+        ]
+      },
+      "kind": "command",
+      "method": "POST",
+      "path": "/api/memory/session-import-previews",
+      "pathParameters": [],
+      "problemContract": {
+        "codes": [
+          "approval_already_decided",
+          "approval_expired",
+          "command_id_reused",
+          "definition_stale",
+          "forbidden",
+          "internal_error",
+          "memory_context_required_failed",
+          "memory_import_backend_unavailable",
+          "memory_import_failed",
+          "memory_import_idempotency_conflict",
+          "memory_import_source_invalid",
+          "model_candidate_invalid",
+          "not_found",
+          "outcome_unknown",
+          "plan_hash_conflict",
+          "policy_denied",
+          "product_commit_failed",
+          "prompt_review_already_decided",
+          "prompt_review_hash_conflict",
+          "prompt_review_payload_hash_conflict",
+          "provider_auth_failed",
+          "provider_rate_limited",
+          "provider_stream_interrupted",
+          "provider_timeout",
+          "resource_stale",
+          "revision_conflict",
+          "store_corrupted",
+          "unauthenticated",
+          "validation_failed",
+          "workflow_dispatch_unknown",
+          "workflow_resume_unknown"
+        ],
+        "problemCodeSchema": {
+          "identity": "problemCodeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ffd0c2d6cf0881b5ee465b5823f0a38fe17644a5a5088fdff963b887f944eb4f"
+        },
+        "recoveryActions": [
+          "contact_support",
+          "none",
+          "reauthenticate",
+          "rehydrate_and_retry",
+          "retry_same_command",
+          "wait_for_reconciliation"
+        ],
+        "recoveryActionSchema": {
+          "identity": "recoveryActionSchema",
+          "schemaVersions": [],
+          "signatureSha256": "7517fb6e8480b3566cc9aa74d618b944a63fc675278fddd6446a15292bd2569e"
+        }
+      },
+      "query": {
+        "parsers": [],
+        "schemas": []
+      },
+      "requestSchemas": [
+        {
+          "identity": "previewMemorySessionImportPayloadSchema",
+          "schemaVersions": [],
+          "signatureSha256": "5a4fafb85a36d8088624ca823f5e2b3fc051362f3fea19c513c3d01c5adba6a6"
+        },
+        {
+          "identity": "previewMemorySessionImportResponseSchema",
+          "schemaVersions": [],
+          "signatureSha256": "cd04154e3e115fcd64b3d5498ce2a07ff5b3b36cca6d97a30c80255f491b8444"
+        }
+      ],
+      "responseSchemas": [
+        {
+          "identity": "response-expression:POST /api/memory/session-import-previews:1",
+          "schemaVersions": [],
+          "signatureSha256": "f7542b5f427d42b1a667fe78c7abe6689a29672b7b7c9e2e441ba47dc15eb3b7"
+        }
+      ],
+      "successfulResponses": [
+        {
+          "explicitSchemas": [],
+          "signatureSha256": "f7542b5f427d42b1a667fe78c7abe6689a29672b7b7c9e2e441ba47dc15eb3b7",
+          "source": "json",
+          "status": "200"
+        }
+      ]
+    },
+    {
+      "body": {
+        "schemas": []
+      },
+      "kind": "query",
+      "method": "GET",
+      "path": "/api/memory/session-imports",
+      "pathParameters": [],
+      "problemContract": {
+        "codes": [
+          "approval_already_decided",
+          "approval_expired",
+          "command_id_reused",
+          "definition_stale",
+          "forbidden",
+          "internal_error",
+          "memory_context_required_failed",
+          "memory_import_backend_unavailable",
+          "memory_import_failed",
+          "memory_import_idempotency_conflict",
+          "memory_import_source_invalid",
+          "model_candidate_invalid",
+          "not_found",
+          "outcome_unknown",
+          "plan_hash_conflict",
+          "policy_denied",
+          "product_commit_failed",
+          "prompt_review_already_decided",
+          "prompt_review_hash_conflict",
+          "prompt_review_payload_hash_conflict",
+          "provider_auth_failed",
+          "provider_rate_limited",
+          "provider_stream_interrupted",
+          "provider_timeout",
+          "resource_stale",
+          "revision_conflict",
+          "store_corrupted",
+          "unauthenticated",
+          "validation_failed",
+          "workflow_dispatch_unknown",
+          "workflow_resume_unknown"
+        ],
+        "problemCodeSchema": {
+          "identity": "problemCodeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ffd0c2d6cf0881b5ee465b5823f0a38fe17644a5a5088fdff963b887f944eb4f"
+        },
+        "recoveryActions": [
+          "contact_support",
+          "none",
+          "reauthenticate",
+          "rehydrate_and_retry",
+          "retry_same_command",
+          "wait_for_reconciliation"
+        ],
+        "recoveryActionSchema": {
+          "identity": "recoveryActionSchema",
+          "schemaVersions": [],
+          "signatureSha256": "7517fb6e8480b3566cc9aa74d618b944a63fc675278fddd6446a15292bd2569e"
+        }
+      },
+      "query": {
+        "parsers": [
+          {
+            "allowedKeys": [],
+            "identity": "query-parser:memory-routes.ts",
+            "schemas": [],
+            "signatureSha256": "7155a42a07da417f93952d2f26f240ca8eeac2f7c28ab2c9c1fa3ff1f20b51eb"
+          }
+        ],
+        "schemas": [
+          {
+            "identity": "listMemorySessionImportsQuerySchema",
+            "schemaVersions": [],
+            "signatureSha256": "a13ff472ce32fd8349af16e26562566bb4d0c2cf809667b79d9615b1ee2062df"
+          },
+          {
+            "identity": "listMemorySessionImportsResponseSchema",
+            "schemaVersions": [],
+            "signatureSha256": "50896d0761e4581e396d0d25683225b65f9030fc74ce83b2e50339245519221c"
+          }
+        ]
+      },
+      "requestSchemas": [
+        {
+          "identity": "listMemorySessionImportsQuerySchema",
+          "schemaVersions": [],
+          "signatureSha256": "a13ff472ce32fd8349af16e26562566bb4d0c2cf809667b79d9615b1ee2062df"
+        },
+        {
+          "identity": "listMemorySessionImportsResponseSchema",
+          "schemaVersions": [],
+          "signatureSha256": "50896d0761e4581e396d0d25683225b65f9030fc74ce83b2e50339245519221c"
+        }
+      ],
+      "responseSchemas": [
+        {
+          "identity": "response-expression:GET /api/memory/session-imports:1",
+          "schemaVersions": [],
+          "signatureSha256": "c747103d3f98c1ade51ea1624b3c4444f10e2b1c9d74fce5bb11c3bf08643fb6"
+        }
+      ],
+      "successfulResponses": [
+        {
+          "explicitSchemas": [],
+          "signatureSha256": "c747103d3f98c1ade51ea1624b3c4444f10e2b1c9d74fce5bb11c3bf08643fb6",
+          "source": "json",
+          "status": "200"
+        }
+      ]
+    },
+    {
+      "body": {
+        "schemas": [
+          {
+            "identity": "commandEnvelopeSchema",
+            "schemaVersions": [],
+            "signatureSha256": "983c361eef494c67ba91773e43d14f233fa568daf18e331d3479334bd8b17439"
+          },
+          {
+            "identity": "createMemorySessionImportPayloadSchema",
+            "schemaVersions": [],
+            "signatureSha256": "d003c25d1c119a415338cd834780a8cc171f7faf8bafc67d15ae2dce529d477c"
+          },
+          {
+            "identity": "memorySessionImportResponseSchema",
+            "schemaVersions": [],
+            "signatureSha256": "b56f3ff430b982ce84908298ddbc98c68f3b8b3c2fa3d9463ba581532036ca8d"
+          }
+        ]
+      },
+      "kind": "command",
+      "method": "POST",
+      "path": "/api/memory/session-imports",
+      "pathParameters": [],
+      "problemContract": {
+        "codes": [
+          "approval_already_decided",
+          "approval_expired",
+          "command_id_reused",
+          "definition_stale",
+          "forbidden",
+          "internal_error",
+          "memory_context_required_failed",
+          "memory_import_backend_unavailable",
+          "memory_import_failed",
+          "memory_import_idempotency_conflict",
+          "memory_import_source_invalid",
+          "model_candidate_invalid",
+          "not_found",
+          "outcome_unknown",
+          "plan_hash_conflict",
+          "policy_denied",
+          "product_commit_failed",
+          "prompt_review_already_decided",
+          "prompt_review_hash_conflict",
+          "prompt_review_payload_hash_conflict",
+          "provider_auth_failed",
+          "provider_rate_limited",
+          "provider_stream_interrupted",
+          "provider_timeout",
+          "resource_stale",
+          "revision_conflict",
+          "store_corrupted",
+          "unauthenticated",
+          "validation_failed",
+          "workflow_dispatch_unknown",
+          "workflow_resume_unknown"
+        ],
+        "problemCodeSchema": {
+          "identity": "problemCodeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ffd0c2d6cf0881b5ee465b5823f0a38fe17644a5a5088fdff963b887f944eb4f"
+        },
+        "recoveryActions": [
+          "contact_support",
+          "none",
+          "reauthenticate",
+          "rehydrate_and_retry",
+          "retry_same_command",
+          "wait_for_reconciliation"
+        ],
+        "recoveryActionSchema": {
+          "identity": "recoveryActionSchema",
+          "schemaVersions": [],
+          "signatureSha256": "7517fb6e8480b3566cc9aa74d618b944a63fc675278fddd6446a15292bd2569e"
+        }
+      },
+      "query": {
+        "parsers": [],
+        "schemas": []
+      },
+      "requestSchemas": [
+        {
+          "identity": "commandEnvelopeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "983c361eef494c67ba91773e43d14f233fa568daf18e331d3479334bd8b17439"
+        },
+        {
+          "identity": "createMemorySessionImportPayloadSchema",
+          "schemaVersions": [],
+          "signatureSha256": "d003c25d1c119a415338cd834780a8cc171f7faf8bafc67d15ae2dce529d477c"
+        },
+        {
+          "identity": "memorySessionImportResponseSchema",
+          "schemaVersions": [],
+          "signatureSha256": "b56f3ff430b982ce84908298ddbc98c68f3b8b3c2fa3d9463ba581532036ca8d"
+        }
+      ],
+      "responseSchemas": [
+        {
+          "identity": "response-expression:POST /api/memory/session-imports:1",
+          "schemaVersions": [],
+          "signatureSha256": "49e6087f944578c6e74c02795901c7cae916bfe7b1a8a04fd8dc1aa7dda5ab12"
+        }
+      ],
+      "successfulResponses": [
+        {
+          "explicitSchemas": [],
+          "signatureSha256": "49e6087f944578c6e74c02795901c7cae916bfe7b1a8a04fd8dc1aa7dda5ab12",
+          "source": "json",
+          "status": "201"
+        }
+      ]
+    },
+    {
+      "body": {
+        "schemas": []
+      },
+      "kind": "query",
+      "method": "GET",
+      "path": "/api/memory/session-imports/:memorySessionImportId",
+      "pathParameters": [
+        {
+          "name": "memorySessionImportId",
+          "schema": {
+            "identity": "memorySessionImportIdSchema",
+            "schemaVersions": [],
+            "signatureSha256": "b91bc2b2b85c6c0a9a2fc7f68c97f393c6a6e90f3721e4b8dd77895176122082"
+          }
+        }
+      ],
+      "problemContract": {
+        "codes": [
+          "approval_already_decided",
+          "approval_expired",
+          "command_id_reused",
+          "definition_stale",
+          "forbidden",
+          "internal_error",
+          "memory_context_required_failed",
+          "memory_import_backend_unavailable",
+          "memory_import_failed",
+          "memory_import_idempotency_conflict",
+          "memory_import_source_invalid",
+          "model_candidate_invalid",
+          "not_found",
+          "outcome_unknown",
+          "plan_hash_conflict",
+          "policy_denied",
+          "product_commit_failed",
+          "prompt_review_already_decided",
+          "prompt_review_hash_conflict",
+          "prompt_review_payload_hash_conflict",
+          "provider_auth_failed",
+          "provider_rate_limited",
+          "provider_stream_interrupted",
+          "provider_timeout",
+          "resource_stale",
+          "revision_conflict",
+          "store_corrupted",
+          "unauthenticated",
+          "validation_failed",
+          "workflow_dispatch_unknown",
+          "workflow_resume_unknown"
+        ],
+        "problemCodeSchema": {
+          "identity": "problemCodeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ffd0c2d6cf0881b5ee465b5823f0a38fe17644a5a5088fdff963b887f944eb4f"
+        },
+        "recoveryActions": [
+          "contact_support",
+          "none",
+          "reauthenticate",
+          "rehydrate_and_retry",
+          "retry_same_command",
+          "wait_for_reconciliation"
+        ],
+        "recoveryActionSchema": {
+          "identity": "recoveryActionSchema",
+          "schemaVersions": [],
+          "signatureSha256": "7517fb6e8480b3566cc9aa74d618b944a63fc675278fddd6446a15292bd2569e"
+        }
+      },
+      "query": {
+        "parsers": [
+          {
+            "allowedKeys": [],
+            "identity": "query-parser:memory-routes.ts",
+            "schemas": [],
+            "signatureSha256": "ce965e85fe019526337a2f49aa1f8f69aa6e40adb0a6c98e1138a26d9c99cf88"
+          }
+        ],
+        "schemas": []
+      },
+      "requestSchemas": [
+        {
+          "identity": "memorySessionImportIdSchema",
+          "schemaVersions": [],
+          "signatureSha256": "b91bc2b2b85c6c0a9a2fc7f68c97f393c6a6e90f3721e4b8dd77895176122082"
+        }
+      ],
+      "responseSchemas": [
+        {
+          "identity": "response-expression:GET /api/memory/session-imports/:memorySessionImportId:1",
+          "schemaVersions": [],
+          "signatureSha256": "49e6087f944578c6e74c02795901c7cae916bfe7b1a8a04fd8dc1aa7dda5ab12"
+        }
+      ],
+      "successfulResponses": [
+        {
+          "explicitSchemas": [],
+          "signatureSha256": "49e6087f944578c6e74c02795901c7cae916bfe7b1a8a04fd8dc1aa7dda5ab12",
+          "source": "json",
+          "status": "200"
+        }
+      ]
+    },
+    {
+      "body": {
+        "schemas": []
+      },
+      "kind": "query",
+      "method": "GET",
+      "path": "/api/memory/session-sources",
+      "pathParameters": [],
+      "problemContract": {
+        "codes": [
+          "approval_already_decided",
+          "approval_expired",
+          "command_id_reused",
+          "definition_stale",
+          "forbidden",
+          "internal_error",
+          "memory_context_required_failed",
+          "memory_import_backend_unavailable",
+          "memory_import_failed",
+          "memory_import_idempotency_conflict",
+          "memory_import_source_invalid",
+          "model_candidate_invalid",
+          "not_found",
+          "outcome_unknown",
+          "plan_hash_conflict",
+          "policy_denied",
+          "product_commit_failed",
+          "prompt_review_already_decided",
+          "prompt_review_hash_conflict",
+          "prompt_review_payload_hash_conflict",
+          "provider_auth_failed",
+          "provider_rate_limited",
+          "provider_stream_interrupted",
+          "provider_timeout",
+          "resource_stale",
+          "revision_conflict",
+          "store_corrupted",
+          "unauthenticated",
+          "validation_failed",
+          "workflow_dispatch_unknown",
+          "workflow_resume_unknown"
+        ],
+        "problemCodeSchema": {
+          "identity": "problemCodeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ffd0c2d6cf0881b5ee465b5823f0a38fe17644a5a5088fdff963b887f944eb4f"
+        },
+        "recoveryActions": [
+          "contact_support",
+          "none",
+          "reauthenticate",
+          "rehydrate_and_retry",
+          "retry_same_command",
+          "wait_for_reconciliation"
+        ],
+        "recoveryActionSchema": {
+          "identity": "recoveryActionSchema",
+          "schemaVersions": [],
+          "signatureSha256": "7517fb6e8480b3566cc9aa74d618b944a63fc675278fddd6446a15292bd2569e"
+        }
+      },
+      "query": {
+        "parsers": [
+          {
+            "allowedKeys": [],
+            "identity": "query-parser:memory-routes.ts",
+            "schemas": [],
+            "signatureSha256": "ec3a97b0fa3e9b4d7a769ef1796bfce19a576506f23f249cf1be9805ed559460"
+          }
+        ],
+        "schemas": [
+          {
+            "identity": "listMemorySessionSourcesResponseSchema",
+            "schemaVersions": [],
+            "signatureSha256": "d81b02b472503e93dc6e490263ebce10487c7efb7efb62d33f464edb8588306b"
+          },
+          {
+            "identity": "memorySessionSourceListQuerySchema",
+            "schemaVersions": [],
+            "signatureSha256": "75e684ab40d8a781d77082176738efb582b9991c5f796f00b3d90f70187f8609"
+          }
+        ]
+      },
+      "requestSchemas": [
+        {
+          "identity": "listMemorySessionSourcesResponseSchema",
+          "schemaVersions": [],
+          "signatureSha256": "d81b02b472503e93dc6e490263ebce10487c7efb7efb62d33f464edb8588306b"
+        },
+        {
+          "identity": "memorySessionSourceListQuerySchema",
+          "schemaVersions": [],
+          "signatureSha256": "75e684ab40d8a781d77082176738efb582b9991c5f796f00b3d90f70187f8609"
+        }
+      ],
+      "responseSchemas": [
+        {
+          "identity": "response-expression:GET /api/memory/session-sources:1",
+          "schemaVersions": [],
+          "signatureSha256": "5a8a966c00152816c6ddb353f0d5f39b0a960c075d0c974abe2650fcf09afef3"
+        }
+      ],
+      "successfulResponses": [
+        {
+          "explicitSchemas": [],
+          "signatureSha256": "5a8a966c00152816c6ddb353f0d5f39b0a960c075d0c974abe2650fcf09afef3",
+          "source": "json",
+          "status": "200"
+        }
+      ]
+    },
+    {
+      "body": {
+        "schemas": []
+      },
+      "kind": "query",
+      "method": "GET",
+      "path": "/api/memory/write-candidates",
+      "pathParameters": [],
+      "problemContract": {
+        "codes": [
+          "approval_already_decided",
+          "approval_expired",
+          "command_id_reused",
+          "definition_stale",
+          "forbidden",
+          "internal_error",
+          "memory_context_required_failed",
+          "memory_import_backend_unavailable",
+          "memory_import_failed",
+          "memory_import_idempotency_conflict",
+          "memory_import_source_invalid",
+          "model_candidate_invalid",
+          "not_found",
+          "outcome_unknown",
+          "plan_hash_conflict",
+          "policy_denied",
+          "product_commit_failed",
+          "prompt_review_already_decided",
+          "prompt_review_hash_conflict",
+          "prompt_review_payload_hash_conflict",
+          "provider_auth_failed",
+          "provider_rate_limited",
+          "provider_stream_interrupted",
+          "provider_timeout",
+          "resource_stale",
+          "revision_conflict",
+          "store_corrupted",
+          "unauthenticated",
+          "validation_failed",
+          "workflow_dispatch_unknown",
+          "workflow_resume_unknown"
+        ],
+        "problemCodeSchema": {
+          "identity": "problemCodeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ffd0c2d6cf0881b5ee465b5823f0a38fe17644a5a5088fdff963b887f944eb4f"
+        },
+        "recoveryActions": [
+          "contact_support",
+          "none",
+          "reauthenticate",
+          "rehydrate_and_retry",
+          "retry_same_command",
+          "wait_for_reconciliation"
+        ],
+        "recoveryActionSchema": {
+          "identity": "recoveryActionSchema",
+          "schemaVersions": [],
+          "signatureSha256": "7517fb6e8480b3566cc9aa74d618b944a63fc675278fddd6446a15292bd2569e"
+        }
+      },
+      "query": {
+        "parsers": [
+          {
+            "allowedKeys": [],
+            "identity": "query-parser:memory-routes.ts",
+            "schemas": [],
+            "signatureSha256": "d47af7582e59e681bb4c94a9f42bd012e7919481108d3a531f6257e689e51de6"
+          }
+        ],
+        "schemas": [
+          {
+            "identity": "listMemoryAgentWriteCandidatesQuerySchema",
+            "schemaVersions": [],
+            "signatureSha256": "9163d640847853b61284d5c2b080e2f597b4abcfdfddb191a0adc4c895b6c7e8"
+          },
+          {
+            "identity": "listMemoryAgentWriteCandidatesResponseSchema",
+            "schemaVersions": [],
+            "signatureSha256": "99eb1c21914d1d301fbe61a0843b4cf56e20e9b62f1d2e6a52d39a4760265237"
+          }
+        ]
+      },
+      "requestSchemas": [
+        {
+          "identity": "listMemoryAgentWriteCandidatesQuerySchema",
+          "schemaVersions": [],
+          "signatureSha256": "9163d640847853b61284d5c2b080e2f597b4abcfdfddb191a0adc4c895b6c7e8"
+        },
+        {
+          "identity": "listMemoryAgentWriteCandidatesResponseSchema",
+          "schemaVersions": [],
+          "signatureSha256": "99eb1c21914d1d301fbe61a0843b4cf56e20e9b62f1d2e6a52d39a4760265237"
+        }
+      ],
+      "responseSchemas": [
+        {
+          "identity": "response-expression:GET /api/memory/write-candidates:1",
+          "schemaVersions": [],
+          "signatureSha256": "657ba39678bf78e093659ab9cf31efba9bf53eaa296e2481862304eba7a127f2"
+        }
+      ],
+      "successfulResponses": [
+        {
+          "explicitSchemas": [],
+          "signatureSha256": "657ba39678bf78e093659ab9cf31efba9bf53eaa296e2481862304eba7a127f2",
+          "source": "json",
+          "status": "200"
+        }
+      ]
+    },
+    {
+      "body": {
+        "schemas": []
+      },
+      "kind": "query",
+      "method": "GET",
+      "path": "/api/memory/write-candidates/:candidateId",
+      "pathParameters": [
+        {
+          "name": "candidateId",
+          "schema": {
+            "identity": "memoryAgentWriteCandidateIdSchema",
+            "schemaVersions": [],
+            "signatureSha256": "5c3aaad35a3edf43e4e6240b88314c8cd7bd9e0626b334b2ea5b567836767f58"
+          }
+        }
+      ],
+      "problemContract": {
+        "codes": [
+          "approval_already_decided",
+          "approval_expired",
+          "command_id_reused",
+          "definition_stale",
+          "forbidden",
+          "internal_error",
+          "memory_context_required_failed",
+          "memory_import_backend_unavailable",
+          "memory_import_failed",
+          "memory_import_idempotency_conflict",
+          "memory_import_source_invalid",
+          "model_candidate_invalid",
+          "not_found",
+          "outcome_unknown",
+          "plan_hash_conflict",
+          "policy_denied",
+          "product_commit_failed",
+          "prompt_review_already_decided",
+          "prompt_review_hash_conflict",
+          "prompt_review_payload_hash_conflict",
+          "provider_auth_failed",
+          "provider_rate_limited",
+          "provider_stream_interrupted",
+          "provider_timeout",
+          "resource_stale",
+          "revision_conflict",
+          "store_corrupted",
+          "unauthenticated",
+          "validation_failed",
+          "workflow_dispatch_unknown",
+          "workflow_resume_unknown"
+        ],
+        "problemCodeSchema": {
+          "identity": "problemCodeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ffd0c2d6cf0881b5ee465b5823f0a38fe17644a5a5088fdff963b887f944eb4f"
+        },
+        "recoveryActions": [
+          "contact_support",
+          "none",
+          "reauthenticate",
+          "rehydrate_and_retry",
+          "retry_same_command",
+          "wait_for_reconciliation"
+        ],
+        "recoveryActionSchema": {
+          "identity": "recoveryActionSchema",
+          "schemaVersions": [],
+          "signatureSha256": "7517fb6e8480b3566cc9aa74d618b944a63fc675278fddd6446a15292bd2569e"
+        }
+      },
+      "query": {
+        "parsers": [
+          {
+            "allowedKeys": [],
+            "identity": "query-parser:memory-routes.ts",
+            "schemas": [],
+            "signatureSha256": "ce965e85fe019526337a2f49aa1f8f69aa6e40adb0a6c98e1138a26d9c99cf88"
+          }
+        ],
+        "schemas": []
+      },
+      "requestSchemas": [
+        {
+          "identity": "memoryAgentWriteCandidateIdSchema",
+          "schemaVersions": [],
+          "signatureSha256": "5c3aaad35a3edf43e4e6240b88314c8cd7bd9e0626b334b2ea5b567836767f58"
+        }
+      ],
+      "responseSchemas": [
+        {
+          "identity": "response-expression:GET /api/memory/write-candidates/:candidateId:1",
+          "schemaVersions": [],
+          "signatureSha256": "df5fe56dd9ed13cf14e340d87bede998a0caac08df69be66342d2584dff32f86"
+        }
+      ],
+      "successfulResponses": [
+        {
+          "explicitSchemas": [],
+          "signatureSha256": "df5fe56dd9ed13cf14e340d87bede998a0caac08df69be66342d2584dff32f86",
+          "source": "json",
+          "status": "200"
+        }
+      ]
+    },
+    {
+      "body": {
+        "schemas": [
+          {
+            "identity": "commandEnvelopeSchema",
+            "schemaVersions": [],
+            "signatureSha256": "983c361eef494c67ba91773e43d14f233fa568daf18e331d3479334bd8b17439"
+          },
+          {
+            "identity": "decideMemoryAgentWriteCandidatePayloadSchema",
+            "schemaVersions": [],
+            "signatureSha256": "d4bfacda09fb3047a1f82f87d18d94dc138fd61c95ab133074e9228c1758f2d6"
+          },
+          {
+            "identity": "memoryAgentWriteDecisionResponseSchema",
+            "schemaVersions": [],
+            "signatureSha256": "698c722b1993699e506169650c18079f5f6c4bcb3edd99db66fde0ba9d34cfb7"
+          }
+        ]
+      },
+      "kind": "command",
+      "method": "POST",
+      "path": "/api/memory/write-candidates/:candidateId/decisions",
+      "pathParameters": [
+        {
+          "name": "candidateId",
+          "schema": {
+            "identity": "memoryAgentWriteCandidateIdSchema",
+            "schemaVersions": [],
+            "signatureSha256": "5c3aaad35a3edf43e4e6240b88314c8cd7bd9e0626b334b2ea5b567836767f58"
+          }
+        }
+      ],
+      "problemContract": {
+        "codes": [
+          "approval_already_decided",
+          "approval_expired",
+          "command_id_reused",
+          "definition_stale",
+          "forbidden",
+          "internal_error",
+          "memory_context_required_failed",
+          "memory_import_backend_unavailable",
+          "memory_import_failed",
+          "memory_import_idempotency_conflict",
+          "memory_import_source_invalid",
+          "model_candidate_invalid",
+          "not_found",
+          "outcome_unknown",
+          "plan_hash_conflict",
+          "policy_denied",
+          "product_commit_failed",
+          "prompt_review_already_decided",
+          "prompt_review_hash_conflict",
+          "prompt_review_payload_hash_conflict",
+          "provider_auth_failed",
+          "provider_rate_limited",
+          "provider_stream_interrupted",
+          "provider_timeout",
+          "resource_stale",
+          "revision_conflict",
+          "store_corrupted",
+          "unauthenticated",
+          "validation_failed",
+          "workflow_dispatch_unknown",
+          "workflow_resume_unknown"
+        ],
+        "problemCodeSchema": {
+          "identity": "problemCodeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ffd0c2d6cf0881b5ee465b5823f0a38fe17644a5a5088fdff963b887f944eb4f"
+        },
+        "recoveryActions": [
+          "contact_support",
+          "none",
+          "reauthenticate",
+          "rehydrate_and_retry",
+          "retry_same_command",
+          "wait_for_reconciliation"
+        ],
+        "recoveryActionSchema": {
+          "identity": "recoveryActionSchema",
+          "schemaVersions": [],
+          "signatureSha256": "7517fb6e8480b3566cc9aa74d618b944a63fc675278fddd6446a15292bd2569e"
+        }
+      },
+      "query": {
+        "parsers": [],
+        "schemas": []
+      },
+      "requestSchemas": [
+        {
+          "identity": "commandEnvelopeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "983c361eef494c67ba91773e43d14f233fa568daf18e331d3479334bd8b17439"
+        },
+        {
+          "identity": "decideMemoryAgentWriteCandidatePayloadSchema",
+          "schemaVersions": [],
+          "signatureSha256": "d4bfacda09fb3047a1f82f87d18d94dc138fd61c95ab133074e9228c1758f2d6"
+        },
+        {
+          "identity": "memoryAgentWriteCandidateIdSchema",
+          "schemaVersions": [],
+          "signatureSha256": "5c3aaad35a3edf43e4e6240b88314c8cd7bd9e0626b334b2ea5b567836767f58"
+        },
+        {
+          "identity": "memoryAgentWriteDecisionResponseSchema",
+          "schemaVersions": [],
+          "signatureSha256": "698c722b1993699e506169650c18079f5f6c4bcb3edd99db66fde0ba9d34cfb7"
+        }
+      ],
+      "responseSchemas": [
+        {
+          "identity": "response-expression:POST /api/memory/write-candidates/:candidateId/decisions:1",
+          "schemaVersions": [],
+          "signatureSha256": "f326a6ed3e1229800b18b89062612425c2cafec2b7a7b24b20c17024d47816df"
+        }
+      ],
+      "successfulResponses": [
+        {
+          "explicitSchemas": [],
+          "signatureSha256": "f326a6ed3e1229800b18b89062612425c2cafec2b7a7b24b20c17024d47816df",
+          "source": "json",
+          "status": "201"
         }
       ]
     },
@@ -18378,13 +21099,13 @@
         {
           "identity": "response-expression:GET /api/plane-projects/opening-packet:1",
           "schemaVersions": [],
-          "signatureSha256": "4ed3eb911f913ea976fa571b45afd72ffc2096414d96704843dfeff6fbc41d16"
+          "signatureSha256": "a617d43f62a16c695d51800e88f7510d72718fed4b1857a4d2a0bf33517146bb"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "4ed3eb911f913ea976fa571b45afd72ffc2096414d96704843dfeff6fbc41d16",
+          "signatureSha256": "a617d43f62a16c695d51800e88f7510d72718fed4b1857a4d2a0bf33517146bb",
           "source": "json",
           "status": "200"
         }
@@ -18489,13 +21210,13 @@
         {
           "identity": "response-expression:GET /api/plane-projects/operations:1",
           "schemaVersions": [],
-          "signatureSha256": "ae6c4f020ee13ea95b87db29d2b72163a725210260da0bbe3dd9ded5f6476c25"
+          "signatureSha256": "3ee6e24150ad8c9699f501b59b31d6c0c2ef789509376f26427b4b8f4977ee3a"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "ae6c4f020ee13ea95b87db29d2b72163a725210260da0bbe3dd9ded5f6476c25",
+          "signatureSha256": "3ee6e24150ad8c9699f501b59b31d6c0c2ef789509376f26427b4b8f4977ee3a",
           "source": "json",
           "status": "200"
         }
@@ -18603,13 +21324,13 @@
         {
           "identity": "response-expression:POST /api/plane-projects/operations:1",
           "schemaVersions": [],
-          "signatureSha256": "7f1996685cc7830122d58282c2e50d4e71c6badd3058e43e2a2f02a7a0e8785a"
+          "signatureSha256": "601ac11d8616ace9f81debdec41c6b4b3b38d1e4e3dc00730fed546b23438e3e"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "7f1996685cc7830122d58282c2e50d4e71c6badd3058e43e2a2f02a7a0e8785a",
+          "signatureSha256": "601ac11d8616ace9f81debdec41c6b4b3b38d1e4e3dc00730fed546b23438e3e",
           "source": "json",
           "status": "201"
         }
@@ -18707,13 +21428,13 @@
         {
           "identity": "response-expression:GET /api/plane-projects/operations/:planeProjectOperationId:1",
           "schemaVersions": [],
-          "signatureSha256": "7f1996685cc7830122d58282c2e50d4e71c6badd3058e43e2a2f02a7a0e8785a"
+          "signatureSha256": "601ac11d8616ace9f81debdec41c6b4b3b38d1e4e3dc00730fed546b23438e3e"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "7f1996685cc7830122d58282c2e50d4e71c6badd3058e43e2a2f02a7a0e8785a",
+          "signatureSha256": "601ac11d8616ace9f81debdec41c6b4b3b38d1e4e3dc00730fed546b23438e3e",
           "source": "json",
           "status": "200"
         }
@@ -18835,13 +21556,13 @@
         {
           "identity": "response-expression:POST /api/plane-projects/operations/:planeProjectOperationId/execute:1",
           "schemaVersions": [],
-          "signatureSha256": "7f1996685cc7830122d58282c2e50d4e71c6badd3058e43e2a2f02a7a0e8785a"
+          "signatureSha256": "601ac11d8616ace9f81debdec41c6b4b3b38d1e4e3dc00730fed546b23438e3e"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "7f1996685cc7830122d58282c2e50d4e71c6badd3058e43e2a2f02a7a0e8785a",
+          "signatureSha256": "601ac11d8616ace9f81debdec41c6b4b3b38d1e4e3dc00730fed546b23438e3e",
           "source": "json",
           "status": "200"
         }
@@ -18963,13 +21684,13 @@
         {
           "identity": "response-expression:POST /api/plane-projects/operations/:planeProjectOperationId/reconcile:1",
           "schemaVersions": [],
-          "signatureSha256": "7f1996685cc7830122d58282c2e50d4e71c6badd3058e43e2a2f02a7a0e8785a"
+          "signatureSha256": "601ac11d8616ace9f81debdec41c6b4b3b38d1e4e3dc00730fed546b23438e3e"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "7f1996685cc7830122d58282c2e50d4e71c6badd3058e43e2a2f02a7a0e8785a",
+          "signatureSha256": "601ac11d8616ace9f81debdec41c6b4b3b38d1e4e3dc00730fed546b23438e3e",
           "source": "json",
           "status": "200"
         }
@@ -19782,13 +22503,13 @@
         {
           "identity": "response-expression:POST /api/project-bootstrap/candidates/:projectBootstrapCandidateId/decision:1",
           "schemaVersions": [],
-          "signatureSha256": "84d984367b544f4b12aeffe05e3f4fe02f418c1a86a7fa3aa95333deb51b8ee7"
+          "signatureSha256": "a2eff3b38dfca7ef18dd9bf0a9fee63e866a456cf109b155d46c083dcabab38c"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "84d984367b544f4b12aeffe05e3f4fe02f418c1a86a7fa3aa95333deb51b8ee7",
+          "signatureSha256": "a2eff3b38dfca7ef18dd9bf0a9fee63e866a456cf109b155d46c083dcabab38c",
           "source": "json",
           "status": "201"
         }
@@ -20085,13 +22806,13 @@
         {
           "identity": "response-expression:GET /api/project-bootstrap/operations/:projectBootstrapOperationId:1",
           "schemaVersions": [],
-          "signatureSha256": "4aa5ce919656f916e139908d98b6d8732b1ac4fc8f65f6bf4fb7ed620b8d75cb"
+          "signatureSha256": "8310c8812b79c80c86c6da2f9e313ab06d53a919ac81e45e37ad320cbcda23ee"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "4aa5ce919656f916e139908d98b6d8732b1ac4fc8f65f6bf4fb7ed620b8d75cb",
+          "signatureSha256": "8310c8812b79c80c86c6da2f9e313ab06d53a919ac81e45e37ad320cbcda23ee",
           "source": "json",
           "status": "200"
         }
@@ -20203,13 +22924,13 @@
         {
           "identity": "response-expression:POST /api/project-bootstrap/operations/:projectBootstrapOperationId/retry:1",
           "schemaVersions": [],
-          "signatureSha256": "46c4003dd1d0024080b65305cc53a15c38b3a1ea42edbb7605c23d3ce1ae9183"
+          "signatureSha256": "e48f9eb5929271701ff11271e33a102a3b172abec4d58a1558797e73b5ca3447"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "46c4003dd1d0024080b65305cc53a15c38b3a1ea42edbb7605c23d3ce1ae9183",
+          "signatureSha256": "e48f9eb5929271701ff11271e33a102a3b172abec4d58a1558797e73b5ca3447",
           "source": "json",
           "status": "202"
         }
@@ -28433,13 +31154,13 @@
         {
           "identity": "response-expression:GET /api/runs/:productRunId/tool-executions:1",
           "schemaVersions": [],
-          "signatureSha256": "66c533a0a6bf3e4988c6cb64e60ac5487ab4784c5d487d39cedc695655896a17"
+          "signatureSha256": "6f019d1ac78e81d693c8737b888f899ea31eb55a42d677526a35328451ea7747"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "66c533a0a6bf3e4988c6cb64e60ac5487ab4784c5d487d39cedc695655896a17",
+          "signatureSha256": "6f019d1ac78e81d693c8737b888f899ea31eb55a42d677526a35328451ea7747",
           "source": "json",
           "status": "200"
         }
@@ -28537,13 +31258,13 @@
         {
           "identity": "response-expression:GET /api/runs/:productRunId/workflow-config-summary:1",
           "schemaVersions": [],
-          "signatureSha256": "3c9c9e55bc5bd21e6ee585ba5db6167cd22bb26a01f7ae700d38096688561412"
+          "signatureSha256": "1be3b90bba7952f1b102b2f2f8b81192116e5ec2259a671e16e7466184dcf906"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "3c9c9e55bc5bd21e6ee585ba5db6167cd22bb26a01f7ae700d38096688561412",
+          "signatureSha256": "1be3b90bba7952f1b102b2f2f8b81192116e5ec2259a671e16e7466184dcf906",
           "source": "json",
           "status": "200"
         }
@@ -28641,13 +31362,13 @@
         {
           "identity": "response-expression:GET /api/runs/:productRunId/workflow-execution-trace:1",
           "schemaVersions": [],
-          "signatureSha256": "553c9d40c1a729852cab1c65dddb3482f1e1294cc63205ffc7a6343dd50f536f"
+          "signatureSha256": "262e8a18e6c968b488ed0a0f8e9cf6e32e343572aa7ae38d0b0f626160301c92"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "553c9d40c1a729852cab1c65dddb3482f1e1294cc63205ffc7a6343dd50f536f",
+          "signatureSha256": "262e8a18e6c968b488ed0a0f8e9cf6e32e343572aa7ae38d0b0f626160301c92",
           "source": "json",
           "status": "200"
         }
@@ -28775,13 +31496,13 @@
         {
           "identity": "response-expression:GET /api/runs/:productRunId/workflow-nodes/:workflowNodeRunId:1",
           "schemaVersions": [],
-          "signatureSha256": "349381ae84383db1b3638a8845f22183155c6c5e6a2f1452b0407f2b1a45008b"
+          "signatureSha256": "68fd927cdcd7f7343a4b4ed3aec9be2da35b1ce3819b61ea907a21a32c32349a"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "349381ae84383db1b3638a8845f22183155c6c5e6a2f1452b0407f2b1a45008b",
+          "signatureSha256": "68fd927cdcd7f7343a4b4ed3aec9be2da35b1ce3819b61ea907a21a32c32349a",
           "source": "json",
           "status": "200"
         }
@@ -28879,13 +31600,13 @@
         {
           "identity": "response-expression:GET /api/runs/:productRunId/workflow-view:1",
           "schemaVersions": [],
-          "signatureSha256": "f8eb2293c4f7aff04acd596ebf36c341bc348dcd9a290634edfb67b94ff5584b"
+          "signatureSha256": "b8e64ec6fa3f975c250ef63ea31750091a0291ca4b2da10f2fd55e299bbf691c"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "f8eb2293c4f7aff04acd596ebf36c341bc348dcd9a290634edfb67b94ff5584b",
+          "signatureSha256": "b8e64ec6fa3f975c250ef63ea31750091a0291ca4b2da10f2fd55e299bbf691c",
           "source": "json",
           "status": "200"
         }
@@ -29556,13 +32277,13 @@
         {
           "identity": "response-expression:POST /api/sessions/:sessionId/messages:1",
           "schemaVersions": [],
-          "signatureSha256": "ca9c549cf8c7b56a431be661eab9b0c28da2a31255b6ab3e1c56a2c023075dca"
+          "signatureSha256": "1c24099d4d8faef19afa649cfa055e54ea2080f452549839e349fd2e122eef59"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "ca9c549cf8c7b56a431be661eab9b0c28da2a31255b6ab3e1c56a2c023075dca",
+          "signatureSha256": "1c24099d4d8faef19afa649cfa055e54ea2080f452549839e349fd2e122eef59",
           "source": "json",
           "status": "201"
         }
@@ -29777,13 +32498,13 @@
         {
           "identity": "response-expression:GET /api/sessions/:sessionId/project-bootstrap/current:1",
           "schemaVersions": [],
-          "signatureSha256": "2d36b897e6050ceb9d350c66023dbfaf29f412584cc2a9689e503f32fdca6ec4"
+          "signatureSha256": "4eefb1b5ca2b8ab6f8f38d0fb7f8d2ad9e3267eec3da84f2361d0e66ff14b16b"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "2d36b897e6050ceb9d350c66023dbfaf29f412584cc2a9689e503f32fdca6ec4",
+          "signatureSha256": "4eefb1b5ca2b8ab6f8f38d0fb7f8d2ad9e3267eec3da84f2361d0e66ff14b16b",
           "source": "json",
           "status": "200"
         }
@@ -29895,13 +32616,13 @@
         {
           "identity": "response-expression:POST /api/sessions/:sessionId/project-bootstrap/messages:1",
           "schemaVersions": [],
-          "signatureSha256": "ca9c549cf8c7b56a431be661eab9b0c28da2a31255b6ab3e1c56a2c023075dca"
+          "signatureSha256": "1c24099d4d8faef19afa649cfa055e54ea2080f452549839e349fd2e122eef59"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "ca9c549cf8c7b56a431be661eab9b0c28da2a31255b6ab3e1c56a2c023075dca",
+          "signatureSha256": "1c24099d4d8faef19afa649cfa055e54ea2080f452549839e349fd2e122eef59",
           "source": "json",
           "status": "201"
         }
@@ -30088,13 +32809,13 @@
         {
           "identity": "response-expression:GET /api/workflow/blueprints:1",
           "schemaVersions": [],
-          "signatureSha256": "1e1fbf8c2b1d006cb5a0f682b168894404e3474fc88603beca503bca02f959d3"
+          "signatureSha256": "a8f82fe01c9d39c19f36e9bc01557622de973d1194b5e3f61c4557105b1508d0"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "1e1fbf8c2b1d006cb5a0f682b168894404e3474fc88603beca503bca02f959d3",
+          "signatureSha256": "a8f82fe01c9d39c19f36e9bc01557622de973d1194b5e3f61c4557105b1508d0",
           "source": "json",
           "status": "200"
         }
@@ -30177,13 +32898,13 @@
         {
           "identity": "response-expression:GET /api/workflow/catalog:1",
           "schemaVersions": [],
-          "signatureSha256": "e5b2d627eb7ac800b39fdc9023a66170fe81304c96518b16e62e014cd41ee556"
+          "signatureSha256": "69596197ce7f833367f917d3646e7c216d1b46737cfa3e085361633ad1859c2b"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "e5b2d627eb7ac800b39fdc9023a66170fe81304c96518b16e62e014cd41ee556",
+          "signatureSha256": "69596197ce7f833367f917d3646e7c216d1b46737cfa3e085361633ad1859c2b",
           "source": "json",
           "status": "200"
         }
@@ -30266,13 +32987,13 @@
         {
           "identity": "response-expression:GET /api/workflow/definitions:1",
           "schemaVersions": [],
-          "signatureSha256": "47666d825f3bac60ba7a371f5e3fc1387dc3084d9e78d02917c7cfc696709346"
+          "signatureSha256": "79584934cd908336b97185380b8692117154019468135765d2cd48a6d5d4713f"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "47666d825f3bac60ba7a371f5e3fc1387dc3084d9e78d02917c7cfc696709346",
+          "signatureSha256": "79584934cd908336b97185380b8692117154019468135765d2cd48a6d5d4713f",
           "source": "json",
           "status": "200"
         }
@@ -30370,13 +33091,13 @@
         {
           "identity": "response-expression:GET /api/workflow/definitions/:workflowDefinitionId:1",
           "schemaVersions": [],
-          "signatureSha256": "5697a3d8a67a89b84dc70da5e1c15fdb10e3ca799c2e2f3aa9a1efacc25ff86e"
+          "signatureSha256": "51847cd5de841544a04f399097e92625e59c30e1d37aa668770ed2ad7ca46127"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "5697a3d8a67a89b84dc70da5e1c15fdb10e3ca799c2e2f3aa9a1efacc25ff86e",
+          "signatureSha256": "51847cd5de841544a04f399097e92625e59c30e1d37aa668770ed2ad7ca46127",
           "source": "json",
           "status": "200"
         }
@@ -30488,13 +33209,13 @@
         {
           "identity": "response-expression:POST /api/workflow/definitions/:workflowDefinitionId/archive-status:1",
           "schemaVersions": [],
-          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6"
+          "signatureSha256": "3d91826c8aa410e537e743248d79bb19226a86cdb404803041f9f9b3757dc20a"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6",
+          "signatureSha256": "3d91826c8aa410e537e743248d79bb19226a86cdb404803041f9f9b3757dc20a",
           "source": "json",
           "status": "200"
         }
@@ -30509,9 +33230,9 @@
             "signatureSha256": "983c361eef494c67ba91773e43d14f233fa568daf18e331d3479334bd8b17439"
           },
           {
-            "identity": "saveWorkflowDefinitionDraftPayloadSchema",
+            "identity": "saveWorkflowDefinitionDraftV3PayloadSchema",
             "schemaVersions": [],
-            "signatureSha256": "3a7241961c7112903a2025fc0253f22ea8074cbbb7d8322d9fbb1cc40d2f2125"
+            "signatureSha256": "8f29ce84e835eb55188907a14ed33bfac7e29dfdc9e33596fe15d17a63b2689f"
           }
         ]
       },
@@ -30592,9 +33313,9 @@
           "signatureSha256": "983c361eef494c67ba91773e43d14f233fa568daf18e331d3479334bd8b17439"
         },
         {
-          "identity": "saveWorkflowDefinitionDraftPayloadSchema",
+          "identity": "saveWorkflowDefinitionDraftV3PayloadSchema",
           "schemaVersions": [],
-          "signatureSha256": "3a7241961c7112903a2025fc0253f22ea8074cbbb7d8322d9fbb1cc40d2f2125"
+          "signatureSha256": "8f29ce84e835eb55188907a14ed33bfac7e29dfdc9e33596fe15d17a63b2689f"
         },
         {
           "identity": "workflowDefinitionIdSchema",
@@ -30606,13 +33327,13 @@
         {
           "identity": "response-expression:POST /api/workflow/definitions/:workflowDefinitionId/drafts:1",
           "schemaVersions": [],
-          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6"
+          "signatureSha256": "3d91826c8aa410e537e743248d79bb19226a86cdb404803041f9f9b3757dc20a"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6",
+          "signatureSha256": "3d91826c8aa410e537e743248d79bb19226a86cdb404803041f9f9b3757dc20a",
           "source": "json",
           "status": "201"
         }
@@ -30724,13 +33445,13 @@
         {
           "identity": "response-expression:POST /api/workflow/definitions/:workflowDefinitionId/publish:1",
           "schemaVersions": [],
-          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6"
+          "signatureSha256": "3d91826c8aa410e537e743248d79bb19226a86cdb404803041f9f9b3757dc20a"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6",
+          "signatureSha256": "3d91826c8aa410e537e743248d79bb19226a86cdb404803041f9f9b3757dc20a",
           "source": "json",
           "status": "200"
         }
@@ -30835,13 +33556,13 @@
         {
           "identity": "response-expression:POST /api/workflow/definitions/agent-node-configurations:1",
           "schemaVersions": [],
-          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6"
+          "signatureSha256": "3d91826c8aa410e537e743248d79bb19226a86cdb404803041f9f9b3757dc20a"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6",
+          "signatureSha256": "3d91826c8aa410e537e743248d79bb19226a86cdb404803041f9f9b3757dc20a",
           "source": "json",
           "status": "201"
         }
@@ -30939,13 +33660,13 @@
         {
           "identity": "response-expression:POST /api/workflow/definitions/copies:1",
           "schemaVersions": [],
-          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6"
+          "signatureSha256": "3d91826c8aa410e537e743248d79bb19226a86cdb404803041f9f9b3757dc20a"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "dbf277ad9b4906952f9aaaa692a8e783d49b345a33d0bbfbf0fe244128d202a6",
+          "signatureSha256": "3d91826c8aa410e537e743248d79bb19226a86cdb404803041f9f9b3757dc20a",
           "source": "json",
           "status": "201"
         }
@@ -30955,9 +33676,9 @@
       "body": {
         "schemas": [
           {
-            "identity": "validateWorkflowDefinitionPayloadSchema",
+            "identity": "validateWorkflowDefinitionV3PayloadSchema",
             "schemaVersions": [],
-            "signatureSha256": "11efec83224c4492a2dbd119d07ae61cdfe81ade741e9c5772290e843f41024e"
+            "signatureSha256": "7490bcfdf26107b14f2284d455401c22f4de883bd17e42e8cd69a88cb36c7145"
           }
         ]
       },
@@ -31024,22 +33745,22 @@
       },
       "requestSchemas": [
         {
-          "identity": "validateWorkflowDefinitionPayloadSchema",
+          "identity": "validateWorkflowDefinitionV3PayloadSchema",
           "schemaVersions": [],
-          "signatureSha256": "11efec83224c4492a2dbd119d07ae61cdfe81ade741e9c5772290e843f41024e"
+          "signatureSha256": "7490bcfdf26107b14f2284d455401c22f4de883bd17e42e8cd69a88cb36c7145"
         }
       ],
       "responseSchemas": [
         {
           "identity": "response-expression:POST /api/workflow/definitions/validate:1",
           "schemaVersions": [],
-          "signatureSha256": "526cf047b74c50f6e0302b287b018e6e1e3f586c100a29d471ce4cd6bbc5c22e"
+          "signatureSha256": "cdd563160fda37bea35e934aaac3223134156b7c9bc762339e1bf6b6d15224e2"
         }
       ],
       "successfulResponses": [
         {
           "explicitSchemas": [],
-          "signatureSha256": "526cf047b74c50f6e0302b287b018e6e1e3f586c100a29d471ce4cd6bbc5c22e",
+          "signatureSha256": "cdd563160fda37bea35e934aaac3223134156b7c9bc762339e1bf6b6d15224e2",
           "source": "json",
           "status": "200"
         }
@@ -31178,8 +33899,24 @@
       "schemaVersions": ["chat-execution-trace.v1"]
     },
     {
+      "identity": "memoryAgentWriteDecisionSchema",
+      "schemaVersions": ["memory-agent-write-decision.v1"]
+    },
+    {
       "identity": "memoryBackendProfileDtoSchema",
       "schemaVersions": ["chat-product-api.v1"]
+    },
+    {
+      "identity": "memoryProviderComparisonPreviewSchema",
+      "schemaVersions": ["memory-provider-comparison-preview.v1"]
+    },
+    {
+      "identity": "memorySessionImportPreviewSchema",
+      "schemaVersions": ["memory-session-import-preview.v1"]
+    },
+    {
+      "identity": "memorySessionImportSchema",
+      "schemaVersions": ["memory-session-import.v1"]
     },
     {
       "identity": "messageDtoSchema",
@@ -31427,27 +34164,51 @@
     },
     {
       "identity": "workflowBlueprintDtoSchema",
-      "schemaVersions": ["chat-workflow-product-api.v2"]
+      "schemaVersions": ["chat-workflow-product-api.v3"]
     },
     {
       "identity": "workflowBlueprintsDtoSchema",
+      "schemaVersions": ["chat-workflow-product-api.v3"]
+    },
+    {
+      "identity": "workflowBlueprintsV2DtoSchema",
+      "schemaVersions": ["chat-workflow-product-api.v2"]
+    },
+    {
+      "identity": "workflowBlueprintV2DtoSchema",
       "schemaVersions": ["chat-workflow-product-api.v2"]
     },
     {
       "identity": "workflowCatalogDtoSchema",
+      "schemaVersions": ["chat-workflow-product-api.v3"]
+    },
+    {
+      "identity": "workflowCatalogV2DtoSchema",
       "schemaVersions": ["chat-workflow-product-api.v2"]
     },
     {
       "identity": "workflowDefinitionPublishedDtoSchema",
+      "schemaVersions": ["chat-workflow-product-api.v3"]
+    },
+    {
+      "identity": "workflowDefinitionPublishedV2DtoSchema",
       "schemaVersions": ["chat-workflow-product-api.v2"]
     },
     {
       "identity": "workflowDefinitionsDtoSchema",
+      "schemaVersions": ["chat-workflow-product-api.v3"]
+    },
+    {
+      "identity": "workflowDefinitionsV2DtoSchema",
       "schemaVersions": ["chat-workflow-product-api.v2"]
     },
     {
       "identity": "workflowDefinitionValidationDtoSchema",
       "schemaVersions": ["chat-workflow-designer-api.v2"]
+    },
+    {
+      "identity": "workflowDefinitionValidationV3DtoSchema",
+      "schemaVersions": ["chat-workflow-designer-api.v3"]
     },
     {
       "identity": "workflowExecutionTraceDtoSchema",
@@ -31467,6 +34228,10 @@
     },
     {
       "identity": "workflowRunConfigSummaryDtoSchema",
+      "schemaVersions": ["chat-workflow-product-api.v3"]
+    },
+    {
+      "identity": "workflowRunConfigSummaryV2DtoSchema",
       "schemaVersions": ["chat-workflow-product-api.v2"]
     },
     {

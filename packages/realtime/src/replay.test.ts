@@ -877,7 +877,7 @@ describe("assembleRunReplay", () => {
     const traceDir = join(dir, "traces");
     const snapshot = minimalSnapshot();
     snapshot.entities.attempts[GOVERNANCE_ATTEMPT_ID] = {
-      schemaVersion: "run-attempt.v1",
+      schemaVersion: "run-attempt.v2",
       attemptId: GOVERNANCE_ATTEMPT_ID,
       productRunId: RUN_ID,
       kind: "governance_review",

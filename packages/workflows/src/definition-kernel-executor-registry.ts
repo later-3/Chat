@@ -23,11 +23,19 @@ export const NOTE_CAPTURE_RUNNER_FAMILY = "note-capture.v1" as const;
 export const NOTE_CAPTURE_RUNNER_BUNDLE_VERSION = "note-capture.bundle.v1" as const;
 export const DIRECT_AGENT_RUNNER_FAMILY = "direct-agent.v1" as const;
 export const DIRECT_AGENT_RUNNER_BUNDLE_VERSION = "direct-agent.bundle.v1" as const;
+export const MEMORY_DIRECT_RUNNER_FAMILY = "memory-direct.v1" as const;
+export const MEMORY_DIRECT_RUNNER_BUNDLE_VERSION = "memory-direct.bundle.v1" as const;
+export const MEMORY_AGENT_DIRECT_RUNNER_FAMILY = "memory-agent-direct.v1" as const;
+export const MEMORY_AGENT_DIRECT_RUNNER_BUNDLE_VERSION = "memory-agent-direct.bundle.v1" as const;
 
 export type PlanningRunnerFamily =
   typeof LEGACY_PLANNING_RUNNER_FAMILY | typeof CONFIGURABLE_PLANNING_RUNNER_FAMILY;
 export type ProductWorkflowRunnerFamily =
-  PlanningRunnerFamily | typeof NOTE_CAPTURE_RUNNER_FAMILY | typeof DIRECT_AGENT_RUNNER_FAMILY;
+  | PlanningRunnerFamily
+  | typeof NOTE_CAPTURE_RUNNER_FAMILY
+  | typeof DIRECT_AGENT_RUNNER_FAMILY
+  | typeof MEMORY_DIRECT_RUNNER_FAMILY
+  | typeof MEMORY_AGENT_DIRECT_RUNNER_FAMILY;
 
 export interface KernelExecutorRegistration extends WorkflowExecutorManifestEntry {
   readonly executorKind: WorkflowExecutorKind;
@@ -51,12 +59,17 @@ export interface KernelExecutorRegistration extends WorkflowExecutorManifestEntr
     | "review_note"
     | "commit_note"
     | "advance_direct_agent"
-    | "review_prompt";
+    | "review_prompt"
+    | "retrieve_memory_with_agent"
+    | "propose_memory_write_with_agent";
 }
 
 const REGISTRATIONS: readonly KernelExecutorRegistration[] = [
   entry("memory.query", "step", "query_memory"),
   entry("memory.write", "step", "write_memory"),
+  entry("memory.write", "step", "write_memory", 2),
+  entry("agent.memory_retrieve", "step", "retrieve_memory_with_agent"),
+  entry("agent.memory_write", "step", "propose_memory_write_with_agent"),
   entry("context.memory", "step", "load_memory_context"),
   entry("context.project", "step", "load_project_context"),
   entry("policy.rules", "step", "resolve_rules"),
@@ -116,9 +129,9 @@ export class KernelExecutorRegistry {
 export const DEFINITION_KERNEL_EXECUTORS = new KernelExecutorRegistry(REGISTRATIONS);
 
 // 静态表同时被Workflow函数解释器引用，不能为一个key helper拉入Application或
-// Domain运行时代码（其中含Node crypto，Workflow sandbox不允许）。19是冻结内置集合，
+// Domain运行时代码（其中含Node crypto，Workflow sandbox不允许）。22是冻结内置集合，
 // Catalog/Compiler的完整集合一致性另由definition-kernel conformance测试逐项证明。
-if (DEFINITION_KERNEL_EXECUTORS.list().length !== 19) {
+if (DEFINITION_KERNEL_EXECUTORS.list().length !== 22) {
   throw new Error("workflow.executor_registry.incomplete_builtin_set");
 }
 
@@ -130,11 +143,12 @@ function entry(
   nodeType: WorkflowNodeTypeKey,
   executorKind: WorkflowExecutorKind,
   operation: KernelExecutorRegistration["operation"],
+  schemaVersion = 1,
 ): KernelExecutorRegistration {
   return {
     nodeType,
-    schemaVersion: 1,
-    executorVersion: `${nodeType}.v1`,
+    schemaVersion,
+    executorVersion: `${nodeType}.v${String(schemaVersion)}`,
     executorKind,
     operation,
   };

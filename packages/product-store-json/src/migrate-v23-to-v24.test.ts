@@ -20,6 +20,10 @@ const SUPERVISED_ENTITY_KEYS = [
   "supervisedStepHumanDecisions",
   "supervisedAgentOutcomeObservations",
   "supervisedExecutionResults",
+  "memorySessionImports",
+  "memoryAgentOperations",
+  "memoryAgentWriteCandidates",
+  "memoryAgentWriteDecisions",
 ] as const;
 
 async function realNonEmptyV23(): Promise<ProductSnapshotV23> {

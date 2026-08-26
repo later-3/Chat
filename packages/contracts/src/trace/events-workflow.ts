@@ -104,7 +104,11 @@ export const workflowMemoryNodeFields = {
   workflowNodeRunId: workflowNodeRunIdSchema,
   definitionNodeId: definitionNodeIdSchema,
   nodeType: workflowNodeTypeSchema.refine(
-    (value) => value === "memory.query" || value === "memory.write",
+    (value) =>
+      value === "memory.query" ||
+      value === "memory.write" ||
+      value === "agent.memory_retrieve" ||
+      value === "agent.memory_write",
   ),
   publicSummary: z.string().min(1).max(500).optional(),
 };

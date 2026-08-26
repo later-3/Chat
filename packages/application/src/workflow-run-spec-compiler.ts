@@ -1,11 +1,11 @@
 import { z } from "zod";
 import {
-  workflowExecutorManifestEntrySchema,
+  workflowExecutorManifestEntryV3Schema,
   inspectDirectAgentConfigurationSource,
   workflowRunBusinessInputSchema,
-  workflowRunSpecV2Schema,
+  workflowRunSpecV3Schema,
   workflowRunSpecSchema,
-  workflowRunnerEvidenceSchema,
+  workflowRunnerEvidenceV3Schema,
   type WorkflowExecutorManifestEntry,
   type WorkflowNodeResolution,
   type WorkflowResolvedResource,
@@ -215,14 +215,14 @@ export function compileWorkflowRunSpec(
     ),
   };
   const candidate = {
-    schemaVersion: "workflow-run-spec.v2" as const,
+    schemaVersion: "workflow-run-spec.v3" as const,
     workflowRunSpecId: input.workflowRunSpecId,
     productRunId: input.productRunId,
     ...executionPayload,
     sha256: hashCanonical("workflow-run-spec.v1", executionPayload),
     createdAt: input.createdAt,
   };
-  const parsedRunSpec = workflowRunSpecV2Schema.safeParse(candidate);
+  const parsedRunSpec = workflowRunSpecV3Schema.safeParse(candidate);
   if (!parsedRunSpec.success) {
     return {
       success: false,
@@ -343,9 +343,9 @@ function parseCompilerBoundaries(
   const manifest = parseContractArray(
     input.executorManifest,
     64,
-    workflowExecutorManifestEntrySchema,
+    workflowExecutorManifestEntryV3Schema,
   );
-  const runner = workflowRunnerEvidenceSchema.safeParse(input.runner);
+  const runner = workflowRunnerEvidenceV3Schema.safeParse(input.runner);
   const businessInput =
     input.businessInput === undefined
       ? { success: true as const, data: undefined }
@@ -390,7 +390,14 @@ function parseCompilerBoundaries(
       definition.blueprintKey === "note"
         ? { inputKind: "note_capture", runnerFamily: "note-capture.v1" }
         : definition.blueprintKey === "direct"
-          ? { inputKind: "direct_agent_message", runnerFamily: "direct-agent.v1" }
+          ? {
+              inputKind: "direct_agent_message",
+              runnerFamily: [3, 4, 5].includes(definition.blueprintVersion)
+                ? "memory-agent-direct.v1"
+                : definition.blueprintVersion === 2
+                  ? "memory-direct.v1"
+                  : "direct-agent.v1",
+            }
           : { inputKind: "planning_message", runnerFamily: "configurable-planning.v1" };
     if (
       businessInput.data.kind !== expected.inputKind ||

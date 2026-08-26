@@ -19,6 +19,12 @@ import { z } from "zod";
  */
 const idKeySchema = z.string().min(1).max(200);
 const productSnapshotV24EntitiesSchema = productSnapshotSchema.shape.entities
+  .omit({
+    memorySessionImports: true,
+    memoryAgentOperations: true,
+    memoryAgentWriteCandidates: true,
+    memoryAgentWriteDecisions: true,
+  })
   .extend({
     attempts: z.record(idKeySchema, runAttemptV1Schema),
     validationResults: z.record(idKeySchema, validationResultV1Schema),

@@ -24,6 +24,11 @@ import {
   listMemoryProvidersResponseSchema,
   listMemoryWritesResponseSchema,
   memoryWriteResponseSchema,
+  listMemorySessionSourcesResponseSchema,
+  previewMemorySessionImportResponseSchema,
+  memorySessionImportResponseSchema,
+  listMemorySessionImportsResponseSchema,
+  previewMemoryProviderComparisonResponseSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
   runContextDtoSchema,
@@ -69,6 +74,9 @@ import {
 } from "@chat/application";
 import {
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_REVISION_ID,
+  SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_REVISION_ID,
   SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
   SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID,
 } from "@chat/application/workflow-system-definitions";
@@ -240,6 +248,28 @@ async function testApp(): Promise<{
     CHAT_PLANE_ENABLED: "1",
   });
   const backend = {
+    describeProvider: () => ({
+      schemaVersion: "memory-provider-descriptor.v1" as const,
+      providerId: "mbk_memmy" as never,
+      displayName: "memmy 本地记忆",
+      providerKind: "memmy",
+      transport: "http" as const,
+      adapterContractVersion: "memmy-workflow.v1",
+      configured: true,
+      configurationFingerprint: "f".repeat(64) as never,
+      capabilities: {
+        query: { maxResults: 20, maxContextCharacters: 50_000 },
+        write: {
+          maxContentCharacters: 50_000,
+          materialization: "synchronous" as const,
+          idempotency: "provider_key" as const,
+        },
+        reconcile: true,
+        management: { list: true, get: true, update: false, delete: false, history: false },
+      },
+      authMode: "bearer" as const,
+      credentialRevision: "api-test-key-1",
+    }),
     describe: () => ({
       backendId: "mbk_memmy" as never,
       displayName: "memmy 本地记忆",
@@ -274,6 +304,33 @@ async function testApp(): Promise<{
           tokenEstimate: 12,
         },
       ],
+    }),
+    queryMemory: async () => ({
+      externalQueryId: "memmy-workflow-query-1",
+      hitCount: 1,
+      sections: [
+        {
+          externalObjectIds: ["memory-test-1"],
+          title: "测试来源",
+          category: "procedure" as const,
+          content: "发布前必须完成真实浏览器测试。",
+          labels: ["release"],
+          score: 0.75,
+        },
+      ],
+    }),
+    writeMemory: async (input: { operationId: string; requestSha256: string }) => ({
+      externalObjectId: `memmy:${input.operationId}`,
+      responseSha256: input.requestSha256,
+    }),
+    reconcileMemoryWrite: async (input: { operationId: string; requestSha256: string }) => ({
+      status: "materialized" as const,
+      accepted: {
+        externalObjectId: `memmy:${input.operationId}`,
+        responseSha256: input.requestSha256,
+      },
+      verificationKind: "read_by_id",
+      verificationSha256: "a".repeat(64),
     }),
     describeImport: () => ({
       descriptor: {
@@ -317,7 +374,7 @@ async function testApp(): Promise<{
         query: { maxResults: 20, maxContextCharacters: 32_000 },
         write: {
           maxContentCharacters: 8_192,
-          materialization: "asynchronous" as const,
+          materialization: "accepted_only" as const,
           idempotency: "chat_reconcile" as const,
         },
         reconcile: true,
@@ -484,11 +541,49 @@ async function testApp(): Promise<{
       get: (backendId) => (backendId === "mbk_memmy" ? backend : undefined),
     },
     workflowMemoryProviders: {
-      list: () => [tencentBackend.describeProvider()],
-      getQuery: (providerId) =>
-        providerId === "mbk_tencentmemorycore" ? tencentBackend : undefined,
-      getWrite: (providerId) =>
-        providerId === "mbk_tencentmemorycore" ? tencentBackend : undefined,
+      list: () => [backend.describeProvider(), tencentBackend.describeProvider()],
+      getQuery: (providerId) => {
+        if (providerId === "mbk_memmy") return backend;
+        if (providerId === "mbk_tencentmemorycore") return tencentBackend;
+        return undefined;
+      },
+      getWrite: (providerId) => {
+        if (providerId === "mbk_memmy") return backend;
+        if (providerId === "mbk_tencentmemorycore") return tencentBackend;
+        return undefined;
+      },
+    },
+    memorySessionSources: {
+      get: () => ({
+        kind: "codex" as const,
+        list: async () => [
+          {
+            sourceSessionId: "019db07f-953c-7fc2-95b6-d38228810e64",
+            title: "API Codex Session",
+            updatedAt: "2026-08-24T09:00:00.000Z",
+          },
+        ],
+        load: async () => ({
+          sourceKind: "codex" as const,
+          sourceSessionId: "019db07f-953c-7fc2-95b6-d38228810e64",
+          title: "API Codex Session",
+          updatedAt: "2026-08-24T09:00:00.000Z",
+          messages: [
+            {
+              sourceMessageKey: "turn-api:user",
+              role: "user" as const,
+              text: "把这轮对话导入Memory。",
+              createdAt: "2026-08-24T08:59:00.000Z",
+            },
+            {
+              sourceMessageKey: "turn-api:assistant",
+              role: "assistant" as const,
+              text: "先预览，确认哈希后再导入。",
+              createdAt: "2026-08-24T09:00:00.000Z",
+            },
+          ],
+        }),
+      }),
     },
     executionTraceReader: {
       read: async ({ productRunId, afterSequence }) => ({
@@ -1169,11 +1264,32 @@ describe("公开产品API", () => {
         definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
     );
     const direct = definitionsEnvelope.definitions.definitions.find(
-      (definition) => definition.blueprintKey === "direct",
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
+    );
+    const memoryDirect = definitionsEnvelope.definitions.definitions.find(
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_DIRECT_WORKFLOW_REVISION_ID,
+    );
+    const memoryRead = definitionsEnvelope.definitions.definitions.find(
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_READ_DIRECT_WORKFLOW_REVISION_ID,
+    );
+    const memoryWrite = definitionsEnvelope.definitions.definitions.find(
+      (definition) =>
+        definition.workflowDefinitionRevisionId === SYSTEM_MEMORY_WRITE_DIRECT_WORKFLOW_REVISION_ID,
     );
     expect(
       definitionsEnvelope.definitions.definitions.map((definition) => definition.title),
-    ).toEqual(["规划执行工作流", "Memory 增强规划与执行", "执行 Agent（逐次提示词审核）"]);
+    ).toEqual([
+      "规划执行工作流",
+      "Memory 增强规划与执行",
+      "执行 Agent（逐次提示词审核）",
+      "Memory 增强执行 Agent",
+      "Memory Agent 增强执行",
+      "只查询 Memory 后回答",
+      "只整理为 Memory 候选",
+    ]);
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.query");
     expect(ordinary?.nodes.map((node) => node.nodeType)).not.toContain("memory.write");
     expect(memory).toMatchObject({
@@ -1219,6 +1335,52 @@ describe("公开产品API", () => {
           },
         ],
       },
+    ]);
+    expect(memoryDirect).toMatchObject({
+      title: "Memory 增强执行 Agent",
+      blueprintKey: "direct",
+      blueprintVersion: 2,
+      ownerKind: "system",
+    });
+    expect(memoryDirect?.nodes.map((node) => node.definitionNodeId)).toEqual([
+      "memory-direct.query",
+      "direct.agent",
+      "memory-direct.write",
+    ]);
+    expect(memoryDirect?.nodes.at(-1)?.schemaVersion).toBe(2);
+    expect(memoryRead).toMatchObject({
+      title: "只查询 Memory 后回答",
+      blueprintKey: "direct",
+      blueprintVersion: 4,
+      ownerKind: "system",
+    });
+    expect(memoryRead?.nodes.map((node) => node.nodeType)).toEqual([
+      "agent.memory_retrieve",
+      "agent.direct",
+    ]);
+    expect(memoryWrite).toMatchObject({
+      title: "只整理为 Memory 候选",
+      blueprintKey: "direct",
+      blueprintVersion: 5,
+      ownerKind: "system",
+    });
+    expect(memoryWrite?.nodes.map((node) => node.nodeType)).toEqual([
+      "agent.direct",
+      "agent.memory_write",
+    ]);
+    expect(
+      memoryDirect?.nodes
+        .filter((node) => node.nodeType === "memory.query" || node.nodeType === "memory.write")
+        .map((node) => ({
+          nodeType: node.nodeType,
+          fields: node.runConfigFields.map((field) => field.name),
+        })),
+    ).toEqual([
+      {
+        nodeType: "memory.query",
+        fields: ["providerId", "required", "maxResults", "maxContextCharacters"],
+      },
+      { nodeType: "memory.write", fields: ["providerId", "required"] },
     ]);
     if (memory === undefined) throw new Error("缺少独立Memory Workflow公开选项");
 
@@ -1928,13 +2090,18 @@ describe("公开产品API", () => {
     const providersResponse = await app.request("/api/memory/providers");
     expect(providersResponse.status).toBe(200);
     const providers = listMemoryProvidersResponseSchema.parse(await providersResponse.json());
-    expect(providers.providers).toHaveLength(1);
+    expect(providers.providers).toHaveLength(2);
     expect(providers.providers[0]).toMatchObject({
+      providerId: "mbk_memmy",
+      providerKind: "memmy",
+      capabilities: { write: { materialization: "synchronous" } },
+    });
+    expect(providers.providers[1]).toMatchObject({
       providerId: "mbk_tencentmemorycore",
       providerKind: "tencent_memorycore",
       transport: "http",
       configured: true,
-      capabilities: { query: { maxResults: 20 }, write: { materialization: "asynchronous" } },
+      capabilities: { query: { maxResults: 20 }, write: { materialization: "accepted_only" } },
     });
     expect(JSON.stringify(providers)).not.toMatch(/token|serviceId|teamId|baseUrl|L0|L1/u);
     expect((await app.request("/api/memory/providers?debug=1")).status).toBe(400);
@@ -2042,6 +2209,202 @@ describe("公开产品API", () => {
     });
     expect(response.status).toBe(400);
     expect(problemDetailSchema.parse(await response.json()).code).toBe("validation_failed");
+  });
+
+  it("Codex Session必须先预览，导入后公开批次与统一Memory Write状态", async () => {
+    const { app, deps } = await testApp();
+    const codexSessionId = "019db07f-953c-7fc2-95b6-d38228810e64";
+    const listedSources = listMemorySessionSourcesResponseSchema.parse(
+      await (await app.request("/api/memory/session-sources?kind=codex&limit=10")).json(),
+    );
+    expect(listedSources.sources).toEqual([
+      {
+        source: { kind: "codex", codexSessionId },
+        title: "API Codex Session",
+        updatedAt: "2026-08-24T09:00:00.000Z",
+      },
+    ]);
+    expect((await app.request("/api/memory/session-sources?kind=codex&kind=chat")).status).toBe(
+      400,
+    );
+    expect((await app.request("/api/memory/session-sources?kind=codex&debug=true")).status).toBe(
+      400,
+    );
+
+    const previewResponse = await postJson(app, "/api/memory/session-import-previews", {
+      source: { kind: "codex", codexSessionId },
+      providerId: "mbk_tencentmemorycore",
+    });
+    expect(previewResponse.status).toBe(200);
+    const preview = previewMemorySessionImportResponseSchema.parse(
+      await previewResponse.json(),
+    ).preview;
+    expect(preview).toMatchObject({ newItemCount: 1, existingItemCount: 0 });
+    expect(preview.items[0]?.contentPreview).toContain("把这轮对话导入Memory");
+
+    const importedResponse = await postJson(app, "/api/memory/session-imports", {
+      commandId: nextCmd(),
+      payload: {
+        source: preview.source,
+        providerId: preview.providerId,
+        sourceSnapshotSha256: preview.sourceSnapshotSha256,
+        previewSha256: preview.previewSha256,
+      },
+    });
+    expect(importedResponse.status, await importedResponse.clone().text()).toBe(201);
+    const imported = memorySessionImportResponseSchema.parse(
+      await importedResponse.json(),
+    ).memorySessionImport;
+    expect(imported).toMatchObject({
+      status: "processing",
+      createdItemCount: 1,
+      existingItemCount: 0,
+      resultCounts: { queued: 1 },
+    });
+
+    const afterPreview = previewMemorySessionImportResponseSchema.parse(
+      await (
+        await postJson(app, "/api/memory/session-import-previews", {
+          source: preview.source,
+          providerId: preview.providerId,
+        })
+      ).json(),
+    ).preview;
+    expect(afterPreview).toMatchObject({ newItemCount: 0, existingItemCount: 1 });
+    const exact = memorySessionImportResponseSchema.parse(
+      await (
+        await app.request(`/api/memory/session-imports/${imported.memorySessionImportId}`)
+      ).json(),
+    );
+    expect(exact.memorySessionImport.memorySessionImportId).toBe(imported.memorySessionImportId);
+    const imports = listMemorySessionImportsResponseSchema.parse(
+      await (await app.request("/api/memory/session-imports?limit=10")).json(),
+    );
+    expect(imports.memorySessionImports).toHaveLength(1);
+    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(Object.keys(snapshot.entities.memoryWriteIntents)).toHaveLength(1);
+    expect(
+      Object.values(snapshot.outbox).filter((entry) => entry.kind === "memory_write_start"),
+    ).toHaveLength(1);
+  });
+
+  it("Chat Session与Codex共用同一预览和导入合同", async () => {
+    const { app, deps } = await testApp();
+    const created = await postJson(app, "/api/sessions", {
+      commandId: nextCmd(),
+      payload: { title: "Chat Session导入测试" },
+    });
+    expect(created.status).toBe(201);
+    const session = (await created.json()) as { session: { sessionId: string } };
+    const message = await postJson(app, `/api/sessions/${session.session.sessionId}/messages`, {
+      commandId: nextCmd(),
+      payload: { text: "这条Chat消息也应通过统一转换器导入。" },
+    });
+    expect(message.status).toBe(201);
+
+    const listed = listMemorySessionSourcesResponseSchema.parse(
+      await (await app.request("/api/memory/session-sources?kind=chat&limit=10")).json(),
+    );
+    expect(listed.sources).toHaveLength(1);
+    expect(listed.sources[0]).toMatchObject({
+      source: { kind: "chat", productSessionId: session.session.sessionId },
+      title: "Chat Session导入测试",
+    });
+
+    const preview = previewMemorySessionImportResponseSchema.parse(
+      await (
+        await postJson(app, "/api/memory/session-import-previews", {
+          source: listed.sources[0]!.source,
+          providerId: "mbk_tencentmemorycore",
+        })
+      ).json(),
+    ).preview;
+    expect(preview).toMatchObject({ newItemCount: 1, existingItemCount: 0 });
+    expect(preview.items[0]?.contentPreview).toContain("这条Chat消息");
+
+    const imported = await postJson(app, "/api/memory/session-imports", {
+      commandId: nextCmd(),
+      payload: {
+        source: preview.source,
+        providerId: preview.providerId,
+        sourceSnapshotSha256: preview.sourceSnapshotSha256,
+        previewSha256: preview.previewSha256,
+      },
+    });
+    expect(imported.status).toBe(201);
+    expect(
+      memorySessionImportResponseSchema.parse(await imported.json()).memorySessionImport,
+    ).toMatchObject({ createdItemCount: 1, existingItemCount: 0 });
+    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    const importedIntent = Object.values(snapshot.entities.memoryWriteIntents).find(
+      (intent) => intent.schemaVersion === "memory-write-intent.v2",
+    );
+    expect(importedIntent).toMatchObject({
+      sourceSessionKey: session.session.sessionId,
+      sourceSelection: { sourceKind: "chat" },
+    });
+  });
+
+  it("同一Codex来源并行比较两个Provider且Preview零写入", async () => {
+    const { app, deps } = await testApp();
+    const before = (await deps.store.read({ kind: "committedSnapshot" })).snapshot.storeRevision;
+    const response = await postJson(app, "/api/memory/provider-comparison-previews", {
+      source: {
+        kind: "codex",
+        codexSessionId: "019db07f-953c-7fc2-95b6-d38228810e64",
+      },
+      query: "发布前需要完成什么？",
+      providerIds: ["mbk_tencentmemorycore", "mbk_memmy"],
+      maxResults: 8,
+      maxContextCharacters: 8_000,
+    });
+    expect(response.status, await response.clone().text()).toBe(200);
+    const comparison = previewMemoryProviderComparisonResponseSchema.parse(
+      await response.json(),
+    ).comparison;
+    expect(comparison.providers).toMatchObject([
+      {
+        providerId: "mbk_memmy",
+        status: "completed",
+        hitCount: 1,
+        selectedCount: 1,
+        writeMaterialization: "synchronous",
+      },
+      {
+        providerId: "mbk_tencentmemorycore",
+        status: "completed",
+        hitCount: 0,
+        selectedCount: 0,
+        writeMaterialization: "accepted_only",
+      },
+    ]);
+    expect(comparison.pairwise).toEqual([
+      {
+        leftProviderId: "mbk_memmy",
+        rightProviderId: "mbk_tencentmemorycore",
+        exactContentOverlapCount: 0,
+        leftUniqueContentCount: 1,
+        rightUniqueContentCount: 0,
+        sharedLabels: [],
+        scoreComparisonAllowed: false,
+      },
+    ]);
+    expect(JSON.stringify(comparison)).not.toContain("workflow-query-1");
+    expect(JSON.stringify(comparison)).not.toContain("memory-test-1");
+    expect((await deps.store.read({ kind: "committedSnapshot" })).snapshot.storeRevision).toBe(
+      before,
+    );
+
+    const injected = await postJson(app, "/api/memory/provider-comparison-previews", {
+      source: {
+        kind: "codex",
+        codexSessionId: "019db07f-953c-7fc2-95b6-d38228810e64",
+      },
+      query: "发布前需要完成什么？",
+      providerIds: ["mbk_tencentmemorycore", "mbk_memmy"],
+      endpoint: "https://attacker.invalid",
+    });
+    expect(injected.status).toBe(400);
   });
 
   it("Project推进入口拒绝浏览器指定Provider、模型和Workflow私有身份", async () => {

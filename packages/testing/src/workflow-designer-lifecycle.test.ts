@@ -23,7 +23,7 @@ import {
   type CommandId,
   type PrincipalId,
   type WorkflowDefinitionId,
-  type WorkflowDefinitionSequence,
+  type WorkflowDefinitionSequenceV3,
 } from "@chat/contracts";
 import { hashCanonical } from "@chat/domain";
 import { JsonProductStore } from "@chat/product-store-json";
@@ -446,6 +446,9 @@ describe("S6 Workflow Definition生命周期", () => {
       const legacyRevision =
         legacySnapshot.entities.workflowDefinitionRevisions[copiedDraftRevisionId];
       if (legacyRevision === undefined) throw new Error("测试Draft不存在");
+      if (legacyRevision.schemaVersion !== "workflow-definition-revision.v3") {
+        throw new Error("当前Designer Draft必须使用Workflow Definition Revision v3");
+      }
       legacySnapshot.entities.workflowDefinitionRevisions[copiedDraftRevisionId] = {
         ...legacyRevision,
         semanticRoot: ambiguousRoot,
@@ -765,7 +768,7 @@ describe("S6 Workflow Definition生命周期", () => {
   });
 });
 
-function countDefinitionNodes(root: WorkflowDefinitionSequence): number {
+function countDefinitionNodes(root: WorkflowDefinitionSequenceV3): number {
   let count = 0;
   const stack = [...root.elements];
   while (stack.length > 0) {
@@ -780,7 +783,7 @@ function countDefinitionNodes(root: WorkflowDefinitionSequence): number {
 }
 
 function findNodeConfig(
-  root: WorkflowDefinitionSequence,
+  root: WorkflowDefinitionSequenceV3,
   definitionNodeId: string,
 ): Readonly<Record<string, unknown>> | undefined {
   const stack = [...root.elements];

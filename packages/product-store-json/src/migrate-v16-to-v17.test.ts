@@ -46,6 +46,10 @@ function removeV20Entities(entities: Record<string, unknown>): void {
     "supervisedStepHumanDecisions",
     "supervisedAgentOutcomeObservations",
     "supervisedExecutionResults",
+    "memorySessionImports",
+    "memoryAgentOperations",
+    "memoryAgentWriteCandidates",
+    "memoryAgentWriteDecisions",
   ]) {
     delete entities[key];
   }
