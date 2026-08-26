@@ -44,6 +44,7 @@
     "test:external:memory:memorycore": "node scripts/ci/test-safety-gate.mjs external --command-name=test:external:memory:memorycore --switch=CHAT_MEMORY_REAL_TEST -- pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-fixed-memorycore-http.ts",
     "test:external:memory:response-drop": "node scripts/ci/test-safety-gate.mjs external --command-name=test:external:memory:response-drop --switch=CHAT_MEMORY_REAL_TEST -- pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-response-drop.ts",
     "test:external:plane-ce": "node scripts/ci/test-safety-gate.mjs external --command-name=test:external:plane-ce --switch=CHAT_PLANE_CE_REAL_TEST --credential=CHAT_PLANE_CE_API_TOKEN -- pnpm --filter @chat/api exec node --import tsx ../../scripts/plane-ce/verify-real-bootstrap.ts",
+    "project:git-identity-pin": "node scripts/project/print-git-identity-pin.mjs",
     "managed-sources:prepare": "node scripts/ci/managed-sources.mjs prepare",
     "managed-sources:verify": "node scripts/ci/managed-sources.mjs verify",
     "api-surface:generate": "node scripts/ci/api-surface.mjs generate",
