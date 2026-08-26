@@ -658,9 +658,11 @@ function declarationClosure(
     if (symbol === undefined) return;
     const actual = resolvedSymbol(checker, symbol);
     for (const nested of actual.declarations ?? []) {
+      const nestedPath = nested.getSourceFile().fileName;
       if (
-        !nested.getSourceFile().fileName.startsWith(allowedRoot) ||
-        nested.getSourceFile().fileName.includes(`${sep}node_modules${sep}`)
+        !nestedPath.startsWith(allowedRoot) ||
+        nestedPath.includes(`${sep}node_modules${sep}`) ||
+        nestedPath.includes(`${sep}src${sep}internal-compat${sep}`)
       )
         continue;
       if (

@@ -20,11 +20,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [
-        ".",
-        "./composition",
-        "./outbox-dispatcher"
-      ],
+      "exportPaths": [".", "./composition", "./outbox-dispatcher"],
       "exports": {
         ".": {
           "import": "./src/app.ts",
@@ -47,11 +43,7 @@
             "import": "./src/app.ts",
             "types": "./src/app.ts"
           },
-          "exportedSymbols": [
-            "ApiApp",
-            "ApiAppOptions",
-            "createApiApp"
-          ],
+          "exportedSymbols": ["ApiApp", "ApiAppOptions", "createApiApp"],
           "key": ".",
           "target": "./src/app.ts",
           "transitiveSignatureSha256": "3dd7d3600a5a63e44c7c08af66189ff2ab5b71fd36b2fd82877399662eb58e63",
@@ -86,10 +78,7 @@
             "import": "./src/outbox-dispatcher.ts",
             "types": "./src/outbox-dispatcher.ts"
           },
-          "exportedSymbols": [
-            "OutboxDispatcher",
-            "OutboxDispatcherOptions"
-          ],
+          "exportedSymbols": ["OutboxDispatcher", "OutboxDispatcherOptions"],
           "key": "./outbox-dispatcher",
           "target": "./src/outbox-dispatcher.ts",
           "transitiveSignatureSha256": "b3f5cd7ed7ccba304254559fbb96c2b8014394e1c97b68467506fd6a0fc227e9",
@@ -678,11 +667,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [
-        ".",
-        "./public",
-        "./runtime-credential"
-      ],
+      "exportPaths": [".", "./public", "./runtime-credential"],
       "exports": {
         ".": {
           "import": "./src/index.ts",
@@ -3355,9 +3340,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [
-        "."
-      ],
+      "exportPaths": ["."],
       "exports": {
         ".": {
           "import": "./src/index.ts",
@@ -3746,12 +3729,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [
-        ".",
-        "./client",
-        "./cordis.patch.yml",
-        "./package.json"
-      ],
+      "exportPaths": [".", "./client", "./cordis.patch.yml", "./package.json"],
       "exports": {
         ".": {
           "default": "./dist/dsh-bundle.js"
@@ -3815,9 +3793,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [
-        "."
-      ],
+      "exportPaths": ["."],
       "exports": {
         ".": {
           "import": "./src/index.ts",
@@ -3867,11 +3843,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [
-        ".",
-        "./agent-runtime-profile-client",
-        "./coding-executor"
-      ],
+      "exportPaths": [".", "./agent-runtime-profile-client", "./coding-executor"],
       "exports": {
         ".": {
           "import": "./src/index.ts",
@@ -4171,9 +4143,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [
-        "."
-      ],
+      "exportPaths": ["."],
       "exports": {
         ".": {
           "import": "./src/index.ts",
@@ -4274,9 +4244,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [
-        "."
-      ],
+      "exportPaths": ["."],
       "exports": {
         ".": {
           "import": "./src/index.ts",
@@ -4346,10 +4314,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [
-        ".",
-        "./replay-cli"
-      ],
+      "exportPaths": [".", "./replay-cli"],
       "exports": {
         ".": {
           "import": "./src/index.ts",
@@ -4427,9 +4392,7 @@
             "import": "./src/replay-cli.ts",
             "types": "./src/replay-cli.ts"
           },
-          "exportedSymbols": [
-            "runReplayCli"
-          ],
+          "exportedSymbols": ["runReplayCli"],
           "key": "./replay-cli",
           "target": "./src/replay-cli.ts",
           "transitiveSignatureSha256": "5e4a12978a366323a7e349e0013b19aba6d6e293174263888a9d94fd4b00f287",
@@ -4440,9 +4403,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [
-        "."
-      ],
+      "exportPaths": ["."],
       "exports": {
         ".": {
           "import": "./src/index.ts",
@@ -4472,9 +4433,7 @@
     {
       "bin": {},
       "executableCommands": [],
-      "exportPaths": [
-        "."
-      ],
+      "exportPaths": ["."],
       "exports": {
         ".": {
           "import": "./src/index.ts",
@@ -4784,10 +4743,7 @@
     {
       "enumValues": [],
       "name": "adoptExistingPlaneProjectResponseSchema",
-      "requiredFields": [
-        "binding",
-        "snapshot"
-      ],
+      "requiredFields": ["binding", "snapshot"],
       "schemaVersions": [],
       "signatureSha256": "5e4c82c337fb1ea1ba8a6393e94dd861f169d8bd6760977807741f0681173a4e"
     },
@@ -4805,10 +4761,7 @@
       "signatureSha256": "138afe9f01e586c81b0fb3646c7300254f051514aae02df96a7024c00b447822"
     },
     {
-      "enumValues": [
-        "content_delivery",
-        "workflow_improvement"
-      ],
+      "enumValues": ["content_delivery", "workflow_improvement"],
       "name": "adoptProjectPracticePayloadSchema",
       "requiredFields": [
         "applicableWorkKinds",
@@ -4828,13 +4781,7 @@
       "signatureSha256": "6202aa9fb8235e1989ef773bcb8d96369bcf4696280c949da7c4120c3cda002c"
     },
     {
-      "enumValues": [
-        "coding_executor",
-        "direct",
-        "note_extractor",
-        "planner",
-        "project_bootstrap"
-      ],
+      "enumValues": ["coding_executor", "direct", "note_extractor", "planner", "project_bootstrap"],
       "name": "agentKeySchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -4848,11 +4795,7 @@
       "signatureSha256": "381e8e8a0901d770ed9a6eac92e8591f991f8dcf694ecc999c2c97e2a76d61d2"
     },
     {
-      "enumValues": [
-        "create_version",
-        "restore_default",
-        "revise_prompt"
-      ],
+      "enumValues": ["create_version", "restore_default", "revise_prompt"],
       "name": "agentProfileDtoSchema",
       "requiredFields": [
         "agentKey",
@@ -4866,41 +4809,25 @@
         "tools",
         "versions"
       ],
-      "schemaVersions": [
-        "chat-agent-profile-api.v3"
-      ],
+      "schemaVersions": ["chat-agent-profile-api.v3"],
       "signatureSha256": "f9e45cf236f74db32f4621275da6b5b96e1c96caa532aa8fca4285775458cfcb"
     },
     {
       "enumValues": [],
       "name": "agentProfilesDtoSchema",
-      "requiredFields": [
-        "items",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-agent-profile-api.v3"
-      ],
+      "requiredFields": ["items", "schemaVersion"],
+      "schemaVersions": ["chat-agent-profile-api.v3"],
       "signatureSha256": "de30f7fe9c6c6858ebc94d96cc7765ec6aff158b8c194918e7fc79c4c8725661"
     },
     {
       "enumValues": [],
       "name": "agentProfilesV2DtoSchema",
-      "requiredFields": [
-        "items",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-agent-profile-api.v2"
-      ],
+      "requiredFields": ["items", "schemaVersion"],
+      "schemaVersions": ["chat-agent-profile-api.v2"],
       "signatureSha256": "3a964adcd9edeb32f1eaff1059391f1b9df6891fccb0df0381201ccb0138dbaf"
     },
     {
-      "enumValues": [
-        "create_version",
-        "restore_default",
-        "revise_prompt"
-      ],
+      "enumValues": ["create_version", "restore_default", "revise_prompt"],
       "name": "agentProfileV2DtoSchema",
       "requiredFields": [
         "agentKey",
@@ -4914,16 +4841,11 @@
         "tools",
         "versions"
       ],
-      "schemaVersions": [
-        "chat-agent-profile-api.v2"
-      ],
+      "schemaVersions": ["chat-agent-profile-api.v2"],
       "signatureSha256": "40bf46c935daac005d8bb1b9f38675c3476c4c9f4e6d1fafb1d2e90f09ccaa51"
     },
     {
-      "enumValues": [
-        "disabled",
-        "inherit_runtime_default"
-      ],
+      "enumValues": ["disabled", "inherit_runtime_default"],
       "name": "agentResourceModeSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -4932,12 +4854,7 @@
     {
       "enumValues": [],
       "name": "agentResourcesSchema",
-      "requiredFields": [
-        "contextFiles",
-        "extensions",
-        "promptTemplates",
-        "skills"
-      ],
+      "requiredFields": ["contextFiles", "extensions", "promptTemplates", "skills"],
       "schemaVersions": [],
       "signatureSha256": "24a3657c957a355f6270a0baf0f90c99f5db1b8debe393e963d8185c46d18171"
     },
@@ -5008,20 +4925,14 @@
     {
       "enumValues": [],
       "name": "agentRuntimeDiagnosticDtoSchema",
-      "requiredFields": [
-        "code",
-        "message"
-      ],
+      "requiredFields": ["code", "message"],
       "schemaVersions": [],
       "signatureSha256": "3d93942f3f9ad17e4324a0fe35e8a7f14202e39cbc1cd99b55c7ff533a8014c1"
     },
     {
       "enumValues": [],
       "name": "agentRuntimeSchema",
-      "requiredFields": [
-        "baseVariantKey",
-        "kind"
-      ],
+      "requiredFields": ["baseVariantKey", "kind"],
       "schemaVersions": [],
       "signatureSha256": "a30c107757b1abb60541f8da17570d374987d60c557c7f47af2134fbb72529e9"
     },
@@ -5041,21 +4952,12 @@
     {
       "enumValues": [],
       "name": "agentRuntimeToolV2DtoSchema",
-      "requiredFields": [
-        "description",
-        "name",
-        "parametersJson",
-        "sourceRelativePath"
-      ],
+      "requiredFields": ["description", "name", "parametersJson", "sourceRelativePath"],
       "schemaVersions": [],
       "signatureSha256": "fd5706b4187a58b11007ca16d4af315f4a188319788a51906dd1913631a1ed74"
     },
     {
-      "enumValues": [
-        "available",
-        "paused",
-        "unavailable"
-      ],
+      "enumValues": ["available", "paused", "unavailable"],
       "name": "agentRuntimeVariantDtoSchema",
       "requiredFields": [
         "bodyMarkdown",
@@ -5113,25 +5015,14 @@
     {
       "enumValues": [],
       "name": "agentSystemPromptSchema",
-      "requiredFields": [
-        "bodyMarkdown",
-        "mode",
-        "sha256"
-      ],
+      "requiredFields": ["bodyMarkdown", "mode", "sha256"],
       "schemaVersions": [],
       "signatureSha256": "bff8263b01573f203b10ce7ea6aa0e66e31f558534d1d6c00becba0109ec2377"
     },
     {
-      "enumValues": [
-        "runtime_default",
-        "runtime_locked"
-      ],
+      "enumValues": ["runtime_default", "runtime_locked"],
       "name": "agentToolDefinitionDtoSchema",
-      "requiredFields": [
-        "description",
-        "name",
-        "policy"
-      ],
+      "requiredFields": ["description", "name", "policy"],
       "schemaVersions": [],
       "signatureSha256": "bc95ea2426431c340d09f627394ad731ee901f7b5e28be973cccf8937f25eacb"
     },
@@ -5173,9 +5064,7 @@
     {
       "enumValues": [],
       "name": "agentVersionV2Schema",
-      "requiredFields": [
-        "sha256"
-      ],
+      "requiredFields": ["sha256"],
       "schemaVersions": [],
       "signatureSha256": "9efb36ac33a18a68cd8446d842d94caa7f3deb761ee60265026ea398ebdd282c"
     },
@@ -5193,9 +5082,7 @@
         "schemaVersion",
         "status"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "29643b2194d184b52973e4824a6a20f01b2cbf22d698aa93af2518920aa8c2b9"
     },
     {
@@ -5229,47 +5116,28 @@
     {
       "enumValues": [],
       "name": "assignProjectActionPayloadSchema",
-      "requiredFields": [
-        "ownerParticipantId"
-      ],
+      "requiredFields": ["ownerParticipantId"],
       "schemaVersions": [],
       "signatureSha256": "181f53bec7d588baedcb28205869e1f3425dfc532ecf5b3f22c5f8e8084697f8"
     },
     {
       "enumValues": [],
       "name": "beginProjectAdvancementPayloadSchema",
-      "requiredFields": [
-        "projectId",
-        "sessionId",
-        "text"
-      ],
+      "requiredFields": ["projectId", "sessionId", "text"],
       "schemaVersions": [],
       "signatureSha256": "32faa1ee2933247f805db0e4b33c9c463563b7ef82485f12353445ab32f3c1be"
     },
     {
       "enumValues": [],
       "name": "beginProjectIntakePayloadSchema",
-      "requiredFields": [
-        "rootId",
-        "sessionId",
-        "text"
-      ],
+      "requiredFields": ["rootId", "sessionId", "text"],
       "schemaVersions": [],
       "signatureSha256": "da5c7c2b353d9b99dbe2cc25fb223741c7be9aedb144f592e3d0455ebc95bc4c"
     },
     {
-      "enumValues": [
-        "action",
-        "contribution",
-        "decision"
-      ],
+      "enumValues": ["action", "contribution", "decision"],
       "name": "beginProjectManagementCandidatePayloadSchema",
-      "requiredFields": [
-        "kind",
-        "projectId",
-        "sessionId",
-        "text"
-      ],
+      "requiredFields": ["kind", "projectId", "sessionId", "text"],
       "schemaVersions": [],
       "signatureSha256": "2f7ad24d3956e7befdd5bceb0b50b1d8c0b9b3a098b5b00642493b9910caeddc"
     },
@@ -5293,20 +5161,12 @@
     {
       "enumValues": [],
       "name": "blockProjectWorkPayloadSchema",
-      "requiredFields": [
-        "participantId",
-        "reason",
-        "recoveryConditions",
-        "stoppedAt"
-      ],
+      "requiredFields": ["participantId", "reason", "recoveryConditions", "stoppedAt"],
       "schemaVersions": [],
       "signatureSha256": "140d8b5538a32344955203b121d722e3bb4c7b737dd05690c7c8b401b2285fcd"
     },
     {
-      "enumValues": [
-        "product_decision_required",
-        "run_policy"
-      ],
+      "enumValues": ["product_decision_required", "run_policy"],
       "name": "capabilityApprovalPolicySchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -5322,29 +5182,19 @@
     {
       "enumValues": [],
       "name": "capabilityDescriptorSchema",
-      "requiredFields": [
-        "descriptorSha256"
-      ],
+      "requiredFields": ["descriptorSha256"],
       "schemaVersions": [],
       "signatureSha256": "9a82685ad870207863f7edbaaa16605da5d3f848476f6959eb5a8fcc4d94edcb"
     },
     {
-      "enumValues": [
-        "external_write",
-        "local_write",
-        "read",
-        "shell"
-      ],
+      "enumValues": ["external_write", "local_write", "read", "shell"],
       "name": "capabilityEffectSchema",
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "b62f77dc56d38a843b92d714d501b4da48014809d8dd89824f88585695101a91"
     },
     {
-      "enumValues": [
-        "product_intent_result",
-        "runtime_journal"
-      ],
+      "enumValues": ["product_intent_result", "runtime_journal"],
       "name": "capabilityEvidencePolicySchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -5372,35 +5222,21 @@
       "signatureSha256": "291d9cbfa8385b7608f630e165cb1457ecb57fdfb55537095bdd92c025359b59"
     },
     {
-      "enumValues": [
-        "available",
-        "paused",
-        "unavailable"
-      ],
+      "enumValues": ["available", "paused", "unavailable"],
       "name": "capabilityReadinessSchema",
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "da1ca4bda94b8ab3aabe4b44bb3df5c64de37494f0a7d05c127c02d6a89ec057"
     },
     {
-      "enumValues": [
-        "chat_application",
-        "dsh",
-        "pi_direct",
-        "pi_planning",
-        "provider"
-      ],
+      "enumValues": ["chat_application", "dsh", "pi_direct", "pi_planning", "provider"],
       "name": "capabilityRuntimeOwnerSchema",
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "c2625a23b63a8c40711321dd0b8fb3e1c286ea8108c26b958e024e6e6afd1dc6"
     },
     {
-      "enumValues": [
-        "global",
-        "provider_defined",
-        "workspace_required"
-      ],
+      "enumValues": ["global", "provider_defined", "workspace_required"],
       "name": "capabilityScopePolicySchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -5409,31 +5245,19 @@
     {
       "enumValues": [],
       "name": "capabilityScopeRefSchema",
-      "requiredFields": [
-        "kind",
-        "providerRef",
-        "rootId"
-      ],
+      "requiredFields": ["kind", "providerRef", "rootId"],
       "schemaVersions": [],
       "signatureSha256": "5cb4e1a561629fde995b672d0dbb2e0ede1ed05e84d5078b56dc549200134c36"
     },
     {
       "enumValues": [],
       "name": "capabilitySelectionRefSchema",
-      "requiredFields": [
-        "capabilityId",
-        "descriptorSha256"
-      ],
+      "requiredFields": ["capabilityId", "descriptorSha256"],
       "schemaVersions": [],
       "signatureSha256": "5e0764ad4b89c5f20f3dc127083dc776ec027018a2588b33a4929dc86c303c79"
     },
     {
-      "enumValues": [
-        "builtin",
-        "managed_extension",
-        "provider",
-        "workspace_extension"
-      ],
+      "enumValues": ["builtin", "managed_extension", "provider", "workspace_extension"],
       "name": "capabilitySourceKindSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -5442,82 +5266,49 @@
     {
       "enumValues": [],
       "name": "capabilitySourceRefSchema",
-      "requiredFields": [
-        "sourceKind"
-      ],
+      "requiredFields": ["sourceKind"],
       "schemaVersions": [],
       "signatureSha256": "1b770af27d434fd2fb217c0fd8a06af37eb462f7825e45cac419ca49c19c9d23"
     },
     {
-      "enumValues": [
-        "agent_candidate",
-        "external",
-        "resource",
-        "user"
-      ],
+      "enumValues": ["agent_candidate", "external", "resource", "user"],
       "name": "captureProjectNeedPayloadSchema",
-      "requiredFields": [
-        "occurredAt",
-        "origin",
-        "statement"
-      ],
+      "requiredFields": ["occurredAt", "origin", "statement"],
       "schemaVersions": [],
       "signatureSha256": "663dfc6aaddda3269024a80b9689c3f61d5d922abc064fee28951c9d9196af1c"
     },
     {
-      "enumValues": [
-        "active",
-        "archived"
-      ],
+      "enumValues": ["active", "archived"],
       "name": "changePromptFragmentArchiveStatusPayloadSchema",
-      "requiredFields": [
-        "currentRevisionId",
-        "currentRevisionSha256",
-        "targetStatus"
-      ],
+      "requiredFields": ["currentRevisionId", "currentRevisionSha256", "targetStatus"],
       "schemaVersions": [],
       "signatureSha256": "a7aa2066e9aa392a24e3a02c8c38fcd35d0f324a7d6a5c91bb4b1e658d8d1096"
     },
     {
-      "enumValues": [
-        "active",
-        "archived"
-      ],
+      "enumValues": ["active", "archived"],
       "name": "changeWorkflowDefinitionArchiveStatusPayloadSchema",
-      "requiredFields": [
-        "publishedDefinitionSha256",
-        "publishedRevisionId",
-        "targetStatus"
-      ],
+      "requiredFields": ["publishedDefinitionSha256", "publishedRevisionId", "targetStatus"],
       "schemaVersions": [],
       "signatureSha256": "f20840dd936ae4698e29002ffd062e624144dd2cbf5d4bab53f83fc57ed6b4b0"
     },
     {
       "enumValues": [],
       "name": "claimProjectWorkPayloadSchema",
-      "requiredFields": [
-        "leaseExpiresAt",
-        "participantId"
-      ],
+      "requiredFields": ["leaseExpiresAt", "participantId"],
       "schemaVersions": [],
       "signatureSha256": "e5c50d237d97c9760373e5b64a273a38f3aaf85a7ccaa597b97b7215506d0851"
     },
     {
       "enumValues": [],
       "name": "commandAcceptedSchema",
-      "requiredFields": [
-        "revision"
-      ],
+      "requiredFields": ["revision"],
       "schemaVersions": [],
       "signatureSha256": "e640cde64859ed600509e68d0aa5d1b62d68335629aff6a53fbbb259a575251b"
     },
     {
       "enumValues": [],
       "name": "commandEnvelopeSchema",
-      "requiredFields": [
-        "commandId",
-        "payload"
-      ],
+      "requiredFields": ["commandId", "payload"],
       "schemaVersions": [],
       "signatureSha256": "983c361eef494c67ba91773e43d14f233fa568daf18e331d3479334bd8b17439"
     },
@@ -5529,12 +5320,7 @@
       "signatureSha256": "15bc843f76044ed9888f3b52693beb6cab6e54435c06c991619135c2c20f8549"
     },
     {
-      "enumValues": [
-        "create",
-        "manual_review",
-        "noop",
-        "update"
-      ],
+      "enumValues": ["create", "manual_review", "noop", "update"],
       "name": "contentLabPlaneRolloutActionSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -5543,11 +5329,7 @@
     {
       "enumValues": [],
       "name": "contentLabPlaneRolloutChangeSchema",
-      "requiredFields": [
-        "after",
-        "before",
-        "field"
-      ],
+      "requiredFields": ["after", "before", "field"],
       "schemaVersions": [],
       "signatureSha256": "ca1e1817f631767854cfe1df90f1bf183ef97558a8c0da8e3d90a47a09fa85bc"
     },
@@ -5566,17 +5348,12 @@
     {
       "enumValues": [],
       "name": "contentLabPlaneRolloutDryRunResponseSchema",
-      "requiredFields": [
-        "dryRun"
-      ],
+      "requiredFields": ["dryRun"],
       "schemaVersions": [],
       "signatureSha256": "597a7c287b076b6860795aae5412e07235bc88e81b834eeb3838b84806e2fd09"
     },
     {
-      "enumValues": [
-        "available",
-        "unavailable"
-      ],
+      "enumValues": ["available", "unavailable"],
       "name": "contentLabPlaneRolloutDryRunSchema",
       "requiredFields": [
         "blockers",
@@ -5619,9 +5396,7 @@
         "workspaceRootId",
         "workspaceSlug"
       ],
-      "schemaVersions": [
-        "content-lab-plane-rollout.v1"
-      ],
+      "schemaVersions": ["content-lab-plane-rollout.v1"],
       "signatureSha256": "18e57108e8d7d4d8c980e419c4f04bccf9549ab22f0380a1018a26c2c80558dd"
     },
     {
@@ -5637,31 +5412,21 @@
         "workflow_improvement"
       ],
       "name": "contentLabPlaneRolloutExecutionObjectSchema",
-      "requiredFields": [
-        "displayName",
-        "outcome",
-        "providerObjectId",
-        "stableKey",
-        "targetKind"
-      ],
+      "requiredFields": ["displayName", "outcome", "providerObjectId", "stableKey", "targetKind"],
       "schemaVersions": [],
       "signatureSha256": "dc6251bda536599b06ac2df78f5e3357111c0b5f73b07326056c0bccc3519ee9"
     },
     {
       "enumValues": [],
       "name": "contentLabPlaneRolloutExecutionRequestSchema",
-      "requiredFields": [
-        "approvedDryRunSha256"
-      ],
+      "requiredFields": ["approvedDryRunSha256"],
       "schemaVersions": [],
       "signatureSha256": "24330ebb49f919928695047a667a926406d6e08ccefb50588449db02c611fd64"
     },
     {
       "enumValues": [],
       "name": "contentLabPlaneRolloutExecutionResponseSchema",
-      "requiredFields": [
-        "execution"
-      ],
+      "requiredFields": ["execution"],
       "schemaVersions": [],
       "signatureSha256": "910bc797f3d0041abd66fe2f190a9aebc289fcee80983dee6f29a65658032083"
     },
@@ -5686,9 +5451,7 @@
         "updated",
         "writes"
       ],
-      "schemaVersions": [
-        "content-lab-plane-rollout.v1"
-      ],
+      "schemaVersions": ["content-lab-plane-rollout.v1"],
       "signatureSha256": "f628b8e1b40e406c38ba872fb49f6ee47c63b492c27f6bf8101297f705031645"
     },
     {
@@ -5766,11 +5529,7 @@
     {
       "enumValues": [],
       "name": "copyPromptFragmentPayloadSchema",
-      "requiredFields": [
-        "destinationScope",
-        "sourcePromptFragmentRevisionId",
-        "sourceSha256"
-      ],
+      "requiredFields": ["destinationScope", "sourcePromptFragmentRevisionId", "sourceSha256"],
       "schemaVersions": [],
       "signatureSha256": "02027300b17e9fa24c229be3ddd99c4bf0d70b4379c413aef151a04f95bfdec2"
     },
@@ -5831,36 +5590,21 @@
     {
       "enumValues": [],
       "name": "createMemoryImportPayloadSchema",
-      "requiredFields": [
-        "backendId",
-        "sourceSelection",
-        "tags",
-        "title"
-      ],
+      "requiredFields": ["backendId", "sourceSelection", "tags", "title"],
       "schemaVersions": [],
       "signatureSha256": "cb92ba59d324bae0ae2dfb895bcd53da40e2b0f43f8dc7b4c9b3bc5ba1a6cb45"
     },
     {
       "enumValues": [],
       "name": "createProjectActionPayloadSchema",
-      "requiredFields": [
-        "ownerParticipantId",
-        "title",
-        "workId"
-      ],
+      "requiredFields": ["ownerParticipantId", "title", "workId"],
       "schemaVersions": [],
       "signatureSha256": "68043ad0f1e1c95d8ddbd173f6dc5ca922caea171155bab504b1b1302035c1e9"
     },
     {
       "enumValues": [],
       "name": "createProjectWorkPayloadSchema",
-      "requiredFields": [
-        "hypothesis",
-        "kind",
-        "practiceKey",
-        "sourceRef",
-        "targetPlatforms"
-      ],
+      "requiredFields": ["hypothesis", "kind", "practiceKey", "sourceRef", "targetPlatforms"],
       "schemaVersions": [],
       "signatureSha256": "61221f01b9781e985bb071b5e2e0b94b039a7365adac30a9e45f3863e9327e99"
     },
@@ -5874,20 +5618,14 @@
     {
       "enumValues": [],
       "name": "createRulePayloadSchema",
-      "requiredFields": [
-        "priority",
-        "revision",
-        "title"
-      ],
+      "requiredFields": ["priority", "revision", "title"],
       "schemaVersions": [],
       "signatureSha256": "267e1d696ff44b2a5a685ad1dc5b4702ee5f036f4ce4d2889c6bb249b58d7535"
     },
     {
       "enumValues": [],
       "name": "createRuleTagPayloadSchema",
-      "requiredFields": [
-        "name"
-      ],
+      "requiredFields": ["name"],
       "schemaVersions": [],
       "signatureSha256": "327d6e7d5f4b1cfe5e0c15abaa8893dd29428fb88565f4e278aaa8be6bb44d08"
     },
@@ -5913,27 +5651,21 @@
     {
       "enumValues": [],
       "name": "currentProjectBootstrapResponseSchema",
-      "requiredFields": [
-        "projectBootstrap"
-      ],
+      "requiredFields": ["projectBootstrap"],
       "schemaVersions": [],
       "signatureSha256": "8b0f04ae2aede66a23af8b9b34f9512401bb3051d906f30b7e9c93b10f8a0fcb"
     },
     {
       "enumValues": [],
       "name": "currentProjectCandidateResponseSchema",
-      "requiredFields": [
-        "candidate"
-      ],
+      "requiredFields": ["candidate"],
       "schemaVersions": [],
       "signatureSha256": "4ea044c268dcc61549f78c52bb7ea7dd7d1fe05febc28c783aec3527d8befdce"
     },
     {
       "enumValues": [],
       "name": "currentPromptReviewResponseSchema",
-      "requiredFields": [
-        "promptReview"
-      ],
+      "requiredFields": ["promptReview"],
       "schemaVersions": [],
       "signatureSha256": "37e8780073bcc0e5ac8718551050dae1fe7b73a16b3bb0fc0572b8abb75b9f2b"
     },
@@ -5947,9 +5679,7 @@
     {
       "enumValues": [],
       "name": "cursorPageSchema",
-      "requiredFields": [
-        "items"
-      ],
+      "requiredFields": ["items"],
       "schemaVersions": [],
       "signatureSha256": "683137395f5526f8ca12cc7f4aa9e7b80e8865df341451f32173b94a74e0b9af"
     },
@@ -5969,12 +5699,7 @@
         "selected"
       ],
       "name": "decideProjectWorkTransitionPayloadSchema",
-      "requiredFields": [
-        "decidedByParticipantId",
-        "evidenceIds",
-        "rationale",
-        "targetState"
-      ],
+      "requiredFields": ["decidedByParticipantId", "evidenceIds", "rationale", "targetState"],
       "schemaVersions": [],
       "signatureSha256": "ea7eb3cab8a4dcc834675e68b374a44c8a75d4c63c9f6d2c283d65cc883e8711"
     },
@@ -5992,9 +5717,7 @@
         "productRunId",
         "schemaVersion"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "c541f04b4bb8a26d0c921c0ea13419edd8a79279f0bc6ade1ce79ac18d4a572e"
     },
     {
@@ -6012,11 +5735,7 @@
       "signatureSha256": "a58f54fc6db28bd4c2c8be9c44b4adf9244b091575260fe5e168ad52009721b7"
     },
     {
-      "enumValues": [
-        "backlog",
-        "started",
-        "unstarted"
-      ],
+      "enumValues": ["backlog", "started", "unstarted"],
       "name": "ensurePlaneWorkItemIntentSchema",
       "requiredFields": [
         "description",
@@ -6041,9 +5760,7 @@
     {
       "enumValues": [],
       "name": "executePlaneProjectOperationPayloadSchema",
-      "requiredFields": [
-        "planeProjectOperationId"
-      ],
+      "requiredFields": ["planeProjectOperationId"],
       "schemaVersions": [],
       "signatureSha256": "0adb9023039ad0fe7089b17d624b4a728b2ed07da6216a3aeb83e74e3c7d5ba4"
     },
@@ -6062,20 +5779,9 @@
       "signatureSha256": "a9122ca9766a659d9f321992d2547026964977cff9d89ad4dc989c03ecc3df15"
     },
     {
-      "enumValues": [
-        "failed",
-        "running",
-        "succeeded"
-      ],
+      "enumValues": ["failed", "running", "succeeded"],
       "name": "executionStepTraceDtoSchema",
-      "requiredFields": [
-        "input",
-        "output",
-        "parentWorkflowNodeRunId",
-        "status",
-        "stepId",
-        "title"
-      ],
+      "requiredFields": ["input", "output", "parentWorkflowNodeRunId", "status", "stepId", "title"],
       "schemaVersions": [],
       "signatureSha256": "1ac8bb98b86419748d9908b760749e752ec522e83190374c7eb52d44e453c503"
     },
@@ -6096,16 +5802,8 @@
     {
       "enumValues": [],
       "name": "executionTracePageSchema",
-      "requiredFields": [
-        "hasMore",
-        "items",
-        "nextCursor",
-        "productRunId",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-execution-trace.v1"
-      ],
+      "requiredFields": ["hasMore", "items", "nextCursor", "productRunId", "schemaVersion"],
+      "schemaVersions": ["chat-execution-trace.v1"],
       "signatureSha256": "a94a7bcd54a7d15ee069a1e24a0ee2df94b07d90c77afe5d39bf7fd65f217691"
     },
     {
@@ -6125,36 +5823,28 @@
     {
       "enumValues": [],
       "name": "getPlaneProjectBindingQuerySchema",
-      "requiredFields": [
-        "planeProjectBindingId"
-      ],
+      "requiredFields": ["planeProjectBindingId"],
       "schemaVersions": [],
       "signatureSha256": "d449cd055ac46f5f83b122f3d4745141f934264e45db47321f9655410a728b6c"
     },
     {
       "enumValues": [],
       "name": "getPlaneProjectBindingResponseSchema",
-      "requiredFields": [
-        "binding"
-      ],
+      "requiredFields": ["binding"],
       "schemaVersions": [],
       "signatureSha256": "52775f11338be62e75ec21dbd70820828dc120ed932d2d8cd6291e4d915a715f"
     },
     {
       "enumValues": [],
       "name": "getPlaneProjectSnapshotQuerySchema",
-      "requiredFields": [
-        "planeProjectBindingId"
-      ],
+      "requiredFields": ["planeProjectBindingId"],
       "schemaVersions": [],
       "signatureSha256": "0adbc1b9c375cba5ced77075dbaaa468e31cf9544924c7b08670e9480509e256"
     },
     {
       "enumValues": [],
       "name": "getPlaneProjectSnapshotResponseSchema",
-      "requiredFields": [
-        "snapshot"
-      ],
+      "requiredFields": ["snapshot"],
       "schemaVersions": [],
       "signatureSha256": "caf3eb304a6e7c78e80f39c3eaf88e4e19c87eefb303bcac5c4659710cf52a7a"
     },
@@ -6190,9 +5880,7 @@
     {
       "enumValues": [],
       "name": "legacyAgentVersionV1Schema",
-      "requiredFields": [
-        "sha256"
-      ],
+      "requiredFields": ["sha256"],
       "schemaVersions": [],
       "signatureSha256": "d80844a2e61d9f97b885d137e1df0dcb35d83bcdd6246eb79342a86008b650bd"
     },
@@ -6204,101 +5892,72 @@
       "signatureSha256": "8f8f05560652b6ec4f82180084000367d80b0ced61968e262010c8d29b1821a3"
     },
     {
-      "enumValues": [
-        "active",
-        "archived",
-        "needs_attention"
-      ],
+      "enumValues": ["active", "archived", "needs_attention"],
       "name": "listPlaneProjectBindingsQuerySchema",
-      "requiredFields": [
-        "limit"
-      ],
+      "requiredFields": ["limit"],
       "schemaVersions": [],
       "signatureSha256": "71c99872aca53be0168431a2d012ea6f2f8c572c9f3b7290359f12b5494782a9"
     },
     {
       "enumValues": [],
       "name": "listPlaneProjectBindingsResponseSchema",
-      "requiredFields": [
-        "bindings"
-      ],
+      "requiredFields": ["bindings"],
       "schemaVersions": [],
       "signatureSha256": "2973b0a18b28a0c278ca6283deb3156f07a905399385478c2d7f8755f35ba5c2"
     },
     {
       "enumValues": [],
       "name": "listPlaneProjectInboundChangesQuerySchema",
-      "requiredFields": [
-        "limit"
-      ],
+      "requiredFields": ["limit"],
       "schemaVersions": [],
       "signatureSha256": "1f036e8f6ee475fcc7e4498d83b74c99de2cbca611b0efa5c81b1e0c008a0141"
     },
     {
       "enumValues": [],
       "name": "listPlaneProjectInboundChangesResponseSchema",
-      "requiredFields": [
-        "inboundChanges"
-      ],
+      "requiredFields": ["inboundChanges"],
       "schemaVersions": [],
       "signatureSha256": "e092f6c224bf01d83dec9180abee47f53e179ac0a67f9ea32fcb0d01f3a58618"
     },
     {
       "enumValues": [],
       "name": "listPlaneProjectOperationsQuerySchema",
-      "requiredFields": [
-        "limit"
-      ],
+      "requiredFields": ["limit"],
       "schemaVersions": [],
       "signatureSha256": "c73242c2ba165c65dacdd8b5eb32bb14f6d685142a0baa8b192ad4d19530c274"
     },
     {
       "enumValues": [],
       "name": "listPlaneProjectOperationsResponseSchema",
-      "requiredFields": [
-        "operations"
-      ],
+      "requiredFields": ["operations"],
       "schemaVersions": [],
       "signatureSha256": "e3fba8629cbc10f4ee68447aa784103a891ab841420aef22f75ed7a0adcb0216"
     },
     {
       "enumValues": [],
       "name": "listPlaneWorkItemCommentsQuerySchema",
-      "requiredFields": [
-        "limit"
-      ],
+      "requiredFields": ["limit"],
       "schemaVersions": [],
       "signatureSha256": "48ca9b3fdba09615480063a4c646bb76b325d5f3e250b6d92167329c15383e21"
     },
     {
       "enumValues": [],
       "name": "listPlaneWorkItemCommentsResponseSchema",
-      "requiredFields": [
-        "snapshot"
-      ],
+      "requiredFields": ["snapshot"],
       "schemaVersions": [],
       "signatureSha256": "6f9be500ff20daa60dacb794c9158b5c436419ae3a7819e9c0d9d049f8278163"
     },
     {
-      "enumValues": [
-        "active",
-        "archived",
-        "global",
-        "workspace"
-      ],
+      "enumValues": ["active", "archived", "global", "workspace"],
       "name": "listPromptFragmentsQuerySchema",
-      "requiredFields": [
-        "limit"
-      ],
+      "requiredFields": ["limit"],
       "schemaVersions": [],
       "signatureSha256": "a0a0319cf16ce199abea58668b7ba5bf955ec93c39c840d5697a47aafdda47b3"
     },
     {
       "enumValues": [],
       "name": "listRulesQuerySchema",
-      "requiredFields": [
-        "limit"
-      ],
+      "requiredFields": ["limit"],
       "schemaVersions": [],
       "signatureSha256": "a8472bf6cd10f01df9626d41e831fd20f197b1dabcd719768619a093fa8fc335"
     },
@@ -6312,11 +5971,7 @@
     {
       "enumValues": [],
       "name": "manuallyDisposePlaneProjectOperationPayloadSchema",
-      "requiredFields": [
-        "disposition",
-        "planeProjectOperationId",
-        "reason"
-      ],
+      "requiredFields": ["disposition", "planeProjectOperationId", "reason"],
       "schemaVersions": [],
       "signatureSha256": "1f3291c4a44ded237c6df8143bb786d5c53b7872d915f6792f653ad6a4afbeaa"
     },
@@ -6335,12 +5990,7 @@
       "signatureSha256": "e8d7cdc21591c3e6205bf28fb4eb457a93afad0978ae8235f449449f3137a18d"
     },
     {
-      "enumValues": [
-        "memmy",
-        "ready",
-        "tencent_memorycore",
-        "unavailable"
-      ],
+      "enumValues": ["memmy", "ready", "tencent_memorycore", "unavailable"],
       "name": "memoryBackendProfileDtoSchema",
       "requiredFields": [
         "backendId",
@@ -6355,33 +6005,18 @@
         "schemaVersion",
         "tags"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "48f1426eefff374437a9576249b748a1a4a50d49c56cd0cd7b090715206260f9"
     },
     {
       "enumValues": [],
       "name": "memoryContextSelectionSchema",
-      "requiredFields": [
-        "backendId",
-        "contextBudget",
-        "layers",
-        "limit",
-        "requirement",
-        "tags"
-      ],
+      "requiredFields": ["backendId", "contextBudget", "layers", "limit", "requirement", "tags"],
       "schemaVersions": [],
       "signatureSha256": "fa99301542783356333d565759d357b2f5c5b9bc27e440b324d18364d881ebac"
     },
     {
-      "enumValues": [
-        "policy",
-        "skill",
-        "span",
-        "trace",
-        "world_model"
-      ],
+      "enumValues": ["policy", "skill", "span", "trace", "world_model"],
       "name": "memoryContextSourceDtoSchema",
       "requiredFields": [
         "backendId",
@@ -6399,13 +6034,7 @@
     {
       "enumValues": [],
       "name": "memoryImportDtoSchema",
-      "requiredFields": [
-        "allowedActions",
-        "errorCode",
-        "externalObjectId",
-        "status",
-        "summary"
-      ],
+      "requiredFields": ["allowedActions", "errorCode", "externalObjectId", "status", "summary"],
       "schemaVersions": [],
       "signatureSha256": "2138f41e5d7db2d4f5e8fa91b275f72bd07211d609e7e4462883368d77bc3800"
     },
@@ -6424,12 +6053,7 @@
       "signatureSha256": "6a4fea6a7599b634b592450a149eb71ffa4900167b365895a04bb6c809ffb1aa"
     },
     {
-      "enumValues": [
-        "L1",
-        "L2",
-        "L3",
-        "Skill"
-      ],
+      "enumValues": ["L1", "L2", "L3", "Skill"],
       "name": "memoryLayerSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -6443,10 +6067,7 @@
       "signatureSha256": "7c815fe10fcc784845b1e7f985ba87923ecba04a90728fe2ecf9e1b7faa991bd"
     },
     {
-      "enumValues": [
-        "optional",
-        "required"
-      ],
+      "enumValues": ["optional", "required"],
       "name": "memoryRequirementSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -6486,9 +6107,7 @@
         "sessionSequence",
         "sha256"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "c39ef4300c5e81b5f17d3877cfecb94e8335ce2e79a32ae0388fdd10721b54f2"
     },
     {
@@ -6501,9 +6120,7 @@
     {
       "enumValues": [],
       "name": "messageResponseSchema",
-      "requiredFields": [
-        "message"
-      ],
+      "requiredFields": ["message"],
       "schemaVersions": [],
       "signatureSha256": "9d9ab4b8bde7fed906ec3cdb9733f61a90c60bb8b292c13bfb7a25a78881e3b2"
     },
@@ -6522,22 +6139,14 @@
       "signatureSha256": "b8e3e916c53f2df4a60ca9f359c9811b1bcf36fc541b229d83ab196a54a5d049"
     },
     {
-      "enumValues": [
-        "archive",
-        "restore",
-        "revise"
-      ],
+      "enumValues": ["archive", "restore", "revise"],
       "name": "noteAllowedActionSchema",
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "48cc5a97a078718ee22b51e53e53e8eaf119ae3d992fd397b1db05a4c6396cf6"
     },
     {
-      "enumValues": [
-        "confirm",
-        "reject",
-        "request_revision"
-      ],
+      "enumValues": ["confirm", "reject", "request_revision"],
       "name": "noteCandidateAllowedActionSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -6551,50 +6160,30 @@
       "signatureSha256": "866de29ae3fe8cab7dd1f39e363554f300e4db284a249f768672bedb3ada9c18"
     },
     {
-      "enumValues": [
-        "confirmed",
-        "rejected",
-        "revision_requested"
-      ],
+      "enumValues": ["confirmed", "rejected", "revision_requested"],
       "name": "noteCandidateReviewDtoSchema",
-      "requiredFields": [
-        "allowedActions",
-        "code",
-        "failure",
-        "status",
-        "summary"
-      ],
+      "requiredFields": ["allowedActions", "code", "failure", "status", "summary"],
       "schemaVersions": [],
       "signatureSha256": "01db3ac92c08a8354d8e799d3cdaf0e777e9ac2cc6c3f4a316817e75911f75bc"
     },
     {
       "enumValues": [],
       "name": "noteCaptureSubmitInputSchema",
-      "requiredFields": [
-        "kind"
-      ],
+      "requiredFields": ["kind"],
       "schemaVersions": [],
       "signatureSha256": "d2776ef68504d788d4af0e695d0f2060b4802dafa307d5c583bb4b92ffbe4865"
     },
     {
       "enumValues": [],
       "name": "noteCaptureSubmitSourceSchema",
-      "requiredFields": [
-        "endUtf16",
-        "kind",
-        "selectedTextSha256",
-        "startUtf16"
-      ],
+      "requiredFields": ["endUtf16", "kind", "selectedTextSha256", "startUtf16"],
       "schemaVersions": [],
       "signatureSha256": "5ffd7a1a59d7aeebf4cf5270cdd007927c1a5e9a80c3e5f3391385da47b85451"
     },
     {
       "enumValues": [],
       "name": "noteDecisionDtoSchema",
-      "requiredFields": [
-        "kind",
-        "revisionInstruction"
-      ],
+      "requiredFields": ["kind", "revisionInstruction"],
       "schemaVersions": [],
       "signatureSha256": "3a0b82f96066fd996c7cb04e576465ecfd86a1fb32187a042ad2c6dbc1a90650"
     },
@@ -6608,23 +6197,15 @@
     {
       "enumValues": [],
       "name": "noteDetailDtoSchema",
-      "requiredFields": [
-        "allowedActions",
-        "status"
-      ],
+      "requiredFields": ["allowedActions", "status"],
       "schemaVersions": [],
       "signatureSha256": "63df44da586c0582d4cd8e57d073c04951c3f927d8a3ba6e8bbd79ef5adcc72f"
     },
     {
       "enumValues": [],
       "name": "noteHistoryPageDtoSchema",
-      "requiredFields": [
-        "items",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-note-api.v1"
-      ],
+      "requiredFields": ["items", "schemaVersion"],
+      "schemaVersions": ["chat-note-api.v1"],
       "signatureSha256": "d32f1208c33449aaa9eee9b7e7df238cc0c4d5b32847038f405edb318208b4f4"
     },
     {
@@ -6637,13 +6218,8 @@
     {
       "enumValues": [],
       "name": "notePageDtoSchema",
-      "requiredFields": [
-        "items",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-note-api.v1"
-      ],
+      "requiredFields": ["items", "schemaVersion"],
+      "schemaVersions": ["chat-note-api.v1"],
       "signatureSha256": "590e26f78e83d808c94cea3de8d6edc4f97d2c172766bb9338ed783ac1a2f0ef"
     },
     {
@@ -6663,9 +6239,7 @@
         "tags",
         "title"
       ],
-      "schemaVersions": [
-        "chat-note-api.v1"
-      ],
+      "schemaVersions": ["chat-note-api.v1"],
       "signatureSha256": "ffa3c31f49b7405c81902633d57445e90111c912f02dbea90902475fc49f7170"
     },
     {
@@ -6678,12 +6252,7 @@
     {
       "enumValues": [],
       "name": "noteRevisionInputSchema",
-      "requiredFields": [
-        "contentMarkdown",
-        "kind",
-        "tagLabels",
-        "title"
-      ],
+      "requiredFields": ["contentMarkdown", "kind", "tagLabels", "title"],
       "schemaVersions": [],
       "signatureSha256": "bece82e7974f602c506b485592d9ac86c1829750851bd74f64df580c882b996b"
     },
@@ -6701,18 +6270,13 @@
         "tags",
         "title"
       ],
-      "schemaVersions": [
-        "chat-note-api.v1"
-      ],
+      "schemaVersions": ["chat-note-api.v1"],
       "signatureSha256": "d552c6f210b0a5a9ad69f5df124ab8f647204deff57865b07be7ef5c2d67f789"
     },
     {
       "enumValues": [],
       "name": "noteSummaryDtoSchema",
-      "requiredFields": [
-        "allowedActions",
-        "status"
-      ],
+      "requiredFields": ["allowedActions", "status"],
       "schemaVersions": [],
       "signatureSha256": "11df05cbdb76fbc545805871ee8ac059016c7326a8d2f652af756c610bf895e0"
     },
@@ -6731,12 +6295,7 @@
       "signatureSha256": "0acb1ef44f476a7d77a7fa85147c9301eb084af4332afe7f885022735c2c0d70"
     },
     {
-      "enumValues": [
-        "direct_agent",
-        "executor",
-        "note_capture",
-        "planner"
-      ],
+      "enumValues": ["direct_agent", "executor", "note_capture", "planner"],
       "name": "piTraceActivityDtoSchema",
       "requiredFields": [
         "activityKey",
@@ -6752,25 +6311,14 @@
       "signatureSha256": "f520df6c84c06f186971d6426548bb0d46bae3137db9c71ffc23aa01116856ac"
     },
     {
-      "enumValues": [
-        "agent",
-        "model",
-        "tool"
-      ],
+      "enumValues": ["agent", "model", "tool"],
       "name": "piTraceActivityKindSchema",
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "baec397de29dc8c66d39598d7e071a738d81d02bd910b8885cf3b95c5e56f0b3"
     },
     {
-      "enumValues": [
-        "blocked",
-        "cancelled",
-        "failed",
-        "outcome_unknown",
-        "running",
-        "succeeded"
-      ],
+      "enumValues": ["blocked", "cancelled", "failed", "outcome_unknown", "running", "succeeded"],
       "name": "piTraceActivityStatusSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -6789,9 +6337,7 @@
         "status",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "b7dd9bb911ba9483083bfaf726c11ed0bbf76326de90004a1f3b9ce7be7db62e"
     },
     {
@@ -6858,11 +6404,7 @@
       "signatureSha256": "289293f499b98c09958291e3e097cbb7af6978f3e13d435aec3d83a2af26d100"
     },
     {
-      "enumValues": [
-        "active",
-        "archived",
-        "needs_attention"
-      ],
+      "enumValues": ["active", "archived", "needs_attention"],
       "name": "planeProjectBindingSchema",
       "requiredFields": [
         "createdAt",
@@ -6881,9 +6423,7 @@
         "status",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "plane-project-coordination.v2"
-      ],
+      "schemaVersions": ["plane-project-coordination.v2"],
       "signatureSha256": "94cd3e0bfee205328a77e803ad6315beab8ba7f59b9ae0e5b6dfce9cfeb96f5a"
     },
     {
@@ -6896,23 +6436,12 @@
     {
       "enumValues": [],
       "name": "planeProjectLabelSnapshotSchema",
-      "requiredFields": [
-        "color",
-        "name",
-        "planeLabelId"
-      ],
+      "requiredFields": ["color", "name", "planeLabelId"],
       "schemaVersions": [],
       "signatureSha256": "62a48dbe0145a72a80c9051f6642bbcae8e79b11561c257bff5dff42d07dbf18"
     },
     {
-      "enumValues": [
-        "backlog",
-        "cancelled",
-        "completed",
-        "in-progress",
-        "paused",
-        "planned"
-      ],
+      "enumValues": ["backlog", "cancelled", "completed", "in-progress", "paused", "planned"],
       "name": "planeProjectModuleSnapshotSchema",
       "requiredFields": [
         "backlogWorkItems",
@@ -6973,21 +6502,14 @@
     {
       "enumValues": [],
       "name": "planeProjectOperationManualDispositionSchema",
-      "requiredFields": [
-        "actorPrincipalId",
-        "disposedAt",
-        "disposition",
-        "reason"
-      ],
+      "requiredFields": ["actorPrincipalId", "disposedAt", "disposition", "reason"],
       "schemaVersions": [],
       "signatureSha256": "ae03022bda48af63e1f3eb0a674f72e076334c31910a7b489c3b4486350d58eb"
     },
     {
       "enumValues": [],
       "name": "planeProjectOperationResponseSchema",
-      "requiredFields": [
-        "operation"
-      ],
+      "requiredFields": ["operation"],
       "schemaVersions": [],
       "signatureSha256": "a00a78bb44a6d3736de28e779b7a50f99263d6b931d9b37d27de78fa01869b87"
     },
@@ -7012,9 +6534,7 @@
         "status",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "plane-project-coordination.v2"
-      ],
+      "schemaVersions": ["plane-project-coordination.v2"],
       "signatureSha256": "81d35023b0dd7e8c77e45d6d3a70448dfbc0f7c2e8c823f3523f066e3c644da9"
     },
     {
@@ -7056,19 +6576,13 @@
         "workItems",
         "workspaceRootId"
       ],
-      "schemaVersions": [
-        "plane-project-coordination.v2"
-      ],
+      "schemaVersions": ["plane-project-coordination.v2"],
       "signatureSha256": "9ba6df399365afe47654831d3c43bbce17263c800422a53563076600d0887491"
     },
     {
       "enumValues": [],
       "name": "planeProjectStateSnapshotSchema",
-      "requiredFields": [
-        "group",
-        "name",
-        "planeStateId"
-      ],
+      "requiredFields": ["group", "name", "planeStateId"],
       "schemaVersions": [],
       "signatureSha256": "88069ace277f7b8d46cf9caecefa60eec156e1bfa2ae5ce0cf27eea4caef9776"
     },
@@ -7097,13 +6611,7 @@
       "signatureSha256": "e5582737307212c401a8dc7179a8cfc6a4b738889970c0a9cf85f72c431826cf"
     },
     {
-      "enumValues": [
-        "backlog",
-        "cancelled",
-        "completed",
-        "started",
-        "unstarted"
-      ],
+      "enumValues": ["backlog", "cancelled", "completed", "started", "unstarted"],
       "name": "planeStateGroupSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -7135,23 +6643,13 @@
         "totalCommentCount",
         "truncated"
       ],
-      "schemaVersions": [
-        "plane-project-coordination.v2"
-      ],
+      "schemaVersions": ["plane-project-coordination.v2"],
       "signatureSha256": "0354ac2348767bf545df389080aa4d4c5518e8951a0dbeb5301d4de07f49c603"
     },
     {
-      "enumValues": [
-        "human_or_other",
-        "later_agent"
-      ],
+      "enumValues": ["human_or_other", "later_agent"],
       "name": "planeWorkItemCommentSummarySchema",
-      "requiredFields": [
-        "excerpt",
-        "origin",
-        "planeCommentId",
-        "planeWorkItemId"
-      ],
+      "requiredFields": ["excerpt", "origin", "planeCommentId", "planeWorkItemId"],
       "schemaVersions": [],
       "signatureSha256": "58cfe523db6ce74fd1e3b580eb302569be5153c86428db1336e9eddba15261de"
     },
@@ -7163,13 +6661,7 @@
       "signatureSha256": "d65e6802ee2ce928aec50b1dc271f3f0130d02a1f08c1e4a15e23bfb53273051"
     },
     {
-      "enumValues": [
-        "high",
-        "low",
-        "medium",
-        "none",
-        "urgent"
-      ],
+      "enumValues": ["high", "low", "medium", "none", "urgent"],
       "name": "planeWorkItemPrioritySchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -7213,38 +6705,28 @@
     {
       "enumValues": [],
       "name": "preparePlaneProjectOperationPayloadSchema",
-      "requiredFields": [
-        "intent",
-        "planeProjectBindingId"
-      ],
+      "requiredFields": ["intent", "planeProjectBindingId"],
       "schemaVersions": [],
       "signatureSha256": "e6917e24f5d4a1aabeef6cfd9dbdc39256d01c9048d84d3f8d6c4c93b013c602"
     },
     {
       "enumValues": [],
       "name": "previewPromptAssemblyPayloadSchema",
-      "requiredFields": [
-        "selection",
-        "text"
-      ],
+      "requiredFields": ["selection", "text"],
       "schemaVersions": [],
       "signatureSha256": "f814116065c820da6d62f51660e8f3e9f208f0e1a3bed15e317234a86a23b42c"
     },
     {
       "enumValues": [],
       "name": "previewPromptConfigurationPayloadSchema",
-      "requiredFields": [
-        "selection"
-      ],
+      "requiredFields": ["selection"],
       "schemaVersions": [],
       "signatureSha256": "b84810ae46404c702b8b7e46d758ac0fdc969437cd122e9899fa865d7d446af6"
     },
     {
       "enumValues": [],
       "name": "previewPromptTurnPayloadSchema",
-      "requiredFields": [
-        "message"
-      ],
+      "requiredFields": ["message"],
       "schemaVersions": [],
       "signatureSha256": "1be7b70ccc2c91be1a02a65968e81acc73193a6c658c3585b2177e553a5b57ba"
     },
@@ -7333,11 +6815,7 @@
     {
       "enumValues": [],
       "name": "projectAdvancementCandidateDecisionPayloadSchema",
-      "requiredFields": [
-        "candidateSha256",
-        "kind",
-        "proposal"
-      ],
+      "requiredFields": ["candidateSha256", "kind", "proposal"],
       "schemaVersions": [],
       "signatureSha256": "cfd2e7bb693c45eb6ac98871b1c461439129037c048dd6d364b23a664fcb31a9"
     },
@@ -7363,9 +6841,7 @@
         "sha256",
         "timezone"
       ],
-      "schemaVersions": [
-        "project-management-api.v1"
-      ],
+      "schemaVersions": ["project-management-api.v1"],
       "signatureSha256": "16ba494558cdcb8bf634dbda9d3ac9871bd0dab3e27eae2d245cc67ea0c7f9b7"
     },
     {
@@ -7378,19 +6854,14 @@
     {
       "enumValues": [],
       "name": "projectAgentOpeningPacketQuerySchema",
-      "requiredFields": [
-        "includeResourceContext",
-        "refreshPlane"
-      ],
+      "requiredFields": ["includeResourceContext", "refreshPlane"],
       "schemaVersions": [],
       "signatureSha256": "90875e0696f9ef431cd9b95757fbc9ac87cbd6aa6f60b9fd7444fc5e3ee0acd9"
     },
     {
       "enumValues": [],
       "name": "projectAgentOpeningPacketResponseSchema",
-      "requiredFields": [
-        "packet"
-      ],
+      "requiredFields": ["packet"],
       "schemaVersions": [],
       "signatureSha256": "d36df6bbc6f87053c8993079ac97d638d7647019bc30d0286bcb5e33a5997813"
     },
@@ -7470,35 +6941,27 @@
         "workCandidates",
         "workspaceRootId"
       ],
-      "schemaVersions": [
-        "project-agent-coordination.v1"
-      ],
+      "schemaVersions": ["project-agent-coordination.v1"],
       "signatureSha256": "3a6945e129635048f795119bddfa23b73cd7ed015b02b7c867d58821c91620cb"
     },
     {
       "enumValues": [],
       "name": "projectAgentOpeningPacketV2QuerySchema",
-      "requiredFields": [
-        "includeResourceContext"
-      ],
+      "requiredFields": ["includeResourceContext"],
       "schemaVersions": [],
       "signatureSha256": "d617a9be467d8190345a5b983f29a444dedf0352a3c8a0e3be772db2d12d7f8e"
     },
     {
       "enumValues": [],
       "name": "projectAgentOpeningPacketV2ResponseSchema",
-      "requiredFields": [
-        "packet"
-      ],
+      "requiredFields": ["packet"],
       "schemaVersions": [],
       "signatureSha256": "63afabbb3e777dda88f994becac67459fb9820f578d57d2c8cf48ef4cb462a21"
     },
     {
       "enumValues": [],
       "name": "projectAgentOpeningPacketV2Schema",
-      "requiredFields": [
-        "allowedActions"
-      ],
+      "requiredFields": ["allowedActions"],
       "schemaVersions": [],
       "signatureSha256": "ba827f4e9c2d25956ab8f798b3e8a4c991c9676d5aea1113e4971cd27f7da9de"
     },
@@ -7533,9 +6996,7 @@
         "status",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "project-bootstrap.v1"
-      ],
+      "schemaVersions": ["project-bootstrap.v1"],
       "signatureSha256": "a61a5d0fb9cc4f56cef62ff374563f4783aef238ce970fa211b7edf04a325481"
     },
     {
@@ -7577,10 +7038,7 @@
       "signatureSha256": "264f1b266525dbf0350a64310e22fa185b9f0f3ead0f4ac043f402ac553b97de"
     },
     {
-      "enumValues": [
-        "confirm",
-        "reject"
-      ],
+      "enumValues": ["confirm", "reject"],
       "name": "projectBootstrapDecisionPayloadSchema",
       "requiredFields": [
         "candidateRevision",
@@ -7594,17 +7052,12 @@
     {
       "enumValues": [],
       "name": "projectBootstrapDecisionResponseSchema",
-      "requiredFields": [
-        "candidate"
-      ],
+      "requiredFields": ["candidate"],
       "schemaVersions": [],
       "signatureSha256": "869daaad1142e5be9fc291feba0e6f9d2cca656df0185e87495710af3febc10a"
     },
     {
-      "enumValues": [
-        "confirm",
-        "reject"
-      ],
+      "enumValues": ["confirm", "reject"],
       "name": "projectBootstrapDecisionSchema",
       "requiredFields": [
         "candidateRevision",
@@ -7616,16 +7069,11 @@
         "projectBootstrapDecisionId",
         "schemaVersion"
       ],
-      "schemaVersions": [
-        "project-bootstrap.v1"
-      ],
+      "schemaVersions": ["project-bootstrap.v1"],
       "signatureSha256": "c2a3b59874550c8031cb64efd0d970d04d18feaac2eb94afc9ca35e5d64d031c"
     },
     {
-      "enumValues": [
-        "ai_learning",
-        "blank"
-      ],
+      "enumValues": ["ai_learning", "blank"],
       "name": "projectBootstrapInitializerProfileSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -7656,9 +7104,7 @@
         "updatedAt",
         "workspaceStep"
       ],
-      "schemaVersions": [
-        "project-bootstrap.v1"
-      ],
+      "schemaVersions": ["project-bootstrap.v1"],
       "signatureSha256": "af9c39445ef7df7a3d340597211dc12068a9582a7db9c582a626375c05ed840a"
     },
     {
@@ -7678,12 +7124,7 @@
     {
       "enumValues": [],
       "name": "projectBootstrapPreviewSchema",
-      "requiredFields": [
-        "gitAction",
-        "initialModules",
-        "planeProjectLabel",
-        "workspaceLabel"
-      ],
+      "requiredFields": ["gitAction", "initialModules", "planeProjectLabel", "workspaceLabel"],
       "schemaVersions": [],
       "signatureSha256": "64364f2903a0c54000f736141a98fce7d5fa63a3cd5f3231de386667a2eb4388"
     },
@@ -7706,11 +7147,7 @@
     {
       "enumValues": [],
       "name": "projectBootstrapReviewResponseSchema",
-      "requiredFields": [
-        "candidate",
-        "decision",
-        "operation"
-      ],
+      "requiredFields": ["candidate", "decision", "operation"],
       "schemaVersions": [],
       "signatureSha256": "d27f909c8addc0113f2f3c0391da118490320593550a879f732dde7ec2c21007"
     },
@@ -7725,23 +7162,14 @@
         "terminal"
       ],
       "name": "projectBootstrapSessionProjectionSchema",
-      "requiredFields": [
-        "canRecover",
-        "candidate",
-        "reason",
-        "recovery"
-      ],
+      "requiredFields": ["canRecover", "candidate", "reason", "recovery"],
       "schemaVersions": [],
       "signatureSha256": "e5ca84c481f7379a22605ccff159018746c6d20f398d123a10f20457724a29ab"
     },
     {
       "enumValues": [],
       "name": "projectCandidateDecisionPayloadSchema",
-      "requiredFields": [
-        "candidateSha256",
-        "kind",
-        "proposal"
-      ],
+      "requiredFields": ["candidateSha256", "kind", "proposal"],
       "schemaVersions": [],
       "signatureSha256": "414a484b9d297ee11194836ec85b02a02755392d126b5157a8f16ea6ef24f446"
     },
@@ -7841,9 +7269,7 @@
         "title",
         "version"
       ],
-      "schemaVersions": [
-        "project-management-api.v1"
-      ],
+      "schemaVersions": ["project-management-api.v1"],
       "signatureSha256": "e1bcf1c1c4bd1db05e57d8dd2ad34838566bd4fe396ad258d0e038071f8fda03"
     },
     {
@@ -7909,40 +7335,20 @@
         "updatedAt",
         "workId"
       ],
-      "schemaVersions": [
-        "project-inbound-change.v1"
-      ],
+      "schemaVersions": ["project-inbound-change.v1"],
       "signatureSha256": "baa013367847919f3d505109255c8de2f7d0173cdecb6a40a1e92b037df22fca"
     },
     {
-      "enumValues": [
-        "adopted",
-        "candidate",
-        "ignored",
-        "needs_attention",
-        "observed",
-        "resolved"
-      ],
+      "enumValues": ["adopted", "candidate", "ignored", "needs_attention", "observed", "resolved"],
       "name": "projectInboundChangeStatusSchema",
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "d17e5ff67c579342f4ca81865d413dfc5abe62b5b348bf067896744c8eeab294"
     },
     {
-      "enumValues": [
-        "attention",
-        "observe",
-        "reconcile",
-        "report",
-        "review"
-      ],
+      "enumValues": ["attention", "observe", "reconcile", "report", "review"],
       "name": "projectMaintenanceItemDtoSchema",
-      "requiredFields": [
-        "action",
-        "cadenceKey",
-        "reason",
-        "requiresHumanDecision"
-      ],
+      "requiredFields": ["action", "cadenceKey", "reason", "requiresHumanDecision"],
       "schemaVersions": [],
       "signatureSha256": "1c440bdcb36a9606de581687a3cfbd46dc6570760aa9e086f1ce369f2e2caff8"
     },
@@ -7959,37 +7365,21 @@
         "weekly"
       ],
       "name": "projectMaintenancePlanDtoSchema",
-      "requiredFields": [
-        "evaluatedAt",
-        "items",
-        "projectId",
-        "schemaVersion",
-        "trigger"
-      ],
-      "schemaVersions": [
-        "project-management-api.v1"
-      ],
+      "requiredFields": ["evaluatedAt", "items", "projectId", "schemaVersion", "trigger"],
+      "schemaVersions": ["project-management-api.v1"],
       "signatureSha256": "1627c03c4b6c8ffdd6e308224a91b4f95af2592bfbf25c0010a949edb27341a3"
     },
     {
       "enumValues": [],
       "name": "projectManagementCandidateDecisionPayloadSchema",
-      "requiredFields": [
-        "candidateSha256",
-        "kind",
-        "proposal"
-      ],
+      "requiredFields": ["candidateSha256", "kind", "proposal"],
       "schemaVersions": [],
       "signatureSha256": "a9feeb185f7d0862ce58109a22b3810e6334f562fa996e212e8c0d8527fa7679"
     },
     {
       "enumValues": [],
       "name": "projectManagementCommandContextSchema",
-      "requiredFields": [
-        "commandId",
-        "principalId",
-        "projectId"
-      ],
+      "requiredFields": ["commandId", "principalId", "projectId"],
       "schemaVersions": [],
       "signatureSha256": "77fbe2bdddcf6c56ed09b69149381cc8153eecc9ef0f5cec0e8468acaf3e1b26"
     },
@@ -8024,30 +7414,14 @@
     {
       "enumValues": [],
       "name": "projectObjectQueryResultDtoSchema",
-      "requiredFields": [
-        "generatedAt",
-        "items",
-        "projectId",
-        "query",
-        "schemaVersion",
-        "total"
-      ],
-      "schemaVersions": [
-        "project-management-api.v1"
-      ],
+      "requiredFields": ["generatedAt", "items", "projectId", "query", "schemaVersion", "total"],
+      "schemaVersions": ["project-management-api.v1"],
       "signatureSha256": "c5c33176b656835c265e6ddf107facffd00298740f62a476306c2775663428b2"
     },
     {
-      "enumValues": [
-        "all",
-        "attention",
-        "review"
-      ],
+      "enumValues": ["all", "attention", "review"],
       "name": "projectObjectQuerySchema",
-      "requiredFields": [
-        "limit",
-        "view"
-      ],
+      "requiredFields": ["limit", "view"],
       "schemaVersions": [],
       "signatureSha256": "6e670fdda8fb1d288f0a544c591b8e7c89e8696fb34982453eb6c7d95cd710fd"
     },
@@ -8156,29 +7530,15 @@
     {
       "enumValues": [],
       "name": "projectRootDtoSchema",
-      "requiredFields": [
-        "displayName",
-        "enabledAdapters",
-        "rootId",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-project-api.v2"
-      ],
+      "requiredFields": ["displayName", "enabledAdapters", "rootId", "schemaVersion"],
+      "schemaVersions": ["chat-project-api.v2"],
       "signatureSha256": "16f89e83a832c38b9cd9b433eceeeb345e3f24b6eb2675b15d2d5f376d08a161"
     },
     {
       "enumValues": [],
       "name": "projectRootV3DtoSchema",
-      "requiredFields": [
-        "displayName",
-        "enabledAdapters",
-        "rootId",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-project-api.v3"
-      ],
+      "requiredFields": ["displayName", "enabledAdapters", "rootId", "schemaVersion"],
+      "schemaVersions": ["chat-project-api.v3"],
       "signatureSha256": "d17448f9fc767036a4f1bdb4be0774778e50bae2f7ca2c40942ba65053c0197e"
     },
     {
@@ -8213,9 +7573,7 @@
         "summary",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "chat-project-api.v2"
-      ],
+      "schemaVersions": ["chat-project-api.v2"],
       "signatureSha256": "37d9a4b4bc179611ffb42b66f041f0e42dbcee131ed6d1fd4f19889282651fde"
     },
     {
@@ -8236,9 +7594,7 @@
         "summary",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "chat-project-api.v3"
-      ],
+      "schemaVersions": ["chat-project-api.v3"],
       "signatureSha256": "b39423c3c295f06a88b1f3d6f57e3f0b5e27b636dd5893c49e34011dbec68712"
     },
     {
@@ -8253,13 +7609,7 @@
         "state_transition"
       ],
       "name": "projectTimelineItemDtoSchema",
-      "requiredFields": [
-        "id",
-        "kind",
-        "objectRevision",
-        "occurredAt",
-        "title"
-      ],
+      "requiredFields": ["id", "kind", "objectRevision", "occurredAt", "title"],
       "schemaVersions": [],
       "signatureSha256": "152e495b67bf5901df4bc788087edbb02f3c1135d75b6f9a3d4ed0c3e24d4b2d"
     },
@@ -8313,10 +7663,7 @@
       "signatureSha256": "5606be951bffcb381e8dba636371d9833e4dec5b155214791184ffa4d4e72d09"
     },
     {
-      "enumValues": [
-        "active",
-        "archived"
-      ],
+      "enumValues": ["active", "archived"],
       "name": "projectWorkspaceBindingSchema",
       "requiredFields": [
         "createdAt",
@@ -8335,21 +7682,14 @@
         "updatedAt",
         "workspaceRootId"
       ],
-      "schemaVersions": [
-        "project-bootstrap.v1"
-      ],
+      "schemaVersions": ["project-bootstrap.v1"],
       "signatureSha256": "8acace484cbfc77e314ca313d66960d90e904ab5217e0037e07b4399fa3189a9"
     },
     {
       "enumValues": [],
       "name": "projectWorkspaceCompatibleDtoSchema",
-      "requiredFields": [
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-project-api.v2",
-        "chat-project-api.v3"
-      ],
+      "requiredFields": ["schemaVersion"],
+      "schemaVersions": ["chat-project-api.v2", "chat-project-api.v3"],
       "signatureSha256": "7b8edff75c18ac464284a49f86982f074fd2e019c5569db3378925aff5866e47"
     },
     {
@@ -8411,9 +7751,7 @@
         "summary",
         "works"
       ],
-      "schemaVersions": [
-        "chat-project-api.v2"
-      ],
+      "schemaVersions": ["chat-project-api.v2"],
       "signatureSha256": "9b5c88f2410f8e53d49a52ec58f7f8541bd9323e82358ac1b1392e62bff9a05f"
     },
     {
@@ -8480,9 +7818,7 @@
         "summary",
         "works"
       ],
-      "schemaVersions": [
-        "chat-project-api.v3"
-      ],
+      "schemaVersions": ["chat-project-api.v3"],
       "signatureSha256": "3f9804e6edd87ce5e7bbfe5f22c5e28faea6d0a207a8a73d214f5973472c25d3"
     },
     {
@@ -8504,17 +7840,11 @@
         "systemPromptAppend",
         "userPrompt"
       ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "6e643b05d90c473bf9caace0c844b7f6b56dbb1865272d2f120b12eed9c50739"
     },
     {
-      "enumValues": [
-        "append",
-        "default",
-        "replace"
-      ],
+      "enumValues": ["append", "default", "replace"],
       "name": "promptCompositionModeSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -8532,46 +7862,27 @@
         "sha256",
         "systemPromptAppend"
       ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "3506efc8bf5497cd8def7a843601f87d92b531a7444104ba4fe3775010103057"
     },
     {
       "enumValues": [],
       "name": "promptFragmentCommandResultDtoSchema",
-      "requiredFields": [
-        "promptFragment",
-        "replayed",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "requiredFields": ["promptFragment", "replayed", "schemaVersion"],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "1fdca10ebec4126de7b9708c7bda18e716e45bef1c068867b34ce59ab903f9ab"
     },
     {
       "enumValues": [],
       "name": "promptFragmentDetailDtoSchema",
-      "requiredFields": [
-        "currentRevision",
-        "fragment",
-        "revisions",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "requiredFields": ["currentRevision", "fragment", "revisions", "schemaVersion"],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "f398513d973eb8d44c9c8952bd02defa0c5bcf4616a1067dadaac8f23db78403"
     },
     {
       "enumValues": [],
       "name": "promptFragmentDraftPayloadSchema",
-      "requiredFields": [
-        "content",
-        "regionKey",
-        "title"
-      ],
+      "requiredFields": ["content", "regionKey", "title"],
       "schemaVersions": [],
       "signatureSha256": "6da5f332b0bcaff8fe4c061652344e78364f3c29dbce9c0cd79f077acd6da7c0"
     },
@@ -8583,10 +7894,7 @@
       "signatureSha256": "ba087cc5fe4da79ce904ae0707075ea4b282d4b9a3e4ce4773b073af006c0eeb"
     },
     {
-      "enumValues": [
-        "principal",
-        "system"
-      ],
+      "enumValues": ["principal", "system"],
       "name": "promptFragmentOwnerKindSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -8595,20 +7903,12 @@
     {
       "enumValues": [],
       "name": "promptFragmentPageDtoSchema",
-      "requiredFields": [
-        "items",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "requiredFields": ["items", "schemaVersion"],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "c7e1ee56b28677eec690ab8a2ea72fb6aa9a45053bcffc748af87a1428d07687"
     },
     {
-      "enumValues": [
-        "builtin",
-        "principal"
-      ],
+      "enumValues": ["builtin", "principal"],
       "name": "promptFragmentRevisionDetailDtoSchema",
       "requiredFields": [
         "content",
@@ -8624,9 +7924,7 @@
         "sha256",
         "title"
       ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "8920affd24121ac0a69bdebb7427377d82cb28c337dbbff69040a25d7bd152b1"
     },
     {
@@ -8647,9 +7945,7 @@
         "sha256",
         "title"
       ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "caa417c69d4811f268706feee833e3f259798a4b1d10836089fbd53fed5bb241"
     },
     {
@@ -8681,9 +7977,7 @@
         "title",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "c6e27513d34fb68b567762fc664746cbdd787a99017d0dacdd7dd5003a61ec66"
     },
     {
@@ -8720,29 +8014,18 @@
         "title",
         "userManageable"
       ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "871c4fd3c9e6cd110de4dce3b60760fe5616b744537ded0158a6c80329fc9ed5"
     },
     {
       "enumValues": [],
       "name": "promptRegionsDtoSchema",
-      "requiredFields": [
-        "catalogSha256",
-        "items",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "requiredFields": ["catalogSha256", "items", "schemaVersion"],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "011c1c6965500af8d85fcf188d630498b97104f80c2ca8c5156df996af225ef3"
     },
     {
-      "enumValues": [
-        "approve",
-        "reject"
-      ],
+      "enumValues": ["approve", "reject"],
       "name": "promptReviewAllowedActionSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -8762,9 +8045,7 @@
         "reviewSha256",
         "schemaVersion"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "806dd9a39828da742c900e7c9c7d79515c48c8d3a05dc7270db4767a6f9f0fd2"
     },
     {
@@ -8802,11 +8083,7 @@
     {
       "enumValues": [],
       "name": "promptReviewReadableSourceSchema",
-      "requiredFields": [
-        "addedBy",
-        "explanation",
-        "sourceFiles"
-      ],
+      "requiredFields": ["addedBy", "explanation", "sourceFiles"],
       "schemaVersions": [],
       "signatureSha256": "fb5a4f36eb8760587fa2de0e3c9354a6a751c451da7e2b9fd69708de6321c468"
     },
@@ -8835,9 +8112,7 @@
         "status",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "ae5f86899d50f57cb9da224a5ff8cb8464ac570860ece270da166477bd2553a3"
     },
     {
@@ -8872,9 +8147,7 @@
         "status",
         "toolResolution"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "a231b7452fd522bfee5b366fcd3959aa7c2cecf3877403efde18a986b7adf271"
     },
     {
@@ -8887,26 +8160,15 @@
     {
       "enumValues": [],
       "name": "promptWorkspaceDtoSchema",
-      "requiredFields": [
-        "rootId",
-        "schemaVersion",
-        "title"
-      ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "requiredFields": ["rootId", "schemaVersion", "title"],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "dd1916bd05257905f7e735a7dd641503267b01930067ba23c29322523aa9c05b"
     },
     {
       "enumValues": [],
       "name": "promptWorkspacesDtoSchema",
-      "requiredFields": [
-        "items",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ],
+      "requiredFields": ["items", "schemaVersion"],
+      "schemaVersions": ["chat-prompt-studio-api.v1"],
       "signatureSha256": "1b5b874f56548d6e344cf78dd0b80b9dc94961fd359f72091acd039dd0bb0306"
     },
     {
@@ -8930,27 +8192,14 @@
       "signatureSha256": "06ac0c500493e3df9ce5433be1a94005f52e4e32721b8d3a17c70c814a8bafa3"
     },
     {
-      "enumValues": [
-        "behavior",
-        "constraint",
-        "outcome",
-        "quality"
-      ],
+      "enumValues": ["behavior", "constraint", "outcome", "quality"],
       "name": "proposeProjectRequirementPayloadSchema",
-      "requiredFields": [
-        "acceptanceCriteria",
-        "kind",
-        "needIds",
-        "statement"
-      ],
+      "requiredFields": ["acceptanceCriteria", "kind", "needIds", "statement"],
       "schemaVersions": [],
       "signatureSha256": "5b1bbf5adee4ca6e58d3ca38ccd55e3f2921c316b0a78b446dbd108fb227fa5b"
     },
     {
-      "enumValues": [
-        "memory_provider_selector",
-        "resource_selector"
-      ],
+      "enumValues": ["memory_provider_selector", "resource_selector"],
       "name": "publicConfigFieldSchema",
       "requiredFields": [
         "defaultValue",
@@ -8972,22 +8221,14 @@
     {
       "enumValues": [],
       "name": "publishWorkflowDefinitionPayloadSchema",
-      "requiredFields": [
-        "draftDefinitionSha256",
-        "draftRevisionId"
-      ],
+      "requiredFields": ["draftDefinitionSha256", "draftRevisionId"],
       "schemaVersions": [],
       "signatureSha256": "b9a114f1b7530fd244ddfd5e5dbab5ca8956cd66026e40dd0aa063be05eab858"
     },
     {
       "enumValues": [],
       "name": "readinessStatusSchema",
-      "requiredFields": [
-        "name",
-        "ready",
-        "service",
-        "status"
-      ],
+      "requiredFields": ["name", "ready", "service", "status"],
       "schemaVersions": [],
       "signatureSha256": "dad87b4d2b1ff09cf801747e6976173af87c6c37b54ee09a916e21ae24898645"
     },
@@ -9008,17 +8249,12 @@
     {
       "enumValues": [],
       "name": "reconcilePlaneProjectOperationPayloadSchema",
-      "requiredFields": [
-        "planeProjectOperationId"
-      ],
+      "requiredFields": ["planeProjectOperationId"],
       "schemaVersions": [],
       "signatureSha256": "3c2850268c7b193f97b8fe4e7693d38a166cf0c9e914e4bb5256d4d85546f68b"
     },
     {
-      "enumValues": [
-        "provider_verified",
-        "user_confirmed"
-      ],
+      "enumValues": ["provider_verified", "user_confirmed"],
       "name": "recordContentPublicationPayloadSchema",
       "requiredFields": [
         "contentRevisionEvidenceId",
@@ -9072,26 +8308,14 @@
         "test"
       ],
       "name": "recordProjectContributionPayloadSchema",
-      "requiredFields": [
-        "evidenceIds",
-        "kind",
-        "occurredAt",
-        "participantId",
-        "summary"
-      ],
+      "requiredFields": ["evidenceIds", "kind", "occurredAt", "participantId", "summary"],
       "schemaVersions": [],
       "signatureSha256": "47ec5ec5fa041ed41bd68f96a82d54561e153c48be258992ead4b99b7361e94a"
     },
     {
       "enumValues": [],
       "name": "recordProjectDecisionPayloadSchema",
-      "requiredFields": [
-        "choice",
-        "decidedByParticipantId",
-        "options",
-        "question",
-        "rationale"
-      ],
+      "requiredFields": ["choice", "decidedByParticipantId", "options", "question", "rationale"],
       "schemaVersions": [],
       "signatureSha256": "13ab121375e6e531064d9f356bebba13fe43859a10a3429aa2f2ef763498c9c3"
     },
@@ -9152,10 +8376,7 @@
     {
       "enumValues": [],
       "name": "registerProjectAgentPayloadSchema",
-      "requiredFields": [
-        "displayName",
-        "role"
-      ],
+      "requiredFields": ["displayName", "role"],
       "schemaVersions": [],
       "signatureSha256": "b41d2ba24b8f187c06136b220a77b8a84b5ef0d85a467fb3d6feedd0be1c1267"
     },
@@ -9186,11 +8407,7 @@
     {
       "enumValues": [],
       "name": "requestProjectWorkReviewPayloadSchema",
-      "requiredFields": [
-        "evidenceIds",
-        "participantId",
-        "summary"
-      ],
+      "requiredFields": ["evidenceIds", "participantId", "summary"],
       "schemaVersions": [],
       "signatureSha256": "a6154345a376fb4a863e0235de6094b379bd4cf61d7c3393b0d1c49701b48708"
     },
@@ -9232,36 +8449,23 @@
       "signatureSha256": "f1fee6763495d34907f60aaa02df910c2d5d20dceedd566fe81f362d6447e720"
     },
     {
-      "enumValues": [
-        "adopt_plane",
-        "keep_chat"
-      ],
+      "enumValues": ["adopt_plane", "keep_chat"],
       "name": "resolvePlaneProjectInboundChangePayloadSchema",
-      "requiredFields": [
-        "disposition",
-        "projectInboundChangeId",
-        "rationale"
-      ],
+      "requiredFields": ["disposition", "projectInboundChangeId", "rationale"],
       "schemaVersions": [],
       "signatureSha256": "71bb65f8452ec9bfd596d869475388b8348f450c40c2dc1ca3be7ac82efe2343"
     },
     {
       "enumValues": [],
       "name": "resolvePlaneProjectInboundChangeResponseSchema",
-      "requiredFields": [
-        "inboundChange"
-      ],
+      "requiredFields": ["inboundChange"],
       "schemaVersions": [],
       "signatureSha256": "3f394146c6d60194c1ce175f9d57a1766dfe47e37732f0e2637fceed4488e654"
     },
     {
       "enumValues": [],
       "name": "restoreAgentPromptPayloadSchema",
-      "requiredFields": [
-        "currentRevisionId",
-        "currentRevisionSha256",
-        "expectedAggregateRevision"
-      ],
+      "requiredFields": ["currentRevisionId", "currentRevisionSha256", "expectedAggregateRevision"],
       "schemaVersions": [],
       "signatureSha256": "d1f86c8e46ba8ad752fe3798063e51a8404f646e352937b5195659511f6764e2"
     },
@@ -9275,73 +8479,49 @@
     {
       "enumValues": [],
       "name": "resumeProjectWorkPayloadSchema",
-      "requiredFields": [
-        "participantId",
-        "recoveryEvidenceIds"
-      ],
+      "requiredFields": ["participantId", "recoveryEvidenceIds"],
       "schemaVersions": [],
       "signatureSha256": "9a7292e4127c98ba868567b160a4c886030c1da242b064d55076d8246e3856c0"
     },
     {
       "enumValues": [],
       "name": "retryProjectBootstrapPayloadSchema",
-      "requiredFields": [
-        "expectedOperationRevision",
-        "projectBootstrapOperationId"
-      ],
+      "requiredFields": ["expectedOperationRevision", "projectBootstrapOperationId"],
       "schemaVersions": [],
       "signatureSha256": "9f15adbb4bdf774a3af55cf3fc0c63fcbef8b492540766edda86a3cf21f0aec2"
     },
     {
       "enumValues": [],
       "name": "reviseAgentPromptPayloadSchema",
-      "requiredFields": [
-        "bodyMarkdown",
-        "expectedAggregateRevision"
-      ],
+      "requiredFields": ["bodyMarkdown", "expectedAggregateRevision"],
       "schemaVersions": [],
       "signatureSha256": "abf6b98149d83068638362228fe37600b2f57c18ad69365dd5e6d52b65ef0bbe"
     },
     {
       "enumValues": [],
       "name": "reviseNotePayloadSchema",
-      "requiredFields": [
-        "currentRevisionId",
-        "currentRevisionSha256",
-        "revision"
-      ],
+      "requiredFields": ["currentRevisionId", "currentRevisionSha256", "revision"],
       "schemaVersions": [],
       "signatureSha256": "8d28b08abadd96584e872ef1b04a2849e3aea7fe7fc7f112bd23778e1aa89daa"
     },
     {
       "enumValues": [],
       "name": "revisePromptFragmentPayloadSchema",
-      "requiredFields": [
-        "currentRevisionId",
-        "currentRevisionSha256",
-        "revision"
-      ],
+      "requiredFields": ["currentRevisionId", "currentRevisionSha256", "revision"],
       "schemaVersions": [],
       "signatureSha256": "1bc9efc2dda87b114d1d20fc24865397c91c988ab9412ac7a863d4a9980a3e1f"
     },
     {
       "enumValues": [],
       "name": "reviseRulePayloadSchema",
-      "requiredFields": [
-        "currentRevisionId",
-        "currentRevisionSha256",
-        "revision"
-      ],
+      "requiredFields": ["currentRevisionId", "currentRevisionSha256", "revision"],
       "schemaVersions": [],
       "signatureSha256": "c9f169d775acb138410a03aa842b28fdc0fc2fb2eb5c475c8e3738f968d2b76a"
     },
     {
       "enumValues": [],
       "name": "revisionedSchema",
-      "requiredFields": [
-        "revision",
-        "updatedAt"
-      ],
+      "requiredFields": ["revision", "updatedAt"],
       "schemaVersions": [],
       "signatureSha256": "1d643a0290e3a86cb9de03e6945b9164c7215a84d30eff4ac23878e81de328b9"
     },
@@ -9355,14 +8535,8 @@
     {
       "enumValues": [],
       "name": "ruleCommandResultDtoSchema",
-      "requiredFields": [
-        "replayed",
-        "rule",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "requiredFields": ["replayed", "rule", "schemaVersion"],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "218fad212d25d4a8542e66c62410173bacff3cfe41f1c9fb8d5d0fac91c04998"
     },
     {
@@ -9380,9 +8554,7 @@
         "schemaVersion",
         "toLifecycle"
       ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "49c21bd6b6c8cc8cb66619f490d2b3dc8115b28992675f25b96b66d7fad98c28"
     },
     {
@@ -9408,22 +8580,14 @@
         "title",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "1d39c45e56f9c2541b589ac8c09563deaaba6a841f9238db8954e1b602342755"
     },
     {
       "enumValues": [],
       "name": "ruleDetailResponseDtoSchema",
-      "requiredFields": [
-        "decisions",
-        "rule",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "requiredFields": ["decisions", "rule", "schemaVersion"],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "8ff105d0553a9a30d9a78e556d10cc5adb3fa3502f8d6c2a4ef892148f504704"
     },
     {
@@ -9436,13 +8600,8 @@
     {
       "enumValues": [],
       "name": "rulePageDtoSchema",
-      "requiredFields": [
-        "items",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "requiredFields": ["items", "schemaVersion"],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "9cf77c676a473cc15f3e64f85459fbaa13b0734cbe993b0c0a45a4a98045a8c0"
     },
     {
@@ -9468,9 +8627,7 @@
         "sourceCases",
         "tagIds"
       ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "863e74baba905688a4994bcfeac6a6061d5d60ee5a6990dc619a080d0d7dc57c"
     },
     {
@@ -9513,9 +8670,7 @@
         "sha256",
         "tagIds"
       ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "daea3130790a5bea184b974060c636f693225edd2d3a2eccd15b5ec60f1fd2c3"
     },
     {
@@ -9535,19 +8690,12 @@
     {
       "enumValues": [],
       "name": "ruleScopeInputSchema",
-      "requiredFields": [
-        "kind",
-        "scenario"
-      ],
+      "requiredFields": ["kind", "scenario"],
       "schemaVersions": [],
       "signatureSha256": "80f2db8d993359433b6e2bf8be54ecfcbb22cb0ed898f36d7e0c0e4b9f8f863e"
     },
     {
-      "enumValues": [
-        "blocked",
-        "ready",
-        "requires_user_resolution"
-      ],
+      "enumValues": ["blocked", "ready", "requires_user_resolution"],
       "name": "ruleSelectionDtoSchema",
       "requiredFields": [
         "budget",
@@ -9564,9 +8712,7 @@
         "sha256",
         "status"
       ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "314f011fd283f2f63852b40f89227851751c820dad6a118fdcd97c38cc1a566a"
     },
     {
@@ -9579,12 +8725,7 @@
     {
       "enumValues": [],
       "name": "ruleSelectionInputSchema",
-      "requiredFields": [
-        "budget",
-        "excludedRuleIds",
-        "explicitRules",
-        "selectedTagIds"
-      ],
+      "requiredFields": ["budget", "excludedRuleIds", "explicitRules", "selectedTagIds"],
       "schemaVersions": [],
       "signatureSha256": "6490ba517dd7baecabb9793314c19c57dc69001a9bafcffe4337a5ca8dbd7cfe"
     },
@@ -9604,29 +8745,18 @@
         "title",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "36c1ca88c3418427edc0ad24ab0e86fbb549e0197c3f38939cfdac06dd422bed"
     },
     {
       "enumValues": [],
       "name": "ruleTagCommandResultDtoSchema",
-      "requiredFields": [
-        "replayed",
-        "schemaVersion",
-        "tag"
-      ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "requiredFields": ["replayed", "schemaVersion", "tag"],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "cef300778d7254515d54a4213d0e5df3be9190df48560e9e708378bd4400eb8b"
     },
     {
-      "enumValues": [
-        "active",
-        "archived"
-      ],
+      "enumValues": ["active", "archived"],
       "name": "ruleTagDtoSchema",
       "requiredFields": [
         "createdAt",
@@ -9638,9 +8768,7 @@
         "status",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "4bba6e0c241a8f09a02a5ef9be86fb1ac375fd6efadb580784044d5b3604b0ad"
     },
     {
@@ -9653,21 +8781,12 @@
     {
       "enumValues": [],
       "name": "ruleTagsDtoSchema",
-      "requiredFields": [
-        "items",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ],
+      "requiredFields": ["items", "schemaVersion"],
+      "schemaVersions": ["chat-rules-api.v1"],
       "signatureSha256": "26afab322ec53da70fac01dcf28ccdb85b176cf45c22eeb384098800e49bc0a0"
     },
     {
-      "enumValues": [
-        "approve",
-        "reject",
-        "request_revision"
-      ],
+      "enumValues": ["approve", "reject", "request_revision"],
       "name": "runAllowedActionSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -9694,29 +8813,18 @@
         "sha256",
         "sources"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "2b7e6d324d2ae38e18d16bcbf776916c006a1312dc8a9e4cbc1f9af6465b4587"
     },
     {
       "enumValues": [],
       "name": "runContextMemoryDtoSchema",
-      "requiredFields": [
-        "adoptedCount",
-        "errorCode",
-        "hitCount",
-        "queryStatus"
-      ],
+      "requiredFields": ["adoptedCount", "errorCode", "hitCount", "queryStatus"],
       "schemaVersions": [],
       "signatureSha256": "84dd92ff4da6eb882ca862303530340aff2de8dc59b805d356c9ef8ea6f62c4b"
     },
     {
-      "enumValues": [
-        "direct_agent",
-        "note_capture",
-        "planning"
-      ],
+      "enumValues": ["direct_agent", "note_capture", "planning"],
       "name": "runDtoSchema",
       "requiredFields": [
         "allowedActions",
@@ -9734,9 +8842,7 @@
         "status",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "1ecd18dd1ad9173cdd559c8a789d9369e3b1cdf4060770dec89672c9b1a852df"
     },
     {
@@ -9754,29 +8860,19 @@
     {
       "enumValues": [],
       "name": "saveWorkflowDefinitionDraftPayloadSchema",
-      "requiredFields": [
-        "baseDefinitionSha256",
-        "baseRevisionId",
-        "semanticRoot"
-      ],
+      "requiredFields": ["baseDefinitionSha256", "baseRevisionId", "semanticRoot"],
       "schemaVersions": [],
       "signatureSha256": "3a7241961c7112903a2025fc0253f22ea8074cbbb7d8322d9fbb1cc40d2f2125"
     },
     {
       "enumValues": [],
       "name": "serviceStatusSchema",
-      "requiredFields": [
-        "service",
-        "status"
-      ],
+      "requiredFields": ["service", "status"],
       "schemaVersions": [],
       "signatureSha256": "05ce2f39989cd4155c217228063b79acb937d802c6c1000bb67955752026175d"
     },
     {
-      "enumValues": [
-        "active",
-        "archived"
-      ],
+      "enumValues": ["active", "archived"],
       "name": "sessionDtoSchema",
       "requiredFields": [
         "createdAt",
@@ -9786,20 +8882,13 @@
         "status",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "861b388cfec6426ce975f892aa27277e6f5c8e0cfe2cdc61155ad83312001a5e"
     },
     {
-      "enumValues": [
-        "active",
-        "archived"
-      ],
+      "enumValues": ["active", "archived"],
       "name": "setProjectArchiveStatusPayloadSchema",
-      "requiredFields": [
-        "status"
-      ],
+      "requiredFields": ["status"],
       "schemaVersions": [],
       "signatureSha256": "1180ec19c8d11250b2a00f282e9949c28733d6650b7076e4011a4bbcce8c8149"
     },
@@ -9829,56 +8918,35 @@
     {
       "enumValues": [],
       "name": "startSessionMessageResponseSchema",
-      "requiredFields": [
-        "message",
-        "run",
-        "session"
-      ],
+      "requiredFields": ["message", "run", "session"],
       "schemaVersions": [],
       "signatureSha256": "9d70cef75e2bd726a012725fbb64173c7cbf0398b0601292a03f3612007d1dea"
     },
     {
       "enumValues": [],
       "name": "submitDecisionPayloadSchema",
-      "requiredFields": [
-        "approvalRequestId",
-        "kind",
-        "planId",
-        "planRevision",
-        "planSha256"
-      ],
+      "requiredFields": ["approvalRequestId", "kind", "planId", "planRevision", "planSha256"],
       "schemaVersions": [],
       "signatureSha256": "edc95e262f2b2710e40bbe92006f085854277b79424629df27956ecb3f99043f"
     },
     {
       "enumValues": [],
       "name": "submitMessagePayloadSchema",
-      "requiredFields": [
-        "definitionSha256",
-        "kind",
-        "text",
-        "workflowDefinitionRevisionId"
-      ],
+      "requiredFields": ["definitionSha256", "kind", "text", "workflowDefinitionRevisionId"],
       "schemaVersions": [],
       "signatureSha256": "89f26c400e8c67716af5a09e8bdb6d0b10106d595e437e220abead878e56d818"
     },
     {
       "enumValues": [],
       "name": "submitMessageResponseSchema",
-      "requiredFields": [
-        "message",
-        "run"
-      ],
+      "requiredFields": ["message", "run"],
       "schemaVersions": [],
       "signatureSha256": "b4b63f058ab262f6da905153901d77e134cad4a16131fbc690509c6683905266"
     },
     {
       "enumValues": [],
       "name": "submitNoteDecisionPayloadSchema",
-      "requiredFields": [
-        "kind",
-        "revisionInstruction"
-      ],
+      "requiredFields": ["kind", "revisionInstruction"],
       "schemaVersions": [],
       "signatureSha256": "09091ce16dccd77db8566c2aad62483c6692334c81f4eb3027e29f0fcd5d4d4c"
     },
@@ -9912,19 +8980,14 @@
     {
       "enumValues": [],
       "name": "syncPlaneProjectPayloadSchema",
-      "requiredFields": [
-        "planeProjectBindingId"
-      ],
+      "requiredFields": ["planeProjectBindingId"],
       "schemaVersions": [],
       "signatureSha256": "25e6ea57535df3c42fe35076cd5b7527a6ceea2be1b6fa707670aef03b4acc75"
     },
     {
       "enumValues": [],
       "name": "syncPlaneProjectResponseSchema",
-      "requiredFields": [
-        "inboundChanges",
-        "snapshot"
-      ],
+      "requiredFields": ["inboundChanges", "snapshot"],
       "schemaVersions": [],
       "signatureSha256": "85d85dd53cca2d0f5efea0dc3c5916e9bd2337d980e32430a2318161c71d59d0"
     },
@@ -9943,9 +9006,7 @@
         "toolExecutionDecisionId",
         "toolExecutionIntentId"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "56d37457a3829f74cf610fa7f38d824d72ddf444025d148248c8f760eefe9988"
     },
     {
@@ -9956,10 +9017,7 @@
       "signatureSha256": "baec10c34ad7da940ee62b63030ac3aff0df16561264f36ab17c366956924f10"
     },
     {
-      "enumValues": [
-        "approve",
-        "reject"
-      ],
+      "enumValues": ["approve", "reject"],
       "name": "toolExecutionIntentDtoSchema",
       "requiredFields": [
         "allowedActions",
@@ -9978,9 +9036,7 @@
         "toolExecutionIntentId",
         "updatedAt"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "5f43e6fcd3ce48dfabee11e754920155042c934fe18be100ce8cfc16843ffb5f"
     },
     {
@@ -10001,9 +9057,7 @@
         "toolExecutionIntentId",
         "toolExecutionResultId"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "fef059e2723c8c9e0c3d7f4dc3f0d6698d0d89204dcabf2d72630aaeb4e21ce6"
     },
     {
@@ -10016,76 +9070,42 @@
     {
       "enumValues": [],
       "name": "toolExecutionsResponseSchema",
-      "requiredFields": [
-        "decisions",
-        "intents",
-        "results"
-      ],
+      "requiredFields": ["decisions", "intents", "results"],
       "schemaVersions": [],
       "signatureSha256": "16fccec05c13abbe496e42d57ef03e2e77b5479c0f0b593a027a5ba27375b5fa"
     },
     {
       "enumValues": [],
       "name": "transitionProjectActionPayloadSchema",
-      "requiredFields": [
-        "status"
-      ],
+      "requiredFields": ["status"],
       "schemaVersions": [],
       "signatureSha256": "b4f6fcb7be15c63f1e3c1fa2ad2d3f24a8e226d6b642afccb6860880b97371be"
     },
     {
       "enumValues": [],
       "name": "transitionProjectLifecyclePayloadSchema",
-      "requiredFields": [
-        "decidedByParticipantId",
-        "evidenceIds",
-        "reason",
-        "status"
-      ],
+      "requiredFields": ["decidedByParticipantId", "evidenceIds", "reason", "status"],
       "schemaVersions": [],
       "signatureSha256": "2f62bcd61c7810f322aebc1f16a4b0aa2772e0789ad57bf954bd746db70a5924"
     },
     {
-      "enumValues": [
-        "achieved",
-        "cancelled"
-      ],
+      "enumValues": ["achieved", "cancelled"],
       "name": "transitionProjectMilestonePayloadSchema",
-      "requiredFields": [
-        "decidedByParticipantId",
-        "evidenceIds",
-        "reason",
-        "status"
-      ],
+      "requiredFields": ["decidedByParticipantId", "evidenceIds", "reason", "status"],
       "schemaVersions": [],
       "signatureSha256": "4d592440a8fd067d6fc987b6a69a1efd43e926251cfe604a19d05e443ea7adf5"
     },
     {
-      "enumValues": [
-        "active",
-        "completed",
-        "review",
-        "skipped"
-      ],
+      "enumValues": ["active", "completed", "review", "skipped"],
       "name": "transitionProjectStagePayloadSchema",
-      "requiredFields": [
-        "decidedByParticipantId",
-        "evidenceIds",
-        "reason",
-        "status"
-      ],
+      "requiredFields": ["decidedByParticipantId", "evidenceIds", "reason", "status"],
       "schemaVersions": [],
       "signatureSha256": "0aff7ec6fc6a211ce53b86e5e56553ce9a25fa4199b9532dd0fe6d884d651bbf"
     },
     {
       "enumValues": [],
       "name": "transitionRulePayloadSchema",
-      "requiredFields": [
-        "boundRevisionId",
-        "boundRevisionSha256",
-        "reason",
-        "toLifecycle"
-      ],
+      "requiredFields": ["boundRevisionId", "boundRevisionSha256", "reason", "toLifecycle"],
       "schemaVersions": [],
       "signatureSha256": "1c5a272db86690fffb144b6c5c1180b524affc4b077eaa79b4f610e67653495f"
     },
@@ -10117,11 +9137,7 @@
       "signatureSha256": "12a96f214fc84fc2fcf95d4d07e9e267e0d9dbd9c9abab55e36e115e0db43801"
     },
     {
-      "enumValues": [
-        "enabled",
-        "reviewMode",
-        "selection"
-      ],
+      "enumValues": ["enabled", "reviewMode", "selection"],
       "name": "workflowBlueprintDtoSchema",
       "requiredFields": [
         "blueprintKey",
@@ -10143,53 +9159,32 @@
         "terminalNodeType",
         "title"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "911ed3e5b74648b07c60532a39c92e7a002c49493a6582bf12191d95f9d3578e"
     },
     {
       "enumValues": [],
       "name": "workflowBlueprintsDtoSchema",
-      "requiredFields": [
-        "blueprints",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "requiredFields": ["blueprints", "schemaVersion"],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "52e2a526e4c72b72a2b465a2353a75d5acd9a551066198e51171b80c81c683b6"
     },
     {
       "enumValues": [],
       "name": "workflowCatalogDtoSchema",
-      "requiredFields": [
-        "nodes",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "requiredFields": ["nodes", "schemaVersion"],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "71df1ca331dd5fa1042461e82b663922e4204fc066e4b11c5bee8304b5314bd0"
     },
     {
       "enumValues": [],
       "name": "workflowDefinitionCommandResultDtoSchema",
-      "requiredFields": [
-        "definition"
-      ],
+      "requiredFields": ["definition"],
       "schemaVersions": [],
       "signatureSha256": "a38398d3e8c667a1c60403234f6822902296e9da050f5db43ccfa305e18afc16"
     },
     {
-      "enumValues": [
-        "archive",
-        "copy",
-        "publish",
-        "restore",
-        "save",
-        "validate"
-      ],
+      "enumValues": ["archive", "copy", "publish", "restore", "save", "validate"],
       "name": "workflowDefinitionDetailDtoSchema",
       "requiredFields": [
         "allowedActions",
@@ -10271,9 +9266,7 @@
         "workflowDefinitionId",
         "workflowDefinitionRevisionId"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "49d19ccb2f6d22ce5903754f6328a82c3d263b2a4cd0eb75fac7fdde5190cd2e"
     },
     {
@@ -10299,13 +9292,8 @@
     {
       "enumValues": [],
       "name": "workflowDefinitionsDtoSchema",
-      "requiredFields": [
-        "definitions",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "requiredFields": ["definitions", "schemaVersion"],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "48e052a173416c58335f8cf69c1a285def44634b15e35518db38df40eff9c104"
     },
     {
@@ -10319,9 +9307,7 @@
         "semanticRoot",
         "valid"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "c1f270088158b3de59fd2f36d7e4ffb37ea96f0dbca91d28986834e142b6ad85"
     },
     {
@@ -10345,39 +9331,21 @@
       "signatureSha256": "109027d08b2fc015c0f4c75ab2065014b71135d0648a176fedcc8ff167db4f7f"
     },
     {
-      "enumValues": [
-        "definition_invalid",
-        "limit_exceeded",
-        "policy_denied",
-        "resource_stale"
-      ],
+      "enumValues": ["definition_invalid", "limit_exceeded", "policy_denied", "resource_stale"],
       "name": "workflowDesignerDiagnosticDtoSchema",
-      "requiredFields": [
-        "code",
-        "family",
-        "params",
-        "path",
-        "severity"
-      ],
+      "requiredFields": ["code", "family", "params", "path", "severity"],
       "schemaVersions": [],
       "signatureSha256": "32711303e523d343da102b2335ad7e16258a1b365a75fa57b6ae12cc61f56e40"
     },
     {
-      "enumValues": [
-        "error",
-        "info",
-        "warning"
-      ],
+      "enumValues": ["error", "info", "warning"],
       "name": "workflowDesignerDiagnosticSeveritySchema",
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "5526c52764a8044524550646de66da5723846bd8578194895706f14d40291a06"
     },
     {
-      "enumValues": [
-        "fail",
-        "request_human"
-      ],
+      "enumValues": ["fail", "request_human"],
       "name": "workflowDesignerOperationSchema",
       "requiredFields": [
         "activation",
@@ -10437,24 +9405,13 @@
         "updatedAt",
         "workflow"
       ],
-      "schemaVersions": [
-        "chat-workflow-execution-trace.v1"
-      ],
+      "schemaVersions": ["chat-workflow-execution-trace.v1"],
       "signatureSha256": "7098de25d87595819741a9ba353242c5c3b3ae636d0ec5ba0c0a247f855e1dbb"
     },
     {
-      "enumValues": [
-        "json",
-        "markdown",
-        "text"
-      ],
+      "enumValues": ["json", "markdown", "text"],
       "name": "workflowExecutionTraceValueDtoSchema",
-      "requiredFields": [
-        "format",
-        "label",
-        "text",
-        "truncated"
-      ],
+      "requiredFields": ["format", "label", "text", "truncated"],
       "schemaVersions": [],
       "signatureSha256": "ad88e3ba7af60d5e4cb5f57b03427ea66f1a0d589194c51e2ca1dc22fc47ebde"
     },
@@ -10480,10 +9437,7 @@
       "signatureSha256": "efef65eb299dcc022f81b29a0bc5db42acc1cc78abd3c5d99fe4eb133805d181"
     },
     {
-      "enumValues": [
-        "inspect",
-        "submit_decision"
-      ],
+      "enumValues": ["inspect", "submit_decision"],
       "name": "workflowNodeAllowedActionSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -10528,37 +9482,20 @@
         "updatedAt",
         "viewHash"
       ],
-      "schemaVersions": [
-        "chat-workflow-api.v1"
-      ],
+      "schemaVersions": ["chat-workflow-api.v1"],
       "signatureSha256": "e3a862c08f0066fdc7d294e83f1edcff1e54efd11a40474e3cb69a16da8cb1cf"
     },
     {
-      "enumValues": [
-        "evidence",
-        "manifests",
-        "summary",
-        "timeline"
-      ],
+      "enumValues": ["evidence", "manifests", "summary", "timeline"],
       "name": "workflowNodeDetailIncludeSchema",
       "requiredFields": [],
       "schemaVersions": [],
       "signatureSha256": "1929f2a2dde683d3716314eec9842a34f2a72669ae1f039dab1fbab633b7019e"
     },
     {
-      "enumValues": [
-        "input",
-        "output"
-      ],
+      "enumValues": ["input", "output"],
       "name": "workflowNodeManifestDtoSchema",
-      "requiredFields": [
-        "direction",
-        "name",
-        "refs",
-        "revision",
-        "sha256",
-        "slots"
-      ],
+      "requiredFields": ["direction", "name", "refs", "revision", "sha256", "slots"],
       "schemaVersions": [],
       "signatureSha256": "b4df680012ecc0585638fff689a7d310d0ef2f5e4a62b30dcc82eec7468fd845"
     },
@@ -10607,23 +9544,14 @@
         "waiting_human"
       ],
       "name": "workflowNodeTimelineItemDtoSchema",
-      "requiredFields": [
-        "nodeSequence",
-        "occurredAt",
-        "reasonKind",
-        "toStatus"
-      ],
+      "requiredFields": ["nodeSequence", "occurredAt", "reasonKind", "toStatus"],
       "schemaVersions": [],
       "signatureSha256": "4fc6f9dbb5bfedccac059a22218b21aef1687887aa9035637924a5b5c4c1c483"
     },
     {
       "enumValues": [],
       "name": "workflowNodeTraceDetailDtoSchema",
-      "requiredFields": [
-        "input",
-        "output",
-        "workflowNodeRunId"
-      ],
+      "requiredFields": ["input", "output", "workflowNodeRunId"],
       "schemaVersions": [],
       "signatureSha256": "d63654058b4248faa5a9b3cc44331364675db8f19db1ad5075e293d851955f37"
     },
@@ -10635,14 +9563,7 @@
       "signatureSha256": "aadd66a14f7ad4a5347eb7d87d32b57fe22064fb3e76e2a9dbe0a2fe28d74606"
     },
     {
-      "enumValues": [
-        "active",
-        "archived",
-        "memory",
-        "project",
-        "rule",
-        "skill"
-      ],
+      "enumValues": ["active", "archived", "memory", "project", "rule", "skill"],
       "name": "workflowResourceRefDtoSchema",
       "requiredFields": [
         "label",
@@ -10654,21 +9575,14 @@
         "source",
         "status"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "00934415e0f277caa9d92ede2ba7d264b5a736d53e9419daad9c03e7388f7162"
     },
     {
       "enumValues": [],
       "name": "workflowResourcesDtoSchema",
-      "requiredFields": [
-        "resources",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "requiredFields": ["resources", "schemaVersion"],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "e6b8b88e42e35af4c54da4f0a09c69b7f29d7f02fef0ed3ca94b30998177e65e"
     },
     {
@@ -10697,21 +9611,14 @@
         "runnerFamily",
         "schemaVersion"
       ],
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ],
+      "schemaVersions": ["chat-product-api.v1"],
       "signatureSha256": "2ae54f961e6610528180145ce03f5eab64c4a84b23bb4e03d786bee7c1695d94"
     },
     {
       "enumValues": [],
       "name": "workflowRunConfigurationSchema",
-      "requiredFields": [
-        "overrides",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "workflow-run-configuration.v1"
-      ],
+      "requiredFields": ["overrides", "schemaVersion"],
+      "schemaVersions": ["workflow-run-configuration.v1"],
       "signatureSha256": "fab7ee503b30f20f2c7425193644161d8383c2a69e24716ff33a632a9c0e7783"
     },
     {
@@ -10753,12 +9660,7 @@
       "signatureSha256": "be906c00f67e41ca90686d941e88613ac2ce824314fe036c3d34705a46da44ab"
     },
     {
-      "enumValues": [
-        "hook",
-        "run",
-        "sleep",
-        "step"
-      ],
+      "enumValues": ["hook", "run", "sleep", "step"],
       "name": "workflowRuntimeResourceKindSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -10783,13 +9685,7 @@
       "signatureSha256": "887c33c30054b859e5f66c540a804c9d3bd03de8e526c5c1cc306076dcd248a1"
     },
     {
-      "enumValues": [
-        "cancelled",
-        "completed",
-        "failed",
-        "pending",
-        "running"
-      ],
+      "enumValues": ["cancelled", "completed", "failed", "pending", "running"],
       "name": "workflowRuntimeTraceAvailableDtoSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -10805,22 +9701,12 @@
     {
       "enumValues": [],
       "name": "workflowRuntimeTraceEventDtoSchema",
-      "requiredFields": [
-        "offsetMs",
-        "recordedAt",
-        "resourceKind",
-        "sequence",
-        "spanKey",
-        "type"
-      ],
+      "requiredFields": ["offsetMs", "recordedAt", "resourceKind", "sequence", "spanKey", "type"],
       "schemaVersions": [],
       "signatureSha256": "b963ea27e30a443e75dac648f2fd1e2d4ad25e3d4b8cc1d29801f70072758326"
     },
     {
-      "enumValues": [
-        "not_started",
-        "start_outcome_unknown"
-      ],
+      "enumValues": ["not_started", "start_outcome_unknown"],
       "name": "workflowRuntimeTracePendingDtoSchema",
       "requiredFields": [],
       "schemaVersions": [],
@@ -10829,11 +9715,7 @@
     {
       "enumValues": [],
       "name": "workflowRuntimeTraceSegmentDtoSchema",
-      "requiredFields": [
-        "durationMs",
-        "offsetMs",
-        "status"
-      ],
+      "requiredFields": ["durationMs", "offsetMs", "status"],
       "schemaVersions": [],
       "signatureSha256": "84ea306ef9ef5254ab7bc6a08032ba908669cfba5bebcad6cfcdd722bf9c179c"
     },
@@ -10863,12 +9745,7 @@
       "signatureSha256": "943c69711e60853b618ba5e39903f5848c864b0950b88efc601c46e6d4e3ad88"
     },
     {
-      "enumValues": [
-        "complete",
-        "legacy_code",
-        "legacy_limited",
-        "published_definition"
-      ],
+      "enumValues": ["complete", "legacy_code", "legacy_limited", "published_definition"],
       "name": "workflowRunViewDtoSchema",
       "requiredFields": [
         "allowedActions",
@@ -10885,9 +9762,7 @@
         "viewHash",
         "workflowViewDefinitionId"
       ],
-      "schemaVersions": [
-        "chat-workflow-api.v1"
-      ],
+      "schemaVersions": ["chat-workflow-api.v1"],
       "signatureSha256": "988e50137e62d3cca389748dcf32b6455698ef0fe7a4f92b468b18c8686ec3e0"
     },
     {
@@ -10900,14 +9775,8 @@
     {
       "enumValues": [],
       "name": "workspaceInstructionsInputSchema",
-      "requiredFields": [
-        "content",
-        "items",
-        "schemaVersion"
-      ],
-      "schemaVersions": [
-        "workspace-instructions-input.v1"
-      ],
+      "requiredFields": ["content", "items", "schemaVersion"],
+      "schemaVersions": ["workspace-instructions-input.v1"],
       "signatureSha256": "2a1f996f3a5c527d2508afcb61d19333eb85861f095659726e3d1db9d99b7d14"
     }
   ],
@@ -15475,9 +14344,7 @@
       "query": {
         "parsers": [
           {
-            "allowedKeys": [
-              "workspaceRootId"
-            ],
+            "allowedKeys": ["workspaceRootId"],
             "identity": "query-parser:prompt-routes.ts",
             "schemas": [],
             "signatureSha256": "25632b492b815edbafa8d9c315194b8358655d5d256108d7fe10f2c62304c037"
@@ -15575,9 +14442,7 @@
       "query": {
         "parsers": [
           {
-            "allowedKeys": [
-              "workspaceRootId"
-            ],
+            "allowedKeys": ["workspaceRootId"],
             "identity": "query-parser:prompt-routes.ts",
             "schemas": [],
             "signatureSha256": "91ab437e073da204772dda20dcb8399ef737846563e5298a4c75e1397c6e1c01"
@@ -28902,9 +27767,7 @@
       "query": {
         "parsers": [
           {
-            "allowedKeys": [
-              "include"
-            ],
+            "allowedKeys": ["include"],
             "identity": "query-parser:run-routes.ts",
             "schemas": [
               {
@@ -29572,10 +28435,7 @@
       "query": {
         "parsers": [
           {
-            "allowedKeys": [
-              "cursor",
-              "limit"
-            ],
+            "allowedKeys": ["cursor", "limit"],
             "identity": "query-parser:session-routes.ts",
             "schemas": [
               {
@@ -31282,9 +30142,7 @@
       "query": {
         "parsers": [
           {
-            "allowedKeys": [
-              "kind"
-            ],
+            "allowedKeys": ["kind"],
             "identity": "query-parser:workflow-routes.ts",
             "schemas": [],
             "signatureSha256": "2864a51c7be2cc8d8566da74685d2797b92f9d36829d9bc4e030d992940afd1f"
@@ -31314,508 +30172,339 @@
   "versionedDtoAndEventSchemas": [
     {
       "identity": "agentProfileDtoSchema",
-      "schemaVersions": [
-        "chat-agent-profile-api.v3"
-      ]
+      "schemaVersions": ["chat-agent-profile-api.v3"]
     },
     {
       "identity": "agentProfilesDtoSchema",
-      "schemaVersions": [
-        "chat-agent-profile-api.v3"
-      ]
+      "schemaVersions": ["chat-agent-profile-api.v3"]
     },
     {
       "identity": "agentProfilesV2DtoSchema",
-      "schemaVersions": [
-        "chat-agent-profile-api.v2"
-      ]
+      "schemaVersions": ["chat-agent-profile-api.v2"]
     },
     {
       "identity": "agentProfileV2DtoSchema",
-      "schemaVersions": [
-        "chat-agent-profile-api.v2"
-      ]
+      "schemaVersions": ["chat-agent-profile-api.v2"]
     },
     {
       "identity": "approvalDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "contentLabPlaneRolloutDryRunSchema",
-      "schemaVersions": [
-        "content-lab-plane-rollout.v1"
-      ]
+      "schemaVersions": ["content-lab-plane-rollout.v1"]
     },
     {
       "identity": "contentLabPlaneRolloutExecutionSchema",
-      "schemaVersions": [
-        "content-lab-plane-rollout.v1"
-      ]
+      "schemaVersions": ["content-lab-plane-rollout.v1"]
     },
     {
       "identity": "decisionDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "executionTracePageSchema",
-      "schemaVersions": [
-        "chat-execution-trace.v1"
-      ]
+      "schemaVersions": ["chat-execution-trace.v1"]
     },
     {
       "identity": "memoryBackendProfileDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "messageDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "noteHistoryPageDtoSchema",
-      "schemaVersions": [
-        "chat-note-api.v1"
-      ]
+      "schemaVersions": ["chat-note-api.v1"]
     },
     {
       "identity": "notePageDtoSchema",
-      "schemaVersions": [
-        "chat-note-api.v1"
-      ]
+      "schemaVersions": ["chat-note-api.v1"]
     },
     {
       "identity": "noteRevisionDetailDtoSchema",
-      "schemaVersions": [
-        "chat-note-api.v1"
-      ]
+      "schemaVersions": ["chat-note-api.v1"]
     },
     {
       "identity": "noteRevisionSummaryDtoSchema",
-      "schemaVersions": [
-        "chat-note-api.v1"
-      ]
+      "schemaVersions": ["chat-note-api.v1"]
     },
     {
       "identity": "planDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "planeProjectBindingSchema",
-      "schemaVersions": [
-        "plane-project-coordination.v2"
-      ]
+      "schemaVersions": ["plane-project-coordination.v2"]
     },
     {
       "identity": "planeProjectOperationSchema",
-      "schemaVersions": [
-        "plane-project-coordination.v2"
-      ]
+      "schemaVersions": ["plane-project-coordination.v2"]
     },
     {
       "identity": "planeProjectSnapshotSchema",
-      "schemaVersions": [
-        "plane-project-coordination.v2"
-      ]
+      "schemaVersions": ["plane-project-coordination.v2"]
     },
     {
       "identity": "planeWorkItemCommentsSnapshotSchema",
-      "schemaVersions": [
-        "plane-project-coordination.v2"
-      ]
+      "schemaVersions": ["plane-project-coordination.v2"]
     },
     {
       "identity": "projectAgentContextDtoSchema",
-      "schemaVersions": [
-        "project-management-api.v1"
-      ]
+      "schemaVersions": ["project-management-api.v1"]
     },
     {
       "identity": "projectAgentOpeningPacketSchema",
-      "schemaVersions": [
-        "project-agent-coordination.v1"
-      ]
+      "schemaVersions": ["project-agent-coordination.v1"]
     },
     {
       "identity": "projectBootstrapCandidateSchema",
-      "schemaVersions": [
-        "project-bootstrap.v1"
-      ]
+      "schemaVersions": ["project-bootstrap.v1"]
     },
     {
       "identity": "projectBootstrapDecisionSchema",
-      "schemaVersions": [
-        "project-bootstrap.v1"
-      ]
+      "schemaVersions": ["project-bootstrap.v1"]
     },
     {
       "identity": "projectBootstrapOperationSchema",
-      "schemaVersions": [
-        "project-bootstrap.v1"
-      ]
+      "schemaVersions": ["project-bootstrap.v1"]
     },
     {
       "identity": "projectHomeDtoSchema",
-      "schemaVersions": [
-        "project-management-api.v1"
-      ]
+      "schemaVersions": ["project-management-api.v1"]
     },
     {
       "identity": "projectInboundChangeSchema",
-      "schemaVersions": [
-        "project-inbound-change.v1"
-      ]
+      "schemaVersions": ["project-inbound-change.v1"]
     },
     {
       "identity": "projectMaintenancePlanDtoSchema",
-      "schemaVersions": [
-        "project-management-api.v1"
-      ]
+      "schemaVersions": ["project-management-api.v1"]
     },
     {
       "identity": "projectObjectQueryResultDtoSchema",
-      "schemaVersions": [
-        "project-management-api.v1"
-      ]
+      "schemaVersions": ["project-management-api.v1"]
     },
     {
       "identity": "projectRootDtoSchema",
-      "schemaVersions": [
-        "chat-project-api.v2"
-      ]
+      "schemaVersions": ["chat-project-api.v2"]
     },
     {
       "identity": "projectRootV3DtoSchema",
-      "schemaVersions": [
-        "chat-project-api.v3"
-      ]
+      "schemaVersions": ["chat-project-api.v3"]
     },
     {
       "identity": "projectSummaryDtoSchema",
-      "schemaVersions": [
-        "chat-project-api.v2"
-      ]
+      "schemaVersions": ["chat-project-api.v2"]
     },
     {
       "identity": "projectSummaryV3DtoSchema",
-      "schemaVersions": [
-        "chat-project-api.v3"
-      ]
+      "schemaVersions": ["chat-project-api.v3"]
     },
     {
       "identity": "projectWorkspaceBindingSchema",
-      "schemaVersions": [
-        "project-bootstrap.v1"
-      ]
+      "schemaVersions": ["project-bootstrap.v1"]
     },
     {
       "identity": "projectWorkspaceCompatibleDtoSchema",
-      "schemaVersions": [
-        "chat-project-api.v2",
-        "chat-project-api.v3"
-      ]
+      "schemaVersions": ["chat-project-api.v2", "chat-project-api.v3"]
     },
     {
       "identity": "projectWorkspaceDtoSchema",
-      "schemaVersions": [
-        "chat-project-api.v2"
-      ]
+      "schemaVersions": ["chat-project-api.v2"]
     },
     {
       "identity": "projectWorkspaceV3DtoSchema",
-      "schemaVersions": [
-        "chat-project-api.v3"
-      ]
+      "schemaVersions": ["chat-project-api.v3"]
     },
     {
       "identity": "promptAssemblyPreviewDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "promptConfigurationPreviewDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "promptFragmentCommandResultDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "promptFragmentDetailDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "promptFragmentPageDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "promptFragmentRevisionDetailDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "promptFragmentRevisionSummaryDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "promptFragmentSummaryDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "promptRegionDefinitionDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "promptRegionsDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "promptReviewDecisionDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "promptReviewRequestDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "promptTurnPreviewDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "promptWorkspaceDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "promptWorkspacesDtoSchema",
-      "schemaVersions": [
-        "chat-prompt-studio-api.v1"
-      ]
+      "schemaVersions": ["chat-prompt-studio-api.v1"]
     },
     {
       "identity": "ruleCommandResultDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "ruleDecisionDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "ruleDetailDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "ruleDetailResponseDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "rulePageDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "ruleRevisionDetailDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "ruleRevisionSummaryDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "ruleSelectionDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "ruleSummaryDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "ruleTagCommandResultDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "ruleTagDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "ruleTagsDtoSchema",
-      "schemaVersions": [
-        "chat-rules-api.v1"
-      ]
+      "schemaVersions": ["chat-rules-api.v1"]
     },
     {
       "identity": "runContextDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "runDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "sessionDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "toolExecutionDecisionDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "toolExecutionIntentDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "toolExecutionResultDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "workflowBlueprintDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "workflowBlueprintsDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "workflowCatalogDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "workflowDefinitionPublishedDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "workflowDefinitionsDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "workflowDefinitionValidationDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "workflowExecutionTraceDtoSchema",
-      "schemaVersions": [
-        "chat-workflow-execution-trace.v1"
-      ]
+      "schemaVersions": ["chat-workflow-execution-trace.v1"]
     },
     {
       "identity": "workflowNodeDetailDtoSchema",
-      "schemaVersions": [
-        "chat-workflow-api.v1"
-      ]
+      "schemaVersions": ["chat-workflow-api.v1"]
     },
     {
       "identity": "workflowResourceRefDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "workflowResourcesDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "workflowRunConfigSummaryDtoSchema",
-      "schemaVersions": [
-        "chat-product-api.v1"
-      ]
+      "schemaVersions": ["chat-product-api.v1"]
     },
     {
       "identity": "workflowRunConfigurationSchema",
-      "schemaVersions": [
-        "workflow-run-configuration.v1"
-      ]
+      "schemaVersions": ["workflow-run-configuration.v1"]
     },
     {
       "identity": "workflowRunViewDtoSchema",
-      "schemaVersions": [
-        "chat-workflow-api.v1"
-      ]
+      "schemaVersions": ["chat-workflow-api.v1"]
     },
     {
       "identity": "workspaceInstructionsInputSchema",
-      "schemaVersions": [
-        "workspace-instructions-input.v1"
-      ]
+      "schemaVersions": ["workspace-instructions-input.v1"]
     }
   ]
 }

@@ -39,43 +39,57 @@ import {
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
 import { migrateProductSnapshotV2ToV3, productSnapshotV2Schema } from "./migrate-v2-to-v3.js";
-import { migrateProductSnapshotV3ToV4, productSnapshotV3Schema } from "./migrate-v3-to-v4.js";
-import { productSnapshotV4Schema } from "./legacy-v4.js";
-import { productSnapshotV5Schema } from "./legacy-v5.js";
-import { productSnapshotV6Schema, type ProductSnapshotV6 } from "./legacy-v6.js";
-import { productSnapshotV7Schema, type ProductSnapshotV7 } from "./legacy-v7.js";
-import { productSnapshotV8Schema, type ProductSnapshotV8 } from "./legacy-v8.js";
-import { productSnapshotV9Schema, type ProductSnapshotV9 } from "./legacy-v9.js";
-import { productSnapshotV10Schema, type ProductSnapshotV10 } from "./legacy-v10.js";
-import { productSnapshotV11Schema, type ProductSnapshotV11 } from "./legacy-v11.js";
-import { productSnapshotV12Schema, type ProductSnapshotV12 } from "./legacy-v12.js";
-import { productSnapshotV13Schema, type ProductSnapshotV13 } from "./legacy-v13.js";
-import { productSnapshotV14Schema, type ProductSnapshotV14 } from "./legacy-v14.js";
-import { productSnapshotV15Schema, type ProductSnapshotV15 } from "./legacy-v15.js";
-import { productSnapshotV16Schema, type ProductSnapshotV16 } from "./legacy-v16.js";
-import { productSnapshotV17Schema, type ProductSnapshotV17 } from "./legacy-v17.js";
-import { productSnapshotV18Schema } from "./legacy-v18.js";
-import { productSnapshotV19Schema } from "./legacy-v19.js";
+import {
+  migrateProductSnapshotV3ToV4,
+  productSnapshotV3Schema,
+} from "./internal-compat/migrate-v3-to-v4.js";
+import { productSnapshotV4Schema } from "./internal-compat/legacy-v4.js";
+import { productSnapshotV5Schema } from "./internal-compat/legacy-v5.js";
+import { productSnapshotV6Schema, type ProductSnapshotV6 } from "./internal-compat/legacy-v6.js";
+import { productSnapshotV7Schema, type ProductSnapshotV7 } from "./internal-compat/legacy-v7.js";
+import { productSnapshotV8Schema, type ProductSnapshotV8 } from "./internal-compat/legacy-v8.js";
+import { productSnapshotV9Schema, type ProductSnapshotV9 } from "./internal-compat/legacy-v9.js";
+import { productSnapshotV10Schema, type ProductSnapshotV10 } from "./internal-compat/legacy-v10.js";
+import { productSnapshotV11Schema, type ProductSnapshotV11 } from "./internal-compat/legacy-v11.js";
+import { productSnapshotV12Schema, type ProductSnapshotV12 } from "./internal-compat/legacy-v12.js";
+import { productSnapshotV13Schema, type ProductSnapshotV13 } from "./internal-compat/legacy-v13.js";
+import { productSnapshotV14Schema, type ProductSnapshotV14 } from "./internal-compat/legacy-v14.js";
+import {
+  productSnapshotV15Schema,
+  type ProductSnapshotV15,
+} from "./internal-compat/legacy-v15-reader.js";
+import {
+  productSnapshotV16Schema,
+  type ProductSnapshotV16,
+} from "./internal-compat/legacy-v16-reader.js";
+import {
+  productSnapshotV17Schema,
+  type ProductSnapshotV17,
+} from "./internal-compat/legacy-v17-reader.js";
+import { productSnapshotV18Schema } from "./internal-compat/legacy-v18-reader.js";
+import { productSnapshotV19Schema } from "./internal-compat/legacy-v19-base.js";
 import { productSnapshotV20Schema } from "./legacy-v20.js";
-import { productSnapshotV20CapabilitySchema } from "./legacy-v20-capability.js";
+import { productSnapshotV20CapabilitySchema } from "./internal-compat/legacy-v20-capability-reader.js";
 import { productSnapshotV21Schema } from "./legacy-v21.js";
 import { productSnapshotV22Schema } from "./legacy-v22.js";
-import { migrateProductSnapshotV4ToV5 } from "./migrate-v4-to-v5.js";
-import { migrateProductSnapshotV5ToV6 } from "./migrate-v5-to-v6.js";
-import { migrateProductSnapshotV6ToV7 } from "./migrate-v6-to-v7.js";
-import { migrateProductSnapshotV7ToV8 } from "./migrate-v7-to-v8.js";
-import { migrateProductSnapshotV8ToV9 } from "./migrate-v8-to-v9.js";
-import { migrateProductSnapshotV9ToV10 } from "./migrate-v9-to-v10.js";
-import { migrateProductSnapshotV10ToV11 } from "./migrate-v10-to-v11.js";
-import { migrateProductSnapshotV11ToV12 } from "./migrate-v11-to-v12.js";
-import { migrateProductSnapshotV12ToV13 } from "./migrate-v12-to-v13.js";
-import { migrateProductSnapshotV13ToV14 } from "./migrate-v13-to-v14.js";
-import { migrateProductSnapshotV14ToV15 } from "./migrate-v14-to-v15.js";
-import { migrateProductSnapshotV15ToV16 } from "./migrate-v15-to-v16.js";
-import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
-import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
-import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
-import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
+import { migrateProductSnapshotV4ToV5 } from "./internal-compat/migrate-v4-to-v5.js";
+import { migrateProductSnapshotV5ToV6 } from "./internal-compat/migrate-v5-to-v6.js";
+import { migrateProductSnapshotV6ToV7 } from "./internal-compat/migrate-v6-to-v7.js";
+import { migrateProductSnapshotV7ToV8 } from "./internal-compat/migrate-v7-to-v8.js";
+import { migrateProductSnapshotV8ToV9 } from "./internal-compat/migrate-v8-to-v9.js";
+import { migrateProductSnapshotV9ToV10 } from "./internal-compat/migrate-v9-to-v10.js";
+import { migrateProductSnapshotV10ToV11 } from "./internal-compat/migrate-v10-to-v11.js";
+import { migrateProductSnapshotV11ToV12 } from "./internal-compat/migrate-v11-to-v12.js";
+import { migrateProductSnapshotV12ToV13 } from "./internal-compat/migrate-v12-to-v13.js";
+import { migrateProductSnapshotV13ToV14 } from "./internal-compat/migrate-v13-to-v14.js";
+import { migrateProductSnapshotV14ToV15 } from "./internal-compat/migrate-v14-to-v15.js";
+import {
+  migrateProductSnapshotV15ToV16,
+  migrateProductSnapshotV16ToV17,
+  migrateProductSnapshotV17ToV18,
+  migrateProductSnapshotV18ToV19,
+  migrateProductSnapshotV19ToV20,
+} from "./internal-compat/migrations-v15-v20.js";
 import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { migrateProductSnapshotV20CapabilityToV22 } from "./migrate-v20-capability-to-v22.js";
 import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";

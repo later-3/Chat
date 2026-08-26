@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "chat-compatibility-extractor-migrations.v1",
+  "migrations": [
+    {
+      "domainId": "workflow-run-spec",
+      "fromCanonicalVersion": 1,
+      "toCanonicalVersion": 2,
+      "baseCommit": "ac8f9c066c2ab4403d7b172a5d918996b0775596",
+      "identities": ["workflow-run-spec.v1"]
+    }
+  ],
+  "authorityProofs": [
+    {
+      "domainId": "direct-generic-journals",
+      "baseCommit": "ac8f9c066c2ab4403d7b172a5d918996b0775596",
+      "authorities": ["legacyAuthority"]
+    }
+  ]
+}

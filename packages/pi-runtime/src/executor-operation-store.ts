@@ -11,11 +11,11 @@ import {
   piExecutorOperationStatusSchema,
   piOperationIdSchema,
   piRuntimeSessionIdSchema,
-  startPiExecutorOperationRequestSchema,
   type PiExecutorEvent,
   type PiExecutorOperationSnapshot,
   type StartPiExecutorOperationRequest,
 } from "./executor-service-contract.js";
+import { startPiExecutorOperationRequestSchema } from "./internal-compat/executor-request-reader.js";
 
 const STORE_SCHEMA_VERSION = "pi-executor-operation-store.v2";
 const LEGACY_STORE_SCHEMA_VERSION = "pi-executor-operation-store.v1";

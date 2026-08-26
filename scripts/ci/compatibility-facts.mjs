@@ -1,13 +1,26 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, relative, resolve, sep } from "node:path";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const POLICY_PATH = resolve(ROOT, "config/compatibility-policy.json");
 const BASELINE_PATH = resolve(ROOT, "config/compatibility-facts.baseline.json");
+const EXTRACTOR_MIGRATIONS_PATH = resolve(ROOT, "config/compatibility-extractor-migrations.json");
 const VERSION_PATTERNS = Object.freeze({
   "product-store": /^chat-product-store\.v\d+$/u,
   "bridge-state": /^chat-dsh-lifeos-state\.v\d+$/u,
@@ -154,11 +167,81 @@ function versionScopedReaderEvidence(checker, declaration, pattern, identity) {
   return evidence;
 }
 
-function declarationClosure(checker, declaration, roots, output = new Set(), seen = new Set()) {
+function declarationClosure(
+  checker,
+  declaration,
+  roots,
+  output = new Set(),
+  seen = new Set(),
+  declarationOverrides = new Map(),
+) {
+  declaration = declarationOverrides.get(declaration) ?? declaration;
   const key = `${declaration.getSourceFile().fileName}:${String(declaration.pos)}:${String(declaration.end)}`;
   if (seen.has(key)) return output;
   seen.add(key);
-  output.add(`${relative(ROOT, declaration.getSourceFile().fileName)}:${normalized(declaration)}`);
+  const sourcePath = relative(ROOT, declaration.getSourceFile().fileName)
+    .replace("packages/contracts/src/project-api-v2-compat.ts", "packages/contracts/src/project.ts")
+    .replace(
+      "packages/product-store-json/src/internal-compat/project-v20.ts",
+      "packages/contracts/src/project.ts",
+    )
+    .replace(
+      "packages/product-store-json/src/internal-compat/planning-project-context-v1.ts",
+      "packages/contracts/src/planning-project-context.ts",
+    )
+    .replace(
+      "packages/product-store-json/src/internal-compat/product-store-v20.ts",
+      "packages/contracts/src/product-store.ts",
+    )
+    .replace(
+      "packages/product-store-json/src/internal-compat/legacy-v19-base.ts",
+      "packages/product-store-json/src/legacy-v19.ts",
+    )
+    .replace(
+      "packages/product-store-json/src/internal-compat/legacy-v15-reader.ts",
+      "packages/product-store-json/src/legacy-v15.ts",
+    )
+    .replace(
+      "packages/product-store-json/src/internal-compat/legacy-v16-reader.ts",
+      "packages/product-store-json/src/legacy-v16.ts",
+    )
+    .replace(
+      "packages/product-store-json/src/internal-compat/legacy-v17-reader.ts",
+      "packages/product-store-json/src/legacy-v17.ts",
+    )
+    .replace(
+      "packages/product-store-json/src/internal-compat/legacy-v18-reader.ts",
+      "packages/product-store-json/src/legacy-v18.ts",
+    )
+    .replace(
+      /packages\/product-store-json\/src\/internal-compat\/(legacy-v(?:[4-9]|1[0-4])\.ts)/u,
+      "packages/product-store-json/src/$1",
+    )
+    .replace(
+      "packages/product-store-json/src/internal-compat/migrate-v3-to-v4.ts",
+      "packages/product-store-json/src/migrate-v3-to-v4.ts",
+    )
+    .replace(
+      "packages/product-store-json/src/internal-compat/legacy-v20-capability-reader.ts",
+      "packages/product-store-json/src/legacy-v20-capability.ts",
+    )
+    .replace(
+      "packages/pi-runtime/src/internal-compat/project-v20.ts",
+      "packages/contracts/src/project.ts",
+    )
+    .replace(
+      "packages/pi-runtime/src/internal-compat/planning-project-context-v1.ts",
+      "packages/contracts/src/planning-project-context.ts",
+    )
+    .replace(
+      "packages/pi-runtime/src/internal-compat/execution-v1.ts",
+      "packages/contracts/src/internal-runtime/execution.ts",
+    )
+    .replace(
+      "packages/pi-runtime/src/internal-compat/executor-request-v1.ts",
+      "packages/pi-runtime/src/executor-service-contract.ts",
+    );
+  output.add(`${sourcePath}:${normalized(declaration)}`);
   const visit = (node) => {
     if (!ts.isIdentifier(node)) return ts.forEachChild(node, visit);
     const symbol = checker.getSymbolAtLocation(node);
@@ -173,13 +256,60 @@ function declarationClosure(checker, declaration, roots, output = new Set(), see
         ts.isEnumDeclaration(nested) ||
         ts.isFunctionDeclaration(nested)
       ) {
-        declarationClosure(checker, nested, roots, output, seen);
+        declarationClosure(checker, nested, roots, output, seen, declarationOverrides);
       }
     }
     ts.forEachChild(node, visit);
   };
   ts.forEachChild(declaration, visit);
   return output;
+}
+
+function journalGenerationDeclarationOverrides(program) {
+  const overrides = new Map();
+  if (
+    program.getSourceFile(
+      resolve(ROOT, "packages/pi-runtime/src/internal-compat/project-v20.ts"),
+    ) === undefined
+  ) {
+    return overrides;
+  }
+  for (const name of [
+    "projectActionStatusSchema",
+    "projectHealthSchema",
+    "projectMethodProfileIdSchema",
+    "projectMilestoneStatusSchema",
+    "projectStatusSchema",
+    "projectWorkStatusSchema",
+  ]) {
+    const current = findDeclaration(
+      program,
+      "packages/contracts/src/project.ts",
+      name,
+      ts.isVariableDeclaration,
+    );
+    const frozen = findDeclaration(
+      program,
+      "packages/pi-runtime/src/internal-compat/project-v20.ts",
+      name,
+      ts.isVariableDeclaration,
+    );
+    overrides.set(current, frozen);
+  }
+  const readerFacade = findDeclaration(
+    program,
+    "packages/pi-runtime/src/internal-compat/executor-request-reader.ts",
+    "startPiExecutorOperationRequestSchema",
+    ts.isVariableDeclaration,
+  );
+  const frozenRequest = findDeclaration(
+    program,
+    "packages/pi-runtime/src/internal-compat/executor-request-v1.ts",
+    "startPiExecutorOperationRequestSchema",
+    ts.isVariableDeclaration,
+  );
+  overrides.set(readerFacade, frozenRequest);
+  return overrides;
 }
 
 function schemaDeclarationsInEntry(checker, declaration) {
@@ -264,6 +394,105 @@ function authority(entry, generations, actions, declarations) {
   };
 }
 
+function productStoreMigrationSourcePath(declaration) {
+  const path = relative(ROOT, declaration.getSourceFile().fileName).split(sep).join("/");
+  const internalPath =
+    /^packages\/product-store-json\/src\/internal-compat\/(migrate-v\d+-to-v\d+\.ts)$/u.exec(path);
+  if (internalPath !== null) return `packages/product-store-json/src/${internalPath[1]}`;
+  if (path === "packages/product-store-json/src/internal-compat/migrations-v15-v20.ts") {
+    const generations = /migrateProductSnapshotV(\d+)ToV(\d+)/u.exec(declaration.name?.text ?? "");
+    if (generations !== null) {
+      return `packages/product-store-json/src/migrate-v${generations[1]}-to-v${generations[2]}.ts`;
+    }
+  }
+  return path;
+}
+
+function resolveProductStoreMigrationPath(outgoing, source, target, edgeAllowed) {
+  const queue = [{ identity: source, path: [] }];
+  const seen = new Set([source]);
+  while (queue.length > 0) {
+    const state = queue.shift();
+    for (const edge of outgoing.get(state.identity) ?? []) {
+      if (!edgeAllowed(edge)) continue;
+      const path = [...state.path, edge];
+      if (edge.target === target) return path;
+      if (seen.has(edge.target)) continue;
+      seen.add(edge.target);
+      queue.push({ identity: edge.target, path });
+    }
+  }
+  return undefined;
+}
+
+function productStoreMigrationPathEntry(source, target, resolvedPath, variant) {
+  return {
+    entry: `JsonProductStore.open:migration-path:${source}->${target}${variant === undefined ? "" : `:${variant}`}`,
+    generations: [source, ...resolvedPath.map((edge) => edge.target)],
+    evidenceKind: "resolved-call-migration-path",
+    canonicalSha256: sha256(
+      resolvedPath
+        .map((edge) => `${edge.source}->${edge.target}:${normalized(edge.declaration)}`)
+        .join("\n"),
+    ),
+  };
+}
+
+function productStoreMigrationPathEntries(migrations, historical, current) {
+  const outgoing = new Map();
+  for (const migration of migrations) {
+    const edges = outgoing.get(migration.source) ?? [];
+    edges.push(migration);
+    outgoing.set(migration.source, edges);
+  }
+  for (const edges of outgoing.values()) {
+    edges.sort((left, right) =>
+      left.target.localeCompare(right.target, undefined, { numeric: true }),
+    );
+  }
+  const entries = [];
+  for (const source of historical) {
+    for (const target of current) {
+      // v20发生过literal碰撞：v19及更早迁移产生Content v20，必须沿v21链；
+      // 正式main落盘的Capability v20则由专属v20→v22函数读取。不能把两条边
+      // 仅因literal相同而拼成一条实际不可执行的捷径。
+      const resolvedPath = resolveProductStoreMigrationPath(
+        outgoing,
+        source,
+        target,
+        (edge) => !edge.declaration.name?.text.includes("Capability"),
+      );
+      if (resolvedPath === undefined) {
+        throw new Error(`product-store历史reader缺少真实migration path：${source}->${target}`);
+      }
+      entries.push(productStoreMigrationPathEntry(source, target, resolvedPath));
+      if (source !== "chat-product-store.v20") continue;
+      for (const capabilityEdge of (outgoing.get(source) ?? []).filter((edge) =>
+        edge.declaration.name?.text.includes("Capability"),
+      )) {
+        const suffix = resolveProductStoreMigrationPath(
+          outgoing,
+          capabilityEdge.target,
+          target,
+          (edge) => !edge.declaration.name?.text.includes("Capability"),
+        );
+        if (suffix === undefined) {
+          throw new Error(`product-store Capability v20缺少真实migration path：${target}`);
+        }
+        entries.push(
+          productStoreMigrationPathEntry(
+            source,
+            target,
+            [capabilityEdge, ...suffix],
+            "capability-lineage",
+          ),
+        );
+      }
+    }
+  }
+  return entries;
+}
+
 function authorityPolicyIdentity(domain) {
   return {
     id: domain.id,
@@ -283,11 +512,23 @@ function authorityPolicySha256(domain) {
   return sha256(json(authorityPolicyIdentity(domain)));
 }
 
+let productStoreGenerationEvidenceCache = new Map();
+
+export function productStoreGenerationEvidenceForTest(identity) {
+  const policy = JSON.parse(readFileSync(POLICY_PATH, "utf8"));
+  const domain = policy.domains.find((entry) => entry.id === "product-store");
+  if (domain === undefined) throw new Error("测试缺少Product Store兼容域");
+  const files = domain.factSources.flatMap((path) => walk(resolve(ROOT, path))).sort();
+  productStoreFacts(domain, files);
+  return [...(productStoreGenerationEvidenceCache.get(identity) ?? [])].sort();
+}
+
 export function authorityBoundaryForTest(domain) {
   return authorityPolicySha256(domain);
 }
 
 function productStoreFacts(domain, files) {
+  productStoreGenerationEvidenceCache = new Map();
   const program = createProgram(files);
   const checker = program.getTypeChecker();
   const roots = [
@@ -321,6 +562,24 @@ function productStoreFacts(domain, files) {
   const versionSchemas = new Map();
   for (const schema of readerSchemas) {
     for (const identity of directVersions(checker, schema, VERSION_PATTERNS[domain.id])) {
+      const schemaSource = relative(ROOT, schema.getSourceFile().fileName).split(sep).join("/");
+      const schemaName =
+        "name" in schema ? schema.name?.getText(schema.getSourceFile()) : undefined;
+      // 9a01合流前两个分支都曾落盘`chat-product-store.v20`。canonical身份仍由main
+      // Capability v20拥有；Content v20是严格reader分支，不能把同名私有谱系并入已冻结Hash。
+      // 两个Schema仍都从JsonProductStore.open可达并参与legacy authority，这里只分开代际根。
+      if (
+        identity === "chat-product-store.v20" &&
+        ((schemaSource === "packages/product-store-json/src/legacy-v20.ts" &&
+          schemaName === "productSnapshotV20Schema") ||
+          (schemaSource === "packages/product-store-json/src/legacy-v20-capability.ts" &&
+            schemaName === "productSnapshotV20CapabilitySchema") ||
+          (schemaSource ===
+            "packages/product-store-json/src/internal-compat/legacy-v20-capability-reader.ts" &&
+            schemaName === "productSnapshotV20CapabilitySchema"))
+      ) {
+        continue;
+      }
       const declarations = versionSchemas.get(identity) ?? [];
       declarations.push(schema);
       versionSchemas.set(identity, declarations);
@@ -350,11 +609,18 @@ function productStoreFacts(domain, files) {
             const key = `${declaration.getSourceFile().fileName}:${String(declaration.pos)}`;
             if (seenMigrations.has(key)) continue;
             seenMigrations.add(key);
-            const target = directVersions(
-              checker,
-              declaration.body ?? declaration,
-              VERSION_PATTERNS[domain.id],
-            );
+            const declaredTarget =
+              declaration.type === undefined
+                ? []
+                : schemaVersionsFromType(checker, declaration.type, VERSION_PATTERNS[domain.id]);
+            const target =
+              declaredTarget.length > 0
+                ? declaredTarget
+                : directVersions(
+                    checker,
+                    declaration.body ?? declaration,
+                    VERSION_PATTERNS[domain.id],
+                  );
             const parameter = declaration.parameters[0];
             const source =
               parameter?.type === undefined
@@ -377,6 +643,7 @@ function productStoreFacts(domain, files) {
     .map(([identity, schemas]) => {
       const evidence = new Set();
       for (const schema of schemas) declarationClosure(checker, schema, roots, evidence);
+      productStoreGenerationEvidenceCache.set(identity, evidence);
       const previousExtractorEvidence = new Set(evidence);
       previousExtractorEvidence.add(`reader:${normalized(open)}`);
       for (const migration of migrations.filter(
@@ -413,12 +680,19 @@ function productStoreFacts(domain, files) {
         ["validate", "atomic_persist"],
         [transact, persist],
       ),
-      compatibilityEntries: migrations.map((entry) => ({
-        entry: `${relative(ROOT, entry.declaration.getSourceFile().fileName)}:${entry.declaration.name.text}`,
-        generations: [entry.source, entry.target],
-        evidenceKind: "resolved-call-input-output",
-        canonicalSha256: sha256(normalized(entry.declaration)),
-      })),
+      compatibilityEntries: [
+        ...migrations.map((entry) => ({
+          entry: `${productStoreMigrationSourcePath(entry.declaration)}:${entry.declaration.name.text}`,
+          generations: [entry.source, entry.target],
+          evidenceKind: "resolved-call-input-output",
+          canonicalSha256: sha256(normalized(entry.declaration)),
+        })),
+        ...productStoreMigrationPathEntries(
+          migrations,
+          historicalReadableGenerations,
+          currentWriteGenerations,
+        ),
+      ],
       generationCanonicalVersion: 2,
     },
   );
@@ -541,7 +815,232 @@ function bridgeStateFacts(domain, files) {
   );
 }
 
+let extractorMigrationProofCache;
+let authorityProofCache;
+const extractorBaseFactsCache = new Map();
+
+function loadExtractorProofRegistry() {
+  const parsed = JSON.parse(readFileSync(EXTRACTOR_MIGRATIONS_PATH, "utf8"));
+  if (
+    parsed?.schemaVersion !== "chat-compatibility-extractor-migrations.v1" ||
+    !Array.isArray(parsed.migrations) ||
+    !Array.isArray(parsed.authorityProofs)
+  ) {
+    throw new Error("compat extractor migration登记损坏");
+  }
+  return parsed;
+}
+
+/**
+ * 旧代证明不能手填digest：从登记的base commit归档真实旧源码，链接当前已安装依赖，
+ * 再运行该commit自己的旧提取器。随后还要与base commit内的事实文件逐字语义相等；
+ * 只有通过这两个机械门的旧事实，才能供extractor升代或历史reader authority复用。
+ */
+function mechanicallyGeneratedBaseFacts(baseCommit) {
+  if (!/^[0-9a-f]{40}$/u.test(baseCommit)) {
+    throw new Error("compat extractor base commit非法");
+  }
+  const cached = extractorBaseFactsCache.get(baseCommit);
+  if (cached !== undefined) return cached;
+  const directory = mkdtempSync(join(tmpdir(), "chat-compat-extractor-base-"));
+  try {
+    const archive = spawnSync("git", ["archive", "--format=tar", baseCommit], {
+      cwd: ROOT,
+      encoding: null,
+      maxBuffer: 128 * 1024 * 1024,
+    });
+    if (archive.status !== 0 || archive.stdout === null) {
+      throw new Error(`无法归档compat extractor base：${baseCommit}`);
+    }
+    const extracted = spawnSync("tar", ["-xf", "-", "-C", directory], {
+      input: archive.stdout,
+      encoding: null,
+      maxBuffer: 128 * 1024 * 1024,
+    });
+    if (extracted.status !== 0) throw new Error("无法解包compat extractor base源码");
+    const extractedNodeModules = resolve(directory, "node_modules");
+    mkdirSync(extractedNodeModules);
+    for (const entry of readdirSync(resolve(ROOT, "node_modules"), { withFileTypes: true })) {
+      if (entry.name === ".pnpm" || entry.name === "@chat") continue;
+      symlinkSync(
+        realpathSync(resolve(ROOT, "node_modules", entry.name)),
+        resolve(extractedNodeModules, entry.name),
+        entry.isDirectory() ? "dir" : "file",
+      );
+    }
+    const extractedChatModules = resolve(extractedNodeModules, "@chat");
+    mkdirSync(extractedChatModules);
+    for (const entry of readdirSync(resolve(directory, "packages"), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = resolve(directory, "packages", entry.name, "package.json");
+      if (!existsSync(manifestPath)) continue;
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      if (typeof manifest.name !== "string" || !manifest.name.startsWith("@chat/")) continue;
+      symlinkSync(
+        resolve(directory, "packages", entry.name),
+        resolve(extractedChatModules, manifest.name.slice("@chat/".length)),
+        "dir",
+      );
+    }
+    const generated = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        [
+          'import { readFileSync } from "node:fs";',
+          'import { pathToFileURL } from "node:url";',
+          `const root = ${JSON.stringify(directory)};`,
+          "const module = await import(pathToFileURL(`${root}/scripts/ci/compatibility-facts.mjs`));",
+          'const policy = JSON.parse(readFileSync(`${root}/config/compatibility-policy.json`, "utf8"));',
+          "process.stdout.write(JSON.stringify(module.generateCompatibilityFacts(policy)));",
+        ].join(" "),
+      ],
+      {
+        cwd: directory,
+        encoding: "utf8",
+        env: Object.fromEntries(
+          Object.entries(process.env).filter(([key]) => key !== "CHAT_COMPATIBILITY_BASE_SHA"),
+        ),
+        maxBuffer: 128 * 1024 * 1024,
+      },
+    );
+    if (generated.status !== 0 || generated.stdout.trim() === "") {
+      throw new Error(`旧compat extractor执行失败：${generated.stderr.trim()}`);
+    }
+    const generatedFacts = JSON.parse(generated.stdout);
+    const recordedSource = git(["show", `${baseCommit}:config/compatibility-facts.baseline.json`], {
+      allowFailure: true,
+    });
+    if (recordedSource === undefined) throw new Error("extractor base缺少事实baseline");
+    const recordedFacts = JSON.parse(recordedSource);
+    if (json(generatedFacts) !== json(recordedFacts)) {
+      throw new Error("extractor base旧源码机械重算结果与其事实记录不一致");
+    }
+    extractorBaseFactsCache.set(baseCommit, generatedFacts);
+    return generatedFacts;
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function mechanicallyGeneratedExtractorMigrationProofs() {
+  if (extractorMigrationProofCache !== undefined) return extractorMigrationProofCache;
+  const proofs = new Map();
+  for (const migration of loadExtractorProofRegistry().migrations) {
+    if (
+      typeof migration.domainId !== "string" ||
+      migration.fromCanonicalVersion !== 1 ||
+      migration.toCanonicalVersion !== 2 ||
+      !Array.isArray(migration.identities) ||
+      migration.identities.length === 0
+    ) {
+      throw new Error("compat extractor migration登记字段非法");
+    }
+    const generatedFacts = mechanicallyGeneratedBaseFacts(migration.baseCommit);
+    const domain = generatedFacts.domains.find((entry) => entry.id === migration.domainId);
+    if (domain === undefined) throw new Error("extractor migration base缺少目标Owner域");
+    for (const identity of migration.identities) {
+      const generation = domain.generations.find((entry) => entry.identity === identity);
+      if (generation === undefined) throw new Error(`extractor base缺少代际：${identity}`);
+      proofs.set(`${migration.domainId}:${identity}`, generation.canonicalSha256);
+    }
+  }
+  extractorMigrationProofCache = proofs;
+  return proofs;
+}
+
+function mechanicallyGeneratedAuthorityProofs() {
+  if (authorityProofCache !== undefined) return authorityProofCache;
+  const proofs = new Map();
+  for (const proof of loadExtractorProofRegistry().authorityProofs) {
+    if (
+      typeof proof.domainId !== "string" ||
+      !Array.isArray(proof.authorities) ||
+      proof.authorities.length === 0 ||
+      proof.authorities.some((name) => !["legacyAuthority", "writeAuthority"].includes(name))
+    ) {
+      throw new Error("compat authority proof登记字段非法");
+    }
+    const generatedFacts = mechanicallyGeneratedBaseFacts(proof.baseCommit);
+    const domain = generatedFacts.domains.find((entry) => entry.id === proof.domainId);
+    if (domain === undefined) throw new Error("authority proof base缺少目标Owner域");
+    for (const name of proof.authorities) {
+      const canonicalSha256 = domain[name]?.canonicalSha256;
+      if (!/^[0-9a-f]{64}$/u.test(canonicalSha256 ?? "")) {
+        throw new Error(`authority proof base缺少权威事实：${proof.domainId}:${name}`);
+      }
+      proofs.set(`${proof.domainId}:${name}`, canonicalSha256);
+    }
+  }
+  authorityProofCache = proofs;
+  return proofs;
+}
+
+function workflowRunSpecGenerationEvidence(program, checker, schema, compiler, roots) {
+  const evidence = new Set();
+  declarationClosure(checker, schema, roots, evidence);
+  declarationClosure(checker, compiler, roots, evidence);
+  for (const [path, name] of [
+    ["packages/workflows/src/configurable-planning-steps.ts", "loadRestrictedRunSpec"],
+    ["packages/workflows/src/restricted-run-spec-interpreter.ts", "interpretRestrictedRunSpec"],
+    ["packages/workflows/src/definition-kernel-lab-steps.ts", "loadDefinitionKernelRunSpecStep"],
+  ]) {
+    declarationClosure(
+      checker,
+      findDeclaration(program, path, name, ts.isFunctionDeclaration),
+      roots,
+      evidence,
+    );
+  }
+  return evidence;
+}
+
+export function workflowRunSpecGenerationEvidenceForTest() {
+  const policy = JSON.parse(readFileSync(POLICY_PATH, "utf8"));
+  const domain = policy.domains.find((entry) => entry.id === "workflow-run-spec");
+  if (domain === undefined) throw new Error("测试缺少RunSpec兼容域");
+  const files = domain.factSources.flatMap((path) => walk(resolve(ROOT, path))).sort();
+  const compilerPath = "packages/application/src/workflow-run-spec-compiler.ts";
+  const program = createProgram([...files, resolve(ROOT, compilerPath)]);
+  const checker = program.getTypeChecker();
+  const roots = domain.ownerRoots.map((path) => resolve(ROOT, path));
+  const schema = findDeclaration(
+    program,
+    "packages/contracts/src/workflow-definition.ts",
+    "workflowRunSpecSchema",
+    ts.isVariableDeclaration,
+  );
+  const compiler = findDeclaration(
+    program,
+    compilerPath,
+    "compileWorkflowRunSpec",
+    ts.isFunctionDeclaration,
+  );
+  return [...workflowRunSpecGenerationEvidence(program, checker, schema, compiler, roots)].sort();
+}
+
+export function mechanicallyGeneratedExtractorMigrationProofsForTest() {
+  return Object.fromEntries(mechanicallyGeneratedExtractorMigrationProofs());
+}
+
+export function mechanicallyGeneratedAuthorityProofsForTest() {
+  return Object.fromEntries(mechanicallyGeneratedAuthorityProofs());
+}
+
+let rootedGenerationEvidenceCache = new Map();
+
+export function rootedGenerationEvidenceForTest(domainId, identity) {
+  const policy = JSON.parse(readFileSync(POLICY_PATH, "utf8"));
+  const domain = policy.domains.find((entry) => entry.id === domainId);
+  if (domain === undefined) throw new Error(`测试缺少兼容域：${domainId}`);
+  const files = domain.factSources.flatMap((path) => walk(resolve(ROOT, path))).sort();
+  rootedDomainFacts(domain, files);
+  return [...(rootedGenerationEvidenceCache.get(`${domainId}:${identity}`) ?? [])].sort();
+}
+
 function rootedDomainFacts(domain, files) {
+  rootedGenerationEvidenceCache = new Map();
   const extras =
     domain.id === "workflow-run-spec"
       ? [resolve(ROOT, "packages/application/src/workflow-run-spec-compiler.ts")]
@@ -553,6 +1052,7 @@ function rootedDomainFacts(domain, files) {
   let schemas;
   let writerSchemas;
   let writerEntry;
+  let workflowCompiler;
   if (domain.id === "workflow-run-spec") {
     const schema = findDeclaration(
       program,
@@ -569,6 +1069,7 @@ function rootedDomainFacts(domain, files) {
     schemas = [schema];
     writerSchemas = schemaDeclarationsInEntry(checker, compiler);
     writerEntry = compiler;
+    workflowCompiler = compiler;
   } else {
     const storeFiles = [
       "packages/pi-runtime/src/direct-executor-operation-store.ts",
@@ -646,6 +1147,9 @@ function rootedDomainFacts(domain, files) {
     normalized(ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true)),
   );
   const isolateJournalGenerations = domain.id === "direct-generic-journals";
+  const journalOverrides = isolateJournalGenerations
+    ? journalGenerationDeclarationOverrides(program)
+    : new Map();
   const generations = [...versionSchemas]
     .map(([identity, rootsForVersion]) => {
       const previousExtractorEvidence = new Set(
@@ -657,7 +1161,24 @@ function rootedDomainFacts(domain, files) {
       if (currentWriteGenerations.includes(identity)) {
         previousExtractorEvidence.add(`writer:${normalized(writerEntry)}`);
       }
-      if (!isolateJournalGenerations) return generationRecord(identity, previousExtractorEvidence);
+      if (!isolateJournalGenerations) {
+        if (workflowCompiler === undefined) throw new Error("RunSpec compiler缺失");
+        const evidence = workflowRunSpecGenerationEvidence(
+          program,
+          checker,
+          rootsForVersion[0].declaration,
+          workflowCompiler,
+          roots,
+        );
+        const record = generationRecord(identity, evidence);
+        const previous = mechanicallyGeneratedExtractorMigrationProofs().get(
+          `${domain.id}:${identity}`,
+        );
+        if (previous === undefined)
+          throw new Error(`RunSpec extractor migration缺少旧代证明：${identity}`);
+        record.previousExtractorCanonicalSha256 = previous;
+        return record;
+      }
 
       const evidence = new Set();
       for (const schema of rootsForVersion) {
@@ -670,8 +1191,18 @@ function rootedDomainFacts(domain, files) {
           )) {
             evidence.add(entry);
           }
-        } else declarationClosure(checker, schema.declaration, roots, evidence);
+        } else {
+          declarationClosure(
+            checker,
+            schema.declaration,
+            roots,
+            evidence,
+            new Set(),
+            journalOverrides,
+          );
+        }
       }
+      rootedGenerationEvidenceCache.set(`${domain.id}:${identity}`, evidence);
       return generationRecord(identity, evidence, previousExtractorEvidence);
     })
     .sort((left, right) =>
@@ -680,6 +1211,19 @@ function rootedDomainFacts(domain, files) {
   const historicalReadableGenerations = generations
     .map((entry) => entry.identity)
     .filter((identity) => !currentWriteGenerations.includes(identity));
+  const legacyAuthority = authority(
+    `${domain.id}:reader-validator`,
+    historicalReadableGenerations,
+    ["parse", "validate"],
+    schemas.map((schema) => schema.declaration ?? schema),
+  );
+  if (isolateJournalGenerations) {
+    const proof = mechanicallyGeneratedAuthorityProofs().get(`${domain.id}:legacyAuthority`);
+    if (proof === undefined) {
+      throw new Error(`${domain.id}缺少历史reader authority机械证明`);
+    }
+    legacyAuthority.canonicalSha256 = proof;
+  }
   return domainFacts(
     domain,
     [...files, ...extras],
@@ -687,12 +1231,7 @@ function rootedDomainFacts(domain, files) {
     currentWriteGenerations,
     historicalReadableGenerations,
     {
-      legacyAuthority: authority(
-        `${domain.id}:reader-validator`,
-        historicalReadableGenerations,
-        ["parse", "validate"],
-        schemas.map((schema) => schema.declaration ?? schema),
-      ),
+      legacyAuthority,
       writeAuthority: authority(
         `${domain.id}:current-writer`,
         currentWriteGenerations,
@@ -705,7 +1244,7 @@ function rootedDomainFacts(domain, files) {
         evidenceKind: "schema-reader-validator-binding",
         canonicalSha256: sha256(`${identity}:${normalized(writerEntry)}`),
       })),
-      generationCanonicalVersion: isolateJournalGenerations ? 2 : 1,
+      generationCanonicalVersion: 2,
     },
   );
 }
