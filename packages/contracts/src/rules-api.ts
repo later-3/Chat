@@ -27,7 +27,7 @@ import {
   ruleWorkflowNodeKeySchema,
   selectedRuleRevisionRefSchema,
 } from "./rules.js";
-import { projectMethodProfileIdSchema } from "./project.js";
+import { projectMethodProfileIdSchema } from "./project-api-v2-compat.js";
 
 export const RULES_API_SCHEMA_VERSION = "chat-rules-api.v1";
 

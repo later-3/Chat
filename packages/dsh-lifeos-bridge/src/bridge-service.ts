@@ -61,7 +61,11 @@ import {
 } from "./prompt-workspace-resolver.ts";
 import { exactSectionsFromJson, lastDshUserInputMapping } from "./dsh-bridge-readable.ts";
 import { bridgeChatSubmitPayload } from "./bridge-chat-dispatch.ts";
-import { productSessionIdSchema, type ResolvedCapabilitySnapshot } from "@chat/contracts/public";
+import {
+  productSessionIdSchema,
+  type ProjectObjectQuery,
+  type ResolvedCapabilitySnapshot,
+} from "@chat/contracts/public";
 import { resolveProjectBootstrapLifecycleTerminalStatus } from "./project-bootstrap-lifecycle.ts";
 
 export class BridgeRequestError extends Error {
@@ -265,6 +269,27 @@ export class LifeosBridgeService {
     private readonly bridgeDispatchReview?: BridgeDispatchReviewCoordinator,
   ) {}
 
+  /** DSH只读表面经Bridge访问Chat公开Query，不缓存或复制Project事实。 */
+  async projects(signal?: AbortSignal) {
+    return { projects: await this.chat.listProjects(signal) };
+  }
+
+  async projectOverview(projectId: string, signal?: AbortSignal) {
+    const [projectHome, project] = await Promise.all([
+      this.chat.getProjectHome(projectId, signal),
+      this.chat.getProjectWorkspace(projectId, signal),
+    ]);
+    return { projectHome, project };
+  }
+
+  async projectTimeline(projectId: string, signal?: AbortSignal) {
+    return { items: await this.chat.getProjectTimeline(projectId, signal) };
+  }
+
+  async projectObjects(projectId: string, query: ProjectObjectQuery, signal?: AbortSignal) {
+    return { result: await this.chat.queryProjectObjects(projectId, query, signal) };
+  }
+
   private history(): DshSessionHistoryPort {
     if (this.dshHistory === undefined) {
       throw new BridgeRequestError(
@@ -338,23 +363,45 @@ export class LifeosBridgeService {
 
   private async projectBootstrapTargets(
     projectBootstrap: Awaited<ReturnType<ChatProductClient["getCurrentProjectBootstrap"]>>,
-  ): Promise<{ workspaceCwd?: string; planeUrl?: string } | null> {
+  ): Promise<{ workspaceCwd?: string } | null> {
     if (projectBootstrap?.binding === undefined) return null;
-    const configuration = await this.loadProjectBootstrapConfiguration();
     const workspaceCwd = await this.promptWorkspaceResolver?.resolveCreationTarget?.(
       projectBootstrap.binding.workspaceRootId,
       projectBootstrap.binding.directoryName,
     );
-    const planeUrl = configuration.enabled
-      ? new URL(
-          `${encodeURIComponent(projectBootstrap.binding.planeWorkspaceSlug)}/projects/${encodeURIComponent(projectBootstrap.binding.planeProjectId)}/issues`,
-          `${configuration.providerWebBaseUrl.replace(/\/$/u, "")}/`,
-        ).toString()
-      : undefined;
-    return {
-      ...(workspaceCwd === undefined ? {} : { workspaceCwd }),
-      ...(planeUrl === undefined ? {} : { planeUrl }),
-    };
+    return workspaceCwd === undefined ? {} : { workspaceCwd };
+  }
+
+  private async projectCoordination(
+    dshSessionId: string,
+    binding: SessionBinding | undefined,
+    signal?: AbortSignal,
+  ) {
+    const workspace = this.promptWorkspaceResolver?.resolve(dshSessionId) ?? null;
+    if (binding?.chatSessionId === undefined && workspace === null) return null;
+    const read = this.chat.getProjectAgentOpeningPacket;
+    if (typeof read !== "function") return null;
+    try {
+      return await read.call(
+        this.chat,
+        {
+          ...(binding?.chatSessionId === undefined
+            ? {}
+            : { productSessionId: binding.chatSessionId }),
+          ...(workspace === null ? {} : { workspaceRootId: workspace.rootId }),
+          includeResourceContext: false,
+        },
+        signal,
+      );
+    } catch (error) {
+      if (
+        error instanceof ChatProductApiError &&
+        (error.status === 404 || error.code === "revision_conflict")
+      ) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   async initializeProjectBootstrapSession(
@@ -634,11 +681,13 @@ export class LifeosBridgeService {
     const bridgeDispatchReview = this.bridgeDispatchReview?.current(dshSessionId) ?? null;
     const executionTracesPromise = this.executionTraces(dshSessionId, binding, signal);
     const projectBootstrapTargetsPromise = this.projectBootstrapTargets(projectBootstrap);
+    const projectCoordinationPromise = this.projectCoordination(dshSessionId, binding, signal);
     const current =
       binding?.currentRequestKey === undefined
         ? undefined
         : binding.requests[binding.currentRequestKey];
     if (current?.productRunId === undefined) {
+      const projectCoordination = await projectCoordinationPromise;
       return {
         schemaVersion: BRIDGE_SCHEMA_VERSION,
         dshSessionId,
@@ -658,16 +707,19 @@ export class LifeosBridgeService {
         bridgeDispatchReview,
         projectBootstrap,
         projectBootstrapTargets: await projectBootstrapTargetsPromise,
+        projectCoordination,
+        projectCoordinationTargets: null,
         workflowSelection,
         sessionWorkflowSelection: workflowSelection,
         newSessionWorkflowPreference,
         executionTraces: await executionTracesPromise,
       };
     }
-    const [run, executionTraces, projectBootstrapTargets] = await Promise.all([
+    const [run, executionTraces, projectBootstrapTargets, projectCoordination] = await Promise.all([
       this.chat.getRun(current.productRunId, signal),
       executionTracesPromise,
       projectBootstrapTargetsPromise,
+      projectCoordinationPromise,
     ]);
     let plan: ChatPlan | null = null;
     let approval: ChatApproval | null = null;
@@ -721,6 +773,8 @@ export class LifeosBridgeService {
       bridgeDispatchReview,
       projectBootstrap,
       projectBootstrapTargets,
+      projectCoordination,
+      projectCoordinationTargets: null,
       workflowSelection,
       sessionWorkflowSelection: workflowSelection,
       newSessionWorkflowPreference,

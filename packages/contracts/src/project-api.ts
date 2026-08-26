@@ -11,10 +11,18 @@ import {
   projectMilestoneIdSchema,
   projectObservationIdSchema,
   projectParticipantIdSchema,
+  projectPracticeRevisionIdSchema,
+  projectProviderBindingIdSchema,
+  projectProviderProjectionIdSchema,
   projectResourceIdSchema,
   projectStageIdSchema,
   projectUpdateIdSchema,
   projectWorkIdSchema,
+  projectWorkBlockIdSchema,
+  projectWorkClaimIdSchema,
+  projectWorkHandoffIdSchema,
+  projectWorkOutcomeIdSchema,
+  projectContextMapIdSchema,
 } from "./ids.js";
 import {
   projectActionStatusSchema,
@@ -22,13 +30,27 @@ import {
   projectHealthSchema,
   projectIntakeProposalSchema,
   projectManagementProposalSchema,
+  projectMethodProfileIdSchema as projectMethodProfileV3IdSchema,
+  projectResourceAdapterKindSchema as projectResourceAdapterKindV3Schema,
+  projectStatusSchema,
+  projectContentWorkStatusSchema,
+  projectLegacyWorkStatusSchema,
+  projectPracticeWorkStatusSchema,
+  projectWorkKeySchema,
+} from "./project.js";
+import { projectRecoverableWorkStateSchema } from "./project-coordination.js";
+import {
   projectMethodProfileIdSchema,
   projectResourceAdapterKindSchema,
-  projectStatusSchema,
   projectWorkStatusSchema,
-} from "./project.js";
+} from "./project-api-v2-compat.js";
 
+/**
+ * main曾公开写出的v2网络身份。它只用于在边界先识别旧响应并路由到冻结兼容投影，
+ * 不能被新响应继续写出；v3新增的Work/Context/Provider字段不得原地塞回v2。
+ */
 export const PROJECT_API_SCHEMA_VERSION = "chat-project-api.v2";
+export const PROJECT_API_V3_SCHEMA_VERSION = "chat-project-api.v3";
 
 export const beginProjectIntakePayloadSchema = z
   .object({
@@ -196,17 +218,17 @@ export const recordProjectContributionPayloadSchema = z
   })
   .strict();
 
-export const projectRootDtoSchema = z
+export const projectRootV3DtoSchema = z
   .object({
-    schemaVersion: z.literal(PROJECT_API_SCHEMA_VERSION),
+    schemaVersion: z.literal(PROJECT_API_V3_SCHEMA_VERSION),
     rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
     displayName: z.string().min(1).max(160),
-    enabledAdapters: z.array(projectResourceAdapterKindSchema).min(1).max(3),
+    enabledAdapters: z.array(projectResourceAdapterKindV3Schema).min(1).max(3),
   })
   .strict();
 
 const projectCandidateBaseDto = {
-  schemaVersion: z.literal(PROJECT_API_SCHEMA_VERSION),
+  schemaVersion: z.literal(PROJECT_API_V3_SCHEMA_VERSION),
   projectCandidateId: projectCandidateIdSchema,
   sessionId: productSessionIdSchema,
   candidateKind: z.literal("intake"),
@@ -273,7 +295,7 @@ const projectIntakeCandidateDtoSchema = z.discriminatedUnion("status", [
 ]);
 
 const projectManagementCandidateDtoBase = {
-  schemaVersion: z.literal(PROJECT_API_SCHEMA_VERSION),
+  schemaVersion: z.literal(PROJECT_API_V3_SCHEMA_VERSION),
   projectCandidateId: projectCandidateIdSchema,
   sessionId: productSessionIdSchema,
   candidateKind: z.literal("management"),
@@ -312,7 +334,7 @@ const projectManagementCandidateDtoSchema = z.discriminatedUnion("status", [
 ]);
 
 const projectAdvancementCandidateDtoBase = {
-  schemaVersion: z.literal(PROJECT_API_SCHEMA_VERSION),
+  schemaVersion: z.literal(PROJECT_API_V3_SCHEMA_VERSION),
   projectCandidateId: projectCandidateIdSchema,
   sessionId: productSessionIdSchema,
   candidateKind: z.literal("advancement"),
@@ -383,15 +405,15 @@ export const currentProjectCandidateResponseSchema = z
   .object({ candidate: projectCandidateDtoSchema.nullable() })
   .strict();
 
-export const projectSummaryDtoSchema = z
+export const projectSummaryV3DtoSchema = z
   .object({
-    schemaVersion: z.literal(PROJECT_API_SCHEMA_VERSION),
+    schemaVersion: z.literal(PROJECT_API_V3_SCHEMA_VERSION),
     projectId: projectIdSchema,
     name: z.string().min(1).max(120),
     summary: z.string().min(1).max(1_000),
     goal: z.string().min(1).max(4_000),
     status: projectStatusSchema,
-    methodProfileId: projectMethodProfileIdSchema,
+    methodProfileId: projectMethodProfileV3IdSchema,
     stageName: z.string().min(1).max(120),
     activeWorkCount: z.number().int().nonnegative(),
     openActionCount: z.number().int().nonnegative(),
@@ -421,6 +443,298 @@ const actionDtoSchema = z
     blockedReason: z.string().min(1).max(500).optional(),
     dueAt: z.iso.datetime().optional(),
     revision: z.number().int().positive(),
+  })
+  .strict();
+
+const workBlockDtoSchema = z
+  .object({
+    projectWorkBlockId: projectWorkBlockIdSchema,
+    previousState: projectRecoverableWorkStateSchema,
+    reason: z.string().min(1).max(4_000),
+    stoppedAt: z.string().min(1).max(4_000),
+    recoveryConditions: z.array(z.string()).min(1).max(20),
+    reportedByParticipantId: projectParticipantIdSchema,
+    revision: z.number().int().positive(),
+  })
+  .strict();
+
+const workClaimDtoSchema = z
+  .object({
+    projectWorkClaimId: projectWorkClaimIdSchema,
+    participantId: projectParticipantIdSchema,
+    acquiredAt: z.iso.datetime(),
+    leaseExpiresAt: z.iso.datetime(),
+    revision: z.number().int().positive(),
+  })
+  .strict();
+
+const workHandoffDtoSchema = z
+  .object({
+    projectWorkHandoffId: projectWorkHandoffIdSchema,
+    fromParticipantId: projectParticipantIdSchema,
+    toParticipantId: projectParticipantIdSchema.optional(),
+    completed: z.array(z.string()).max(20),
+    remaining: z.array(z.string()).min(1).max(20),
+    risks: z.array(z.string()).max(20),
+    nextStep: z.string().min(1).max(500),
+    requiredReads: z.array(z.string()).max(20),
+    evidenceIds: z.array(projectEvidenceIdSchema).max(20),
+    createdAt: z.iso.datetime(),
+  })
+  .strict();
+
+const workDtoCommon = {
+  projectWorkId: projectWorkIdSchema,
+  workKey: projectWorkKeySchema,
+  title: z.string().min(1).max(200),
+  objective: z.string().min(1).max(4_000),
+  acceptanceCriteria: z.array(z.string()).min(1).max(20),
+  dependsOn: z.array(projectWorkIdSchema).max(20),
+  ownerParticipantId: projectParticipantIdSchema,
+  practiceRevisionIds: z.array(projectPracticeRevisionIdSchema).max(20),
+  resourceRefs: z.array(z.string()).max(50),
+  activeBlock: workBlockDtoSchema.nullable(),
+  activeClaim: workClaimDtoSchema.nullable(),
+  latestHandoff: workHandoffDtoSchema.nullable(),
+  revision: z.number().int().positive(),
+  actions: z.array(actionDtoSchema).max(100),
+};
+
+const workV3DtoSchema = z.discriminatedUnion("kind", [
+  z
+    .object({ ...workDtoCommon, kind: z.literal("generic"), status: projectLegacyWorkStatusSchema })
+    .strict(),
+  z
+    .object({
+      ...workDtoCommon,
+      kind: z.literal("content_delivery"),
+      status: projectContentWorkStatusSchema,
+      content: z
+        .object({
+          targetPlatforms: z.array(z.string()).min(1).max(10),
+          sourceRef: z.string().min(1).max(500),
+          seriesKey: z.string().optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...workDtoCommon,
+      kind: z.literal("workflow_improvement"),
+      status: projectPracticeWorkStatusSchema,
+      practice: z
+        .object({ practiceKey: z.string(), hypothesis: z.string().min(1).max(4_000) })
+        .strict(),
+    })
+    .strict(),
+]);
+
+const practiceRevisionDtoSchema = z
+  .object({
+    projectPracticeRevisionId: projectPracticeRevisionIdSchema,
+    practiceKey: z.string(),
+    version: z.number().int().positive(),
+    title: z.string().min(1).max(200),
+    applicableWorkKinds: z.array(z.enum(["content_delivery", "workflow_improvement"])),
+    artifactEvidenceId: projectEvidenceIdSchema,
+    status: z.enum(["adopted", "superseded"]),
+    sha256: sha256Schema,
+    adoptedAt: z.iso.datetime(),
+  })
+  .strict();
+
+const workOutcomeDtoSchema = z
+  .object({
+    projectWorkOutcomeId: projectWorkOutcomeIdSchema,
+    workId: projectWorkIdSchema,
+    kind: z.literal("content_publication"),
+    platform: z.string(),
+    contentRevisionEvidenceId: projectEvidenceIdSchema,
+    publicationEvidenceId: projectEvidenceIdSchema,
+    externalContentId: z.string().optional(),
+    url: z.url().optional(),
+    publishedAt: z.iso.datetime(),
+    status: z.enum(["confirmed", "withdrawn", "invalidated"]),
+    verification: z.enum(["user_confirmed", "provider_verified"]),
+    revision: z.number().int().positive(),
+  })
+  .strict();
+
+const contextMapDtoSchema = z
+  .object({
+    projectContextMapId: projectContextMapIdSchema,
+    methodSnapshotId: z.string(),
+    selectors: z.array(
+      z
+        .object({
+          role: z.string(),
+          resourceRef: z.string(),
+          required: z.boolean(),
+          maxItems: z.number().int().positive(),
+          maxCharacters: z.number().int().positive(),
+        })
+        .strict(),
+    ),
+    historyViews: z.array(z.string()),
+    authorityPolicyVersion: z.string(),
+    evidencePolicyVersion: z.string(),
+    sha256: sha256Schema,
+    revision: z.number().int().positive(),
+  })
+  .strict();
+
+const providerBindingDtoSchema = z
+  .object({
+    projectProviderBindingId: projectProviderBindingIdSchema,
+    providerKind: z.literal("plane_ce"),
+    providerVersion: z.string(),
+    externalWorkspaceId: z.string(),
+    externalProjectId: z.string(),
+    externalProjectIdentifier: z.string(),
+    syncPolicyVersion: z.string(),
+    status: z.enum(["active", "needs_attention", "archived"]),
+    revision: z.number().int().positive(),
+  })
+  .strict();
+
+const providerProjectionDtoSchema = z
+  .object({
+    projectProviderProjectionId: projectProviderProjectionIdSchema,
+    bindingId: projectProviderBindingIdSchema,
+    objectType: z.enum(["work", "practice_revision", "context_page", "publication_history_page"]),
+    objectId: z.string(),
+    providerObjectType: z.enum(["work_item", "page"]),
+    providerObjectId: z.string(),
+    externalKey: projectWorkKeySchema.optional(),
+    chatObjectRevision: z.number().int().positive(),
+    syncStatus: z.enum(["healthy", "pending", "outcome_unknown", "needs_attention"]),
+    lastSyncedAt: z.iso.datetime().optional(),
+    revision: z.number().int().positive(),
+  })
+  .strict();
+
+export const projectWorkspaceV3DtoSchema = z
+  .object({
+    schemaVersion: z.literal(PROJECT_API_V3_SCHEMA_VERSION),
+    project: projectSummaryV3DtoSchema,
+    scopeIn: z.array(z.string()).max(30),
+    scopeOut: z.array(z.string()).max(30),
+    successCriteria: z.array(z.string()).min(1).max(30),
+    stage: z
+      .object({
+        projectStageId: projectStageIdSchema,
+        name: z.string().min(1).max(120),
+        goal: z.string().min(1).max(4_000),
+        successCriteria: z.array(z.string()).min(1).max(20),
+        status: z.enum(["planned", "active", "review", "completed", "skipped"]),
+        revision: z.number().int().positive(),
+      })
+      .strict(),
+    milestones: z
+      .array(
+        z
+          .object({
+            projectMilestoneId: projectMilestoneIdSchema,
+            outcome: z.string().min(1).max(4_000),
+            acceptanceCriteria: z.array(z.string()).min(1).max(20),
+            status: z.enum(["planned", "achieved", "cancelled"]),
+            targetAt: z.iso.datetime().optional(),
+            revision: z.number().int().positive(),
+          })
+          .strict(),
+      )
+      .max(100),
+    latestUpdate: z
+      .object({
+        projectUpdateId: projectUpdateIdSchema,
+        authorParticipantId: projectParticipantIdSchema,
+        health: projectHealthSchema,
+        narrative: z.string().min(1).max(4_000),
+        observedChanges: z.array(z.string()).max(20),
+        blockers: z.array(z.string()).max(20),
+        nextFocus: z.array(z.string()).min(1).max(20),
+        publishedAt: z.iso.datetime(),
+      })
+      .strict()
+      .nullable(),
+    participants: z.array(participantDtoSchema).max(100),
+    resources: z
+      .array(
+        z
+          .object({
+            projectResourceId: projectResourceIdSchema,
+            displayName: z.string().min(1).max(160),
+            status: z.enum(["active", "unavailable"]),
+            latestObservationId: projectObservationIdSchema.optional(),
+            latestObservationAt: z.iso.datetime().optional(),
+          })
+          .strict(),
+      )
+      .max(100),
+    works: z.array(workV3DtoSchema).max(100),
+    practices: z.array(practiceRevisionDtoSchema).max(100),
+    publicationOutcomes: z.array(workOutcomeDtoSchema).max(500),
+    contextMap: contextMapDtoSchema.nullable(),
+    providerBindings: z.array(providerBindingDtoSchema).max(20),
+    providerProjections: z.array(providerProjectionDtoSchema).max(1_000),
+    decisions: z
+      .array(
+        z
+          .object({
+            projectDecisionId: projectDecisionIdSchema,
+            question: z.string().min(1).max(1_000),
+            choice: z.string().min(1).max(1_000),
+            rationale: z.string().min(1).max(2_000),
+            decidedByParticipantId: projectParticipantIdSchema,
+            status: z.enum(["active", "superseded", "revoked"]),
+            createdAt: z.iso.datetime(),
+          })
+          .strict(),
+      )
+      .max(100),
+    contributions: z
+      .array(
+        z
+          .object({
+            projectContributionId: projectContributionIdSchema,
+            participantId: projectParticipantIdSchema,
+            kind: z.string().min(1).max(40),
+            summary: z.string().min(1).max(2_000),
+            evidenceStatus: z.enum(["reported", "verified"]),
+            occurredAt: z.iso.datetime(),
+          })
+          .strict(),
+      )
+      .max(100),
+  })
+  .strict();
+
+/** main@ac8f9c06公开的v2只读合同；新响应只写下方v3类型。 */
+export const projectRootDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PROJECT_API_SCHEMA_VERSION),
+    rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
+    displayName: z.string().min(1).max(160),
+    enabledAdapters: z.array(projectResourceAdapterKindSchema).min(1).max(3),
+  })
+  .strict();
+
+export const projectSummaryDtoSchema = z
+  .object({
+    schemaVersion: z.literal(PROJECT_API_SCHEMA_VERSION),
+    projectId: projectIdSchema,
+    name: z.string().min(1).max(120),
+    summary: z.string().min(1).max(1_000),
+    goal: z.string().min(1).max(4_000),
+    status: projectStatusSchema,
+    methodProfileId: projectMethodProfileIdSchema,
+    stageName: z.string().min(1).max(120),
+    activeWorkCount: z.number().int().nonnegative(),
+    openActionCount: z.number().int().nonnegative(),
+    participantCount: z.number().int().nonnegative(),
+    revision: z.number().int().positive(),
+    updatedAt: z.iso.datetime(),
   })
   .strict();
 
@@ -528,6 +842,16 @@ export const projectWorkspaceDtoSchema = z
   })
   .strict();
 
+/** Browser/兼容审计只读入口；服务端新响应仍只写v3。 */
+export const projectWorkspaceCompatibleDtoSchema = z.union([
+  projectWorkspaceDtoSchema.and(
+    z.object({ schemaVersion: z.literal("chat-project-api.v2") }).strict(),
+  ),
+  projectWorkspaceV3DtoSchema.and(
+    z.object({ schemaVersion: z.literal("chat-project-api.v3") }).strict(),
+  ),
+]);
+
 export const projectTimelineItemDtoSchema = z
   .object({
     id: z.string().min(1).max(200),
@@ -539,6 +863,7 @@ export const projectTimelineItemDtoSchema = z
       "action",
       "state_transition",
       "project_update",
+      "project_event",
     ]),
     actorParticipantId: projectParticipantIdSchema.optional(),
     title: z.string().min(1).max(240),
@@ -574,9 +899,9 @@ export type RecordProjectDecisionPayload = z.infer<typeof recordProjectDecisionP
 export type RecordProjectContributionPayload = z.infer<
   typeof recordProjectContributionPayloadSchema
 >;
-export type ProjectRootDto = z.infer<typeof projectRootDtoSchema>;
+export type ProjectRootDto = z.infer<typeof projectRootV3DtoSchema>;
 export type ProjectCandidateDto = z.infer<typeof projectCandidateDtoSchema>;
 export type CurrentProjectCandidateResponse = z.infer<typeof currentProjectCandidateResponseSchema>;
-export type ProjectSummaryDto = z.infer<typeof projectSummaryDtoSchema>;
-export type ProjectWorkspaceDto = z.infer<typeof projectWorkspaceDtoSchema>;
+export type ProjectSummaryDto = z.infer<typeof projectSummaryV3DtoSchema>;
+export type ProjectWorkspaceDto = z.infer<typeof projectWorkspaceV3DtoSchema>;
 export type ProjectTimelineItemDto = z.infer<typeof projectTimelineItemDtoSchema>;

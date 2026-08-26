@@ -506,7 +506,7 @@ function createProjectFacts(input: {
   };
   const methodPolicies = compileProjectMethodSnapshotPolicies(proposal.method.profileId);
   const method: ProjectMethodSnapshot = {
-    schemaVersion: "project-method-snapshot.v2",
+    schemaVersion: "project-method-snapshot.v3",
     projectMethodSnapshotId: ids.methodId,
     projectId: ids.projectId,
     profileId: proposal.method.profileId,
@@ -580,11 +580,13 @@ function createProjectFacts(input: {
     updatedAt: now,
   };
   const evidence: ProjectEvidence = {
-    schemaVersion: "project-evidence.v1",
+    schemaVersion: "project-evidence.v2",
     projectEvidenceId: ids.evidenceId,
     projectId: ids.projectId,
     resourceId: ids.resourceId,
-    kind: "resource_observation",
+    role: "resource_observation",
+    verification: "observed",
+    sourceKind: "project_resource",
     label: "建项资源观察",
     revisionRef: candidate.observationData.git.headSha,
     sha256: candidate.observationSha256,
@@ -594,7 +596,7 @@ function createProjectFacts(input: {
     updatedAt: now,
   };
   const decision: ProjectDecision = {
-    schemaVersion: "project-decision.v1",
+    schemaVersion: "project-decision.v2",
     projectDecisionId: ids.decisionId,
     projectId: ids.projectId,
     question: "是否按已审核方案建立项目？",
@@ -603,6 +605,14 @@ function createProjectFacts(input: {
     rationale: proposal.method.rationale,
     decidedByParticipantId: ids.participantId,
     boundProjectRevision: 1,
+    payloadSha256: hashCanonical("project-decision-payload.v1", {
+      projectId: ids.projectId,
+      boundProjectRevision: 1,
+      question: "是否按已审核方案建立项目？",
+      options: ["建立", "不建立"],
+      choice: "建立",
+      rationale: proposal.method.rationale,
+    }) as never,
     status: "active",
     commandId: input.commandId,
     revision: 1,
@@ -618,19 +628,26 @@ function createProjectFacts(input: {
   draft.entities.projectEvidence[ids.evidenceId] = evidence;
   draft.entities.projectDecisions[ids.decisionId] = decision;
   for (const [index, workProposal] of proposal.initialWork.entries()) {
+    if (proposal.method.profileId === "content-production.v1") {
+      throw new Error("内容生产Project必须通过专用合同创建带平台和来源的Work");
+    }
     const allocated = ids.workAndActions[index];
     if (allocated === undefined) throw new Error("Project Work ID分配不足");
     const work: ProjectWork = {
-      schemaVersion: "project-work.v1",
+      schemaVersion: "project-work.v2",
       projectWorkId: allocated.workId,
       projectId: ids.projectId,
       stageId: ids.stageId,
+      workKey: `project-work-${index + 1}`,
+      kind: "generic",
       title: workProposal.title,
       objective: workProposal.objective,
       acceptanceCriteria: workProposal.acceptanceCriteria,
       dependsOn: [],
       ownerParticipantId: ids.participantId,
       status: "approved",
+      practiceRevisionIds: [],
+      resourceRefs: [],
       revision: 1,
       createdAt: now,
       updatedAt: now,

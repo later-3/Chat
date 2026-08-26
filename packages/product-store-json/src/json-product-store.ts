@@ -56,6 +56,10 @@ import { productSnapshotV16Schema, type ProductSnapshotV16 } from "./legacy-v16.
 import { productSnapshotV17Schema, type ProductSnapshotV17 } from "./legacy-v17.js";
 import { productSnapshotV18Schema } from "./legacy-v18.js";
 import { productSnapshotV19Schema } from "./legacy-v19.js";
+import { productSnapshotV20Schema } from "./legacy-v20.js";
+import { productSnapshotV20CapabilitySchema } from "./legacy-v20-capability.js";
+import { productSnapshotV21Schema } from "./legacy-v21.js";
+import { productSnapshotV22Schema } from "./legacy-v22.js";
 import { migrateProductSnapshotV4ToV5 } from "./migrate-v4-to-v5.js";
 import { migrateProductSnapshotV5ToV6 } from "./migrate-v5-to-v6.js";
 import { migrateProductSnapshotV6ToV7 } from "./migrate-v6-to-v7.js";
@@ -72,6 +76,10 @@ import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
+import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
+import { migrateProductSnapshotV20CapabilityToV22 } from "./migrate-v20-capability-to-v22.js";
+import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
+import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -212,9 +220,55 @@ export class JsonProductStore implements ProductStorePort {
       return new JsonProductStore(options, current.data);
     }
 
+    const legacyV22 = productSnapshotV22Schema.safeParse(parsedJson);
+    if (legacyV22.success) {
+      const migrated = migrateProductSnapshotV22ToV23(legacyV22.data);
+      assertSnapshotIntegrity(migrated);
+      const store = new JsonProductStore(options, migrated);
+      await store.persist(migrated);
+      return store;
+    }
+
+    const legacyV21 = productSnapshotV21Schema.safeParse(parsedJson);
+    if (legacyV21.success) {
+      const migrated = migrateProductSnapshotV22ToV23(
+        migrateProductSnapshotV21ToV22(legacyV21.data),
+      );
+      assertSnapshotIntegrity(migrated);
+      const store = new JsonProductStore(options, migrated);
+      await store.persist(migrated);
+      return store;
+    }
+
+    const legacyV20Capability = productSnapshotV20CapabilitySchema.safeParse(parsedJson);
+    if (legacyV20Capability.success) {
+      const migrated = migrateProductSnapshotV22ToV23(
+        migrateProductSnapshotV20CapabilityToV22(legacyV20Capability.data),
+      );
+      assertSnapshotIntegrity(migrated);
+      const store = new JsonProductStore(options, migrated);
+      await store.persist(migrated);
+      return store;
+    }
+
+    const legacyV20 = productSnapshotV20Schema.safeParse(parsedJson);
+    if (legacyV20.success) {
+      const migrated = migrateProductSnapshotV22ToV23(
+        migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(legacyV20.data)),
+      );
+      assertSnapshotIntegrity(migrated);
+      const store = new JsonProductStore(options, migrated);
+      await store.persist(migrated);
+      return store;
+    }
+
     const legacyV19 = productSnapshotV19Schema.safeParse(parsedJson);
     if (legacyV19.success) {
-      const migrated = migrateProductSnapshotV19ToV20(legacyV19.data);
+      const migrated = migrateProductSnapshotV22ToV23(
+        migrateProductSnapshotV21ToV22(
+          migrateProductSnapshotV20ToV21(migrateProductSnapshotV19ToV20(legacyV19.data)),
+        ),
+      );
       assertSnapshotIntegrity(migrated);
       const store = new JsonProductStore(options, migrated);
       await store.persist(migrated);
@@ -223,8 +277,12 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV18 = productSnapshotV18Schema.safeParse(parsedJson);
     if (legacyV18.success) {
-      const migrated = migrateProductSnapshotV19ToV20(
-        migrateProductSnapshotV18ToV19(legacyV18.data),
+      const migrated = migrateProductSnapshotV22ToV23(
+        migrateProductSnapshotV21ToV22(
+          migrateProductSnapshotV20ToV21(
+            migrateProductSnapshotV19ToV20(migrateProductSnapshotV18ToV19(legacyV18.data)),
+          ),
+        ),
       );
       assertSnapshotIntegrity(migrated);
       const store = new JsonProductStore(options, migrated);
@@ -350,8 +408,14 @@ export class JsonProductStore implements ProductStorePort {
       }
       v17 = migrateProductSnapshotV16ToV17(v16);
     }
-    const migrated = migrateProductSnapshotV19ToV20(
-      migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(v17)),
+    const migrated = migrateProductSnapshotV22ToV23(
+      migrateProductSnapshotV21ToV22(
+        migrateProductSnapshotV20ToV21(
+          migrateProductSnapshotV19ToV20(
+            migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(v17)),
+          ),
+        ),
+      ),
     );
     assertSnapshotIntegrity(migrated);
     const store = new JsonProductStore(options, migrated);
@@ -422,6 +486,26 @@ export class JsonProductStore implements ProductStorePort {
             httpStatus: 500,
             message: `Agent Version是不可变事实，不能覆盖或删除（${agentVersionId}）`,
           });
+        }
+      }
+      const immutableProjectCollections = [
+        ["Project Event", current.entities.projectEvents, draft.entities.projectEvents],
+        [
+          "Project Metric Observation",
+          current.entities.projectMetricObservations,
+          draft.entities.projectMetricObservations,
+        ],
+      ] as const;
+      for (const [label, existingFacts, nextFacts] of immutableProjectCollections) {
+        for (const [factId, existing] of Object.entries(existingFacts)) {
+          const next = (nextFacts as Readonly<Record<string, unknown>>)[factId];
+          if (next === undefined || !isDeepStrictEqual(next, existing)) {
+            throw new ApplicationError({
+              code: "internal_error",
+              httpStatus: 500,
+              message: `${label}是不可变历史事实，不能覆盖或删除（${factId}）`,
+            });
+          }
         }
       }
       draft.storeRevision = current.storeRevision + 1;

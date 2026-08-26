@@ -49,6 +49,19 @@ import {
   type ProjectBootstrapCandidate,
   type ProjectBootstrapOperation,
   type ProjectBootstrapReviewResponse,
+  projectAgentOpeningPacketV2ResponseSchema,
+  type ProjectAgentOpeningPacketV2,
+  projectHomeDtoSchema,
+  projectObjectQueryResultDtoSchema,
+  projectSummaryV3DtoSchema,
+  projectTimelineItemDtoSchema,
+  projectWorkspaceV3DtoSchema,
+  type ProjectHomeDto,
+  type ProjectObjectQuery,
+  type ProjectObjectQueryResultDto,
+  type ProjectSummaryDto,
+  type ProjectTimelineItemDto,
+  type ProjectWorkspaceDto,
 } from "@chat/contracts/public";
 import { z } from "zod";
 import {
@@ -96,6 +109,16 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 /** GET /api/workflow/definitions 的外层信封；内层DTO权威在@chat/contracts/public。 */
 const workflowDefinitionsResponseSchema = z
   .object({ definitions: workflowDefinitionsDtoSchema })
+  .strict();
+
+const projectsResponseSchema = z.object({ projects: z.array(projectSummaryV3DtoSchema) }).strict();
+const projectHomeResponseSchema = z.object({ projectHome: projectHomeDtoSchema }).strict();
+const projectWorkspaceResponseSchema = z.object({ project: projectWorkspaceV3DtoSchema }).strict();
+const projectTimelineResponseSchema = z
+  .object({ items: z.array(projectTimelineItemDtoSchema) })
+  .strict();
+const projectObjectQueryResponseSchema = z
+  .object({ result: projectObjectQueryResultDtoSchema })
   .strict();
 
 function withSignal(signal: AbortSignal | undefined): Pick<RequestInit, "signal"> | object {
@@ -222,6 +245,65 @@ export class ChatProductClient {
       withSignal(signal),
     );
     return value.session;
+  }
+
+  async listProjects(signal?: AbortSignal): Promise<ProjectSummaryDto[]> {
+    return (await this.request("/api/projects", projectsResponseSchema, withSignal(signal)))
+      .projects;
+  }
+
+  async getProjectHome(projectId: string, signal?: AbortSignal): Promise<ProjectHomeDto> {
+    return (
+      await this.request(
+        `/api/projects/${encodeURIComponent(projectId)}/home`,
+        projectHomeResponseSchema,
+        withSignal(signal),
+      )
+    ).projectHome;
+  }
+
+  async getProjectWorkspace(projectId: string, signal?: AbortSignal): Promise<ProjectWorkspaceDto> {
+    return (
+      await this.request(
+        `/api/projects/${encodeURIComponent(projectId)}`,
+        projectWorkspaceResponseSchema,
+        withSignal(signal),
+      )
+    ).project;
+  }
+
+  async getProjectTimeline(
+    projectId: string,
+    signal?: AbortSignal,
+  ): Promise<ProjectTimelineItemDto[]> {
+    return (
+      await this.request(
+        `/api/projects/${encodeURIComponent(projectId)}/timeline`,
+        projectTimelineResponseSchema,
+        withSignal(signal),
+      )
+    ).items;
+  }
+
+  async queryProjectObjects(
+    projectId: string,
+    query: ProjectObjectQuery,
+    signal?: AbortSignal,
+  ): Promise<ProjectObjectQueryResultDto> {
+    const params = new URLSearchParams({
+      view: query.view,
+      limit: String(query.limit),
+    });
+    if (query.q !== undefined) params.set("q", query.q);
+    if (query.kind !== undefined) params.set("kind", query.kind);
+    if (query.status !== undefined) params.set("status", query.status);
+    return (
+      await this.request(
+        `/api/projects/${encodeURIComponent(projectId)}/objects?${params.toString()}`,
+        projectObjectQueryResponseSchema,
+        withSignal(signal),
+      )
+    ).result;
   }
 
   async getProjectBootstrapConfiguration(
@@ -717,6 +799,33 @@ export class ChatProductClient {
         ? ""
         : `?workspaceRootId=${encodeURIComponent(workspaceRootId)}`;
     return this.request(`/api/agent-profiles${suffix}`, agentProfilesDtoSchema, withSignal(signal));
+  }
+
+  async getProjectAgentOpeningPacket(
+    query: {
+      readonly projectId?: string;
+      readonly productSessionId?: string;
+      readonly workspaceRootId?: string;
+      readonly workKey?: string;
+      readonly participantId?: string;
+      readonly includeResourceContext?: boolean;
+    },
+    signal?: AbortSignal,
+  ): Promise<ProjectAgentOpeningPacketV2> {
+    const params = new URLSearchParams();
+    if (query.projectId !== undefined) params.set("projectId", query.projectId);
+    if (query.productSessionId !== undefined)
+      params.set("productSessionId", query.productSessionId);
+    if (query.workspaceRootId !== undefined) params.set("workspaceRootId", query.workspaceRootId);
+    if (query.workKey !== undefined) params.set("workKey", query.workKey);
+    if (query.participantId !== undefined) params.set("participantId", query.participantId);
+    params.set("includeResourceContext", String(query.includeResourceContext ?? false));
+    const response = await this.request(
+      `/api/project-agent/opening-packet?${params.toString()}`,
+      projectAgentOpeningPacketV2ResponseSchema,
+      withSignal(signal),
+    );
+    return response.packet;
   }
 
   async reviseAgentPrompt(

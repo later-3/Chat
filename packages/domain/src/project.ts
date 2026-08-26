@@ -32,6 +32,14 @@ export interface ProjectMethodSnapshotPoliciesShape {
     stageTransitionDecision: "required" | "optional";
     iterationCommitmentDecision: "required" | "optional";
   };
+  coordination: {
+    workKinds: ("generic" | "content_delivery" | "workflow_improvement")[];
+    claimPolicy: "disabled" | "optional" | "required_for_agent";
+    blockedRecoveryEvidence: boolean;
+    terminalDecision: "required" | "optional";
+    publicationOutcomeRequired: boolean;
+    practiceAdoptionEvidenceRequired: boolean;
+  };
 }
 
 export interface ProjectIntakeUnderstandingShape {
@@ -64,7 +72,8 @@ export interface ProjectIntakeProposalShape {
   scopeOut: string[];
   successCriteria: string[];
   method: {
-    profileId: "small-project.v1" | "software-delivery.v1" | "lightweight.v1";
+    profileId:
+      "small-project.v1" | "software-delivery.v1" | "lightweight.v1" | "content-production.v1";
     rationale: string;
     policies: ProjectMethodPolicyShape;
   };
@@ -244,13 +253,44 @@ export function computeProjectMethodSnapshotSha256(input: {
   readonly policies: ProjectMethodSnapshotPoliciesShape;
   readonly source: "project_intake" | "migrated_v1" | "user_tailored";
 }): string {
-  return hashCanonical("project-method-snapshot.v2", input);
+  return hashCanonical("project-method-snapshot.v3", input);
 }
 
 /** Profile编译是版本化纯规则；Model、Router和页面都不能各自解释方法。 */
 export function compileProjectMethodSnapshotPolicies(
-  profileId: "small-project.v1" | "software-delivery.v1" | "lightweight.v1",
+  profileId:
+    "small-project.v1" | "software-delivery.v1" | "lightweight.v1" | "content-production.v1",
 ): ProjectMethodSnapshotPoliciesShape {
+  if (profileId === "content-production.v1") {
+    return {
+      stage: {
+        singleActive: true,
+        completionDecision: "required",
+        completionEvidence: "required",
+      },
+      iteration: {
+        enabled: false,
+        singleActive: true,
+        appetiteKind: "review_trigger",
+        circuitBreaker: true,
+      },
+      work: { scopeEnabled: true, readyGate: "required", doneGate: "required" },
+      artifact: { requiredRoles: [] },
+      quality: { evidenceRequired: true, waiverRequiresApproverAndExpiry: true },
+      change: {
+        stageTransitionDecision: "required",
+        iterationCommitmentDecision: "optional",
+      },
+      coordination: {
+        workKinds: ["content_delivery", "workflow_improvement"],
+        claimPolicy: "required_for_agent",
+        blockedRecoveryEvidence: true,
+        terminalDecision: "required",
+        publicationOutcomeRequired: true,
+        practiceAdoptionEvidenceRequired: true,
+      },
+    };
+  }
   if (profileId === "software-delivery.v1") {
     return {
       stage: {
@@ -272,6 +312,14 @@ export function compileProjectMethodSnapshotPolicies(
       change: {
         stageTransitionDecision: "required",
         iterationCommitmentDecision: "required",
+      },
+      coordination: {
+        workKinds: ["generic"],
+        claimPolicy: "optional",
+        blockedRecoveryEvidence: false,
+        terminalDecision: "required",
+        publicationOutcomeRequired: false,
+        practiceAdoptionEvidenceRequired: false,
       },
     };
   }
@@ -297,6 +345,14 @@ export function compileProjectMethodSnapshotPolicies(
         stageTransitionDecision: "required",
         iterationCommitmentDecision: "required",
       },
+      coordination: {
+        workKinds: ["generic"],
+        claimPolicy: "optional",
+        blockedRecoveryEvidence: false,
+        terminalDecision: "required",
+        publicationOutcomeRequired: false,
+        practiceAdoptionEvidenceRequired: false,
+      },
     };
   }
   return {
@@ -317,6 +373,14 @@ export function compileProjectMethodSnapshotPolicies(
     change: {
       stageTransitionDecision: "required",
       iterationCommitmentDecision: "optional",
+    },
+    coordination: {
+      workKinds: ["generic"],
+      claimPolicy: "disabled",
+      blockedRecoveryEvidence: false,
+      terminalDecision: "optional",
+      publicationOutcomeRequired: false,
+      practiceAdoptionEvidenceRequired: false,
     },
   };
 }
@@ -428,6 +492,214 @@ export function assertProjectWorkGraph(works: readonly ProjectWorkShape[]): void
     visited.add(work.projectWorkId);
   };
   for (const work of works) visit(work);
+}
+
+export type ProjectWorkKindShape = "generic" | "content_delivery" | "workflow_improvement";
+export type ProjectWorkStatusShape =
+  | "draft"
+  | "approved"
+  | "in_progress"
+  | "review"
+  | "done"
+  | "cancelled"
+  | "intake"
+  | "proposed"
+  | "selected"
+  | "producing"
+  | "experimenting"
+  | "needs_review"
+  | "ready"
+  | "blocked"
+  | "published"
+  | "adopted"
+  | "dropped"
+  | "rejected";
+
+const CONTENT_WORK_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
+  intake: ["selected", "dropped"],
+  selected: ["producing", "blocked", "dropped"],
+  producing: ["needs_review", "blocked", "dropped"],
+  needs_review: ["producing", "ready", "blocked", "dropped"],
+  ready: ["producing", "blocked", "published", "dropped"],
+  blocked: ["dropped"],
+  published: [],
+  dropped: [],
+};
+
+const PRACTICE_WORK_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
+  proposed: ["selected", "rejected"],
+  selected: ["experimenting", "blocked", "rejected"],
+  experimenting: ["needs_review", "blocked", "rejected"],
+  needs_review: ["experimenting", "blocked", "adopted", "rejected"],
+  blocked: ["rejected"],
+  adopted: [],
+  rejected: [],
+};
+
+const GENERIC_WORK_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
+  draft: ["approved", "cancelled"],
+  approved: ["in_progress", "blocked", "cancelled"],
+  in_progress: ["review", "blocked", "cancelled"],
+  review: ["in_progress", "blocked", "done", "cancelled"],
+  blocked: ["cancelled"],
+  done: [],
+  cancelled: [],
+};
+
+/**
+ * Work状态由Domain执行，而不是由Plane拖卡或模型解释。Blocked同时拥有可投影状态和
+ * 独立Block事实；恢复必须回到Block记录的原State。
+ */
+export function assertProjectWorkTransition(input: {
+  readonly kind: ProjectWorkKindShape;
+  readonly from: ProjectWorkStatusShape;
+  readonly to: ProjectWorkStatusShape;
+  readonly actorKind: "human" | "agent";
+  readonly hasActiveClaim: boolean;
+  readonly decisionId?: string | undefined;
+  readonly evidenceRoles: readonly string[];
+  readonly hasConfirmedPublicationOutcome: boolean;
+  readonly hasPracticeRevisionEvidence: boolean;
+}): void {
+  const transitions =
+    input.kind === "generic"
+      ? GENERIC_WORK_TRANSITIONS
+      : input.kind === "content_delivery"
+        ? CONTENT_WORK_TRANSITIONS
+        : PRACTICE_WORK_TRANSITIONS;
+  if (!(transitions[input.from] ?? []).includes(input.to)) {
+    throw new ProjectDomainError(
+      "project_work_transition_invalid",
+      `${input.kind}不允许从${input.from}转换到${input.to}`,
+    );
+  }
+  if (
+    input.actorKind === "agent" &&
+    (
+      [
+        "approved",
+        "done",
+        "cancelled",
+        "selected",
+        "ready",
+        "published",
+        "dropped",
+        "adopted",
+        "rejected",
+      ] as const
+    ).includes(input.to as never)
+  ) {
+    throw new ProjectDomainError(
+      "project_work_human_decision_required",
+      `${input.to}只能由用户决定`,
+    );
+  }
+  if (input.actorKind === "agent" && !input.hasActiveClaim) {
+    throw new ProjectDomainError("project_work_claim_required", "Agent推进Work必须持有活动Claim");
+  }
+  const decisionStates = [
+    "approved",
+    "done",
+    "cancelled",
+    "selected",
+    "ready",
+    "published",
+    "dropped",
+    "adopted",
+    "rejected",
+  ];
+  if (decisionStates.includes(input.to) && input.decisionId === undefined) {
+    throw new ProjectDomainError(
+      "project_work_decision_required",
+      `${input.to}必须绑定用户Decision`,
+    );
+  }
+  if (input.to === "needs_review" && input.evidenceRoles.length === 0) {
+    throw new ProjectDomainError(
+      "project_work_review_evidence_required",
+      "请求审核必须引用精确Evidence",
+    );
+  }
+  if (input.to === "review" && input.evidenceRoles.length === 0) {
+    throw new ProjectDomainError(
+      "project_work_review_evidence_required",
+      "请求审核必须引用精确Evidence",
+    );
+  }
+  if (input.to === "done" && input.evidenceRoles.length === 0) {
+    throw new ProjectDomainError(
+      "project_work_done_evidence_required",
+      "完成通用Work必须引用精确Evidence",
+    );
+  }
+  if (
+    input.to === "ready" &&
+    (!input.evidenceRoles.includes("content_revision") ||
+      !input.evidenceRoles.includes("qc_report"))
+  ) {
+    throw new ProjectDomainError(
+      "project_work_ready_evidence_required",
+      "Ready必须同时有content_revision和qc_report Evidence",
+    );
+  }
+  if (input.to === "published" && !input.hasConfirmedPublicationOutcome) {
+    throw new ProjectDomainError(
+      "project_work_publication_required",
+      "Published必须有confirmed Publication Outcome",
+    );
+  }
+  if (input.to === "adopted" && !input.hasPracticeRevisionEvidence) {
+    throw new ProjectDomainError(
+      "project_work_practice_evidence_required",
+      "Adopted必须有Practice Revision Evidence",
+    );
+  }
+}
+
+export function assertProjectWorkResume(input: {
+  readonly kind: ProjectWorkKindShape;
+  readonly previousState: ProjectWorkStatusShape;
+  readonly targetState: ProjectWorkStatusShape;
+  readonly recoveryEvidenceIds: readonly string[];
+}): void {
+  if (input.previousState !== input.targetState) {
+    throw new ProjectDomainError(
+      "project_work_resume_state_mismatch",
+      "Blocked恢复必须回到Block记录的原State",
+    );
+  }
+  const allowed =
+    input.kind === "generic"
+      ? ["approved", "in_progress", "review"]
+      : input.kind === "content_delivery"
+        ? ["selected", "producing", "needs_review", "ready"]
+        : ["selected", "experimenting", "needs_review"];
+  if (!allowed.includes(input.targetState)) {
+    throw new ProjectDomainError(
+      "project_work_resume_state_invalid",
+      "Blocked记录的原State不属于当前Work kind",
+    );
+  }
+  if (input.recoveryEvidenceIds.length === 0) {
+    throw new ProjectDomainError(
+      "project_work_resume_evidence_required",
+      "恢复Blocked Work必须引用Evidence",
+    );
+  }
+}
+
+/** Decision Hash把用户看到并确认的语义绑定到精确Project/Work revision。 */
+export function computeProjectDecisionPayloadSha256(input: {
+  readonly projectId: string;
+  readonly boundProjectRevision: number;
+  readonly boundWorkId?: string | undefined;
+  readonly boundWorkRevision?: number | undefined;
+  readonly question: string;
+  readonly options: readonly string[];
+  readonly choice: string;
+  readonly rationale: string;
+}): string {
+  return hashCanonical("project-decision-payload.v1", input);
 }
 
 export class ProjectDomainError extends Error {

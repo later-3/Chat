@@ -407,7 +407,7 @@ async function seedProjectAndRuleRun(deps: ApplicationDeps) {
     }),
     mutate: (draft) => {
       draft.entities.projectMethodSnapshots[methodSnapshotId] = {
-        schemaVersion: "project-method-snapshot.v2",
+        schemaVersion: "project-method-snapshot.v3",
         projectMethodSnapshotId: methodSnapshotId,
         projectId,
         profileId: "small-project.v1",

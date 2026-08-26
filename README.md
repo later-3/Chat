@@ -86,7 +86,6 @@ Trace、DSH状态、PID与浏览器Profile均位于当前worktree的隔离边界
 | `441xx` | 交互式CLI/VS Code debug | 与production并行；一次只允许一个debug worktree |
 | `451xx/452xx/453xx` | Playwright真实浏览器门 | 测试专属；占用时失败关闭，不清理production进程 |
 | `18960/18970`、`19960/19970` | 历史Memory production/debug保留位 | 当前必须空闲；启动器只接受`--memory=off` |
-| `8088/8443` | 独立Plane CE Docker入口 | 不属于Chat启动器或上述三组实例 |
 
 production服务固定为：`43110` Gateway、`43114` DSH内部Host、`43111` API、`43112`
 Workflow、`43115` Pi Executor、`43119` Workbench互斥租约；`43120..43123`只为同族
@@ -120,24 +119,6 @@ Memory Workflow会安全失败，不会因为历史环境变量静默恢复Memor
 `--memory=memmy|memorycore|all`。debug实例同时固定关闭Beta Workbench。code-server只监听
 受管0600 Unix socket，浏览器只能经Gateway访问；扩展市场默认离线，不连接Open VSX或自动
 查询Copilot。
-
-### Plane CE（独立Docker服务）
-
-Plane Community Edition 1.4.1是可选项目管理Provider，不是`pnpm dev`的子进程，也不随
-LaunchAgent自动启动。普通聊天不需要Plane；要体验“创建项目”纵向，先确认Docker Engine/
-Docker Desktop可用，再显式执行：
-
-```bash
-pnpm plane-ce:prepare
-pnpm plane-ce:config
-pnpm plane-ce:up
-pnpm plane-ce:status
-```
-
-固定Compose声明13个服务：通常12个长驻容器，`migrator`为一次性任务。Plane Web入口是
-`http://127.0.0.1:8088`（HTTPS保留位`8443`）。首次还要在Plane中完成管理员、Workspace和
-API Token配置，再按[本地安装指南](./docs/getting-started/local-install.md#31-可选plane-ce项目管理)
-配置Chat。停止使用`pnpm plane-ce:down`；它只停止容器，不删除Plane数据。
 
 完整固定端口与断点入口见[本地调试](./docs/debug/local-debug.md)。
 

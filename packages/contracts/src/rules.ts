@@ -15,7 +15,7 @@ import {
   ruleSelectionIdSchema,
   ruleTagIdSchema,
 } from "./ids.js";
-import { projectMethodProfileIdSchema } from "./project.js";
+import { projectMethodProfileIdSchema } from "./project-api-v2-compat.js";
 
 const isoDateTimeSchema = z.iso.datetime();
 const shortTextSchema = z.string().trim().min(1).max(500);

@@ -115,7 +115,7 @@ test("真实DSH重复批准仍handler一次，并在Product Result响应未知�
       toolExecutionResults: Record<string, { outcome: string; resultSha256?: string }>;
     };
   };
-  expect(snapshot.schemaVersion).toBe("chat-product-store.v20");
+  expect(snapshot.schemaVersion).toBe("chat-product-store.v23");
   const intents = Object.values(snapshot.entities.toolExecutionIntents);
   const decisions = Object.values(snapshot.entities.toolExecutionDecisions);
   const results = Object.values(snapshot.entities.toolExecutionResults);

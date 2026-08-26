@@ -761,7 +761,7 @@ describe("CreateProductSession + SubmitUserMessage", () => {
 });
 
 describe("Message Receipt历史重放闭包", () => {
-  it("真实v1磁盘Receipt缺少RunSpec时完整迁移到v19并在所有运行依赖前恢复", async () => {
+  it("真实v1磁盘Receipt缺少RunSpec时完整迁移到v20并在所有运行依赖前恢复", async () => {
     const manifest = S7_VERSIONED_FIXTURE_MANIFEST.find(
       (entry) => entry.fixtureId === "v1-legacy-planning-active",
     );
@@ -810,7 +810,7 @@ describe("Message Receipt历史重放闭包", () => {
       },
     });
     const migrated = (await store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(migrated.schemaVersion).toBe("chat-product-store.v20");
+    expect(migrated.schemaVersion).toBe("chat-product-store.v23");
     expect(migrated.commandReceipts[commandId]?.resultRefs).toEqual({
       messageId: message.messageId,
       productRunId: run.productRunId,

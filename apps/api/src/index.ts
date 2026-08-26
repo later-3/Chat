@@ -1,4 +1,4 @@
-import "../../../scripts/load-env.mjs";
+import "../../../scripts/load-api-env.mjs";
 import { serve } from "@hono/node-server";
 import {
   createExecutionTraceReader,
@@ -18,6 +18,7 @@ import { createApiApp } from "./app.js";
 import { createApplicationDeps, DEBUG_PRINCIPAL_ID } from "./composition.js";
 import { OutboxDispatcher } from "./outbox-dispatcher.js";
 import { WorkflowRuntimeTraceHttpClient } from "./workflow-runtime-trace-client.js";
+import { loadPlaneCoordinationClientCredential } from "./plane-coordination-client-credential.js";
 
 /**
  * Chat API入口。production固定43111，隔离debug实例固定44111；端口由受管启动器通过PORT传入；
@@ -32,6 +33,7 @@ const port = Number.parseInt(process.env.PORT ?? "43111", 10);
 const hostname = process.env.CHAT_API_HOST ?? "127.0.0.1";
 
 const repoRoot = process.env.CHAT_REPO_ROOT ?? process.cwd();
+const planeEnabled = process.env.CHAT_PLANE_ENABLED === "1";
 const traceSink = createConfiguredTraceSink({ scope: "api" });
 const applicationTraceSink = createConfiguredTraceSink({ scope: "application" });
 const runActivityDir = resolveRunActivityDir();
@@ -47,7 +49,11 @@ const baseDeps = await createApplicationDeps(undefined, (event) => {
     );
   }
 });
+delete process.env.CHAT_PLANE_CE_API_TOKEN;
 const credential = await loadRuntimeCredential(repoRoot);
+const planeCoordinationCredential = planeEnabled
+  ? await loadPlaneCoordinationClientCredential(repoRoot)
+  : undefined;
 const workflowRuntimeBaseUrl = process.env.CHAT_WORKFLOW_BASE_URL ?? "http://127.0.0.1:43112";
 const piExecutorBaseUrl =
   process.env.CHAT_PI_EXECUTOR_INTERNAL_BASE_URL ?? "http://127.0.0.1:43115";
@@ -74,12 +80,18 @@ const dispatcher = new OutboxDispatcher({
   deps,
   workflowRuntimeBaseUrl,
   credential,
+  projectBootstrapEnabled: planeEnabled,
 });
 dispatcher.start();
 
 const app = createApiApp({
   ...(traceSink === undefined ? {} : { traceSink }),
-  product: { deps, principalId: DEBUG_PRINCIPAL_ID },
+  product: {
+    deps,
+    principalId: DEBUG_PRINCIPAL_ID,
+    planeEnabled,
+    ...(planeCoordinationCredential === undefined ? {} : { planeCoordinationCredential }),
+  },
   internalRuntime: { credential },
   providerReady: isBailianReady(bailian),
 });

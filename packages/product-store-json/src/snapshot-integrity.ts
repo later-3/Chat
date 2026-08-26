@@ -37,7 +37,9 @@ import {
   assertDirectAgentCandidates,
 } from "./snapshot-integrity/runs-plans.js";
 import { assertExecution, assertReceiptsAndOutbox } from "./snapshot-integrity/execution.js";
+import { assertProjectCoordination } from "./snapshot-integrity/project-coordination.js";
 import { assertToolExecutions } from "./snapshot-integrity/tool-executions.js";
+import { assertProjectManagement } from "./snapshot-integrity/project-management.js";
 
 /**
  * 完整快照的关系与生命周期校验。
@@ -66,6 +68,8 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
   assertLongTermContext(snapshot, fail);
   assertMemoryImports(snapshot, fail);
   assertProjects(snapshot, fail);
+  assertProjectCoordination(snapshot, fail);
+  assertProjectManagement(snapshot, fail);
   assertProjectBootstraps(snapshot, fail);
   assertPlanningProjectContexts(snapshot, fail);
   assertPlanningMemorySelections(snapshot, fail);

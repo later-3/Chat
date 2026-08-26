@@ -27,6 +27,12 @@ Chat当前开发阶段直接集成Later维护的Fork分支，不再对Pi或DSH�
 
 Chat的`packages/pi-runtime`和`packages/dsh-lifeos-bridge`必须直接链接上述稳定分支的源码构建。修改Pi或DSH时，在对应Fork建立独立功能worktree和分支，提交源码与测试，通过Fork自己的质量门后合入稳定集成分支并重新构建；Chat业务对象、Decision、Workflow和UI不得写入Fork。每次启动与测试必须验证实际解析路径、Fork origin、分支和通用能力标记，缺失时失败关闭。不得重新添加等价Pi/DSH package patch、依赖官方包掩盖Fork缺失，或让未提交的Fork工作树成为运行来源。
 
+### 2.2 项目管理知识路由
+
+项目管理、Content Lab、AI学习或多Agent协作先读取[全项目生命周期蓝图](./docs/product/project-management-system-blueprint.md)、[K1合同](./docs/architecture/project-management-k1-contracts-as-built.md)、[K2 Store](./docs/architecture/project-management-k2-store-as-built.md)、[K2 Application](./docs/architecture/project-management-k2-application-as-built.md)、[Agent开工包](./docs/architecture/project-agent-coordination-as-built.md)和[DSH四视图](./docs/architecture/project-management-dsh-as-built.md)。Project、Profile/Configuration、Work、Decision、Evidence、Event和Agent Context由Chat拥有；外部事项系统、目录、Git仓库、DSH Session和Agent Session都不是第二事实源。
+
+Plane已退出默认运行图、Prompt/Agent/Workflow目录、普通Opening Packet和DSH导航。历史Store事实、旧Run恢复代码及专项Provider研究可以保留；只有用户明确授权的专项任务才允许设置`CHAT_PLANE_ENABLED=1`，且不得把专项启用扩展为正式数据迁移或外部写授权。
+
 ## 3. 开发边界：核心自研、能力复用
 
 Chat的核心是“产品责任”，不是“代码量必须最大”。整个系统可以很大，但Chat自研代码应集中在最小、最关键的产品差异上；文件、编辑器、Terminal、Git、Browser、Memory、前端宿主等成熟能力默认复用高质量上游。

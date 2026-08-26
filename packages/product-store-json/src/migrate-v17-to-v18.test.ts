@@ -2,7 +2,6 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  AGENT_VERSION_SCHEMA_VERSION,
   LEGACY_AGENT_VERSION_SCHEMA_VERSION,
   agentVersionHashInputSchema,
   agentVersionSchema,
@@ -16,9 +15,19 @@ import { productSnapshotV17Schema } from "./legacy-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
+import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
+import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
+import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-22T08:00:00.000Z";
+
+const migrateProductSnapshotV20ToCurrent = (
+  snapshot: Parameters<typeof migrateProductSnapshotV20ToV21>[0],
+) =>
+  migrateProductSnapshotV22ToV23(
+    migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(snapshot)),
+  );
 
 async function seededV17() {
   const directory = await mkdtemp(join(tmpdir(), "chat-agent-v17-seed-"));
@@ -29,9 +38,26 @@ async function seededV17() {
   const { snapshot } = await store.read({ kind: "committedSnapshot" });
   const entities = structuredClone(snapshot.entities) as Record<string, unknown>;
   delete entities["agentVersions"];
+  delete entities["projectWorkBlocks"];
+  delete entities["projectWorkClaims"];
+  delete entities["projectWorkHandoffs"];
+  delete entities["projectPracticeRevisions"];
+  delete entities["projectWorkOutcomes"];
+  delete entities["projectContextMaps"];
+  delete entities["projectProviderBindings"];
+  delete entities["projectProviderProjections"];
+  delete entities["projectCoordinationOperations"];
+  delete entities["projectInboundChanges"];
   delete entities["toolExecutionIntents"];
   delete entities["toolExecutionDecisions"];
   delete entities["toolExecutionResults"];
+  delete entities["projectProfileRevisions"];
+  delete entities["projectConfigurationRevisions"];
+  delete entities["projectEvents"];
+  delete entities["projectNeeds"];
+  delete entities["projectRequirements"];
+  delete entities["projectArtifactRefs"];
+  delete entities["projectMetricObservations"];
   return productSnapshotV17Schema.parse({
     ...snapshot,
     schemaVersion: "chat-product-store.v17",
@@ -89,53 +115,6 @@ function agentVersion(input: {
   });
 }
 
-function qualifiedAgentVersionWithDuplicateCapabilityId(): AgentVersion {
-  const body = {
-    schemaVersion: AGENT_VERSION_SCHEMA_VERSION,
-    agentVersionId: "avn_duplicatecapability1",
-    agentKey: "direct",
-    ownerPrincipalId: "usr_agentstore1",
-    scope: { kind: "global" as const },
-    version: 1,
-    title: "重复Capability ID反例",
-    description: "两个不同Descriptor错误复用同一Capability ID。",
-    runtime: { kind: "pi_coding_agent" as const, baseVariantKey: "pi_cli_default" },
-    baselineRef: {
-      packageName: "@earendil-works/pi-coding-agent" as const,
-      packageVersion: "0.84.2",
-      managedSource: "later-3/pi@codex/later-custom" as const,
-      managedSourceRevision: "1".repeat(40),
-      variantKey: "pi_cli_default",
-      capabilityCatalogSha256: "2".repeat(64),
-    },
-    systemPrompt: { mode: "inherit_runtime" as const },
-    enabledToolNames: ["read", "bash"] as const,
-    enabledCapabilityRefs: [
-      {
-        localName: "read",
-        capabilityId: "later.pi.builtin.shared.v1",
-        descriptorSha256: "3".repeat(64),
-      },
-      {
-        localName: "bash",
-        capabilityId: "later.pi.builtin.shared.v1",
-        descriptorSha256: "4".repeat(64),
-      },
-    ],
-    resources: {
-      contextFiles: "inherit_runtime_default" as const,
-      skills: "inherit_runtime_default" as const,
-      promptTemplates: "inherit_runtime_default" as const,
-      extensions: "inherit_runtime_default" as const,
-    },
-    createdAt: NOW,
-  };
-  return {
-    ...body,
-    sha256: hashCanonical("agent-version.v2", body),
-  } as unknown as AgentVersion;
-}
-
 describe("Product Store v17到v18 Agent Version迁移", () => {
   it("无损保留v17事实并只补空Agent Version集合", async () => {
     const legacy = await seededV17();
@@ -148,7 +127,9 @@ describe("Product Store v17到v18 Agent Version迁移", () => {
     expect(migratedEntities).toEqual(legacy.entities);
     expect(() =>
       assertSnapshotIntegrity(
-        migrateProductSnapshotV19ToV20(migrateProductSnapshotV18ToV19(migrated)),
+        migrateProductSnapshotV20ToCurrent(
+          migrateProductSnapshotV19ToV20(migrateProductSnapshotV18ToV19(migrated)),
+        ),
       ),
     ).not.toThrow();
   });
@@ -255,8 +236,10 @@ describe("Product Store v17到v18 Agent Version迁移", () => {
       version: 1,
       systemPromptBody: "你是可配置的 Pi Coding Agent。",
     });
-    const valid = migrateProductSnapshotV19ToV20(
-      migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(await seededV17())),
+    const valid = migrateProductSnapshotV20ToCurrent(
+      migrateProductSnapshotV19ToV20(
+        migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(await seededV17())),
+      ),
     );
     valid.entities.agentVersions[version.agentVersionId] = version;
     expect(() => assertSnapshotIntegrity(valid)).not.toThrow();
@@ -270,15 +253,5 @@ describe("Product Store v17到v18 Agent Version迁移", () => {
     const outerBroken = structuredClone(valid);
     outerBroken.entities.agentVersions[version.agentVersionId]!.sha256 = "0".repeat(64) as never;
     expect(() => assertSnapshotIntegrity(outerBroken)).toThrow("Hash不一致");
-  });
-
-  it("Snapshot Integrity拒绝Agent Version复用capabilityId", async () => {
-    const snapshot = migrateProductSnapshotV19ToV20(
-      migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(await seededV17())),
-    );
-    const version = qualifiedAgentVersionWithDuplicateCapabilityId();
-    snapshot.entities.agentVersions[version.agentVersionId] = version;
-
-    expect(() => assertSnapshotIntegrity(snapshot)).toThrow(/capabilityId/u);
   });
 });

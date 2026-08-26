@@ -259,6 +259,7 @@ function handle<S extends 200 | 201, T>(status: S, fn: (c: Ctx) => Promise<T>) {
 export interface InternalRuntimeRouterOptions {
   readonly deps: ApplicationDeps;
   readonly credential: string;
+  readonly planeEnabled?: boolean;
 }
 
 export function createInternalRuntimeRouter(
@@ -448,17 +449,21 @@ export function createInternalRuntimeRouter(
     }),
   );
 
-  router.post(
-    DIRECT_AGENT_RUNTIME_PATHS.prepareProjectBootstrap,
-    handle(201, async (c) => {
-      const request = prepareProjectBootstrapRuntimeRequestSchema.parse(await parseInternalBody(c));
-      const candidate = await prepareProjectBootstrapCandidateForRuntime(options.deps, request);
-      return prepareProjectBootstrapRuntimeResponseSchema.parse({
-        schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
-        candidate,
-      });
-    }),
-  );
+  if (options.planeEnabled === true) {
+    router.post(
+      DIRECT_AGENT_RUNTIME_PATHS.prepareProjectBootstrap,
+      handle(201, async (c) => {
+        const request = prepareProjectBootstrapRuntimeRequestSchema.parse(
+          await parseInternalBody(c),
+        );
+        const candidate = await prepareProjectBootstrapCandidateForRuntime(options.deps, request);
+        return prepareProjectBootstrapRuntimeResponseSchema.parse({
+          schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
+          candidate,
+        });
+      }),
+    );
+  }
 
   router.post(
     DIRECT_AGENT_RUNTIME_PATHS.commitResult,

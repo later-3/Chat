@@ -1,3 +1,4 @@
+import "../load-supervisor-env.mjs";
 import { resolve } from "node:path";
 
 import {

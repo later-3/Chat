@@ -7,6 +7,7 @@ import { registerNoteRoutes } from "./product-routes/note-routes.js";
 import { registerMemoryRoutes } from "./product-routes/memory-routes.js";
 import { registerProjectBootstrapRoutes } from "./product-routes/project-bootstrap-routes.js";
 import { registerProjectRoutes } from "./product-routes/project-routes.js";
+import { registerPlaneProjectCoordinationRoutes } from "./product-routes/plane-project-coordination-routes.js";
 import {
   registerSessionCreateRoutes,
   registerSessionDetailRoutes,
@@ -29,7 +30,10 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
   registerNoteRoutes(router, ctx);
   registerMemoryRoutes(router, ctx);
   registerSessionCreateRoutes(router, ctx);
-  registerProjectBootstrapRoutes(router, ctx);
+  if (ctx.planeEnabled) {
+    registerProjectBootstrapRoutes(router, ctx);
+    registerPlaneProjectCoordinationRoutes(router, ctx);
+  }
   registerProjectRoutes(router, ctx);
   registerSessionDetailRoutes(router, ctx);
   registerRunRoutes(router, ctx);

@@ -600,7 +600,7 @@ test("Web角色使用受管DSH Node Host且私有Bridge状态不进入命令与�
   assert.equal(web.command, process.execPath);
   assert.deepEqual(web.args, [
     "--import",
-    "/workspace/chat/scripts/load-env.mjs",
+    "/workspace/chat/scripts/load-web-env.mjs",
     "/workspace/chat/scripts/dsh/start-web.mjs",
   ]);
   assert.equal(web.cwd, ROOT);
@@ -613,6 +613,35 @@ test("Web角色使用受管DSH Node Host且私有Bridge状态不进入命令与�
   assert.equal(web.env.VSCODE_INSPECTOR_OPTIONS, undefined);
   assert.equal(web.env.NODE_OPTIONS, undefined);
   assert.doesNotMatch(`${web.args.join(" ")} ${web.readyUrl}`, /private|state\.json|43111/u);
+});
+
+test("显式开启的外部事项Provider仍只把原始Token交给API角色", () => {
+  const services = createServiceDefinitions({
+    root: ROOT,
+    workbench: "off",
+    environment: {
+      PATH: "/usr/bin",
+      CHAT_PLANE_ENABLED: "1",
+      CHAT_PLANE_CE_BASE_URL: "http://127.0.0.1:8088",
+      CHAT_PLANE_CE_API_TOKEN: "plane-token-must-stay-api-private",
+      CHAT_PLANE_CE_WORKSPACES_JSON: '[{"slug":"later","displayName":"Later"}]',
+      CHAT_PLANE_COORDINATION_CLIENT_CREDENTIAL_PATH: "/private/plane-client-key",
+    },
+  });
+  const byId = Object.fromEntries(services.map((service) => [service.id, service]));
+  assert.equal(byId.api.env.CHAT_PLANE_CE_API_TOKEN, "plane-token-must-stay-api-private");
+  assert.equal(byId.piExecutor.env.CHAT_PLANE_CE_API_TOKEN, undefined);
+  assert.equal(byId.workflow.env.CHAT_PLANE_CE_API_TOKEN, undefined);
+  assert.equal(byId.web.env.CHAT_PLANE_CE_API_TOKEN, undefined);
+  assert.equal(
+    byId.piExecutor.env.CHAT_PLANE_COORDINATION_CLIENT_CREDENTIAL_PATH,
+    "/private/plane-client-key",
+  );
+  assert.equal(byId.workflow.env.CHAT_PLANE_COORDINATION_CLIENT_CREDENTIAL_PATH, undefined);
+  assert.equal(byId.web.env.CHAT_PLANE_COORDINATION_CLIENT_CREDENTIAL_PATH, undefined);
+  assert.ok(byId.piExecutor.args.includes("/workspace/chat/scripts/load-pi-executor-env.mjs"));
+  assert.ok(byId.workflow.args.includes("/workspace/chat/scripts/load-workflow-env.mjs"));
+  assert.ok(byId.api.args.includes("/workspace/chat/scripts/load-api-env.mjs"));
 });
 
 test("同一Git仓库的worktree共享固定源码缓存", () => {

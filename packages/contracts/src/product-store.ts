@@ -81,10 +81,33 @@ import {
 } from "./project-bootstrap.js";
 import { agentVersionSchema } from "./agent-configuration.js";
 import {
+  projectContextMapSchema,
+  projectPracticeRevisionSchema,
+  projectProviderBindingSchema,
+  projectProviderProjectionSchema,
+  projectWorkBlockSchema,
+  projectWorkClaimSchema,
+  projectWorkHandoffSchema,
+  projectWorkOutcomeSchema,
+} from "./project-coordination.js";
+import {
+  planeProjectOperationSchema,
+  projectInboundChangeSchema,
+} from "./plane-project-coordination.js";
+import {
   toolExecutionDecisionSchema,
   toolExecutionIntentSchema,
   toolExecutionResultSchema,
 } from "./tool-execution.js";
+import {
+  projectArtifactRefSchema,
+  projectConfigurationRevisionSchema,
+  projectEventSchema,
+  projectMetricObservationSchema,
+  projectNeedSchema,
+  projectProfileRevisionSchema,
+  projectRequirementSchema,
+} from "./project-management.js";
 
 /**
  * Product Snapshot顶层合同（任务书§8.3）。
@@ -96,7 +119,7 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v20";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v23";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -140,6 +163,23 @@ const productEntitiesSchema = z
     projectResources: z.record(idKeySchema, projectResourceSchema),
     projectParticipants: z.record(idKeySchema, projectParticipantSchema),
     projectWorks: z.record(idKeySchema, projectWorkSchema),
+    projectWorkBlocks: z.record(idKeySchema, projectWorkBlockSchema),
+    projectWorkClaims: z.record(idKeySchema, projectWorkClaimSchema),
+    projectWorkHandoffs: z.record(idKeySchema, projectWorkHandoffSchema),
+    projectPracticeRevisions: z.record(idKeySchema, projectPracticeRevisionSchema),
+    projectWorkOutcomes: z.record(idKeySchema, projectWorkOutcomeSchema),
+    projectContextMaps: z.record(idKeySchema, projectContextMapSchema),
+    projectProviderBindings: z.record(idKeySchema, projectProviderBindingSchema),
+    projectProviderProjections: z.record(idKeySchema, projectProviderProjectionSchema),
+    projectCoordinationOperations: z.record(idKeySchema, planeProjectOperationSchema),
+    projectInboundChanges: z.record(idKeySchema, projectInboundChangeSchema),
+    projectProfileRevisions: z.record(idKeySchema, projectProfileRevisionSchema),
+    projectConfigurationRevisions: z.record(idKeySchema, projectConfigurationRevisionSchema),
+    projectEvents: z.record(idKeySchema, projectEventSchema),
+    projectNeeds: z.record(idKeySchema, projectNeedSchema),
+    projectRequirements: z.record(idKeySchema, projectRequirementSchema),
+    projectArtifactRefs: z.record(idKeySchema, projectArtifactRefSchema),
+    projectMetricObservations: z.record(idKeySchema, projectMetricObservationSchema),
     projectActions: z.record(idKeySchema, projectActionSchema),
     projectContributions: z.record(idKeySchema, projectContributionSchema),
     projectEvidence: z.record(idKeySchema, projectEvidenceSchema),
@@ -238,6 +278,23 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       projectResources: {},
       projectParticipants: {},
       projectWorks: {},
+      projectWorkBlocks: {},
+      projectWorkClaims: {},
+      projectWorkHandoffs: {},
+      projectPracticeRevisions: {},
+      projectWorkOutcomes: {},
+      projectContextMaps: {},
+      projectProviderBindings: {},
+      projectProviderProjections: {},
+      projectCoordinationOperations: {},
+      projectInboundChanges: {},
+      projectProfileRevisions: {},
+      projectConfigurationRevisions: {},
+      projectEvents: {},
+      projectNeeds: {},
+      projectRequirements: {},
+      projectArtifactRefs: {},
+      projectMetricObservations: {},
       projectActions: {},
       projectContributions: {},
       projectEvidence: {},

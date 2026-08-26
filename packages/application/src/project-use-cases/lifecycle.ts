@@ -1,4 +1,6 @@
 import {
+  type ContentLabChangeCandidate,
+  type ContentLabObservation,
   type CommandId,
   type PrincipalId,
   type Project,
@@ -74,7 +76,7 @@ export async function transitionProjectLifecycle(
         evidenceIds: input.payload.evidenceIds,
       });
       const decision: ProjectDecision = {
-        schemaVersion: "project-decision.v1",
+        schemaVersion: "project-decision.v2",
         projectDecisionId: decisionId,
         projectId: project.projectId,
         question: `是否把Project从${project.status}转换为${input.payload.status}？`,
@@ -83,6 +85,14 @@ export async function transitionProjectLifecycle(
         rationale: input.payload.reason,
         decidedByParticipantId: actor.projectParticipantId,
         boundProjectRevision: project.revision,
+        payloadSha256: hashCanonical("project-decision-payload.v1", {
+          projectId: project.projectId,
+          boundProjectRevision: project.revision,
+          question: `是否把Project从${project.status}转换为${input.payload.status}？`,
+          options: [input.payload.status],
+          choice: input.payload.status,
+          rationale: input.payload.reason,
+        }) as never,
         status: "active",
         commandId: input.commandId,
         revision: 1,
@@ -162,11 +172,19 @@ export async function recordProjectDecision(
       if (participant?.projectId !== project.projectId || participant.status !== "active")
         throw revisionConflict("决策者不属于当前Project");
       draft.entities.projectDecisions[decisionId] = {
-        schemaVersion: "project-decision.v1",
+        schemaVersion: "project-decision.v2",
         projectDecisionId: decisionId,
         projectId: project.projectId,
         ...input.payload,
         boundProjectRevision: project.revision,
+        payloadSha256: hashCanonical("project-decision-payload.v1", {
+          projectId: project.projectId,
+          boundProjectRevision: project.revision,
+          question: input.payload.question,
+          options: input.payload.options,
+          choice: input.payload.choice,
+          rationale: input.payload.rationale,
+        }) as never,
         status: "active",
         commandId: input.commandId,
         revision: 1,
@@ -312,6 +330,15 @@ export async function observeProjectResource(
     });
     throw error;
   }
+  if (
+    observed.descriptor.rootId !== resource.rootId ||
+    observed.descriptor.enabledAdapters.length !== resource.enabledAdapters.length ||
+    observed.descriptor.enabledAdapters.some(
+      (adapter, index) => adapter !== resource.enabledAdapters[index],
+    )
+  ) {
+    throw revisionConflict("Project Resource Registry描述与已绑定Resource不一致");
+  }
   const projectIds = requireProjectIds(deps);
   const observationId = projectIds.observation();
   const evidenceId = projectIds.evidence();
@@ -320,6 +347,10 @@ export async function observeProjectResource(
   const previous = Object.values(before.snapshot.entities.projectObservations)
     .filter((item) => item.resourceId === resource.projectResourceId)
     .sort((a, b) => b.observedAt.localeCompare(a.observedAt))[0];
+  const changeCandidate = buildContentLabChangeCandidate(
+    previous?.data.contentLab,
+    observed.data.contentLab,
+  );
   const requestSha256 = hashCanonical("command.observe-project-resource.v1", {
     principalId: input.principalId,
     projectId: project.projectId,
@@ -343,6 +374,7 @@ export async function observeProjectResource(
         ...(previous !== undefined ? { previousObservationId: previous.projectObservationId } : {}),
         adapterKinds: current.enabledAdapters,
         data: observed.data,
+        ...(changeCandidate === undefined ? {} : { changeCandidate }),
         sha256: observationSha256 as never,
         observedAt: now,
         revision: 1,
@@ -350,11 +382,13 @@ export async function observeProjectResource(
         updatedAt: now,
       };
       draft.entities.projectEvidence[evidenceId] = {
-        schemaVersion: "project-evidence.v1",
+        schemaVersion: "project-evidence.v2",
         projectEvidenceId: evidenceId,
         projectId: project.projectId,
         resourceId: resource.projectResourceId,
-        kind: "resource_observation",
+        role: "resource_observation",
+        verification: "observed",
+        sourceKind: "project_resource",
         label: "资源观察刷新",
         revisionRef: observed.data.git.headSha,
         sha256: observationSha256 as never,
@@ -382,4 +416,81 @@ export async function observeProjectResource(
     });
   }
   return getProjectWorkspace(deps, { principalId: input.principalId, projectId: input.projectId });
+}
+
+function buildContentLabChangeCandidate(
+  previous: ContentLabObservation | undefined,
+  current: ContentLabObservation | undefined,
+): ContentLabChangeCandidate | undefined {
+  if (current === undefined) return undefined;
+  if (previous === undefined) {
+    return {
+      schemaVersion: "content-lab-change-candidate.v1",
+      classification: "baseline",
+      changeKinds: [],
+      changedPaths: [],
+      summary: "已建立Content Lab只读资源基线；不会据此自动完成Work或发布Workflow Revision",
+      prohibitsAutomaticCompletion: true,
+    };
+  }
+  const before = contentLabPathFingerprints(previous);
+  const after = contentLabPathFingerprints(current);
+  const changedPaths = [...new Set([...before.keys(), ...after.keys()])]
+    .filter((path) => before.get(path) !== after.get(path))
+    .sort()
+    .slice(0, 200);
+  if (changedPaths.length === 0) {
+    return {
+      schemaVersion: "content-lab-change-candidate.v1",
+      classification: "none",
+      changeKinds: [],
+      changedPaths: [],
+      summary: "Content Lab受管资源相对上一Observation无变化",
+      prohibitsAutomaticCompletion: true,
+    };
+  }
+  const kinds = new Set<ContentLabChangeCandidate["changeKinds"][number]>();
+  for (const path of changedPaths) {
+    if (/(^|\/)AGENTS\.md$/u.test(path)) kinds.add("governance");
+    else if (path.startsWith("workflows/") || /analysis\/.*workflow.*\.md$/iu.test(path))
+      kinds.add("workflow");
+    else if (/(^|\/)templates\//u.test(path)) kinds.add("template");
+    else if (/(^|\/)series_registry\.md$/u.test(path)) kinds.add("series");
+    else if (path.startsWith("cases/")) kinds.add("case");
+    else kinds.add("work_evidence");
+  }
+  return {
+    schemaVersion: "content-lab-change-candidate.v1",
+    classification: "review_required",
+    changeKinds: [...kinds].sort(),
+    changedPaths,
+    summary: `发现${changedPaths.length}项受管资源变化，等待Agent或用户审核归类`,
+    prohibitsAutomaticCompletion: true,
+  };
+}
+
+function contentLabPathFingerprints(observation: ContentLabObservation): Map<string, string> {
+  const fingerprints = new Map<string, string>();
+  for (const ref of [
+    ...observation.catalog.governance,
+    ...observation.catalog.workflows,
+    ...observation.catalog.templates,
+    ...observation.catalog.seriesRegistries,
+    ...observation.catalog.cases,
+  ]) {
+    fingerprints.set(ref.relativePath, ref.sha256);
+  }
+  for (const job of observation.jobs) {
+    fingerprints.set(job.jobKey, job.fingerprintSha256);
+    for (const ref of [job.source, job.publish, job.qc, job.workflowAnalysis]) {
+      if (ref !== undefined) fingerprints.set(ref.relativePath, ref.sha256);
+    }
+    for (const artifact of job.recommendedArtifacts) {
+      fingerprints.set(
+        artifact.relativePath,
+        artifact.sha256 ?? `${artifact.hashPolicy}:${artifact.sizeBytes ?? "missing"}`,
+      );
+    }
+  }
+  return fingerprints;
 }

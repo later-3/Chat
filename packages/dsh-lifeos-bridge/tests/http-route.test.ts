@@ -9,6 +9,7 @@ import {
   assertSameOriginRequest,
   createLifeosRouteHandler,
   parseAgentProfilesQuery,
+  parseProjectObjectQuery,
   parseSessionRecordsChatQuery,
   parseSessionRecordsDshQuery,
 } from "../src/http-route.ts";
@@ -532,6 +533,33 @@ test("session-record queries accept only bounded, non-repeated source cursors", 
   ]) {
     assert.throws(() => parseSessionRecordsDshQuery(new URL(url)), {
       code: "lifeos_session_records_query_invalid",
+    });
+  }
+});
+
+test("Project对象查询只接受受限、单值的公开查询合同", () => {
+  assert.deepEqual(
+    parseProjectObjectQuery(
+      new URL(
+        "http://localhost/lifeos/projects/prj_12345678/objects?q=Crash+Course&kind=work&status=intake&view=review&limit=200",
+      ),
+    ),
+    { q: "Crash Course", kind: "work", status: "intake", view: "review", limit: 200 },
+  );
+  assert.deepEqual(
+    parseProjectObjectQuery(new URL("http://localhost/lifeos/projects/prj_12345678/objects")),
+    { view: "all", limit: 100 },
+  );
+  for (const url of [
+    "http://localhost/x?limit=0",
+    "http://localhost/x?limit=501",
+    "http://localhost/x?limit=1&limit=2",
+    "http://localhost/x?kind=unknown",
+    "http://localhost/x?view=unknown",
+    "http://localhost/x?unexpected=1",
+  ]) {
+    assert.throws(() => parseProjectObjectQuery(new URL(url)), {
+      code: "lifeos_project_query_invalid",
     });
   }
 });

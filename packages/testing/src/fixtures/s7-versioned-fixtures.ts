@@ -61,12 +61,14 @@ import {
   migrateProductSnapshotV17ToV18,
   migrateProductSnapshotV18ToV19,
   migrateProductSnapshotV19ToV20,
+  migrateProductSnapshotV20ToV21,
+  migrateProductSnapshotV21ToV22,
+  migrateProductSnapshotV22ToV23,
   productSnapshotV1Schema,
   productSnapshotV10Schema,
   type ProductSnapshotV10,
   type ProductSnapshotV16,
   type ProductSnapshotV18,
-  type ProductSnapshotV19,
   type ProductSnapshotV1,
 } from "@chat/product-store-json";
 
@@ -116,7 +118,6 @@ export type S7VersionedFixtureSnapshot =
   | ProductSnapshotV15Fixture
   | ProductSnapshotV16
   | ProductSnapshotV18
-  | ProductSnapshotV19
   | ProductSnapshot;
 
 export interface S7VersionedFixtureManifestEntry {
@@ -273,7 +274,7 @@ export async function buildS7VersionedFixture(
 }
 
 export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot): ProductSnapshot {
-  if (snapshot.schemaVersion === "chat-product-store.v20") return structuredClone(snapshot);
+  if (snapshot.schemaVersion === "chat-product-store.v23") return structuredClone(snapshot);
   const v2 =
     snapshot.schemaVersion === "chat-product-store.v1"
       ? migrateProductSnapshotV1ToV2(snapshot)
@@ -304,8 +305,14 @@ export function migrateS7FixtureToCurrent(snapshot: S7VersionedFixtureSnapshot):
     v17.schemaVersion === "chat-product-store.v17" ? migrateProductSnapshotV17ToV18(v17) : v17;
   const v19 =
     v18.schemaVersion === "chat-product-store.v18" ? migrateProductSnapshotV18ToV19(v18) : v18;
+  const v20 =
+    v19.schemaVersion === "chat-product-store.v19" ? migrateProductSnapshotV19ToV20(v19) : v19;
+  const v21 =
+    v20.schemaVersion === "chat-product-store.v20" ? migrateProductSnapshotV20ToV21(v20) : v20;
+  const v22 =
+    v21.schemaVersion === "chat-product-store.v21" ? migrateProductSnapshotV21ToV22(v21) : v21;
   return productSnapshotSchema.parse(
-    v19.schemaVersion === "chat-product-store.v19" ? migrateProductSnapshotV19ToV20(v19) : v19,
+    v22.schemaVersion === "chat-product-store.v22" ? migrateProductSnapshotV22ToV23(v22) : v22,
   );
 }
 
@@ -338,9 +345,26 @@ function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
   delete entities["projectBootstrapOperations"];
   delete entities["projectWorkspaceBindings"];
   delete entities["agentVersions"];
+  delete entities["projectWorkBlocks"];
+  delete entities["projectWorkClaims"];
+  delete entities["projectWorkHandoffs"];
+  delete entities["projectPracticeRevisions"];
+  delete entities["projectWorkOutcomes"];
+  delete entities["projectContextMaps"];
+  delete entities["projectProviderBindings"];
+  delete entities["projectProviderProjections"];
+  delete entities["projectCoordinationOperations"];
+  delete entities["projectInboundChanges"];
   delete entities["toolExecutionIntents"];
   delete entities["toolExecutionDecisions"];
   delete entities["toolExecutionResults"];
+  delete entities["projectProfileRevisions"];
+  delete entities["projectConfigurationRevisions"];
+  delete entities["projectEvents"];
+  delete entities["projectNeeds"];
+  delete entities["projectRequirements"];
+  delete entities["projectArtifactRefs"];
+  delete entities["projectMetricObservations"];
   return productSnapshotV10Schema.parse(downgraded);
 }
 

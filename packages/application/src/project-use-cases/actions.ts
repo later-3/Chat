@@ -268,7 +268,7 @@ export async function setProjectArchiveStatus(
       const reason =
         input.payload.status === "archived" ? "用户显式归档Project" : "用户显式恢复Project";
       draft.entities.projectDecisions[decisionId] = {
-        schemaVersion: "project-decision.v1",
+        schemaVersion: "project-decision.v2",
         projectDecisionId: decisionId,
         projectId: project.projectId,
         question: `是否把Project从${project.status}转换为${input.payload.status}？`,
@@ -277,6 +277,14 @@ export async function setProjectArchiveStatus(
         rationale: reason,
         decidedByParticipantId: actor.projectParticipantId,
         boundProjectRevision: project.revision,
+        payloadSha256: hashCanonical("project-decision-payload.v1", {
+          projectId: project.projectId,
+          boundProjectRevision: project.revision,
+          question: `是否把Project从${project.status}转换为${input.payload.status}？`,
+          options: [input.payload.status],
+          choice: input.payload.status,
+          rationale: reason,
+        }) as never,
         status: "active",
         commandId: input.commandId,
         revision: 1,

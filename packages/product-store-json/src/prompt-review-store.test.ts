@@ -42,6 +42,9 @@ import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
+import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
+import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
+import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-19T12:00:00.000Z";
@@ -306,9 +309,26 @@ describe("Prompt Review Product Snapshot完整性", () => {
       delete legacyEntities["projectBootstrapDecisions"];
       delete legacyEntities["projectBootstrapOperations"];
       delete legacyEntities["projectWorkspaceBindings"];
+      delete legacyEntities["projectWorkBlocks"];
+      delete legacyEntities["projectWorkClaims"];
+      delete legacyEntities["projectWorkHandoffs"];
+      delete legacyEntities["projectPracticeRevisions"];
+      delete legacyEntities["projectWorkOutcomes"];
+      delete legacyEntities["projectContextMaps"];
+      delete legacyEntities["projectProviderBindings"];
+      delete legacyEntities["projectProviderProjections"];
+      delete legacyEntities["projectCoordinationOperations"];
+      delete legacyEntities["projectInboundChanges"];
       delete legacyEntities["toolExecutionIntents"];
       delete legacyEntities["toolExecutionDecisions"];
       delete legacyEntities["toolExecutionResults"];
+      delete legacyEntities["projectProfileRevisions"];
+      delete legacyEntities["projectConfigurationRevisions"];
+      delete legacyEntities["projectEvents"];
+      delete legacyEntities["projectNeeds"];
+      delete legacyEntities["projectRequirements"];
+      delete legacyEntities["projectArtifactRefs"];
+      delete legacyEntities["projectMetricObservations"];
       const legacy = productSnapshotV14Schema.parse({
         ...snapshot,
         schemaVersion: "chat-product-store.v14",
@@ -335,10 +355,16 @@ describe("Prompt Review Product Snapshot完整性", () => {
       );
       expect(() =>
         assertSnapshotIntegrity(
-          migrateProductSnapshotV19ToV20(
-            migrateProductSnapshotV18ToV19(
-              migrateProductSnapshotV17ToV18(
-                migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16(migrated)),
+          migrateProductSnapshotV22ToV23(
+            migrateProductSnapshotV21ToV22(
+              migrateProductSnapshotV20ToV21(
+                migrateProductSnapshotV19ToV20(
+                  migrateProductSnapshotV18ToV19(
+                    migrateProductSnapshotV17ToV18(
+                      migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16(migrated)),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -356,9 +382,26 @@ describe("Prompt Review Product Snapshot完整性", () => {
     delete legacyEntities["projectBootstrapDecisions"];
     delete legacyEntities["projectBootstrapOperations"];
     delete legacyEntities["projectWorkspaceBindings"];
+    delete legacyEntities["projectWorkBlocks"];
+    delete legacyEntities["projectWorkClaims"];
+    delete legacyEntities["projectWorkHandoffs"];
+    delete legacyEntities["projectPracticeRevisions"];
+    delete legacyEntities["projectWorkOutcomes"];
+    delete legacyEntities["projectContextMaps"];
+    delete legacyEntities["projectProviderBindings"];
+    delete legacyEntities["projectProviderProjections"];
+    delete legacyEntities["projectCoordinationOperations"];
+    delete legacyEntities["projectInboundChanges"];
     delete legacyEntities["toolExecutionIntents"];
     delete legacyEntities["toolExecutionDecisions"];
     delete legacyEntities["toolExecutionResults"];
+    delete legacyEntities["projectProfileRevisions"];
+    delete legacyEntities["projectConfigurationRevisions"];
+    delete legacyEntities["projectEvents"];
+    delete legacyEntities["projectNeeds"];
+    delete legacyEntities["projectRequirements"];
+    delete legacyEntities["projectArtifactRefs"];
+    delete legacyEntities["projectMetricObservations"];
     const legacy = productSnapshotV14Schema.parse({
       ...snapshot,
       schemaVersion: "chat-product-store.v14",

@@ -27,7 +27,6 @@ export interface LifeosDockInjected {
   ) => Promise<boolean>;
   decideProjectBootstrap: (request: ProjectBootstrapDecisionRequest) => Promise<boolean>;
   openProjectWorkspace: (cwd: string) => Promise<void>;
-  openPlaneProject: (url: string) => void;
 }
 
 export type LifeosDockProps = PropsRuntime<"conversation.input.dock"> &
@@ -320,7 +319,8 @@ export function shouldShowLifeosReviewDock(projection: LifeosProjection | null):
     projection?.pendingNoteDecision != null ||
     projection?.pendingPromptReviewDecision != null ||
     projection?.pendingToolExecutionDecision != null ||
-    projectBootstrapVisible
+    projectBootstrapVisible ||
+    projection?.projectCoordination != null
   );
 }
 
@@ -341,7 +341,6 @@ export function LifeosDock({
   decideBridgeDispatchReview,
   decideProjectBootstrap,
   openProjectWorkspace,
-  openPlaneProject,
 }: LifeosDockProps) {
   const state = useLifeos((value) => value);
   const [explanation, setExplanation] = useState("");
@@ -362,6 +361,7 @@ export function LifeosDock({
   const reviewableNoteCandidate =
     canReviewNote && noteCandidate?.status === "under_review" ? noteCandidate : null;
   const projectBootstrap = projection?.projectBootstrap ?? null;
+  const projectCoordination = projection?.projectCoordination ?? null;
   if (!shouldShowLifeosReviewDock(projection)) return null;
 
   const submitPlan = async (kind: DecisionRequest["kind"]): Promise<void> => {
@@ -912,7 +912,7 @@ export function LifeosDock({
         ) : null}
         {projectBootstrap.binding === undefined ? null : (
           <div className="lifeos-warning" data-testid="lifeos-project-bootstrap-ready">
-            <p>Plane项目与本地Git Workspace均已验证，项目绑定已生效。</p>
+            <p>项目 Workspace 已验证，项目绑定已生效。</p>
             <div className="lifeos-actions">
               {projection?.projectBootstrapTargets?.workspaceCwd === undefined ? null : (
                 <button
@@ -926,18 +926,67 @@ export function LifeosDock({
                   进入 Workspace
                 </button>
               )}
-              {projection?.projectBootstrapTargets?.planeUrl === undefined ? null : (
-                <button
-                  type="button"
-                  data-testid="lifeos-open-plane-project"
-                  onClick={() => openPlaneProject(projection.projectBootstrapTargets!.planeUrl!)}
-                >
-                  打开 Plane
-                </button>
-              )}
             </div>
           </div>
         )}
+        {state.error === null ? null : (
+          <p className="lifeos-error" role="alert">
+            {state.error}
+          </p>
+        )}
+      </section>
+    );
+  }
+
+  const hasOtherReview =
+    canReviewPlan ||
+    canReviewNote ||
+    canReviewPrompt ||
+    toolExecution !== null ||
+    dshSendReview !== null ||
+    bridgeDispatchReview !== null ||
+    projection?.pendingDecision != null ||
+    projection?.pendingNoteDecision != null ||
+    projection?.pendingPromptReviewDecision != null ||
+    projection?.pendingToolExecutionDecision != null;
+  if (projectCoordination !== null && !hasOtherReview) {
+    const currentWork = projectCoordination.currentWork;
+    return (
+      <section
+        className="lifeos-card lifeos-project-coordination-card"
+        data-testid="lifeos-project-coordination-card"
+        aria-label="当前项目协作状态"
+      >
+        <header className="lifeos-header">
+          <strong>{projectCoordination.project.name}</strong>
+          <span className="lifeos-status">项目上下文已恢复</span>
+        </header>
+        <div className="lifeos-plan">
+          {currentWork === null ? (
+            <div className="lifeos-objective">
+              {projectCoordination.requiresWorkSelection
+                ? `需要选择当前工作 · ${projectCoordination.workCandidates.length} 项待选`
+                : "当前没有活动工作"}
+            </div>
+          ) : (
+            <>
+              <div className="lifeos-objective">{currentWork.title}</div>
+              <div className="lifeos-summary">
+                {currentWork.workKey} · {currentWork.status} · revision {currentWork.revision}
+              </div>
+              {currentWork.activeBlock === null ? null : (
+                <p className="lifeos-warning">阻塞：{currentWork.activeBlock.reason}</p>
+              )}
+            </>
+          )}
+          <div className="lifeos-note-tags" aria-label="项目协作提醒">
+            <span>{projectCoordination.project.methodProfileId}</span>
+            {projectCoordination.resource?.changeCandidateClassification !==
+            "review_required" ? null : (
+              <span>目录变化待审核</span>
+            )}
+          </div>
+        </div>
         {state.error === null ? null : (
           <p className="lifeos-error" role="alert">
             {state.error}

@@ -1,13 +1,8 @@
-import { productSnapshotSchema } from "@chat/contracts";
 import { z } from "zod";
+import { productSnapshotV19Schema } from "./legacy-v19.js";
 
-const productSnapshotV16PlaneEntitiesSchema = productSnapshotSchema.shape.entities
-  .omit({
-    agentVersions: true,
-    toolExecutionIntents: true,
-    toolExecutionDecisions: true,
-    toolExecutionResults: true,
-  })
+const productSnapshotV16PlaneEntitiesSchema = productSnapshotV19Schema.shape.entities
+  .omit({ agentVersions: true })
   .strict();
 
 const productSnapshotV16MainEntitiesSchema = productSnapshotV16PlaneEntitiesSchema
@@ -20,7 +15,7 @@ const productSnapshotV16MainEntitiesSchema = productSnapshotV16PlaneEntitiesSche
   .strict();
 
 /** main曾发布的v16：包含Prompt Assembly v2，但尚无Plane初始化事实集合。 */
-export const productSnapshotV16MainSchema = productSnapshotSchema
+export const productSnapshotV16MainSchema = productSnapshotV19Schema
   .extend({
     schemaVersion: z.literal("chat-product-store.v16"),
     entities: productSnapshotV16MainEntitiesSchema,
@@ -28,7 +23,7 @@ export const productSnapshotV16MainSchema = productSnapshotSchema
   .strict();
 
 /** Plane开发分支曾发布的v16：四组初始化事实已经存在，迁移时必须完整保留。 */
-export const productSnapshotV16PlaneSchema = productSnapshotSchema
+export const productSnapshotV16PlaneSchema = productSnapshotV19Schema
   .extend({
     schemaVersion: z.literal("chat-product-store.v16"),
     entities: productSnapshotV16PlaneEntitiesSchema,

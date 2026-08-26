@@ -305,18 +305,22 @@ export async function createFilePromptCatalog(
       throw new Error(`Agent工具重复:${agent.agentKey}`);
     }
   }
+  const agents =
+    env.CHAT_PLANE_ENABLED === "1"
+      ? manifest.agents
+      : manifest.agents.filter((agent) => agent.agentKey !== "project_bootstrap");
   const snapshot: PromptCatalogSnapshot = {
     catalogSha256: hashCanonical("prompt-catalog.v1", {
       catalogRevision: manifest.catalogRevision,
       sharedSelectionProfile: manifest.sharedSelectionProfile,
-      agents: manifest.agents,
+      agents,
       regions,
       builtinFragments: builtinFragments.map(({ content: _content, ...item }) => item),
     }),
     sharedSelectionProfile: manifest.sharedSelectionProfile,
     regions,
     builtinFragments,
-    agents: manifest.agents,
+    agents,
   };
   return { load: async () => structuredClone(snapshot) };
 }

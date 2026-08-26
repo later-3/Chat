@@ -681,8 +681,6 @@ test("专用入口冻结一次性能力，确认只写一次且后台ready后恢
     assert.equal(ready.projectBootstrap?.operation?.status, "ready");
     assert.deepEqual(ready.projectBootstrapTargets, {
       workspaceCwd: "/srv/code/ai-learning",
-      planeUrl:
-        "http://127.0.0.1:8088/learning/projects/66cf0460-84e0-4d3d-b1ef-d193b83b7562/issues",
     });
     const completed = await state.readSession(dshSessionId);
     assert.equal(completed?.projectBootstrapLifecycle?.status, "ready");

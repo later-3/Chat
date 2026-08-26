@@ -288,6 +288,58 @@ test("session records consume the public Product Session and opaque Message curs
   assert.equal(urls[1]?.searchParams.get("limit"), "50");
 });
 
+test("Project开工包查询只发送稳定Session/Root身份和显式读取开关", async () => {
+  let requested: URL | undefined;
+  const packet = {
+    schemaVersion: "project-agent-coordination.v2",
+    resolution: {
+      projectId: "prj_chatclient1",
+      sources: ["product_session", "workspace_root"],
+      productSessionId: "psn_chatclient1",
+      workspaceRootId: "root_contentlab",
+    },
+    project: {
+      projectId: "prj_chatclient1",
+      name: "Content Lab",
+      goal: "持续产出内容。",
+      status: "active",
+      revision: 1,
+      methodSnapshotId: "pms_chatclient1",
+      methodProfileId: "content-production.v1",
+      methodSnapshotRevision: 1,
+    },
+    participant: null,
+    resource: null,
+    currentWork: null,
+    workCandidates: [],
+    requiresWorkSelection: false,
+    permissions: {
+      allowedActions: [],
+    },
+    completionGate: null,
+    resourceContext: { status: "not_requested" },
+    generatedAt: "2026-08-24T00:00:00.000Z",
+  } as const;
+  const client = new ChatProductClient(new URL("http://127.0.0.1:1"), async (input) => {
+    requested = new URL(String(input));
+    return new Response(JSON.stringify({ packet }), { status: 200 });
+  });
+  assert.deepEqual(
+    await client.getProjectAgentOpeningPacket({
+      productSessionId: "psn_chatclient1",
+      workspaceRootId: "root_contentlab",
+      includeResourceContext: false,
+    }),
+    packet,
+  );
+  assert.equal(requested?.pathname, "/api/project-agent/opening-packet");
+  assert.equal(requested?.searchParams.get("productSessionId"), "psn_chatclient1");
+  assert.equal(requested?.searchParams.get("workspaceRootId"), "root_contentlab");
+  assert.equal(requested?.searchParams.get("includeResourceContext"), "false");
+  assert.equal(requested?.searchParams.has("refreshPlane"), false);
+  assert.equal(requested?.searchParams.has("cwd"), false);
+});
+
 test("Agent profile queries and version creation preserve the immutable versions contract", async () => {
   const requests: Array<{ url: URL; method: string; body?: unknown }> = [];
   const client = new ChatProductClient(new URL("http://127.0.0.1:1"), async (input, init) => {

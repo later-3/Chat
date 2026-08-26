@@ -32,6 +32,16 @@ import {
   projectMilestoneIdSchema,
   projectUpdateIdSchema,
   projectStateTransitionIdSchema,
+  projectWorkBlockIdSchema,
+  projectWorkClaimIdSchema,
+  projectWorkHandoffIdSchema,
+  projectPracticeRevisionIdSchema,
+  projectWorkOutcomeIdSchema,
+  projectContextMapIdSchema,
+  projectProviderBindingIdSchema,
+  projectProviderProjectionIdSchema,
+  projectCoordinationOperationIdSchema,
+  projectInboundChangeIdSchema,
   noteIdSchema,
   noteRevisionIdSchema,
   noteCandidateIdSchema,
@@ -63,11 +73,14 @@ import type {
   RuleIdFactory,
   PromptFragmentIdFactory,
   ProjectBootstrapIdFactory,
+  PlaneProjectCoordinationIdFactory,
 } from "@chat/application";
 import { createInProcessProjectBootstrapExecutionCoordinator } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
 import {
   createPlaneCeProjectBootstrap,
+  createPlaneCeProjectCoordination,
+  createPlaneCeProjectRolloutInspection,
   createProjectResourceRegistry,
   createProjectWorkspaceProvisioner,
 } from "@chat/project-runtime";
@@ -130,6 +143,21 @@ export function createProjectIdFactory(): ProjectIdFactory {
     milestone: () => projectMilestoneIdSchema.parse(`pml_${randomSuffix()}`),
     update: () => projectUpdateIdSchema.parse(`pup_${randomSuffix()}`),
     stateTransition: () => projectStateTransitionIdSchema.parse(`ptr_${randomSuffix()}`),
+    workBlock: () => projectWorkBlockIdSchema.parse(`pbl_${randomSuffix()}`),
+    workClaim: () => projectWorkClaimIdSchema.parse(`pcl_${randomSuffix()}`),
+    workHandoff: () => projectWorkHandoffIdSchema.parse(`phf_${randomSuffix()}`),
+    practiceRevision: () => projectPracticeRevisionIdSchema.parse(`ppr_${randomSuffix()}`),
+    workOutcome: () => projectWorkOutcomeIdSchema.parse(`pwo_${randomSuffix()}`),
+    contextMap: () => projectContextMapIdSchema.parse(`pcm_${randomSuffix()}`),
+    providerBinding: () => projectProviderBindingIdSchema.parse(`pvb_${randomSuffix()}`),
+    providerProjection: () => projectProviderProjectionIdSchema.parse(`pvp_${randomSuffix()}`),
+  };
+}
+
+export function createPlaneProjectCoordinationIdFactory(): PlaneProjectCoordinationIdFactory {
+  return {
+    operation: () => projectCoordinationOperationIdSchema.parse(`pco_${randomSuffix()}`),
+    inboundChange: () => projectInboundChangeIdSchema.parse(`pic_${randomSuffix()}`),
   };
 }
 
@@ -203,8 +231,19 @@ export async function createApplicationDeps(
 ): Promise<ApplicationDeps> {
   const store = await openProductStore(filePath, trace);
   const projectRoots = await createProjectResourceRegistry(process.env);
-  const projectWorkspaceProvisioner = await createProjectWorkspaceProvisioner(process.env);
-  const projectManagementBootstrap = createPlaneCeProjectBootstrap(process.env);
+  const planeEnabled = process.env.CHAT_PLANE_ENABLED === "1";
+  const projectWorkspaceProvisioner = planeEnabled
+    ? await createProjectWorkspaceProvisioner(process.env)
+    : undefined;
+  const projectManagementBootstrap = planeEnabled
+    ? createPlaneCeProjectBootstrap(process.env)
+    : undefined;
+  const planeProjectCoordination = planeEnabled
+    ? createPlaneCeProjectCoordination(process.env)
+    : undefined;
+  const planeProjectRolloutInspection = planeEnabled
+    ? createPlaneCeProjectRolloutInspection(process.env)
+    : undefined;
   if ((projectWorkspaceProvisioner === undefined) !== (projectManagementBootstrap === undefined)) {
     throw new Error(
       "Project Bootstrap配置不完整：CHAT_PROJECT_CREATION_ROOTS_JSON与Plane CE配置必须同时提供",
@@ -230,6 +269,7 @@ export async function createApplicationDeps(
     projectIntakeUnderstanding: projectUnderstanding,
     projectAdvancementUnderstanding: advancementUnderstanding,
     projectIds: createProjectIdFactory(),
+    disabledProjectProviderKinds: planeEnabled ? [] : ["plane_ce", "plane-ce.v1"],
     noteIds: createNoteIdFactory(),
     ruleIds: createRuleIdFactory(),
     directAgentIds: createDirectAgentIdFactory(),
@@ -246,6 +286,13 @@ export async function createApplicationDeps(
           projectWorkspaceProvisioner,
           projectManagementBootstrap: projectManagementBootstrap!,
         }),
+    ...(planeProjectCoordination === undefined
+      ? {}
+      : {
+          planeProjectCoordination,
+          planeProjectCoordinationIds: createPlaneProjectCoordinationIdFactory(),
+        }),
+    ...(planeProjectRolloutInspection === undefined ? {} : { planeProjectRolloutInspection }),
     ...(trace !== undefined ? { trace } : {}),
   };
 }

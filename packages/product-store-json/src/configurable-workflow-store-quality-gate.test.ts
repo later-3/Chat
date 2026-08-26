@@ -47,6 +47,9 @@ import { migrateProductSnapshotV16ToV17 } from "./migrate-v16-to-v17.js";
 import { migrateProductSnapshotV17ToV18 } from "./migrate-v17-to-v18.js";
 import { migrateProductSnapshotV18ToV19 } from "./migrate-v18-to-v19.js";
 import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
+import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
+import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
+import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
 import { productSnapshotV13Schema } from "./legacy-v13.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { computePromptFragmentRevisionSha256 } from "@chat/domain";
@@ -56,10 +59,16 @@ const NOW = "2026-08-10T12:00:00.000Z";
 function migrateProductSnapshotV15ToV16(
   snapshot: Parameters<typeof migrateProductSnapshotV15ToV16Legacy>[0],
 ): ProductSnapshot {
-  return migrateProductSnapshotV19ToV20(
-    migrateProductSnapshotV18ToV19(
-      migrateProductSnapshotV17ToV18(
-        migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+  return migrateProductSnapshotV22ToV23(
+    migrateProductSnapshotV21ToV22(
+      migrateProductSnapshotV20ToV21(
+        migrateProductSnapshotV19ToV20(
+          migrateProductSnapshotV18ToV19(
+            migrateProductSnapshotV17ToV18(
+              migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+            ),
+          ),
+        ),
       ),
     ),
   );
@@ -121,9 +130,26 @@ function emptyV6() {
     "projectBootstrapDecisions",
     "projectBootstrapOperations",
     "projectWorkspaceBindings",
+    "projectWorkBlocks",
+    "projectWorkClaims",
+    "projectWorkHandoffs",
+    "projectPracticeRevisions",
+    "projectWorkOutcomes",
+    "projectContextMaps",
+    "projectProviderBindings",
+    "projectProviderProjections",
+    "projectCoordinationOperations",
+    "projectInboundChanges",
     "toolExecutionIntents",
     "toolExecutionDecisions",
     "toolExecutionResults",
+    "projectProfileRevisions",
+    "projectConfigurationRevisions",
+    "projectEvents",
+    "projectNeeds",
+    "projectRequirements",
+    "projectArtifactRefs",
+    "projectMetricObservations",
   ]) {
     delete entities[key];
   }

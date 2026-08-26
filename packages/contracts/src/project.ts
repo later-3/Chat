@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { sha256Schema } from "./hash.js";
 import {
+  contentLabChangeCandidateSchema,
+  contentLabObservationSchema,
+} from "./content-lab-project.js";
+import {
   commandIdSchema,
   messageIdSchema,
   principalIdSchema,
@@ -19,6 +23,9 @@ import {
   projectStageIdSchema,
   projectStateTransitionIdSchema,
   projectUpdateIdSchema,
+  projectPracticeRevisionIdSchema,
+  projectWorkBlockIdSchema,
+  projectWorkClaimIdSchema,
   projectWorkIdSchema,
 } from "./ids.js";
 
@@ -48,6 +55,13 @@ export const projectMethodProfileIdSchema = z.enum([
   "small-project.v1",
   "software-delivery.v1",
   "lightweight.v1",
+  "content-production.v1",
+]);
+
+export const projectWorkKindSchema = z.enum([
+  "generic",
+  "content_delivery",
+  "workflow_improvement",
 ]);
 
 export const projectMethodPolicySchema = z
@@ -62,8 +76,8 @@ export const projectMethodPolicySchema = z
 const methodDecisionRequirementSchema = z.enum(["required", "optional"]);
 
 /**
- * Method Snapshot v2不是可解释DSL，而是Domain已编译的完整策略结果。
- * 字段只覆盖PS2真正执行的门，后续能力通过新版本演进。
+ * Method Snapshot v3不是可解释DSL，而是Domain从内置Profile编译的完整策略结果。
+ * coordination只描述当前内核真正执行的门；新增项目类型必须通过版本化Profile演进。
  */
 export const projectMethodSnapshotPoliciesSchema = z
   .object({
@@ -108,12 +122,22 @@ export const projectMethodSnapshotPoliciesSchema = z
         iterationCommitmentDecision: methodDecisionRequirementSchema,
       })
       .strict(),
+    coordination: z
+      .object({
+        workKinds: z.array(projectWorkKindSchema).min(1).max(3),
+        claimPolicy: z.enum(["disabled", "optional", "required_for_agent"]),
+        blockedRecoveryEvidence: z.boolean(),
+        terminalDecision: methodDecisionRequirementSchema,
+        publicationOutcomeRequired: z.boolean(),
+        practiceAdoptionEvidenceRequired: z.boolean(),
+      })
+      .strict(),
   })
   .strict();
 
 export const projectMethodSnapshotSchema = z
   .object({
-    schemaVersion: z.literal("project-method-snapshot.v2"),
+    schemaVersion: z.literal("project-method-snapshot.v3"),
     projectMethodSnapshotId: projectMethodSnapshotIdSchema,
     projectId: projectIdSchema,
     profileId: projectMethodProfileIdSchema,
@@ -205,7 +229,41 @@ export const projectUpdateSchema = z
   })
   .strict();
 
-const projectTransitionCommon = {
+export const projectLegacyWorkStatusSchema = z.enum([
+  "draft",
+  "approved",
+  "in_progress",
+  "review",
+  "blocked",
+  "done",
+  "cancelled",
+]);
+export const projectContentWorkStatusSchema = z.enum([
+  "intake",
+  "selected",
+  "producing",
+  "needs_review",
+  "ready",
+  "blocked",
+  "published",
+  "dropped",
+]);
+export const projectPracticeWorkStatusSchema = z.enum([
+  "proposed",
+  "selected",
+  "experimenting",
+  "needs_review",
+  "blocked",
+  "adopted",
+  "rejected",
+]);
+export const projectWorkStatusSchema = z.union([
+  projectLegacyWorkStatusSchema,
+  projectContentWorkStatusSchema,
+  projectPracticeWorkStatusSchema,
+]);
+
+const projectTransitionBase = {
   schemaVersion: z.literal("project-state-transition.v1"),
   projectStateTransitionId: projectStateTransitionIdSchema,
   projectId: projectIdSchema,
@@ -214,10 +272,13 @@ const projectTransitionCommon = {
   beforeRevision: z.number().int().positive(),
   afterRevision: z.number().int().positive(),
   reason: z.string().trim().min(1).max(2_000),
-  decisionId: projectDecisionIdSchema,
   evidenceIds: z.array(projectEvidenceIdSchema).max(20),
   occurredAt: isoDateTimeSchema,
   ...entityBase,
+};
+const projectTransitionCommon = {
+  ...projectTransitionBase,
+  decisionId: projectDecisionIdSchema,
 };
 
 /** 严格状态历史只记录转换，不复制Stage/Update正文，也不承担Activity职责。 */
@@ -249,12 +310,23 @@ export const projectStateTransitionSchema = z.discriminatedUnion("objectType", [
       to: projectMilestoneStatusSchema,
     })
     .strict(),
+  z
+    .object({
+      ...projectTransitionBase,
+      objectType: z.literal("work"),
+      objectId: projectWorkIdSchema,
+      from: projectWorkStatusSchema,
+      to: projectWorkStatusSchema,
+      decisionId: projectDecisionIdSchema.optional(),
+    })
+    .strict(),
 ]);
 
 export const projectResourceAdapterKindSchema = z.enum([
   "local-git-workspace.v1",
   "project-document-manifest.v1",
   "package-script-catalog.v1",
+  "content-lab-resource.v1",
 ]);
 
 export const projectResourceSchema = z
@@ -285,29 +357,104 @@ export const projectParticipantSchema = z
   })
   .strict();
 
-export const projectWorkStatusSchema = z.enum([
-  "draft",
-  "approved",
-  "in_progress",
-  "review",
-  "done",
-  "cancelled",
-]);
+export const projectWorkKeySchema = z
+  .string()
+  .trim()
+  .regex(/^[a-z0-9][a-z0-9:._-]{0,179}$/u)
+  .refine((value) => !/^(?:run|psn|session|att|attempt|cmd|req)[:_-]/u.test(value), {
+    message: "Work Key不能使用Session、Run或Command身份",
+  });
+
+const projectResourceRefSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .refine((value) => !value.startsWith("/") && !value.split("/").includes(".."), {
+    message: "Resource Ref必须是受管稳定引用，不能是绝对路径或越界路径",
+  });
+
+const projectWorkCommon = {
+  schemaVersion: z.literal("project-work.v2"),
+  projectWorkId: projectWorkIdSchema,
+  projectId: projectIdSchema,
+  stageId: projectStageIdSchema,
+  workKey: projectWorkKeySchema,
+  title: z.string().min(1).max(200),
+  /** 人类可在受管Provider中调整的跨Provider工作优先级；旧Store缺省等价none。 */
+  priority: z.enum(["none", "urgent", "high", "medium", "low"]).optional(),
+  objective: longText,
+  acceptanceCriteria: z.array(shortText).min(1).max(20),
+  dependsOn: z.array(projectWorkIdSchema).max(20),
+  ownerParticipantId: projectParticipantIdSchema,
+  activeBlockId: projectWorkBlockIdSchema.optional(),
+  activeClaimId: projectWorkClaimIdSchema.optional(),
+  practiceRevisionIds: z.array(projectPracticeRevisionIdSchema).max(20),
+  resourceRefs: z.array(projectResourceRefSchema).max(50),
+  resolutionDecisionId: projectDecisionIdSchema.optional(),
+  ...entityBase,
+};
+
 export const projectWorkSchema = z
-  .object({
-    schemaVersion: z.literal("project-work.v1"),
-    projectWorkId: projectWorkIdSchema,
-    projectId: projectIdSchema,
-    stageId: projectStageIdSchema,
-    title: z.string().min(1).max(200),
-    objective: longText,
-    acceptanceCriteria: z.array(shortText).min(1).max(20),
-    dependsOn: z.array(projectWorkIdSchema).max(20),
-    ownerParticipantId: projectParticipantIdSchema,
-    status: projectWorkStatusSchema,
-    ...entityBase,
-  })
-  .strict();
+  .discriminatedUnion("kind", [
+    z
+      .object({
+        ...projectWorkCommon,
+        kind: z.literal("generic"),
+        status: projectLegacyWorkStatusSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...projectWorkCommon,
+        kind: z.literal("content_delivery"),
+        status: projectContentWorkStatusSchema,
+        content: z
+          .object({
+            targetPlatforms: z
+              .array(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/u))
+              .min(1)
+              .max(10),
+            sourceRef: projectResourceRefSchema,
+            seriesKey: z
+              .string()
+              .regex(/^[a-z0-9][a-z0-9._-]{0,119}$/u)
+              .optional(),
+          })
+          .strict(),
+      })
+      .strict(),
+    z
+      .object({
+        ...projectWorkCommon,
+        kind: z.literal("workflow_improvement"),
+        status: projectPracticeWorkStatusSchema,
+        practice: z
+          .object({
+            practiceKey: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,119}$/u),
+            hypothesis: longText,
+          })
+          .strict(),
+      })
+      .strict(),
+  ])
+  .superRefine((work, context) => {
+    const terminal = ["published", "dropped", "adopted", "rejected"].includes(work.status);
+    if (work.kind !== "generic" && terminal !== (work.resolutionDecisionId !== undefined)) {
+      context.addIssue({
+        code: "custom",
+        path: ["resolutionDecisionId"],
+        message: "内容或方法Work终态必须且只能绑定Resolution Decision",
+      });
+    }
+    if ((work.status === "blocked") !== (work.activeBlockId !== undefined)) {
+      context.addIssue({
+        code: "custom",
+        path: ["activeBlockId"],
+        message: "所有Work的Blocked状态与活动Block必须一致",
+      });
+    }
+  });
 
 export const projectActionStatusSchema = z.enum(["todo", "doing", "blocked", "done", "cancelled"]);
 export const projectActionSchema = z
@@ -328,18 +475,69 @@ export const projectActionSchema = z
 
 export const projectEvidenceSchema = z
   .object({
-    schemaVersion: z.literal("project-evidence.v1"),
+    schemaVersion: z.literal("project-evidence.v2"),
     projectEvidenceId: projectEvidenceIdSchema,
     projectId: projectIdSchema,
+    workId: projectWorkIdSchema.optional(),
+    workRevision: z.number().int().positive().optional(),
     resourceId: projectResourceIdSchema.optional(),
-    kind: z.enum(["resource_observation", "commit", "pull_request", "test", "artifact", "trace"]),
+    role: z.enum([
+      "resource_observation",
+      "source",
+      "content_revision",
+      "qc_report",
+      "artifact_manifest",
+      "user_review",
+      "publication_receipt",
+      "practice_case",
+      "practice_revision",
+      "commit",
+      "pull_request",
+      "test",
+      "artifact",
+      "trace",
+    ]),
+    verification: z.enum(["reported", "observed", "verified"]),
+    sourceKind: z.enum([
+      "project_resource",
+      "git",
+      "external_url",
+      "provider",
+      "user_decision",
+      "runtime",
+    ]),
     label: z.string().min(1).max(240),
     revisionRef: z.string().min(1).max(240),
+    uri: z
+      .string()
+      .trim()
+      .min(1)
+      .max(2_000)
+      .refine((value) => !value.startsWith("/") && !value.startsWith("file:"), {
+        message: "Evidence URI不能暴露本机绝对路径或file URI",
+      })
+      .optional(),
     sha256: sha256Schema,
     observedAt: isoDateTimeSchema,
     ...entityBase,
   })
-  .strict();
+  .strict()
+  .superRefine((evidence, context) => {
+    if ((evidence.workId !== undefined) !== (evidence.workRevision !== undefined)) {
+      context.addIssue({
+        code: "custom",
+        path: ["workRevision"],
+        message: "Evidence的Work ID和Revision必须同时存在",
+      });
+    }
+    if ((evidence.sourceKind === "project_resource") !== (evidence.resourceId !== undefined)) {
+      context.addIssue({
+        code: "custom",
+        path: ["resourceId"],
+        message: "只有project_resource Evidence才能且必须绑定Resource",
+      });
+    }
+  });
 
 export const projectContributionSchema = z
   .object({
@@ -369,7 +567,7 @@ export const projectContributionSchema = z
 
 export const projectDecisionSchema = z
   .object({
-    schemaVersion: z.literal("project-decision.v1"),
+    schemaVersion: z.literal("project-decision.v2"),
     projectDecisionId: projectDecisionIdSchema,
     projectId: projectIdSchema,
     question: z.string().min(1).max(1_000),
@@ -378,12 +576,24 @@ export const projectDecisionSchema = z
     rationale: z.string().min(1).max(2_000),
     decidedByParticipantId: projectParticipantIdSchema,
     boundProjectRevision: z.number().int().positive(),
+    boundWorkId: projectWorkIdSchema.optional(),
+    boundWorkRevision: z.number().int().positive().optional(),
+    payloadSha256: sha256Schema,
     status: z.enum(["active", "superseded", "revoked"]),
     supersededByDecisionId: projectDecisionIdSchema.optional(),
     commandId: commandIdSchema,
     ...entityBase,
   })
-  .strict();
+  .strict()
+  .superRefine((decision, context) => {
+    if ((decision.boundWorkId !== undefined) !== (decision.boundWorkRevision !== undefined)) {
+      context.addIssue({
+        code: "custom",
+        path: ["boundWorkRevision"],
+        message: "Decision的Work ID和Revision必须同时存在",
+      });
+    }
+  });
 
 export const projectObservationDataSchema = z
   .object({
@@ -414,6 +624,7 @@ export const projectObservationDataSchema = z
           .strict(),
       )
       .max(100),
+    contentLab: contentLabObservationSchema.optional(),
   })
   .strict();
 
@@ -426,6 +637,7 @@ export const projectObservationSchema = z
     previousObservationId: projectObservationIdSchema.optional(),
     adapterKinds: z.array(projectResourceAdapterKindSchema).min(1).max(3),
     data: projectObservationDataSchema,
+    changeCandidate: contentLabChangeCandidateSchema.optional(),
     sha256: sha256Schema,
     observedAt: isoDateTimeSchema,
     ...entityBase,

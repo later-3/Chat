@@ -3,7 +3,7 @@ import {
   type ProjectSummaryDto,
   type ProjectWorkspaceDto,
 } from "@chat/contracts";
-import { projectSummaryDtoSchema, projectWorkspaceDtoSchema } from "@chat/contracts";
+import { projectSummaryV3DtoSchema, projectWorkspaceV3DtoSchema } from "@chat/contracts";
 import { forbidden, notFound } from "../errors.js";
 /**
  * Project用例共享helper：根注册表、ID工厂、Trace发射与可写性断言。
@@ -16,7 +16,7 @@ import {
   type ProjectCandidateDto,
   type TraceEventInput,
 } from "@chat/contracts";
-import { PROJECT_API_SCHEMA_VERSION, projectCandidateDtoSchema } from "@chat/contracts";
+import { PROJECT_API_V3_SCHEMA_VERSION, projectCandidateDtoSchema } from "@chat/contracts";
 import { hashCanonical } from "@chat/domain";
 import { type ApplicationDeps, type ProjectIdFactory } from "../deps.js";
 import { ApplicationError, revisionConflict } from "../errors.js";
@@ -96,7 +96,7 @@ export function assertProjectWritable(project: Project): void {
 export function toCandidateDto(candidate: ProjectCandidate): ProjectCandidateDto {
   if (candidate.candidateKind === "management") {
     return projectCandidateDtoSchema.parse({
-      schemaVersion: PROJECT_API_SCHEMA_VERSION,
+      schemaVersion: PROJECT_API_V3_SCHEMA_VERSION,
       projectCandidateId: candidate.projectCandidateId,
       sessionId: candidate.sessionId,
       candidateKind: "management",
@@ -116,7 +116,7 @@ export function toCandidateDto(candidate: ProjectCandidate): ProjectCandidateDto
   }
   if (candidate.candidateKind === "advancement") {
     const base = {
-      schemaVersion: PROJECT_API_SCHEMA_VERSION,
+      schemaVersion: PROJECT_API_V3_SCHEMA_VERSION,
       projectCandidateId: candidate.projectCandidateId,
       sessionId: candidate.sessionId,
       candidateKind: "advancement" as const,
@@ -167,7 +167,7 @@ export function toCandidateDto(candidate: ProjectCandidate): ProjectCandidateDto
     });
   }
   const base = {
-    schemaVersion: PROJECT_API_SCHEMA_VERSION,
+    schemaVersion: PROJECT_API_V3_SCHEMA_VERSION,
     projectCandidateId: candidate.projectCandidateId,
     sessionId: candidate.sessionId,
     candidateKind: "intake",
@@ -238,8 +238,8 @@ export function projectSummary(snapshot: Snapshot, project: Project): ProjectSum
   const participants = Object.values(snapshot.entities.projectParticipants).filter(
     (participant) => participant.projectId === project.projectId,
   );
-  return projectSummaryDtoSchema.parse({
-    schemaVersion: PROJECT_API_SCHEMA_VERSION,
+  return projectSummaryV3DtoSchema.parse({
+    schemaVersion: PROJECT_API_V3_SCHEMA_VERSION,
     projectId: project.projectId,
     name: project.name,
     summary: project.summary,
@@ -247,7 +247,10 @@ export function projectSummary(snapshot: Snapshot, project: Project): ProjectSum
     status: project.status,
     methodProfileId: method.profileId,
     stageName: stage.name,
-    activeWorkCount: works.filter((work) => !["done", "cancelled"].includes(work.status)).length,
+    activeWorkCount: works.filter(
+      (work) =>
+        !["done", "cancelled", "published", "dropped", "adopted", "rejected"].includes(work.status),
+    ).length,
     openActionCount: actions.filter((action) => !["done", "cancelled"].includes(action.status))
       .length,
     participantCount: participants.filter((participant) => participant.status === "active").length,
@@ -285,6 +288,30 @@ export function projectWorkspace(
   const contributions = Object.values(snapshot.entities.projectContributions).filter(
     (item) => item.projectId === project.projectId,
   );
+  const workBlocks = Object.values(snapshot.entities.projectWorkBlocks).filter(
+    (item) => item.projectId === project.projectId,
+  );
+  const workClaims = Object.values(snapshot.entities.projectWorkClaims).filter(
+    (item) => item.projectId === project.projectId,
+  );
+  const workHandoffs = Object.values(snapshot.entities.projectWorkHandoffs).filter(
+    (item) => item.projectId === project.projectId,
+  );
+  const practices = Object.values(snapshot.entities.projectPracticeRevisions).filter(
+    (item) => item.projectId === project.projectId,
+  );
+  const publicationOutcomes = Object.values(snapshot.entities.projectWorkOutcomes).filter(
+    (item) => item.projectId === project.projectId,
+  );
+  const contextMap = Object.values(snapshot.entities.projectContextMaps).find(
+    (item) => item.projectId === project.projectId && item.status === "active",
+  );
+  const providerBindings = Object.values(snapshot.entities.projectProviderBindings).filter(
+    (item) => item.projectId === project.projectId,
+  );
+  const providerProjections = Object.values(snapshot.entities.projectProviderProjections).filter(
+    (item) => item.projectId === project.projectId,
+  );
   const stage = snapshot.entities.projectStages[project.currentStageId];
   if (stage === undefined) throw notFound("Project当前Stage不存在");
   const milestones = Object.values(snapshot.entities.projectMilestones).filter(
@@ -293,8 +320,8 @@ export function projectWorkspace(
   const latestUpdate = Object.values(snapshot.entities.projectUpdates)
     .filter((item) => item.projectId === project.projectId)
     .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))[0];
-  return projectWorkspaceDtoSchema.parse({
-    schemaVersion: PROJECT_API_SCHEMA_VERSION,
+  return projectWorkspaceV3DtoSchema.parse({
+    schemaVersion: PROJECT_API_V3_SCHEMA_VERSION,
     project: projectSummary(snapshot, project),
     scopeIn: project.scopeIn,
     scopeOut: project.scopeOut,
@@ -351,26 +378,147 @@ export function projectWorkspace(
           : {}),
       };
     }),
-    works: works.map((work) => ({
-      projectWorkId: work.projectWorkId,
-      title: work.title,
-      objective: work.objective,
-      acceptanceCriteria: work.acceptanceCriteria,
-      ownerParticipantId: work.ownerParticipantId,
-      status: work.status,
-      revision: work.revision,
-      actions: actions
-        .filter((action) => action.workId === work.projectWorkId)
-        .map((action) => ({
-          projectActionId: action.projectActionId,
-          workId: action.workId,
-          title: action.title,
-          ownerParticipantId: action.ownerParticipantId,
-          status: action.status,
-          ...(action.blockedReason !== undefined ? { blockedReason: action.blockedReason } : {}),
-          ...(action.dueAt !== undefined ? { dueAt: action.dueAt } : {}),
-          revision: action.revision,
-        })),
+    works: works.map((work) => {
+      const activeBlock = workBlocks.find(
+        (block) => block.projectWorkBlockId === work.activeBlockId && block.status === "active",
+      );
+      const activeClaim = workClaims.find(
+        (claim) => claim.projectWorkClaimId === work.activeClaimId && claim.status === "active",
+      );
+      const latestHandoff = workHandoffs
+        .filter((handoff) => handoff.workId === work.projectWorkId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+      return {
+        projectWorkId: work.projectWorkId,
+        workKey: work.workKey,
+        kind: work.kind,
+        title: work.title,
+        objective: work.objective,
+        acceptanceCriteria: work.acceptanceCriteria,
+        dependsOn: work.dependsOn,
+        ownerParticipantId: work.ownerParticipantId,
+        practiceRevisionIds: work.practiceRevisionIds,
+        resourceRefs: work.resourceRefs,
+        status: work.status,
+        ...(work.kind === "content_delivery" ? { content: work.content } : {}),
+        ...(work.kind === "workflow_improvement" ? { practice: work.practice } : {}),
+        activeBlock:
+          activeBlock === undefined
+            ? null
+            : {
+                projectWorkBlockId: activeBlock.projectWorkBlockId,
+                previousState: activeBlock.previousState,
+                reason: activeBlock.reason,
+                stoppedAt: activeBlock.stoppedAt,
+                recoveryConditions: activeBlock.recoveryConditions,
+                reportedByParticipantId: activeBlock.reportedByParticipantId,
+                revision: activeBlock.revision,
+              },
+        activeClaim:
+          activeClaim === undefined
+            ? null
+            : {
+                projectWorkClaimId: activeClaim.projectWorkClaimId,
+                participantId: activeClaim.participantId,
+                acquiredAt: activeClaim.acquiredAt,
+                leaseExpiresAt: activeClaim.leaseExpiresAt,
+                revision: activeClaim.revision,
+              },
+        latestHandoff:
+          latestHandoff === undefined
+            ? null
+            : {
+                projectWorkHandoffId: latestHandoff.projectWorkHandoffId,
+                fromParticipantId: latestHandoff.fromParticipantId,
+                ...(latestHandoff.toParticipantId === undefined
+                  ? {}
+                  : { toParticipantId: latestHandoff.toParticipantId }),
+                completed: latestHandoff.completed,
+                remaining: latestHandoff.remaining,
+                risks: latestHandoff.risks,
+                nextStep: latestHandoff.nextStep,
+                requiredReads: latestHandoff.requiredReads,
+                evidenceIds: latestHandoff.evidenceIds,
+                createdAt: latestHandoff.createdAt,
+              },
+        revision: work.revision,
+        actions: actions
+          .filter((action) => action.workId === work.projectWorkId)
+          .map((action) => ({
+            projectActionId: action.projectActionId,
+            workId: action.workId,
+            title: action.title,
+            ownerParticipantId: action.ownerParticipantId,
+            status: action.status,
+            ...(action.blockedReason !== undefined ? { blockedReason: action.blockedReason } : {}),
+            ...(action.dueAt !== undefined ? { dueAt: action.dueAt } : {}),
+            revision: action.revision,
+          })),
+      };
+    }),
+    practices: practices.map((practice) => ({
+      projectPracticeRevisionId: practice.projectPracticeRevisionId,
+      practiceKey: practice.practiceKey,
+      version: practice.version,
+      title: practice.title,
+      applicableWorkKinds: practice.applicableWorkKinds,
+      artifactEvidenceId: practice.artifactEvidenceId,
+      status: practice.status,
+      sha256: practice.sha256,
+      adoptedAt: practice.adoptedAt,
+    })),
+    publicationOutcomes: publicationOutcomes.map((outcome) => ({
+      projectWorkOutcomeId: outcome.projectWorkOutcomeId,
+      workId: outcome.workId,
+      kind: outcome.kind,
+      platform: outcome.platform,
+      contentRevisionEvidenceId: outcome.contentRevisionEvidenceId,
+      publicationEvidenceId: outcome.publicationEvidenceId,
+      ...(outcome.externalContentId === undefined
+        ? {}
+        : { externalContentId: outcome.externalContentId }),
+      ...(outcome.url === undefined ? {} : { url: outcome.url }),
+      publishedAt: outcome.publishedAt,
+      status: outcome.status,
+      verification: outcome.verification,
+      revision: outcome.revision,
+    })),
+    contextMap:
+      contextMap === undefined
+        ? null
+        : {
+            projectContextMapId: contextMap.projectContextMapId,
+            methodSnapshotId: contextMap.methodSnapshotId,
+            selectors: contextMap.selectors,
+            historyViews: contextMap.historyViews,
+            authorityPolicyVersion: contextMap.authorityPolicyVersion,
+            evidencePolicyVersion: contextMap.evidencePolicyVersion,
+            sha256: contextMap.sha256,
+            revision: contextMap.revision,
+          },
+    providerBindings: providerBindings.map((binding) => ({
+      projectProviderBindingId: binding.projectProviderBindingId,
+      providerKind: binding.providerKind,
+      providerVersion: binding.providerVersion,
+      externalWorkspaceId: binding.externalWorkspaceId,
+      externalProjectId: binding.externalProjectId,
+      externalProjectIdentifier: binding.externalProjectIdentifier,
+      syncPolicyVersion: binding.syncPolicyVersion,
+      status: binding.status,
+      revision: binding.revision,
+    })),
+    providerProjections: providerProjections.map((projection) => ({
+      projectProviderProjectionId: projection.projectProviderProjectionId,
+      bindingId: projection.bindingId,
+      objectType: projection.objectType,
+      objectId: projection.objectId,
+      providerObjectType: projection.providerObjectType,
+      providerObjectId: projection.providerObjectId,
+      ...(projection.externalKey === undefined ? {} : { externalKey: projection.externalKey }),
+      chatObjectRevision: projection.chatObjectRevision,
+      syncStatus: projection.syncStatus,
+      ...(projection.lastSyncedAt === undefined ? {} : { lastSyncedAt: projection.lastSyncedAt }),
+      revision: projection.revision,
     })),
     decisions: decisions
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))

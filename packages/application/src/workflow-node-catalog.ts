@@ -202,7 +202,7 @@ const directCapabilityModeField = (): PublicConfigField => ({
   name: "capabilityMode",
   label: "能力模式",
   defaultValue: "pi_cli_default",
-  options: ["pi_cli_default", "read_only", "project_bootstrap"],
+  options: ["pi_cli_default", "read_only"],
 });
 
 const directPromptReviewModeField = (): PublicConfigField => ({
@@ -493,7 +493,7 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
       }),
     defaultConfig: { capabilityMode: "pi_cli_default", promptReviewMode: "manual" },
     publicConfigFields: [
-      agentKeyField("direct", ["direct", "project_bootstrap"]),
+      agentKeyField("direct", ["direct"]),
       agentPromptOverrideField(),
       directCapabilityModeField(),
       directPromptReviewModeField(),

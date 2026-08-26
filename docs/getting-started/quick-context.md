@@ -20,10 +20,11 @@ Browser → DSH Web → LifeOS Bridge → Chat Query/Command API
 
 Product事实由Product Store/Application拥有；Checkpoint、Hook和重放由Workflow拥有；Pi
 Session、Tool Journal和Provider调用由Pi Runtime拥有；DSH Session和浏览器缓存只属于DSH；
-Plane、Git、Memory等外部系统只拥有自己的资源。它们的ID不能互换为产品身份或授权。
+Git、Memory及其他外部系统只拥有自己的资源。它们的ID不能互换为产品身份或授权。
 
-已完成：产品后端、Workflow/Agent Runtime、固定DSH派生、LifeOS Bridge、Project Bootstrap和
-Capability治理。Workbench实现已完成但仍是Beta，提升为通用发布门已暂停。Memory暂停。当前优先
+已完成：产品后端、Workflow/Agent Runtime、固定DSH派生、LifeOS Bridge、Capability治理，以及
+Project监督账本、Content Production协作事实、Content Lab有界上下文和DSH项目四视图。历史
+Project Bootstrap仅保留兼容读取，普通运行图不装配外部项目Provider。Workbench实现已完成但仍是Beta，提升为通用发布门已暂停。Memory暂停。当前优先
 候选是Browser Provider，但尚未授权实现。不要从阶段计划推导开工授权；涉及真实数据处置前还要
 读取[PROJECT_STATE](../../PROJECT_STATE.md)中的最新诊断，接手导航不授予修复权。
 
@@ -36,11 +37,11 @@ Capability治理。Workbench实现已完成但仍是Beta，提升为通用发布
    [Outbox Dispatcher](../../apps/api/src/outbox-dispatcher.ts) →
    [Planning Workflow](../../packages/workflows/src/planning-execution-workflow.ts) →
    [Pi Agent Runner](../../packages/pi-runtime/src/agent-runner.ts)。
-2. Project Bootstrap：
-   [Bridge Service专用入口/决定](../../packages/dsh-lifeos-bridge/src/bridge-service.ts) →
-   [Bootstrap Message dispatch](../../packages/dsh-lifeos-bridge/src/bridge-chat-dispatch.ts) →
-   [Application用例](../../packages/application/src/project-bootstrap-use-cases.ts) →
-   [Project Adapter](../../packages/project-runtime/src/plane-ce-bootstrap.ts)。
+2. Project监督与协作：
+   [项目路由](../../apps/api/src/product-routes/project-routes.ts) →
+   [Project管理用例](../../packages/application/src/project-management-use-cases.ts) →
+   [Opening Packet v2](../../packages/application/src/project-agent-coordination-use-cases.ts) →
+   [DSH四视图](../../packages/dsh-lifeos-bridge/src/client/ProjectManagementView.tsx)。
 3. 启动与恢复：
    [统一启动器](../../scripts/dev/start.mjs) →
    [服务图与Supervisor](../../scripts/dev/app-runtime.mjs) →
@@ -59,7 +60,7 @@ Capability治理。Workbench实现已完成但仍是Beta，提升为通用发布
 5. 未明确授权时不得push、建PR、部署、改仓库设置、迁移真实数据或调用外部写。
 
 付费测试只能走名称含`:paid`的命令，并同时设置`CHAT_ALLOW_PAID_TESTS=1`和精确Provider
-凭据。真实Plane/Memory等外部写只能走`:external:`命令，同时设置全局和服务专用开关。
+凭据。真实Memory等外部写只能走`:external:`命令，同时设置全局和服务专用开关。
 普通CI与`verify:core`统一去凭据。详见[测试lane](../testing/test-lanes.md)。
 
 ## 10–12 分钟：最安全的首个验证

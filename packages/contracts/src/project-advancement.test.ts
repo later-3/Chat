@@ -39,6 +39,14 @@ describe("PS2.1 Project Advancement合同", () => {
         stageTransitionDecision: "required" as const,
         iterationCommitmentDecision: "required" as const,
       },
+      coordination: {
+        workKinds: ["generic"] as const,
+        claimPolicy: "optional" as const,
+        blockedRecoveryEvidence: false,
+        terminalDecision: "required" as const,
+        publicationOutcomeRequired: false,
+        practiceAdoptionEvidenceRequired: false,
+      },
     };
     expect(projectMethodSnapshotPoliciesSchema.parse(policies)).toEqual(policies);
     expect(() =>

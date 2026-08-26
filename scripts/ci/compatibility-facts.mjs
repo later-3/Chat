@@ -780,6 +780,9 @@ function apiGenerations() {
   const schemas = api.publicSchemas;
   const evidence = new Map();
   for (const schema of schemas) {
+    // 多代union只证明read-old/migration edge；若把它同时计入每代canonical，
+    // 新增兼容入口本身会反向改写旧代Hash，使合法升代无法通过同代冻结门。
+    if (schema.schemaVersions.length !== 1) continue;
     for (const identity of schema.schemaVersions) {
       if (!/\.v\d+$/u.test(identity)) continue;
       const values = evidence.get(identity) ?? [];

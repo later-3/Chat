@@ -27,19 +27,17 @@ import { PromptStudioController } from "./prompt-studio-controller.ts";
 import { installPromptStudioStyles } from "./prompt-studio-styles.ts";
 import { PromptComposerController } from "./prompt-composer-controller.ts";
 import { PromptControlBar, type PromptControlBarInjected } from "./PromptControlBar.tsx";
+import { ProjectManagementController } from "./project-management-controller.ts";
+import { ProjectManagementView, type ProjectManagementInjected } from "./ProjectManagementView.tsx";
 import {
-  ProjectBootstrapSidebarAction,
-  type ProjectBootstrapSidebarInjected,
-} from "./ProjectBootstrapSidebarAction.tsx";
-import { projectBootstrapPresetSchema } from "../contracts.ts";
-import {
-  connectProjectBootstrapSession,
-  resolveProjectBootstrapWorkspaceId,
-} from "./project-bootstrap-session.ts";
+  ProjectManagementSidebarAction,
+  ProjectManagementSurface,
+  type ProjectManagementNavigationInjected,
+} from "./ProjectManagementNavigation.tsx";
 
 export const name = "chat-dsh-lifeos-bridge-client";
-// Cordis只允许读取显式注入的Service。项目建项入口同时操作公开Sessions与Workspaces
-// face，因此必须把两者声明为启动依赖；遗漏时静态类型仍可通过，但浏览器会在apply阶段失败。
+// Cordis只允许读取显式注入的Service。会话Dock会通过公开Sessions与Workspaces face
+// 打开受管Workspace，因此必须把两者声明为启动依赖。
 export const inject = ["slots", "conversationEvents", "sessions", "workspaces"];
 
 /** Additive Workflow/Plan/HITL/Workbench surfaces; native ChatView and Composer remain owners. */
@@ -65,36 +63,10 @@ export function apply(ctx: ClientContext): void {
   }, "lifeos bridge: execution trace trajectory");
   const workbench = new WorkbenchSurfaceController();
   const promptStudio = new PromptStudioController();
+  const projectManagement = new ProjectManagementController();
   // `@deepseek-ai/dsh-session`与浏览器Runtime都扩展Cordis的`sessions`键；此处运行在
   // Client插件根，真实对象是公开ISessions face，显式收窄避免服务端类型声明污染。
   const clientSessions = ctx.sessions as unknown as ISessions;
-  const startProjectBootstrap = async (): Promise<void> => {
-    const targetWorkspaceId = resolveProjectBootstrapWorkspaceId(clientSessions, ctx.workspaces);
-    const presetResponse = await fetch("/lifeos/project-bootstrap/preset", {
-      credentials: "same-origin",
-      headers: { accept: "application/json" },
-    });
-    const presetJson = (await presetResponse.json()) as unknown;
-    if (!presetResponse.ok) throw new Error("项目初始化配置不可用");
-    const preset = projectBootstrapPresetSchema.parse(presetJson);
-    if (!preset.enabled) throw new Error("当前部署未配置Plane CE项目初始化能力");
-    await connectProjectBootstrapSession(
-      clientSessions,
-      ctx.workspaces,
-      targetWorkspaceId,
-      async (sessionId) => {
-        const initialized = await fetch(
-          `/lifeos/project-bootstrap/sessions/${encodeURIComponent(String(sessionId))}/initialize`,
-          {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { accept: "application/json" },
-          },
-        );
-        if (!initialized.ok) throw new Error("项目会话预设初始化失败");
-      },
-    );
-  };
   const controllers = new Map<SessionId, LifeosProjectionController>();
   const recordControllers = new Map<SessionId, SessionRecordsController>();
   const promptComposerControllers = new Map<SessionId, PromptComposerController>();
@@ -137,6 +109,10 @@ export function apply(ctx: ClientContext): void {
   );
 
   ctx.effect(() => () => promptStudio.dispose(), "lifeos bridge: prompt studio controller");
+  ctx.effect(
+    () => () => projectManagement.dispose(),
+    "lifeos bridge: project management controller",
+  );
 
   ctx.slots.inject("settings.section", () =>
     ctx.slots.register(
@@ -202,15 +178,40 @@ export function apply(ctx: ClientContext): void {
     ),
   );
 
+  ctx.slots.inject("conversation.view", () =>
+    ctx.slots.register(
+      {
+        name: "conversation.view",
+        id: "lifeos-project-management",
+        order: 15,
+        label: () => "项目",
+        inject: (): ProjectManagementInjected => ({
+          hooks: { projectManagement },
+          refresh: () => projectManagement.refresh(),
+          select: (projectId) => projectManagement.select(projectId),
+          setQueryText: (value) => projectManagement.setQueryText(value),
+          setQueryKind: (value) => projectManagement.setQueryKind(value),
+          runQuery: () => projectManagement.runQuery(),
+        }),
+      },
+      ProjectManagementView,
+    ),
+  );
+
+  // Project是跨Session的产品视图。全局Sidebar入口保证空白新会话也能恢复项目上下文，
+  // conversation.view则保留已进入会话后的同一投影；两者共享控制器且不复制事实。
   ctx.slots.inject("sidebar.footer.action", () =>
     ctx.slots.register(
       {
         name: "sidebar.footer.action",
-        id: "lifeos-project-bootstrap",
-        order: 20,
-        inject: (): ProjectBootstrapSidebarInjected => ({ startProjectBootstrap }),
+        id: "lifeos-project-management",
+        order: 25,
+        inject: (): ProjectManagementNavigationInjected => ({
+          hooks: { projectManagement },
+          openProjectManagement: () => projectManagement.open(),
+        }),
       },
-      ProjectBootstrapSidebarAction,
+      ProjectManagementSidebarAction,
     ),
   );
 
@@ -223,6 +224,26 @@ export function apply(ctx: ClientContext): void {
         inject: () => ({ workbench }),
       },
       CodeWorkbenchSidebarAction,
+    ),
+  );
+
+  ctx.slots.inject("shell.overlay", () =>
+    ctx.slots.register(
+      {
+        name: "shell.overlay",
+        id: "lifeos-project-management-surface",
+        order: 25,
+        inject: (): ProjectManagementInjected & { closeProjectManagement: () => void } => ({
+          hooks: { projectManagement },
+          refresh: () => projectManagement.refresh(),
+          select: (projectId) => projectManagement.select(projectId),
+          setQueryText: (value) => projectManagement.setQueryText(value),
+          setQueryKind: (value) => projectManagement.setQueryKind(value),
+          runQuery: () => projectManagement.runQuery(),
+          closeProjectManagement: () => projectManagement.close(),
+        }),
+      },
+      ProjectManagementSurface,
     ),
   );
 
@@ -369,9 +390,6 @@ export function apply(ctx: ClientContext): void {
               const workspace = await ctx.workspaces.create({ path: cwd });
               const sessionId = await ctx.workspaces.connectWorkspace(workspace.workspaceId);
               clientSessions.open(sessionId);
-            },
-            openPlaneProject: (url) => {
-              window.open(url, "_blank", "noopener,noreferrer");
             },
             decideDshSendReview: (request) => controller.decideDshSendReview(request),
             decideBridgeDispatchReview: (request) => controller.decideBridgeDispatchReview(request),

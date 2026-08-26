@@ -33,9 +33,6 @@ import {
   projectActionSchema,
   projectCandidateSchema,
   projectContributionSchema,
-  projectDecisionSchema,
-  projectEvidenceSchema,
-  projectMethodSnapshotSchema,
   projectMilestoneSchema,
   projectObservationSchema,
   projectParticipantSchema,
@@ -44,8 +41,13 @@ import {
   projectStageSchema,
   projectStateTransitionSchema,
   projectUpdateSchema,
-  projectWorkSchema,
 } from "@chat/contracts";
+import {
+  projectDecisionV19Schema as projectDecisionSchema,
+  projectEvidenceV19Schema as projectEvidenceSchema,
+  projectMethodSnapshotV19Schema as projectMethodSnapshotSchema,
+  projectWorkV19Schema as projectWorkSchema,
+} from "./legacy-v19.js";
 
 const idKeySchema = z.string().min(1).max(200);
 

@@ -20,9 +20,6 @@ import {
   projectActionSchema,
   projectCandidateSchema,
   projectContributionSchema,
-  projectDecisionSchema,
-  projectEvidenceSchema,
-  projectMethodSnapshotSchema,
   projectMilestoneSchema,
   projectObservationSchema,
   projectParticipantSchema,
@@ -31,12 +28,17 @@ import {
   projectStageSchema,
   projectStateTransitionSchema,
   projectUpdateSchema,
-  projectWorkSchema,
   revisionInputSchema,
   runAttemptSchema,
   runContextRequestSchema,
   validationResultSchema,
 } from "@chat/contracts";
+import {
+  projectDecisionV19Schema as projectDecisionSchema,
+  projectEvidenceV19Schema as projectEvidenceSchema,
+  projectMethodSnapshotV19Schema as projectMethodSnapshotSchema,
+  projectWorkV19Schema as projectWorkSchema,
+} from "./legacy-v19.js";
 
 /** S1迁移前的精确v5读取合同；只用于向前迁移，不作为当前写Schema。 */
 export const productSnapshotV5Schema = z

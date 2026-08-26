@@ -20,7 +20,10 @@ import {
   observeProjectResource,
   prepareProjectCandidateForReview,
   beginProjectAdvancement,
+  adoptProjectConfiguration,
+  getProjectAgentOpeningPacket,
   prepareProjectAdvancementCandidate,
+  proposeProjectConfiguration,
   decideProjectAdvancementCandidate,
   recordProjectContribution,
   recordProjectDecision,
@@ -283,6 +286,87 @@ describe("PS1 Project Intake Application纵向链", () => {
     if (owner === undefined || work === undefined || resource === undefined) {
       throw new Error("project facts missing");
     }
+    const configurationCandidate = await proposeProjectConfiguration(application, {
+      principalId,
+      commandId: "cmd_projectconfiguration" as never,
+      projectId,
+      expectedProjectRevision: workspace.project.project.revision,
+      payload: {
+        profileKey: "software-delivery",
+        objective: "把Chat建设成可持续推进工作的产品",
+        scopeIn: ["维护Chat代码和项目文档"],
+        scopeOut: ["未经用户确认的高影响动作"],
+        successCriteria: ["项目事实可以跨会话恢复"],
+        timezone: "Asia/Shanghai",
+        schedulePolicy: {
+          mode: "delivery",
+          plannedActualComparison: true,
+          recurrenceEnabled: false,
+          cadences: [],
+        },
+        participantIds: [owner.projectParticipantId],
+        resourceBindings: [
+          {
+            projectResourceId: resource.projectResourceId,
+            role: "source",
+            required: true,
+            capabilities: ["discover", "read", "version", "diff", "search"],
+          },
+        ],
+        presentationBindings: [
+          {
+            capability: "work",
+            providerKind: "external-work-tracker.v1",
+            bindingRef: "chat:work",
+            mode: "primary",
+          },
+          {
+            capability: "code",
+            providerKind: "code-workbench.v1",
+            bindingRef: "chat:source",
+            mode: "primary",
+          },
+          {
+            capability: "document",
+            providerKind: "embedded-document-view.v1",
+            bindingRef: "chat:docs",
+            mode: "primary",
+          },
+        ],
+        terminology: { work: "开发事项" },
+        requiredReads: ["AGENTS.md", "PROJECT_STATE.md"],
+      },
+    });
+    await adoptProjectConfiguration(application, {
+      principalId,
+      commandId: "cmd_projectconfigurationadopt" as never,
+      projectId,
+      expectedProjectRevision: workspace.project.project.revision,
+      expectedCandidateRevision: configurationCandidate.configuration.revision,
+      payload: {
+        candidateConfigurationRevisionId:
+          configurationCandidate.configuration.projectConfigurationRevisionId,
+        candidateRevision: configurationCandidate.configuration.revision,
+        candidateSha256: configurationCandidate.configuration.sha256,
+        decidedByParticipantId: owner.projectParticipantId,
+        rationale: "用户审核后采用软件交付管理配置。",
+      },
+    });
+    const opening = await getProjectAgentOpeningPacket(application, {
+      principalId,
+      query: {
+        projectId,
+        includeResourceContext: false,
+        refreshPlane: false,
+      },
+    });
+    expect(opening.packet.management).toMatchObject({
+      status: "ready",
+      context: {
+        profileRevisionSha256: expect.stringMatching(/^[0-9a-f]{64}$/u),
+        requiredReads: ["AGENTS.md", "PROJECT_STATE.md"],
+      },
+    });
     const actionWorkspace = await createProjectAction(application, {
       principalId,
       commandId: "cmd_projectaction" as never,

@@ -111,7 +111,7 @@ async function fixture() {
         updatedAt: NOW,
       };
       draft.entities.projectMethodSnapshots["pms_projectcontext1"] = {
-        schemaVersion: "project-method-snapshot.v2",
+        schemaVersion: "project-method-snapshot.v3",
         projectMethodSnapshotId: "pms_projectcontext1" as never,
         projectId: PROJECT_ID,
         profileId: "small-project.v1",

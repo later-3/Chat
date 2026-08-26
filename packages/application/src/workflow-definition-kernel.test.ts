@@ -153,7 +153,7 @@ describe("Node Catalog与Blueprint一致性", () => {
             name: "agentKey",
             type: "enum_select",
             defaultValue: "direct",
-            options: ["direct", "project_bootstrap"],
+            options: ["direct"],
           },
           {
             name: "agentPromptOverride",
@@ -164,7 +164,7 @@ describe("Node Catalog与Blueprint一致性", () => {
           {
             name: "capabilityMode",
             defaultValue: "pi_cli_default",
-            options: ["pi_cli_default", "read_only", "project_bootstrap"],
+            options: ["pi_cli_default", "read_only"],
           },
           {
             name: "promptReviewMode",

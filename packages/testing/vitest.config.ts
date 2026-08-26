@@ -30,6 +30,10 @@ export default defineConfig({
           name: "unit",
           include: ["src/**/*.test.ts"],
           exclude: LOCAL_WORLD_FILES,
+          // Node 24 + Vitest 4的fork worker在完整Project图上会保留重复transform结果并越过4GB堆门。
+          // 单thread worker仍执行全部文件，只消除与被测语义无关的并行内存放大。
+          pool: "threads",
+          maxWorkers: 1,
           testTimeout: 90_000,
           hookTimeout: 120_000,
         },

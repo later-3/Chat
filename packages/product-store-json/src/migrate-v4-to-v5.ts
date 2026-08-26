@@ -1,7 +1,4 @@
-import {
-  compileProjectMethodSnapshotPolicies,
-  computeProjectMethodSnapshotSha256,
-} from "@chat/domain";
+import { compileProjectMethodSnapshotPolicies, hashCanonical } from "@chat/domain";
 import type { ProductSnapshotV4 } from "./legacy-v4.js";
 import { productSnapshotV5Schema, type ProductSnapshotV5 } from "./legacy-v5.js";
 
@@ -12,7 +9,10 @@ import { productSnapshotV5Schema, type ProductSnapshotV5 } from "./legacy-v5.js"
 export function migrateProductSnapshotV4ToV5(snapshot: ProductSnapshotV4): ProductSnapshotV5 {
   const methods = Object.fromEntries(
     Object.entries(snapshot.entities.projectMethodSnapshots).map(([id, method]) => {
-      const policies = compileProjectMethodSnapshotPolicies(method.profileId);
+      const { coordination: _coordination, ...policies } = compileProjectMethodSnapshotPolicies(
+        method.profileId,
+      );
+      void _coordination;
       return [
         id,
         {
@@ -20,12 +20,12 @@ export function migrateProductSnapshotV4ToV5(snapshot: ProductSnapshotV4): Produ
           schemaVersion: "project-method-snapshot.v2" as const,
           policies,
           source: "migrated_v1" as const,
-          sha256: computeProjectMethodSnapshotSha256({
+          sha256: hashCanonical("project-method-snapshot.v2", {
             profileId: method.profileId,
             rationale: method.rationale,
             policies,
             source: "migrated_v1",
-          }),
+          }) as never,
         },
       ];
     }),

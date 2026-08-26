@@ -15,7 +15,7 @@ import type {
   ProjectStateTransition,
   TraceEventInput,
 } from "@chat/contracts";
-import { PROJECT_API_SCHEMA_VERSION, projectCandidateDtoSchema } from "@chat/contracts";
+import { PROJECT_API_V3_SCHEMA_VERSION, projectCandidateDtoSchema } from "@chat/contracts";
 import {
   computeProjectAdvancementCandidateSha256,
   assertProjectStageTransition,
@@ -57,7 +57,7 @@ function requireIds(deps: ApplicationDeps): ProjectIdFactory {
 
 function toDto(candidate: AdvancementCandidate): ProjectCandidateDto {
   const base = {
-    schemaVersion: PROJECT_API_SCHEMA_VERSION,
+    schemaVersion: PROJECT_API_V3_SCHEMA_VERSION,
     projectCandidateId: candidate.projectCandidateId,
     sessionId: candidate.sessionId,
     candidateKind: "advancement" as const,
@@ -619,7 +619,7 @@ export async function decideProjectAdvancementCandidate(
       }
       assertProposalReferences(draft, project, candidate.proposal);
       const decision: ProjectDecision = {
-        schemaVersion: "project-decision.v1",
+        schemaVersion: "project-decision.v2",
         projectDecisionId: decisionId,
         projectId: project.projectId,
         question: "是否采用本次Stage、Milestone与Project Update方案？",
@@ -628,6 +628,14 @@ export async function decideProjectAdvancementCandidate(
         rationale: "用户确认版本绑定的Project Advancement Candidate。",
         decidedByParticipantId: candidate.proposal.update.authorParticipantId,
         boundProjectRevision: project.revision,
+        payloadSha256: hashCanonical("project-decision-payload.v1", {
+          projectId: project.projectId,
+          boundProjectRevision: project.revision,
+          question: "是否采用本次Stage、Milestone与Project Update方案？",
+          options: ["采用", "拒绝"],
+          choice: "采用",
+          rationale: "用户确认版本绑定的Project Advancement Candidate。",
+        }) as never,
         status: "active",
         commandId: input.commandId,
         revision: 1,
@@ -845,7 +853,7 @@ export async function transitionProjectStage(
         throw revisionConflict("Project已有另一个active Stage");
       }
       const decision: ProjectDecision = {
-        schemaVersion: "project-decision.v1",
+        schemaVersion: "project-decision.v2",
         projectDecisionId: decisionId,
         projectId: project.projectId,
         question: `是否把Stage从${stage.status}转换为${input.payload.status}？`,
@@ -854,6 +862,14 @@ export async function transitionProjectStage(
         rationale: input.payload.reason,
         decidedByParticipantId: input.payload.decidedByParticipantId,
         boundProjectRevision: project.revision,
+        payloadSha256: hashCanonical("project-decision-payload.v1", {
+          projectId: project.projectId,
+          boundProjectRevision: project.revision,
+          question: `是否把Stage从${stage.status}转换为${input.payload.status}？`,
+          options: [input.payload.status],
+          choice: input.payload.status,
+          rationale: input.payload.reason,
+        }) as never,
         status: "active",
         commandId: input.commandId,
         revision: 1,
@@ -979,7 +995,7 @@ export async function transitionProjectMilestone(
         evidenceIds: input.payload.evidenceIds,
       });
       const decision: ProjectDecision = {
-        schemaVersion: "project-decision.v1",
+        schemaVersion: "project-decision.v2",
         projectDecisionId: decisionId,
         projectId: project.projectId,
         question: `是否把Milestone转换为${input.payload.status}？`,
@@ -988,6 +1004,14 @@ export async function transitionProjectMilestone(
         rationale: input.payload.reason,
         decidedByParticipantId: input.payload.decidedByParticipantId,
         boundProjectRevision: project.revision,
+        payloadSha256: hashCanonical("project-decision-payload.v1", {
+          projectId: project.projectId,
+          boundProjectRevision: project.revision,
+          question: `是否把Milestone转换为${input.payload.status}？`,
+          options: [input.payload.status],
+          choice: input.payload.status,
+          rationale: input.payload.reason,
+        }) as never,
         status: "active",
         commandId: input.commandId,
         revision: 1,

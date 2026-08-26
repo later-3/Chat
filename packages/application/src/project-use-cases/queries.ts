@@ -27,7 +27,23 @@ export async function getProjectWorkspace(
   input: { readonly principalId: PrincipalId; readonly projectId: string },
 ): Promise<{ project: ProjectWorkspaceDto }> {
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
-  return { project: projectWorkspace(snapshot, input.projectId, input.principalId) };
+  const project = projectWorkspace(snapshot, input.projectId, input.principalId);
+  const disabled = new Set(deps.disabledProjectProviderKinds ?? []);
+  const providerBindings = project.providerBindings.filter(
+    (binding) => !disabled.has(binding.providerKind),
+  );
+  const visibleBindingIds = new Set(
+    providerBindings.map((binding) => binding.projectProviderBindingId),
+  );
+  return {
+    project: {
+      ...project,
+      providerBindings,
+      providerProjections: project.providerProjections.filter((projection) =>
+        visibleBindingIds.has(projection.bindingId),
+      ),
+    },
+  };
 }
 
 export async function getProjectTimeline(
@@ -96,7 +112,9 @@ export async function getProjectTimeline(
             ? `阶段：${item.from} → ${item.to}`
             : item.objectType === "milestone"
               ? `里程碑：${item.from} → ${item.to}`
-              : `项目：${item.from} → ${item.to}`,
+              : item.objectType === "work"
+                ? `工作：${item.from} → ${item.to}`
+                : `项目：${item.from} → ${item.to}`,
         occurredAt: item.occurredAt,
         objectRevision: item.revision,
       })),
@@ -108,6 +126,18 @@ export async function getProjectTimeline(
         actorParticipantId: item.authorParticipantId,
         title: `项目更新 · ${item.health}`,
         occurredAt: item.publishedAt,
+        objectRevision: item.revision,
+      })),
+    ...Object.values(snapshot.entities.projectEvents)
+      .filter((item) => item.projectId === project.projectId)
+      .map((item) => ({
+        id: item.projectEventId,
+        kind: "project_event" as const,
+        ...(item.source.participantId === undefined
+          ? {}
+          : { actorParticipantId: item.source.participantId }),
+        title: item.eventType,
+        occurredAt: item.occurredAt,
         objectRevision: item.revision,
       })),
   ];

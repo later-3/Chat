@@ -45,11 +45,11 @@ describe("File Prompt Catalog workspace instructions", () => {
       expect.arrayContaining([
         expect.objectContaining({ agentKey: "planner" }),
         expect.objectContaining({ agentKey: "direct" }),
-        expect.objectContaining({ agentKey: "project_bootstrap" }),
         expect.objectContaining({ agentKey: "coding_executor" }),
         expect.objectContaining({ agentKey: "note_extractor" }),
       ]),
     );
+    expect(snapshot.agents.map((agent) => agent.agentKey)).not.toContain("project_bootstrap");
     expect(snapshot.agents.find((agent) => agent.agentKey === "direct")?.defaultPrompt).toEqual({
       kind: "pi_coding_agent",
       defaultVariantKey: "pi_cli_default",
@@ -59,13 +59,6 @@ describe("File Prompt Catalog workspace instructions", () => {
     ).toEqual({
       kind: "pi_coding_agent",
       defaultVariantKey: "workspace_write_shell",
-    });
-    expect(
-      snapshot.agents.find((agent) => agent.agentKey === "project_bootstrap")?.defaultPrompt,
-    ).toEqual({
-      kind: "pi_coding_agent",
-      defaultVariantKey: "read_only",
-      promptFragmentRevisionId: "pfr_builtinprojectbootstrapv1",
     });
     expect(snapshot.builtinFragments.map((fragment) => fragment.sourceRelativePath)).not.toEqual(
       expect.arrayContaining([

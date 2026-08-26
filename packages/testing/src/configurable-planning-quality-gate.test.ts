@@ -125,7 +125,7 @@ async function qualityFixture(): Promise<QualityFixture> {
         title: "B的私有规划流程",
       };
       draft.entities.projectMethodSnapshots["pms_qualityprivate1"] = {
-        schemaVersion: "project-method-snapshot.v2",
+        schemaVersion: "project-method-snapshot.v3",
         projectMethodSnapshotId: "pms_qualityprivate1" as never,
         projectId: PRIVATE_PROJECT_ID as never,
         profileId: "small-project.v1",

@@ -9,6 +9,9 @@ import {
   assertProjectStageTransition,
   assertProjectMilestoneTransition,
   assertProjectLifecycleTransition,
+  assertProjectWorkResume,
+  assertProjectWorkTransition,
+  computeProjectDecisionPayloadSha256,
   type ProjectIntakeUnderstandingShape,
   type ProjectObservationDataShape,
   type ProjectWorkShape,
@@ -55,14 +58,18 @@ describe("Project领域规则", () => {
 
   it("拒绝Work自依赖和循环", () => {
     const base = {
-      schemaVersion: "project-work.v1" as const,
+      schemaVersion: "project-work.v2" as const,
       projectId: "prj_demo" as never,
       stageId: "pst_demo" as never,
+      workKey: "demo-work",
+      kind: "generic" as const,
       title: "Work",
       objective: "交付",
       acceptanceCriteria: ["有证据"],
       ownerParticipantId: "ppt_owner" as never,
       status: "approved" as const,
+      practiceRevisionIds: [],
+      resourceRefs: [],
       revision: 1,
       createdAt: "2026-08-09T00:00:00.000Z",
       updatedAt: "2026-08-09T00:00:00.000Z",
@@ -174,6 +181,173 @@ describe("PS2.1 Method、Stage与Milestone规则", () => {
         to: "achieved",
         decisionId: "pdc_done",
         evidenceIds: ["pev_proof"],
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("content-production.v1 Work规则", () => {
+  it("区分Agent审核请求、用户Ready决定和真实Publication Outcome", () => {
+    expect(() =>
+      assertProjectWorkTransition({
+        kind: "content_delivery",
+        from: "producing",
+        to: "needs_review",
+        actorKind: "agent",
+        hasActiveClaim: true,
+        evidenceRoles: ["content_revision", "qc_report"],
+        hasConfirmedPublicationOutcome: false,
+        hasPracticeRevisionEvidence: false,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertProjectWorkTransition({
+        kind: "content_delivery",
+        from: "needs_review",
+        to: "ready",
+        actorKind: "agent",
+        hasActiveClaim: true,
+        decisionId: "pdc_ready",
+        evidenceRoles: ["content_revision", "qc_report"],
+        hasConfirmedPublicationOutcome: false,
+        hasPracticeRevisionEvidence: false,
+      }),
+    ).toThrow("只能由用户决定");
+    expect(() =>
+      assertProjectWorkTransition({
+        kind: "content_delivery",
+        from: "ready",
+        to: "published",
+        actorKind: "human",
+        hasActiveClaim: false,
+        decisionId: "pdc_publish",
+        evidenceRoles: [],
+        hasConfirmedPublicationOutcome: false,
+        hasPracticeRevisionEvidence: false,
+      }),
+    ).toThrow("Publication Outcome");
+  });
+
+  it("Blocked只能凭恢复Evidence回原State，也能由用户终态决定关闭", () => {
+    expect(() =>
+      assertProjectWorkResume({
+        kind: "content_delivery",
+        previousState: "producing",
+        targetState: "needs_review",
+        recoveryEvidenceIds: ["pev_restore"],
+      }),
+    ).toThrow("原State");
+    expect(() =>
+      assertProjectWorkResume({
+        kind: "content_delivery",
+        previousState: "producing",
+        targetState: "producing",
+        recoveryEvidenceIds: ["pev_restore"],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertProjectWorkTransition({
+        kind: "content_delivery",
+        from: "blocked",
+        to: "dropped",
+        actorKind: "human",
+        hasActiveClaim: false,
+        decisionId: "pdc_drop",
+        evidenceRoles: [],
+        hasConfirmedPublicationOutcome: false,
+        hasPracticeRevisionEvidence: false,
+      }),
+    ).not.toThrow();
+  });
+
+  it("Decision Payload Hash绑定精确Work revision和用户看到的语义", () => {
+    const base = {
+      projectId: "prj_content",
+      boundProjectRevision: 2,
+      boundWorkId: "pwk_content",
+      boundWorkRevision: 4,
+      question: "是否Ready？",
+      options: ["ready"],
+      choice: "ready",
+      rationale: "QC通过",
+    };
+    expect(computeProjectDecisionPayloadSha256(base)).not.toBe(
+      computeProjectDecisionPayloadSha256({ ...base, boundWorkRevision: 5 }),
+    );
+  });
+});
+
+describe("generic Work规则", () => {
+  const base = {
+    kind: "generic" as const,
+    actorKind: "agent" as const,
+    hasActiveClaim: true,
+    hasConfirmedPublicationOutcome: false,
+    hasPracticeRevisionEvidence: false,
+  };
+
+  it("Agent只能凭Claim和Evidence请求Review，Done必须由用户决定", () => {
+    expect(() =>
+      assertProjectWorkTransition({
+        ...base,
+        from: "in_progress",
+        to: "review",
+        evidenceRoles: [],
+      }),
+    ).toThrow("精确Evidence");
+    expect(() =>
+      assertProjectWorkTransition({
+        ...base,
+        from: "in_progress",
+        to: "review",
+        evidenceRoles: ["test"],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertProjectWorkTransition({
+        ...base,
+        from: "review",
+        to: "done",
+        decisionId: "pdc_done",
+        evidenceRoles: ["commit", "test"],
+      }),
+    ).toThrow("只能由用户决定");
+    expect(() =>
+      assertProjectWorkTransition({
+        ...base,
+        actorKind: "human",
+        hasActiveClaim: false,
+        from: "review",
+        to: "done",
+        decisionId: "pdc_done",
+        evidenceRoles: ["commit", "test"],
+      }),
+    ).not.toThrow();
+  });
+
+  it("Block作为正交对象恢复到原generic状态并要求Evidence", () => {
+    expect(() =>
+      assertProjectWorkResume({
+        kind: "generic",
+        previousState: "in_progress",
+        targetState: "review",
+        recoveryEvidenceIds: ["pev_restore"],
+      }),
+    ).toThrow("原State");
+    expect(() =>
+      assertProjectWorkResume({
+        kind: "generic",
+        previousState: "in_progress",
+        targetState: "in_progress",
+        recoveryEvidenceIds: [],
+      }),
+    ).toThrow("Evidence");
+    expect(() =>
+      assertProjectWorkResume({
+        kind: "generic",
+        previousState: "in_progress",
+        targetState: "in_progress",
+        recoveryEvidenceIds: ["pev_restore"],
       }),
     ).not.toThrow();
   });

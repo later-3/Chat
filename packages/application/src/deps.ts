@@ -28,6 +28,16 @@ import type {
   ProjectMilestoneId,
   ProjectUpdateId,
   ProjectStateTransitionId,
+  ProjectWorkBlockId,
+  ProjectWorkClaimId,
+  ProjectWorkHandoffId,
+  ProjectPracticeRevisionId,
+  ProjectWorkOutcomeId,
+  ProjectContextMapId,
+  ProjectProviderBindingId,
+  ProjectProviderProjectionId,
+  ProjectCoordinationOperationId,
+  ProjectInboundChangeId,
   NoteId,
   NoteRevisionId,
   NoteCandidateId,
@@ -70,6 +80,11 @@ import type {
   ProjectManagementBootstrapPort,
   ProjectWorkspaceProvisionerPort,
 } from "./project-bootstrap-ports.js";
+import type { PlaneProjectCoordinationPort } from "./plane-project-coordination-ports.js";
+import type {
+  PlaneProjectRolloutExecutionPort,
+  PlaneProjectRolloutInspectionPort,
+} from "./plane-project-rollout-ports.js";
 
 /** Trace发射器：由组合根提供（@chat/realtime Sink）；Application不依赖具体Sink。 */
 export type TraceEmitter = (event: TraceEventInput) => void;
@@ -136,6 +151,14 @@ export interface ProjectIdFactory {
   milestone(): ProjectMilestoneId;
   update(): ProjectUpdateId;
   stateTransition(): ProjectStateTransitionId;
+  workBlock?(): ProjectWorkBlockId;
+  workClaim?(): ProjectWorkClaimId;
+  workHandoff?(): ProjectWorkHandoffId;
+  practiceRevision?(): ProjectPracticeRevisionId;
+  workOutcome?(): ProjectWorkOutcomeId;
+  contextMap?(): ProjectContextMapId;
+  providerBinding?(): ProjectProviderBindingId;
+  providerProjection?(): ProjectProviderProjectionId;
 }
 
 export interface NoteIdFactory {
@@ -181,6 +204,12 @@ export interface ProjectBootstrapIdFactory {
   binding(): ProjectWorkspaceBindingId;
 }
 
+/** Provider写Journal和入站漂移使用Chat Project身份，不复用Plane UUID或Runtime ID。 */
+export interface PlaneProjectCoordinationIdFactory {
+  operation(): ProjectCoordinationOperationId;
+  inboundChange(): ProjectInboundChangeId;
+}
+
 export interface ApplicationDeps {
   readonly store: ProductStorePort;
   readonly now: () => string;
@@ -203,6 +232,8 @@ export interface ApplicationDeps {
   readonly projectIntakeUnderstanding?: ProjectIntakeUnderstandingPort;
   readonly projectAdvancementUnderstanding?: ProjectAdvancementUnderstandingPort;
   readonly projectIds?: ProjectIdFactory;
+  /** 未装配Provider只从普通读模型退出；原始Binding/Operation仍留在Product Store供历史审计。 */
+  readonly disabledProjectProviderKinds?: readonly string[];
   readonly noteIds?: NoteIdFactory;
   readonly ruleIds?: RuleIdFactory;
   readonly directAgentIds?: DirectAgentIdFactory;
@@ -216,6 +247,12 @@ export interface ApplicationDeps {
   readonly projectWorkspaceProvisioner?: ProjectWorkspaceProvisionerPort;
   readonly projectBootstrapExecutionCoordinator?: ProjectBootstrapExecutionCoordinatorPort;
   readonly projectBootstrapIds?: ProjectBootstrapIdFactory;
+  readonly planeProjectCoordination?: PlaneProjectCoordinationPort;
+  readonly planeProjectCoordinationIds?: PlaneProjectCoordinationIdFactory;
+  /** 一次性管理员Dry Run只读面；不进入Agent scoped Router，也不包含写方法。 */
+  readonly planeProjectRolloutInspection?: PlaneProjectRolloutInspectionPort;
+  /** 仅供显式授权的一次性管理员纵向；不挂载Agent或浏览器公开Router。 */
+  readonly planeProjectRolloutExecution?: PlaneProjectRolloutExecutionPort;
 }
 
 /** 规划修订默认上限（任务书§9.2.7）。 */

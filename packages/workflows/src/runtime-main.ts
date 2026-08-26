@@ -1,4 +1,4 @@
-import "../../../scripts/load-env.mjs";
+import "../../../scripts/load-workflow-env.mjs";
 import { serve } from "@hono/node-server";
 import {
   createRunActivitySink,

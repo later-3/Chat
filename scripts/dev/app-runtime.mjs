@@ -246,10 +246,28 @@ function vsCodeAutoAttachEnvironment(environment) {
   };
 }
 
-function commonEnvironment(root, environment) {
+function commonEnvironment(root, environment, role) {
+  const isolated = { ...environment };
+  if (isolated.CHAT_PLANE_ENABLED !== "1") {
+    for (const key of Object.keys(isolated)) {
+      if (
+        key !== "CHAT_PLANE_ENABLED" &&
+        (key.startsWith("CHAT_PLANE_") ||
+          key.startsWith("CHAT_CONTENT_LAB_PLANE_") ||
+          key === "CHAT_PROJECT_CREATION_ROOTS_JSON")
+      ) {
+        delete isolated[key];
+      }
+    }
+  }
+  if (role !== "api") delete isolated.CHAT_PLANE_CE_API_TOKEN;
+  if (role !== "api" && role !== "piExecutor") {
+    delete isolated.CHAT_PLANE_COORDINATION_CLIENT_CREDENTIAL_PATH;
+  }
   return {
-    ...environment,
+    ...isolated,
     CHAT_REPO_ROOT: root,
+    CHAT_RUNTIME_ROLE: role,
   };
 }
 
@@ -281,13 +299,15 @@ export function createServiceDefinitions({
   const ports = runtime.ports;
   const workbenchRuntime = resolveLocalWorkbenchRuntimeContract(repoRoot, managedEnvironment);
   const providerEnvironment = join(repoRoot, "scripts/debug/load-provider-env.mjs");
+  const piExecutorEnvironment = join(repoRoot, "scripts/load-pi-executor-env.mjs");
+  const workflowEnvironment = join(repoRoot, "scripts/load-workflow-env.mjs");
   const services = [];
 
   const executorArgs = [];
   if (debug) {
     executorArgs.push("--enable-source-maps", `--inspect=127.0.0.1:${ports.piExecutorInspector}`);
   }
-  executorArgs.push("--import", providerEnvironment);
+  executorArgs.push("--import", piExecutorEnvironment, "--import", providerEnvironment);
   executorArgs.push(
     "--import",
     join(repoRoot, "apps/pi-executor/node_modules/tsx/dist/loader.mjs"),
@@ -301,7 +321,7 @@ export function createServiceDefinitions({
     args: executorArgs,
     cwd: repoRoot,
     env: {
-      ...commonEnvironment(repoRoot, managedEnvironment),
+      ...commonEnvironment(repoRoot, managedEnvironment, "piExecutor"),
       CHAT_PI_EXECUTOR_PORT: String(ports.piExecutor),
     },
     readyUrl: `http://127.0.0.1:${ports.piExecutor}/healthz`,
@@ -313,7 +333,7 @@ export function createServiceDefinitions({
   if (debug) {
     workflowArgs.push("--enable-source-maps", `--inspect=127.0.0.1:${ports.workflowInspector}`);
   }
-  workflowArgs.push("--import", providerEnvironment);
+  workflowArgs.push("--import", workflowEnvironment, "--import", providerEnvironment);
   workflowArgs.push(
     "--import",
     join(repoRoot, "packages/workflows/node_modules/tsx/dist/loader.mjs"),
@@ -327,7 +347,7 @@ export function createServiceDefinitions({
     args: workflowArgs,
     cwd: repoRoot,
     env: {
-      ...commonEnvironment(repoRoot, managedEnvironment),
+      ...commonEnvironment(repoRoot, managedEnvironment, "workflow"),
       CHAT_MEMORY_ENABLED: "0",
       CHAT_WORKFLOW_PORT: String(ports.workflow),
       CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${ports.piExecutor}`,
@@ -341,7 +361,7 @@ export function createServiceDefinitions({
   if (debug) {
     apiArgs.push("--enable-source-maps", `--inspect=127.0.0.1:${ports.apiInspector}`);
   }
-  apiArgs.push("--import", join(repoRoot, "scripts/load-env.mjs"));
+  apiArgs.push("--import", join(repoRoot, "scripts/load-api-env.mjs"));
   apiArgs.push(
     "--import",
     join(repoRoot, "apps/api/node_modules/tsx/dist/loader.mjs"),
@@ -355,7 +375,7 @@ export function createServiceDefinitions({
     args: apiArgs,
     cwd: join(repoRoot, "apps/api"),
     env: {
-      ...commonEnvironment(repoRoot, managedEnvironment),
+      ...commonEnvironment(repoRoot, managedEnvironment, "api"),
       CHAT_MEMORY_ENABLED: "0",
       CHAT_PI_EXECUTOR_INTERNAL_BASE_URL: `http://127.0.0.1:${ports.piExecutor}`,
       PORT: String(ports.api),
@@ -411,7 +431,7 @@ export function createServiceDefinitions({
   }
   webArgs.push(
     "--import",
-    join(repoRoot, "scripts/load-env.mjs"),
+    join(repoRoot, "scripts/load-web-env.mjs"),
     join(repoRoot, "scripts/dsh/start-web.mjs"),
   );
   services.push({

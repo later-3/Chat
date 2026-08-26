@@ -67,6 +67,8 @@ export interface OutboxDispatcherOptions {
   readonly workflowRuntimeBaseUrl: string;
   readonly credential: string;
   readonly intervalMs?: number;
+  /** 历史Bootstrap Outbox仅在显式启用对应Provider时消费；关闭时保留事实并让其他队列继续。 */
+  readonly projectBootstrapEnabled?: boolean;
   /** 仅用于私有执行lease的竞争者身份；生产默认每个Dispatcher实例唯一。 */
   readonly dispatcherInstanceId?: string;
 }
@@ -1232,8 +1234,10 @@ export class OutboxDispatcher {
           entry.kind === "project_advancement_resume"
         )
           await dispatchProjectAdvancement(this.options, entry);
-        else
+        else if (entry.kind === "project_bootstrap_execute") {
+          if (this.options.projectBootstrapEnabled !== true) continue;
           await dispatchProjectBootstrap(this.options, snapshot, entry, this.dispatcherInstanceId);
+        }
       }
       const unknownEntries = Object.values(snapshot.outbox)
         .filter((entry) => entry.status === "outcome_unknown")
@@ -1242,6 +1246,7 @@ export class OutboxDispatcher {
         if (entry.kind === "workflow_start" || entry.kind === "workflow_resume") {
           await reconcileUnknown(this.options, snapshot, entry);
         } else if (entry.kind === "project_bootstrap_execute") {
+          if (this.options.projectBootstrapEnabled !== true) continue;
           // 本kind由Application直接拥有Provider对账，不使用Runtime unknown状态。
           await markStatus(this.options, entry, "pending");
         } else if (

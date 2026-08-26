@@ -5,7 +5,7 @@ import {
   type ProjectCandidateDto,
   type ProjectRootDto,
 } from "@chat/contracts";
-import { PROJECT_API_SCHEMA_VERSION } from "@chat/contracts";
+import { PROJECT_API_V3_SCHEMA_VERSION } from "@chat/contracts";
 import { hashCanonical } from "@chat/domain";
 import { type ApplicationDeps } from "../deps.js";
 import { ApplicationError, forbidden, notFound, revisionConflict } from "../errors.js";
@@ -25,7 +25,7 @@ export async function listProjectRoots(
     roots: requireProjectRoots(deps)
       .list()
       .map((root) => ({
-        schemaVersion: PROJECT_API_SCHEMA_VERSION,
+        schemaVersion: PROJECT_API_V3_SCHEMA_VERSION,
         rootId: root.rootId,
         displayName: root.displayName,
         enabledAdapters: [...root.enabledAdapters],

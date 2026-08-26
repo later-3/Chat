@@ -231,7 +231,10 @@ async function seed(): Promise<{
     ids: ids(),
     directAgentIds: directAgentIds(),
     noteIds: noteIds(),
-    promptCatalog: await createFilePromptCatalog(),
+    promptCatalog: await createFilePromptCatalog(undefined, {
+      ...process.env,
+      CHAT_PLANE_ENABLED: "1",
+    }),
     agentRuntimeProfiles: { read: async (agentKey) => runtimeProfile(agentKey) },
     trace: (event) => traces.push(event),
     memoryImportBackends: {
@@ -1065,6 +1068,7 @@ describe("通用Product Workflow终态监督", () => {
       deps: seeded.deps,
       workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
       credential: "rtk_test",
+      projectBootstrapEnabled: true,
     });
 
     await dispatcher.tick();
@@ -1730,6 +1734,38 @@ describe("通用Product Workflow终态监督", () => {
 });
 
 describe("Project Bootstrap Outbox耐久执行", () => {
+  it("默认关闭Provider时保留旧Bootstrap Outbox且不触达外部写", async () => {
+    const seeded = await seedProjectBootstrapDispatch();
+    await decideProjectBootstrapCandidate(seeded.deps, {
+      principalId: "usr_dispatchtest" as never,
+      commandId: "cmd_bootstrapdisabledconfirm" as never,
+      projectBootstrapCandidateId: seeded.candidate.projectBootstrapCandidateId,
+      candidateRevision: seeded.candidate.revision,
+      candidateSha256: seeded.candidate.sha256,
+      kind: "confirm",
+    });
+    const {
+      projectManagementBootstrap: _projectManagementBootstrap,
+      projectWorkspaceProvisioner: _projectWorkspaceProvisioner,
+      ...providerDisabledDeps
+    } = seeded.deps;
+    const dispatcher = new OutboxDispatcher({
+      deps: providerDisabledDeps,
+      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
+      credential: "rtk_test",
+      projectBootstrapEnabled: false,
+    });
+
+    await expect(dispatcher.tick()).resolves.toBeUndefined();
+
+    const snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
+    expect(
+      Object.values(snapshot.outbox).find((entry) => entry.kind === "project_bootstrap_execute"),
+    ).toMatchObject({ status: "pending", dispatchAttempts: 0 });
+    expect(seeded.workspace.provision).not.toHaveBeenCalled();
+    expect(seeded.plane.provision).not.toHaveBeenCalled();
+  });
+
   it("确认事务原子创建Operation与Outbox，Dispatcher无Bridge收敛且幂等重放不重复建项", async () => {
     const seeded = await seedProjectBootstrapDispatch();
     const beforeDecision = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
@@ -1783,6 +1819,7 @@ describe("Project Bootstrap Outbox耐久执行", () => {
       deps: seeded.deps,
       workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
       credential: "rtk_test",
+      projectBootstrapEnabled: true,
     });
     await dispatcher.tick();
     await dispatcher.tick();
@@ -1849,12 +1886,14 @@ describe("Project Bootstrap Outbox耐久执行", () => {
       deps: seeded.deps,
       workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
       credential: "rtk_test",
+      projectBootstrapEnabled: true,
       dispatcherInstanceId: "dispatcher-a",
     });
     const second = new OutboxDispatcher({
       deps: seeded.deps,
       workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
       credential: "rtk_test",
+      projectBootstrapEnabled: true,
       dispatcherInstanceId: "dispatcher-b",
     });
 
@@ -1898,6 +1937,7 @@ describe("Project Bootstrap Outbox耐久执行", () => {
       deps: seeded.deps,
       workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
       credential: "rtk_test",
+      projectBootstrapEnabled: true,
       dispatcherInstanceId: "dispatcher-crashed",
     });
     await expect(crashed.tick()).rejects.toThrow("simulated process crash");
@@ -1964,6 +2004,7 @@ describe("Project Bootstrap Outbox耐久执行", () => {
       deps: seeded.deps,
       workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
       credential: "rtk_test",
+      projectBootstrapEnabled: true,
       dispatcherInstanceId: "dispatcher-fence-a",
     });
     const oldTick = dispatcherA.tick();
@@ -1973,6 +2014,7 @@ describe("Project Bootstrap Outbox耐久执行", () => {
       deps: seeded.deps,
       workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
       credential: "rtk_test",
+      projectBootstrapEnabled: true,
       dispatcherInstanceId: "dispatcher-fence-b",
     });
 

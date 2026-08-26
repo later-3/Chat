@@ -234,7 +234,10 @@ async function testApp(): Promise<{
     operation: () => gen("pbo"),
     binding: () => gen("pwb"),
   } as ProjectBootstrapIdFactory;
-  const promptCatalog = await createFilePromptCatalog();
+  const promptCatalog = await createFilePromptCatalog(undefined, {
+    ...process.env,
+    CHAT_PLANE_ENABLED: "1",
+  });
   const backend = {
     describe: () => ({
       backendId: "mbk_memmy" as never,
@@ -495,7 +498,7 @@ async function testApp(): Promise<{
   };
   const app = createApiApp({
     traceSink: null,
-    product: { deps, principalId: DEBUG_PRINCIPAL_ID },
+    product: { deps, principalId: DEBUG_PRINCIPAL_ID, planeEnabled: true },
     internalRuntime: { credential: "rtk_test" },
   });
   return {
@@ -805,6 +808,7 @@ describe("公开产品API", () => {
       product: {
         deps: receiptOnlyDeps,
         principalId: DEBUG_PRINCIPAL_ID,
+        planeEnabled: true,
       },
       internalRuntime: { credential: "rtk_test" },
     });
@@ -1186,7 +1190,7 @@ describe("公开产品API", () => {
             type: "enum_select",
             label: "Agent 模板",
             defaultValue: "direct",
-            options: ["direct", "project_bootstrap"],
+            options: ["direct"],
           },
           {
             name: "agentPromptOverride",
@@ -1200,7 +1204,7 @@ describe("公开产品API", () => {
             type: "enum_select",
             label: "能力模式",
             defaultValue: "pi_cli_default",
-            options: ["pi_cli_default", "read_only", "project_bootstrap"],
+            options: ["pi_cli_default", "read_only"],
           },
           {
             name: "promptReviewMode",

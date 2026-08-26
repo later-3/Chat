@@ -15,6 +15,11 @@ import {
   workflowSelectionRequestSchema,
   saveWorkflowAgentNodeConfigurationRequestSchema,
 } from "./contracts.ts";
+import {
+  projectIdSchema,
+  projectObjectQuerySchema,
+  type ProjectObjectQuery,
+} from "@chat/contracts/public";
 import { BridgeRequestError, LifeosBridgeService } from "./bridge-service.ts";
 import { ChatProductApiError } from "./chat-client.ts";
 import { DshSessionHistoryAccessError } from "./dsh-session-history.ts";
@@ -65,6 +70,10 @@ const WORKFLOW_AGENT_NODE_CONFIGURATIONS_PATH = /^\/lifeos\/workflow\/agent-node
 const PROJECT_BOOTSTRAP_PRESET_PATH = /^\/lifeos\/project-bootstrap\/preset$/;
 const PROJECT_BOOTSTRAP_INITIALIZE_PATH =
   /^\/lifeos\/project-bootstrap\/sessions\/([^/]+)\/initialize$/;
+const PROJECTS_PATH = /^\/lifeos\/projects$/;
+const PROJECT_OVERVIEW_PATH = /^\/lifeos\/projects\/([^/]+)$/;
+const PROJECT_TIMELINE_PATH = /^\/lifeos\/projects\/([^/]+)\/timeline$/;
+const PROJECT_OBJECTS_PATH = /^\/lifeos\/projects\/([^/]+)\/objects$/;
 const PROMPT_REGIONS_PATH = /^\/lifeos\/prompts\/regions$/;
 const AGENT_PROFILES_PATH = /^\/lifeos\/agents$/;
 const AGENT_VERSIONS_PATH = /^\/lifeos\/agents\/([^/]+)\/versions$/;
@@ -180,6 +189,20 @@ function sessionIdFrom(match: RegExpExecArray): string {
   return decoded;
 }
 
+function projectIdFrom(match: RegExpExecArray): string {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(match[1] ?? "");
+  } catch {
+    throw new BridgeRequestError(400, "lifeos_project_invalid", "Project id is invalid");
+  }
+  const parsed = projectIdSchema.safeParse(decoded);
+  if (!parsed.success) {
+    throw new BridgeRequestError(400, "lifeos_project_invalid", "Project id is invalid");
+  }
+  return parsed.data;
+}
+
 function singleQueryValue(params: URLSearchParams, key: string): string | undefined {
   const values = params.getAll(key);
   if (values.length > 1) {
@@ -213,14 +236,14 @@ function recordsLimit(params: URLSearchParams): number {
   return value;
 }
 
-function assertOnlyQueryKeys(params: URLSearchParams, allowed: ReadonlySet<string>): void {
+function assertOnlyQueryKeys(
+  params: URLSearchParams,
+  allowed: ReadonlySet<string>,
+  errorCode = "lifeos_session_records_query_invalid",
+): void {
   for (const key of params.keys()) {
     if (!allowed.has(key)) {
-      throw new BridgeRequestError(
-        400,
-        "lifeos_session_records_query_invalid",
-        `未知Query参数：${key}`,
-      );
+      throw new BridgeRequestError(400, errorCode, `未知Query参数：${key}`);
     }
   }
 }
@@ -269,6 +292,44 @@ export function parseSessionRecordsDshQuery(url: URL): {
     ...(afterSeq === undefined ? {} : { afterSeq }),
     limit: recordsLimit(url.searchParams),
   };
+}
+
+export function parseProjectObjectQuery(url: URL): ProjectObjectQuery {
+  assertOnlyQueryKeys(
+    url.searchParams,
+    new Set(["q", "kind", "status", "view", "limit"]),
+    "lifeos_project_query_invalid",
+  );
+  const projectQueryValue = (key: string): string | undefined => {
+    const values = url.searchParams.getAll(key);
+    if (values.length > 1) {
+      throw new BridgeRequestError(
+        400,
+        "lifeos_project_query_invalid",
+        `Project Query参数${key}不得重复`,
+      );
+    }
+    return values[0];
+  };
+  const q = projectQueryValue("q");
+  const kind = projectQueryValue("kind");
+  const status = projectQueryValue("status");
+  const view = projectQueryValue("view");
+  const rawLimit = projectQueryValue("limit");
+  if (rawLimit !== undefined && !/^[1-9][0-9]*$/u.test(rawLimit)) {
+    throw new BridgeRequestError(400, "lifeos_project_query_invalid", "limit必须是正整数");
+  }
+  const parsed = projectObjectQuerySchema.safeParse({
+    ...(q === undefined ? {} : { q }),
+    ...(kind === undefined ? {} : { kind }),
+    ...(status === undefined ? {} : { status }),
+    ...(view === undefined ? {} : { view }),
+    ...(rawLimit === undefined ? {} : { limit: Number(rawLimit) }),
+  });
+  if (!parsed.success) {
+    throw new BridgeRequestError(400, "lifeos_project_query_invalid", "Project Query参数非法");
+  }
+  return parsed.data;
 }
 
 /** Agent Profile只允许显式的单一Chat Workspace Root，缺省即全局配置。 */
@@ -801,6 +862,53 @@ export function createLifeosRouteHandler(
           );
         }
         sendJson(res, 200, await service.sessionRecordsOverview(sessionIdFrom(recordsMatch)));
+        return;
+      }
+      if (req.method === "GET" && PROJECTS_PATH.test(url.pathname)) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        sendJson(res, 200, await service.projects());
+        return;
+      }
+      const projectObjectsMatch = PROJECT_OBJECTS_PATH.exec(url.pathname);
+      if (req.method === "GET" && projectObjectsMatch !== null) {
+        sendJson(
+          res,
+          200,
+          await service.projectObjects(
+            projectIdFrom(projectObjectsMatch),
+            parseProjectObjectQuery(url),
+          ),
+        );
+        return;
+      }
+      const projectTimelineMatch = PROJECT_TIMELINE_PATH.exec(url.pathname);
+      if (req.method === "GET" && projectTimelineMatch !== null) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        sendJson(res, 200, await service.projectTimeline(projectIdFrom(projectTimelineMatch)));
+        return;
+      }
+      const projectOverviewMatch = PROJECT_OVERVIEW_PATH.exec(url.pathname);
+      if (req.method === "GET" && projectOverviewMatch !== null) {
+        if (url.search !== "") {
+          throw new BridgeRequestError(
+            400,
+            "lifeos_query_forbidden",
+            "Query parameters are not accepted",
+          );
+        }
+        sendJson(res, 200, await service.projectOverview(projectIdFrom(projectOverviewMatch)));
         return;
       }
       const chatRecordsMatch = SESSION_RECORDS_CHAT_PATH.exec(url.pathname);

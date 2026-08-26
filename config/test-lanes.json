@@ -1031,6 +1031,116 @@
       "path": "scripts/workbench/fixed-code-server.test.mjs",
       "lane": "beta",
       "runner": "node"
+    },
+    {
+      "path": "apps/api/src/plane-coordination-client-credential.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "apps/api/src/plane-project-coordination-routes.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "apps/api/src/project-management-routes.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/managed-project-creation-use-cases.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/project-coordination-use-cases.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/application/src/project-management-use-cases.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/plane-project-coordination.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/contracts/src/project-management.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/plane-project-coordination.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/domain/src/project-management.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/dsh-lifeos-bridge/tests/project-management-bridge-service.test.ts",
+      "lane": "contract",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/product-store-json/src/migrate-v19-to-v20.test.ts",
+      "lane": "compat",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/product-store-json/src/project-management-store.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/project-runtime/src/content-lab-resource.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/project-runtime/src/plane-ce-coordination.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/project-runtime/src/plane-ce-rollout-execution.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/project-runtime/src/plane-ce-rollout-inspection.test.ts",
+      "lane": "core",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/content-production-project-vertical.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/project-management-k2-vertical.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "packages/testing/src/project-management-profile-k1.test.ts",
+      "lane": "integration",
+      "runner": "vitest"
+    },
+    {
+      "path": "scripts/load-env.test.mjs",
+      "lane": "core",
+      "runner": "node"
+    },
+    {
+      "path": "scripts/project/print-git-identity-pin.test.mjs",
+      "lane": "core",
+      "runner": "node"
     }
   ],
   "laneTasks": {

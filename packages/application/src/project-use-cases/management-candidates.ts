@@ -408,7 +408,7 @@ function commitManagementProposal(input: {
   }
   if (input.proposal.kind === "decision") {
     input.draft.entities.projectDecisions[input.ids.decisionId] = {
-      schemaVersion: "project-decision.v1",
+      schemaVersion: "project-decision.v2",
       projectDecisionId: input.ids.decisionId,
       projectId: input.project.projectId,
       question: input.proposal.question,
@@ -417,6 +417,14 @@ function commitManagementProposal(input: {
       rationale: input.proposal.rationale,
       decidedByParticipantId: input.proposal.decidedByParticipantId,
       boundProjectRevision: input.project.revision,
+      payloadSha256: hashCanonical("project-decision-payload.v1", {
+        projectId: input.project.projectId,
+        boundProjectRevision: input.project.revision,
+        question: input.proposal.question,
+        options: input.proposal.options,
+        choice: input.proposal.choice,
+        rationale: input.proposal.rationale,
+      }) as never,
       status: "active",
       commandId: input.commandId,
       revision: 1,

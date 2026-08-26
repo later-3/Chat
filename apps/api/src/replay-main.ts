@@ -1,4 +1,4 @@
-import "../../../scripts/load-env.mjs";
+import "../../../scripts/load-api-env.mjs";
 import { assertSnapshotIntegrity } from "@chat/product-store-json";
 import { runReplayCli } from "@chat/realtime/replay-cli";
 import { readSafeMemoryImportRuntimeEvidence } from "@chat/workflows";

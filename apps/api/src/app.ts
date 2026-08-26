@@ -41,6 +41,8 @@ export interface ApiAppOptions {
   product?: {
     readonly deps: ApplicationDeps;
     readonly principalId: PrincipalId;
+    readonly planeEnabled?: boolean;
+    readonly planeCoordinationCredential?: string;
   };
   /** 私有Runtime Router（仅服务端凭据）；缺省时不挂载。 */
   internalRuntime?: {
@@ -179,7 +181,14 @@ export function createApiApp(options: ApiAppOptions = {}) {
   if (options.product !== undefined) {
     app.route(
       "/api",
-      createProductRouter({ deps: options.product.deps, principalId: options.product.principalId }),
+      createProductRouter({
+        deps: options.product.deps,
+        principalId: options.product.principalId,
+        planeEnabled: options.product.planeEnabled === true,
+        ...(options.product.planeCoordinationCredential === undefined
+          ? {}
+          : { planeCoordinationCredential: options.product.planeCoordinationCredential }),
+      }),
     );
   }
 
@@ -189,6 +198,7 @@ export function createApiApp(options: ApiAppOptions = {}) {
       createInternalRuntimeRouter({
         deps: options.product.deps,
         credential: options.internalRuntime.credential,
+        planeEnabled: options.product.planeEnabled === true,
       }),
     );
   }
