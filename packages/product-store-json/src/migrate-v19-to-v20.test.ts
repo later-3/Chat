@@ -10,6 +10,7 @@ import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
 import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
 import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
+import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-24T08:00:00.000Z";
@@ -17,8 +18,10 @@ const NOW = "2026-08-24T08:00:00.000Z";
 const migrateProductSnapshotV20ToCurrent = (
   snapshot: Parameters<typeof migrateProductSnapshotV20ToV21>[0],
 ) =>
-  migrateProductSnapshotV22ToV23(
-    migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(snapshot)),
+  migrateProductSnapshotV23ToV24(
+    migrateProductSnapshotV22ToV23(
+      migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(snapshot)),
+    ),
   );
 
 async function nonEmptyV19() {
@@ -50,6 +53,17 @@ async function nonEmptyV19() {
     "projectRequirements",
     "projectArtifactRefs",
     "projectMetricObservations",
+    "supervisedPlanningEpochs",
+    "supervisedCarryForwards",
+    "supervisedStepStates",
+    "supervisedAgentAttempts",
+    "supervisedStepEvidence",
+    "supervisedStepCandidates",
+    "supervisedPlannerVerdicts",
+    "supervisedStepReviewRequests",
+    "supervisedStepHumanDecisions",
+    "supervisedAgentOutcomeObservations",
+    "supervisedExecutionResults",
   ]) {
     delete entities[key];
   }
@@ -224,7 +238,7 @@ describe("Product Store v19到v20内容协调内核迁移", () => {
 
     await JsonProductStore.open({ filePath, now: () => NOW });
     const once = await readFile(filePath, "utf8");
-    expect(JSON.parse(once)).toMatchObject({ schemaVersion: "chat-product-store.v23" });
+    expect(JSON.parse(once)).toMatchObject({ schemaVersion: "chat-product-store.v24" });
     await JsonProductStore.open({ filePath, now: () => NOW });
     expect(await readFile(filePath, "utf8")).toBe(once);
   });
@@ -297,14 +311,18 @@ describe("Product Store v19到v20内容协调内核迁移", () => {
     expect(migrated.entities.toolExecutionIntents).toEqual({});
     expect(migrated.entities.toolExecutionDecisions).toEqual({});
     expect(migrated.entities.toolExecutionResults).toEqual({});
-    expect(() => assertSnapshotIntegrity(migrateProductSnapshotV22ToV23(migrated))).not.toThrow();
+    expect(() =>
+      assertSnapshotIntegrity(
+        migrateProductSnapshotV23ToV24(migrateProductSnapshotV22ToV23(migrated)),
+      ),
+    ).not.toThrow();
 
     const v21Directory = await mkdtemp(join(tmpdir(), "chat-project-v21-v22-"));
     const v21Path = join(v21Directory, "product-store.json");
     await writeFile(v21Path, JSON.stringify(projectV21));
     const v23Store = await JsonProductStore.open({ filePath: v21Path, now: () => NOW });
     const v23FromDisk = (await v23Store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(v23FromDisk.schemaVersion).toBe("chat-product-store.v23");
+    expect(v23FromDisk.schemaVersion).toBe("chat-product-store.v24");
     expect(v23FromDisk.entities.projectProviderBindings).toEqual(
       projectV21.entities.projectProviderBindings,
     );

@@ -108,6 +108,19 @@ import {
   projectProfileRevisionSchema,
   projectRequirementSchema,
 } from "./project-management.js";
+import {
+  supervisedAgentAttemptV3Schema,
+  supervisedAgentOutcomeObservationV3Schema,
+  supervisedCarryForwardV3Schema,
+  supervisedExecutionResultV3Schema,
+  supervisedPlannerVerdictV3Schema,
+  supervisedPlanningEpochV3Schema,
+  supervisedStepCandidateV3Schema,
+  supervisedStepEvidenceV3Schema,
+  supervisedStepHumanDecisionV3Schema,
+  supervisedStepReviewRequestV3Schema,
+  supervisedStepStateV3Schema,
+} from "./supervised-planning-v3.js";
 
 /**
  * Product Snapshot顶层合同（任务书§8.3）。
@@ -119,7 +132,7 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v23";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v24";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -147,6 +160,20 @@ const productEntitiesSchema = z
     toolExecutionIntents: z.record(idKeySchema, toolExecutionIntentSchema),
     toolExecutionDecisions: z.record(idKeySchema, toolExecutionDecisionSchema),
     toolExecutionResults: z.record(idKeySchema, toolExecutionResultSchema),
+    supervisedPlanningEpochs: z.record(idKeySchema, supervisedPlanningEpochV3Schema),
+    supervisedCarryForwards: z.record(idKeySchema, supervisedCarryForwardV3Schema),
+    supervisedStepStates: z.record(idKeySchema, supervisedStepStateV3Schema),
+    supervisedAgentAttempts: z.record(idKeySchema, supervisedAgentAttemptV3Schema),
+    supervisedStepEvidence: z.record(idKeySchema, supervisedStepEvidenceV3Schema),
+    supervisedStepCandidates: z.record(idKeySchema, supervisedStepCandidateV3Schema),
+    supervisedPlannerVerdicts: z.record(idKeySchema, supervisedPlannerVerdictV3Schema),
+    supervisedStepReviewRequests: z.record(idKeySchema, supervisedStepReviewRequestV3Schema),
+    supervisedStepHumanDecisions: z.record(idKeySchema, supervisedStepHumanDecisionV3Schema),
+    supervisedAgentOutcomeObservations: z.record(
+      idKeySchema,
+      supervisedAgentOutcomeObservationV3Schema,
+    ),
+    supervisedExecutionResults: z.record(idKeySchema, supervisedExecutionResultV3Schema),
     contextRequests: z.record(idKeySchema, runContextRequestSchema),
     memoryQueries: z.record(idKeySchema, memoryQuerySchema),
     memoryResultSnapshots: z.record(idKeySchema, memoryResultSnapshotSchema),
@@ -262,6 +289,17 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       toolExecutionIntents: {},
       toolExecutionDecisions: {},
       toolExecutionResults: {},
+      supervisedPlanningEpochs: {},
+      supervisedCarryForwards: {},
+      supervisedStepStates: {},
+      supervisedAgentAttempts: {},
+      supervisedStepEvidence: {},
+      supervisedStepCandidates: {},
+      supervisedPlannerVerdicts: {},
+      supervisedStepReviewRequests: {},
+      supervisedStepHumanDecisions: {},
+      supervisedAgentOutcomeObservations: {},
+      supervisedExecutionResults: {},
       contextRequests: {},
       memoryQueries: {},
       memoryResultSnapshots: {},

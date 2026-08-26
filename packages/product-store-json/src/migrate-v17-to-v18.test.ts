@@ -18,6 +18,7 @@ import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
 import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
 import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
+import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-22T08:00:00.000Z";
@@ -25,8 +26,10 @@ const NOW = "2026-08-22T08:00:00.000Z";
 const migrateProductSnapshotV20ToCurrent = (
   snapshot: Parameters<typeof migrateProductSnapshotV20ToV21>[0],
 ) =>
-  migrateProductSnapshotV22ToV23(
-    migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(snapshot)),
+  migrateProductSnapshotV23ToV24(
+    migrateProductSnapshotV22ToV23(
+      migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(snapshot)),
+    ),
   );
 
 async function seededV17() {
@@ -58,6 +61,21 @@ async function seededV17() {
   delete entities["projectRequirements"];
   delete entities["projectArtifactRefs"];
   delete entities["projectMetricObservations"];
+  for (const key of [
+    "supervisedPlanningEpochs",
+    "supervisedCarryForwards",
+    "supervisedStepStates",
+    "supervisedAgentAttempts",
+    "supervisedStepEvidence",
+    "supervisedStepCandidates",
+    "supervisedPlannerVerdicts",
+    "supervisedStepReviewRequests",
+    "supervisedStepHumanDecisions",
+    "supervisedAgentOutcomeObservations",
+    "supervisedExecutionResults",
+  ]) {
+    delete entities[key];
+  }
   return productSnapshotV17Schema.parse({
     ...snapshot,
     schemaVersion: "chat-product-store.v17",

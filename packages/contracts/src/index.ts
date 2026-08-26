@@ -51,6 +51,7 @@ export * from "./agent-key.js";
 export * from "./agent-runtime-capabilities.js";
 export * from "./capability.js";
 export * from "./tool-execution.js";
+export * from "./supervised-planning-v3.js";
 export * from "./tool-execution-api.js";
 export * from "./agent-configuration.js";
 export * from "./prompt-assembly.js";

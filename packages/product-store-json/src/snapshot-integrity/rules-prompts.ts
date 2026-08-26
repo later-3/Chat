@@ -34,6 +34,10 @@ import {
 } from "@chat/domain";
 import type { Fail } from "./shared.js";
 
+function same(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 /**
  * Agent配置版本（集中化Agent配置管理）：版本号唯一占用、
  * System Prompt与版本Hash一致、派生来源存在且派生关系单调。
@@ -474,6 +478,8 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
     const definitionRevision =
       entities.workflowDefinitionRevisions[assembly.workflowDefinitionRevisionId];
     const isV3 = assembly.schemaVersion === "prompt-assembly.v3";
+    const isV5 = assembly.schemaVersion === "prompt-assembly.v5";
+    const isWorkflowAssembly = isV3 || isV5;
     if (
       run === undefined ||
       session === undefined ||
@@ -486,12 +492,61 @@ export function assertPromptAssemblies(snapshot: ProductSnapshot, fail: Fail): v
       runSpec?.productRunId !== assembly.productRunId ||
       runSpec.definitionRef.workflowDefinitionRevisionId !==
         assembly.workflowDefinitionRevisionId ||
-      (!isV3 && runSpec.definitionRef.blueprintKey !== "direct") ||
-      (isV3 && runSpec.definitionRef.blueprintKey === "direct")
+      (!isWorkflowAssembly && runSpec.definitionRef.blueprintKey !== "direct") ||
+      (isWorkflowAssembly && runSpec.definitionRef.blueprintKey === "direct")
     ) {
       fail(
         `promptAssembly ${assembly.promptAssemblyId} 与Run/Session/Message/WorkflowRevision绑定不一致`,
       );
+    }
+
+    if (isV5) {
+      if (run.runKind !== "planning") {
+        fail(`promptAssembly ${assembly.promptAssemblyId} V5只能绑定Planning Run`);
+      }
+      for (const roleAssembly of assembly.roleAssemblies) {
+        const version = entities.agentVersions[roleAssembly.agentVersionRef.agentVersionId];
+        const expectedPrompt =
+          version?.systemPrompt.mode === "replace"
+            ? {
+                kind: "pi_coding_agent" as const,
+                mode: "replace" as const,
+                bodyMarkdown: version.systemPrompt.bodyMarkdown,
+                sha256: version.systemPrompt.sha256,
+              }
+            : { kind: "pi_coding_agent" as const, mode: "inherit" as const };
+        const expectedCapabilityRefs = roleAssembly.tools.capabilities.map((capability) => ({
+          localName: capability.localName,
+          capabilityId: capability.ref.capabilityId,
+          descriptorSha256: capability.ref.descriptorSha256,
+        }));
+        const runNode = runSpec.nodeResolutions.find(
+          (node) =>
+            node.definitionNodeId === roleAssembly.definitionNodeId &&
+            node.activation === "enabled",
+        );
+        if (
+          version?.schemaVersion !== "agent-version.v2" ||
+          version.sha256 !== roleAssembly.agentVersionRef.sha256 ||
+          version.ownerPrincipalId !== session.ownerPrincipalId ||
+          runNode === undefined ||
+          !same(roleAssembly.piSystemPrompt, expectedPrompt) ||
+          !same(roleAssembly.tools.names, version.enabledToolNames) ||
+          !same(expectedCapabilityRefs, version.enabledCapabilityRefs) ||
+          !same(roleAssembly.tools.resources, version.resources) ||
+          (version.scope.kind === "workspace" &&
+            (version.scope.rootId !== assembly.workspaceRootId ||
+              assembly.workspaceGrantSha256 === undefined))
+        ) {
+          fail(
+            `promptAssembly ${assembly.promptAssemblyId} 的${roleAssembly.role} Version/Capability/Scope绑定非法`,
+          );
+        }
+      }
+      const runAssemblies = assembliesByRun.get(assembly.productRunId) ?? [];
+      runAssemblies.push(assembly);
+      assembliesByRun.set(assembly.productRunId, runAssemblies);
+      continue;
     }
 
     const isLegacy = assembly.compilerVersion === LEGACY_DIRECT_PROMPT_COMPILER_VERSION;

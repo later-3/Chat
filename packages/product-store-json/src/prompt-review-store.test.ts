@@ -45,10 +45,29 @@ import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
 import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
 import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
+import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-19T12:00:00.000Z";
 const PRINCIPAL = "usr_promptreview" as const;
+
+function removeV24SupervisedEntities(entities: Record<string, unknown>): void {
+  for (const key of [
+    "supervisedPlanningEpochs",
+    "supervisedCarryForwards",
+    "supervisedStepStates",
+    "supervisedAgentAttempts",
+    "supervisedStepEvidence",
+    "supervisedStepCandidates",
+    "supervisedPlannerVerdicts",
+    "supervisedStepReviewRequests",
+    "supervisedStepHumanDecisions",
+    "supervisedAgentOutcomeObservations",
+    "supervisedExecutionResults",
+  ]) {
+    delete entities[key];
+  }
+}
 
 function rehashPromptAssembly(assembly: PromptAssembly): void {
   if (assembly.schemaVersion !== "prompt-assembly.v1") {
@@ -329,6 +348,7 @@ describe("Prompt Review Product Snapshot完整性", () => {
       delete legacyEntities["projectRequirements"];
       delete legacyEntities["projectArtifactRefs"];
       delete legacyEntities["projectMetricObservations"];
+      removeV24SupervisedEntities(legacyEntities);
       const legacy = productSnapshotV14Schema.parse({
         ...snapshot,
         schemaVersion: "chat-product-store.v14",
@@ -355,13 +375,15 @@ describe("Prompt Review Product Snapshot完整性", () => {
       );
       expect(() =>
         assertSnapshotIntegrity(
-          migrateProductSnapshotV22ToV23(
-            migrateProductSnapshotV21ToV22(
-              migrateProductSnapshotV20ToV21(
-                migrateProductSnapshotV19ToV20(
-                  migrateProductSnapshotV18ToV19(
-                    migrateProductSnapshotV17ToV18(
-                      migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16(migrated)),
+          migrateProductSnapshotV23ToV24(
+            migrateProductSnapshotV22ToV23(
+              migrateProductSnapshotV21ToV22(
+                migrateProductSnapshotV20ToV21(
+                  migrateProductSnapshotV19ToV20(
+                    migrateProductSnapshotV18ToV19(
+                      migrateProductSnapshotV17ToV18(
+                        migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16(migrated)),
+                      ),
                     ),
                   ),
                 ),
@@ -402,6 +424,7 @@ describe("Prompt Review Product Snapshot完整性", () => {
     delete legacyEntities["projectRequirements"];
     delete legacyEntities["projectArtifactRefs"];
     delete legacyEntities["projectMetricObservations"];
+    removeV24SupervisedEntities(legacyEntities);
     const legacy = productSnapshotV14Schema.parse({
       ...snapshot,
       schemaVersion: "chat-product-store.v14",

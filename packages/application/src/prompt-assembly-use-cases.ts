@@ -1341,6 +1341,9 @@ export function assertPromptAssemblySourcesCurrent(
   principalId: PrincipalId,
   compiledRunSpec?: WorkflowRunSpec,
 ): void {
+  if (assembly.schemaVersion === "prompt-assembly.v5") {
+    throw revisionConflict("监督执行Prompt Assembly尚未进入Application执行阶段");
+  }
   const runSpec =
     compiledRunSpec ??
     Object.values(snapshot.entities.workflowRunSpecs).find(

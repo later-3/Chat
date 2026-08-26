@@ -50,6 +50,7 @@ import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
 import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
 import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
+import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
 import { productSnapshotV13Schema } from "./legacy-v13.js";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { computePromptFragmentRevisionSha256 } from "@chat/domain";
@@ -59,13 +60,15 @@ const NOW = "2026-08-10T12:00:00.000Z";
 function migrateProductSnapshotV15ToV16(
   snapshot: Parameters<typeof migrateProductSnapshotV15ToV16Legacy>[0],
 ): ProductSnapshot {
-  return migrateProductSnapshotV22ToV23(
-    migrateProductSnapshotV21ToV22(
-      migrateProductSnapshotV20ToV21(
-        migrateProductSnapshotV19ToV20(
-          migrateProductSnapshotV18ToV19(
-            migrateProductSnapshotV17ToV18(
-              migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+  return migrateProductSnapshotV23ToV24(
+    migrateProductSnapshotV22ToV23(
+      migrateProductSnapshotV21ToV22(
+        migrateProductSnapshotV20ToV21(
+          migrateProductSnapshotV19ToV20(
+            migrateProductSnapshotV18ToV19(
+              migrateProductSnapshotV17ToV18(
+                migrateProductSnapshotV16ToV17(migrateProductSnapshotV15ToV16Legacy(snapshot)),
+              ),
             ),
           ),
         ),
@@ -150,6 +153,17 @@ function emptyV6() {
     "projectRequirements",
     "projectArtifactRefs",
     "projectMetricObservations",
+    "supervisedPlanningEpochs",
+    "supervisedCarryForwards",
+    "supervisedStepStates",
+    "supervisedAgentAttempts",
+    "supervisedStepEvidence",
+    "supervisedStepCandidates",
+    "supervisedPlannerVerdicts",
+    "supervisedStepReviewRequests",
+    "supervisedStepHumanDecisions",
+    "supervisedAgentOutcomeObservations",
+    "supervisedExecutionResults",
   ]) {
     delete entities[key];
   }

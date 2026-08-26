@@ -25,6 +25,17 @@ const projectCoordinationV21EntitiesSchema = productSnapshotSchema.shape.entitie
     projectRequirements: true,
     projectArtifactRefs: true,
     projectMetricObservations: true,
+    supervisedPlanningEpochs: true,
+    supervisedCarryForwards: true,
+    supervisedStepStates: true,
+    supervisedAgentAttempts: true,
+    supervisedStepEvidence: true,
+    supervisedStepCandidates: true,
+    supervisedPlannerVerdicts: true,
+    supervisedStepReviewRequests: true,
+    supervisedStepHumanDecisions: true,
+    supervisedAgentOutcomeObservations: true,
+    supervisedExecutionResults: true,
   })
   .extend({
     promptAssemblies: z.record(

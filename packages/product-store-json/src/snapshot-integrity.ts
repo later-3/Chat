@@ -40,6 +40,7 @@ import { assertExecution, assertReceiptsAndOutbox } from "./snapshot-integrity/e
 import { assertProjectCoordination } from "./snapshot-integrity/project-coordination.js";
 import { assertToolExecutions } from "./snapshot-integrity/tool-executions.js";
 import { assertProjectManagement } from "./snapshot-integrity/project-management.js";
+import { assertSupervisedPlanningV3 } from "./snapshot-integrity/supervised-planning-v3.js";
 
 /**
  * 完整快照的关系与生命周期校验。
@@ -80,6 +81,7 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
   assertWorkflowPolicyResolutions(snapshot, fail);
   assertExecution(snapshot, fail);
   assertToolExecutions(snapshot, fail);
+  assertSupervisedPlanningV3(snapshot, fail);
   assertDirectAgentCandidates(snapshot, fail);
   assertReceiptsAndOutbox(snapshot, fail);
 

@@ -36,6 +36,10 @@ import {
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
   SYSTEM_DIRECT_AGENT_WORKFLOW_VIEW_ID,
 } from "@chat/application/workflow-system-definitions";
+import {
+  assertSupervisedAgentAttemptTransitionV3,
+  assertSupervisedStepReviewRequestTransitionV3,
+} from "@chat/domain";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
 import { migrateProductSnapshotV2ToV3, productSnapshotV2Schema } from "./migrate-v2-to-v3.js";
@@ -72,6 +76,7 @@ import { productSnapshotV20Schema } from "./legacy-v20.js";
 import { productSnapshotV20CapabilitySchema } from "./internal-compat/legacy-v20-capability-reader.js";
 import { productSnapshotV21Schema } from "./legacy-v21.js";
 import { productSnapshotV22Schema } from "./legacy-v22.js";
+import { productSnapshotV23Schema } from "./legacy-v23.js";
 import { migrateProductSnapshotV4ToV5 } from "./internal-compat/migrate-v4-to-v5.js";
 import { migrateProductSnapshotV5ToV6 } from "./internal-compat/migrate-v5-to-v6.js";
 import { migrateProductSnapshotV6ToV7 } from "./internal-compat/migrate-v6-to-v7.js";
@@ -94,6 +99,7 @@ import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
 import { migrateProductSnapshotV20CapabilityToV22 } from "./migrate-v20-capability-to-v22.js";
 import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
 import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
+import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -234,9 +240,20 @@ export class JsonProductStore implements ProductStorePort {
       return new JsonProductStore(options, current.data);
     }
 
+    const legacyV23 = productSnapshotV23Schema.safeParse(parsedJson);
+    if (legacyV23.success) {
+      const migrated = migrateProductSnapshotV23ToV24(legacyV23.data);
+      assertSnapshotIntegrity(migrated);
+      const store = new JsonProductStore(options, migrated);
+      await store.persist(migrated);
+      return store;
+    }
+
     const legacyV22 = productSnapshotV22Schema.safeParse(parsedJson);
     if (legacyV22.success) {
-      const migrated = migrateProductSnapshotV22ToV23(legacyV22.data);
+      const migrated = migrateProductSnapshotV23ToV24(
+        migrateProductSnapshotV22ToV23(legacyV22.data),
+      );
       assertSnapshotIntegrity(migrated);
       const store = new JsonProductStore(options, migrated);
       await store.persist(migrated);
@@ -245,8 +262,8 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV21 = productSnapshotV21Schema.safeParse(parsedJson);
     if (legacyV21.success) {
-      const migrated = migrateProductSnapshotV22ToV23(
-        migrateProductSnapshotV21ToV22(legacyV21.data),
+      const migrated = migrateProductSnapshotV23ToV24(
+        migrateProductSnapshotV22ToV23(migrateProductSnapshotV21ToV22(legacyV21.data)),
       );
       assertSnapshotIntegrity(migrated);
       const store = new JsonProductStore(options, migrated);
@@ -256,8 +273,10 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV20Capability = productSnapshotV20CapabilitySchema.safeParse(parsedJson);
     if (legacyV20Capability.success) {
-      const migrated = migrateProductSnapshotV22ToV23(
-        migrateProductSnapshotV20CapabilityToV22(legacyV20Capability.data),
+      const migrated = migrateProductSnapshotV23ToV24(
+        migrateProductSnapshotV22ToV23(
+          migrateProductSnapshotV20CapabilityToV22(legacyV20Capability.data),
+        ),
       );
       assertSnapshotIntegrity(migrated);
       const store = new JsonProductStore(options, migrated);
@@ -267,8 +286,10 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV20 = productSnapshotV20Schema.safeParse(parsedJson);
     if (legacyV20.success) {
-      const migrated = migrateProductSnapshotV22ToV23(
-        migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(legacyV20.data)),
+      const migrated = migrateProductSnapshotV23ToV24(
+        migrateProductSnapshotV22ToV23(
+          migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(legacyV20.data)),
+        ),
       );
       assertSnapshotIntegrity(migrated);
       const store = new JsonProductStore(options, migrated);
@@ -278,9 +299,11 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV19 = productSnapshotV19Schema.safeParse(parsedJson);
     if (legacyV19.success) {
-      const migrated = migrateProductSnapshotV22ToV23(
-        migrateProductSnapshotV21ToV22(
-          migrateProductSnapshotV20ToV21(migrateProductSnapshotV19ToV20(legacyV19.data)),
+      const migrated = migrateProductSnapshotV23ToV24(
+        migrateProductSnapshotV22ToV23(
+          migrateProductSnapshotV21ToV22(
+            migrateProductSnapshotV20ToV21(migrateProductSnapshotV19ToV20(legacyV19.data)),
+          ),
         ),
       );
       assertSnapshotIntegrity(migrated);
@@ -291,10 +314,12 @@ export class JsonProductStore implements ProductStorePort {
 
     const legacyV18 = productSnapshotV18Schema.safeParse(parsedJson);
     if (legacyV18.success) {
-      const migrated = migrateProductSnapshotV22ToV23(
-        migrateProductSnapshotV21ToV22(
-          migrateProductSnapshotV20ToV21(
-            migrateProductSnapshotV19ToV20(migrateProductSnapshotV18ToV19(legacyV18.data)),
+      const migrated = migrateProductSnapshotV23ToV24(
+        migrateProductSnapshotV22ToV23(
+          migrateProductSnapshotV21ToV22(
+            migrateProductSnapshotV20ToV21(
+              migrateProductSnapshotV19ToV20(migrateProductSnapshotV18ToV19(legacyV18.data)),
+            ),
           ),
         ),
       );
@@ -422,11 +447,13 @@ export class JsonProductStore implements ProductStorePort {
       }
       v17 = migrateProductSnapshotV16ToV17(v16);
     }
-    const migrated = migrateProductSnapshotV22ToV23(
-      migrateProductSnapshotV21ToV22(
-        migrateProductSnapshotV20ToV21(
-          migrateProductSnapshotV19ToV20(
-            migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(v17)),
+    const migrated = migrateProductSnapshotV23ToV24(
+      migrateProductSnapshotV22ToV23(
+        migrateProductSnapshotV21ToV22(
+          migrateProductSnapshotV20ToV21(
+            migrateProductSnapshotV19ToV20(
+              migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(v17)),
+            ),
           ),
         ),
       ),
@@ -502,12 +529,129 @@ export class JsonProductStore implements ProductStorePort {
           });
         }
       }
+      for (const [attemptId, existing] of Object.entries(
+        current.entities.supervisedAgentAttempts,
+      )) {
+        const next = draft.entities.supervisedAgentAttempts[attemptId];
+        if (next === undefined) {
+          throw new ApplicationError({
+            code: "internal_error",
+            httpStatus: 500,
+            message: `监督Agent Attempt不能删除（${attemptId}）`,
+          });
+        }
+        if (!isDeepStrictEqual(next, existing)) {
+          try {
+            assertSupervisedAgentAttemptTransitionV3(existing, next);
+          } catch (error) {
+            throw new ApplicationError({
+              code: "internal_error",
+              httpStatus: 500,
+              message: `监督Agent Attempt非法收敛（${attemptId}）：${error instanceof Error ? error.message : String(error)}`,
+            });
+          }
+        }
+      }
+      for (const [attemptId, attempt] of Object.entries(draft.entities.supervisedAgentAttempts)) {
+        if (
+          current.entities.supervisedAgentAttempts[attemptId] === undefined &&
+          (attempt.outcome !== "running" || attempt.revision !== 1)
+        ) {
+          throw new ApplicationError({
+            code: "internal_error",
+            httpStatus: 500,
+            message: `监督Agent Attempt必须从running@1创建（${attemptId}）`,
+          });
+        }
+      }
+      for (const [reviewId, existing] of Object.entries(
+        current.entities.supervisedStepReviewRequests,
+      )) {
+        const next = draft.entities.supervisedStepReviewRequests[reviewId];
+        if (next === undefined) {
+          throw new ApplicationError({
+            code: "internal_error",
+            httpStatus: 500,
+            message: `监督Product Review不能删除（${reviewId}）`,
+          });
+        }
+        if (!isDeepStrictEqual(next, existing)) {
+          try {
+            assertSupervisedStepReviewRequestTransitionV3(existing, next);
+          } catch (error) {
+            throw new ApplicationError({
+              code: "internal_error",
+              httpStatus: 500,
+              message: `监督Product Review非法收敛（${reviewId}）：${error instanceof Error ? error.message : String(error)}`,
+            });
+          }
+        }
+      }
+      for (const [reviewId, review] of Object.entries(
+        draft.entities.supervisedStepReviewRequests,
+      )) {
+        if (
+          current.entities.supervisedStepReviewRequests[reviewId] === undefined &&
+          (review.decisionState.status !== "open" || review.revision !== 1)
+        ) {
+          throw new ApplicationError({
+            code: "internal_error",
+            httpStatus: 500,
+            message: `监督Product Review必须从open@1创建（${reviewId}）`,
+          });
+        }
+      }
       const immutableProjectCollections = [
         ["Project Event", current.entities.projectEvents, draft.entities.projectEvents],
         [
           "Project Metric Observation",
           current.entities.projectMetricObservations,
           draft.entities.projectMetricObservations,
+        ],
+        [
+          "Supervised Planning Epoch",
+          current.entities.supervisedPlanningEpochs,
+          draft.entities.supervisedPlanningEpochs,
+        ],
+        [
+          "Supervised Carry Forward",
+          current.entities.supervisedCarryForwards,
+          draft.entities.supervisedCarryForwards,
+        ],
+        [
+          "Supervised Step State Version",
+          current.entities.supervisedStepStates,
+          draft.entities.supervisedStepStates,
+        ],
+        [
+          "Supervised Step Evidence",
+          current.entities.supervisedStepEvidence,
+          draft.entities.supervisedStepEvidence,
+        ],
+        [
+          "Supervised Step Candidate",
+          current.entities.supervisedStepCandidates,
+          draft.entities.supervisedStepCandidates,
+        ],
+        [
+          "Supervised Reviewer Verdict",
+          current.entities.supervisedPlannerVerdicts,
+          draft.entities.supervisedPlannerVerdicts,
+        ],
+        [
+          "Supervised Product Decision",
+          current.entities.supervisedStepHumanDecisions,
+          draft.entities.supervisedStepHumanDecisions,
+        ],
+        [
+          "Supervised Outcome Observation",
+          current.entities.supervisedAgentOutcomeObservations,
+          draft.entities.supervisedAgentOutcomeObservations,
+        ],
+        [
+          "Supervised Execution Result",
+          current.entities.supervisedExecutionResults,
+          draft.entities.supervisedExecutionResults,
         ],
       ] as const;
       for (const [label, existingFacts, nextFacts] of immutableProjectCollections) {

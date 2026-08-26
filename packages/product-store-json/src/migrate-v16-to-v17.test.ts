@@ -35,6 +35,17 @@ function removeV20Entities(entities: Record<string, unknown>): void {
     "projectRequirements",
     "projectArtifactRefs",
     "projectMetricObservations",
+    "supervisedPlanningEpochs",
+    "supervisedCarryForwards",
+    "supervisedStepStates",
+    "supervisedAgentAttempts",
+    "supervisedStepEvidence",
+    "supervisedStepCandidates",
+    "supervisedPlannerVerdicts",
+    "supervisedStepReviewRequests",
+    "supervisedStepHumanDecisions",
+    "supervisedAgentOutcomeObservations",
+    "supervisedExecutionResults",
   ]) {
     delete entities[key];
   }

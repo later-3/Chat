@@ -7,6 +7,7 @@ export {
 } from "./agent-runtime-capabilities.js";
 import { sha256Schema } from "./hash.js";
 import {
+  agentVersionIdSchema,
   messageIdSchema,
   productRunIdSchema,
   productSessionIdSchema,
@@ -15,6 +16,7 @@ import {
   promptFragmentRevisionIdSchema,
   workflowDefinitionRevisionIdSchema,
 } from "./ids.js";
+import { supervisedAgentRoleV3Schema } from "./supervised-planning-v3.js";
 import { workflowDefinitionNodeIdSchema } from "./workflow-definition.js";
 import {
   promptFragmentScopeSchema,
@@ -26,6 +28,7 @@ export const PROMPT_ASSEMBLY_SCHEMA_VERSION = "prompt-assembly.v1";
 export const PROMPT_ASSEMBLY_V2_SCHEMA_VERSION = "prompt-assembly.v2";
 export const PROMPT_ASSEMBLY_V3_SCHEMA_VERSION = "prompt-assembly.v3";
 export const PROMPT_ASSEMBLY_V4_SCHEMA_VERSION = "prompt-assembly.v4";
+export const PROMPT_ASSEMBLY_V5_SCHEMA_VERSION = "prompt-assembly.v5";
 export const WORKFLOW_PROMPT_PROFILE_VERSION = "workflow-agent-prompt-profile.v1";
 export const WORKFLOW_PROMPT_COMPILER_VERSION = "workflow-agent-prompt-compiler.v1";
 export const DIRECT_PROMPT_PROFILE_VERSION = "direct-agent-prompt-profile.v1";
@@ -34,6 +37,8 @@ export const DIRECT_PROMPT_PROFILE_V2_VERSION = "direct-agent-prompt-profile.v2"
 export const DIRECT_PROMPT_COMPILER_V2_VERSION = "direct-agent-prompt-compiler.v2";
 export const DIRECT_PROMPT_COMPILER_V3_VERSION = "direct-agent-prompt-compiler.v3";
 export const DIRECT_PROMPT_COMPILER_V4_VERSION = "direct-agent-prompt-compiler.v4";
+export const SUPERVISED_PROMPT_PROFILE_VERSION = "supervised-agent-prompt-profile.v1";
+export const SUPERVISED_PROMPT_COMPILER_V5_VERSION = "supervised-agent-prompt-compiler.v5";
 export const DIRECT_PROMPT_INPUT_TOKEN_LIMIT = 64_000;
 export const DIRECT_PROMPT_TOOL_TOKEN_RESERVE = 8_000;
 export const DIRECT_PROMPT_METER_VERSION = "utf8-bytes-div-3.v1";
@@ -592,6 +597,102 @@ export const promptAssemblyV4Schema = z
     }
   });
 
+/**
+ * Supervised Prompt Assembly v5是Run级角色配置计划，不是Provider Payload。Executor与
+ * Reviewer各自冻结AgentVersion、真实Runtime Profile及完整qualified Capability快照；
+ * 每轮动态Step/Candidate输入后续只通过带Hash的Input Manifest进入Pi。
+ */
+export const supervisedPromptRoleAssemblyV5Schema = z
+  .object({
+    role: supervisedAgentRoleV3Schema,
+    definitionNodeId: workflowDefinitionNodeIdSchema,
+    agentVersionRef: z
+      .object({ agentVersionId: agentVersionIdSchema, sha256: sha256Schema })
+      .strict(),
+    runtimeProfileSha256: sha256Schema,
+    piSystemPrompt: piSystemPromptResolutionSchema,
+    tools: z
+      .object({
+        names: z.array(directAgentToolNameSchema).max(32),
+        capabilities: z.array(resolvedCapabilitySnapshotSchema).max(32),
+        resources: agentRuntimeResourcePolicySchema,
+        capabilityManifestSha256: sha256Schema,
+        estimatedTokens: z.literal(DIRECT_PROMPT_TOOL_TOKEN_RESERVE),
+      })
+      .strict()
+      .superRefine((value, ctx) => {
+        if (
+          value.names.length !== value.capabilities.length ||
+          value.capabilities.some(
+            (capability, index) => capability.localName !== value.names[index],
+          )
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["capabilities"],
+            message: "监督角色的Capability顺序必须与Pi本地Tool投影一致",
+          });
+        }
+        const capabilityIds = new Set(value.capabilities.map((item) => item.ref.capabilityId));
+        const refs = new Set(value.capabilities.map((item) => JSON.stringify(item.ref)));
+        if (
+          new Set(value.names).size !== value.names.length ||
+          capabilityIds.size !== value.capabilities.length ||
+          refs.size !== value.capabilities.length
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["capabilities"],
+            message: "监督角色的Tool、Capability ID与qualified Ref不能重复",
+          });
+        }
+        if (value.names.includes("project_bootstrap_prepare")) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["names"],
+            message: "监督执行不能借用专用Project Bootstrap Tool",
+          });
+        }
+      }),
+    sha256: sha256Schema,
+  })
+  .strict();
+
+export const promptAssemblyV5Schema = z
+  .object({
+    schemaVersion: z.literal(PROMPT_ASSEMBLY_V5_SCHEMA_VERSION),
+    promptAssemblyId: promptAssemblyIdSchema,
+    productSessionId: productSessionIdSchema,
+    productRunId: productRunIdSchema,
+    sourceMessageId: messageIdSchema,
+    workflowDefinitionRevisionId: workflowDefinitionRevisionIdSchema,
+    profileVersion: z.literal(SUPERVISED_PROMPT_PROFILE_VERSION),
+    compilerVersion: z.literal(SUPERVISED_PROMPT_COMPILER_V5_VERSION),
+    workspaceRootId: promptWorkspaceRootIdSchema.optional(),
+    workspaceGrantSha256: sha256Schema.optional(),
+    roleAssemblies: z.array(supervisedPromptRoleAssemblyV5Schema).length(2),
+    sha256: sha256Schema,
+    createdAt: z.iso.datetime(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.workspaceRootId === undefined) !== (value.workspaceGrantSha256 === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["workspaceGrantSha256"],
+        message: "监督Prompt Assembly的Workspace与Grant Hash必须成对冻结",
+      });
+    }
+    const roles = value.roleAssemblies.map((role) => role.role).sort();
+    if (JSON.stringify(roles) !== JSON.stringify(["executor", "reviewer"])) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["roleAssemblies"],
+        message: "监督Prompt Assembly必须精确包含Executor与Reviewer",
+      });
+    }
+  });
+
 export const promptBearingNodeTypeSchema = z.enum([
   "agent.plan",
   "agent.direct",
@@ -663,6 +764,7 @@ export const promptAssemblySchema = z.union([
   promptAssemblyV2Schema,
   promptAssemblyV3Schema,
   promptAssemblyV4Schema,
+  promptAssemblyV5Schema,
 ]);
 
 export type PromptCompositionMode = z.infer<typeof promptCompositionModeSchema>;
@@ -682,3 +784,5 @@ export type PromptNodeAssembly = z.infer<typeof promptNodeAssemblySchema>;
 export type PiSystemPromptResolution = z.infer<typeof piSystemPromptResolutionSchema>;
 export type PromptAssemblyV3 = z.infer<typeof promptAssemblyV3Schema>;
 export type PromptAssemblyV4 = z.infer<typeof promptAssemblyV4Schema>;
+export type SupervisedPromptRoleAssemblyV5 = z.infer<typeof supervisedPromptRoleAssemblyV5Schema>;
+export type PromptAssemblyV5 = z.infer<typeof promptAssemblyV5Schema>;

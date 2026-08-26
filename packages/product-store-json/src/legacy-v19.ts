@@ -161,6 +161,17 @@ const productSnapshotV19EntitiesSchema = productSnapshotSchema.shape.entities
     projectRequirements: true,
     projectArtifactRefs: true,
     projectMetricObservations: true,
+    supervisedPlanningEpochs: true,
+    supervisedCarryForwards: true,
+    supervisedStepStates: true,
+    supervisedAgentAttempts: true,
+    supervisedStepEvidence: true,
+    supervisedStepCandidates: true,
+    supervisedPlannerVerdicts: true,
+    supervisedStepReviewRequests: true,
+    supervisedStepHumanDecisions: true,
+    supervisedAgentOutcomeObservations: true,
+    supervisedExecutionResults: true,
   })
   .extend({
     /** v19只能按当时已发布代际解释，不能借当前union反向改写历史语义。 */

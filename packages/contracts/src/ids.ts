@@ -61,6 +61,21 @@ export const toolExecutionIntentIdSchema = prefixedId("tei");
 export const toolExecutionDecisionIdSchema = prefixedId("ted");
 export const toolExecutionResultIdSchema = prefixedId("ter");
 
+/*
+ * 逐步监督执行v3产品身份。它们只表示Chat Product Store中的业务事实，不能复用
+ * Workflow Hook、Pi Operation、Provider Request或Tool Execution审核身份。
+ */
+export const supervisedPlanningEpochIdSchema = prefixedId("spe");
+export const supervisedCarryForwardIdSchema = prefixedId("scf");
+export const supervisedStepStateIdSchema = prefixedId("sss");
+export const supervisedStepEvidenceIdSchema = prefixedId("sev");
+export const supervisedStepCandidateIdSchema = prefixedId("scd");
+export const supervisedPlannerVerdictIdSchema = prefixedId("spv");
+export const supervisedStepReviewRequestIdSchema = prefixedId("srr");
+export const supervisedStepDecisionIdSchema = prefixedId("sdc");
+export const supervisedAgentObservationIdSchema = prefixedId("sao");
+export const supervisedExecutionResultIdSchema = prefixedId("ser");
+
 /* C1 长期上下文新增身份。均由服务端根据已提交产品身份确定性派生。 */
 export const contextRequestIdSchema = prefixedId("ctxr");
 export const memoryQueryIdSchema = prefixedId("mqy");
@@ -187,6 +202,16 @@ export type AgentVersionId = z.infer<typeof agentVersionIdSchema>;
 export type ToolExecutionIntentId = z.infer<typeof toolExecutionIntentIdSchema>;
 export type ToolExecutionDecisionId = z.infer<typeof toolExecutionDecisionIdSchema>;
 export type ToolExecutionResultId = z.infer<typeof toolExecutionResultIdSchema>;
+export type SupervisedPlanningEpochId = z.infer<typeof supervisedPlanningEpochIdSchema>;
+export type SupervisedCarryForwardId = z.infer<typeof supervisedCarryForwardIdSchema>;
+export type SupervisedStepStateId = z.infer<typeof supervisedStepStateIdSchema>;
+export type SupervisedStepEvidenceId = z.infer<typeof supervisedStepEvidenceIdSchema>;
+export type SupervisedStepCandidateId = z.infer<typeof supervisedStepCandidateIdSchema>;
+export type SupervisedPlannerVerdictId = z.infer<typeof supervisedPlannerVerdictIdSchema>;
+export type SupervisedStepReviewRequestId = z.infer<typeof supervisedStepReviewRequestIdSchema>;
+export type SupervisedStepDecisionId = z.infer<typeof supervisedStepDecisionIdSchema>;
+export type SupervisedAgentObservationId = z.infer<typeof supervisedAgentObservationIdSchema>;
+export type SupervisedExecutionResultId = z.infer<typeof supervisedExecutionResultIdSchema>;
 export type ContextRequestId = z.infer<typeof contextRequestIdSchema>;
 export type MemoryQueryId = z.infer<typeof memoryQueryIdSchema>;
 export type MemoryResultSnapshotId = z.infer<typeof memoryResultSnapshotIdSchema>;

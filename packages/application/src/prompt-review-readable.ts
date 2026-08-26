@@ -103,7 +103,11 @@ function assemblySource(
   assembly: PromptAssembly | undefined,
   placement: "system" | "messages",
 ): PromptReviewReadableSource | undefined {
-  if (assembly?.schemaVersion === "prompt-assembly.v3") return undefined;
+  if (
+    assembly?.schemaVersion === "prompt-assembly.v3" ||
+    assembly?.schemaVersion === "prompt-assembly.v5"
+  )
+    return undefined;
   const fragments =
     assembly?.regions
       .filter((region) => region.placement === placement)

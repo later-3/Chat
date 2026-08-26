@@ -737,6 +737,17 @@ describe("Direct Agent Application + JsonProductStore最小纵向", () => {
       "projectRequirements",
       "projectArtifactRefs",
       "projectMetricObservations",
+      "supervisedPlanningEpochs",
+      "supervisedCarryForwards",
+      "supervisedStepStates",
+      "supervisedAgentAttempts",
+      "supervisedStepEvidence",
+      "supervisedStepCandidates",
+      "supervisedPlannerVerdicts",
+      "supervisedStepReviewRequests",
+      "supervisedStepHumanDecisions",
+      "supervisedAgentOutcomeObservations",
+      "supervisedExecutionResults",
     ]) {
       delete capabilityV20Entities[key];
     }
@@ -753,7 +764,7 @@ describe("Direct Agent Application + JsonProductStore最小纵向", () => {
       now: () => BASE_TIME,
     });
     const migratedSnapshot = (await migratedStore.read({ kind: "committedSnapshot" })).snapshot;
-    expect(migratedSnapshot.schemaVersion).toBe("chat-product-store.v23");
+    expect(migratedSnapshot.schemaVersion).toBe("chat-product-store.v24");
     expect(migratedSnapshot.entities.toolExecutionIntents).toEqual(
       snapshot.entities.toolExecutionIntents,
     );

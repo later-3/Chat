@@ -1,7 +1,10 @@
 import {
   agentVersionSchema,
   productSnapshotSchema,
-  promptAssemblySchema,
+  promptAssemblyV1Schema,
+  promptAssemblyV2Schema,
+  promptAssemblyV3Schema,
+  promptAssemblyV4Schema,
   toolExecutionDecisionSchema,
   toolExecutionIntentSchema,
   toolExecutionResultSchema,
@@ -20,7 +23,15 @@ const idKeySchema = z.string().min(1).max(200);
  */
 const capabilityV20EntitiesSchema = productSnapshotV19Schema.shape.entities
   .extend({
-    promptAssemblies: z.record(idKeySchema, promptAssemblySchema),
+    promptAssemblies: z.record(
+      idKeySchema,
+      z.union([
+        promptAssemblyV1Schema,
+        promptAssemblyV2Schema,
+        promptAssemblyV3Schema,
+        promptAssemblyV4Schema,
+      ]),
+    ),
     agentVersions: z.record(idKeySchema, agentVersionSchema),
     toolExecutionIntents: z.record(idKeySchema, toolExecutionIntentSchema),
     toolExecutionDecisions: z.record(idKeySchema, toolExecutionDecisionSchema),

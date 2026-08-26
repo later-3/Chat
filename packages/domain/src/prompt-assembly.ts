@@ -88,6 +88,44 @@ export interface PromptAssemblyV4Shape extends Omit<
   readonly runtimeProfileSha256: string;
 }
 
+export interface SupervisedPromptRoleAssemblyV5Shape {
+  readonly role: "executor" | "reviewer";
+  readonly definitionNodeId: string;
+  readonly agentVersionRef: {
+    readonly agentVersionId: string;
+    readonly sha256: string;
+  };
+  readonly runtimeProfileSha256: string;
+  readonly piSystemPrompt: PiSystemPromptResolutionShape;
+  readonly tools: {
+    readonly names: readonly string[];
+    readonly capabilities: readonly {
+      readonly localName: string;
+      readonly ref: Readonly<Record<string, unknown>>;
+      readonly [key: string]: unknown;
+    }[];
+    readonly resources: Readonly<Record<string, unknown>>;
+    readonly capabilityManifestSha256: string;
+    readonly estimatedTokens: number;
+  };
+  readonly sha256: string;
+}
+
+export interface PromptAssemblyV5Shape {
+  readonly schemaVersion: "prompt-assembly.v5";
+  readonly promptAssemblyId: string;
+  readonly productSessionId: string;
+  readonly productRunId: string;
+  readonly sourceMessageId: string;
+  readonly workflowDefinitionRevisionId: string;
+  readonly profileVersion: "supervised-agent-prompt-profile.v1";
+  readonly compilerVersion: "supervised-agent-prompt-compiler.v5";
+  readonly workspaceRootId?: string | undefined;
+  readonly workspaceGrantSha256?: string | undefined;
+  readonly roleAssemblies: readonly SupervisedPromptRoleAssemblyV5Shape[];
+  readonly sha256: string;
+}
+
 export interface PromptNodeAssemblyShape {
   readonly definitionNodeId: string;
   readonly nodeType: "agent.plan" | "agent.direct" | "execute.plan" | "note.extract";
@@ -219,6 +257,24 @@ export function computePromptAssemblyV4Sha256(
   return hashCanonical("prompt-assembly.v4", input);
 }
 
+export function computeSupervisedCapabilityManifestSha256(
+  capabilities: readonly Readonly<Record<string, unknown>>[],
+): string {
+  return hashCanonical("supervised-capability-manifest.v3", { capabilities });
+}
+
+export function computeSupervisedPromptRoleAssemblyV5Sha256(
+  input: Omit<SupervisedPromptRoleAssemblyV5Shape, "sha256">,
+): string {
+  return hashCanonical("supervised-prompt-role-assembly.v5", input);
+}
+
+export function computePromptAssemblyV5Sha256(
+  input: Omit<PromptAssemblyV5Shape, "sha256">,
+): string {
+  return hashCanonical("prompt-assembly.v5", input);
+}
+
 function assertRegions(regions: readonly PromptAssemblyRegionShape[]): void {
   const regionKeys = new Set<string>();
   for (const region of regions) {
@@ -247,8 +303,52 @@ function assertRegions(regions: readonly PromptAssemblyRegionShape[]): void {
 
 export function assertPromptAssembly(
   assembly:
-    PromptAssemblyShape | PromptAssemblyV2Shape | PromptAssemblyV3Shape | PromptAssemblyV4Shape,
+    | PromptAssemblyShape
+    | PromptAssemblyV2Shape
+    | PromptAssemblyV3Shape
+    | PromptAssemblyV4Shape
+    | PromptAssemblyV5Shape,
 ): void {
+  if (assembly.schemaVersion === "prompt-assembly.v5") {
+    for (const role of assembly.roleAssemblies) {
+      const capabilityManifestSha256 = computeSupervisedCapabilityManifestSha256(
+        role.tools.capabilities,
+      );
+      if (capabilityManifestSha256 !== role.tools.capabilityManifestSha256) {
+        throw new Error(`监督Prompt角色 ${role.role} Capability Manifest Hash不一致`);
+      }
+      const expectedRole = computeSupervisedPromptRoleAssemblyV5Sha256({
+        role: role.role,
+        definitionNodeId: role.definitionNodeId,
+        agentVersionRef: role.agentVersionRef,
+        runtimeProfileSha256: role.runtimeProfileSha256,
+        piSystemPrompt: role.piSystemPrompt,
+        tools: role.tools,
+      });
+      if (expectedRole !== role.sha256) {
+        throw new Error(`监督Prompt角色 ${role.role} Hash不一致`);
+      }
+    }
+    const expected = computePromptAssemblyV5Sha256({
+      schemaVersion: assembly.schemaVersion,
+      promptAssemblyId: assembly.promptAssemblyId,
+      productSessionId: assembly.productSessionId,
+      productRunId: assembly.productRunId,
+      sourceMessageId: assembly.sourceMessageId,
+      workflowDefinitionRevisionId: assembly.workflowDefinitionRevisionId,
+      profileVersion: assembly.profileVersion,
+      compilerVersion: assembly.compilerVersion,
+      ...(assembly.workspaceRootId === undefined
+        ? {}
+        : { workspaceRootId: assembly.workspaceRootId }),
+      ...(assembly.workspaceGrantSha256 === undefined
+        ? {}
+        : { workspaceGrantSha256: assembly.workspaceGrantSha256 }),
+      roleAssemblies: assembly.roleAssemblies,
+    });
+    if (expected !== assembly.sha256) throw new Error("Prompt Assembly V5 Hash不一致");
+    return;
+  }
   if (assembly.schemaVersion === "prompt-assembly.v3") {
     assertRegions(assembly.sharedRegions);
     for (const node of assembly.nodes) {

@@ -278,8 +278,11 @@ export async function authorizeDirectAgentOperation(
   const message = snapshot.entities.messages[run.sourceMessageId];
   const session = snapshot.entities.sessions[run.sessionId];
   const promptAssembly = directPromptAssembly(snapshot.entities, input.productRunId);
-  if (promptAssembly.schemaVersion === "prompt-assembly.v3") {
-    throw revisionConflict("Direct Agent不能使用Workflow Prompt计划");
+  if (
+    promptAssembly.schemaVersion === "prompt-assembly.v3" ||
+    promptAssembly.schemaVersion === "prompt-assembly.v5"
+  ) {
+    throw revisionConflict("Direct Agent不能使用Workflow或监督执行Prompt计划");
   }
   if (
     attempt === undefined ||

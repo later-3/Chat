@@ -37,12 +37,14 @@ export function migrateProductSnapshotV20CapabilityToV22(
   const projectV22 = migrateProductSnapshotV21ToV22(
     migrateProductSnapshotV20ToV21(migrateProductSnapshotV19ToV20(projectV19)),
   );
+  const legacyPromptAssemblies =
+    productSnapshotV22Schema.shape.entities.shape.promptAssemblies.parse(promptAssemblies);
 
   return productSnapshotV22Schema.parse({
     ...projectV22,
     entities: {
       ...projectV22.entities,
-      promptAssemblies,
+      promptAssemblies: legacyPromptAssemblies,
       agentVersions,
       toolExecutionIntents,
       toolExecutionDecisions,

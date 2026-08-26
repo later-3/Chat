@@ -30,5 +30,6 @@ export * from "./prompt-review.js";
 export * from "./direct-agent-run-lifecycle.js";
 export * from "./direct-agent.js";
 export * from "./tool-execution.js";
+export * from "./supervised-planning-v3.js";
 export * from "./project-bootstrap.js";
 export * from "./workspace-grant.js";

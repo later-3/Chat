@@ -141,6 +141,17 @@ describe("Product Store v23全项目生命周期事实", () => {
       "projectRequirements",
       "projectArtifactRefs",
       "projectMetricObservations",
+      "supervisedPlanningEpochs",
+      "supervisedCarryForwards",
+      "supervisedStepStates",
+      "supervisedAgentAttempts",
+      "supervisedStepEvidence",
+      "supervisedStepCandidates",
+      "supervisedPlannerVerdicts",
+      "supervisedStepReviewRequests",
+      "supervisedStepHumanDecisions",
+      "supervisedAgentOutcomeObservations",
+      "supervisedExecutionResults",
     ]) {
       delete entities[key];
     }
@@ -153,7 +164,7 @@ describe("Product Store v23全项目生命周期事实", () => {
 
     const migratedStore = await JsonProductStore.open({ filePath, now: () => NOW });
     const migrated = (await migratedStore.read({ kind: "committedSnapshot" })).snapshot;
-    expect(migrated.schemaVersion).toBe("chat-product-store.v23");
+    expect(migrated.schemaVersion).toBe("chat-product-store.v24");
     expect(migrated.storeRevision).toBe(legacy.storeRevision);
     expect(migrated.entities.projectProfileRevisions).toEqual({});
     expect(migrated.entities.projectConfigurationRevisions).toEqual({});

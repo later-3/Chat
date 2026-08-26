@@ -65,6 +65,17 @@ describe("Product Store v8→v9", () => {
               "projectRequirements",
               "projectArtifactRefs",
               "projectMetricObservations",
+              "supervisedPlanningEpochs",
+              "supervisedCarryForwards",
+              "supervisedStepStates",
+              "supervisedAgentAttempts",
+              "supervisedStepEvidence",
+              "supervisedStepCandidates",
+              "supervisedPlannerVerdicts",
+              "supervisedStepReviewRequests",
+              "supervisedStepHumanDecisions",
+              "supervisedAgentOutcomeObservations",
+              "supervisedExecutionResults",
             ].includes(key),
         ),
       ),
@@ -81,7 +92,7 @@ describe("Product Store v8→v9", () => {
     await writeFile(filePath, JSON.stringify(legacy), "utf8");
     await JsonProductStore.open({ filePath, now: () => NOW });
     const onDisk = JSON.parse(await readFile(filePath, "utf8")) as { schemaVersion?: unknown };
-    expect(onDisk.schemaVersion).toBe("chat-product-store.v23");
+    expect(onDisk.schemaVersion).toBe("chat-product-store.v24");
     await JsonProductStore.open({ filePath, now: () => NOW });
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual(onDisk);
   });

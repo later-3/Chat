@@ -32,6 +32,17 @@ function v18Entities(entities: Record<string, unknown>): Record<string, unknown>
     "projectRequirements",
     "projectArtifactRefs",
     "projectMetricObservations",
+    "supervisedPlanningEpochs",
+    "supervisedCarryForwards",
+    "supervisedStepStates",
+    "supervisedAgentAttempts",
+    "supervisedStepEvidence",
+    "supervisedStepCandidates",
+    "supervisedPlannerVerdicts",
+    "supervisedStepReviewRequests",
+    "supervisedStepHumanDecisions",
+    "supervisedAgentOutcomeObservations",
+    "supervisedExecutionResults",
   ]) {
     delete legacy[key];
   }
@@ -136,7 +147,7 @@ describe("Product Store v18到v19 Project Bootstrap Outbox迁移", () => {
 
     await JsonProductStore.open({ filePath, now: () => NOW });
     const once = await readFile(filePath, "utf8");
-    expect(JSON.parse(once)).toMatchObject({ schemaVersion: "chat-product-store.v23" });
+    expect(JSON.parse(once)).toMatchObject({ schemaVersion: "chat-product-store.v24" });
     await JsonProductStore.open({ filePath, now: () => NOW });
     expect(await readFile(filePath, "utf8")).toBe(once);
   });
