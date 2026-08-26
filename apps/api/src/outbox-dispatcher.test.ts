@@ -1744,11 +1744,9 @@ describe("Project Bootstrap Outbox耐久执行", () => {
       candidateSha256: seeded.candidate.sha256,
       kind: "confirm",
     });
-    const {
-      projectManagementBootstrap: _projectManagementBootstrap,
-      projectWorkspaceProvisioner: _projectWorkspaceProvisioner,
-      ...providerDisabledDeps
-    } = seeded.deps;
+    const providerDisabledDeps = { ...seeded.deps };
+    Reflect.deleteProperty(providerDisabledDeps, "projectManagementBootstrap");
+    Reflect.deleteProperty(providerDisabledDeps, "projectWorkspaceProvisioner");
     const dispatcher = new OutboxDispatcher({
       deps: providerDisabledDeps,
       workflowRuntimeBaseUrl: "http://127.0.0.1:43112",

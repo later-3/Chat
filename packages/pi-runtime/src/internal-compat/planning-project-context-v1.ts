@@ -1,6 +1,5 @@
 import {
   projectActionIdSchema,
-  projectIdSchema,
   projectMilestoneIdSchema,
   projectUpdateIdSchema,
   projectWorkIdSchema,

@@ -121,14 +121,10 @@ async function managedSnapshot(input: { readonly secondProject?: boolean } = {})
 }
 
 function rehashConfiguration(configuration: ProjectConfigurationRevision): void {
-  const {
-    schemaVersion: _schemaVersion,
-    sha256: _sha256,
-    revision: _revision,
-    createdAt: _createdAt,
-    updatedAt: _updatedAt,
-    ...hashInput
-  } = configuration;
+  const hashInput = { ...configuration };
+  for (const key of ["schemaVersion", "sha256", "revision", "createdAt", "updatedAt"] as const) {
+    Reflect.deleteProperty(hashInput, key);
+  }
   configuration.sha256 = computeProjectConfigurationRevisionSha256(hashInput) as never;
 }
 
