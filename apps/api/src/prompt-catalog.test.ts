@@ -78,4 +78,33 @@ describe("File Prompt Catalog workspace instructions", () => {
     ).toEqual({ kind: "workspace", rootId: "root_target" });
     expect(JSON.stringify(workspace)).not.toContain("Must not be discovered");
   });
+
+  it("默认Catalog隐藏Plane Agent与Builtin Fragment但精确历史Revision仍可解析", async () => {
+    const repoRoot = await realpath(resolve(import.meta.dirname, "../../.."));
+    const planeCatalog = await createFilePromptCatalog(repoRoot, { CHAT_PLANE_ENABLED: "1" });
+    const historical = (await planeCatalog.load()).builtinFragments.find(
+      (fragment) => fragment.promptFragmentRevisionId === "pfr_builtinprojectbootstrapv1",
+    );
+    if (historical === undefined) throw new Error("专项Catalog缺少历史Project Bootstrap Revision");
+
+    const defaultCatalog = await createFilePromptCatalog(repoRoot, {});
+    const current = await defaultCatalog.load();
+    expect(current.agents.map((agent) => agent.agentKey)).not.toContain("project_bootstrap");
+    expect(
+      current.builtinFragments.map((fragment) => fragment.promptFragmentRevisionId),
+    ).not.toContain(historical.promptFragmentRevisionId);
+    expect(JSON.stringify(current)).not.toContain("Plane");
+    await expect(
+      defaultCatalog.resolveBuiltinRevision({
+        promptFragmentRevisionId: historical.promptFragmentRevisionId,
+        sha256: historical.sha256,
+      }),
+    ).resolves.toEqual(historical);
+    await expect(
+      defaultCatalog.resolveBuiltinRevision({
+        promptFragmentRevisionId: historical.promptFragmentRevisionId,
+        sha256: "0".repeat(64),
+      }),
+    ).resolves.toBeUndefined();
+  });
 });

@@ -52,7 +52,7 @@ Git 内置组件不复制进 Product Store。用户组件正文不隐藏在 Prod
 - Catalog Adapter：`apps/api/src/prompt-catalog.ts`
 - 用户文件 Adapter：`apps/api/src/prompt-file-library.ts`
 
-Catalog Adapter从`import.meta.url`推导仓库根，拒绝绝对路径、`..`、越界symlink、缺失文件、重复ID/Region/Order和SHA-256漂移。
+Catalog Adapter从`import.meta.url`推导仓库根，拒绝绝对路径、`..`、越界symlink、缺失文件、重复ID/Region/Order和SHA-256漂移。它明确分开两种读取语义：普通Catalog/List/详情只返回“当前可发现投影”；冻结Run则以`revisionId + sha256`从完整Git Catalog精确解析历史Revision。默认投影会同时移除Project Bootstrap Agent及其引用的Plane Fragment，因此Agent、Fragment、Tool和详情正文都不会泄漏Plane；只有显式`CHAT_PLANE_ENABLED=1`的专项运行图恢复该发现面。历史定义不删除，也不会因当前投影收窄而使既有Run无法解析。
 
 Bridge按`CHAT_PROJECT_ROOTS_JSON`把DSH当前打开目录映射为Chat `rootId`。平台Chat根的精确`AGENTS.md`投影为全局`workspace_instructions`组件；目标Workspace根的精确`AGENTS.md`只在该Scope可见。系统不递归发现父级、子目录或其他Agent文件，也不自动选择这些组件。
 

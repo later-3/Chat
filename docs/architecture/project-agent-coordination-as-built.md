@@ -22,8 +22,9 @@ Resolver只接受稳定产品身份：`projectId`、`productSessionId`、`worksp
 公开入口：
 
 - `GET /api/project-agent/opening-packet`
+- `GET /api/project-agent/opening-packet-v3`
 
-查询参数使用strict Schema；普通入口支持项目身份、可选Work/Participant以及是否读取Resource Context。返回值由`ProjectAgentOpeningPacket`合同约束，不包含任意Provider专用字段。
+查询参数使用strict Schema；当前Application与新调用使用`project-agent-coordination.v3`，其management绑定`project-agent-context.v2`的精确Project目标。v1/v2入口只读保留，DSH可在独立迁移后切换，不原地改变历史合同。普通入口支持项目身份、可选Work/Participant以及是否读取Resource Context，返回值不包含任意Provider专用字段。
 
 ## 3. 开工与交接规则
 

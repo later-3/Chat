@@ -49,20 +49,25 @@ Artifact、Event或历史身份。
 
 ## 4. Agent Context
 
-`compileProjectAgentContext`实现六种固定目的：
+当前写代`compileProjectAgentContextV2`实现六种固定目的；旧`project-agent-context.v1`只读保留，不原地改变目标语义：
 
 1. `project_opening`：恢复目标、承诺、当前工作、风险、决定和最近变化；
 2. `work_execution`：为精确工作读取Need、Requirement、依赖、Artifact和Evidence；
-3. `delta`：读取自上次观察后的事件和对象变化；
-4. `review`：读取验收标准、候选Revision、Evidence和风险；
+3. `delta`：绑定稳定Event watermark，读取该游标之后的事件和对象变化；
+4. `review`：绑定被审对象的`kind + objectId + revision + sha256`和所属Work，读取验收标准、Evidence和风险；
 5. `handoff`：读取Work、Claim、Block、交付物、决定和交接历史；
 6. `maintenance`：读取项目健康、Attention、期限、Metric、Event和报告事实。
 
-Context按Profile政策执行对象种类、Resource Role、最近事件数、对象数和字符预算，并显式返回
-`omissions`。它绑定Profile/Configuration精确ID与Hash，生成自身Hash；Session丢失后可由Project
-身份重新编译，完整历史不会无界塞入每轮Prompt。
+`project_opening`和`maintenance`以Project为目标；`work_execution`和`handoff`必须绑定精确
+`workId + workRevision`；`review`必须绑定上述被审对象Ref和Work；`delta`必须绑定精确watermark。
+因此同一Project的多个Work不会混入一次工作、审核或交接上下文，错误Revision、错误审核对象和
+不存在的游标均失败关闭。
 
-现有统一Agent开工包已经自动附带`management`投影：已采用Configuration时包含
+Context按Profile政策执行对象种类、Resource Role、最近事件数、对象数和字符预算，并显式返回
+`omissions`。它的Hash覆盖目标、Profile/Configuration精确Revision与Hash、裁剪结果和正文；
+Session丢失后仍可从稳定目标重新编译，完整历史不会无界塞入每轮Prompt。
+
+当前`project-agent-coordination.v3`统一Agent开工包自动附带v2 `management`投影：已采用Configuration时包含
 `project_opening` Context和`agent_started` Maintenance Plan；旧Project尚未采用时明确返回
 `not_configured`，同时保留Work、Claim和Handoff读取能力。Codex、Pi和Chat内Agent不再
 需要各自猜测该从哪些状态文档恢复项目。
@@ -85,10 +90,12 @@ Candidate/Decision/Operation链。自动调度和报告Candidate提交属于后�
 - `POST /api/projects/:projectId/requirements`
 - `GET /api/projects/:projectId/home`
 - `GET /api/projects/:projectId/contexts/:purpose`
+- `GET /api/projects/:projectId/contexts-v2/:purpose`
+- `GET /api/project-agent/opening-packet-v3`
 - `GET /api/projects/:projectId/maintenance?trigger=...`
 - 原有`GET /api/projects/:projectId/timeline`现已包含统一`project_event`。
 
-这些JSON合同既可被DSH使用，也可被未来其他前端、CLI或Agent使用；API不是某个Viewer的专用后端。
+旧Context v1与Opening v1/v2入口继续只读兼容；Application和新API调用使用上述v2/v3入口。这些JSON合同既可被DSH使用，也可被未来其他前端、CLI或Agent使用；API不是某个Viewer的专用后端。
 
 ## 7. 已验证场景
 

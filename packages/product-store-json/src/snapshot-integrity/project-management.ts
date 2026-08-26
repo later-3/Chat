@@ -6,6 +6,10 @@ import {
 } from "@chat/domain";
 import type { Fail } from "./shared.js";
 
+function assertUnique(values: readonly string[], label: string, fail: Fail): void {
+  if (new Set(values).size !== values.length) fail(`${label}重复`);
+}
+
 function profileDefinition(
   profile: ProductSnapshot["entities"]["projectProfileRevisions"][string],
 ): ProjectProfileDefinition {
@@ -23,6 +27,91 @@ function profileDefinition(
     maintenanceCadences: profile.maintenanceCadences,
     metrics: profile.metrics,
   };
+}
+
+function persistedEventSubject(
+  snapshot: ProductSnapshot,
+  event: ProductSnapshot["entities"]["projectEvents"][string],
+  fail: Fail,
+): { readonly revision: number; readonly projectId?: string | undefined } {
+  const { entities } = snapshot;
+  const subject = (() => {
+    switch (event.subject.kind) {
+      case "project":
+        return entities.projects[event.subject.objectId];
+      case "profile":
+        return entities.projectProfileRevisions[event.subject.objectId];
+      case "configuration":
+        return entities.projectConfigurationRevisions[event.subject.objectId];
+      case "need":
+        return entities.projectNeeds[event.subject.objectId];
+      case "requirement":
+        return entities.projectRequirements[event.subject.objectId];
+      case "work":
+        return entities.projectWorks[event.subject.objectId];
+      case "action":
+        return entities.projectActions[event.subject.objectId];
+      case "activity":
+      case "review":
+        return entities.projectContributions[event.subject.objectId];
+      case "claim":
+        return entities.projectWorkClaims[event.subject.objectId];
+      case "handoff":
+        return entities.projectWorkHandoffs[event.subject.objectId];
+      case "block":
+        return entities.projectWorkBlocks[event.subject.objectId];
+      case "resource":
+        return entities.projectResources[event.subject.objectId];
+      case "artifact":
+        return entities.projectArtifactRefs[event.subject.objectId];
+      case "evidence":
+        return entities.projectEvidence[event.subject.objectId];
+      case "decision":
+        return entities.projectDecisions[event.subject.objectId];
+      case "practice":
+        return entities.projectPracticeRevisions[event.subject.objectId];
+      case "metric":
+        return entities.projectMetricObservations[event.subject.objectId];
+      case "event":
+        return entities.projectEvents[event.subject.objectId];
+      case "publication":
+        return entities.projectWorkOutcomes[event.subject.objectId];
+      case "objective":
+      case "scope":
+      case "commitment":
+      case "dependency":
+      case "risk":
+      case "issue":
+      case "acceptance":
+      case "change":
+      case "knowledge":
+      case "case":
+      case "lesson":
+      case "capture":
+      case "competency":
+      case "assessment":
+      case "daily_entry":
+      case "report":
+        fail(
+          `projectEvent ${event.projectEventId} Subject kind ${event.subject.kind} 没有持久聚合或外部Ref合同`,
+        );
+    }
+  })();
+  if (subject === undefined) fail(`projectEvent ${event.projectEventId} Subject不存在`);
+  if (event.subject.kind === "profile") {
+    const belongsToProject = Object.values(entities.projectConfigurationRevisions).some(
+      (configuration) =>
+        configuration.projectId === event.projectId &&
+        configuration.profileRevisionId === event.subject.objectId,
+    );
+    if (!belongsToProject) fail(`projectEvent ${event.projectEventId} Profile Subject跨Project`);
+    return { revision: subject.revision };
+  }
+  const subjectProjectId = "projectId" in subject ? subject.projectId : undefined;
+  if (subjectProjectId !== event.projectId) {
+    fail(`projectEvent ${event.projectEventId} Subject跨Project`);
+  }
+  return { revision: subject.revision, projectId: subjectProjectId };
 }
 
 export function assertProjectManagement(snapshot: ProductSnapshot, fail: Fail): void {
@@ -57,7 +146,7 @@ export function assertProjectManagement(snapshot: ProductSnapshot, fail: Fail): 
 
   const adoptedConfigurations = new Set<string>();
   const configurationVersions = new Set<string>();
-  const supersededConfigurations = new Set<string>();
+  const successorByConfigurationId = new Map<string, string>();
   for (const configuration of Object.values(entities.projectConfigurationRevisions)) {
     const versionKey = `${configuration.projectId}\0${String(configuration.version)}`;
     if (configurationVersions.has(versionKey)) {
@@ -66,6 +155,28 @@ export function assertProjectManagement(snapshot: ProductSnapshot, fail: Fail): 
       );
     }
     configurationVersions.add(versionKey);
+    assertUnique(
+      configuration.participantIds,
+      `projectConfigurationRevision ${configuration.projectConfigurationRevisionId} Participant`,
+      fail,
+    );
+    assertUnique(
+      configuration.resourceBindings.map(
+        (binding) => `${binding.projectResourceId}\0${binding.role}`,
+      ),
+      `projectConfigurationRevision ${configuration.projectConfigurationRevisionId} Resource Binding`,
+      fail,
+    );
+    assertUnique(
+      configuration.presentationBindings.map((binding) => `${binding.capability}\0${binding.mode}`),
+      `projectConfigurationRevision ${configuration.projectConfigurationRevisionId} Presentation capability/mode`,
+      fail,
+    );
+    assertUnique(
+      configuration.requiredReads,
+      `projectConfigurationRevision ${configuration.projectConfigurationRevisionId} Required Read`,
+      fail,
+    );
     const project = entities.projects[configuration.projectId];
     const profile = entities.projectProfileRevisions[configuration.profileRevisionId];
     if (project === undefined || profile?.sha256 !== configuration.profileRevisionSha256) {
@@ -136,27 +247,39 @@ export function assertProjectManagement(snapshot: ProductSnapshot, fail: Fail): 
         `projectConfigurationRevision ${configuration.projectConfigurationRevisionId} Hash不一致`,
       );
     }
-    if (configuration.status === "adopted") {
-      const supersededId = configuration.supersedesConfigurationRevisionId;
-      if (supersededId !== undefined) {
-        const superseded = entities.projectConfigurationRevisions[supersededId];
-        if (
-          superseded?.projectId !== configuration.projectId ||
-          superseded.status !== "adopted" ||
-          superseded.version >= configuration.version ||
-          supersededConfigurations.has(supersededId)
-        ) {
-          fail(
-            `projectConfigurationRevision ${configuration.projectConfigurationRevisionId} Supersedes链无效`,
-          );
-        }
-        supersededConfigurations.add(supersededId);
+    const supersededId = configuration.supersedesConfigurationRevisionId;
+    if (supersededId !== undefined) {
+      const predecessor = entities.projectConfigurationRevisions[supersededId];
+      if (
+        configuration.status !== "adopted" ||
+        predecessor?.projectId !== configuration.projectId ||
+        predecessor.status !== "adopted" ||
+        predecessor.version >= configuration.version ||
+        successorByConfigurationId.has(supersededId)
+      ) {
+        fail(
+          `projectConfigurationRevision ${configuration.projectConfigurationRevisionId} Supersedes链无效`,
+        );
       }
+      successorByConfigurationId.set(supersededId, configuration.projectConfigurationRevisionId);
+    }
+  }
+  for (const configuration of Object.values(entities.projectConfigurationRevisions)) {
+    const visited = new Set<string>();
+    let cursor: string | undefined = configuration.projectConfigurationRevisionId;
+    while (cursor !== undefined) {
+      if (visited.has(cursor)) {
+        fail(
+          `projectConfigurationRevision ${configuration.projectConfigurationRevisionId} Supersedes链成环`,
+        );
+      }
+      visited.add(cursor);
+      cursor = successorByConfigurationId.get(cursor);
     }
   }
   for (const configuration of Object.values(entities.projectConfigurationRevisions)) {
     if (configuration.status !== "adopted") continue;
-    if (!supersededConfigurations.has(configuration.projectConfigurationRevisionId)) {
+    if (!successorByConfigurationId.has(configuration.projectConfigurationRevisionId)) {
       if (adoptedConfigurations.has(configuration.projectId)) {
         fail(`project ${configuration.projectId} 存在多个当前已采用Configuration`);
       }
@@ -188,6 +311,7 @@ export function assertProjectManagement(snapshot: ProductSnapshot, fail: Fail): 
     }
   }
 
+  const eventStreams = new Map<string, (typeof entities.projectEvents)[string][]>();
   for (const event of Object.values(entities.projectEvents)) {
     if (
       entities.projects[event.projectId] === undefined ||
@@ -199,65 +323,54 @@ export function assertProjectManagement(snapshot: ProductSnapshot, fail: Fail): 
     ) {
       fail(`projectEvent ${event.projectEventId} Project/Participant/Evidence无效`);
     }
-    const subject =
-      event.subject.kind === "need"
-        ? entities.projectNeeds[event.subject.objectId]
-        : event.subject.kind === "requirement"
-          ? entities.projectRequirements[event.subject.objectId]
-          : event.subject.kind === "work"
-            ? entities.projectWorks[event.subject.objectId]
-            : event.subject.kind === "action"
-              ? entities.projectActions[event.subject.objectId]
-              : event.subject.kind === "claim"
-                ? entities.projectWorkClaims[event.subject.objectId]
-                : event.subject.kind === "block"
-                  ? entities.projectWorkBlocks[event.subject.objectId]
-                  : event.subject.kind === "handoff"
-                    ? entities.projectWorkHandoffs[event.subject.objectId]
-                    : event.subject.kind === "review" || event.subject.kind === "activity"
-                      ? entities.projectContributions[event.subject.objectId]
-                      : event.subject.kind === "resource"
-                        ? entities.projectResources[event.subject.objectId]
-                        : event.subject.kind === "artifact"
-                          ? entities.projectArtifactRefs[event.subject.objectId]
-                          : event.subject.kind === "evidence"
-                            ? entities.projectEvidence[event.subject.objectId]
-                            : event.subject.kind === "decision"
-                              ? entities.projectDecisions[event.subject.objectId]
-                              : event.subject.kind === "event"
-                                ? entities.projectEvents[event.subject.objectId]
-                                : event.subject.kind === "profile"
-                                  ? entities.projectProfileRevisions[event.subject.objectId]
-                                  : event.subject.kind === "configuration"
-                                    ? entities.projectConfigurationRevisions[event.subject.objectId]
-                                    : undefined;
-    const subjectMustExist = [
-      "need",
-      "profile",
-      "configuration",
-      "requirement",
-      "work",
-      "action",
-      "claim",
-      "block",
-      "handoff",
-      "review",
-      "activity",
-      "resource",
-      "artifact",
-      "evidence",
-      "decision",
-      "event",
-    ].includes(event.subject.kind);
-    const subjectProjectId =
-      subject !== undefined && "projectId" in subject ? subject.projectId : undefined;
-    if (
-      (subjectMustExist && subject === undefined) ||
-      (subject !== undefined &&
-        ((event.subject.kind !== "profile" && subjectProjectId !== event.projectId) ||
-          (event.subject.revision !== undefined && subject.revision !== event.subject.revision)))
-    ) {
-      fail(`projectEvent ${event.projectEventId} Subject无效`);
+    const persisted = persistedEventSubject(snapshot, event, fail);
+    if (event.subject.revision !== undefined && event.subject.revision > persisted.revision) {
+      fail(`projectEvent ${event.projectEventId} Subject Revision超出当前对象`);
+    }
+    const streamKey = `${event.subject.kind}\0${event.subject.objectId}`;
+    const stream = eventStreams.get(streamKey) ?? [];
+    stream.push(event);
+    eventStreams.set(streamKey, stream);
+  }
+  for (const stream of eventStreams.values()) {
+    const current = persistedEventSubject(snapshot, stream[0]!, fail);
+    const anchors = stream
+      .map((event) => event.subject.revision)
+      .filter((revision): revision is number => revision !== undefined);
+    const transitions = stream
+      .filter(
+        (event): event is typeof event & { beforeRevision: number; afterRevision: number } =>
+          event.beforeRevision !== undefined && event.afterRevision !== undefined,
+      )
+      .sort(
+        (left, right) =>
+          left.beforeRevision - right.beforeRevision ||
+          left.projectEventId.localeCompare(right.projectEventId),
+      );
+    for (let index = 0; index < transitions.length; index += 1) {
+      const event = transitions[index]!;
+      const previous = transitions[index - 1];
+      if (
+        event.afterRevision > current.revision ||
+        (event.subject.revision !== undefined && event.subject.revision !== event.afterRevision) ||
+        (previous !== undefined && event.beforeRevision !== previous.afterRevision)
+      ) {
+        fail(`projectEvent ${event.projectEventId} Subject Revision历史链断裂`);
+      }
+    }
+    if (transitions.length > 0) {
+      const first = transitions[0]!;
+      const last = transitions.at(-1)!;
+      const latestAnchorAtOrBeforeFirst = anchors
+        .filter((revision) => revision <= first.beforeRevision)
+        .sort((left, right) => right - left)[0];
+      if (
+        (latestAnchorAtOrBeforeFirst !== undefined &&
+          latestAnchorAtOrBeforeFirst !== first.beforeRevision) ||
+        last.afterRevision !== current.revision
+      ) {
+        fail(`projectEvent ${last.projectEventId} Subject Revision历史链不能与当前对象对齐`);
+      }
     }
   }
 

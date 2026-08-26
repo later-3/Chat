@@ -436,6 +436,7 @@ function fixture(): {
           },
         ],
       }),
+      resolveBuiltinRevision: async () => undefined,
     },
     projectRoots: {
       list: () => [

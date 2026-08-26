@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { commandIdSchema, principalIdSchema, projectIdSchema } from "./ids.js";
+import {
+  commandIdSchema,
+  principalIdSchema,
+  projectIdSchema,
+  projectProfileRevisionIdSchema,
+  projectWorkIdSchema,
+} from "./ids.js";
 import {
   projectConfigurationRevisionIdSchema,
   projectEventIdSchema,
@@ -18,6 +24,7 @@ import {
 import { sha256Schema } from "./hash.js";
 
 export const PROJECT_MANAGEMENT_API_VERSION = "project-management-api.v1";
+export const PROJECT_AGENT_CONTEXT_V2_VERSION = "project-agent-context.v2";
 
 const isoDateTimeSchema = z.iso.datetime();
 const shortText = z.string().trim().min(1).max(500);
@@ -214,6 +221,92 @@ export const projectAgentContextDtoSchema = z
   })
   .strict();
 
+export const projectAgentContextV2TargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("project") }).strict(),
+  z
+    .object({
+      kind: z.literal("work"),
+      workId: projectWorkIdSchema,
+      workRevision: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("review"),
+      workId: projectWorkIdSchema,
+      workRevision: z.number().int().positive(),
+      subject: z
+        .object({
+          kind: projectManagedObjectKindSchema,
+          objectId: z.string().trim().min(1).max(200),
+          revision: z.number().int().positive(),
+          sha256: sha256Schema,
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("delta"),
+      watermark: z
+        .object({
+          projectEventId: projectEventIdSchema,
+          recordedAt: isoDateTimeSchema,
+          payloadSha256: sha256Schema,
+        })
+        .strict(),
+    })
+    .strict(),
+]);
+
+/** v2把Context目的与精确目标绑定；v1只保留历史读取，不能承载新写语义。 */
+export const projectAgentContextV2RequestSchema = z
+  .object({
+    purpose: projectContextPurposeSchema,
+    target: projectAgentContextV2TargetSchema,
+  })
+  .strict()
+  .superRefine((request, context) => {
+    const expected =
+      request.purpose === "project_opening" || request.purpose === "maintenance"
+        ? "project"
+        : request.purpose === "work_execution" || request.purpose === "handoff"
+          ? "work"
+          : request.purpose === "review"
+            ? "review"
+            : "delta";
+    if (request.target.kind !== expected) {
+      context.addIssue({
+        code: "custom",
+        path: ["target", "kind"],
+        message: `${request.purpose}必须使用${expected}目标`,
+      });
+    }
+  });
+
+export const projectAgentContextV2DtoSchema = z
+  .object({
+    schemaVersion: z.literal(PROJECT_AGENT_CONTEXT_V2_VERSION),
+    purpose: projectContextPurposeSchema,
+    target: projectAgentContextV2TargetSchema,
+    projectId: projectIdSchema,
+    profileRevisionId: projectProfileRevisionIdSchema,
+    profileRevisionSha256: sha256Schema,
+    configurationRevisionId: projectConfigurationRevisionIdSchema,
+    configurationRevisionSha256: sha256Schema,
+    objective: longText,
+    timezone: z.string().trim().min(1).max(80),
+    schedulePolicy: projectConfigurationSchedulePolicySchema,
+    items: z.array(projectAgentContextItemDtoSchema).max(1_000),
+    resourceBindings: z.array(projectResourceBindingConfigSchema).max(100),
+    recentEventIds: z.array(projectEventIdSchema).max(500),
+    requiredReads: z.array(z.string().min(1).max(500)).max(50),
+    omissions: z.array(shortText).max(100),
+    compiledAt: isoDateTimeSchema,
+    sha256: sha256Schema,
+  })
+  .strict();
+
 export const projectMaintenanceItemDtoSchema = z
   .object({
     cadenceKey: z.string().min(1).max(120),
@@ -270,4 +363,7 @@ export type ProjectObjectQueryResultDto = z.infer<typeof projectObjectQueryResul
 export type ProjectPresentationSurfaceDto = z.infer<typeof projectPresentationSurfaceDtoSchema>;
 export type ProjectHomeDto = z.infer<typeof projectHomeDtoSchema>;
 export type ProjectAgentContextDto = z.infer<typeof projectAgentContextDtoSchema>;
+export type ProjectAgentContextV2Target = z.infer<typeof projectAgentContextV2TargetSchema>;
+export type ProjectAgentContextV2Request = z.infer<typeof projectAgentContextV2RequestSchema>;
+export type ProjectAgentContextV2Dto = z.infer<typeof projectAgentContextV2DtoSchema>;
 export type ProjectMaintenancePlanDto = z.infer<typeof projectMaintenancePlanDtoSchema>;

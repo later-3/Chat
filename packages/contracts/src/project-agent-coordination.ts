@@ -25,11 +25,13 @@ import {
 import { promptWorkspaceRootIdSchema } from "./prompt-fragment.js";
 import {
   projectAgentContextDtoSchema,
+  projectAgentContextV2DtoSchema,
   projectMaintenancePlanDtoSchema,
 } from "./project-management-api.js";
 
 export const PROJECT_AGENT_COORDINATION_SCHEMA_VERSION = "project-agent-coordination.v1";
 export const PROJECT_AGENT_COORDINATION_V2_SCHEMA_VERSION = "project-agent-coordination.v2";
+export const PROJECT_AGENT_COORDINATION_V3_SCHEMA_VERSION = "project-agent-coordination.v3";
 
 const queryBooleanSchema = z.enum(["true", "false"]).transform((value) => value === "true");
 
@@ -380,9 +382,39 @@ export const projectAgentOpeningPacketV2ResponseSchema = z
   .object({ packet: projectAgentOpeningPacketV2Schema })
   .strict();
 
+/** v3只把普通Opening的管理Context升级为精确目标v2；v1/v2继续只读。 */
+export const projectAgentOpeningPacketV3Schema = projectAgentOpeningPacketV2Schema
+  .omit({ schemaVersion: true, management: true })
+  .extend({
+    schemaVersion: z.literal(PROJECT_AGENT_COORDINATION_V3_SCHEMA_VERSION),
+    management: z
+      .discriminatedUnion("status", [
+        z
+          .object({
+            status: z.literal("not_configured"),
+            reason: z.string().min(1).max(500),
+          })
+          .strict(),
+        z
+          .object({
+            status: z.literal("ready"),
+            context: projectAgentContextV2DtoSchema,
+            maintenance: projectMaintenancePlanDtoSchema,
+          })
+          .strict(),
+      ])
+      .optional(),
+  })
+  .strict();
+
+export const projectAgentOpeningPacketV3ResponseSchema = z
+  .object({ packet: projectAgentOpeningPacketV3Schema })
+  .strict();
+
 export type ProjectAgentOpeningPacketQuery = z.infer<typeof projectAgentOpeningPacketQuerySchema>;
 export type ProjectAgentOpeningPacket = z.infer<typeof projectAgentOpeningPacketSchema>;
 export type ProjectAgentOpeningPacketV2Query = z.infer<
   typeof projectAgentOpeningPacketV2QuerySchema
 >;
 export type ProjectAgentOpeningPacketV2 = z.infer<typeof projectAgentOpeningPacketV2Schema>;
+export type ProjectAgentOpeningPacketV3 = z.infer<typeof projectAgentOpeningPacketV3Schema>;

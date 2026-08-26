@@ -57,5 +57,14 @@ export interface PromptCatalogSnapshot {
 
 /** Git Prompt Catalog的只读Port；Product Store不复制Builtin正文。 */
 export interface PromptCatalogPort {
+  /** 当前运行图可发现的Catalog；默认运行图不得泄漏冻结的专项能力。 */
   load(): Promise<PromptCatalogSnapshot>;
+  /**
+   * 历史Run只凭已经冻结的Revision ID与Hash精确恢复Builtin正文。
+   * 该入口不是Catalog枚举或详情查询，Hash不一致时必须返回undefined。
+   */
+  resolveBuiltinRevision(input: {
+    readonly promptFragmentRevisionId: PromptFragmentRevisionId;
+    readonly sha256: string;
+  }): Promise<BuiltinPromptFragmentRevision | undefined>;
 }

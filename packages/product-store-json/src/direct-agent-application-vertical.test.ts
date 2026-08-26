@@ -172,6 +172,7 @@ async function createHarness() {
           },
         ],
       }),
+      resolveBuiltinRevision: async () => undefined,
     },
     agentRuntimeProfiles: {
       read: async (agentKey, workspaceRootId) =>

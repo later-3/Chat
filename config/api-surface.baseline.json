@@ -114,7 +114,7 @@
         }
       },
       "name": "@chat/application",
-      "publicEntrySignatureSha256": "b1037055e8af559355e8320e8a49b3e134107812550cde2f403e3bcc1ef77581",
+      "publicEntrySignatureSha256": "b096f5858e2c52791a114fe2bef73eb1cc7cd5c6a194443d34220a222d520fb5",
       "subpaths": [
         {
           "conditions": {
@@ -194,6 +194,7 @@
             "CompilePlanningInput",
             "CompilePlanningInputCommand",
             "compileProjectAgentContext",
+            "compileProjectAgentContextV2",
             "compileWorkflowPromptAssembly",
             "completeRunAttempt",
             "CompleteRunAttemptCommand",
@@ -266,6 +267,7 @@
             "getProductRun",
             "getProjectAgentOpeningPacket",
             "getProjectAgentOpeningPacketV2",
+            "getProjectAgentOpeningPacketV3",
             "getProjectBootstrapConfiguration",
             "getProjectBootstrapOperation",
             "getProjectBootstrapReview",
@@ -567,7 +569,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "b1037055e8af559355e8320e8a49b3e134107812550cde2f403e3bcc1ef77581",
+          "transitiveSignatureSha256": "b096f5858e2c52791a114fe2bef73eb1cc7cd5c6a194443d34220a222d520fb5",
           "visibility": "public"
         },
         {
@@ -683,7 +685,7 @@
         }
       },
       "name": "@chat/contracts",
-      "publicEntrySignatureSha256": "18d943b2f514a65614650ab5e471ca61e448a11064c481decc5d1d7d014bca5d",
+      "publicEntrySignatureSha256": "53591d3103210af7682d25f487a05608c9170d5309db426388f32e2f86af4e10",
       "subpaths": [
         {
           "conditions": {
@@ -1497,8 +1499,10 @@
             "productSnapshotSchema",
             "Project",
             "PROJECT_ADVANCEMENT_WORKFLOW_DEFINITION_VERSION",
+            "PROJECT_AGENT_CONTEXT_V2_VERSION",
             "PROJECT_AGENT_COORDINATION_SCHEMA_VERSION",
             "PROJECT_AGENT_COORDINATION_V2_SCHEMA_VERSION",
+            "PROJECT_AGENT_COORDINATION_V3_SCHEMA_VERSION",
             "PROJECT_API_SCHEMA_VERSION",
             "PROJECT_API_V3_SCHEMA_VERSION",
             "PROJECT_BOOTSTRAP_SCHEMA_VERSION",
@@ -1523,6 +1527,12 @@
             "ProjectAgentContextDto",
             "projectAgentContextDtoSchema",
             "projectAgentContextItemDtoSchema",
+            "ProjectAgentContextV2Dto",
+            "projectAgentContextV2DtoSchema",
+            "ProjectAgentContextV2Request",
+            "projectAgentContextV2RequestSchema",
+            "ProjectAgentContextV2Target",
+            "projectAgentContextV2TargetSchema",
             "ProjectAgentOpeningPacket",
             "ProjectAgentOpeningPacketQuery",
             "projectAgentOpeningPacketQuerySchema",
@@ -1533,6 +1543,9 @@
             "projectAgentOpeningPacketV2QuerySchema",
             "projectAgentOpeningPacketV2ResponseSchema",
             "projectAgentOpeningPacketV2Schema",
+            "ProjectAgentOpeningPacketV3",
+            "projectAgentOpeningPacketV3ResponseSchema",
+            "projectAgentOpeningPacketV3Schema",
             "ProjectArtifactRef",
             "ProjectArtifactRefId",
             "projectArtifactRefIdSchema",
@@ -2410,7 +2423,7 @@
           ],
           "key": ".",
           "target": "./src/index.ts",
-          "transitiveSignatureSha256": "18d943b2f514a65614650ab5e471ca61e448a11064c481decc5d1d7d014bca5d",
+          "transitiveSignatureSha256": "53591d3103210af7682d25f487a05608c9170d5309db426388f32e2f86af4e10",
           "visibility": "public"
         },
         {
@@ -2804,8 +2817,10 @@
             "productRunIdSchema",
             "ProductSessionId",
             "productSessionIdSchema",
+            "PROJECT_AGENT_CONTEXT_V2_VERSION",
             "PROJECT_AGENT_COORDINATION_SCHEMA_VERSION",
             "PROJECT_AGENT_COORDINATION_V2_SCHEMA_VERSION",
+            "PROJECT_AGENT_COORDINATION_V3_SCHEMA_VERSION",
             "PROJECT_API_SCHEMA_VERSION",
             "PROJECT_API_V3_SCHEMA_VERSION",
             "PROJECT_BOOTSTRAP_SCHEMA_VERSION",
@@ -2818,6 +2833,12 @@
             "ProjectAgentContextDto",
             "projectAgentContextDtoSchema",
             "projectAgentContextItemDtoSchema",
+            "ProjectAgentContextV2Dto",
+            "projectAgentContextV2DtoSchema",
+            "ProjectAgentContextV2Request",
+            "projectAgentContextV2RequestSchema",
+            "ProjectAgentContextV2Target",
+            "projectAgentContextV2TargetSchema",
             "ProjectAgentOpeningPacket",
             "ProjectAgentOpeningPacketQuery",
             "projectAgentOpeningPacketQuerySchema",
@@ -2828,6 +2849,9 @@
             "projectAgentOpeningPacketV2QuerySchema",
             "projectAgentOpeningPacketV2ResponseSchema",
             "projectAgentOpeningPacketV2Schema",
+            "ProjectAgentOpeningPacketV3",
+            "projectAgentOpeningPacketV3ResponseSchema",
+            "projectAgentOpeningPacketV3Schema",
             "ProjectArtifactRef",
             "ProjectArtifactRefId",
             "projectArtifactRefIdSchema",
@@ -3318,7 +3342,7 @@
           ],
           "key": "./public",
           "target": "./src/public.ts",
-          "transitiveSignatureSha256": "fd7da9c6f052f1501d830f6abf50334a337f3b67d90fd5b035d5aa09ca63f294",
+          "transitiveSignatureSha256": "d05654857b835ffec5c9cdc9cae2b8b65f56dda40f8fcf8f5b00b8b73bc421cf",
           "visibility": "public"
         },
         {
@@ -6853,6 +6877,58 @@
     },
     {
       "enumValues": [],
+      "name": "projectAgentContextV2DtoSchema",
+      "requiredFields": [
+        "compiledAt",
+        "configurationRevisionId",
+        "configurationRevisionSha256",
+        "items",
+        "objective",
+        "omissions",
+        "profileRevisionId",
+        "profileRevisionSha256",
+        "projectId",
+        "purpose",
+        "recentEventIds",
+        "requiredReads",
+        "resourceBindings",
+        "schedulePolicy",
+        "schemaVersion",
+        "sha256",
+        "target",
+        "timezone"
+      ],
+      "schemaVersions": ["project-agent-context.v2"],
+      "signatureSha256": "0d58bcc12101a702fd2bb0a5883b5d857935dcf1c22f1191b8f9b3078818be18"
+    },
+    {
+      "enumValues": [],
+      "name": "projectAgentContextV2RequestSchema",
+      "requiredFields": ["purpose", "target"],
+      "schemaVersions": [],
+      "signatureSha256": "ed69ca1e11d64bbb8455059f70adb964bbc3254d56b63728f44f2cb2673670eb"
+    },
+    {
+      "enumValues": [],
+      "name": "projectAgentContextV2TargetSchema",
+      "requiredFields": [
+        "kind",
+        "objectId",
+        "payloadSha256",
+        "projectEventId",
+        "recordedAt",
+        "revision",
+        "sha256",
+        "subject",
+        "watermark",
+        "workId",
+        "workRevision"
+      ],
+      "schemaVersions": [],
+      "signatureSha256": "cc5838b7bfc6748a6c82de8251ced64ae70422165030060892b27891072e44c5"
+    },
+    {
+      "enumValues": [],
       "name": "projectAgentOpeningPacketQuerySchema",
       "requiredFields": ["includeResourceContext", "refreshPlane"],
       "schemaVersions": [],
@@ -6964,6 +7040,20 @@
       "requiredFields": ["allowedActions"],
       "schemaVersions": [],
       "signatureSha256": "ba827f4e9c2d25956ab8f798b3e8a4c991c9676d5aea1113e4971cd27f7da9de"
+    },
+    {
+      "enumValues": [],
+      "name": "projectAgentOpeningPacketV3ResponseSchema",
+      "requiredFields": ["packet"],
+      "schemaVersions": [],
+      "signatureSha256": "165d6fd147ff1a3d7dedb270ee80bf708b3754ae578870e9628f0b56fc899279"
+    },
+    {
+      "enumValues": [],
+      "name": "projectAgentOpeningPacketV3Schema",
+      "requiredFields": ["context", "maintenance", "reason", "status"],
+      "schemaVersions": [],
+      "signatureSha256": "9b7dea25f2b16e78e6ae0081f1b8ba935a35034bfc06ad38d5fbbeaa3bf5bb8b"
     },
     {
       "enumValues": [],
@@ -11708,6 +11798,11 @@
     },
     {
       "kind": "value",
+      "name": "PROJECT_AGENT_CONTEXT_V2_VERSION",
+      "signatureSha256": "486c7a19ba2f9b5aa83562c0cd5439b19c1cd6df86e053965fad9afa2418df27"
+    },
+    {
+      "kind": "value",
       "name": "PROJECT_AGENT_COORDINATION_SCHEMA_VERSION",
       "signatureSha256": "7119acaaf7c73efd201382bc779f17d36590dec0d006abceb406ed0a349cc552"
     },
@@ -11715,6 +11810,11 @@
       "kind": "value",
       "name": "PROJECT_AGENT_COORDINATION_V2_SCHEMA_VERSION",
       "signatureSha256": "2ff920b39465abcbbee84dc4bff39ab5d815c468d3e0f45bdf5086faae1e507b"
+    },
+    {
+      "kind": "value",
+      "name": "PROJECT_AGENT_COORDINATION_V3_SCHEMA_VERSION",
+      "signatureSha256": "da10087fa3fdfb24e91781dfae178bd07b59be26c7f90a5f4e0e39ed14513a59"
     },
     {
       "kind": "value",
@@ -11778,6 +11878,36 @@
     },
     {
       "kind": "type",
+      "name": "ProjectAgentContextV2Dto",
+      "signatureSha256": "31ad0df5319f9374a224232d0668f046ac5205760da0c23b997a9bf8b04beab0"
+    },
+    {
+      "kind": "schema",
+      "name": "projectAgentContextV2DtoSchema",
+      "signatureSha256": "0d58bcc12101a702fd2bb0a5883b5d857935dcf1c22f1191b8f9b3078818be18"
+    },
+    {
+      "kind": "type",
+      "name": "ProjectAgentContextV2Request",
+      "signatureSha256": "cdfddd1330b2c5253ed8114109c265c2d4662e93521522b072ef22df3fdd53f6"
+    },
+    {
+      "kind": "schema",
+      "name": "projectAgentContextV2RequestSchema",
+      "signatureSha256": "ed69ca1e11d64bbb8455059f70adb964bbc3254d56b63728f44f2cb2673670eb"
+    },
+    {
+      "kind": "type",
+      "name": "ProjectAgentContextV2Target",
+      "signatureSha256": "be106c392a83a7b147cd9670656f74907aa0a50b9deb08e8fe595efe7b8b0b6f"
+    },
+    {
+      "kind": "schema",
+      "name": "projectAgentContextV2TargetSchema",
+      "signatureSha256": "cc5838b7bfc6748a6c82de8251ced64ae70422165030060892b27891072e44c5"
+    },
+    {
+      "kind": "type",
       "name": "ProjectAgentOpeningPacket",
       "signatureSha256": "d2811d3f3a45a624f97a979f1205a553df52258839c53b80d54adead824b9b32"
     },
@@ -11825,6 +11955,21 @@
       "kind": "schema",
       "name": "projectAgentOpeningPacketV2Schema",
       "signatureSha256": "ba827f4e9c2d25956ab8f798b3e8a4c991c9676d5aea1113e4971cd27f7da9de"
+    },
+    {
+      "kind": "type",
+      "name": "ProjectAgentOpeningPacketV3",
+      "signatureSha256": "a00b473ecea55f8b2dc5315782dd8b71625b8844160e0484022f68154c488715"
+    },
+    {
+      "kind": "schema",
+      "name": "projectAgentOpeningPacketV3ResponseSchema",
+      "signatureSha256": "165d6fd147ff1a3d7dedb270ee80bf708b3754ae578870e9628f0b56fc899279"
+    },
+    {
+      "kind": "schema",
+      "name": "projectAgentOpeningPacketV3Schema",
+      "signatureSha256": "9b7dea25f2b16e78e6ae0081f1b8ba935a35034bfc06ad38d5fbbeaa3bf5bb8b"
     },
     {
       "kind": "type",
@@ -18849,6 +18994,117 @@
     },
     {
       "body": {
+        "schemas": []
+      },
+      "kind": "query",
+      "method": "GET",
+      "path": "/api/project-agent/opening-packet-v3",
+      "pathParameters": [],
+      "problemContract": {
+        "codes": [
+          "approval_already_decided",
+          "approval_expired",
+          "command_id_reused",
+          "definition_stale",
+          "forbidden",
+          "internal_error",
+          "memory_context_required_failed",
+          "memory_import_backend_unavailable",
+          "memory_import_failed",
+          "memory_import_idempotency_conflict",
+          "memory_import_source_invalid",
+          "model_candidate_invalid",
+          "not_found",
+          "outcome_unknown",
+          "plan_hash_conflict",
+          "policy_denied",
+          "product_commit_failed",
+          "prompt_review_already_decided",
+          "prompt_review_hash_conflict",
+          "prompt_review_payload_hash_conflict",
+          "provider_auth_failed",
+          "provider_rate_limited",
+          "provider_stream_interrupted",
+          "provider_timeout",
+          "resource_stale",
+          "revision_conflict",
+          "store_corrupted",
+          "unauthenticated",
+          "validation_failed",
+          "workflow_dispatch_unknown",
+          "workflow_resume_unknown"
+        ],
+        "problemCodeSchema": {
+          "identity": "problemCodeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ffd0c2d6cf0881b5ee465b5823f0a38fe17644a5a5088fdff963b887f944eb4f"
+        },
+        "recoveryActions": [
+          "contact_support",
+          "none",
+          "reauthenticate",
+          "rehydrate_and_retry",
+          "retry_same_command",
+          "wait_for_reconciliation"
+        ],
+        "recoveryActionSchema": {
+          "identity": "recoveryActionSchema",
+          "schemaVersions": [],
+          "signatureSha256": "7517fb6e8480b3566cc9aa74d618b944a63fc675278fddd6446a15292bd2569e"
+        }
+      },
+      "query": {
+        "parsers": [
+          {
+            "allowedKeys": [],
+            "identity": "query-parser:project-routes.ts",
+            "schemas": [],
+            "signatureSha256": "e57b4048c37575ea3ecf4dbbb1d46ee5ecbfc0a1c16fd6e7e9d29f49f85a2158"
+          }
+        ],
+        "schemas": [
+          {
+            "identity": "projectAgentOpeningPacketV2QuerySchema",
+            "schemaVersions": [],
+            "signatureSha256": "d617a9be467d8190345a5b983f29a444dedf0352a3c8a0e3be772db2d12d7f8e"
+          },
+          {
+            "identity": "projectAgentOpeningPacketV3ResponseSchema",
+            "schemaVersions": [],
+            "signatureSha256": "165d6fd147ff1a3d7dedb270ee80bf708b3754ae578870e9628f0b56fc899279"
+          }
+        ]
+      },
+      "requestSchemas": [
+        {
+          "identity": "projectAgentOpeningPacketV2QuerySchema",
+          "schemaVersions": [],
+          "signatureSha256": "d617a9be467d8190345a5b983f29a444dedf0352a3c8a0e3be772db2d12d7f8e"
+        },
+        {
+          "identity": "projectAgentOpeningPacketV3ResponseSchema",
+          "schemaVersions": [],
+          "signatureSha256": "165d6fd147ff1a3d7dedb270ee80bf708b3754ae578870e9628f0b56fc899279"
+        }
+      ],
+      "responseSchemas": [
+        {
+          "identity": "response-expression:GET /api/project-agent/opening-packet-v3:1",
+          "schemaVersions": [],
+          "signatureSha256": "33b98b08ef01f72d50dfda40dc66b6fe244660f66706c02ab0f914570fcfb7c4"
+        }
+      ],
+      "successfulResponses": [
+        {
+          "explicitSchemas": [],
+          "signatureSha256": "33b98b08ef01f72d50dfda40dc66b6fe244660f66706c02ab0f914570fcfb7c4",
+          "source": "json",
+          "status": "200"
+        }
+      ]
+    },
+    {
+      "body": {
         "schemas": [
           {
             "identity": "commandEnvelopeSchema",
@@ -21153,6 +21409,154 @@
           "signatureSha256": "20ee3cea9f2d1073854270bfa564b06db8ea817019b9284d7e1ee5ef0a6d30a4",
           "source": "json",
           "status": "201"
+        }
+      ]
+    },
+    {
+      "body": {
+        "schemas": []
+      },
+      "kind": "query",
+      "method": "GET",
+      "path": "/api/projects/:projectId/contexts-v2/:purpose",
+      "pathParameters": [
+        {
+          "name": "projectId",
+          "schema": {
+            "identity": "projectIdSchema",
+            "schemaVersions": [],
+            "signatureSha256": "4ba79e35d3e4c8d45b52237e5e89b2247ea7b9e23c7ec883de42431e46793558"
+          }
+        },
+        {
+          "name": "purpose",
+          "schema": {
+            "identity": "projectContextPurposeSchema",
+            "schemaVersions": [],
+            "signatureSha256": "3dec5a6c9bb099cdf062c470abf792f9a26afe22979ab1e406faaa0a658fa3f7"
+          }
+        }
+      ],
+      "problemContract": {
+        "codes": [
+          "approval_already_decided",
+          "approval_expired",
+          "command_id_reused",
+          "definition_stale",
+          "forbidden",
+          "internal_error",
+          "memory_context_required_failed",
+          "memory_import_backend_unavailable",
+          "memory_import_failed",
+          "memory_import_idempotency_conflict",
+          "memory_import_source_invalid",
+          "model_candidate_invalid",
+          "not_found",
+          "outcome_unknown",
+          "plan_hash_conflict",
+          "policy_denied",
+          "product_commit_failed",
+          "prompt_review_already_decided",
+          "prompt_review_hash_conflict",
+          "prompt_review_payload_hash_conflict",
+          "provider_auth_failed",
+          "provider_rate_limited",
+          "provider_stream_interrupted",
+          "provider_timeout",
+          "resource_stale",
+          "revision_conflict",
+          "store_corrupted",
+          "unauthenticated",
+          "validation_failed",
+          "workflow_dispatch_unknown",
+          "workflow_resume_unknown"
+        ],
+        "problemCodeSchema": {
+          "identity": "problemCodeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ffd0c2d6cf0881b5ee465b5823f0a38fe17644a5a5088fdff963b887f944eb4f"
+        },
+        "recoveryActions": [
+          "contact_support",
+          "none",
+          "reauthenticate",
+          "rehydrate_and_retry",
+          "retry_same_command",
+          "wait_for_reconciliation"
+        ],
+        "recoveryActionSchema": {
+          "identity": "recoveryActionSchema",
+          "schemaVersions": [],
+          "signatureSha256": "7517fb6e8480b3566cc9aa74d618b944a63fc675278fddd6446a15292bd2569e"
+        }
+      },
+      "query": {
+        "parsers": [
+          {
+            "allowedKeys": [],
+            "identity": "query-parser:project-routes.ts",
+            "schemas": [],
+            "signatureSha256": "032724a294578b224a159db88f1f77c416cf6115b57d4fbc640b15c6b2339886"
+          }
+        ],
+        "schemas": [
+          {
+            "identity": "projectAgentContextV2RequestSchema",
+            "schemaVersions": [],
+            "signatureSha256": "ed69ca1e11d64bbb8455059f70adb964bbc3254d56b63728f44f2cb2673670eb"
+          },
+          {
+            "identity": "projectManagedObjectKindSchema",
+            "schemaVersions": [],
+            "signatureSha256": "c1fdeeab176d0335ade64d46f498c837f10ecf13dc535470cb083e3a5262456b"
+          },
+          {
+            "identity": "projectWorkIdSchema",
+            "schemaVersions": [],
+            "signatureSha256": "21a5be702d0bcf7f798f1c1f3c787fe9ad040f3c2d7072b26a72d1ae64db264e"
+          }
+        ]
+      },
+      "requestSchemas": [
+        {
+          "identity": "projectAgentContextV2RequestSchema",
+          "schemaVersions": [],
+          "signatureSha256": "ed69ca1e11d64bbb8455059f70adb964bbc3254d56b63728f44f2cb2673670eb"
+        },
+        {
+          "identity": "projectContextPurposeSchema",
+          "schemaVersions": [],
+          "signatureSha256": "3dec5a6c9bb099cdf062c470abf792f9a26afe22979ab1e406faaa0a658fa3f7"
+        },
+        {
+          "identity": "projectIdSchema",
+          "schemaVersions": [],
+          "signatureSha256": "4ba79e35d3e4c8d45b52237e5e89b2247ea7b9e23c7ec883de42431e46793558"
+        },
+        {
+          "identity": "projectManagedObjectKindSchema",
+          "schemaVersions": [],
+          "signatureSha256": "c1fdeeab176d0335ade64d46f498c837f10ecf13dc535470cb083e3a5262456b"
+        },
+        {
+          "identity": "projectWorkIdSchema",
+          "schemaVersions": [],
+          "signatureSha256": "21a5be702d0bcf7f798f1c1f3c787fe9ad040f3c2d7072b26a72d1ae64db264e"
+        }
+      ],
+      "responseSchemas": [
+        {
+          "identity": "response-expression:GET /api/projects/:projectId/contexts-v2/:purpose:1",
+          "schemaVersions": [],
+          "signatureSha256": "1b05d7d275e17348cdd067fa0a76671b09661b3da5222fe7d9997e90e90ad187"
+        }
+      ],
+      "successfulResponses": [
+        {
+          "explicitSchemas": [],
+          "signatureSha256": "1b05d7d275e17348cdd067fa0a76671b09661b3da5222fe7d9997e90e90ad187",
+          "source": "json",
+          "status": "200"
         }
       ]
     },
@@ -30253,6 +30657,10 @@
     {
       "identity": "projectAgentContextDtoSchema",
       "schemaVersions": ["project-management-api.v1"]
+    },
+    {
+      "identity": "projectAgentContextV2DtoSchema",
+      "schemaVersions": ["project-agent-context.v2"]
     },
     {
       "identity": "projectAgentOpeningPacketSchema",

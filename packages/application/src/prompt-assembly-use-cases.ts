@@ -241,6 +241,20 @@ async function sourcesFor(
   return sources;
 }
 
+async function resolveExactBuiltinSource(
+  deps: ApplicationDeps,
+  sources: Map<string, ResolvedSource>,
+  ref: { readonly promptFragmentRevisionId: string; readonly sha256: string },
+): Promise<PromptAssemblyFragment | undefined> {
+  const visible = sources.get(ref.promptFragmentRevisionId)?.fragment;
+  if (visible !== undefined) return visible;
+  const historical = await requireCatalog(deps).resolveBuiltinRevision({
+    promptFragmentRevisionId: promptFragmentRevisionIdSchema.parse(ref.promptFragmentRevisionId),
+    sha256: ref.sha256,
+  });
+  return historical === undefined ? undefined : builtinFragment(historical);
+}
+
 function assertSourceVisible(
   source: PromptAssemblyFragment,
   selection: PromptTurnSelectionInput,
@@ -295,18 +309,20 @@ async function compileRegions(deps: ApplicationDeps, context: CompileContext) {
       mode: "default" as const,
       selected: [],
     };
-    const resolveExplicit = (refs: typeof input.selected) =>
-      refs.map((ref) => {
-        const resolved = sources.get(ref.promptFragmentRevisionId)?.fragment;
-        if (resolved === undefined) throw notFound("Prompt Revision不存在、已归档或无权访问");
-        if (resolved.sha256 !== ref.sha256) throw revisionConflict("Prompt Revision Hash已变化");
-        if (resolved.regionKey !== region.regionKey) {
-          throw revisionConflict("Prompt Revision与选择的Region不一致");
-        }
-        assertSourceVisible(resolved, context.selection);
-        return resolved;
-      });
-    const explicit = resolveExplicit(input.selected);
+    const resolveExplicit = async (refs: typeof input.selected) =>
+      Promise.all(
+        refs.map(async (ref) => {
+          const resolved = await resolveExactBuiltinSource(deps, sources, ref);
+          if (resolved === undefined) throw notFound("Prompt Revision不存在、已归档或无权访问");
+          if (resolved.sha256 !== ref.sha256) throw revisionConflict("Prompt Revision Hash已变化");
+          if (resolved.regionKey !== region.regionKey) {
+            throw revisionConflict("Prompt Revision与选择的Region不一致");
+          }
+          assertSourceVisible(resolved, context.selection);
+          return resolved;
+        }),
+      );
+    const explicit = await resolveExplicit(input.selected);
     const defaults = regionDefaults(catalog, region.regionKey);
     const sharedFragments =
       input.mode === "default"

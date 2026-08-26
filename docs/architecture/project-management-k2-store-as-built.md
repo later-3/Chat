@@ -35,10 +35,11 @@ Store在打开和每次事务提交前统一检查：
 
 - Map key与对象ID一致；
 - Profile key/version不重复，Profile与Configuration Hash可重算；
-- 每个Project最多只有一个`adopted` Configuration；
-- Configuration引用的Project、Profile、Participant、Resource和Decision同Project有效；
+- 每个Project最多只有一个`adopted` Configuration；只有adopted后继可声明`supersedes`，且链必须同Project、版本递增、单后继、无环；candidate和superseded不能伪造该关系；
+- Configuration引用的Project、Profile、Participant、Resource和Decision同Project有效；Participant、Resource Binding、`capability + mode` Presentation Binding和required read在各自集合内唯一；
 - Need/Requirement/Event/ArtifactRef/Metric的Project、Evidence和Provenance引用有效；
-- Event已建模的Subject必须存在，且可选Revision必须与目标对象一致；
+- Event对所有持久化Subject kind（包括Project本身）穷尽解析，拒绝任意ID和跨Project；没有持久聚合或外部Ref合同的kind显式拒绝；
+- Event Subject的历史Revision不必等于当前对象Revision；同一对象的事件流按`beforeRevision → afterRevision`连续校验，拒绝断链或分叉，并要求最后一个afterRevision与当前对象对齐；
 - Event与Metric Observation是追加式历史事实，提交后不能覆盖或删除；Profile、Configuration
   与Artifact Ref可以通过受治理的Revision/状态用例演进，不能由Router或Provider直接改写。
 

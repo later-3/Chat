@@ -1,12 +1,17 @@
 import {
   PROJECT_MANAGEMENT_API_VERSION,
+  PROJECT_AGENT_CONTEXT_V2_VERSION,
   projectAgentContextDtoSchema,
+  projectAgentContextV2DtoSchema,
+  projectAgentContextV2RequestSchema,
   projectHomeDtoSchema,
   projectMaintenancePlanDtoSchema,
   projectObjectQueryResultDtoSchema,
   projectObjectQuerySchema,
   type PrincipalId,
   type ProjectAgentContextDto,
+  type ProjectAgentContextV2Dto,
+  type ProjectAgentContextV2Target,
   type ProjectContextPurpose,
   type ProjectHomeDto,
   type ProjectMaintenancePlanDto,
@@ -498,18 +503,13 @@ export async function getProjectHome(
     recentEvents: eventObjects,
     presentationSurfaces: profile.viewRequirements.map((requirement) => {
       const disabled = new Set(deps.disabledProjectProviderKinds ?? []);
-      const binding = configuration.presentationBindings.find(
-        (candidate) =>
-          candidate.capability === requirement.capability &&
-          candidate.mode === "primary" &&
-          !disabled.has(candidate.providerKind),
+      const bindingByCapabilityAndMode = new Map(
+        configuration.presentationBindings
+          .filter((candidate) => !disabled.has(candidate.providerKind))
+          .map((candidate) => [`${candidate.capability}\0${candidate.mode}`, candidate] as const),
       );
-      const fallback = configuration.presentationBindings.find(
-        (candidate) =>
-          candidate.capability === requirement.capability &&
-          candidate.mode === "fallback" &&
-          !disabled.has(candidate.providerKind),
-      );
+      const binding = bindingByCapabilityAndMode.get(`${requirement.capability}\0primary`);
+      const fallback = bindingByCapabilityAndMode.get(`${requirement.capability}\0fallback`);
       const selected = binding ?? fallback;
       return {
         ...requirement,
@@ -605,6 +605,188 @@ export async function compileProjectAgentContext(
     sha256: hashCanonical("project-agent-context.v1", hashInput),
   });
   return { context };
+}
+
+function reviewTargetSha256(item: ProjectObjectSummaryDto): string {
+  return hashCanonical("project-agent-review-target.v1", item);
+}
+
+function assertTargetWork(
+  snapshot: Snapshot,
+  projectId: string,
+  target: Extract<ProjectAgentContextV2Target, { kind: "work" | "review" }>,
+) {
+  const work = snapshot.entities.projectWorks[target.workId];
+  if (work?.projectId !== projectId) throw notFound("Context目标Work不存在");
+  if (work.revision !== target.workRevision) {
+    throw forbidden("Context目标Work Revision不匹配");
+  }
+  return work;
+}
+
+function eventOrder(
+  left: Snapshot["entities"]["projectEvents"][string],
+  right: Snapshot["entities"]["projectEvents"][string],
+): number {
+  return (
+    left.recordedAt.localeCompare(right.recordedAt) ||
+    left.projectEventId.localeCompare(right.projectEventId)
+  );
+}
+
+function selectContextV2Objects(input: {
+  readonly snapshot: Snapshot;
+  readonly projectId: string;
+  readonly target: ProjectAgentContextV2Target;
+  readonly objects: readonly ProjectObjectSummaryDto[];
+}): {
+  readonly objects: readonly ProjectObjectSummaryDto[];
+  readonly events: readonly Snapshot["entities"]["projectEvents"][string][];
+} {
+  const projectEvents = Object.values(input.snapshot.entities.projectEvents)
+    .filter((event) => event.projectId === input.projectId)
+    .sort(eventOrder);
+  if (input.target.kind === "project") return { objects: input.objects, events: projectEvents };
+  if (input.target.kind === "delta") {
+    const cursor = input.snapshot.entities.projectEvents[input.target.watermark.projectEventId];
+    if (
+      cursor?.projectId !== input.projectId ||
+      cursor.recordedAt !== input.target.watermark.recordedAt ||
+      cursor.payloadSha256 !== input.target.watermark.payloadSha256
+    ) {
+      throw forbidden("Delta Context Event Cursor/Watermark不匹配");
+    }
+    const cursorIndex = projectEvents.findIndex(
+      (event) => event.projectEventId === cursor.projectEventId,
+    );
+    const events = projectEvents.slice(cursorIndex + 1);
+    const eventIds = new Set(events.map((event) => event.projectEventId));
+    const subjectKeys = new Set(
+      events.map((event) => `${event.subject.kind}\0${event.subject.objectId}`),
+    );
+    return {
+      objects: input.objects.filter(
+        (item) =>
+          (item.kind === "event" && eventIds.has(item.objectId as never)) ||
+          subjectKeys.has(`${item.kind}\0${item.objectId}`),
+      ),
+      events,
+    };
+  }
+
+  const target = input.target;
+  assertTargetWork(input.snapshot, input.projectId, target);
+  const relatedToWork = (item: ProjectObjectSummaryDto): boolean =>
+    (item.kind === "work" && item.objectId === target.workId) ||
+    item.relationIds.includes(target.workId);
+  if (target.kind === "review") {
+    const subject = input.objects.find(
+      (item) => item.kind === target.subject.kind && item.objectId === target.subject.objectId,
+    );
+    if (
+      subject === undefined ||
+      subject.revision !== target.subject.revision ||
+      reviewTargetSha256(subject) !== target.subject.sha256 ||
+      (!relatedToWork(subject) && !(subject.kind === "work" && subject.objectId === target.workId))
+    ) {
+      throw forbidden("Review Context被审对象Ref或Work绑定不匹配");
+    }
+  }
+  const objects = input.objects.filter(
+    (item) =>
+      relatedToWork(item) ||
+      (target.kind === "review" &&
+        item.kind === target.subject.kind &&
+        item.objectId === target.subject.objectId),
+  );
+  const relatedObjectKeys = new Set(objects.map((item) => `${item.kind}\0${item.objectId}`));
+  const events = projectEvents.filter(
+    (event) =>
+      event.subject.objectId === target.workId ||
+      relatedObjectKeys.has(`${event.subject.kind}\0${event.subject.objectId}`),
+  );
+  return { objects, events };
+}
+
+/**
+ * 新代Context把六种Purpose绑定到精确Project、Work、Review对象或Event Watermark。
+ * 旧v1编译器只为历史客户端保留，Opening与新公开Query均使用本入口。
+ */
+export async function compileProjectAgentContextV2(
+  deps: ApplicationDeps,
+  input: {
+    readonly principalId: PrincipalId;
+    readonly projectId: string;
+    readonly purpose: ProjectContextPurpose;
+    readonly target: ProjectAgentContextV2Target;
+  },
+): Promise<{ context: ProjectAgentContextV2Dto }> {
+  const request = projectAgentContextV2RequestSchema.parse({
+    purpose: input.purpose,
+    target: input.target,
+  });
+  const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
+  const project = ownedProject(snapshot, input.projectId, input.principalId);
+  const { configuration, profile } = currentConfiguration(snapshot, input.projectId);
+  const policy = profile.contextPolicies.find((candidate) => candidate.purpose === input.purpose);
+  if (policy === undefined) throw notFound(`Profile缺少Context政策:${input.purpose}`);
+  const scoped = selectContextV2Objects({
+    snapshot,
+    projectId: project.projectId,
+    target: request.target,
+    objects: allProjectObjectSummaries(snapshot, project.projectId),
+  });
+  const allObjects = scoped.objects
+    .filter((item) => policy.objectKinds.includes(item.kind))
+    .sort((a, b) =>
+      (b.updatedAt ?? b.occurredAt ?? "").localeCompare(a.updatedAt ?? a.occurredAt ?? ""),
+    );
+  const omissions: string[] = [];
+  const selected: Array<ProjectObjectSummaryDto & { summary: string }> = [];
+  let usedCharacters = 0;
+  for (const item of allObjects) {
+    if (selected.length >= policy.maxObjects) {
+      omissions.push(`达到maxObjects=${String(policy.maxObjects)}，省略剩余对象`);
+      break;
+    }
+    const text = contextSummary(item);
+    if (usedCharacters + text.length > policy.maxCharacters) {
+      omissions.push(`达到maxCharacters=${String(policy.maxCharacters)}，省略对象${item.objectId}`);
+      continue;
+    }
+    usedCharacters += text.length;
+    selected.push({ ...item, summary: text });
+  }
+  const recentEventIds = [...scoped.events]
+    .sort((left, right) => eventOrder(right, left))
+    .slice(0, policy.recentEventLimit)
+    .map((event) => event.projectEventId);
+  const compiledAt = deps.now();
+  const hashInput = {
+    purpose: request.purpose,
+    target: request.target,
+    projectId: project.projectId,
+    profileRevisionId: profile.projectProfileRevisionId,
+    profileRevisionSha256: profile.sha256,
+    configurationRevisionId: configuration.projectConfigurationRevisionId,
+    configurationRevisionSha256: configuration.sha256,
+    objective: configuration.objective,
+    timezone: configuration.timezone,
+    schedulePolicy: configuration.schedulePolicy,
+    items: selected,
+    resourceBindings: configuration.resourceBindings,
+    recentEventIds,
+    requiredReads: configuration.requiredReads,
+    omissions,
+    compiledAt,
+  };
+  return {
+    context: projectAgentContextV2DtoSchema.parse({
+      schemaVersion: PROJECT_AGENT_CONTEXT_V2_VERSION,
+      ...hashInput,
+      sha256: hashCanonical(PROJECT_AGENT_CONTEXT_V2_VERSION, hashInput),
+    }),
+  };
 }
 
 export async function evaluateProjectMaintenance(

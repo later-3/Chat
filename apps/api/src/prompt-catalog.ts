@@ -305,22 +305,41 @@ export async function createFilePromptCatalog(
       throw new Error(`Agent工具重复:${agent.agentKey}`);
     }
   }
-  const agents =
-    env.CHAT_PLANE_ENABLED === "1"
-      ? manifest.agents
-      : manifest.agents.filter((agent) => agent.agentKey !== "project_bootstrap");
+  const planeEnabled = env.CHAT_PLANE_ENABLED === "1";
+  const hiddenAgentKeys = new Set(planeEnabled ? [] : ["project_bootstrap"]);
+  const hiddenBuiltinRevisionIds = new Set(
+    manifest.agents
+      .filter((agent) => hiddenAgentKeys.has(agent.agentKey))
+      .flatMap((agent) =>
+        agent.defaultPrompt.promptFragmentRevisionId === undefined
+          ? []
+          : [agent.defaultPrompt.promptFragmentRevisionId],
+      ),
+  );
+  const agents = manifest.agents.filter((agent) => !hiddenAgentKeys.has(agent.agentKey));
+  const discoverableBuiltinFragments = builtinFragments.filter(
+    (fragment) => !hiddenBuiltinRevisionIds.has(fragment.promptFragmentRevisionId),
+  );
   const snapshot: PromptCatalogSnapshot = {
     catalogSha256: hashCanonical("prompt-catalog.v1", {
       catalogRevision: manifest.catalogRevision,
       sharedSelectionProfile: manifest.sharedSelectionProfile,
       agents,
       regions,
-      builtinFragments: builtinFragments.map(({ content: _content, ...item }) => item),
+      builtinFragments: discoverableBuiltinFragments.map(({ content: _content, ...item }) => item),
     }),
     sharedSelectionProfile: manifest.sharedSelectionProfile,
     regions,
-    builtinFragments,
+    builtinFragments: discoverableBuiltinFragments,
     agents,
   };
-  return { load: async () => structuredClone(snapshot) };
+  return {
+    load: async () => structuredClone(snapshot),
+    resolveBuiltinRevision: async (input) => {
+      const revision = builtinFragments.find(
+        (candidate) => candidate.promptFragmentRevisionId === input.promptFragmentRevisionId,
+      );
+      return revision?.sha256 === input.sha256 ? structuredClone(revision) : undefined;
+    },
+  };
 }

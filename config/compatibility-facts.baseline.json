@@ -24,6 +24,7 @@
         "chat-workflow-execution-trace.v1",
         "content-lab-plane-rollout.v1",
         "plane-project-coordination.v2",
+        "project-agent-context.v2",
         "project-agent-coordination.v1",
         "project-bootstrap.v1",
         "project-inbound-change.v1",
@@ -125,6 +126,13 @@
           "identity": "plane-project-coordination.v2"
         },
         {
+          "canonicalSha256": "87aff72917b29183825e19205e92cb16b44f5790e18f66a5e265dbc905201409",
+          "evidenceCount": 1,
+          "family": "project-agent-context.",
+          "generation": 2,
+          "identity": "project-agent-context.v2"
+        },
+        {
           "canonicalSha256": "8ffe15fb0db4db98e2ed663916b9686bf39df37f6bef0f58ca7b124cd2ded01b",
           "evidenceCount": 1,
           "family": "project-agent-coordination.",
@@ -171,7 +179,7 @@
       "id": "network-contracts",
       "legacyAuthority": {
         "allowedActions": ["decode", "project"],
-        "canonicalSha256": "98037bbc5cba31cb250852fef613624bc21d42f67e6d47d57c133fa14cb10a96",
+        "canonicalSha256": "495e8153e102e66600ad1dbef8b8c365d7c68e4522b04b95aee63f14ca6a14ad",
         "entry": "@chat/contracts/public:decode-old",
         "generations": ["chat-agent-profile-api.v2", "chat-project-api.v2"]
       },
@@ -179,7 +187,7 @@
       "sourceFiles": ["config/api-surface.baseline.json", "packages/contracts/src/public.ts"],
       "writeAuthority": {
         "allowedActions": ["validate", "write_current_response"],
-        "canonicalSha256": "98037bbc5cba31cb250852fef613624bc21d42f67e6d47d57c133fa14cb10a96",
+        "canonicalSha256": "495e8153e102e66600ad1dbef8b8c365d7c68e4522b04b95aee63f14ca6a14ad",
         "entry": "apps/api:createApiApp",
         "generations": [
           "chat-agent-profile-api.v3",
@@ -193,6 +201,7 @@
           "chat-workflow-execution-trace.v1",
           "content-lab-plane-rollout.v1",
           "plane-project-coordination.v2",
+          "project-agent-context.v2",
           "project-agent-coordination.v1",
           "project-bootstrap.v1",
           "project-inbound-change.v1",
@@ -1601,6 +1610,7 @@
         "chat-workflow-execution-trace.v1",
         "content-lab-plane-rollout.v1",
         "plane-project-coordination.v2",
+        "project-agent-context.v2",
         "project-agent-coordination.v1",
         "project-bootstrap.v1",
         "project-inbound-change.v1",
@@ -1702,6 +1712,13 @@
           "identity": "plane-project-coordination.v2"
         },
         {
+          "canonicalSha256": "87aff72917b29183825e19205e92cb16b44f5790e18f66a5e265dbc905201409",
+          "evidenceCount": 1,
+          "family": "project-agent-context.",
+          "generation": 2,
+          "identity": "project-agent-context.v2"
+        },
+        {
           "canonicalSha256": "8ffe15fb0db4db98e2ed663916b9686bf39df37f6bef0f58ca7b124cd2ded01b",
           "evidenceCount": 1,
           "family": "project-agent-coordination.",
@@ -1774,6 +1791,7 @@
           "chat-workflow-execution-trace.v1",
           "content-lab-plane-rollout.v1",
           "plane-project-coordination.v2",
+          "project-agent-context.v2",
           "project-agent-coordination.v1",
           "project-bootstrap.v1",
           "project-inbound-change.v1",

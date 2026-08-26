@@ -3,6 +3,7 @@ import { compileContentLabProjectContext } from "./project-content-context-use-c
 import {
   getProjectAgentOpeningPacket,
   getProjectAgentOpeningPacketV2,
+  getProjectAgentOpeningPacketV3,
 } from "./project-agent-coordination-use-cases.js";
 import { previewContentLabPlaneRollout } from "./content-lab-plane-rollout-use-cases.js";
 import {
@@ -18,6 +19,7 @@ import {
 import {
   compileProjectMethodSnapshotPolicies,
   computeProjectMethodSnapshotSha256,
+  hashCanonical,
 } from "@chat/domain";
 import type { ApplicationDeps } from "./deps.js";
 import { CommandIdReusedError } from "./errors.js";
@@ -47,7 +49,9 @@ import {
 } from "./project-management-use-cases.js";
 import {
   compileProjectAgentContext,
+  compileProjectAgentContextV2,
   getProjectHome,
+  queryProjectObjects,
 } from "./project-management-query-use-cases.js";
 
 const PRINCIPAL = "usr_contentlab" as PrincipalId;
@@ -1771,5 +1775,139 @@ describe("Generic Software Work Coordination纵向", () => {
     expect(reviewContext.context.items.map((item) => item.kind)).toEqual(
       expect.arrayContaining(["work", "review", "evidence"]),
     );
+
+    const second = await createProjectWork(f.deps, {
+      principalId: PRINCIPAL,
+      commandId: command("createsoftwareworksecond"),
+      projectId: f.projectId,
+      expectedProjectRevision: projectRevision(f),
+      payload: {
+        kind: "generic",
+        workKey: "github:issue:other",
+        title: "无关的同Project Work",
+        objective: "证明Context不会混入同Project的其他工作。",
+        acceptanceCriteria: ["只进入自己的Context"],
+        ownerParticipantId: f.ownerId,
+        dependsOn: [],
+        practiceRevisionIds: [],
+        resourceRefs: [],
+      },
+    });
+    const secondWork = second.project.works.find((work) => work.workKey === "github:issue:other");
+    if (secondWork === undefined) throw new Error("第二个Work未创建");
+    const exactWork = await compileProjectAgentContextV2(f.deps, {
+      principalId: PRINCIPAL,
+      projectId: f.projectId,
+      purpose: "work_execution",
+      target: { kind: "work", workId, workRevision: projectWork(f, workId).revision },
+    });
+    expect(exactWork.context.target).toEqual({
+      kind: "work",
+      workId,
+      workRevision: projectWork(f, workId).revision,
+    });
+    expect(exactWork.context.items.map((item) => item.objectId)).not.toContain(
+      secondWork.projectWorkId,
+    );
+    await expect(
+      compileProjectAgentContextV2(f.deps, {
+        principalId: PRINCIPAL,
+        projectId: f.projectId,
+        purpose: "handoff",
+        target: { kind: "work", workId, workRevision: projectWork(f, workId).revision - 1 },
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+
+    const workQuery = await queryProjectObjects(f.deps, {
+      principalId: PRINCIPAL,
+      projectId: f.projectId,
+      query: { kind: "work", view: "all", limit: 100 },
+    });
+    const firstSummary = workQuery.result.items.find((item) => item.objectId === workId)!;
+    const secondSummary = workQuery.result.items.find(
+      (item) => item.objectId === secondWork.projectWorkId,
+    )!;
+    await expect(
+      compileProjectAgentContextV2(f.deps, {
+        principalId: PRINCIPAL,
+        projectId: f.projectId,
+        purpose: "review",
+        target: {
+          kind: "review",
+          workId,
+          workRevision: projectWork(f, workId).revision,
+          subject: {
+            kind: "work",
+            objectId: secondSummary.objectId,
+            revision: secondSummary.revision,
+            sha256: hashCanonical("project-agent-review-target.v1", secondSummary) as never,
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    const reviewV2 = await compileProjectAgentContextV2(f.deps, {
+      principalId: PRINCIPAL,
+      projectId: f.projectId,
+      purpose: "review",
+      target: {
+        kind: "review",
+        workId,
+        workRevision: projectWork(f, workId).revision,
+        subject: {
+          kind: "work",
+          objectId: firstSummary.objectId,
+          revision: firstSummary.revision,
+          sha256: hashCanonical("project-agent-review-target.v1", firstSummary) as never,
+        },
+      },
+    });
+    expect(reviewV2.context.target.kind).toBe("review");
+
+    const events = Object.values(f.store.inspect().entities.projectEvents).sort(
+      (a, b) =>
+        a.recordedAt.localeCompare(b.recordedAt) ||
+        a.projectEventId.localeCompare(b.projectEventId),
+    );
+    const watermark = events[0]!;
+    const delta = await compileProjectAgentContextV2(f.deps, {
+      principalId: PRINCIPAL,
+      projectId: f.projectId,
+      purpose: "delta",
+      target: {
+        kind: "delta",
+        watermark: {
+          projectEventId: watermark.projectEventId,
+          recordedAt: watermark.recordedAt,
+          payloadSha256: watermark.payloadSha256,
+        },
+      },
+    });
+    expect(delta.context.recentEventIds).not.toContain(watermark.projectEventId);
+    await expect(
+      compileProjectAgentContextV2(f.deps, {
+        principalId: PRINCIPAL,
+        projectId: f.projectId,
+        purpose: "delta",
+        target: {
+          kind: "delta",
+          watermark: {
+            projectEventId: watermark.projectEventId,
+            recordedAt: watermark.recordedAt,
+            payloadSha256: "0".repeat(64) as never,
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    const openingV3 = await getProjectAgentOpeningPacketV3(f.deps, {
+      principalId: PRINCIPAL,
+      query: { projectId: f.projectId as never, includeResourceContext: false },
+    });
+    expect(openingV3.packet).toMatchObject({
+      schemaVersion: "project-agent-coordination.v3",
+      management: {
+        status: "ready",
+        context: { schemaVersion: "project-agent-context.v2", target: { kind: "project" } },
+      },
+    });
   });
 });

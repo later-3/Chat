@@ -92,6 +92,19 @@ function assertConfigurationReferences(
   projectId: string,
   payload: ProposeProjectConfigurationPayload,
 ): void {
+  const assertUnique = (values: readonly string[], label: string) => {
+    if (new Set(values).size !== values.length) throw revisionConflict(`${label}不能重复`);
+  };
+  assertUnique(payload.participantIds, "Participant");
+  assertUnique(
+    payload.resourceBindings.map((binding) => `${binding.projectResourceId}\0${binding.role}`),
+    "Resource Binding",
+  );
+  assertUnique(
+    payload.presentationBindings.map((binding) => `${binding.capability}\0${binding.mode}`),
+    "Presentation capability/mode",
+  );
+  assertUnique(payload.requiredReads, "Required Read");
   for (const participantId of payload.participantIds) {
     const participant = snapshot.entities.projectParticipants[participantId];
     if (participant?.projectId !== projectId || participant.status !== "active") {

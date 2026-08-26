@@ -103,7 +103,10 @@ function replayProbeDeps(deps: ApplicationDeps, calls: string[]): ApplicationDep
       artifact: () => fail("ids.artifact"),
       outbox: () => fail("ids.outbox"),
     },
-    promptCatalog: { load: async () => fail("promptCatalog.load") },
+    promptCatalog: {
+      load: async () => fail("promptCatalog.load"),
+      resolveBuiltinRevision: async () => fail("promptCatalog.resolveBuiltinRevision"),
+    },
     promptFiles: {
       publishRevision: async () => fail("promptFiles.publishRevision"),
       readRevision: async () => fail("promptFiles.readRevision"),

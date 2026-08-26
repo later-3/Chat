@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   createEmptySnapshot,
   projectAgentContextDtoSchema,
+  projectAgentContextV2DtoSchema,
+  projectAgentOpeningPacketV3ResponseSchema,
   projectHomeDtoSchema,
   projectMaintenancePlanDtoSchema,
   type PrincipalId,
@@ -273,6 +275,38 @@ describe("Project Management公开API纵向", () => {
     const context = projectAgentContextDtoSchema.parse(contextBody.context);
     expect(context.requiredReads).toEqual(["AGENTS.md", "PROJECT_STATE.md"]);
     expect(context.sha256).toMatch(/^[a-f0-9]{64}$/u);
+
+    const contextV2Response = await app.request(
+      `/api/projects/${PROJECT_ID}/contexts-v2/project_opening`,
+    );
+    expect(contextV2Response.status).toBe(200);
+    const contextV2Body = (await contextV2Response.json()) as { context: unknown };
+    const contextV2 = projectAgentContextV2DtoSchema.parse(contextV2Body.context);
+    expect(contextV2.target).toEqual({ kind: "project" });
+    expect(contextV2.sha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(
+      (
+        await app.request(
+          `/api/projects/${PROJECT_ID}/contexts-v2/work_execution?workId=pwk_missing`,
+        )
+      ).status,
+    ).toBe(400);
+
+    const openingV3Response = await app.request(
+      `/api/project-agent/opening-packet-v3?projectId=${PROJECT_ID}&includeResourceContext=false`,
+    );
+    expect(openingV3Response.status).toBe(200);
+    expect(
+      projectAgentOpeningPacketV3ResponseSchema.parse(await openingV3Response.json()),
+    ).toMatchObject({
+      packet: {
+        schemaVersion: "project-agent-coordination.v3",
+        management: {
+          status: "ready",
+          context: { schemaVersion: "project-agent-context.v2", target: { kind: "project" } },
+        },
+      },
+    });
 
     const maintenanceResponse = await app.request(
       `/api/projects/${PROJECT_ID}/maintenance?trigger=agent_started`,

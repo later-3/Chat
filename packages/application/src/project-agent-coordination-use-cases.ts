@@ -1,6 +1,7 @@
 import {
   projectAgentOpeningPacketSchema,
   projectAgentOpeningPacketV2Schema,
+  projectAgentOpeningPacketV3Schema,
   type PrincipalId,
   type ProductSnapshot,
   type Project,
@@ -8,6 +9,7 @@ import {
   type ProjectAgentOpeningPacketQuery,
   type ProjectAgentOpeningPacketV2,
   type ProjectAgentOpeningPacketV2Query,
+  type ProjectAgentOpeningPacketV3,
   type ProjectParticipant,
   type ProjectProviderBinding,
   type ProjectResource,
@@ -19,6 +21,7 @@ import { compileContentLabProjectContext } from "./project-content-context-use-c
 import { getPlaneProjectSnapshot } from "./plane-project-coordination-use-cases.js";
 import {
   compileProjectAgentContext,
+  compileProjectAgentContextV2,
   evaluateProjectMaintenance,
 } from "./project-management-query-use-cases.js";
 
@@ -58,7 +61,7 @@ export async function getProjectAgentOpeningPacket(
     readonly query: ProjectAgentOpeningPacketQuery;
   },
 ): Promise<{ packet: ProjectAgentOpeningPacket }> {
-  return compileProjectAgentOpeningPacket(deps, input, true) as Promise<{
+  return compileProjectAgentOpeningPacket(deps, input, "v1") as Promise<{
     packet: ProjectAgentOpeningPacket;
   }>;
 }
@@ -71,8 +74,21 @@ export async function getProjectAgentOpeningPacketV2(
     readonly query: ProjectAgentOpeningPacketV2Query;
   },
 ): Promise<{ packet: ProjectAgentOpeningPacketV2 }> {
-  return compileProjectAgentOpeningPacket(deps, input, false) as Promise<{
+  return compileProjectAgentOpeningPacket(deps, input, "v2") as Promise<{
     packet: ProjectAgentOpeningPacketV2;
+  }>;
+}
+
+/** 新普通Opening使用精确Project目标Context；v2入口继续为旧Bridge只读保留。 */
+export async function getProjectAgentOpeningPacketV3(
+  deps: ApplicationDeps,
+  input: {
+    readonly principalId: PrincipalId;
+    readonly query: ProjectAgentOpeningPacketV2Query;
+  },
+): Promise<{ packet: ProjectAgentOpeningPacketV3 }> {
+  return compileProjectAgentOpeningPacket(deps, input, "v3") as Promise<{
+    packet: ProjectAgentOpeningPacketV3;
   }>;
 }
 
@@ -82,8 +98,11 @@ async function compileProjectAgentOpeningPacket(
     readonly principalId: PrincipalId;
     readonly query: ProjectAgentOpeningPacketQuery | ProjectAgentOpeningPacketV2Query;
   },
-  includeProviderCoordination: boolean,
-): Promise<{ packet: ProjectAgentOpeningPacket | ProjectAgentOpeningPacketV2 }> {
+  version: "v1" | "v2" | "v3",
+): Promise<{
+  packet: ProjectAgentOpeningPacket | ProjectAgentOpeningPacketV2 | ProjectAgentOpeningPacketV3;
+}> {
+  const includeProviderCoordination = version === "v1";
   const resolved = await resolveProject(deps, input.principalId, input.query);
   const { snapshot, project, participant, resource } = resolved;
   const method = snapshot.entities.projectMethodSnapshots[project.methodSnapshotId];
@@ -156,9 +175,12 @@ async function compileProjectAgentOpeningPacket(
     : [];
 
   const packetInput = {
-    schemaVersion: includeProviderCoordination
-      ? "project-agent-coordination.v1"
-      : "project-agent-coordination.v2",
+    schemaVersion:
+      version === "v1"
+        ? "project-agent-coordination.v1"
+        : version === "v2"
+          ? "project-agent-coordination.v2"
+          : "project-agent-coordination.v3",
     resolution: {
       projectId: project.projectId,
       sources: resolved.sources,
@@ -236,12 +258,21 @@ async function compileProjectAgentOpeningPacket(
       work: currentWork,
       include: input.query.includeResourceContext,
     }),
-    management: await managementProjection(deps, input.principalId, snapshot, project),
+    management: await managementProjection(
+      deps,
+      input.principalId,
+      snapshot,
+      project,
+      version === "v3",
+    ),
     generatedAt: deps.now(),
   };
-  const packet = includeProviderCoordination
-    ? projectAgentOpeningPacketSchema.parse(packetInput)
-    : projectAgentOpeningPacketV2Schema.parse(packetInput);
+  const packet =
+    version === "v1"
+      ? projectAgentOpeningPacketSchema.parse(packetInput)
+      : version === "v2"
+        ? projectAgentOpeningPacketV2Schema.parse(packetInput)
+        : projectAgentOpeningPacketV3Schema.parse(packetInput);
   return { packet };
 }
 
@@ -250,7 +281,10 @@ async function managementProjection(
   principalId: PrincipalId,
   snapshot: ProductSnapshot,
   project: Project,
-): Promise<NonNullable<ProjectAgentOpeningPacket["management"]>> {
+  contextV2: boolean,
+): Promise<
+  NonNullable<ProjectAgentOpeningPacket["management"] | ProjectAgentOpeningPacketV3["management"]>
+> {
   const hasAdoptedConfiguration = Object.values(
     snapshot.entities.projectConfigurationRevisions,
   ).some(
@@ -262,6 +296,22 @@ async function managementProjection(
       status: "not_configured",
       reason: "Project尚未采用工具无关的管理Configuration；旧协调事实仍可读取。",
     };
+  }
+  if (contextV2) {
+    const [{ context }, { maintenance }] = await Promise.all([
+      compileProjectAgentContextV2(deps, {
+        principalId,
+        projectId: project.projectId,
+        purpose: "project_opening",
+        target: { kind: "project" },
+      }),
+      evaluateProjectMaintenance(deps, {
+        principalId,
+        projectId: project.projectId,
+        trigger: "agent_started",
+      }),
+    ]);
+    return { status: "ready", context, maintenance };
   }
   const [{ context }, { maintenance }] = await Promise.all([
     compileProjectAgentContext(deps, {

@@ -2472,6 +2472,7 @@ describe("公开产品API", () => {
           await compileGate;
           return originalCatalog.load();
         },
+        resolveBuiltinRevision: (input) => originalCatalog.resolveBuiltinRevision(input),
       },
     };
     const slowApp = createApiApp({
@@ -3624,5 +3625,39 @@ describe("公开产品API", () => {
     expect(agentProfileDtoSchema.parse(await restoredResponse.json()).systemPrompt.source).toBe(
       "runtime_default",
     );
+  });
+
+  it("默认Prompt Studio的Agent、Fragment、Detail与Tool均不发现Plane历史定义", async () => {
+    const { deps } = await testApp();
+    const promptCatalog = await createFilePromptCatalog(undefined, {});
+    const app = createApiApp({
+      traceSink: null,
+      product: {
+        deps: { ...deps, promptCatalog },
+        principalId: DEBUG_PRINCIPAL_ID,
+        planeEnabled: false,
+      },
+      internalRuntime: { credential: "rtk_test" },
+    });
+
+    const profilesResponse = await app.request("/api/agent-profiles");
+    expect(profilesResponse.status).toBe(200);
+    const profilesJson = JSON.stringify(await profilesResponse.json());
+    expect(profilesJson).not.toContain("project_bootstrap");
+    expect(profilesJson).not.toContain("project_bootstrap_prepare");
+    expect(profilesJson).not.toContain("Plane");
+    expect((await app.request("/api/agent-profiles/project_bootstrap")).status).toBe(404);
+
+    const fragmentsResponse = await app.request("/api/prompt-fragments");
+    expect(fragmentsResponse.status).toBe(200);
+    const fragmentsJson = JSON.stringify(await fragmentsResponse.json());
+    expect(fragmentsJson).not.toContain("pfg_builtinprojectbootstrap");
+    expect(fragmentsJson).not.toContain("Plane");
+    expect((await app.request("/api/prompt-fragments/pfg_builtinprojectbootstrap")).status).toBe(
+      404,
+    );
+    expect(
+      (await app.request("/api/prompt-fragment-revisions/pfr_builtinprojectbootstrapv1")).status,
+    ).toBe(404);
   });
 });

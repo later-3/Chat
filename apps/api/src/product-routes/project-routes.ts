@@ -42,12 +42,15 @@ import {
   recordProjectContributionPayloadSchema,
   projectAgentOpeningPacketV2QuerySchema,
   projectAgentOpeningPacketV2ResponseSchema,
+  projectAgentOpeningPacketV3ResponseSchema,
   contentLabPlaneRolloutDryRunQuerySchema,
   contentLabPlaneRolloutDryRunResponseSchema,
   adoptProjectConfigurationPayloadSchema,
   adoptExistingPlaneProjectPayloadSchema,
   captureProjectNeedPayloadSchema,
   projectContextPurposeSchema,
+  projectManagedObjectKindSchema,
+  projectAgentContextV2RequestSchema,
   projectObjectQuerySchema,
   proposeProjectConfigurationPayloadSchema,
   proposeProjectRequirementPayloadSchema,
@@ -89,11 +92,13 @@ import {
   handoffProjectWork,
   observeProjectResource,
   getProjectAgentOpeningPacketV2,
+  getProjectAgentOpeningPacketV3,
   previewContentLabPlaneRollout,
   adoptProjectConfiguration,
   adoptExistingPlaneProject,
   captureProjectNeed,
   compileProjectAgentContext,
+  compileProjectAgentContextV2,
   evaluateProjectMaintenance,
   getProjectHome,
   queryProjectObjects,
@@ -144,6 +149,50 @@ export function registerProjectRoutes(router: ProductRouter, ctx: ProductRouteCo
       return c.json(
         projectAgentOpeningPacketV2ResponseSchema.parse(
           await getProjectAgentOpeningPacketV2(ctx.deps, {
+            principalId: ctx.principalId,
+            query,
+          }),
+        ),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/project-agent/opening-packet-v3", async (c) => {
+    try {
+      const params = strictQueryParams(
+        c.req.url,
+        [
+          "projectId",
+          "productSessionId",
+          "workspaceRootId",
+          "workKey",
+          "participantId",
+          "includeResourceContext",
+        ],
+        "Project Agent v3开工包查询",
+      );
+      const query = projectAgentOpeningPacketV2QuerySchema.parse({
+        ...(params.get("projectId") === null ? {} : { projectId: params.get("projectId") }),
+        ...(params.get("productSessionId") === null
+          ? {}
+          : { productSessionId: params.get("productSessionId") }),
+        ...(params.get("workspaceRootId") === null
+          ? {}
+          : { workspaceRootId: params.get("workspaceRootId") }),
+        ...(params.get("workKey") === null ? {} : { workKey: params.get("workKey") }),
+        ...(params.get("participantId") === null
+          ? {}
+          : { participantId: params.get("participantId") }),
+        ...(params.get("includeResourceContext") === null
+          ? {}
+          : { includeResourceContext: params.get("includeResourceContext") }),
+      });
+      return c.json(
+        projectAgentOpeningPacketV3ResponseSchema.parse(
+          await getProjectAgentOpeningPacketV3(ctx.deps, {
             principalId: ctx.principalId,
             query,
           }),
@@ -779,6 +828,94 @@ export function registerProjectRoutes(router: ProductRouter, ctx: ProductRouteCo
           principalId: ctx.principalId,
           projectId,
           purpose,
+        }),
+        200,
+      );
+    } catch (error) {
+      return mapError(c, error);
+    }
+  });
+
+  router.get("/projects/:projectId/contexts-v2/:purpose", async (c) => {
+    try {
+      const keys = [
+        "workId",
+        "workRevision",
+        "subjectKind",
+        "subjectId",
+        "subjectRevision",
+        "subjectSha256",
+        "eventId",
+        "eventRecordedAt",
+        "eventPayloadSha256",
+      ] as const;
+      const params = strictQueryParams(c.req.url, [...keys], "Project Context v2查询");
+      const projectId = projectIdSchema.parse(c.req.param("projectId"));
+      const purpose = projectContextPurposeSchema.parse(c.req.param("purpose"));
+      const present = (key: (typeof keys)[number]) => params.get(key) !== null;
+      const requireOnly = (required: readonly (typeof keys)[number][]) => {
+        const requiredSet = new Set(required);
+        if (keys.some((key) => present(key) !== requiredSet.has(key))) {
+          throw new ApplicationError({
+            code: "validation_failed",
+            httpStatus: 400,
+            message: `${purpose} Context目标参数不完整或包含多余字段`,
+          });
+        }
+      };
+      const positiveRevision = (key: "workRevision" | "subjectRevision") =>
+        z.coerce.number().int().positive().parse(params.get(key));
+      const target =
+        purpose === "project_opening" || purpose === "maintenance"
+          ? (requireOnly([]), { kind: "project" as const })
+          : purpose === "work_execution" || purpose === "handoff"
+            ? (requireOnly(["workId", "workRevision"]),
+              {
+                kind: "work" as const,
+                workId: projectWorkIdSchema.parse(params.get("workId")),
+                workRevision: positiveRevision("workRevision"),
+              })
+            : purpose === "review"
+              ? (requireOnly([
+                  "workId",
+                  "workRevision",
+                  "subjectKind",
+                  "subjectId",
+                  "subjectRevision",
+                  "subjectSha256",
+                ]),
+                {
+                  kind: "review" as const,
+                  workId: projectWorkIdSchema.parse(params.get("workId")),
+                  workRevision: positiveRevision("workRevision"),
+                  subject: {
+                    kind: projectManagedObjectKindSchema.parse(params.get("subjectKind")),
+                    objectId: z.string().min(1).max(200).parse(params.get("subjectId")),
+                    revision: positiveRevision("subjectRevision"),
+                    sha256: z
+                      .string()
+                      .regex(/^[a-f0-9]{64}$/u)
+                      .parse(params.get("subjectSha256")),
+                  },
+                })
+              : (requireOnly(["eventId", "eventRecordedAt", "eventPayloadSha256"]),
+                {
+                  kind: "delta" as const,
+                  watermark: {
+                    projectEventId: z.string().min(1).max(200).parse(params.get("eventId")),
+                    recordedAt: z.iso.datetime().parse(params.get("eventRecordedAt")),
+                    payloadSha256: z
+                      .string()
+                      .regex(/^[a-f0-9]{64}$/u)
+                      .parse(params.get("eventPayloadSha256")),
+                  },
+                });
+      const request = projectAgentContextV2RequestSchema.parse({ purpose, target });
+      return c.json(
+        await compileProjectAgentContextV2(ctx.deps, {
+          principalId: ctx.principalId,
+          projectId,
+          ...request,
         }),
         200,
       );

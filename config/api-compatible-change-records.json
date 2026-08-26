@@ -4587,6 +4587,204 @@
       "owner": "Chat Contracts/Application/Product Store",
       "verification": "定向合同、Store迁移、Bridge纵向与API Surface治理门",
       "rollbackOrRemoval": "回退本集成提交；不删除历史Store事实"
+    },
+    {
+      "issueKind": "public_symbol_added",
+      "target": "PROJECT_AGENT_CONTEXT_V2_VERSION",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "7f4b258bc18c834db0ef1bc8c2d6a5d49b2adb2e0cda7bfab3270713ffee491c",
+      "diffSha256": "61cbe53cf72a7c67e7dda6c2a154fd3b48839956f510aed5dd8e1d7658e5ae42",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "public_symbol_added",
+      "target": "PROJECT_AGENT_COORDINATION_V3_SCHEMA_VERSION",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "c8234d45c741bf105a52b7e8da029461678358c3dc0b47538e70b5f4d0010948",
+      "diffSha256": "4057d776a995695a220ee6c66b60eb10e712db442cc5466acd4bcec5a653f8ef",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "public_symbol_added",
+      "target": "ProjectAgentContextV2Dto",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "c657c0f343bb61f968a1fef30423bd4a51229df37144783cf1f310cb43bdc1c7",
+      "diffSha256": "b583d325b96c047b689a9c1189c8e4270a93fa85f74934575f6dacb84089ff71",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "public_symbol_added",
+      "target": "projectAgentContextV2DtoSchema",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "49e7a25b783b064c7b2121769de2dcb11911b6648052d8cd6e40c8193561abfe",
+      "diffSha256": "bcf48256f98a31f0482b9ac39ca044af12a58c7341d475fa8f738f6e72ae0377",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "public_symbol_added",
+      "target": "ProjectAgentContextV2Request",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "7d525b3184cd491d666b00d0363d2740e761a2422d76879ecb0d62c35ee290f5",
+      "diffSha256": "bddbdffdd3ae54ed41f7d258444110f21e4d21a34e4e6ee60fba2e38a8c2521e",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "public_symbol_added",
+      "target": "projectAgentContextV2RequestSchema",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "c40a5d4c82e0eb9224e63381526df7d9c62a9bf7ee2f8842d627ec6956bf4fa9",
+      "diffSha256": "f85b781b8047e2f36435a558140bbbe235d9a38ee8ec40a819115af8f422403f",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "public_symbol_added",
+      "target": "ProjectAgentContextV2Target",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "390b3994f8b39223782efe1af6eb131a5d57fd75f246e30c48479d8a92379e98",
+      "diffSha256": "a624e7a9e786dea3a3d3f7f2aac490edce4316518130f123d3494468a763c9b2",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "public_symbol_added",
+      "target": "projectAgentContextV2TargetSchema",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "66edaddffbdb5d8cbd2676ea104ac68dc47b2e9a89d3e59c5f8a3bd90e112e63",
+      "diffSha256": "b22dd9e4eca41b408d75561b89324064932d624d00a7abda142272397f1bf9b0",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "public_symbol_added",
+      "target": "ProjectAgentOpeningPacketV3",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "72ac28c8aa4cfb0dd665ce0e10598277921bad2169fd0b838f8cf3a9417dfa1e",
+      "diffSha256": "ecc09c3930089f6409022a6c0ace1b38638382ffd2ff2f79b4177a54369df679",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "public_symbol_added",
+      "target": "projectAgentOpeningPacketV3ResponseSchema",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "8ded6d3060c5afa858df579b6931ff24c4aec0d61bff639f859ba1bdf4a1fdb1",
+      "diffSha256": "825279e9cc0a41249305cdd570e11c57c29c264d265c20091d2070eae48c2b39",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "public_symbol_added",
+      "target": "projectAgentOpeningPacketV3Schema",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "be9c09d57837b8323c1d1e3923c041b7e60a1860b369af2d8129105b9193c702",
+      "diffSha256": "d614197f47cbce83c3c533d341b18ddc9f16d156035be84593ce1b950814c653",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "route_added",
+      "target": "GET /api/project-agent/opening-packet-v3",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "5a17d62e6c38ddeb59e4d2d9a2b9e4ca8f475eba90dbd3c2be723ab476364537",
+      "diffSha256": "28d26bb60c0685ed41658387e4fd7b1bf1a9ea9060f087afb513cffbc75e46e6",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "route_added",
+      "target": "GET /api/projects/:projectId/contexts-v2/:purpose",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "2b702e99334afe01c1b97f334bc936ffe68160a886f04b05c8faf737a144a063",
+      "diffSha256": "0c3fec305fed73c44b63b9111ba202aa02ba22742f7a2bf5e600649a4874c77e",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "schema_added",
+      "target": "projectAgentContextV2DtoSchema",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "fbc5177e1340463034c5b09b823ce76dd57559d287b92249356991c39d6438e5",
+      "diffSha256": "74b840efda11310665490872cb36f4fc8c59676471fc41d24d69ad9dd52e5fc0",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "schema_added",
+      "target": "projectAgentContextV2RequestSchema",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "a3f102d9ee2e2b42dd3d57f7b33ae11245e56f5243c3564fd1fc7aa76b01be4c",
+      "diffSha256": "e9ce05d88e0ecf03e5dc494ae1c14367e94af7f80a503fdc0e650e3d743a2a99",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "schema_added",
+      "target": "projectAgentContextV2TargetSchema",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "eb10b41816ef859070c26ee7fb09ca4e07bcc562c6e8874a9acd34b4b91ed54c",
+      "diffSha256": "738f189c399e1af7602a9c3afd87779de0710b2ba2daf5295ed8d94b148c0757",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "schema_added",
+      "target": "projectAgentOpeningPacketV3ResponseSchema",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "a5a643af38584b9abbb19b5f1701b7bf6c492311d109bc5669b1374347742c86",
+      "diffSha256": "ffabb0ff416ee3351bac3e86c218bb015fbe5aff4735a4252d7d7cdb38e79471",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
+    },
+    {
+      "issueKind": "schema_added",
+      "target": "projectAgentOpeningPacketV3Schema",
+      "baseDigest": "c6be6f8d284a2429dd91328978294763f5cfbc1d09e250b1d66a4998e4ae80a0",
+      "currentDigest": "cf762af09b6e9fc27dae77c8fe1992a2114c5c88af6bae2d387f06d0f3455ff1",
+      "diffSha256": "07491b5c5607e55e6bb8ecac5bc6ae83d6b5add69f5c582dd54013844909149b",
+      "purpose": "发布精确目标Project Agent Context v2与普通Opening Packet v3，保留v1/v2只读",
+      "owner": "Chat Contracts/Application/API",
+      "verification": "Contracts/Application/API合同测试、API Surface与compatibility门",
+      "rollbackOrRemoval": "移除v2/v3新路由与导出；旧v1/v2读取合同不变"
     }
   ]
 }

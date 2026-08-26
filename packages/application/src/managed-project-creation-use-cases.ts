@@ -51,6 +51,14 @@ export async function createManagedProject(
     readonly payload: CreateManagedProjectPayload;
   },
 ): Promise<{ project: ProjectWorkspaceDto }> {
+  if (
+    new Set(
+      input.payload.presentationBindings.map((binding) => `${binding.capability}\0${binding.mode}`),
+    ).size !== input.payload.presentationBindings.length ||
+    new Set(input.payload.requiredReads).size !== input.payload.requiredReads.length
+  ) {
+    throw revisionConflict("Presentation capability/mode或Required Read不能重复");
+  }
   const descriptor = requireProjectRoots(deps)
     .list()
     .find((root) => root.rootId === input.payload.rootId);
