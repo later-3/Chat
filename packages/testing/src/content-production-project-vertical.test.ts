@@ -953,7 +953,6 @@ describe("Content Production × Plane P5真实Json纵向", () => {
     ).resolves.toEqual(reconciled);
     const openingPacket = await getProjectAgentOpeningPacket(deps, {
       principalId: OWNER,
-      includeProviderCoordination: true,
       query: {
         workspaceRootId: "root_contentlab" as never,
         participantId: f.agentIds[0],

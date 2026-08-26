@@ -10,6 +10,7 @@ import {
   planeProjectSnapshotSchema,
   planeWorkItemCommentsSnapshotSchema,
   projectDecisionSchema,
+  projectEventSchema,
   projectInboundChangeSchema,
   projectProviderBindingSchema,
   projectProviderProjectionSchema,
@@ -1575,7 +1576,7 @@ export async function resolvePlaneProjectInboundChange(
       const nextWorkRevision =
         input.disposition === "adopt_plane" ? currentWork.revision + 1 : currentWork.revision;
       if (input.disposition === "adopt_plane") {
-        draft.entities.projectWorks[currentWork.projectWorkId] = {
+        const nextWork = {
           ...currentWork,
           ...(current.after.name === undefined ? {} : { title: current.after.name }),
           objective: current.after.description!,
@@ -1583,6 +1584,41 @@ export async function resolvePlaneProjectInboundChange(
           revision: nextWorkRevision,
           updatedAt: strictlyAfter(currentWork.updatedAt, now),
         };
+        draft.entities.projectWorks[currentWork.projectWorkId] = nextWork;
+        const projectEventId = `pev_${hashCanonical("id.project-coordination-event.v1", {
+          commandId: input.commandId,
+          projectId: current.projectId,
+          eventType: "work.provider-metadata-adopted",
+          subject: { kind: "work", objectId: currentWork.projectWorkId },
+        }).slice(0, 24)}`;
+        draft.entities.projectEvents[projectEventId] = projectEventSchema.parse({
+          schemaVersion: "project-event.v1",
+          projectEventId,
+          projectId: current.projectId,
+          eventType: "work.provider-metadata-adopted",
+          subject: { kind: "work", objectId: currentWork.projectWorkId },
+          source: {
+            kind: "user",
+            principalId: input.principalId,
+            participantId: human.projectParticipantId,
+          },
+          occurredAt: now,
+          observedAt: now,
+          recordedAt: now,
+          beforeRevision: currentWork.revision,
+          afterRevision: nextWork.revision,
+          payloadSha256: hashCanonical("project-coordination-event-payload.v1", {
+            changeId: current.projectInboundChangeId,
+            decisionId,
+            title: nextWork.title,
+            objective: nextWork.objective,
+            priority: nextWork.priority,
+          }),
+          evidenceIds: [],
+          revision: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
       }
       draft.entities.projectProviderProjections[currentProjection.projectProviderProjectionId] =
         projectProviderProjectionSchema.parse({
@@ -2246,13 +2282,46 @@ export async function syncPlaneProject(
             if (current?.revision !== expectedWorkRevision) {
               throw revisionConflict("Plane元数据采用期间Work revision发生变化");
             }
-            draft.entities.projectWorks[change.workId] = {
+            const nextWork = {
               ...current,
               ...(nameChanged ? { title: change.after.name! } : {}),
               ...(priorityChanged ? { priority: change.after.priority! } : {}),
               revision: current.revision + 1,
               updatedAt: strictlyAfter(current.updatedAt, metadataAt),
             };
+            draft.entities.projectWorks[change.workId] = nextWork;
+            const projectEventId = `pev_${hashCanonical("id.project-coordination-event.v1", {
+              commandId: metadataCommandId,
+              projectId: change.projectId,
+              eventType: "work.provider-metadata-adopted",
+              subject: { kind: "work", objectId: current.projectWorkId },
+            }).slice(0, 24)}`;
+            draft.entities.projectEvents[projectEventId] = projectEventSchema.parse({
+              schemaVersion: "project-event.v1",
+              projectEventId,
+              projectId: change.projectId,
+              eventType: "work.provider-metadata-adopted",
+              subject: { kind: "work", objectId: current.projectWorkId },
+              source: {
+                kind: "user",
+                principalId: input.principalId,
+                participantId: human.projectParticipantId,
+              },
+              occurredAt: metadataAt,
+              observedAt: metadataAt,
+              recordedAt: metadataAt,
+              beforeRevision: current.revision,
+              afterRevision: nextWork.revision,
+              payloadSha256: hashCanonical("project-coordination-event-payload.v1", {
+                changeId,
+                title: nextWork.title,
+                priority: nextWork.priority,
+              }),
+              evidenceIds: [],
+              revision: 1,
+              createdAt: metadataAt,
+              updatedAt: metadataAt,
+            });
             return { resultRefs: { projectWorkId: current.projectWorkId } };
           },
         });
