@@ -62,7 +62,7 @@ interface ResolvedExecutionStep {
 }
 
 /**
- * 只沿Approved Plan的Planning Attempt所绑定Memory/Project/Rules冻结事实解析当前Step。
+ * 只沿Approved Plan的Planning Attempt所绑定Memory/Rules冻结事实解析当前Step。
  * 任何跨选择、缺失或版本/Hash偏差都在进入Executor前失败关闭。
  */
 function resolveExecutionStepContext(
@@ -138,18 +138,6 @@ function resolveExecutionStepContext(
       workflowMemoryContext.sha256 !== planningAttempt.workflowMemoryContextSha256)
   ) {
     throw revisionConflict("Approved Plan绑定的Workflow Memory Context不存在或Hash不一致");
-  }
-  const projectContext =
-    planningAttempt.planningProjectContextId === undefined
-      ? undefined
-      : snapshot.entities.planningProjectContexts[planningAttempt.planningProjectContextId];
-  if (
-    planningAttempt.planningProjectContextId !== undefined &&
-    (projectContext === undefined ||
-      projectContext.productRunId !== contract.productRunId ||
-      projectContext.sha256 !== planningAttempt.planningProjectContextSha256)
-  ) {
-    throw revisionConflict("Approved Plan绑定的Project Context不存在或Hash不一致");
   }
   const ruleSelection =
     planningAttempt.ruleSelectionId === undefined
@@ -249,23 +237,6 @@ function resolveExecutionStepContext(
         category: memory.category,
         labels: memory.labels,
         content: memory.content,
-      };
-    }
-    if (
-      projectContext !== undefined &&
-      projectContext.planningProjectContextId === ref.refId &&
-      projectContext.revision === ref.revision &&
-      projectContext.sha256 === ref.sha256
-    ) {
-      return {
-        contextKind: "project",
-        refId: projectContext.planningProjectContextId,
-        revision: projectContext.revision,
-        sha256: projectContext.sha256,
-        title: projectContext.snapshot.name,
-        projectId: projectContext.projectId,
-        projectRevision: projectContext.projectRevision,
-        snapshot: projectContext.snapshot,
       };
     }
     const selectedRule = ruleSelection?.selected.find(
@@ -584,35 +555,15 @@ export async function compileExecutionContract(
       );
       let workspaceRef: ExecutionContract["workspaceRef"];
       if (requiresWorkspace) {
-        const planningAttempt = draft.entities.attempts[plan.planningAttemptId];
-        const projectContext =
-          planningAttempt?.planningProjectContextId === undefined
+        const promptRef = workflowNodePromptFor(draft, input.productRunId, "agent.plan");
+        const promptAssembly =
+          promptRef === undefined
             ? undefined
-            : draft.entities.planningProjectContexts[planningAttempt.planningProjectContextId];
-        if (
-          planningAttempt?.kind !== "planning" ||
-          projectContext === undefined ||
-          projectContext.productRunId !== input.productRunId ||
-          projectContext.sha256 !== planningAttempt.planningProjectContextSha256
-        ) {
-          throw revisionConflict("Coding Capability必须绑定已冻结的Project Context");
+            : draft.entities.promptAssemblies[promptRef.promptAssemblyId];
+        if (promptAssembly?.workspaceRootId === undefined) {
+          throw revisionConflict("Coding Capability必须绑定受管Workspace");
         }
-        const workspaces = Object.values(draft.entities.projectResources).filter(
-          (resource) =>
-            resource.projectId === projectContext.projectId &&
-            resource.kind === "workspace" &&
-            resource.status === "active",
-        );
-        if (workspaces.length !== 1 || workspaces[0] === undefined) {
-          throw revisionConflict("Coding Capability必须绑定唯一活动Workspace资源");
-        }
-        const workspace = workspaces[0];
-        workspaceRef = {
-          projectId: workspace.projectId,
-          projectResourceId: workspace.projectResourceId,
-          rootId: workspace.rootId,
-          revision: workspace.revision,
-        };
+        workspaceRef = { rootId: promptAssembly.workspaceRootId };
       }
       const contract: ExecutionContract = {
         schemaVersion: "execution-contract.v1",

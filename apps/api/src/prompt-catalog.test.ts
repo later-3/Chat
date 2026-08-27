@@ -45,18 +45,16 @@ describe("File Prompt Catalog workspace instructions", () => {
 
     const catalog = await createFilePromptCatalog(repoRoot, {
       CHAT_PLATFORM_WORKSPACE_ROOT_ID: "root_chat",
-      CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
+      CHAT_WORKSPACE_ROOTS_JSON: JSON.stringify([
         {
           rootId: "root_chat",
           displayName: "Chat",
           canonicalPath: repoRoot,
-          enabledAdapters: [],
         },
         {
           rootId: "root_target",
           displayName: "Target",
           canonicalPath: target,
-          enabledAdapters: [],
         },
       ]),
     });

@@ -8,6 +8,7 @@ import {
   promptFragmentIdSchema,
   promptFragmentRevisionIdSchema,
   promptRegionDefinitionDtoSchema,
+  readWorkspaceRootConfig,
 } from "@chat/contracts";
 import type {
   BuiltinPromptFragmentRevision,
@@ -23,19 +24,6 @@ const relativePathSchema = z
   .min(1)
   .max(500)
   .refine((value) => !value.startsWith("/") && !value.split(/[\\/]/u).includes(".."));
-
-const promptWorkspaceConfigSchema = z
-  .array(
-    z
-      .object({
-        rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
-        displayName: z.string().min(1).max(160),
-        canonicalPath: z.string().min(1).max(2_000),
-        enabledAdapters: z.array(z.string()),
-      })
-      .strict(),
-  )
-  .max(20);
 
 const manifestSchema = z
   .object({
@@ -221,10 +209,7 @@ export async function createFilePromptCatalog(
     (item) => item.regionKey === "workspace_instructions",
   );
   if (workspaceInstructionsRegion !== undefined) {
-    let roots: z.infer<typeof promptWorkspaceConfigSchema> = [];
-    if (env.CHAT_PROJECT_ROOTS_JSON?.trim()) {
-      roots = promptWorkspaceConfigSchema.parse(JSON.parse(env.CHAT_PROJECT_ROOTS_JSON));
-    }
+    const roots = readWorkspaceRootConfig(env);
     const platformRootId = env.CHAT_PLATFORM_WORKSPACE_ROOT_ID?.trim() || "root_chat";
     for (const workspace of roots) {
       const canonicalRoot = await realpath(workspace.canonicalPath);

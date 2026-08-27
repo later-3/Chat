@@ -26,13 +26,6 @@ import { PromptStudioController } from "./prompt-studio-controller.ts";
 import { installPromptStudioStyles } from "./prompt-studio-styles.ts";
 import { PromptComposerController } from "./prompt-composer-controller.ts";
 import { PromptControlBar, type PromptControlBarInjected } from "./PromptControlBar.tsx";
-import { ProjectManagementController } from "./project-management-controller.ts";
-import { ProjectManagementView, type ProjectManagementInjected } from "./ProjectManagementView.tsx";
-import {
-  ProjectManagementSidebarAction,
-  ProjectManagementSurface,
-  type ProjectManagementNavigationInjected,
-} from "./ProjectManagementNavigation.tsx";
 
 export const name = "chat-dsh-lifeos-bridge-client";
 // Cordis只允许读取显式注入的Service。会话Dock会通过公开Sessions与Workspaces face
@@ -62,7 +55,6 @@ export function apply(ctx: ClientContext): void {
   }, "lifeos bridge: execution trace trajectory");
   const workbench = new WorkbenchSurfaceController();
   const promptStudio = new PromptStudioController();
-  const projectManagement = new ProjectManagementController();
   const controllers = new Map<SessionId, LifeosProjectionController>();
   const recordControllers = new Map<SessionId, SessionRecordsController>();
   const promptComposerControllers = new Map<SessionId, PromptComposerController>();
@@ -105,11 +97,6 @@ export function apply(ctx: ClientContext): void {
   );
 
   ctx.effect(() => () => promptStudio.dispose(), "lifeos bridge: prompt studio controller");
-  ctx.effect(
-    () => () => projectManagement.dispose(),
-    "lifeos bridge: project management controller",
-  );
-
   ctx.slots.inject("settings.section", () =>
     ctx.slots.register(
       {
@@ -174,43 +161,6 @@ export function apply(ctx: ClientContext): void {
     ),
   );
 
-  ctx.slots.inject("conversation.view", () =>
-    ctx.slots.register(
-      {
-        name: "conversation.view",
-        id: "lifeos-project-management",
-        order: 15,
-        label: () => "项目",
-        inject: (): ProjectManagementInjected => ({
-          hooks: { projectManagement },
-          refresh: () => projectManagement.refresh(),
-          select: (projectId) => projectManagement.select(projectId),
-          setQueryText: (value) => projectManagement.setQueryText(value),
-          setQueryKind: (value) => projectManagement.setQueryKind(value),
-          runQuery: () => projectManagement.runQuery(),
-        }),
-      },
-      ProjectManagementView,
-    ),
-  );
-
-  // Project是跨Session的产品视图。全局Sidebar入口保证空白新会话也能恢复项目上下文，
-  // conversation.view则保留已进入会话后的同一投影；两者共享控制器且不复制事实。
-  ctx.slots.inject("sidebar.footer.action", () =>
-    ctx.slots.register(
-      {
-        name: "sidebar.footer.action",
-        id: "lifeos-project-management",
-        order: 25,
-        inject: (): ProjectManagementNavigationInjected => ({
-          hooks: { projectManagement },
-          openProjectManagement: () => projectManagement.open(),
-        }),
-      },
-      ProjectManagementSidebarAction,
-    ),
-  );
-
   ctx.slots.inject("sidebar.footer.action", () =>
     ctx.slots.register(
       {
@@ -220,26 +170,6 @@ export function apply(ctx: ClientContext): void {
         inject: () => ({ workbench }),
       },
       CodeWorkbenchSidebarAction,
-    ),
-  );
-
-  ctx.slots.inject("shell.overlay", () =>
-    ctx.slots.register(
-      {
-        name: "shell.overlay",
-        id: "lifeos-project-management-surface",
-        order: 25,
-        inject: (): ProjectManagementInjected & { closeProjectManagement: () => void } => ({
-          hooks: { projectManagement },
-          refresh: () => projectManagement.refresh(),
-          select: (projectId) => projectManagement.select(projectId),
-          setQueryText: (value) => projectManagement.setQueryText(value),
-          setQueryKind: (value) => projectManagement.setQueryKind(value),
-          runQuery: () => projectManagement.runQuery(),
-          closeProjectManagement: () => projectManagement.close(),
-        }),
-      },
-      ProjectManagementSurface,
     ),
   );
 

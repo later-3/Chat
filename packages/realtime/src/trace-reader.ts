@@ -1,7 +1,49 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { traceEventSchema, type TraceEvent } from "@chat/contracts";
+import { z } from "zod";
 import { TRACE_FILE_PATTERN, resolveTraceDir } from "./trace-paths.js";
+
+const retiredProjectTraceEnvelopeSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    eventId: z.string().regex(/^[a-z][a-z0-9]*_[A-Za-z0-9-]{1,80}$/u),
+    timestamp: z.string().datetime({ offset: true }),
+    level: z.enum(["debug", "info", "warn", "error"]),
+    traceId: z.string().regex(/^[a-z][a-z0-9]*_[A-Za-z0-9-]{1,80}$/u),
+    spanId: z.string().regex(/^[a-z][a-z0-9]*_[A-Za-z0-9-]{1,80}$/u),
+    outcome: z.enum(["success", "failure", "rejected", "unknown"]),
+    eventName: z.enum([
+      "project.intake.started",
+      "project.intake.candidate_published",
+      "project.intake.confirmed",
+      "project.intake.rejected",
+      "project.advancement.started",
+      "project.advancement.candidate_published",
+      "project.advancement.confirmed",
+      "project.advancement.rejected",
+      "project.lifecycle.transitioned",
+      "project.stage.transitioned",
+      "project.milestone.transitioned",
+      "project.update.published",
+      "project.understanding.started",
+      "project.understanding.completed",
+      "project.understanding.failed",
+      "project.resource.observe.started",
+      "project.resource.observe.completed",
+      "project.resource.observe.failed",
+      "project.action.created",
+      "project.action.assigned",
+      "project.action.transitioned",
+      "project.decision.candidate",
+      "project.decision.committed",
+      "project.decision.rejected",
+      "project.contribution.candidate",
+      "project.contribution.committed",
+      "project.contribution.rejected",
+    ]),
+  })
+  .passthrough();
 
 /**
  * Trace Reader（任务书§7.4）。
@@ -63,6 +105,10 @@ export function readTraceEvents(query: TraceQuery): TraceEvent[] {
         parsed = JSON.parse(line);
       } catch {
         throw new TraceReadError(name, index + 1, "JSON解析失败，原始文件保持未修改");
+      }
+      // 已退役事件只作为原始JSONL历史证据保留，不再投影为当前Trace事件。
+      if (retiredProjectTraceEnvelopeSchema.safeParse(parsed).success) {
+        return;
       }
       const result = traceEventSchema.safeParse(parsed);
       if (!result.success) {

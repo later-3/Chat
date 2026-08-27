@@ -51,16 +51,11 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 const sharedEnvironment = {
   ...process.env,
   CHAT_REPO_ROOT: repoRoot,
-  CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
+  CHAT_WORKSPACE_ROOTS_JSON: JSON.stringify([
     {
       rootId: "root_chat",
       displayName: "Chat 工作区",
       canonicalPath: repoRoot,
-      enabledAdapters: [
-        "local-git-workspace.v1",
-        "project-document-manifest.v1",
-        "package-script-catalog.v1",
-      ],
     },
   ]),
   CHAT_RUNTIME_KEY: "rtk_dshreale2etestonly0000000000",

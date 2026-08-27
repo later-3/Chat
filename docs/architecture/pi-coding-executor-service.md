@@ -55,7 +55,7 @@ Planner只能从以下四种Capability请求能力，用户批准Plan后Applicat
 | `workspace_write` | 读工具 + `edit`、`write` |
 | `shell_execute` | 读工具 + `bash`；必须标记`high`风险 |
 
-任何非纯文本能力都必须绑定Planning时冻结的Project Context，并解析出唯一活动`ProjectResource`。Product Store只保存`projectId/projectResourceId/rootId/revision`；Executor Service用服务端`CHAT_PROJECT_ROOTS_JSON`把`rootId`解析为canonical path。canonical Host路径不会进入Product Store、Workflow checkpoint或Operation HTTP请求；Pi工具实际使用的模型可见相对路径会作为已脱敏、有界执行证据进入Journal/Trace。
+任何非纯文本能力都必须绑定Planning时冻结的`rootId`。Product Store只保存稳定Workspace Root身份；Executor Service用服务端`CHAT_WORKSPACE_ROOTS_JSON`把`rootId`解析为canonical path。canonical Host路径不会进入Product Store、Workflow checkpoint或Operation HTTP请求；Pi工具实际使用的模型可见相对路径会作为已脱敏、有界执行证据进入Journal/Trace。
 
 `read/grep/find/ls/edit/write`在awaited `tool_call`栅栏中拒绝`..`、Root外绝对路径与symlink逃逸；被拒绝的调用记录参数Hash、已脱敏显示输入和稳定错误码。`bash`与Pi CLI一样是本机用户权限下的高影响能力，不是文件系统或网络沙箱：它固定以Workspace为`cwd`，但命令本身仍可访问Host。为避免把Provider/Runtime秘密暴露给Shell，Executor只传递PATH、Locale、时区、终端和临时目录等白名单环境，并使用独立HOME；需要SSH、Git Credential或其他外部凭据时必须再引入显式Credential Provider，不能继承父进程秘密。
 

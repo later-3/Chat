@@ -57,75 +57,7 @@ import {
   assertSupervisedStepReviewRequestTransitionV3,
 } from "@chat/domain";
 import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
-import { migrateProductSnapshotV1ToV2, productSnapshotV1Schema } from "./migrate-v1-to-v2.js";
-import { migrateProductSnapshotV2ToV3, productSnapshotV2Schema } from "./migrate-v2-to-v3.js";
-import {
-  migrateProductSnapshotV3ToV4,
-  productSnapshotV3Schema,
-} from "./internal-compat/migrate-v3-to-v4.js";
-import { productSnapshotV4Schema } from "./internal-compat/legacy-v4.js";
-import { productSnapshotV5Schema } from "./internal-compat/legacy-v5.js";
-import { productSnapshotV6Schema, type ProductSnapshotV6 } from "./internal-compat/legacy-v6.js";
-import { productSnapshotV7Schema, type ProductSnapshotV7 } from "./internal-compat/legacy-v7.js";
-import { productSnapshotV8Schema, type ProductSnapshotV8 } from "./internal-compat/legacy-v8.js";
-import { productSnapshotV9Schema, type ProductSnapshotV9 } from "./internal-compat/legacy-v9.js";
-import { productSnapshotV10Schema, type ProductSnapshotV10 } from "./internal-compat/legacy-v10.js";
-import { productSnapshotV11Schema, type ProductSnapshotV11 } from "./internal-compat/legacy-v11.js";
-import { productSnapshotV12Schema, type ProductSnapshotV12 } from "./internal-compat/legacy-v12.js";
-import { productSnapshotV13Schema, type ProductSnapshotV13 } from "./internal-compat/legacy-v13.js";
-import { productSnapshotV14Schema, type ProductSnapshotV14 } from "./internal-compat/legacy-v14.js";
-import {
-  productSnapshotV15Schema,
-  type ProductSnapshotV15,
-} from "./internal-compat/legacy-v15-reader.js";
-import {
-  productSnapshotV16Schema,
-  type ProductSnapshotV16,
-} from "./internal-compat/legacy-v16-reader.js";
-import {
-  productSnapshotV17Schema,
-  type ProductSnapshotV17,
-} from "./internal-compat/legacy-v17-reader.js";
-import { productSnapshotV18Schema } from "./internal-compat/legacy-v18-reader.js";
-import { productSnapshotV19Schema } from "./internal-compat/legacy-v19-base.js";
-import { productSnapshotV20Schema } from "./legacy-v20.js";
-import { productSnapshotV20CapabilitySchema } from "./internal-compat/legacy-v20-capability-reader.js";
-import { productSnapshotV21Schema } from "./legacy-v21.js";
-import { productSnapshotV22Schema } from "./legacy-v22.js";
-import { productSnapshotV23Schema, type ProductSnapshotV23 } from "./legacy-v23.js";
-import { productSnapshotV24Schema } from "./legacy-v24.js";
-import { productSnapshotV25Schema } from "./legacy-v25.js";
-import { migrateProductSnapshotV4ToV5 } from "./internal-compat/migrate-v4-to-v5.js";
-import { migrateProductSnapshotV5ToV6 } from "./internal-compat/migrate-v5-to-v6.js";
-import { migrateProductSnapshotV6ToV7 } from "./internal-compat/migrate-v6-to-v7.js";
-import { migrateProductSnapshotV7ToV8 } from "./internal-compat/migrate-v7-to-v8.js";
-import { migrateProductSnapshotV8ToV9 } from "./internal-compat/migrate-v8-to-v9.js";
-import { migrateProductSnapshotV9ToV10 } from "./internal-compat/migrate-v9-to-v10.js";
-import { migrateProductSnapshotV10ToV11 } from "./internal-compat/migrate-v10-to-v11.js";
-import { migrateProductSnapshotV11ToV12 } from "./internal-compat/migrate-v11-to-v12.js";
-import { migrateProductSnapshotV12ToV13 } from "./internal-compat/migrate-v12-to-v13.js";
-import { migrateProductSnapshotV13ToV14 } from "./internal-compat/migrate-v13-to-v14.js";
-import { migrateProductSnapshotV14ToV15 } from "./internal-compat/migrate-v14-to-v15.js";
-import {
-  migrateProductSnapshotV15ToV16,
-  migrateProductSnapshotV16ToV17,
-  migrateProductSnapshotV17ToV18,
-  migrateProductSnapshotV18ToV19,
-  migrateProductSnapshotV19ToV20,
-} from "./internal-compat/migrations-v15-v20.js";
-import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
-import { migrateProductSnapshotV20CapabilityToV22 } from "./migrate-v20-capability-to-v22.js";
-import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
-import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
-import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
-import { migrateProductSnapshotV24ToV25 } from "./migrate-v24-to-v25.js";
-import { migrateProductSnapshotV25ToV26 } from "./migrate-v25-to-v26.js";
-
-function migrateProductSnapshotV23ToCurrent(snapshot: ProductSnapshotV23): ProductSnapshot {
-  return migrateProductSnapshotV25ToV26(
-    migrateProductSnapshotV24ToV25(migrateProductSnapshotV23ToV24(snapshot)),
-  );
-}
+import { migrateLegacyProductSnapshot } from "./legacy-snapshot-migration.js";
 
 /**
  * 版本化JSON Product Store Adapter（任务书§8）。
@@ -297,245 +229,15 @@ export class JsonProductStore implements ProductStorePort {
       return new JsonProductStore(options, current.data);
     }
 
-    const legacyV25 = productSnapshotV25Schema.safeParse(parsedJson);
-    if (legacyV25.success) {
-      const migrated = migrateProductSnapshotV25ToV26(legacyV25.data);
+    let migrated: ProductSnapshot;
+    try {
+      migrated = migrateLegacyProductSnapshot(parsedJson);
       assertSnapshotIntegrity(migrated);
-      const store = new JsonProductStore(options, migrated);
-      await store.persist(migrated);
-      return store;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const recovery = message.includes("备份分支") ? `：${message}` : "";
+      throw new StoreCorruptedError(`Product Store Schema未知或非法，已保留原文件${recovery}`);
     }
-
-    const legacyV24 = productSnapshotV24Schema.safeParse(parsedJson);
-    if (legacyV24.success) {
-      const migrated = migrateProductSnapshotV25ToV26(
-        migrateProductSnapshotV24ToV25(legacyV24.data),
-      );
-      assertSnapshotIntegrity(migrated);
-      const store = new JsonProductStore(options, migrated);
-      await store.persist(migrated);
-      return store;
-    }
-
-    const legacyV23 = productSnapshotV23Schema.safeParse(parsedJson);
-    if (legacyV23.success) {
-      const migrated = migrateProductSnapshotV23ToCurrent(legacyV23.data);
-      assertSnapshotIntegrity(migrated);
-      const store = new JsonProductStore(options, migrated);
-      await store.persist(migrated);
-      return store;
-    }
-
-    const legacyV22 = productSnapshotV22Schema.safeParse(parsedJson);
-    if (legacyV22.success) {
-      const migrated = migrateProductSnapshotV23ToCurrent(
-        migrateProductSnapshotV22ToV23(legacyV22.data),
-      );
-      assertSnapshotIntegrity(migrated);
-      const store = new JsonProductStore(options, migrated);
-      await store.persist(migrated);
-      return store;
-    }
-
-    const legacyV21 = productSnapshotV21Schema.safeParse(parsedJson);
-    if (legacyV21.success) {
-      const migrated = migrateProductSnapshotV23ToCurrent(
-        migrateProductSnapshotV22ToV23(migrateProductSnapshotV21ToV22(legacyV21.data)),
-      );
-      assertSnapshotIntegrity(migrated);
-      const store = new JsonProductStore(options, migrated);
-      await store.persist(migrated);
-      return store;
-    }
-
-    const legacyV20Capability = productSnapshotV20CapabilitySchema.safeParse(parsedJson);
-    if (legacyV20Capability.success) {
-      const migrated = migrateProductSnapshotV23ToCurrent(
-        migrateProductSnapshotV22ToV23(
-          migrateProductSnapshotV20CapabilityToV22(legacyV20Capability.data),
-        ),
-      );
-      assertSnapshotIntegrity(migrated);
-      const store = new JsonProductStore(options, migrated);
-      await store.persist(migrated);
-      return store;
-    }
-
-    const legacyV20 = productSnapshotV20Schema.safeParse(parsedJson);
-    if (legacyV20.success) {
-      const migrated = migrateProductSnapshotV23ToCurrent(
-        migrateProductSnapshotV22ToV23(
-          migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(legacyV20.data)),
-        ),
-      );
-      assertSnapshotIntegrity(migrated);
-      const store = new JsonProductStore(options, migrated);
-      await store.persist(migrated);
-      return store;
-    }
-
-    const legacyV19 = productSnapshotV19Schema.safeParse(parsedJson);
-    if (legacyV19.success) {
-      const migrated = migrateProductSnapshotV23ToCurrent(
-        migrateProductSnapshotV22ToV23(
-          migrateProductSnapshotV21ToV22(
-            migrateProductSnapshotV20ToV21(migrateProductSnapshotV19ToV20(legacyV19.data)),
-          ),
-        ),
-      );
-      assertSnapshotIntegrity(migrated);
-      const store = new JsonProductStore(options, migrated);
-      await store.persist(migrated);
-      return store;
-    }
-
-    const legacyV18 = productSnapshotV18Schema.safeParse(parsedJson);
-    if (legacyV18.success) {
-      const migrated = migrateProductSnapshotV23ToCurrent(
-        migrateProductSnapshotV22ToV23(
-          migrateProductSnapshotV21ToV22(
-            migrateProductSnapshotV20ToV21(
-              migrateProductSnapshotV19ToV20(migrateProductSnapshotV18ToV19(legacyV18.data)),
-            ),
-          ),
-        ),
-      );
-      assertSnapshotIntegrity(migrated);
-      const store = new JsonProductStore(options, migrated);
-      await store.persist(migrated);
-      return store;
-    }
-
-    const legacyV17 = productSnapshotV17Schema.safeParse(parsedJson);
-    let v17: ProductSnapshotV17;
-    if (legacyV17.success) {
-      v17 = legacyV17.data;
-    } else {
-      const legacyV16 = productSnapshotV16Schema.safeParse(parsedJson);
-      let v16: ProductSnapshotV16;
-      if (legacyV16.success) {
-        v16 = legacyV16.data;
-      } else {
-        const legacyV15 = productSnapshotV15Schema.safeParse(parsedJson);
-        let v15: ProductSnapshotV15;
-        if (legacyV15.success) {
-          v15 = legacyV15.data;
-        } else {
-          const legacyV14 = productSnapshotV14Schema.safeParse(parsedJson);
-          let v14: ProductSnapshotV14;
-          if (legacyV14.success) {
-            v14 = legacyV14.data;
-          } else {
-            const legacyV13 = productSnapshotV13Schema.safeParse(parsedJson);
-            let v13: ProductSnapshotV13;
-            if (legacyV13.success) {
-              v13 = legacyV13.data;
-            } else {
-              const legacyV12 = productSnapshotV12Schema.safeParse(parsedJson);
-              let v12: ProductSnapshotV12;
-              if (legacyV12.success) {
-                v12 = legacyV12.data;
-              } else {
-                const legacyV11 = productSnapshotV11Schema.safeParse(parsedJson);
-                let v11: ProductSnapshotV11;
-                if (legacyV11.success) {
-                  v11 = legacyV11.data;
-                } else {
-                  const legacyV10 = productSnapshotV10Schema.safeParse(parsedJson);
-                  let v10: ProductSnapshotV10;
-                  if (legacyV10.success) {
-                    v10 = legacyV10.data;
-                  } else {
-                    const legacyV9 = productSnapshotV9Schema.safeParse(parsedJson);
-                    let v9: ProductSnapshotV9;
-                    if (legacyV9.success) {
-                      v9 = legacyV9.data;
-                    } else {
-                      const legacyV8 = productSnapshotV8Schema.safeParse(parsedJson);
-                      let v8: ProductSnapshotV8;
-                      if (legacyV8.success) {
-                        v8 = legacyV8.data;
-                      } else {
-                        const legacyV7 = productSnapshotV7Schema.safeParse(parsedJson);
-                        let v7: ProductSnapshotV7;
-                        if (legacyV7.success) {
-                          v7 = legacyV7.data;
-                        } else {
-                          const legacyV6 = productSnapshotV6Schema.safeParse(parsedJson);
-                          let v6: ProductSnapshotV6;
-                          if (legacyV6.success) {
-                            v6 = legacyV6.data;
-                          } else {
-                            const legacyV5 = productSnapshotV5Schema.safeParse(parsedJson);
-                            let v5;
-                            if (legacyV5.success) {
-                              v5 = legacyV5.data;
-                            } else {
-                              const legacyV4 = productSnapshotV4Schema.safeParse(parsedJson);
-                              let v4;
-                              if (legacyV4.success) {
-                                v4 = legacyV4.data;
-                              } else {
-                                const legacyV3 = productSnapshotV3Schema.safeParse(parsedJson);
-                                let v3;
-                                if (legacyV3.success) {
-                                  v3 = legacyV3.data;
-                                } else {
-                                  const legacyV2 = productSnapshotV2Schema.safeParse(parsedJson);
-                                  let v2;
-                                  if (legacyV2.success) {
-                                    v2 = legacyV2.data;
-                                  } else {
-                                    const legacyV1 = productSnapshotV1Schema.safeParse(parsedJson);
-                                    if (!legacyV1.success) {
-                                      throw new StoreCorruptedError(
-                                        "Product Store Schema未知或非法，已保留原文件",
-                                      );
-                                    }
-                                    v2 = migrateProductSnapshotV1ToV2(legacyV1.data);
-                                  }
-                                  v3 = migrateProductSnapshotV2ToV3(v2);
-                                }
-                                v4 = migrateProductSnapshotV3ToV4(v3);
-                              }
-                              v5 = migrateProductSnapshotV4ToV5(v4);
-                            }
-                            v6 = migrateProductSnapshotV5ToV6(v5);
-                          }
-                          v7 = migrateProductSnapshotV6ToV7(v6);
-                        }
-                        v8 = productSnapshotV8Schema.parse(migrateProductSnapshotV7ToV8(v7));
-                      }
-                      v9 = migrateProductSnapshotV8ToV9(v8);
-                    }
-                    v10 = productSnapshotV10Schema.parse(migrateProductSnapshotV9ToV10(v9));
-                  }
-                  v11 = migrateProductSnapshotV10ToV11(v10);
-                }
-                v12 = migrateProductSnapshotV11ToV12(v11);
-              }
-              v13 = migrateProductSnapshotV12ToV13(v12);
-            }
-            v14 = migrateProductSnapshotV13ToV14(v13);
-          }
-          v15 = migrateProductSnapshotV14ToV15(v14);
-        }
-        v16 = migrateProductSnapshotV15ToV16(v15);
-      }
-      v17 = migrateProductSnapshotV16ToV17(v16);
-    }
-    const migrated = migrateProductSnapshotV23ToCurrent(
-      migrateProductSnapshotV22ToV23(
-        migrateProductSnapshotV21ToV22(
-          migrateProductSnapshotV20ToV21(
-            migrateProductSnapshotV19ToV20(
-              migrateProductSnapshotV18ToV19(migrateProductSnapshotV17ToV18(v17)),
-            ),
-          ),
-        ),
-      ),
-    );
-    assertSnapshotIntegrity(migrated);
     const store = new JsonProductStore(options, migrated);
     // 成功迁移使用与普通事务相同的原子替换；rename 前失败时旧文件逐字节不变。
     await store.persist(migrated);
@@ -678,13 +380,7 @@ export class JsonProductStore implements ProductStorePort {
           });
         }
       }
-      const immutableProjectCollections = [
-        ["Project Event", current.entities.projectEvents, draft.entities.projectEvents],
-        [
-          "Project Metric Observation",
-          current.entities.projectMetricObservations,
-          draft.entities.projectMetricObservations,
-        ],
+      const immutableHistoricalCollections = [
         [
           "Supervised Planning Epoch",
           current.entities.supervisedPlanningEpochs,
@@ -731,7 +427,7 @@ export class JsonProductStore implements ProductStorePort {
           draft.entities.supervisedExecutionResults,
         ],
       ] as const;
-      for (const [label, existingFacts, nextFacts] of immutableProjectCollections) {
+      for (const [label, existingFacts, nextFacts] of immutableHistoricalCollections) {
         for (const [factId, existing] of Object.entries(existingFacts)) {
           const next = (nextFacts as Readonly<Record<string, unknown>>)[factId];
           if (next === undefined || !isDeepStrictEqual(next, existing)) {

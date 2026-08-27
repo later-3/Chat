@@ -39,23 +39,6 @@ import { directAgentCandidateSchema } from "./direct-agent.js";
 import { promptReviewDecisionSchema, promptReviewRequestSchema } from "./prompt-review.js";
 import { promptFragmentRevisionSchema, promptFragmentSchema } from "./prompt-fragment.js";
 import { promptAssemblySchema } from "./prompt-assembly.js";
-import {
-  projectActionSchema,
-  projectCandidateSchema,
-  projectContributionSchema,
-  projectDecisionSchema,
-  projectEvidenceSchema,
-  projectMethodSnapshotSchema,
-  projectMilestoneSchema,
-  projectObservationSchema,
-  projectParticipantSchema,
-  projectResourceSchema,
-  projectSchema,
-  projectStageSchema,
-  projectStateTransitionSchema,
-  projectUpdateSchema,
-  projectWorkSchema,
-} from "./project.js";
 import { noteCandidateSchema, noteDecisionSchema, noteRevisionSchema, noteSchema } from "./note.js";
 import {
   ruleDecisionSchema,
@@ -64,7 +47,6 @@ import {
   ruleSelectionSchema,
   ruleTagSchema,
 } from "./rules.js";
-import { planningProjectContextSchema } from "./planning-project-context.js";
 import { planningMemorySelectionSchema } from "./planning-memory-selection.js";
 import { workflowPolicyResolutionSchema } from "./workflow-policy-resolution.js";
 import {
@@ -81,27 +63,10 @@ import {
 } from "./memory-agent.js";
 import { agentVersionSchema } from "./agent-configuration.js";
 import {
-  projectContextMapSchema,
-  projectPracticeRevisionSchema,
-  projectWorkBlockSchema,
-  projectWorkClaimSchema,
-  projectWorkHandoffSchema,
-  projectWorkOutcomeSchema,
-} from "./project-coordination.js";
-import {
   toolExecutionDecisionSchema,
   toolExecutionIntentSchema,
   toolExecutionResultSchema,
 } from "./tool-execution.js";
-import {
-  projectArtifactRefSchema,
-  projectConfigurationRevisionSchema,
-  projectEventSchema,
-  projectMetricObservationSchema,
-  projectNeedSchema,
-  projectProfileRevisionSchema,
-  projectRequirementSchema,
-} from "./project-management.js";
 import {
   supervisedAgentAttemptV3Schema,
   supervisedAgentOutcomeObservationV3Schema,
@@ -126,7 +91,7 @@ import {
  *   原文件保持逐字节不变。
  */
 
-export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v26";
+export const PRODUCT_STORE_SCHEMA_VERSION = "chat-product-store.v27";
 
 const idKeySchema = z.string().min(1).max(200);
 
@@ -176,34 +141,6 @@ const productEntitiesSchema = z
     memoryImportIntents: z.record(idKeySchema, memoryImportIntentSchema),
     memoryImportResults: z.record(idKeySchema, memoryImportResultSchema),
     memorySessionImports: z.record(idKeySchema, memorySessionImportSchema),
-    projects: z.record(idKeySchema, projectSchema),
-    projectMethodSnapshots: z.record(idKeySchema, projectMethodSnapshotSchema),
-    projectStages: z.record(idKeySchema, projectStageSchema),
-    projectMilestones: z.record(idKeySchema, projectMilestoneSchema),
-    projectUpdates: z.record(idKeySchema, projectUpdateSchema),
-    projectStateTransitions: z.record(idKeySchema, projectStateTransitionSchema),
-    projectResources: z.record(idKeySchema, projectResourceSchema),
-    projectParticipants: z.record(idKeySchema, projectParticipantSchema),
-    projectWorks: z.record(idKeySchema, projectWorkSchema),
-    projectWorkBlocks: z.record(idKeySchema, projectWorkBlockSchema),
-    projectWorkClaims: z.record(idKeySchema, projectWorkClaimSchema),
-    projectWorkHandoffs: z.record(idKeySchema, projectWorkHandoffSchema),
-    projectPracticeRevisions: z.record(idKeySchema, projectPracticeRevisionSchema),
-    projectWorkOutcomes: z.record(idKeySchema, projectWorkOutcomeSchema),
-    projectContextMaps: z.record(idKeySchema, projectContextMapSchema),
-    projectProfileRevisions: z.record(idKeySchema, projectProfileRevisionSchema),
-    projectConfigurationRevisions: z.record(idKeySchema, projectConfigurationRevisionSchema),
-    projectEvents: z.record(idKeySchema, projectEventSchema),
-    projectNeeds: z.record(idKeySchema, projectNeedSchema),
-    projectRequirements: z.record(idKeySchema, projectRequirementSchema),
-    projectArtifactRefs: z.record(idKeySchema, projectArtifactRefSchema),
-    projectMetricObservations: z.record(idKeySchema, projectMetricObservationSchema),
-    projectActions: z.record(idKeySchema, projectActionSchema),
-    projectContributions: z.record(idKeySchema, projectContributionSchema),
-    projectEvidence: z.record(idKeySchema, projectEvidenceSchema),
-    projectDecisions: z.record(idKeySchema, projectDecisionSchema),
-    projectObservations: z.record(idKeySchema, projectObservationSchema),
-    projectCandidates: z.record(idKeySchema, projectCandidateSchema),
     workflowViewDefinitions: z.record(idKeySchema, workflowViewDefinitionSchema),
     workflowDefinitions: z.record(idKeySchema, workflowDefinitionSchema),
     workflowDefinitionRevisions: z.record(idKeySchema, workflowDefinitionRevisionSchema),
@@ -220,7 +157,6 @@ const productEntitiesSchema = z
     ruleTags: z.record(idKeySchema, ruleTagSchema),
     ruleDecisions: z.record(idKeySchema, ruleDecisionSchema),
     ruleSelections: z.record(idKeySchema, ruleSelectionSchema),
-    planningProjectContexts: z.record(idKeySchema, planningProjectContextSchema),
     planningMemorySelections: z.record(idKeySchema, planningMemorySelectionSchema),
     workflowPolicyResolutions: z.record(idKeySchema, workflowPolicyResolutionSchema),
     workflowMemoryQueries: z.record(idKeySchema, workflowMemoryQuerySchema),
@@ -295,34 +231,6 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       memoryImportIntents: {},
       memoryImportResults: {},
       memorySessionImports: {},
-      projects: {},
-      projectMethodSnapshots: {},
-      projectStages: {},
-      projectMilestones: {},
-      projectUpdates: {},
-      projectStateTransitions: {},
-      projectResources: {},
-      projectParticipants: {},
-      projectWorks: {},
-      projectWorkBlocks: {},
-      projectWorkClaims: {},
-      projectWorkHandoffs: {},
-      projectPracticeRevisions: {},
-      projectWorkOutcomes: {},
-      projectContextMaps: {},
-      projectProfileRevisions: {},
-      projectConfigurationRevisions: {},
-      projectEvents: {},
-      projectNeeds: {},
-      projectRequirements: {},
-      projectArtifactRefs: {},
-      projectMetricObservations: {},
-      projectActions: {},
-      projectContributions: {},
-      projectEvidence: {},
-      projectDecisions: {},
-      projectObservations: {},
-      projectCandidates: {},
       workflowViewDefinitions: {},
       workflowDefinitions: {},
       workflowDefinitionRevisions: {},
@@ -339,7 +247,6 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       ruleTags: {},
       ruleDecisions: {},
       ruleSelections: {},
-      planningProjectContexts: {},
       planningMemorySelections: {},
       workflowPolicyResolutions: {},
       workflowMemoryQueries: {},

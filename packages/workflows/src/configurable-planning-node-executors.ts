@@ -48,8 +48,9 @@ export async function executePlanningNode(input: {
       throw new Error("configurable_planning.memory_write_requires_specialized_boundary");
     case "context.memory":
       throw new Error("configurable_planning.memory_requires_specialized_boundary");
+    // 旧RunSpec仍可被读出，但退役节点没有任何可调用的Runtime operation。
     case "context.project":
-      throw new Error("configurable_planning.project_requires_specialized_boundary");
+      throw new Error("configurable_planning.retired_node_not_executable");
     case "policy.rules":
       throw new Error("configurable_planning.rules_require_specialized_boundary");
     case "capability.skills":
@@ -89,7 +90,7 @@ export async function executePlanningNode(input: {
 function unavailableOptionalResource(
   runSpec: WorkflowRunSpec,
   definitionNodeId: string,
-  resourceKind: "project" | "rule" | "skill",
+  resourceKind: "rule" | "skill",
 ): "optional_unavailable" {
   const resources = runSpec.resourceResolutions.filter(
     (candidate) =>
@@ -136,9 +137,6 @@ async function executePlan(
       : {}),
     ...(state.workflowMemoryContextRef !== undefined
       ? { workflowMemoryContextRef: state.workflowMemoryContextRef }
-      : {}),
-    ...(state.planningProjectContextRef !== undefined
-      ? { planningProjectContextRef: state.planningProjectContextRef }
       : {}),
     ...(state.ruleSelectionRef !== undefined ? { ruleSelectionRef: state.ruleSelectionRef } : {}),
     maxSteps,

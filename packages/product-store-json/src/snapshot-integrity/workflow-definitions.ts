@@ -45,7 +45,6 @@ import {
   assertWorkflowViewDefinition,
   computeNodeValueManifestSha256,
   workflowNodeRunIdentityKey,
-  computeWorkflowProjectResourceSha256,
   computePromptReviewDecisionSha256,
 } from "@chat/domain";
 import type { Fail } from "./shared.js";
@@ -500,33 +499,6 @@ function assertNodeProductRef(
         sha256: hashCanonical("memory-write-result.v1", target),
       };
     }
-  } else if (ref.kind === "project") {
-    const target = entities.projects[ref.id];
-    if (target !== undefined) {
-      if (target.revision === ref.revision) {
-        expected = {
-          revision: target.revision,
-          sha256: computeWorkflowProjectResourceSha256(target),
-        };
-      } else if (
-        ref.revision < target.revision &&
-        Object.values(entities.planningProjectContexts).some((context) =>
-          context.sourceRefs.some(
-            (source) =>
-              source.kind === "project" &&
-              source.objectId === ref.id &&
-              source.revision === ref.revision &&
-              source.sha256 === ref.sha256,
-          ),
-        )
-      ) {
-        // Project当前无历史表；旧revision由不可变PlanningProjectContext继续自证。
-        return;
-      }
-    }
-  } else if (ref.kind === "planning_project_context") {
-    const target = entities.planningProjectContexts[ref.id];
-    if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
   } else if (ref.kind === "rule_revision") {
     const target = entities.ruleRevisions[ref.id];
     if (target !== undefined) expected = { revision: target.revision, sha256: target.sha256 };
@@ -651,8 +623,14 @@ function assertNodeProductRef(
           productRunId: target.productRunId,
           executionContractId: target.executionContractId,
           executionCandidateId: target.executionCandidateId,
-          strictEvidence: target.strictEvidence,
-          governanceReview: target.governanceReview,
+          ...(target.schemaVersion === "validation-result.v2"
+            ? {
+                strictEvidence: target.strictEvidence,
+                ...(target.governanceReview !== undefined
+                  ? { governanceReview: target.governanceReview }
+                  : {}),
+              }
+            : {}),
           outcome: target.outcome,
           failures: target.failures,
         }),

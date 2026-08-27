@@ -28,10 +28,7 @@ const planningScope: RuleScopeShape = {
   ruleScopeId: "rsc_planning",
   kind: "contextual",
   scenario: "planning",
-  projectMethodProfileId: "software-delivery.v1",
-  projectStageKey: "delivery",
   workflowNodeKey: "policy.rules",
-  projectId: "prj_chat",
 };
 
 function makeRevision(
@@ -192,24 +189,18 @@ describe("Rule Revision与生命周期", () => {
 });
 
 describe("Rule Scope与确定性选择", () => {
-  it("contextual Scope各字段取AND，不同场景或Project均不匹配", () => {
+  it("contextual Scope各字段取AND，不同场景不匹配", () => {
     expect(
       ruleScopeMatches(planningScope, {
         scenario: "planning",
-        projectMethodProfileId: "software-delivery.v1",
-        projectStageKey: "delivery",
         workflowNodeKey: "policy.rules",
-        projectId: "prj_chat",
       }),
     ).toBe(true);
     expect(ruleScopeMatches(planningScope, { scenario: "planning" })).toBe(false);
     expect(
       ruleScopeMatches(planningScope, {
         scenario: "note_capture",
-        projectMethodProfileId: "software-delivery.v1",
-        projectStageKey: "delivery",
         workflowNodeKey: "policy.rules",
-        projectId: "prj_chat",
       }),
     ).toBe(false);
     expect(ruleScopeMatches(globalScope, { scenario: "note_capture" })).toBe(true);
@@ -251,10 +242,7 @@ describe("Rule Scope与确定性选择", () => {
         excludedRuleIds: [required.ruleId],
         context: {
           scenario: "planning",
-          projectMethodProfileId: "software-delivery.v1",
-          projectStageKey: "delivery",
           workflowNodeKey: "policy.rules",
-          projectId: "prj_chat",
         },
       }),
     });

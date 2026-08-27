@@ -15,15 +15,11 @@ import {
   noteDecisionIdSchema,
   outboxEntryIdSchema,
   planningMemorySelectionIdSchema,
-  planningProjectContextIdSchema,
   planIdSchema,
   planRevisionIdSchema,
   principalIdSchema,
   productRunIdSchema,
   productSessionIdSchema,
-  projectCandidateIdSchema,
-  projectIdSchema,
-  projectResourceIdSchema,
   revisionInputIdSchema,
   ruleSelectionIdSchema,
   runAttemptIdSchema,
@@ -348,8 +344,6 @@ export const runAttemptV2Schema = z
     planningMemorySelectionSha256: sha256Schema.optional(),
     workflowMemoryContextId: workflowMemoryContextIdSchema.optional(),
     workflowMemoryContextSha256: sha256Schema.optional(),
-    planningProjectContextId: planningProjectContextIdSchema.optional(),
-    planningProjectContextSha256: sha256Schema.optional(),
     ruleSelectionId: ruleSelectionIdSchema.optional(),
     ruleSelectionSha256: sha256Schema.optional(),
     outcome: runAttemptOutcomeSchema,
@@ -533,17 +527,10 @@ export const executionContractSchema = z
     steps: z.array(approvedExecutionStepSchema).min(1).max(B2_MAX_PLAN_STEPS),
     /** 从Approved Plan确定性拷贝的完成条件；验证时必须逐条有证据。 */
     completionCriteria: z.array(z.string().min(1).max(500)).min(1).max(20),
-    /**
-     * Coding能力所绑定的产品Workspace。rootId只是一段服务端配置别名；
-     * 绝不把canonical path写入Product Store、Workflow checkpoint或Trace。
-     * 纯文本Contract可以没有Workspace；任何workspace/shell能力都必须有它。
-     */
+    /** Coding能力只绑定受管Workspace别名，不依赖任何Project产品对象。 */
     workspaceRef: z
       .object({
-        projectId: projectIdSchema,
-        projectResourceId: projectResourceIdSchema,
         rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
-        revision: z.number().int().positive(),
       })
       .strict()
       .optional(),
@@ -725,10 +712,6 @@ export const outboxEntryKindSchema = z.enum([
   "memory_import_reconcile",
   "memory_write_start",
   "memory_write_reconcile",
-  "project_intake_start",
-  "project_intake_resume",
-  "project_advancement_start",
-  "project_advancement_resume",
 ]);
 
 export const outboxEntryStatusSchema = z.enum([
@@ -857,38 +840,6 @@ export const outboxEntrySchema = z.discriminatedUnion("kind", [
       memoryWriteIntentId: memoryWriteIntentIdSchema,
       memoryWriteResultId: memoryWriteResultIdSchema,
       expectedResultRevision: z.number().int().positive(),
-    })
-    .strict(),
-  z
-    .object({
-      ...outboxCommonFields,
-      kind: z.literal("project_intake_start"),
-      projectCandidateId: projectCandidateIdSchema,
-      expectedCandidateRevision: z.number().int().positive(),
-    })
-    .strict(),
-  z
-    .object({
-      ...outboxCommonFields,
-      kind: z.literal("project_intake_resume"),
-      projectCandidateId: projectCandidateIdSchema,
-      expectedCandidateRevision: z.number().int().positive(),
-    })
-    .strict(),
-  z
-    .object({
-      ...outboxCommonFields,
-      kind: z.literal("project_advancement_start"),
-      projectCandidateId: projectCandidateIdSchema,
-      expectedCandidateRevision: z.number().int().positive(),
-    })
-    .strict(),
-  z
-    .object({
-      ...outboxCommonFields,
-      kind: z.literal("project_advancement_resume"),
-      projectCandidateId: projectCandidateIdSchema,
-      expectedCandidateRevision: z.number().int().positive(),
     })
     .strict(),
 ]);

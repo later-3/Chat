@@ -151,9 +151,6 @@ export async function executeDefinitionKernelNodeStep(input: {
     case "load_memory_context":
       raw = await port.loadMemoryContext(context);
       break;
-    case "load_project_context":
-      raw = await port.loadProjectContext(context);
-      break;
     case "resolve_rules":
       raw = await port.resolveRules(context);
       break;

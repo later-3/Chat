@@ -52,7 +52,6 @@ import {
   type SessionDto,
 } from "@chat/contracts/public";
 import { z } from "zod";
-import { projectAgentOpeningPacketV2Schema } from "@chat/contracts/public";
 
 export const BRIDGE_SCHEMA_VERSION = "chat-dsh-lifeos-bridge.v3" as const;
 export const DSH_CONTEXT_INJECTION_SCHEMA_VERSION = "chat-dsh-context-injections.v1" as const;
@@ -856,8 +855,6 @@ export const lifeosProjectionSchema = z
     dshSendReview: dshSendReviewSchema.nullable().default(null),
     bridgeDispatchReviewEnabled: z.boolean().default(false),
     bridgeDispatchReview: bridgeChatDispatchReviewSchema.nullable().default(null),
-    projectCoordination: projectAgentOpeningPacketV2Schema.nullable().default(null),
-    projectCoordinationTargets: z.null().default(null),
     /** @deprecated 使用sessionWorkflowSelection；保留一个Bridge合同版本供旧Client迁移。 */
     workflowSelection: workflowSelectionSchema.nullable(),
     sessionWorkflowSelection: workflowSelectionSchema.nullable().default(null),

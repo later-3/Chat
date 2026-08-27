@@ -22,8 +22,7 @@ Product事实由Product Store/Application拥有；Checkpoint、Hook和重放由W
 Session、Tool Journal和Provider调用由Pi Runtime拥有；DSH Session和浏览器缓存只属于DSH；
 Git、Memory及其他外部系统只拥有自己的资源。它们的ID不能互换为产品身份或授权。
 
-已完成：产品后端、Workflow/Agent Runtime、固定DSH派生、LifeOS Bridge、Capability治理，以及
-Project监督账本、Content Production协作事实、Content Lab有界上下文和DSH项目四视图。历史
+已完成：产品后端、Workflow/Agent Runtime、固定DSH派生、LifeOS Bridge与Capability治理。历史
 Workbench实现已完成但仍是Beta，提升为通用发布门已暂停。Memory暂停。当前优先
 候选是Browser Provider，但尚未授权实现。不要从阶段计划推导开工授权；涉及真实数据处置前还要
 读取[PROJECT_STATE](../../PROJECT_STATE.md)中的最新诊断，接手导航不授予修复权。
@@ -37,12 +36,7 @@ Workbench实现已完成但仍是Beta，提升为通用发布门已暂停。Memo
    [Outbox Dispatcher](../../apps/api/src/outbox-dispatcher.ts) →
    [Planning Workflow](../../packages/workflows/src/planning-execution-workflow.ts) →
    [Pi Agent Runner](../../packages/pi-runtime/src/agent-runner.ts)。
-2. Project监督与协作：
-   [项目路由](../../apps/api/src/product-routes/project-routes.ts) →
-   [Project管理用例](../../packages/application/src/project-management-use-cases.ts) →
-   [Opening Packet v2](../../packages/application/src/project-agent-coordination-use-cases.ts) →
-   [DSH四视图](../../packages/dsh-lifeos-bridge/src/client/ProjectManagementView.tsx)。
-3. 启动与恢复：
+2. 启动与恢复：
    [统一启动器](../../scripts/dev/start.mjs) →
    [服务图与Supervisor](../../scripts/dev/app-runtime.mjs) →
    [API组合根](../../apps/api/src/composition.ts) →

@@ -40,7 +40,6 @@ import {
   hashCanonical,
 } from "@chat/domain";
 import { JsonProductStore } from "./json-product-store.js";
-import { productSnapshotV20CapabilitySchema } from "./legacy-v20-capability.js";
 
 const PRINCIPAL = "usr_directvertical" as PrincipalId;
 const BASE_TIME = "2026-08-19T12:00:00.000Z";
@@ -232,7 +231,7 @@ async function createHarness() {
             })
           : undefined,
     },
-    projectRoots: {
+    workspaceRoots: {
       list: () => [
         {
           rootId: "root_chat",
@@ -241,9 +240,6 @@ async function createHarness() {
           grantSha256: "4".repeat(64),
         },
       ],
-      observe: async () => {
-        throw new Error("测试不观察Workspace");
-      },
     },
   };
   const { session } = await createProductSession(deps, {
@@ -712,72 +708,6 @@ describe("Direct Agent Application + JsonProductStore最小纵向", () => {
         (decision) => decision.commandId === decisionCommandId,
       ),
     ).toHaveLength(1);
-
-    // 模拟正式main已经落盘的非空Capability v20。打开时必须走专用双谱系识别，
-    // 逐字保留Tool Intent/Decision/Result并补入空Project Coordination集合。
-    const capabilityV20Entities = structuredClone(snapshot.entities) as unknown as Record<
-      string,
-      unknown
-    >;
-    for (const key of [
-      "projectWorkBlocks",
-      "projectWorkClaims",
-      "projectWorkHandoffs",
-      "projectPracticeRevisions",
-      "projectWorkOutcomes",
-      "projectContextMaps",
-      "projectProviderBindings",
-      "projectProviderProjections",
-      "projectCoordinationOperations",
-      "projectInboundChanges",
-      "projectProfileRevisions",
-      "projectConfigurationRevisions",
-      "projectEvents",
-      "projectNeeds",
-      "projectRequirements",
-      "projectArtifactRefs",
-      "projectMetricObservations",
-      "supervisedPlanningEpochs",
-      "supervisedCarryForwards",
-      "supervisedStepStates",
-      "supervisedAgentAttempts",
-      "supervisedStepEvidence",
-      "supervisedStepCandidates",
-      "supervisedPlannerVerdicts",
-      "supervisedStepReviewRequests",
-      "supervisedStepHumanDecisions",
-      "supervisedAgentOutcomeObservations",
-      "supervisedExecutionResults",
-    ]) {
-      delete capabilityV20Entities[key];
-    }
-    const capabilityV20 = productSnapshotV20CapabilitySchema.parse({
-      ...snapshot,
-      schemaVersion: "chat-product-store.v20",
-      entities: capabilityV20Entities,
-    });
-    const migratedDirectory = await mkdtemp(join(tmpdir(), "chat-capability-v20-v22-"));
-    const migratedPath = join(migratedDirectory, "product-store.json");
-    await writeFile(migratedPath, JSON.stringify(capabilityV20));
-    const migratedStore = await JsonProductStore.open({
-      filePath: migratedPath,
-      now: () => BASE_TIME,
-    });
-    const migratedSnapshot = (await migratedStore.read({ kind: "committedSnapshot" })).snapshot;
-    expect(migratedSnapshot.schemaVersion).toBe("chat-product-store.v24");
-    expect(migratedSnapshot.entities.toolExecutionIntents).toEqual(
-      snapshot.entities.toolExecutionIntents,
-    );
-    expect(migratedSnapshot.entities.toolExecutionDecisions).toEqual(
-      snapshot.entities.toolExecutionDecisions,
-    );
-    expect(migratedSnapshot.entities.toolExecutionResults).toEqual(
-      snapshot.entities.toolExecutionResults,
-    );
-    expect(migratedSnapshot.entities.projectWorkClaims).toEqual({});
-    const once = await readFile(migratedPath, "utf8");
-    await JsonProductStore.open({ filePath: migratedPath, now: () => BASE_TIME });
-    expect(await readFile(migratedPath, "utf8")).toBe(once);
   });
 
   it("Run终结后旧Tool批准不能再claim执行许可", async () => {

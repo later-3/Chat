@@ -6,13 +6,7 @@ export type RuleLifecycleStatusShape =
 export type RuleEnforcementShape = "user_selectable" | "system_required";
 export type RuleRiskShape = "low" | "medium" | "high";
 
-export type RuleScenarioShape =
-  | "general_chat"
-  | "planning"
-  | "project_intake"
-  | "project_advancement"
-  | "note_capture"
-  | "memory_capture";
+export type RuleScenarioShape = "general_chat" | "planning" | "note_capture" | "memory_capture";
 
 export type RuleScopeShape =
   | {
@@ -25,10 +19,7 @@ export type RuleScopeShape =
       readonly ruleScopeId: string;
       readonly kind: "contextual";
       readonly scenario: RuleScenarioShape;
-      readonly projectMethodProfileId?: string | undefined;
-      readonly projectStageKey?: string | undefined;
       readonly workflowNodeKey?: string | undefined;
-      readonly projectId?: string | undefined;
     };
 
 export type RuleRevisionOriginShape =
@@ -38,8 +29,7 @@ export type RuleRevisionOriginShape =
 
 export type RuleSourceCaseRefShape =
   | { readonly kind: "message"; readonly messageId: string }
-  | { readonly kind: "product_run"; readonly productRunId: string }
-  | { readonly kind: "project_decision"; readonly projectDecisionId: string };
+  | { readonly kind: "product_run"; readonly productRunId: string };
 
 export interface RuleRevisionSnapshotShape {
   readonly ruleRevisionId: string;

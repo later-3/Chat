@@ -134,7 +134,7 @@ function requireCatalog(deps: ApplicationDeps) {
 
 function assertWorkspace(deps: ApplicationDeps, selection: PromptTurnSelectionInput): void {
   if (selection.workspaceRootId === undefined) return;
-  if (!deps.projectRoots?.list().some((root) => root.rootId === selection.workspaceRootId)) {
+  if (!deps.workspaceRoots?.list().some((root) => root.rootId === selection.workspaceRootId)) {
     throw forbidden("Prompt选择绑定了未配置或未授权的Workspace");
   }
 }

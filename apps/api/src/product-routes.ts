@@ -5,7 +5,6 @@ import { registerPromptRoutes } from "./product-routes/prompt-routes.js";
 import { registerRuleRoutes } from "./product-routes/rule-routes.js";
 import { registerNoteRoutes } from "./product-routes/note-routes.js";
 import { registerMemoryRoutes } from "./product-routes/memory-routes.js";
-import { registerProjectRoutes } from "./product-routes/project-routes.js";
 import {
   registerSessionCreateRoutes,
   registerSessionDetailRoutes,
@@ -28,7 +27,6 @@ export function createProductRouter(ctx: ProductRouteContext): Hono<{ Variables:
   registerNoteRoutes(router, ctx);
   registerMemoryRoutes(router, ctx);
   registerSessionCreateRoutes(router, ctx);
-  registerProjectRoutes(router, ctx);
   registerSessionDetailRoutes(router, ctx);
   registerRunRoutes(router, ctx);
 

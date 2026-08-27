@@ -3,8 +3,6 @@ import { getRun } from "workflow/api";
 import {
   MEMORY_IMPORT_WORKFLOW_DEFINITION_VERSION,
   MEMORY_WRITE_WORKFLOW_DEFINITION_VERSION,
-  PROJECT_ADVANCEMENT_WORKFLOW_DEFINITION_VERSION,
-  PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION,
   type TraceEventInput,
 } from "@chat/contracts";
 import type { RunActivitySink } from "@chat/realtime";
@@ -45,7 +43,7 @@ import { installWorkflowNetworkPolicy } from "./workflow-network-policy.js";
  * 调试导航：入口先打开Binding并核对Workflow耐久目录，再读取当前bundle的build
  * evidence；Local World恢复活动Run之前逐项验证Binding身份、Runner family、私有
  * Workflow Run存在性和历史版本证据。全部通过后才挂载HTTP分派路由：正式
- * Planning/Note见runtime-product-http-routes，Memory/Project见
+ * Planning/Note见runtime-product-http-routes，Memory见
  * runtime-operation-http-routes。任一身份、版本或耐久数据不一致都会在world.start
  * 前失败关闭；start/resume越过SDK边界后无法确认则只记录outcome_unknown，绝不盲重试。
  */
@@ -222,23 +220,6 @@ export async function createWorkflowRuntimeServer(options: WorkflowRuntimeServer
             !buildEvidence.workflowDefinitionVersions.includes(binding.workflowDefinitionVersion)
           ) {
             throw new Error("活动Memory Write Workflow版本与当前构建不一致，拒绝恢复");
-          }
-        }
-        for (const { binding } of bindings.listProjectIntakeBindings()) {
-          const run = getRun(binding.workflowRunId);
-          if (!(await run.exists)) {
-            throw new Error("Project Intake Binding引用的Workflow Run不存在，拒绝恢复");
-          }
-          const status = String(await run.status);
-          if (["completed", "failed", "cancelled"].includes(status)) continue;
-          const supportedProjectVersion =
-            binding.workflowDefinitionVersion === PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION ||
-            binding.workflowDefinitionVersion === PROJECT_ADVANCEMENT_WORKFLOW_DEFINITION_VERSION;
-          if (
-            !supportedProjectVersion ||
-            !buildEvidence.workflowDefinitionVersions.includes(binding.workflowDefinitionVersion)
-          ) {
-            throw new Error("活动Project Candidate Workflow版本与当前构建不一致，拒绝恢复");
           }
         }
       },

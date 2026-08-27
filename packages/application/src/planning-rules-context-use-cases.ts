@@ -52,7 +52,7 @@ export async function preparePlanningRulesContext(
           attemptNumber: input.attemptNumber,
           terminal: "skipped",
           outcomeCode: "optional_unavailable",
-          publicSummary: "本轮未选择Project Rules",
+          publicSummary: "本轮未选择规则",
           inputSlots: [],
           outputSlots: [],
           at: now,
@@ -88,19 +88,9 @@ export async function preparePlanningRulesContext(
         }
         return { rule, revision };
       });
-      const projectContext = Object.values(draft.entities.planningProjectContexts).find(
-        (context) => context.productRunId === input.productRunId,
-      );
       const context = {
         scenario: "planning" as const,
         workflowNodeKey: "policy.rules",
-        ...(projectContext !== undefined
-          ? {
-              projectId: projectContext.projectId,
-              projectMethodProfileId: projectContext.snapshot.methodProfileId,
-              projectStageKey: projectContext.snapshot.stage.key,
-            }
-          : {}),
       };
       const request = {
         explicitRules: explicit.map(({ rule, revision }) => ({
@@ -344,7 +334,7 @@ function commitRuleSelectionNode(input: {
     id: input.selection.ruleSelectionId,
     revision: 1,
     sha256: input.selection.sha256,
-    label: `已冻结${String(input.selection.selected.length)}条Project Rules`,
+    label: `已冻结${String(input.selection.selected.length)}条规则`,
   };
   return commitPlanningContextNodeFact(input.draft, {
     run: input.run,
@@ -355,7 +345,7 @@ function commitRuleSelectionNode(input: {
     attemptNumber: input.attemptNumber,
     terminal: "succeeded",
     outcomeCode: "success",
-    publicSummary: `已采用${String(input.selection.selected.length)}条Project Rules`,
+    publicSummary: `已采用${String(input.selection.selected.length)}条规则`,
     inputSlots: [{ name: "rules", refs: inputRefs }],
     outputSlots: [{ name: "selection", refs: [selectionRef] }],
     relatedProductRef: selectionRef,

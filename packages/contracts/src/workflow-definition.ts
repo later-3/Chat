@@ -26,7 +26,10 @@ import {
  * - Application Compiler必须直接复用本文件Schema，避免S3实验Schema与持久合同漂移。
  */
 
-/** v1已发布节点枚举；旧导出名保持只读，不能因治理节点加入而原地扩义。 */
+/**
+ * v1 已发布节点枚举。`context.project` 只用于读取删除 Project 前已经提交的
+ * Workflow 事实；当前 Compiler 固定产出 v3，Node Catalog 也不再注册该节点。
+ */
 export const workflowDefinitionNodeTypeSchema = z.enum([
   "memory.query",
   "memory.write",
@@ -568,7 +571,7 @@ export const workflowDefinitionRevisionSchema = z.union([
   workflowDefinitionRevisionV3Schema,
 ]);
 
-export type WorkflowResourceKind = "memory" | "project" | "rule" | "skill";
+export type WorkflowResourceKind = "memory" | "rule" | "skill";
 
 export const workflowFrozenResourceSchema = z
   .object({

@@ -276,6 +276,34 @@ describe("readTraceEvents", () => {
     expect(readFileSync(file, "utf8")).toBe(`${legacy}\n`);
   });
 
+  it("跳过已退役Project事件且继续读取同文件中的当前事件", () => {
+    const dir = tempDir();
+    const file = join(dir, "chat-trace-2026-08-07.jsonl");
+    const retired = JSON.stringify({
+      schemaVersion: 1,
+      eventId: "evt_retired1",
+      timestamp: "2026-08-07T00:00:00.000Z",
+      level: "info",
+      traceId: "trace_retired1",
+      spanId: "span_retired1",
+      outcome: "unknown",
+      eventName: "project.intake.started",
+    });
+    writeFileSync(file, `${retired}\n`, "utf8");
+    emitAt(dir, 1000, { ...providerCompletedInput, traceId: "t_current1" });
+
+    expect(readTraceEvents({ dir }).map((event) => event.traceId)).toEqual(["t_current1"]);
+    expect(readFileSync(file, "utf8")).toContain(retired);
+  });
+
+  it("未知或缺少公共Envelope的project事件仍失败关闭", () => {
+    const dir = tempDir();
+    const file = join(dir, "chat-trace-2026-08-07.jsonl");
+    writeFileSync(file, `${JSON.stringify({ eventName: "project.evil" })}\n`, "utf8");
+
+    expect(() => readTraceEvents({ dir })).toThrowError(TraceReadError);
+  });
+
   it("目录不存在时返回空结果", () => {
     expect(readTraceEvents({ dir: join(tempDir(), "missing") })).toEqual([]);
   });

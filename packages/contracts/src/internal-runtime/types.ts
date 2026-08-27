@@ -54,8 +54,6 @@ import {
 import {
   preparePlanningMemoryContextRequestSchema,
   preparePlanningMemoryContextResponseSchema,
-  preparePlanningProjectContextRequestSchema,
-  preparePlanningProjectContextResponseSchema,
   preparePlanningRulesContextRequestSchema,
   preparePlanningRulesContextResponseSchema,
 } from "./context-prep.js";
@@ -201,12 +199,6 @@ export type PreparePlanningMemoryContextRequest = z.infer<
 >;
 export type PreparePlanningMemoryContextResponse = z.infer<
   typeof preparePlanningMemoryContextResponseSchema
->;
-export type PreparePlanningProjectContextRequest = z.infer<
-  typeof preparePlanningProjectContextRequestSchema
->;
-export type PreparePlanningProjectContextResponse = z.infer<
-  typeof preparePlanningProjectContextResponseSchema
 >;
 export type PreparePlanningRulesContextRequest = z.infer<
   typeof preparePlanningRulesContextRequestSchema

@@ -33,7 +33,6 @@ const planningPolicy: WorkflowDesignerPolicy = {
       address: [],
       allowedNodeTypes: [
         "context.memory",
-        "context.project",
         "policy.rules",
         "capability.skills",
         "agent.research",

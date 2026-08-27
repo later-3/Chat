@@ -10,7 +10,6 @@ import {
   type NoteCandidateId,
   type OutboxEntryId,
   type ProductRunId,
-  type ProjectCandidateId,
   type PromptReviewDecisionId,
   type PromptReviewRequestId,
 } from "@chat/contracts";
@@ -33,7 +32,6 @@ import {
   type MemoryWriteWorkflowBinding,
   type NoteHookBinding,
   type PromptReviewHookBinding,
-  type ProjectIntakeWorkflowBinding,
   type RuntimeBindingsFile,
   type WorkflowBinding,
 } from "./runtime-bindings-schema.js";
@@ -46,7 +44,6 @@ export {
   type MemoryWriteWorkflowBinding,
   type NoteHookBinding,
   type PromptReviewHookBinding,
-  type ProjectIntakeWorkflowBinding,
   type RuntimeBindingsFile,
   type WorkflowBinding,
 } from "./runtime-bindings-schema.js";
@@ -127,9 +124,7 @@ export class RuntimeBindingStore {
       Object.keys(this.bindings.memoryImportStartIntents).length > 0 ||
       Object.keys(this.bindings.memoryImportWorkflows).length > 0 ||
       Object.keys(this.bindings.memoryWriteStartIntents).length > 0 ||
-      Object.keys(this.bindings.memoryWriteWorkflows).length > 0 ||
-      Object.keys(this.bindings.projectIntakeStartIntents).length > 0 ||
-      Object.keys(this.bindings.projectIntakeWorkflows).length > 0
+      Object.keys(this.bindings.memoryWriteWorkflows).length > 0
     );
   }
 
@@ -443,188 +438,6 @@ export class RuntimeBindingStore {
     });
   }
 
-  listProjectIntakeBindings(): readonly {
-    projectCandidateId: ProjectCandidateId;
-    binding: ProjectIntakeWorkflowBinding;
-  }[] {
-    this.assertAvailable();
-    return Object.entries(this.bindings.projectIntakeWorkflows).map(
-      ([projectCandidateId, binding]) => ({
-        projectCandidateId: projectCandidateId as ProjectCandidateId,
-        binding: structuredClone(binding),
-      }),
-    );
-  }
-
-  getProjectIntakeBinding(
-    projectCandidateId: ProjectCandidateId,
-  ): ProjectIntakeWorkflowBinding | undefined {
-    this.assertAvailable();
-    const binding = this.bindings.projectIntakeWorkflows[projectCandidateId];
-    return binding === undefined ? undefined : structuredClone(binding);
-  }
-
-  getProjectIntakeStartState(
-    projectCandidateId: ProjectCandidateId,
-  ): "missing" | "outcome_unknown" | "exists" {
-    this.assertAvailable();
-    if (this.bindings.projectIntakeWorkflows[projectCandidateId] !== undefined) return "exists";
-    if (this.bindings.projectIntakeStartIntents[projectCandidateId] !== undefined) {
-      return "outcome_unknown";
-    }
-    return "missing";
-  }
-
-  async claimProjectIntakeStartIntent(input: {
-    projectCandidateId: ProjectCandidateId;
-    outboxId: OutboxEntryId;
-    workflowDefinitionVersion: string;
-    now: string;
-  }): Promise<"claimed" | "already_started" | "outcome_unknown"> {
-    return this.enqueue(async () => {
-      this.assertAvailable();
-      if (this.bindings.projectIntakeWorkflows[input.projectCandidateId] !== undefined) {
-        return "already_started";
-      }
-      const existing = this.bindings.projectIntakeStartIntents[input.projectCandidateId];
-      if (existing !== undefined) {
-        if (
-          existing.outboxId !== input.outboxId ||
-          existing.workflowDefinitionVersion !== input.workflowDefinitionVersion
-        ) {
-          throw new RuntimeBindingError("Project Intake start意图冲突");
-        }
-        return "outcome_unknown";
-      }
-      const next = structuredClone(this.bindings);
-      next.projectIntakeStartIntents[input.projectCandidateId] = {
-        outboxId: input.outboxId,
-        workflowDefinitionVersion: input.workflowDefinitionVersion,
-        state: "starting",
-        createdAt: input.now,
-        updatedAt: input.now,
-      };
-      await this.commit(next);
-      return "claimed";
-    });
-  }
-
-  async claimProjectIntakeWorkflowBinding(input: {
-    projectCandidateId: ProjectCandidateId;
-    outboxId: OutboxEntryId;
-    workflowRunId: string;
-    workflowDefinitionVersion: string;
-    hookToken: string;
-    now: string;
-  }): Promise<void> {
-    await this.enqueue(async () => {
-      this.assertAvailable();
-      const existing = this.bindings.projectIntakeWorkflows[input.projectCandidateId];
-      if (existing !== undefined) {
-        if (
-          existing.startOutboxId !== input.outboxId ||
-          existing.workflowRunId !== input.workflowRunId ||
-          existing.workflowDefinitionVersion !== input.workflowDefinitionVersion ||
-          existing.hookToken !== input.hookToken
-        ) {
-          throw new RuntimeBindingError("Project Intake Workflow映射冲突");
-        }
-        return;
-      }
-      const intent = this.bindings.projectIntakeStartIntents[input.projectCandidateId];
-      if (
-        intent === undefined ||
-        intent.outboxId !== input.outboxId ||
-        intent.workflowDefinitionVersion !== input.workflowDefinitionVersion
-      ) {
-        throw new RuntimeBindingError("Project Intake Workflow缺少匹配的start意图");
-      }
-      const next = structuredClone(this.bindings);
-      next.projectIntakeWorkflows[input.projectCandidateId] = {
-        startOutboxId: input.outboxId,
-        workflowRunId: input.workflowRunId,
-        workflowDefinitionVersion: input.workflowDefinitionVersion,
-        hookToken: input.hookToken,
-        resumeDispatchState: "none",
-        createdAt: input.now,
-        updatedAt: input.now,
-      };
-      delete next.projectIntakeStartIntents[input.projectCandidateId];
-      await this.commit(next);
-    });
-  }
-
-  async markProjectIntakeStartOutcomeUnknown(
-    projectCandidateId: ProjectCandidateId,
-    now: string,
-  ): Promise<void> {
-    await this.enqueue(async () => {
-      const existing = this.bindings.projectIntakeStartIntents[projectCandidateId];
-      if (existing === undefined) {
-        if (this.bindings.projectIntakeWorkflows[projectCandidateId] !== undefined) return;
-        throw new RuntimeBindingError("Project Intake start结果未知但意图缺失");
-      }
-      const next = structuredClone(this.bindings);
-      next.projectIntakeStartIntents[projectCandidateId] = {
-        ...existing,
-        state: "outcome_unknown",
-        updatedAt: now,
-      };
-      await this.commit(next);
-    });
-  }
-
-  async markProjectIntakeResumeDispatching(
-    projectCandidateId: ProjectCandidateId,
-    now: string,
-  ): Promise<void> {
-    await this.setProjectIntakeResumeState(projectCandidateId, "dispatching", now, ["none"]);
-  }
-
-  async markProjectIntakeResumeDispatched(
-    projectCandidateId: ProjectCandidateId,
-    now: string,
-  ): Promise<void> {
-    await this.setProjectIntakeResumeState(projectCandidateId, "dispatched", now, [
-      "dispatching",
-      "dispatched",
-    ]);
-  }
-
-  async markProjectIntakeResumeOutcomeUnknown(
-    projectCandidateId: ProjectCandidateId,
-    now: string,
-  ): Promise<void> {
-    await this.setProjectIntakeResumeState(projectCandidateId, "outcome_unknown", now, [
-      "dispatching",
-      "outcome_unknown",
-    ]);
-  }
-
-  private async setProjectIntakeResumeState(
-    projectCandidateId: ProjectCandidateId,
-    state: ProjectIntakeWorkflowBinding["resumeDispatchState"],
-    now: string,
-    allowedFrom: readonly ProjectIntakeWorkflowBinding["resumeDispatchState"][],
-  ): Promise<void> {
-    await this.enqueue(async () => {
-      const existing = this.bindings.projectIntakeWorkflows[projectCandidateId];
-      if (existing === undefined) throw new RuntimeBindingError("Project Intake Workflow映射缺失");
-      if (!allowedFrom.includes(existing.resumeDispatchState)) {
-        throw new RuntimeBindingError(`Project Intake Resume状态不允许转换到${state}`);
-      }
-      if (existing.resumeDispatchState === state) return;
-      const next = structuredClone(this.bindings);
-      next.projectIntakeWorkflows[projectCandidateId] = {
-        ...existing,
-        resumeDispatchState: state,
-        updatedAt: now,
-      };
-      await this.commit(next);
-    });
-  }
-
-  /** 先落盘start意图；已有未决意图时绝不再次调用Workflow start。 */
   async claimStartIntent(input: {
     productRunId: ProductRunId;
     outboxId: OutboxEntryId;

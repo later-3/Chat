@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { sha256Schema } from "./hash.js";
 import {
-  projectIdSchema,
   ruleDecisionIdSchema,
   ruleIdSchema,
   ruleRevisionIdSchema,
@@ -13,7 +12,6 @@ import {
   ruleDecisionActorSchema,
   ruleEnforcementSchema,
   ruleLifecycleSchema,
-  ruleProjectStageKeySchema,
   ruleRevisionOriginSchema,
   ruleRiskSchema,
   ruleScopeSchema,
@@ -27,7 +25,6 @@ import {
   ruleWorkflowNodeKeySchema,
   selectedRuleRevisionRefSchema,
 } from "./rules.js";
-import { projectMethodProfileIdSchema } from "./project-api-v2-compat.js";
 
 export const RULES_API_SCHEMA_VERSION = "chat-rules-api.v1";
 
@@ -38,10 +35,7 @@ export const ruleScopeInputSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("contextual"),
       scenario: ruleScenarioSchema,
-      projectMethodProfileId: projectMethodProfileIdSchema.optional(),
-      projectStageKey: ruleProjectStageKeySchema.optional(),
       workflowNodeKey: ruleWorkflowNodeKeySchema.optional(),
-      projectId: projectIdSchema.optional(),
     })
     .strict(),
 ]);

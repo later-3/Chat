@@ -264,7 +264,6 @@ function planningInputEvidence(
         modelConfigVersion: attempt.modelConfigVersion ?? null,
         contextPackageId: attempt.contextPackageId ?? null,
         planningMemorySelectionId: attempt.planningMemorySelectionId ?? null,
-        planningProjectContextId: attempt.planningProjectContextId ?? null,
         ruleSelectionId: attempt.ruleSelectionId ?? null,
       }),
     }),

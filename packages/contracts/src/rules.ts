@@ -6,8 +6,6 @@ import {
   messageIdSchema,
   principalIdSchema,
   productRunIdSchema,
-  projectDecisionIdSchema,
-  projectIdSchema,
   ruleDecisionIdSchema,
   ruleIdSchema,
   ruleRevisionIdSchema,
@@ -15,7 +13,6 @@ import {
   ruleSelectionIdSchema,
   ruleTagIdSchema,
 } from "./ids.js";
-import { projectMethodProfileIdSchema } from "./project-api-v2-compat.js";
 
 const isoDateTimeSchema = z.iso.datetime();
 const shortTextSchema = z.string().trim().min(1).max(500);
@@ -36,13 +33,10 @@ export const ruleEnforcementSchema = z.enum(["user_selectable", "system_required
 export const ruleScenarioSchema = z.enum([
   "general_chat",
   "planning",
-  "project_intake",
-  "project_advancement",
   "note_capture",
   "memory_capture",
 ]);
 
-export const ruleProjectStageKeySchema = z.string().regex(/^[a-z][a-z0-9-]{0,79}$/u);
 export const ruleWorkflowNodeKeySchema = z.string().regex(/^[a-z][a-z0-9.-]{0,119}$/u);
 
 /**
@@ -63,10 +57,7 @@ export const ruleScopeSchema = z.discriminatedUnion("kind", [
       ruleScopeId: ruleScopeIdSchema,
       kind: z.literal("contextual"),
       scenario: ruleScenarioSchema,
-      projectMethodProfileId: projectMethodProfileIdSchema.optional(),
-      projectStageKey: ruleProjectStageKeySchema.optional(),
       workflowNodeKey: ruleWorkflowNodeKeySchema.optional(),
-      projectId: projectIdSchema.optional(),
     })
     .strict(),
 ]);
@@ -82,12 +73,6 @@ export const ruleSourceCaseRefSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("product_run"),
       productRunId: productRunIdSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("project_decision"),
-      projectDecisionId: projectDecisionIdSchema,
     })
     .strict(),
 ]);
@@ -218,10 +203,7 @@ export const ruleDecisionSchema = z
 export const ruleSelectionContextSchema = z
   .object({
     scenario: ruleScenarioSchema,
-    projectMethodProfileId: projectMethodProfileIdSchema.optional(),
-    projectStageKey: ruleProjectStageKeySchema.optional(),
     workflowNodeKey: ruleWorkflowNodeKeySchema.optional(),
-    projectId: projectIdSchema.optional(),
   })
   .strict();
 

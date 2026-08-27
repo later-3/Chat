@@ -14,7 +14,7 @@
 后端当前已经支持：
 
 - 查询真实Run、节点Input/Output/Timeline/Evidence和受控Trace摘要；
-- 为Run选择已发布Planning或Note流程以及Memory、Project、Rules和审核策略；
+- 为Run选择已发布Planning或Note流程以及Memory、Rules和审核策略；
 - 通过严格Command复制、编辑、校验、发布、归档或恢复受限Definition；
 - 在Planning审核中要求修订、批准或拒绝；在Note审核中确认、编辑后确认、要求修订或拒绝；
 - 刷新、进程重启或重复提交后继续同一产品Run，不重复消费已经提交的决定或副作用；
@@ -22,7 +22,7 @@
 
 DSH桥接面已经交付原生对话、Planning HITL与Note Candidate审核。Note审核读取安全DTO并支持确认、要求修订和拒绝；Candidate正文、标签、类型和来源数量在手机/桌面同一卡片中可见。Note列表/历史编辑、Run Viewer、Rules和Definition编辑仍是已存在的Chat API能力，但在对应DSH Client插件完成前不能写成当前用户界面已经可操作。
 
-与原始目标对照，本次真正交付的是受限Kernel、运行观察、Memory/Project/Rules配置化Planning、人工审核循环、执行/验证/提交、Note、Rules和Designer。正式Research产品事实与正式Skill集合/授权/冻结/消费链尚未交付；它们保留为原始目标中的明确延期项，不用兼容节点、空资源目录或`optional_unavailable`冒充完成。
+与原始目标对照，本次真正交付的是受限Kernel、运行观察、Memory/Rules配置化Planning、人工审核循环、执行/验证/提交、Note、Rules和Designer。正式Research产品事实与正式Skill集合/授权/冻结/消费链尚未交付；它们保留为原始目标中的明确延期项，不用兼容节点、空资源目录或`optional_unavailable`冒充完成。
 
 ## 2. 实际架构
 
@@ -74,7 +74,6 @@ Note Application按变化原因拆分：公开Query/DTO投影、普通Note维护
 | `memory.query` | `providerId`、`required`、`maxResults`、`maxContextCharacters` | Workflow只读Provider Step + `WorkflowMemoryQuery/Snapshot/Context`原子事实；同类节点最多8个 |
 | `memory.write` | `providerId`、来源Message、`conversation_turn` | Memory Planning父Workflow复用统一写入状态机并唯一执行；直接Write Command才由Outbox启动独立`MemoryWriteWorkflow` |
 | `context.memory` | 历史`required`、`maxItems`、选择的`mrs_*` | 旧完整上下文Planning兼容能力；Compiler + `PlanningMemorySelection`原子事实 |
-| `context.project` | `required`、Project选择 | `PlanningProjectContext`与Node终态/Manifest同事务 |
 | `policy.rules` | `required`、Rule选择 | `RuleSelection`与Node终态/Manifest同事务；正文只经私有Runtime边界 |
 | `agent.plan` | `maxSteps` | Application发布Plan前再次校验 |
 | `execute.plan` | `maxActions` | Application编译Execution Contract前再次校验，任何Provider调用之前失败 |
@@ -109,7 +108,7 @@ bounded_loop(Plan -> Human Review) -> Execute -> Governance Check -> Product Com
 2. 独立Memory Planning（仅在DSH显式选择后运行）：
 
 ```text
-Memory Query -> Memory Write（本次用户输入） -> Project -> Rules -> Skills
+Memory Query -> Memory Write（本次用户输入） -> Rules -> Skills
              -> bounded_loop(Plan -> Human Review)
              -> Execute -> Validate -> Product Commit
 ```
@@ -152,7 +151,7 @@ Operation Journal中先提交`provider.started`派发栅栏；派发后结果未
 - Hook先由产品Decision提交，再由Outbox恢复；edited Note同时区分被claim的旧Candidate和Decision绑定的successor。
 - Runtime Binding保存runner family/bundle版本；恢复按当次Run证据分派，不按当前全局默认猜测。
 - Runtime私有命令校验RunSpec、节点类型、合法executionPath、activation、状态、终态和产品引用；持有Runtime Key也不能伪造另一路径或在Run终态后创建节点。
-- 百炼Host采用精确域名/Workspace正则；当前允许用户已配置并授权且真实验收通过的`coding.dashscope.aliyuncs.com`，Token Plan与同形恶意域名仍在启动或付费调用前失败关闭。Project模型Profile在provider为`bailian`时使用同一安全合同。
+- 百炼Host采用精确域名/Workspace正则；当前允许用户已配置并授权且真实验收通过的`coding.dashscope.aliyuncs.com`，Token Plan与同形恶意域名仍在启动或付费调用前失败关闭。
 
 ## 8. Store与迁移
 
@@ -161,9 +160,9 @@ Product Store当前为`chat-product-store.v25`；与本节Workflow直接相关�
 - v6：Workflow View/Node/Transition/Manifest；
 - v7：Definition/Revision/RunSpec；
 - v8：Note；
-- v9：Rules与Planning Project Context；
+- v9：Rules上下文；
 - v10：Planning Memory Selection与Workflow Policy Resolution。
-- v11：保留完整上下文Planning Definition，新增独立且默认的“规划执行工作流”；它不声明Memory/Project/Rules/Skills资源节点，历史RunSpec继续引用原冻结Definition。
+- v11：保留完整上下文Planning Definition，新增独立且默认的“规划执行工作流”；它不声明可选资源节点，历史RunSpec继续引用原冻结Definition。
 - v12：新增Provider中立的Workflow Memory Query/Snapshot/Context与Memory Write Intent/Result，并发布独立Memory Planning Definition；v11的Simple Planning仍是默认且内容不变。
 - v13：新增独立Direct Agent Run、Prompt Review Request/Decision、Direct Candidate与单个Execution Agent系统Definition；Prompt Review是该节点内部状态，原始Provider请求正文只保存在Product Store一次。
 - v14：新增用户Prompt Fragment/Revision产品事实。

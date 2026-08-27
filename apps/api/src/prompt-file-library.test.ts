@@ -25,12 +25,11 @@ describe("Prompt Markdown File Library", () => {
     const library = await createPromptFileLibrary({
       repoRoot,
       env: {
-        CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
+        CHAT_WORKSPACE_ROOTS_JSON: JSON.stringify([
           {
             rootId: "root_target",
             displayName: "Target",
             canonicalPath: workspaceRoot,
-            enabledAdapters: [],
           },
         ]),
       },

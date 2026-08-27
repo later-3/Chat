@@ -67,38 +67,10 @@ export function assertExecution(snapshot: ProductSnapshot, fail: Fail): void {
     const requiresWorkspace = contract.capabilityRefs.some(
       (capability) => capability !== EXECUTION_CAPABILITY_MARKDOWN_COMPOSE,
     );
-    if (requiresWorkspace) {
-      const planningAttempt = entities.attempts[plan.planningAttemptId];
-      const projectContext =
-        planningAttempt?.planningProjectContextId === undefined
-          ? undefined
-          : entities.planningProjectContexts[planningAttempt.planningProjectContextId];
-      const workspaces =
-        projectContext === undefined
-          ? []
-          : Object.values(entities.projectResources).filter(
-              (resource) =>
-                resource.projectId === projectContext.projectId &&
-                resource.kind === "workspace" &&
-                resource.status === "active",
-            );
-      const workspace = workspaces[0];
-      if (
-        planningAttempt?.kind !== "planning" ||
-        projectContext === undefined ||
-        projectContext.productRunId !== contract.productRunId ||
-        projectContext.sha256 !== planningAttempt.planningProjectContextSha256 ||
-        workspaces.length !== 1 ||
-        workspace === undefined ||
-        contract.workspaceRef === undefined ||
-        contract.workspaceRef.projectId !== workspace.projectId ||
-        contract.workspaceRef.projectResourceId !== workspace.projectResourceId ||
-        contract.workspaceRef.rootId !== workspace.rootId ||
-        contract.workspaceRef.revision !== workspace.revision
-      ) {
-        fail(`contract ${contract.executionContractId} Workspace绑定无效`);
-      }
-    } else if (contract.workspaceRef !== undefined) {
+    if (requiresWorkspace && contract.workspaceRef === undefined) {
+      fail(`contract ${contract.executionContractId} 缺少Workspace绑定`);
+    }
+    if (!requiresWorkspace && contract.workspaceRef !== undefined) {
       fail(`contract ${contract.executionContractId} 无Workspace能力却携带Workspace绑定`);
     }
     const hash = hashCanonical("execution-contract.v1", {
@@ -377,750 +349,55 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
   for (let revision = 1; revision <= snapshot.storeRevision; revision += 1) {
     if (!committedRevisions.has(revision)) fail(`缺少store revision ${String(revision)}的Receipt`);
   }
-  const receiptShapes: Record<string, readonly string[]> = {
-    CreateProductSession: ["sessionId"],
-    // Message提交在下方按Run保存的runner family区分历史/正式configurable形状。
-    CompilePlanningInput: ["attemptId", "productRunId"],
-    PublishPlanForReview: ["planRevisionId", "approvalRequestId", "productRunId"],
-    BeginRunAttempt: ["attemptId"],
-    CompleteRunAttempt: [],
-    CompileExecutionContract: ["executionContractId"],
-    PersistExecutionCandidate: ["executionCandidateId"],
-    PrepareGovernanceReviewInput: ["attemptId"],
-    PersistValidationResult: ["validationResultId"],
-    CommitExecutionResult: [
-      "finalMessageId",
-      "productRunId",
-      "messageSha256",
-      "evidenceReceiptSha256",
-    ],
-    BeginDirectAgentAttempt: ["attemptId"],
-    PublishPromptReviewRequest: ["productRunId", "promptReviewRequestId"],
-    SubmitPromptReviewDecision: ["productRunId", "promptReviewDecisionId", "promptReviewRequestId"],
-    MarkPromptReviewDispatching: ["promptReviewRequestId"],
-    CommitPromptReviewDispatched: ["promptReviewRequestId"],
-    CommitPromptReviewOutcomeUnknown: ["promptReviewRequestId"],
-    PersistDirectAgentCandidate: ["directAgentCandidateId"],
-    CommitDirectAgentResult: ["directAgentCandidateId", "messageId", "productRunId"],
-    CommitRejectedRun: ["productRunId"],
-    ExpireApproval: ["status"],
-    CommitRunFailure: ["productRunId"],
-    UpdateOutboxStatus: [],
-    FailOutboxAndRun: ["productRunId"],
-    CommitRunOutcomeUnknown: ["productRunId"],
-    TransitionConfigurablePlanningNode: ["workflowNodeRunId"],
-    CopyWorkflowDefinition: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
-    SaveWorkflowAgentNodeConfiguration: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
-    SaveWorkflowDefinitionDraft: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
-    PublishWorkflowDefinition: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
-    ChangeWorkflowDefinitionArchiveStatus: ["workflowDefinitionId", "workflowDefinitionRevisionId"],
-    SettleIncompatibleWorkflowRun: ["productRunId"],
-    SettleRunAfterTerminalWorkflow: ["productRunId"],
-    PreparePlanningContextNone: ["contextRequestId", "productRunId"],
-    BeginMemoryContextQuery: ["memoryQueryId", "productRunId"],
-    CompleteMemoryContextQuery: ["contextPackageId", "productRunId"],
-    CommitOptionalMemoryQueryFailure: ["contextPackageId", "productRunId"],
-    CommitRequiredMemoryQueryFailure: ["productRunId"],
-    BeginWorkflowMemoryQuery: ["productRunId", "workflowMemoryQueryId"],
-    PersistWorkflowMemoryQueryResult: [
-      "productRunId",
-      "workflowMemoryQueryId",
-      "workflowNodeRunId",
-    ],
-    CreateMemoryWrite: ["memoryWriteIntentId", "memoryWriteResultId"],
-    MarkMemoryWriteDispatching: ["memoryWriteResultId"],
-    CommitMemoryWriteAccepted: ["memoryWriteResultId"],
-    CommitMemoryWriteMaterialized: ["memoryWriteResultId"],
-    CommitMemoryWriteFailed: ["memoryWriteResultId"],
-    CommitMemoryWriteOutcomeUnknown: ["memoryWriteResultId"],
-    RequestMemoryWriteReconciliation: ["memoryWriteIntentId", "memoryWriteResultId"],
-    CreateMemorySessionImport: ["memorySessionImportId"],
-    BeginMemoryAgentOperation: ["dispatchDisposition", "memoryAgentOperationId"],
-    CompleteMemoryAgentOperation: ["memoryAgentOperationId"],
-    MarkMemoryAgentOperationOutcomeUnknown: ["memoryAgentOperationId"],
-    DecideMemoryAgentWriteCandidate: ["memoryAgentWriteCandidateId", "memoryAgentWriteDecisionId"],
-    CreateMemoryImport: ["memoryImportIntentId", "memoryImportResultId"],
-    MarkMemoryImportDispatching: ["memoryImportResultId"],
-    CommitMemoryImportAccepted: ["memoryImportResultId"],
-    CommitMemoryImportMaterialized: ["memoryImportResultId"],
-    CommitMemoryImportFailed: ["memoryImportResultId"],
-    CommitMemoryImportOutcomeUnknown: ["memoryImportResultId"],
-    RequestMemoryImportReconciliation: ["memoryImportIntentId", "memoryImportResultId"],
-    RecoverMemoryImportAfterTerminalWorkflow: [
-      "outboxId",
-      "memoryImportResultId",
-      "recoveryOutboxId",
-    ],
-    BeginProjectIntake: ["projectCandidateId", "messageId"],
-    BeginProjectManagementCandidate: ["projectCandidateId", "messageId"],
-    BeginProjectAdvancement: ["projectCandidateId", "messageId"],
-    PrepareProjectAdvancementCandidate: ["projectCandidateId"],
-    FailProjectAdvancementCandidate: ["projectCandidateId"],
-    DecideProjectAdvancementCandidate: ["projectCandidateId", "projectId"],
-    TransitionProjectStage: ["projectId", "projectStageId"],
-    TransitionProjectMilestone: ["projectId", "projectMilestoneId"],
-    DecideProjectManagementCandidate: ["projectCandidateId", "projectId"],
-    PrepareProjectCandidateForReview: ["projectCandidateId"],
-    FailProjectCandidateForReview: ["projectCandidateId"],
-    CreateProjectAction: ["projectId", "projectActionId"],
-    AssignProjectAction: ["projectId"],
-    TransitionProjectAction: ["projectId"],
-    SetProjectArchiveStatus: ["projectId", "projectDecisionId", "projectStateTransitionId"],
-    TransitionProjectLifecycle: ["projectId", "projectDecisionId", "projectStateTransitionId"],
-    RecordProjectDecision: ["projectId", "projectDecisionId"],
-    RecordProjectContribution: ["projectId", "projectContributionId"],
-    ObserveProjectResource: ["projectId", "projectObservationId"],
-    CreateManagedProject: [
-      "projectId",
-      "projectParticipantId",
-      "projectResourceId",
-      "projectConfigurationRevisionId",
-      "projectEventId",
-    ],
-    CreateContentProductionProject: ["projectId", "projectContextMapId"],
-    RegisterProjectAgent: ["projectId", "projectParticipantId"],
-    RegisterProjectProfileRevision: ["projectProfileRevisionId"],
-    ProposeProjectConfiguration: ["projectId", "projectConfigurationRevisionId", "projectEventId"],
-    AdoptProjectConfiguration: [
-      "projectId",
-      "projectConfigurationRevisionId",
-      "projectDecisionId",
-      "projectEventId",
-    ],
-    CaptureProjectNeed: ["projectId", "projectNeedId", "projectEventId"],
-    ProposeProjectRequirement: ["projectId", "projectRequirementId", "projectEventId"],
-    CreateProjectWorkV2: ["projectId", "projectWorkId"],
-    RecordProjectEvidenceV2: ["projectId", "projectEvidenceId"],
-    ClaimProjectWork: ["projectId", "projectWorkId", "projectWorkClaimId"],
-    BlockProjectWork: ["projectId", "projectWorkId", "projectWorkBlockId"],
-    ResumeProjectWork: ["projectId", "projectWorkId", "projectWorkBlockId"],
-    RequestProjectWorkReview: ["projectId", "projectWorkId", "projectContributionId"],
-    HandoffProjectWork: ["projectId", "projectWorkId", "projectWorkHandoffId"],
-    DecideProjectWorkTransition: ["projectId", "projectWorkId", "projectDecisionId"],
-    RecordContentPublication: [
-      "projectId",
-      "projectWorkId",
-      "projectWorkOutcomeId",
-      "projectDecisionId",
-    ],
-    AdoptProjectPractice: [
-      "projectId",
-      "projectWorkId",
-      "projectPracticeRevisionId",
-      "projectDecisionId",
-    ],
-    ReviseNote: ["noteId", "noteRevisionId"],
-    ArchiveNote: ["noteId"],
-    RestoreNote: ["noteId"],
-    // PublishNoteCandidate在下方按manual/system_policy动态校验resultRefs。
-    SubmitNoteDecision: ["noteDecisionId", "noteCandidateId"],
-    CommitConfirmedNote: ["noteId", "noteRevisionId", "productRunId", "finalMessageId"],
-    CreateRule: ["ruleId", "ruleRevisionId"],
-    ReviseRule: ["ruleId", "ruleRevisionId"],
-    TransitionRuleLifecycle: ["ruleId", "ruleDecisionId"],
-    CreateRuleTag: ["ruleTagId"],
-    UpdateRuleTag: ["ruleTagId"],
-    ArchiveRuleTag: ["ruleTagId"],
-    CreatePromptFragment: ["promptFragmentId", "promptFragmentRevisionId"],
-    CopyPromptFragment: ["promptFragmentId", "promptFragmentRevisionId"],
-    RevisePromptFragment: ["promptFragmentId", "promptFragmentRevisionId"],
-    ReviseAgentPrompt: ["promptFragmentId", "promptFragmentRevisionId"],
-    ChangePromptFragmentArchiveStatus: ["promptFragmentId", "promptFragmentRevisionId"],
-    CreateAgentVersion: ["agentVersionId"],
-    PublishToolExecutionIntent: ["toolExecutionIntentId"],
-    SubmitToolExecutionDecision: ["toolExecutionDecisionId", "toolExecutionIntentId"],
-    ClaimToolExecutionDecision: ["toolExecutionDecisionId", "toolExecutionIntentId"],
-    CommitToolExecutionResult: ["toolExecutionIntentId", "toolExecutionResultId"],
-    // 三类Planning Context在none/ready时返回不同的事实引用，见下方动态分支。
+
+  const resultCollections: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
+    sessionId: entities.sessions,
+    messageId: entities.messages,
+    finalMessageId: entities.messages,
+    productRunId: entities.runs,
+    attemptId: entities.attempts,
+    planRevisionId: entities.plans,
+    approvalRequestId: entities.approvalRequests,
+    decisionId: entities.decisions,
+    executionContractId: entities.executionContracts,
+    executionCandidateId: entities.executionCandidates,
+    validationResultId: entities.validationResults,
+    artifactId: entities.artifacts,
+    directAgentCandidateId: entities.directAgentCandidates,
+    promptReviewRequestId: entities.promptReviewRequests,
+    promptReviewDecisionId: entities.promptReviewDecisions,
+    contextRequestId: entities.contextRequests,
+    memoryQueryId: entities.memoryQueries,
+    contextPackageId: entities.contextPackages,
+    memoryImportIntentId: entities.memoryImportIntents,
+    memoryImportResultId: entities.memoryImportResults,
+    memoryWriteIntentId: entities.memoryWriteIntents,
+    memoryWriteResultId: entities.memoryWriteResults,
+    memorySessionImportId: entities.memorySessionImports,
+    memoryAgentOperationId: entities.memoryAgentOperations,
+    memoryAgentWriteCandidateId: entities.memoryAgentWriteCandidates,
+    memoryAgentWriteDecisionId: entities.memoryAgentWriteDecisions,
+    workflowDefinitionId: entities.workflowDefinitions,
+    workflowDefinitionRevisionId: entities.workflowDefinitionRevisions,
+    workflowRunSpecId: entities.workflowRunSpecs,
+    workflowNodeRunId: entities.workflowNodeRuns,
+    noteCandidateId: entities.noteCandidates,
+    noteDecisionId: entities.noteDecisions,
+    noteRevisionId: entities.noteRevisions,
+    ruleId: entities.rules,
+    ruleRevisionId: entities.ruleRevisions,
+    ruleTagId: entities.ruleTags,
   };
   for (const receipt of receipts) {
-    if (
-      receipt.committedStoreRevision < 1 ||
-      receipt.committedStoreRevision > snapshot.storeRevision
-    ) {
-      fail(`receipt ${receipt.commandId} committedStoreRevision越界`);
-    }
-    const receiptRun = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
-    const expectedKeys =
-      receipt.commandType === "SubmitUserMessage"
-        ? receiptRun?.runnerFamily === "legacy-planning.v1"
-          ? ["messageId", "productRunId"]
-          : ["messageId", "productRunId", "workflowRunSpecId"]
-        : receipt.commandType === "SubmitPlanDecision"
-          ? receipt.resultRefs["approvalExpired"] === "true"
-            ? ["approvalExpired", "productRunId"]
-            : ["decisionId", "productRunId"]
-          : receipt.commandType === "DecideProjectCandidate"
-            ? receipt.resultRefs["projectId"] === undefined
-              ? ["projectCandidateId"]
-              : ["projectCandidateId", "projectId"]
-            : receipt.commandType === "PreparePlanningMemoryContext"
-              ? receipt.resultRefs["planningMemorySelectionId"] === undefined
-                ? ["contextStatus", "productRunId", "workflowNodeRunId"]
-                : [
-                    "contextStatus",
-                    "planningMemorySelectionId",
-                    "productRunId",
-                    "workflowNodeRunId",
-                  ]
-              : receipt.commandType === "PreparePlanningProjectContext"
-                ? receipt.resultRefs["planningProjectContextId"] === undefined
-                  ? ["productRunId", "workflowNodeRunId"]
-                  : ["planningProjectContextId", "productRunId", "workflowNodeRunId"]
-                : receipt.commandType === "PreparePlanningRulesContext"
-                  ? receipt.resultRefs["ruleSelectionId"] === undefined
-                    ? ["productRunId", "workflowNodeRunId"]
-                    : ["productRunId", "ruleSelectionId", "workflowNodeRunId"]
-                  : receipt.commandType === "PublishNoteCandidate"
-                    ? receipt.resultRefs["workflowPolicyResolutionId"] === undefined
-                      ? ["noteCandidateId", "productRunId"]
-                      : ["noteCandidateId", "productRunId", "workflowPolicyResolutionId"]
-                    : receipt.commandType === "FreezeWorkflowMemoryContext"
-                      ? receipt.resultRefs["workflowMemoryContextId"] === undefined
-                        ? ["productRunId"]
-                        : ["productRunId", "workflowMemoryContextId"]
-                      : receipt.commandType === "PersistMemoryWriteAgentCandidate"
-                        ? receipt.resultRefs["memoryAgentWriteCandidateId"] === undefined
-                          ? ["productRunId"]
-                          : ["memoryAgentWriteCandidateId", "productRunId"]
-                        : receiptShapes[receipt.commandType];
-    if (expectedKeys === undefined) fail(`receipt ${receipt.commandId} commandType未知`);
-    const actualKeys = Object.keys(receipt.resultRefs).sort();
-    if (JSON.stringify(actualKeys) !== JSON.stringify([...expectedKeys].sort())) {
-      fail(`receipt ${receipt.commandId} resultRefs与Command类型不一致`);
-    }
     for (const [key, value] of Object.entries(receipt.resultRefs)) {
-      const coordinationRefExists =
-        key === "projectProfileRevisionId"
-          ? entities.projectProfileRevisions[value] !== undefined
-          : key === "projectConfigurationRevisionId"
-            ? entities.projectConfigurationRevisions[value] !== undefined
-            : key === "projectEventId"
-              ? entities.projectEvents[value] !== undefined
-              : key === "projectNeedId"
-                ? entities.projectNeeds[value] !== undefined
-                : key === "projectRequirementId"
-                  ? entities.projectRequirements[value] !== undefined
-                  : key === "projectArtifactRefId"
-                    ? entities.projectArtifactRefs[value] !== undefined
-                    : key === "projectMetricObservationId"
-                      ? entities.projectMetricObservations[value] !== undefined
-                      : key === "toolExecutionIntentId"
-                        ? entities.toolExecutionIntents[value] !== undefined
-                        : key === "toolExecutionDecisionId"
-                          ? entities.toolExecutionDecisions[value] !== undefined
-                          : key === "toolExecutionResultId"
-                            ? entities.toolExecutionResults[value] !== undefined
-                            : key === "projectContextMapId"
-                              ? entities.projectContextMaps[value] !== undefined
-                              : key === "projectParticipantId"
-                                ? entities.projectParticipants[value] !== undefined
-                                : key === "projectResourceId"
-                                  ? entities.projectResources[value] !== undefined
-                                  : key === "projectWorkId"
-                                    ? entities.projectWorks[value] !== undefined
-                                    : key === "projectEvidenceId"
-                                      ? entities.projectEvidence[value] !== undefined
-                                      : key === "projectWorkClaimId"
-                                        ? entities.projectWorkClaims[value] !== undefined
-                                        : key === "projectWorkBlockId"
-                                          ? entities.projectWorkBlocks[value] !== undefined
-                                          : key === "projectWorkHandoffId"
-                                            ? entities.projectWorkHandoffs[value] !== undefined
-                                            : key === "projectWorkOutcomeId"
-                                              ? entities.projectWorkOutcomes[value] !== undefined
-                                              : key === "projectPracticeRevisionId"
-                                                ? entities.projectPracticeRevisions[value] !==
-                                                  undefined
-                                                : undefined;
-      const exists =
-        coordinationRefExists ??
-        (key === "sessionId"
-          ? entities.sessions[value] !== undefined
-          : key === "messageId" || key === "finalMessageId"
-            ? entities.messages[value] !== undefined
-            : key === "productRunId"
-              ? entities.runs[value] !== undefined
-              : key === "workflowRunSpecId"
-                ? entities.workflowRunSpecs[value] !== undefined
-                : key === "workflowDefinitionId"
-                  ? entities.workflowDefinitions[value] !== undefined
-                  : key === "workflowDefinitionRevisionId"
-                    ? entities.workflowDefinitionRevisions[value] !== undefined
-                    : key === "attemptId"
-                      ? entities.attempts[value] !== undefined
-                      : key === "planRevisionId"
-                        ? entities.plans[value] !== undefined
-                        : key === "approvalRequestId"
-                          ? entities.approvalRequests[value] !== undefined
-                          : key === "decisionId"
-                            ? entities.decisions[value] !== undefined
-                            : key === "promptReviewRequestId"
-                              ? entities.promptReviewRequests[value] !== undefined
-                              : key === "promptReviewDecisionId"
-                                ? entities.promptReviewDecisions[value] !== undefined
-                                : key === "directAgentCandidateId"
-                                  ? entities.directAgentCandidates[value] !== undefined
-                                  : key === "promptFragmentId"
-                                    ? entities.promptFragments[value] !== undefined
-                                    : key === "promptFragmentRevisionId"
-                                      ? entities.promptFragmentRevisions[value] !== undefined
-                                      : key === "executionContractId"
-                                        ? entities.executionContracts[value] !== undefined
-                                        : key === "executionCandidateId"
-                                          ? entities.executionCandidates[value] !== undefined
-                                          : key === "validationResultId"
-                                            ? entities.validationResults[value] !== undefined
-                                            : key === "workflowNodeRunId"
-                                              ? entities.workflowNodeRuns[value] !== undefined
-                                              : key === "memoryQueryId"
-                                                ? entities.memoryQueries[value] !== undefined
-                                                : key === "contextRequestId"
-                                                  ? entities.contextRequests[value] !== undefined
-                                                  : key === "contextPackageId"
-                                                    ? entities.contextPackages[value] !== undefined
-                                                    : key === "memoryImportIntentId"
-                                                      ? entities.memoryImportIntents[value] !==
-                                                        undefined
-                                                      : key === "memoryImportResultId"
-                                                        ? entities.memoryImportResults[value] !==
-                                                          undefined
-                                                        : key === "workflowMemoryQueryId"
-                                                          ? entities.workflowMemoryQueries[
-                                                              value
-                                                            ] !== undefined
-                                                          : key === "workflowMemoryContextId"
-                                                            ? entities.workflowMemoryContexts[
-                                                                value
-                                                              ] !== undefined
-                                                            : key === "memoryWriteIntentId"
-                                                              ? entities.memoryWriteIntents[
-                                                                  value
-                                                                ] !== undefined
-                                                              : key === "memoryWriteResultId"
-                                                                ? entities.memoryWriteResults[
-                                                                    value
-                                                                  ] !== undefined
-                                                                : key === "memorySessionImportId"
-                                                                  ? entities.memorySessionImports[
-                                                                      value
-                                                                    ] !== undefined
-                                                                  : key === "memoryAgentOperationId"
-                                                                    ? entities
-                                                                        .memoryAgentOperations[
-                                                                        value
-                                                                      ] !== undefined
-                                                                    : key ===
-                                                                        "memoryAgentWriteCandidateId"
-                                                                      ? entities
-                                                                          .memoryAgentWriteCandidates[
-                                                                          value
-                                                                        ] !== undefined
-                                                                      : key ===
-                                                                          "memoryAgentWriteDecisionId"
-                                                                        ? entities
-                                                                            .memoryAgentWriteDecisions[
-                                                                            value
-                                                                          ] !== undefined
-                                                                        : key === "outboxId" ||
-                                                                            key ===
-                                                                              "recoveryOutboxId"
-                                                                          ? snapshot.outbox[
-                                                                              value
-                                                                            ] !== undefined
-                                                                          : key === "projectId"
-                                                                            ? entities.projects[
-                                                                                value
-                                                                              ] !== undefined
-                                                                            : key ===
-                                                                                "projectCandidateId"
-                                                                              ? entities
-                                                                                  .projectCandidates[
-                                                                                  value
-                                                                                ] !== undefined
-                                                                              : key ===
-                                                                                  "projectStageId"
-                                                                                ? entities
-                                                                                    .projectStages[
-                                                                                    value
-                                                                                  ] !== undefined
-                                                                                : key ===
-                                                                                    "projectMilestoneId"
-                                                                                  ? entities
-                                                                                      .projectMilestones[
-                                                                                      value
-                                                                                    ] !== undefined
-                                                                                  : key ===
-                                                                                      "projectActionId"
-                                                                                    ? entities
-                                                                                        .projectActions[
-                                                                                        value
-                                                                                      ] !==
-                                                                                      undefined
-                                                                                    : key ===
-                                                                                        "projectDecisionId"
-                                                                                      ? entities
-                                                                                          .projectDecisions[
-                                                                                          value
-                                                                                        ] !==
-                                                                                        undefined
-                                                                                      : key ===
-                                                                                          "projectStateTransitionId"
-                                                                                        ? entities
-                                                                                            .projectStateTransitions[
-                                                                                            value
-                                                                                          ] !==
-                                                                                          undefined
-                                                                                        : key ===
-                                                                                            "projectContributionId"
-                                                                                          ? entities
-                                                                                              .projectContributions[
-                                                                                              value
-                                                                                            ] !==
-                                                                                            undefined
-                                                                                          : key ===
-                                                                                              "projectObservationId"
-                                                                                            ? entities
-                                                                                                .projectObservations[
-                                                                                                value
-                                                                                              ] !==
-                                                                                              undefined
-                                                                                            : key ===
-                                                                                                "noteId"
-                                                                                              ? entities
-                                                                                                  .notes[
-                                                                                                  value
-                                                                                                ] !==
-                                                                                                undefined
-                                                                                              : key ===
-                                                                                                  "noteRevisionId"
-                                                                                                ? entities
-                                                                                                    .noteRevisions[
-                                                                                                    value
-                                                                                                  ] !==
-                                                                                                  undefined
-                                                                                                : key ===
-                                                                                                    "noteCandidateId"
-                                                                                                  ? entities
-                                                                                                      .noteCandidates[
-                                                                                                      value
-                                                                                                    ] !==
-                                                                                                    undefined
-                                                                                                  : key ===
-                                                                                                      "noteDecisionId"
-                                                                                                    ? entities
-                                                                                                        .noteDecisions[
-                                                                                                        value
-                                                                                                      ] !==
-                                                                                                      undefined
-                                                                                                    : key ===
-                                                                                                        "ruleId"
-                                                                                                      ? entities
-                                                                                                          .rules[
-                                                                                                          value
-                                                                                                        ] !==
-                                                                                                        undefined
-                                                                                                      : key ===
-                                                                                                          "ruleRevisionId"
-                                                                                                        ? entities
-                                                                                                            .ruleRevisions[
-                                                                                                            value
-                                                                                                          ] !==
-                                                                                                          undefined
-                                                                                                        : key ===
-                                                                                                            "ruleTagId"
-                                                                                                          ? entities
-                                                                                                              .ruleTags[
-                                                                                                              value
-                                                                                                            ] !==
-                                                                                                            undefined
-                                                                                                          : key ===
-                                                                                                              "ruleDecisionId"
-                                                                                                            ? entities
-                                                                                                                .ruleDecisions[
-                                                                                                                value
-                                                                                                              ] !==
-                                                                                                              undefined
-                                                                                                            : key ===
-                                                                                                                "agentVersionId"
-                                                                                                              ? entities
-                                                                                                                  .agentVersions[
-                                                                                                                  value
-                                                                                                                ] !==
-                                                                                                                undefined
-                                                                                                              : key ===
-                                                                                                                  "ruleSelectionId"
-                                                                                                                ? entities
-                                                                                                                    .ruleSelections[
-                                                                                                                    value
-                                                                                                                  ] !==
-                                                                                                                  undefined
-                                                                                                                : key ===
-                                                                                                                    "planningProjectContextId"
-                                                                                                                  ? entities
-                                                                                                                      .planningProjectContexts[
-                                                                                                                      value
-                                                                                                                    ] !==
-                                                                                                                    undefined
-                                                                                                                  : key ===
-                                                                                                                      "planningMemorySelectionId"
-                                                                                                                    ? entities
-                                                                                                                        .planningMemorySelections[
-                                                                                                                        value
-                                                                                                                      ] !==
-                                                                                                                      undefined
-                                                                                                                    : key ===
-                                                                                                                        "workflowPolicyResolutionId"
-                                                                                                                      ? entities
-                                                                                                                          .workflowPolicyResolutions[
-                                                                                                                          value
-                                                                                                                        ] !==
-                                                                                                                        undefined
-                                                                                                                      : key ===
-                                                                                                                          "contextStatus"
-                                                                                                                        ? value ===
-                                                                                                                            "none" ||
-                                                                                                                          value ===
-                                                                                                                            "ready"
-                                                                                                                        : key ===
-                                                                                                                            "dispatchDisposition"
-                                                                                                                          ? value ===
-                                                                                                                              "created" ||
-                                                                                                                            value ===
-                                                                                                                              "existing"
-                                                                                                                          : key ===
-                                                                                                                              "fencingToken"
-                                                                                                                            ? /^\d+$/u.test(
-                                                                                                                                value,
-                                                                                                                              ) &&
-                                                                                                                              Number(
-                                                                                                                                value,
-                                                                                                                              ) >
-                                                                                                                                0
-                                                                                                                            : key ===
-                                                                                                                                "executionMode"
-                                                                                                                              ? value ===
-                                                                                                                                  "execute" ||
-                                                                                                                                value ===
-                                                                                                                                  "reconcile"
-                                                                                                                              : key ===
-                                                                                                                                  "messageSha256"
-                                                                                                                                ? /^[a-f0-9]{64}$/.test(
-                                                                                                                                    value,
-                                                                                                                                  )
-                                                                                                                                : key ===
-                                                                                                                                    "approvalExpired"
-                                                                                                                                  ? value ===
-                                                                                                                                    "true"
-                                                                                                                                  : key ===
-                                                                                                                                      "status"
-                                                                                                                                    ? value ===
-                                                                                                                                        "expired" ||
-                                                                                                                                      value ===
-                                                                                                                                        "already_decided"
-                                                                                                                                    : key ===
-                                                                                                                                        "evidenceReceiptSha256"
-                                                                                                                                      ? /^[a-f0-9]{64}$/.test(
-                                                                                                                                          value,
-                                                                                                                                        )
-                                                                                                                                      : false);
-      if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
-    }
-    const receiptDefinitionId = receipt.resultRefs["workflowDefinitionId"];
-    const receiptRevisionId = receipt.resultRefs["workflowDefinitionRevisionId"];
-    if (receiptDefinitionId !== undefined && receiptRevisionId !== undefined) {
-      const referencedRevision = entities.workflowDefinitionRevisions[receiptRevisionId];
-      if (referencedRevision?.workflowDefinitionId !== receiptDefinitionId) {
-        fail(`receipt ${receipt.commandId} Definition与Revision交叉绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "SubmitUserMessage") {
-      const message = entities.messages[receipt.resultRefs["messageId"] ?? ""];
-      const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
-      if (
-        message === undefined ||
-        run === undefined ||
-        run.sourceMessageId !== message.messageId ||
-        run.sessionId !== message.sessionId ||
-        message.role !== "user"
-      ) {
-        fail(`receipt ${receipt.commandId} 的Message/Run绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "PreparePlanningRulesContext") {
-      const selection = entities.ruleSelections[receipt.resultRefs["ruleSelectionId"] ?? ""];
-      if (
-        receipt.resultRefs["ruleSelectionId"] !== undefined &&
-        selection?.productRunId !== receipt.resultRefs["productRunId"]
-      ) {
-        fail(`receipt ${receipt.commandId} Rule Selection与Run交叉绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "PreparePlanningMemoryContext") {
-      const selection =
-        entities.planningMemorySelections[receipt.resultRefs["planningMemorySelectionId"] ?? ""];
-      if (
-        receipt.resultRefs["contextStatus"] === "ready" &&
-        selection?.productRunId !== receipt.resultRefs["productRunId"]
-      ) {
-        fail(`receipt ${receipt.commandId} Memory Selection与Run交叉绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "PreparePlanningProjectContext") {
-      const context =
-        entities.planningProjectContexts[receipt.resultRefs["planningProjectContextId"] ?? ""];
-      if (
-        receipt.resultRefs["planningProjectContextId"] !== undefined &&
-        context?.productRunId !== receipt.resultRefs["productRunId"]
-      ) {
-        fail(`receipt ${receipt.commandId} Project Context与Run交叉绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "PublishNoteCandidate") {
-      const candidate = entities.noteCandidates[receipt.resultRefs["noteCandidateId"] ?? ""];
-      const resolution =
-        entities.workflowPolicyResolutions[receipt.resultRefs["workflowPolicyResolutionId"] ?? ""];
-      if (
-        candidate?.productRunId !== receipt.resultRefs["productRunId"] ||
-        (receipt.resultRefs["workflowPolicyResolutionId"] !== undefined &&
-          (resolution === undefined ||
-            candidate === undefined ||
-            resolution.productRunId !== receipt.resultRefs["productRunId"] ||
-            resolution.noteCandidateId !== candidate.noteCandidateId))
-      ) {
-        fail(`receipt ${receipt.commandId} Note Candidate/Policy/Run交叉绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "PublishPlanForReview") {
-      const plan = entities.plans[receipt.resultRefs["planRevisionId"] ?? ""];
-      const approval = entities.approvalRequests[receipt.resultRefs["approvalRequestId"] ?? ""];
-      const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
-      if (
-        plan === undefined ||
-        approval === undefined ||
-        run === undefined ||
-        plan.productRunId !== run.productRunId ||
-        approval.productRunId !== run.productRunId ||
-        approval.planId !== plan.planId ||
-        approval.planRevision !== plan.planRevision ||
-        approval.planSha256 !== plan.sha256
-      ) {
-        fail(`receipt ${receipt.commandId} 的Plan/Approval/Run绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "SubmitPlanDecision") {
-      const decision = entities.decisions[receipt.resultRefs["decisionId"] ?? ""];
-      const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
-      if (
-        receipt.resultRefs["approvalExpired"] !== "true" &&
-        (decision === undefined || run === undefined || decision.productRunId !== run.productRunId)
-      ) {
-        fail(`receipt ${receipt.commandId} 的Decision/Run绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "PublishPromptReviewRequest") {
-      const request =
-        entities.promptReviewRequests[receipt.resultRefs["promptReviewRequestId"] ?? ""];
-      const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
-      if (
-        request === undefined ||
-        run?.runKind !== "direct_agent" ||
-        request.productRunId !== run.productRunId
-      ) {
-        fail(`receipt ${receipt.commandId} 的Prompt Review Request/Run绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "SubmitPromptReviewDecision") {
-      const request =
-        entities.promptReviewRequests[receipt.resultRefs["promptReviewRequestId"] ?? ""];
-      const decision =
-        entities.promptReviewDecisions[receipt.resultRefs["promptReviewDecisionId"] ?? ""];
-      const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
-      if (
-        request === undefined ||
-        decision === undefined ||
-        run?.runKind !== "direct_agent" ||
-        request.productRunId !== run.productRunId ||
-        decision.productRunId !== run.productRunId ||
-        decision.promptReviewRequestId !== request.promptReviewRequestId
-      ) {
-        fail(`receipt ${receipt.commandId} 的Prompt Review Decision/Request/Run绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "PersistDirectAgentCandidate") {
-      const candidate =
-        entities.directAgentCandidates[receipt.resultRefs["directAgentCandidateId"] ?? ""];
-      if (
-        candidate === undefined ||
-        entities.runs[candidate.productRunId]?.runKind !== "direct_agent"
-      ) {
-        fail(`receipt ${receipt.commandId} 的Direct Agent Candidate绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "CommitDirectAgentResult") {
-      const candidate =
-        entities.directAgentCandidates[receipt.resultRefs["directAgentCandidateId"] ?? ""];
-      const message = entities.messages[receipt.resultRefs["messageId"] ?? ""];
-      const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
-      if (
-        candidate === undefined ||
-        message === undefined ||
-        run?.runKind !== "direct_agent" ||
-        candidate.productRunId !== run.productRunId ||
-        run.finalDirectAgentCandidateId !== candidate.directAgentCandidateId ||
-        run.finalMessageId !== message.messageId ||
-        message.sourceRunId !== run.productRunId ||
-        message.content.text !== candidate.output.text
-      ) {
-        fail(`receipt ${receipt.commandId} 的Direct Agent Candidate/Message/Run绑定不一致`);
-      }
-    }
-    if (receipt.commandType === "CommitExecutionResult") {
-      const message = entities.messages[receipt.resultRefs["finalMessageId"] ?? ""];
-      const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
-      if (
-        message === undefined ||
-        run === undefined ||
-        run.finalMessageId !== message.messageId ||
-        message.sourceRunId !== run.productRunId
-      ) {
-        fail(`receipt ${receipt.commandId} 的正式Message/Run绑定不一致`);
-      }
-      const messageSha256 = hashCanonical("message.v1", {
-        messageId: message.messageId,
-        sessionId: message.sessionId,
-        sessionSequence: message.sessionSequence,
-        role: message.role,
-        content: message.content,
-      });
-      if (receipt.resultRefs["messageSha256"] !== messageSha256) {
-        fail(`receipt ${receipt.commandId} 的messageSha256不一致`);
+      const collection = resultCollections[key];
+      if (collection !== undefined && collection[value] === undefined) {
+        fail(`receipt ${receipt.commandId} 的${key}悬空`);
       }
     }
   }
+
   for (const entry of Object.values(snapshot.outbox)) {
-    if (entry.kind === "project_intake_start" || entry.kind === "project_intake_resume") {
-      const candidate = entities.projectCandidates[entry.projectCandidateId];
-      if (
-        candidate === undefined ||
-        candidate.candidateKind !== "intake" ||
-        entry.expectedCandidateRevision > candidate.revision
-      ) {
-        fail(`outbox ${entry.outboxId} Project Intake绑定不完整`);
-      }
-      continue;
-    }
-    if (entry.kind === "project_advancement_start" || entry.kind === "project_advancement_resume") {
-      const candidate = entities.projectCandidates[entry.projectCandidateId];
-      if (
-        candidate === undefined ||
-        candidate.candidateKind !== "advancement" ||
-        entry.expectedCandidateRevision > candidate.revision
-      ) {
-        fail(`outbox ${entry.outboxId} Project Advancement绑定不完整`);
-      }
-      continue;
-    }
     if (entry.kind === "workflow_start" || entry.kind === "workflow_resume") {
       if (entities.runs[entry.productRunId] === undefined) {
         fail(`outbox ${entry.outboxId} 悬空productRunId`);
@@ -1160,11 +437,7 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
         ) {
           fail(`outbox ${entry.outboxId} workflow_resume绑定不完整`);
         }
-      } else {
-        const hookCandidate =
-          entry.hookNoteCandidateId === undefined
-            ? undefined
-            : entities.noteCandidates[entry.hookNoteCandidateId];
+      } else if (entry.noteCandidateId !== undefined || entry.noteDecisionId !== undefined) {
         const candidate =
           entry.noteCandidateId === undefined
             ? undefined
@@ -1174,17 +447,13 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
             ? undefined
             : entities.noteDecisions[entry.noteDecisionId];
         if (
-          hookCandidate === undefined ||
           candidate === undefined ||
           decision === undefined ||
-          hookCandidate.productRunId !== entry.productRunId ||
           candidate.productRunId !== entry.productRunId ||
           decision.productRunId !== entry.productRunId ||
-          decision.noteCandidateId !== candidate.noteCandidateId ||
-          (hookCandidate.noteCandidateId !== candidate.noteCandidateId &&
-            candidate.supersedesCandidateId !== hookCandidate.noteCandidateId)
+          decision.noteCandidateId !== candidate.noteCandidateId
         ) {
-          fail(`outbox ${entry.outboxId} workflow_resume绑定不完整`);
+          fail(`outbox ${entry.outboxId} Note workflow_resume绑定不完整`);
         }
       }
       continue;

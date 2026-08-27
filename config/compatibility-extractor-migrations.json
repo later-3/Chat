@@ -1,7 +1,8 @@
 {
-  "schemaVersion": "chat-compatibility-extractor-migrations.v1",
+  "schemaVersion": "chat-compatibility-extractor-migrations.v3",
   "migrations": [
     {
+      "proofKind": "reproducible-base",
       "domainId": "workflow-run-spec",
       "fromCanonicalVersion": 1,
       "toCanonicalVersion": 2,
@@ -9,6 +10,16 @@
       "identities": ["workflow-run-spec.v1"]
     },
     {
+      "proofKind": "recorded-baseline-repair",
+      "domainId": "workflow-run-spec",
+      "fromCanonicalVersion": 2,
+      "toCanonicalVersion": 3,
+      "baseCommit": "8a6a8133229bfd9a7f38528bb1062e1c65718a48",
+      "identities": ["workflow-run-spec.v1", "workflow-run-spec.v2"],
+      "repairReason": "historical-source-baseline-divergence"
+    },
+    {
+      "proofKind": "reproducible-base",
       "domainId": "product-store",
       "fromCanonicalVersion": 2,
       "toCanonicalVersion": 3,
@@ -59,6 +70,328 @@
       "toCanonicalVersion": 3,
       "baseCommit": "24f23887e1746e797e57fcc7651d9d3b042eeda2",
       "authorities": ["legacyAuthority", "writeAuthority"]
+    }
+  ],
+  "baselineRepairs": [
+    {
+      "baseCommit": "3fd5b65c4819187c2b02150ff3e69fc41a59cc4b",
+      "domainId": "bridge-state",
+      "target": "legacyAuthority",
+      "recordedCanonicalSha256": "c02f5e36f7edbca4e4ccd0d406e3c2d4a6b46dfb7cb664e60a9bc27f1ba88ef6",
+      "recomputedCanonicalSha256": "faf79bed1c84f98e476d643a6ba7a4647aa6fb0f3e590d490e16ef6c46d1ebc9",
+      "repairReason": "historical-source-baseline-divergence"
+    },
+    {
+      "baseCommit": "3fd5b65c4819187c2b02150ff3e69fc41a59cc4b",
+      "domainId": "bridge-state",
+      "target": "generation",
+      "identity": "chat-dsh-lifeos-state.v13",
+      "recordedCanonicalSha256": "5586e3a5ffd1918dfdb583d062bb2fc08a2b5bc0b83e31e67afbda0bedd5c61b",
+      "recomputedCanonicalSha256": "d20927c6ab551d35315617789651c1f5590ae2c3289f472d76164889d3f3d9e7",
+      "repairReason": "historical-source-baseline-divergence"
+    },
+    {
+      "baseCommit": "3fd5b65c4819187c2b02150ff3e69fc41a59cc4b",
+      "domainId": "bridge-state",
+      "target": "generation",
+      "identity": "chat-dsh-lifeos-state.v14",
+      "recordedCanonicalSha256": "4c1ba02cf41c31df9aceab0d33b337b0b0e419ead8d89e42073eb1e6a046c126",
+      "recomputedCanonicalSha256": "2dd42ef5cd08ba8a5fe0bd163e8317e0c21c7035b3d420977f3c4313f02e42c3",
+      "repairReason": "historical-source-baseline-divergence"
+    },
+    {
+      "baseCommit": "3fd5b65c4819187c2b02150ff3e69fc41a59cc4b",
+      "domainId": "bridge-state",
+      "target": "generation",
+      "identity": "chat-dsh-lifeos-state.v15",
+      "recordedCanonicalSha256": "8e1df409eccdf76e81cf77492f514c91a8fcf49f22102eb4abed6755130051f3",
+      "recomputedCanonicalSha256": "b346f8720b7eabe25fe070c2e248ecc4975a9a5351898c927f50fd20f9134653",
+      "repairReason": "historical-source-baseline-divergence"
+    },
+    {
+      "baseCommit": "3fd5b65c4819187c2b02150ff3e69fc41a59cc4b",
+      "domainId": "bridge-state",
+      "target": "generation",
+      "identity": "chat-dsh-lifeos-state.v16",
+      "recordedCanonicalSha256": "8635036d41e0311e2cd22d800e2670635c25a62c6b9693d2c1d0a812619b22d7",
+      "recomputedCanonicalSha256": "c01db85a437395d58f5471b1e571825e19c191c73e985040fee4bbc74ccc8546",
+      "repairReason": "historical-source-baseline-divergence"
+    }
+  ],
+  "breakingChanges": [
+    {
+      "baseCommit": "3fd5b65c4819187c2b02150ff3e69fc41a59cc4b",
+      "domainIds": ["network-contracts", "browser-dto-events"],
+      "approvedBy": "user:Later",
+      "approvalReference": "2026-08-27 用户明确授权：‘现在 main 分支呢，把 Project 也给干掉，把 Project 干掉。’",
+      "detect": "以删除前main提交为基线，比较compatibility generation的精确旧Hash、当前Hash与删除集合",
+      "why": "Project产品纵向从main整体退役；其网络代际不再保留旧读入口，仍存活但嵌套Project字段的代际同步发生经授权的破坏性收窄",
+      "fix": "当前客户端停止使用Project合同；公共API只保留Chat、Workflow、Memory、Rules、Notes与Workspace Root能力",
+      "verify": "精确API Surface记录、compatibility gate、Store迁移测试、根级质量门与真实服务健康检查",
+      "rollback": "切回codex/backup-before-project-removal-20260827恢复完整Project代码与旧合同",
+      "generations": [
+        {
+          "identity": "chat-agent-profile-api.v2",
+          "previousCanonicalSha256": "4264f061adcbe4524be59346c932d7dc35d1c08485a30b4d22f4267807b499d6",
+          "currentCanonicalSha256": "740172cef29265557b0fed8377642de64ade9e1427ddfd635215b3bc6eb85a3c"
+        },
+        {
+          "identity": "chat-agent-profile-api.v3",
+          "previousCanonicalSha256": "77c2233dfbab725ecc15fde9a7d870364767f0523ec353171ea35d1b4b77eef6",
+          "currentCanonicalSha256": "fea15d62de276b2327f38c60520075341b4cbaf141cab597ee60ce153a2e37f4"
+        },
+        {
+          "identity": "chat-agent-profile-api.v4",
+          "previousCanonicalSha256": "50f7eeb446e6fda6ab4d731899c81b2b05873c555debe9ef080a583347918652",
+          "currentCanonicalSha256": "9b6f711b66fbe295c9ad6d7a8f6bf2bf681864abdd29aed6a4b7a8cc54edf66e"
+        },
+        {
+          "identity": "chat-product-api.v1",
+          "previousCanonicalSha256": "7b352385e09a4e5cc61bb73b53afef31fca60c1c58d564535224dd87ab6a9707",
+          "currentCanonicalSha256": "28729b6cad0345549b559131f968b15183ef18de91d272a00461474cc19f505b"
+        },
+        {
+          "identity": "chat-project-api.v2",
+          "previousCanonicalSha256": "d40790c43cdc59b0eecfbd611c03e10aaa71167a180af23f4331b1adb74cf7c4",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-project-api.v3",
+          "previousCanonicalSha256": "636b19c643545784564cc4037a0b1c3a44f2d4523100816c85692f00f507bf81",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-prompt-turn-preview-api.v2",
+          "previousCanonicalSha256": "703a72c3073b995dc827b896f133f734931015ab77a6983e9ec711bc82d4af7b",
+          "currentCanonicalSha256": "7db9676f8bd3ad6b95790d61f956358e1dc43ae06075b82038a848f2eee6570b"
+        },
+        {
+          "identity": "chat-rules-api.v1",
+          "previousCanonicalSha256": "60b434f646146f01b38a138dd96410186d3ba6f131942bbad53a790103e60690",
+          "currentCanonicalSha256": "e0fbf8db635107b696eb3a9719fe77b18fe176d0138a4c1d076f71d8c8fa3c45"
+        },
+        {
+          "identity": "chat-workflow-api.v1",
+          "previousCanonicalSha256": "7db87dd58a8efdaafc59e7e96387423947f88f3a2531e840e82c49b2f03fae30",
+          "currentCanonicalSha256": "826b451c5784a38f73e3509ce76c0c4fe3ed1b7f62569bee1e623bacf17f9580"
+        },
+        {
+          "identity": "chat-workflow-designer-api.v2",
+          "previousCanonicalSha256": "5dd2f0b4250c0ec6a661ce3f0097cc710274ceed806e3d6a610ece819a00cb02",
+          "currentCanonicalSha256": "ea8cccf93a02ae4e4d29f92c15b733e60ceab337b51315e7bd480fff14a09198"
+        },
+        {
+          "identity": "chat-workflow-execution-trace.v2",
+          "previousCanonicalSha256": "b42932471336cfa51b94f500cd3a1b12719ed49c77d538a1c04bf8b26a7c633a",
+          "currentCanonicalSha256": "4f65b8a0610ee2f4a77e59b7fe0db21655d5551d3e9cee421d6a24ee0949357a"
+        },
+        {
+          "identity": "chat-workflow-product-api.v2",
+          "previousCanonicalSha256": "e08a541cb50397086e9a7719add1098bca2c95cd9e8dd7941e1dbbba72de66c5",
+          "currentCanonicalSha256": "e5a984b5eb6d66e96feadad0ff3c1ec883f58526fc8376b2e9d69969779d3db6"
+        },
+        {
+          "identity": "project-agent-context.v2",
+          "previousCanonicalSha256": "87aff72917b29183825e19205e92cb16b44f5790e18f66a5e265dbc905201409",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "project-agent-coordination.v1",
+          "previousCanonicalSha256": "8ffe15fb0db4db98e2ed663916b9686bf39df37f6bef0f58ca7b124cd2ded01b",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "project-inbound-change.v1",
+          "previousCanonicalSha256": "f42a2c415a3c71fb7a1e1556f2a73e4630b77d555f8358c3b11f24fc85755ff0",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "project-management-api.v1",
+          "previousCanonicalSha256": "996de920d835244cadea7f555d1967996ecfe9b1e1d9e70f329ebfe1559daf2e",
+          "currentCanonicalSha256": null
+        }
+      ]
+    },
+    {
+      "baseCommit": "3fd5b65c4819187c2b02150ff3e69fc41a59cc4b",
+      "domainIds": ["product-store"],
+      "approvedBy": "user:Later",
+      "approvalReference": "2026-08-27 用户明确授权：‘现在 main 分支呢，把 Project 也给干掉，把 Project 干掉。’",
+      "detect": "以删除前main提交为基线，逐代比较Product Store合同闭包与当前v27唯一写格式",
+      "why": "v1-v25完整迁移链携带大量已退役Project结构；main不再维护这套历史产品模型，v10-v26仅由窄提取器一次性迁入v27",
+      "fix": "v1-v9通过备用分支恢复；v10-v26使用不拥有旧Project模型的窄迁移入口；新写入只允许v27",
+      "verify": "真实v19数据迁入v27、revision与receipt守恒、旧版本定向迁移测试、兼容治理门与Store测试",
+      "rollback": "切回codex/backup-before-project-removal-20260827，并使用仓库外保存的原始v19 Store备份",
+      "generations": [
+        {
+          "identity": "chat-product-store.v1",
+          "previousCanonicalSha256": "1b53c48e92f93144b143f1146edd59e0dc920b29448713a9e32400c963cc5e44",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v2",
+          "previousCanonicalSha256": "e52cb67987dcb4563915c01a777f9371eb401f28016656fb632ef02cdfbc1d40",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v3",
+          "previousCanonicalSha256": "db23cf83e146c9bee4333876416c706ee0f6e1f1c5dc01bf26e2de2213b1a62d",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v4",
+          "previousCanonicalSha256": "c13f420dd096f135d6c8f19f3fbe2c4a38f385319cf2d520564b60ad8f5d5986",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v5",
+          "previousCanonicalSha256": "18ec6ac00e521df952aee4c9bafdc5f4acae1c0aa2ae812647ed54f59a04783d",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v6",
+          "previousCanonicalSha256": "073b7431eb485c82f4281b2f7b8a168f37837fa5715e0e54f1d8407f0a398d8e",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v7",
+          "previousCanonicalSha256": "109b93a5555d227918336759fe27ccc46eed7fbf176133344825a46cac95c324",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v8",
+          "previousCanonicalSha256": "8f07f1b409a1f89c9b848eea0392c45b0f6076454b049928cbcdf6ea66995bdd",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v9",
+          "previousCanonicalSha256": "3d25c9e1e25c1b99cea05ff3eddb4efbfcc1a2e73278473893d0df67ac706061",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v10",
+          "previousCanonicalSha256": "15e38ee6a9d8f437d444f84594e3799c24d52d473a6fc02733ec5ac284fd1dbe",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v11",
+          "previousCanonicalSha256": "8f8f1942a98ddfe08485b9838fad6aa941fb3767002efa52ad07add2a29a676f",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v12",
+          "previousCanonicalSha256": "269f2583e5a57e03545361f9fabdc046d5f4ddcc4df1f478ea8374d2f6e83a4d",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v13",
+          "previousCanonicalSha256": "e48d42b01f6e9389faec53ee7cd1e08fb82d9d1a856c5a3cba5e71d5253a5b89",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v14",
+          "previousCanonicalSha256": "63abd76e232787644c407dfeacfb6313a9cf87a64c6d165f3909cc4090648285",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v15",
+          "previousCanonicalSha256": "6d6f81ef883f59f6ca97e28cbff8a53f5ac896556ad5c92b42a20b55ab8a19f9",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v16",
+          "previousCanonicalSha256": "2dfd6213f8921b57db68fad581caa4fda4d14a128019883bb65fe40c2c0347ae",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v17",
+          "previousCanonicalSha256": "5d999fee7c6fa1de3624237153576e9ba34bbe90fca6f5caf7a9d2aa15f36e3e",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v18",
+          "previousCanonicalSha256": "423763a346e4e28b32a834dfba4110f8f3b18f25fd58bafac80ed26dbb6aba99",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v19",
+          "previousCanonicalSha256": "bfc7483a36f87942abe80b974cbc1b990477f79fc5ee99379e7e518c5b7992d4",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v20",
+          "previousCanonicalSha256": "8d5067ca637d1f1892f5e823965686b6d0a19c34f11372834cbcbc1a942e0d3b",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v21",
+          "previousCanonicalSha256": "841d0e7433f1c58fcc2310b70ec6a14fc9cf4aa7943d62c5e817bbd002caf499",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v22",
+          "previousCanonicalSha256": "d467842ea3bc3a7f65f04783382667d004109130ce0ec3f5023dff9494304b12",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v23",
+          "previousCanonicalSha256": "f86febb80b269190ca077abc0df45b2209e53c627d4272503db6e2bc298a7c11",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v24",
+          "previousCanonicalSha256": "cd52407cdc7dcac022ab889f9cb6bdd83447913e883d404d8d268f248ac047a4",
+          "currentCanonicalSha256": null
+        },
+        {
+          "identity": "chat-product-store.v25",
+          "previousCanonicalSha256": "b9056c56a0b422e7d87b9d475c1513652c3dc66ff631d9941e117f78a9d085c3",
+          "currentCanonicalSha256": null
+        }
+      ]
+    },
+    {
+      "baseCommit": "3fd5b65c4819187c2b02150ff3e69fc41a59cc4b",
+      "domainIds": ["direct-generic-journals"],
+      "approvedBy": "user:Later",
+      "approvalReference": "2026-08-27 用户明确授权：‘现在 main 分支呢，把 Project 也给干掉，把 Project 干掉。’",
+      "detect": "以删除前main提交为基线，对Pi Direct与Full Operation Journal逐代比较精确合同闭包Hash",
+      "why": "Journal请求与记录不再携带Project上下文；保留同literal只为读取现存无Project数据，不再承诺解析已退役Project负载",
+      "fix": "当前Executor仅接收Session、Workflow、Agent与Workspace事实；Project字段及其兼容Schema全部删除",
+      "verify": "实际Direct/Generic Journal打开验证、Pi Runtime合同测试、compatibility gate与真实Executor健康检查",
+      "rollback": "切回codex/backup-before-project-removal-20260827恢复旧Journal合同与Project字段",
+      "generations": [
+        {
+          "identity": "full-operation.v2",
+          "previousCanonicalSha256": "f9437e861005895bdc191ef608f63e030607a1216f5ace91af39853660e078ef",
+          "currentCanonicalSha256": "acb1395a3cc38d03680f1811dc9ba3ba84531d583a71ff7ca33caafdb91b19b8"
+        },
+        {
+          "identity": "full-operation.v3",
+          "previousCanonicalSha256": "50e0f7f9203f9becf2577a04561d50b84f78d70274080baed1751140601d6223",
+          "currentCanonicalSha256": "5582d4ebc93d4acadf4638a9dc3474abc487ff08ef8999baa455d63ee7527a38"
+        },
+        {
+          "identity": "pi-direct-executor-operation-store.v2",
+          "previousCanonicalSha256": "c5deba0e91318d24b53b93fd199b0d3e144dd3c1a2a7814f5f6ab1927cc7bbd0",
+          "currentCanonicalSha256": "5ce58aaea61b39f9eccd220d741137712256f1c7800043f11604cb635e9ea1a5"
+        },
+        {
+          "identity": "pi-executor-operation-store.v1",
+          "previousCanonicalSha256": "66406b767e63111b0177d5cb3e4d4119660135347e43cadd554f55bb2f73391d",
+          "currentCanonicalSha256": "1444f4e4444cbb40ec03b69191a03b4604e1a7dde91fcf816a6fa228b355388a"
+        },
+        {
+          "identity": "pi-executor-operation-store.v2",
+          "previousCanonicalSha256": "237774fd87997cc547520d32a76d3e7b64fa8cbc93b81aef1fae318145acdc24",
+          "currentCanonicalSha256": "fda857e3c14151590c69640b4073e8f663b9c74139e4a9bd94ad7776db3df344"
+        },
+        {
+          "identity": "pi-executor.v1",
+          "previousCanonicalSha256": "b7d7c2808001c050c776a0b883677c7f80a6800f44920026b6570da8feff4491",
+          "currentCanonicalSha256": "2f150673d5138482b0cc6f98c34ebd2f219829caf2c8086237ea49cd7d5e4366"
+        }
+      ]
     }
   ]
 }

@@ -186,7 +186,7 @@ export function parseAgentProfilesQuery(url: string): { workspaceRootId?: string
 }
 
 export function parseWorkflowResourcesQuery(url: string): {
-  resourceKind?: "memory" | "project" | "rule" | "skill" | undefined;
+  resourceKind?: "memory" | "rule" | "skill" | undefined;
 } {
   const params = new URL(url).searchParams;
   if ([...params.keys()].some((key) => key !== "kind") || params.getAll("kind").length > 1) {
@@ -198,7 +198,7 @@ export function parseWorkflowResourcesQuery(url: string): {
   }
   const kind = params.get("kind");
   if (kind === null) return {};
-  if (kind !== "memory" && kind !== "project" && kind !== "rule" && kind !== "skill") {
+  if (kind !== "memory" && kind !== "rule" && kind !== "skill") {
     throw new ApplicationError({
       code: "validation_failed",
       httpStatus: 400,

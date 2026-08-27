@@ -265,40 +265,13 @@ function assertRevisionRefsAuthorized(
   for (const conflictId of payload.conflictsWithRuleIds) {
     ownedRule(snapshot.entities, conflictId, principalId);
   }
-  for (const scope of payload.scopes) {
-    if (scope.kind === "contextual" && scope.projectId !== undefined) {
-      const project = snapshot.entities.projects[scope.projectId];
-      if (project?.ownerPrincipalId !== principalId) {
-        throw forbidden("Rule Scope Project不存在或无权访问");
-      }
-      const method = snapshot.entities.projectMethodSnapshots[project.methodSnapshotId];
-      if (
-        scope.projectMethodProfileId !== undefined &&
-        method?.profileId !== scope.projectMethodProfileId
-      ) {
-        throw revisionConflict("Rule Scope Project Method已变化");
-      }
-      if (
-        scope.projectStageKey !== undefined &&
-        !Object.values(snapshot.entities.projectStages).some(
-          (stage) => stage.projectId === project.projectId && stage.key === scope.projectStageKey,
-        )
-      ) {
-        throw revisionConflict("Rule Scope Project Stage不存在或已变化");
-      }
-    }
-  }
   for (const source of payload.sourceCases) {
     const owner =
       source.kind === "message"
         ? snapshot.entities.sessions[snapshot.entities.messages[source.messageId]?.sessionId ?? ""]
             ?.ownerPrincipalId
-        : source.kind === "product_run"
-          ? snapshot.entities.sessions[snapshot.entities.runs[source.productRunId]?.sessionId ?? ""]
-              ?.ownerPrincipalId
-          : snapshot.entities.projects[
-              snapshot.entities.projectDecisions[source.projectDecisionId]?.projectId ?? ""
-            ]?.ownerPrincipalId;
+        : snapshot.entities.sessions[snapshot.entities.runs[source.productRunId]?.sessionId ?? ""]
+            ?.ownerPrincipalId;
     if (owner === undefined) throw notFound("Rule Source Case不存在");
     if (owner !== principalId) throw forbidden("Rule Source Case越权");
   }

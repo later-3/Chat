@@ -3,7 +3,6 @@ import { recordConfigurablePlanningNodeStep } from "./configurable-planning-step
 import {
   preparePlanningLegacyMemoryContextStep,
   preparePlanningMemoryContextStep,
-  preparePlanningProjectContextStep,
   preparePlanningRulesContextStep,
 } from "./workflow-planning-steps.js";
 import type {
@@ -170,34 +169,6 @@ export async function executeMemoryContext(
   throw new Error("configurable_planning.memory_context_status_unreachable");
 }
 
-export async function executeProjectContext(
-  input: ConfigurablePlanningWorkflowInput,
-  state: PlanningInterpreterState,
-  nodeIdentity: PlanningNodeIdentity,
-): Promise<"success" | "optional_unavailable" | "required_unavailable"> {
-  let prepared;
-  try {
-    prepared = await preparePlanningProjectContextStep({
-      productRunId: input.productRunId,
-      attemptId: input.attemptId,
-      workflowRunSpecId: input.workflowRunSpecId,
-      definitionNodeId: nodeIdentity.definitionNodeId,
-      executionPath: nodeIdentity.executionPath,
-      attemptNumber: nodeIdentity.attemptNumber,
-    });
-  } catch {
-    return failPlanningResource(
-      state,
-      "configurable_planning.project_context_unavailable",
-      "Project上下文无法按冻结引用准备",
-    );
-  }
-  // selected/none都由Application在业务事务内原子提交Node terminal；Workflow不补写。
-  if (prepared.status === "none") return "optional_unavailable";
-  state.planningProjectContextRef = prepared.contextRef;
-  return "success";
-}
-
 export async function executeRulesContext(
   input: ConfigurablePlanningWorkflowInput,
   state: PlanningInterpreterState,
@@ -229,7 +200,7 @@ export async function executeRulesContext(
 function hasIncludedResource(
   runSpec: WorkflowRunSpec,
   definitionNodeId: string,
-  resourceKind: "memory" | "project" | "rule",
+  resourceKind: "memory" | "rule",
 ): boolean {
   return runSpec.resourceResolutions.some(
     (resource) =>

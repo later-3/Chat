@@ -122,7 +122,6 @@ describe("paid and external test safety gate", () => {
         TMPDIR: "/safe-tmp",
         CHAT_ALLOW_PAID_TESTS: "1",
         CHAT_ALLOW_EXTERNAL_WRITES: "1",
-        CHAT_PROJECT_MODEL_API_KEY_ENV: "CUSTOM_PROVIDER_KEY",
         CUSTOM_PROVIDER_KEY: "dynamic-secret",
         DASHSCOPE_API_KEY: "dashscope-secret",
         DASHSCOPE_BASE_URL: "https://provider.invalid",

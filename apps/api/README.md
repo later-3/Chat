@@ -12,7 +12,7 @@ Hono协议入口、认证/运行上下文、公开Query/Command路由、私有Ru
 
 - executable：[`src/index.ts`](./src/index.ts)；composition：[`src/composition.ts`](./src/composition.ts)。
 - public HTTP：[`src/product-routes.ts`](./src/product-routes.ts)；private runtime只对受管后端进程开放。
-- 下游依赖Application及Store/Workflow/Pi/Project Adapter；上游是Bridge和私有Runtime Client。
+- 下游依赖Application及Store/Workflow/Pi Adapter；上游是Bridge和私有Runtime Client。
 - Product事务由Application提交；Outbox失败可恢复，外部Provider结果不能由HTTP响应冒充产品终态。
 - 交互事实见[前后端交互](../../docs/architecture/frontend-backend-interaction.md)。
 

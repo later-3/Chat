@@ -8,7 +8,7 @@
 -> Workflow与Agent执行
 -> 产生结果、Evidence与失败事实
 -> 用户反馈与修订
--> 沉淀Project、Memory、Rule和方法
+-> 沉淀Memory、Rule和方法
 -> 改善下一次上下文与执行
 ```
 
@@ -18,7 +18,7 @@
 2. 被采用/排除的Context与来源。
 3. 高影响动作对应的Plan版本和Decision。
 4. Agent/Tool结果、验证、Evidence与明确终态。
-5. 可复用内容先成为候选，经过接受门才进入Memory、Rule或项目事实。
+5. 可复用内容先成为候选，经过接受门才进入Memory或Rule事实。
 
 ## 产品开发也遵守同一飞轮
 

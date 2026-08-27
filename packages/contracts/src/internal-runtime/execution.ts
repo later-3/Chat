@@ -19,8 +19,6 @@ import {
   memoryResultSnapshotIdSchema,
   workflowDefinitionRevisionIdSchema,
   workflowRunSpecIdSchema,
-  planningProjectContextIdSchema,
-  projectIdSchema,
   promptAssemblyIdSchema,
   ruleIdSchema,
   ruleRevisionIdSchema,
@@ -37,7 +35,6 @@ import {
 import { sha256Schema } from "../hash.js";
 import { memoryLayerSchema, memoryResultSnapshotSchema } from "../context.js";
 import { workflowRunSpecSchema } from "../workflow-definition.js";
-import { planningProjectSnapshotSchema } from "../planning-project-context.js";
 import { workflowMemoryCategorySchema } from "../workflow-memory.js";
 import { governanceReviewCandidateSchema } from "../governance-review.js";
 import {
@@ -275,7 +272,7 @@ export const executionDependencyRefSchema = z
 
 /**
  * 只读的执行上下文条目。它是Application从已批准Step的inputRefs解析出的
- * Memory/Project/Rule冻结投影；权威正文仍分别属于对应Product对象。
+ * Memory/Rule冻结投影；权威正文仍分别属于对应Product对象。
  */
 export const executionMemoryContextItemDtoSchema = z
   .object({
@@ -304,19 +301,6 @@ export const executionWorkflowMemoryContextItemDtoSchema = z
   })
   .strict();
 
-export const executionProjectContextItemDtoSchema = z
-  .object({
-    contextKind: z.literal("project"),
-    refId: planningProjectContextIdSchema,
-    revision: z.literal(1),
-    sha256: sha256Schema,
-    title: z.string().trim().min(1).max(120),
-    projectId: projectIdSchema,
-    projectRevision: z.number().int().positive(),
-    snapshot: planningProjectSnapshotSchema,
-  })
-  .strict();
-
 export const executionRuleContextItemDtoSchema = z
   .object({
     contextKind: z.literal("rule"),
@@ -331,7 +315,6 @@ export const executionRuleContextItemDtoSchema = z
 export const executionContextItemDtoSchema = z.union([
   executionMemoryContextItemDtoSchema,
   executionWorkflowMemoryContextItemDtoSchema,
-  executionProjectContextItemDtoSchema,
   executionRuleContextItemDtoSchema,
 ]);
 

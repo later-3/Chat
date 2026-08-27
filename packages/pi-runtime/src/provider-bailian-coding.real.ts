@@ -122,10 +122,7 @@ describe("真实百炼Pi Coding Agent（付费，显式运行）", () => {
       ],
       completionCriteria: ["临时Workspace任务有可复核文件结果"],
       workspaceRef: {
-        projectId: "prj_codinggate",
-        projectResourceId: "prs_codinggate",
         rootId: "root_codinggate",
-        revision: 1,
       },
       capabilityRefs: [
         EXECUTION_CAPABILITY_WORKSPACE_READ,

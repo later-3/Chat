@@ -6,22 +6,9 @@ import type {
   PromptFileRevisionInput,
   PromptFileRevisionProjection,
 } from "@chat/application";
-import { promptFragmentContentSchema, promptWorkspaceRootIdSchema } from "@chat/contracts";
+import { promptFragmentContentSchema, readWorkspaceRootConfig } from "@chat/contracts";
 import { hashCanonical } from "@chat/domain";
 import { z } from "zod";
-
-const rootsSchema = z
-  .array(
-    z
-      .object({
-        rootId: promptWorkspaceRootIdSchema,
-        displayName: z.string().min(1).max(160),
-        canonicalPath: z.string().min(1).max(2_000),
-        enabledAdapters: z.array(z.string()),
-      })
-      .strict(),
-  )
-  .max(20);
 
 const metadataSchema = z
   .object({
@@ -99,9 +86,8 @@ export async function createPromptFileLibrary(options: {
   readonly env: NodeJS.ProcessEnv;
 }): Promise<PromptFileLibraryPort> {
   const repoRoot = await realpath(options.repoRoot);
-  const configured = options.env.CHAT_PROJECT_ROOTS_JSON?.trim();
   const roots = new Map<string, string>();
-  for (const root of configured ? rootsSchema.parse(JSON.parse(configured)) : []) {
+  for (const root of readWorkspaceRootConfig(options.env)) {
     roots.set(root.rootId, await realpath(root.canonicalPath));
   }
   const globalRoot = resolve(repoRoot, ".data", "prompts", "global");

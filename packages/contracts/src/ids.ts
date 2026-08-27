@@ -28,7 +28,6 @@ export const workflowViewDefinitionIdSchema = prefixedId("wvd");
 export const workflowNodeRunIdSchema = prefixedId("wnr");
 export const nodeRunTransitionIdSchema = prefixedId("wnt");
 export const nodeValueManifestIdSchema = prefixedId("wvm");
-export const projectIdSchema = prefixedId("prj");
 
 /* B2 规划—确认—执行纵向链新增的产品身份。 */
 export const principalIdSchema = prefixedId("usr");
@@ -103,40 +102,6 @@ export const memoryAgentWriteDecisionIdSchema = prefixedId("mwd");
 /** 受限Memory Agent的耐久模型调用操作；与Candidate、Provider对象和Workflow Run分离。 */
 export const memoryAgentOperationIdSchema = prefixedId("mao");
 
-/* PS1 Project Solution新增身份；与Git、Workflow和pi私有身份严格分离。 */
-export const projectMethodSnapshotIdSchema = prefixedId("pms");
-export const projectStageIdSchema = prefixedId("pst");
-export const projectResourceIdSchema = prefixedId("prs");
-export const projectParticipantIdSchema = prefixedId("ppt");
-export const projectWorkIdSchema = prefixedId("pwk");
-export const projectActionIdSchema = prefixedId("pac");
-export const projectContributionIdSchema = prefixedId("pct");
-export const projectEvidenceIdSchema = prefixedId("pev");
-export const projectDecisionIdSchema = prefixedId("pdc");
-export const projectObservationIdSchema = prefixedId("pob");
-export const projectCandidateIdSchema = prefixedId("pca");
-/* PS2.1 阶段推进新增身份；正文事实和系统Trace身份不得混用。 */
-export const projectMilestoneIdSchema = prefixedId("pml");
-export const projectUpdateIdSchema = prefixedId("pup");
-export const projectStateTransitionIdSchema = prefixedId("ptr");
-
-/* Project Work协调身份；不能复用Agent Session或Git身份。 */
-export const projectWorkBlockIdSchema = prefixedId("pbl");
-export const projectWorkClaimIdSchema = prefixedId("pcl");
-export const projectWorkHandoffIdSchema = prefixedId("phf");
-export const projectPracticeRevisionIdSchema = prefixedId("ppr");
-export const projectWorkOutcomeIdSchema = prefixedId("pwo");
-export const projectContextMapIdSchema = prefixedId("pcm");
-
-/* 全项目生命周期K1身份；Profile/Configuration/Event不能复用Method Snapshot或Transition身份。 */
-export const projectProfileRevisionIdSchema = prefixedId("pfr");
-export const projectConfigurationRevisionIdSchema = prefixedId("pcf");
-export const projectEventIdSchema = prefixedId("pev");
-export const projectNeedIdSchema = prefixedId("pnd");
-export const projectRequirementIdSchema = prefixedId("prq");
-export const projectArtifactRefIdSchema = prefixedId("paf");
-export const projectMetricObservationIdSchema = prefixedId("pmo");
-
 /* R1/R2 用户规则身份；Revision与Selection必须能独立冻结、回放和审计。 */
 export const ruleIdSchema = prefixedId("rul");
 export const ruleRevisionIdSchema = prefixedId("rrv");
@@ -144,9 +109,6 @@ export const ruleTagIdSchema = prefixedId("rtg");
 export const ruleScopeIdSchema = prefixedId("rsc");
 export const ruleDecisionIdSchema = prefixedId("rde");
 export const ruleSelectionIdSchema = prefixedId("rsl");
-/* Planning运行冻结的Project Context；不是Project聚合或Workflow Runtime身份。 */
-export const planningProjectContextIdSchema = prefixedId("pcx");
-/** Planning Memory Selection不能复用ProjectMethodSnapshot既有的pms_*身份。 */
 export const planningMemorySelectionIdSchema = prefixedId("pmsl");
 /** Workflow Policy Resolution是产品策略事实，不是human Decision或Rule Decision。 */
 export const workflowPolicyResolutionIdSchema = prefixedId("wpr");
@@ -178,7 +140,6 @@ export type WorkflowViewDefinitionId = z.infer<typeof workflowViewDefinitionIdSc
 export type WorkflowNodeRunId = z.infer<typeof workflowNodeRunIdSchema>;
 export type NodeRunTransitionId = z.infer<typeof nodeRunTransitionIdSchema>;
 export type NodeValueManifestId = z.infer<typeof nodeValueManifestIdSchema>;
-export type ProjectId = z.infer<typeof projectIdSchema>;
 export type PrincipalId = z.infer<typeof principalIdSchema>;
 export type PlanId = z.infer<typeof planIdSchema>;
 export type PlanRevisionId = z.infer<typeof planRevisionIdSchema>;
@@ -226,40 +187,12 @@ export type MemorySessionImportId = z.infer<typeof memorySessionImportIdSchema>;
 export type MemoryAgentWriteCandidateId = z.infer<typeof memoryAgentWriteCandidateIdSchema>;
 export type MemoryAgentWriteDecisionId = z.infer<typeof memoryAgentWriteDecisionIdSchema>;
 export type MemoryAgentOperationId = z.infer<typeof memoryAgentOperationIdSchema>;
-export type ProjectMethodSnapshotId = z.infer<typeof projectMethodSnapshotIdSchema>;
-export type ProjectStageId = z.infer<typeof projectStageIdSchema>;
-export type ProjectResourceId = z.infer<typeof projectResourceIdSchema>;
-export type ProjectParticipantId = z.infer<typeof projectParticipantIdSchema>;
-export type ProjectWorkId = z.infer<typeof projectWorkIdSchema>;
-export type ProjectActionId = z.infer<typeof projectActionIdSchema>;
-export type ProjectContributionId = z.infer<typeof projectContributionIdSchema>;
-export type ProjectEvidenceId = z.infer<typeof projectEvidenceIdSchema>;
-export type ProjectDecisionId = z.infer<typeof projectDecisionIdSchema>;
-export type ProjectObservationId = z.infer<typeof projectObservationIdSchema>;
-export type ProjectCandidateId = z.infer<typeof projectCandidateIdSchema>;
-export type ProjectMilestoneId = z.infer<typeof projectMilestoneIdSchema>;
-export type ProjectUpdateId = z.infer<typeof projectUpdateIdSchema>;
-export type ProjectStateTransitionId = z.infer<typeof projectStateTransitionIdSchema>;
-export type ProjectWorkBlockId = z.infer<typeof projectWorkBlockIdSchema>;
-export type ProjectWorkClaimId = z.infer<typeof projectWorkClaimIdSchema>;
-export type ProjectWorkHandoffId = z.infer<typeof projectWorkHandoffIdSchema>;
-export type ProjectPracticeRevisionId = z.infer<typeof projectPracticeRevisionIdSchema>;
-export type ProjectWorkOutcomeId = z.infer<typeof projectWorkOutcomeIdSchema>;
-export type ProjectContextMapId = z.infer<typeof projectContextMapIdSchema>;
-export type ProjectProfileRevisionId = z.infer<typeof projectProfileRevisionIdSchema>;
-export type ProjectConfigurationRevisionId = z.infer<typeof projectConfigurationRevisionIdSchema>;
-export type ProjectEventId = z.infer<typeof projectEventIdSchema>;
-export type ProjectNeedId = z.infer<typeof projectNeedIdSchema>;
-export type ProjectRequirementId = z.infer<typeof projectRequirementIdSchema>;
-export type ProjectArtifactRefId = z.infer<typeof projectArtifactRefIdSchema>;
-export type ProjectMetricObservationId = z.infer<typeof projectMetricObservationIdSchema>;
 export type RuleId = z.infer<typeof ruleIdSchema>;
 export type RuleRevisionId = z.infer<typeof ruleRevisionIdSchema>;
 export type RuleTagId = z.infer<typeof ruleTagIdSchema>;
 export type RuleScopeId = z.infer<typeof ruleScopeIdSchema>;
 export type RuleDecisionId = z.infer<typeof ruleDecisionIdSchema>;
 export type RuleSelectionId = z.infer<typeof ruleSelectionIdSchema>;
-export type PlanningProjectContextId = z.infer<typeof planningProjectContextIdSchema>;
 export type PlanningMemorySelectionId = z.infer<typeof planningMemorySelectionIdSchema>;
 export type WorkflowPolicyResolutionId = z.infer<typeof workflowPolicyResolutionIdSchema>;
 export type NoteId = z.infer<typeof noteIdSchema>;

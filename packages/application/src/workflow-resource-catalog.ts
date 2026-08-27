@@ -6,11 +6,12 @@ import type {
   WorkflowRunConfiguration,
 } from "@chat/contracts";
 import { PRODUCT_API_SCHEMA_VERSION } from "@chat/contracts";
-import { computeWorkflowProjectResourceSha256 } from "@chat/domain";
 import { ApplicationError, forbidden } from "./errors.js";
 
 export interface AuthorizedWorkflowResource {
-  readonly frozen: WorkflowFrozenResource;
+  readonly frozen: WorkflowFrozenResource & {
+    readonly resourceKind: "memory" | "rule" | "skill";
+  };
   readonly label: string;
   readonly source: string;
 }
@@ -42,21 +43,6 @@ export function listAuthorizedWorkflowResources(
       source: memory.backendId,
     });
   }
-  for (const project of Object.values(snapshot.entities.projects)) {
-    if (project.ownerPrincipalId !== principalId) continue;
-    resources.push({
-      frozen: {
-        resourceKind: "project",
-        resourceId: project.projectId,
-        revision: project.revision,
-        sha256: computeWorkflowProjectResourceSha256(project),
-        status: project.status === "archived" ? "archived" : "active",
-        allowedPrincipalIds: [project.ownerPrincipalId],
-      },
-      label: project.name,
-      source: "product-store",
-    });
-  }
   for (const rule of Object.values(snapshot.entities.rules)) {
     if (
       rule.ownerPrincipalId !== principalId ||
@@ -85,13 +71,6 @@ export function listAuthorizedWorkflowResources(
     ),
   );
 }
-
-/**
- * Project当前聚合不是不可变Revision对象，因此RunSpec冻结其revision与资源Hash。
- * 执行context.project时必须用同一函数复核；成功后另建不可变Project Context Snapshot，
- * 之后的规划修订只复用Snapshot，不再回读已变化的Project聚合。
- */
-export { computeWorkflowProjectResourceSha256 } from "@chat/domain";
 
 export function toWorkflowResourceRefDto(
   resource: AuthorizedWorkflowResource,
@@ -125,6 +104,14 @@ export function assertWorkflowResourceSelectionsAuthorized(
   );
   for (const override of configuration.overrides) {
     if (override.kind !== "resource_selection") continue;
+    if (override.resourceKind === "project") {
+      throw new ApplicationError({
+        code: "resource_stale",
+        httpStatus: 409,
+        message: "Project资源已退出当前产品",
+        recoveryAction: "rehydrate_and_retry",
+      });
+    }
     for (const selection of override.selections) {
       const key = `${override.resourceKind}\0${selection.resourceId}`;
       if (authorized.has(key)) continue;
@@ -148,7 +135,7 @@ export function assertWorkflowResourceSelectionsAuthorized(
 
 function workflowResourceOwnerPrincipalId(
   snapshot: ProductSnapshot,
-  kind: "memory" | "project" | "rule" | "skill",
+  kind: "memory" | "rule" | "skill",
   resourceId: string,
 ): PrincipalId | undefined {
   if (kind === "memory") {
@@ -160,7 +147,6 @@ function workflowResourceOwnerPrincipalId(
       ? undefined
       : snapshot.entities.sessions[run.sessionId]?.ownerPrincipalId;
   }
-  if (kind === "project") return snapshot.entities.projects[resourceId]?.ownerPrincipalId;
   if (kind === "rule") return snapshot.entities.rules[resourceId]?.ownerPrincipalId;
   // Skill持久集合尚未接入；未知skill ID必须失败关闭。
   return undefined;

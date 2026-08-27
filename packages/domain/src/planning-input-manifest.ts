@@ -40,11 +40,6 @@ export interface PlanningInputManifestInput {
     readonly revision: number;
     readonly sha256: string;
   };
-  readonly planningProjectContextRef?: {
-    readonly planningProjectContextId: string;
-    readonly revision: number;
-    readonly sha256: string;
-  };
   readonly ruleSelectionRef?: {
     readonly ruleSelectionId: string;
     readonly revision: number;
@@ -62,13 +57,12 @@ export interface PlanningInputManifestInput {
 
 /**
  * Planning Input Manifest是模型调用的完整版本证据，不含任何正文。
- * v1仅Message/Plan，v2加入查询Memory，v3加入Project/Rules，v4加入显式Memory选择，
+ * v1仅Message/Plan，v2加入查询Memory，v3加入Rules，v4加入显式Memory选择，
  * v5加入Workflow Memory，v6加入Workspace指令，v7绑定节点Prompt Assembly；
  * 旧Attempt继续按原Hash域验证。
  */
 export function computePlanningInputManifestSha256(input: PlanningInputManifestInput): string {
-  const hasVersion3Context =
-    input.planningProjectContextRef !== undefined || input.ruleSelectionRef !== undefined;
+  const hasVersion3Context = input.ruleSelectionRef !== undefined;
   const hashDomain =
     input.promptAssemblyRef !== undefined
       ? "planning-input-manifest.v7"
@@ -100,9 +94,6 @@ export function computePlanningInputManifestSha256(input: PlanningInputManifestI
       : {}),
     ...(input.workflowMemoryContextRef !== undefined
       ? { workflowMemoryContextRef: input.workflowMemoryContextRef }
-      : {}),
-    ...(input.planningProjectContextRef !== undefined
-      ? { planningProjectContextRef: input.planningProjectContextRef }
       : {}),
     ...(input.ruleSelectionRef !== undefined ? { ruleSelectionRef: input.ruleSelectionRef } : {}),
     ...(input.promptAssemblyRef !== undefined

@@ -42,8 +42,6 @@ export interface CompilePlanningInputCommand {
   readonly planningMemorySelectionRef?:
     CompilePlanningInputRequest["planningMemorySelectionRef"] | undefined;
   readonly workflowMemoryContextRef?: CompilePlanningInputRequest["workflowMemoryContextRef"];
-  readonly planningProjectContextRef?:
-    CompilePlanningInputRequest["planningProjectContextRef"] | undefined;
   readonly ruleSelectionRef?: CompilePlanningInputRequest["ruleSelectionRef"] | undefined;
 }
 
@@ -80,9 +78,6 @@ export async function compilePlanningInput(
       : {}),
     ...(input.workflowMemoryContextRef !== undefined
       ? { workflowMemoryContextRef: input.workflowMemoryContextRef }
-      : {}),
-    ...(input.planningProjectContextRef !== undefined
-      ? { planningProjectContextRef: input.planningProjectContextRef }
       : {}),
     ...(input.ruleSelectionRef !== undefined ? { ruleSelectionRef: input.ruleSelectionRef } : {}),
   });
@@ -198,33 +193,6 @@ export async function compilePlanningInput(
         throw revisionConflict("本轮没有Memory选择，不允许附加ContextPackage");
       }
 
-      const projectContextsForRun = Object.values(draft.entities.planningProjectContexts).filter(
-        (candidate) => candidate.productRunId === input.productRunId,
-      );
-      if (projectContextsForRun.length > 1) {
-        throw revisionConflict("同一Planning Run存在多个Project Context");
-      }
-      const projectContext =
-        input.planningProjectContextRef === undefined
-          ? undefined
-          : draft.entities.planningProjectContexts[
-              input.planningProjectContextRef.planningProjectContextId
-            ];
-      if (input.planningProjectContextRef === undefined) {
-        if (projectContextsForRun.length > 0) {
-          throw revisionConflict("Planning Input遗漏已冻结的Project Context");
-        }
-      } else if (
-        projectContext === undefined ||
-        projectContext.productRunId !== input.productRunId ||
-        projectContext.revision !== input.planningProjectContextRef.revision ||
-        projectContext.sha256 !== input.planningProjectContextRef.sha256 ||
-        projectContextsForRun[0]?.planningProjectContextId !==
-          projectContext.planningProjectContextId
-      ) {
-        throw revisionConflict("Planning Project Context引用不存在或Hash不一致");
-      }
-
       const ruleSelectionsForRun = Object.values(draft.entities.ruleSelections).filter(
         (candidate) => candidate.productRunId === input.productRunId,
       );
@@ -300,9 +268,6 @@ export async function compilePlanningInput(
           priorAttempt?.workflowMemoryContextId !==
             input.workflowMemoryContextRef?.workflowMemoryContextId ||
           priorAttempt?.workflowMemoryContextSha256 !== input.workflowMemoryContextRef?.sha256 ||
-          priorAttempt?.planningProjectContextId !==
-            input.planningProjectContextRef?.planningProjectContextId ||
-          priorAttempt?.planningProjectContextSha256 !== input.planningProjectContextRef?.sha256 ||
           priorAttempt?.ruleSelectionId !== input.ruleSelectionRef?.ruleSelectionId ||
           priorAttempt?.ruleSelectionSha256 !== input.ruleSelectionRef?.sha256
         ) {
@@ -362,15 +327,6 @@ export async function compilePlanningInput(
                 workflowMemoryContextId: workflowMemoryContext.workflowMemoryContextId,
                 revision: workflowMemoryContext.revision,
                 sha256: workflowMemoryContext.sha256,
-              },
-            }
-          : {}),
-        ...(projectContext !== undefined
-          ? {
-              planningProjectContextRef: {
-                planningProjectContextId: projectContext.planningProjectContextId,
-                revision: projectContext.revision,
-                sha256: projectContext.sha256,
               },
             }
           : {}),
@@ -446,12 +402,6 @@ export async function compilePlanningInput(
               workflowMemoryContextSha256: workflowMemoryContext.sha256,
             }
           : {}),
-        ...(projectContext !== undefined
-          ? {
-              planningProjectContextId: projectContext.planningProjectContextId,
-              planningProjectContextSha256: projectContext.sha256,
-            }
-          : {}),
         ...(ruleSelection !== undefined
           ? {
               ruleSelectionId: ruleSelection.ruleSelectionId,
@@ -502,10 +452,6 @@ export async function compilePlanningInput(
     attempt.workflowMemoryContextId === undefined
       ? undefined
       : snapshot.entities.workflowMemoryContexts[attempt.workflowMemoryContextId];
-  const projectContext =
-    attempt.planningProjectContextId === undefined
-      ? undefined
-      : snapshot.entities.planningProjectContexts[attempt.planningProjectContextId];
   const ruleSelection =
     attempt.ruleSelectionId === undefined
       ? undefined
@@ -546,14 +492,6 @@ export async function compilePlanningInput(
       workflowMemoryContext.sha256 !== attempt.workflowMemoryContextSha256)
   ) {
     throw revisionConflict("Planning Attempt引用的Workflow Memory Context不存在或Hash不一致");
-  }
-  if (
-    attempt.planningProjectContextId !== undefined &&
-    (projectContext === undefined ||
-      projectContext.productRunId !== input.productRunId ||
-      projectContext.sha256 !== attempt.planningProjectContextSha256)
-  ) {
-    throw revisionConflict("Planning Attempt引用的Project Context不存在或Hash不一致");
   }
   if (
     attempt.ruleSelectionId !== undefined &&
@@ -752,21 +690,6 @@ export async function compilePlanningInput(
                 reasonCode: exclusion.reasonCode,
               })),
             },
-          },
-        }
-      : {}),
-    ...(projectContext !== undefined
-      ? {
-          projectContext: {
-            ref: {
-              planningProjectContextId: projectContext.planningProjectContextId,
-              revision: projectContext.revision,
-              sha256: projectContext.sha256,
-            },
-            projectId: projectContext.projectId,
-            projectRevision: projectContext.projectRevision,
-            projectSha256: projectContext.projectSha256,
-            snapshot: projectContext.snapshot,
           },
         }
       : {}),

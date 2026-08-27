@@ -1,19 +1,6 @@
 import { realpath } from "node:fs/promises";
 import type { PromptTurnSelectionInput } from "@chat/contracts/public";
-import { z } from "zod";
-
-const promptWorkspaceRootConfigSchema = z
-  .array(
-    z
-      .object({
-        rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
-        displayName: z.string().min(1).max(160),
-        canonicalPath: z.string().min(1).max(2_000),
-        enabledAdapters: z.array(z.string().min(1)).min(1).max(20),
-      })
-      .strict(),
-  )
-  .max(20);
+import { readWorkspaceRootConfig } from "@chat/contracts/workspace-root-config";
 
 export interface PromptWorkspaceContext {
   readonly rootId: string;
@@ -81,34 +68,33 @@ export interface DshWorkspaceRegistryProjection {
 
 /**
  * DSH Workspace只负责把Session定位到canonical path；Chat rootId仍来自服务端
- * CHAT_PROJECT_ROOTS_JSON。resolver的公开结果刻意不包含DSH Workspace ID或路径。
+ * CHAT_WORKSPACE_ROOTS_JSON。resolver的公开结果刻意不包含DSH Workspace ID或路径。
  */
 export async function createPromptWorkspaceResolver(
   registry: DshWorkspaceRegistryProjection,
-  env: { readonly CHAT_PROJECT_ROOTS_JSON?: string | undefined },
+  env: NodeJS.ProcessEnv,
 ): Promise<PromptWorkspaceResolver> {
-  const raw = env.CHAT_PROJECT_ROOTS_JSON;
-  if (raw === undefined || raw.trim() === "") {
+  let config;
+  try {
+    config = readWorkspaceRootConfig(env);
+  } catch {
+    throw new Error("CHAT_WORKSPACE_ROOTS_JSON不符合Prompt Workspace映射合同");
+  }
+  if (config.length === 0) {
     return {
       resolve: () => null,
     };
-  }
-  let config: z.infer<typeof promptWorkspaceRootConfigSchema>;
-  try {
-    config = promptWorkspaceRootConfigSchema.parse(JSON.parse(raw));
-  } catch {
-    throw new Error("CHAT_PROJECT_ROOTS_JSON不符合Prompt Workspace映射合同");
   }
   const byPath = new Map<string, PromptWorkspaceContext>();
   const rootIds = new Set<string>();
   for (const item of config) {
     if (rootIds.has(item.rootId)) {
-      throw new Error("CHAT_PROJECT_ROOTS_JSON包含重复rootId");
+      throw new Error("CHAT_WORKSPACE_ROOTS_JSON包含重复rootId");
     }
     rootIds.add(item.rootId);
     const path = await realpath(item.canonicalPath);
     if (byPath.has(path)) {
-      throw new Error("CHAT_PROJECT_ROOTS_JSON包含映射到同一目录的多个rootId");
+      throw new Error("CHAT_WORKSPACE_ROOTS_JSON包含映射到同一目录的多个rootId");
     }
     byPath.set(path, { rootId: item.rootId, title: item.displayName });
   }

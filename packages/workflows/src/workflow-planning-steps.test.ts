@@ -10,7 +10,6 @@ import type { MemoryQueryDispatchDto, PlanningInputDto } from "@chat/contracts";
 import { computeMemoryBackendDescriptorSha256 } from "@chat/domain";
 import { setWorkflowRuntimeContext } from "./runtime-context.js";
 import {
-  preparePlanningProjectContextStep,
   preparePlanningRulesContextStep,
   generateAndPublishPlanStep,
   preparePlanningLegacyMemoryContextStep,
@@ -236,7 +235,7 @@ describe("queryMemoryContextStep", () => {
   });
 });
 
-describe("Planning Memory/Project/Rules Context Steps", () => {
+describe("Planning Memory/Rules Context Steps", () => {
   it("只把不可变ref写入checkpoint，并以稳定commandId复用Application事实", async () => {
     const selectedMemory = vi.fn(async () => ({
       schemaVersion: "chat-internal-runtime.v1",
@@ -263,17 +262,6 @@ describe("Planning Memory/Project/Rules Context Steps", () => {
       ],
       totalContentCharacters: 19,
     }));
-    const project = vi.fn(async (_input: { readonly commandId: string }) => ({
-      schemaVersion: "chat-internal-runtime.v1",
-      status: "ready" as const,
-      productRunId: "run_workflow1",
-      workflowRunSpecId: "wrs_workflow1",
-      contextRef: {
-        planningProjectContextId: "pcx_workflow1",
-        revision: 1 as const,
-        sha256: SHA,
-      },
-    }));
     const rules = vi.fn(async (_input: { readonly commandId: string }) => ({
       schemaVersion: "chat-internal-runtime.v1",
       status: "ready" as const,
@@ -293,7 +281,6 @@ describe("Planning Memory/Project/Rules Context Steps", () => {
     const memory = backend(async () => ({ externalQueryId: "unused", hitCount: 0, sections: [] }));
     installContext(memory, [], {
       preparePlanningMemoryContext: selectedMemory,
-      preparePlanningProjectContext: project,
       preparePlanningRulesContext: rules,
     });
     const identity = {
@@ -307,10 +294,6 @@ describe("Planning Memory/Project/Rules Context Steps", () => {
     const memoryResult = await preparePlanningMemoryContextStep({
       ...identity,
       definitionNodeId: "planning.memory",
-    });
-    const projectResult = await preparePlanningProjectContextStep({
-      ...identity,
-      definitionNodeId: "planning.project",
     });
     const firstRulesResult = await preparePlanningRulesContextStep({
       ...identity,
@@ -326,14 +309,6 @@ describe("Planning Memory/Project/Rules Context Steps", () => {
       selectionRef: { planningMemorySelectionId: "pmsl_workflow1", revision: 1, sha256: SHA },
     });
     expect(JSON.stringify(memoryResult)).not.toContain("private memory body");
-    expect(projectResult).toEqual({
-      status: "ready",
-      contextRef: {
-        planningProjectContextId: "pcx_workflow1",
-        revision: 1,
-        sha256: SHA,
-      },
-    });
     expect(firstRulesResult).toEqual({
       status: "ready",
       selectionRef: { ruleSelectionId: "rsl_workflow1", revision: 1, sha256: SHA },
@@ -341,7 +316,7 @@ describe("Planning Memory/Project/Rules Context Steps", () => {
     expect(replayedRulesResult).toEqual(firstRulesResult);
     expect(JSON.stringify(firstRulesResult)).not.toContain("private rule");
     expect(rules.mock.calls[0]?.[0].commandId).toBe(rules.mock.calls[1]?.[0].commandId);
-    for (const prepare of [selectedMemory, project, rules]) {
+    for (const prepare of [selectedMemory, rules]) {
       expect(prepare).toHaveBeenCalledWith(
         expect.objectContaining({
           executionPath: [{ containerNodeId: "planning.resource.loop", iteration: 2 }],

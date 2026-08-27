@@ -166,7 +166,7 @@ code-server的Unix socket和Terminal子进程也应被受管回收。不要用`k
 
 - `Provider not ready`：安装成功但未配置`DASHSCOPE_API_KEY`；填入`.env`后重启。
 - `link:`目标不存在或Fork能力门失败：按第2、3节检出正确Fork稳定分支并重新构建；不要恢复package patch。
-- `executor.workspace_not_allowed`：批准计划请求了Workspace工具，但Contract中的`rootId`不在服务端`CHAT_PROJECT_ROOTS_JSON`；修正Root配置后发起新Run，不要把绝对路径放进请求。
+- `executor.workspace_not_allowed`：批准计划请求了Workspace工具，但Contract中的`rootId`不在服务端`CHAT_WORKSPACE_ROOTS_JSON`；修正Root配置后发起新Run，不要把绝对路径放进请求。
 - 端口占用：先运行`pnpm dev:status`，再用`pnpm dev:stop`回收身份匹配的旧Chat进程。
   未知进程不会被自动终止。
 - `43113`占用：这是已退役的无认证code-server端口，启动器只报告、绝不自动清理；

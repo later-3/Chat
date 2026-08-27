@@ -8,7 +8,6 @@ import {
   executeMemoryContext,
   executeWorkflowMemoryWrite,
   executeWorkflowMemoryQuery,
-  executeProjectContext,
   executeRulesContext,
 } from "./configurable-planning-resource-executors.js";
 import {
@@ -100,8 +99,6 @@ async function interpretPlanningRunSpec(
         // Memory是否有旧式ContextRequest只能由Application权威边界判断。none必须从queued
         // 直接skipped；真实查询才进入running，避免制造S1不允许的running→skipped。
         outcome = await executeMemoryContext(input, runSpec, state, nodeIdentity);
-      } else if (element.nodeType === "context.project") {
-        outcome = await executeProjectContext(input, state, nodeIdentity);
       } else if (element.nodeType === "policy.rules") {
         outcome = await executeRulesContext(input, state, nodeIdentity);
       } else if (
@@ -247,11 +244,24 @@ function resolvedSkipOutcome(
     // 没有独立research产品提交边界；显式跳过并说明已合并，不能写成功假证据。
     return "no_evidence";
   }
-  if (
-    resolution.nodeType === "context.memory" ||
-    resolution.nodeType === "context.project" ||
-    resolution.nodeType === "policy.rules"
-  ) {
+  if (resolution.nodeType === "context.project") {
+    const retiredResources = runSpec.resourceResolutions.filter(
+      (candidate) =>
+        candidate.definitionNodeId === resolution.definitionNodeId &&
+        candidate.resourceKind === "project",
+    );
+    if (
+      retiredResources.length > 0 &&
+      retiredResources.every(
+        (candidate) =>
+          candidate.resolution === "excluded" && candidate.exclusionReason === "not_selected",
+      )
+    ) {
+      return "optional_unavailable";
+    }
+    throw new Error("configurable_planning.retired_project_node_not_excluded");
+  }
+  if (resolution.nodeType === "context.memory" || resolution.nodeType === "policy.rules") {
     // 资源selected/none由Application业务事务原子投影；Runner不能预判后通用补写。
     // Memory的legacy ContextRequest与RunSpec Snapshot也不能因同名互相覆盖。
     return undefined;
@@ -299,7 +309,6 @@ const APPLICATION_OWNS_NODE_TYPES: ReadonlySet<string> = new Set([
 
 const OPTIONAL_RESOURCE_KIND_BY_NODE_TYPE: Readonly<Record<string, string>> = {
   "context.memory": "memory",
-  "context.project": "project",
   "policy.rules": "rule",
   "capability.skills": "skill",
 };

@@ -43,8 +43,8 @@ const fixtureKeys = [
 ] as const;
 
 describe("Node Catalog与Blueprint一致性", () => {
-  it("当前22个版本化节点合同全部使用strict parser且默认配置/公开默认值一致", () => {
-    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(22);
+  it("当前21个版本化节点合同全部使用strict parser且默认配置/公开默认值一致", () => {
+    expect(DEFAULT_NODE_CATALOG.list()).toHaveLength(21);
     for (const descriptor of DEFAULT_NODE_CATALOG.list()) {
       expect(
         DEFAULT_NODE_CATALOG.parseConfig(
@@ -826,7 +826,7 @@ describe("Definition规范化与RunSpec Compiler", () => {
         (resolution) =>
           resolution.resolution === "excluded" && resolution.exclusionReason === "not_selected",
       ),
-    ).toHaveLength(4);
+    ).toHaveLength(3);
 
     const originalDefinition = kernelDefinitionFixture("mixed");
     const memory = originalDefinition.semanticRoot.elements[0];

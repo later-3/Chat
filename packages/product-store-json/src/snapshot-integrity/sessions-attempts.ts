@@ -146,8 +146,6 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
           (attempt.planningMemorySelectionSha256 === undefined) ||
         (attempt.workflowMemoryContextId === undefined) !==
           (attempt.workflowMemoryContextSha256 === undefined) ||
-        (attempt.planningProjectContextId === undefined) !==
-          (attempt.planningProjectContextSha256 === undefined) ||
         (attempt.ruleSelectionId === undefined) !== (attempt.ruleSelectionSha256 === undefined)
       ) {
         fail(`planning attempt ${attempt.attemptId} 高级Context证据不成对`);
@@ -163,17 +161,6 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
           memorySelection.sha256 !== attempt.planningMemorySelectionSha256)
       ) {
         fail(`planning attempt ${attempt.attemptId} Memory Selection引用不一致`);
-      }
-      const projectContext =
-        attempt.planningProjectContextId === undefined
-          ? undefined
-          : entities.planningProjectContexts[attempt.planningProjectContextId];
-      if (
-        attempt.planningProjectContextId !== undefined &&
-        (projectContext?.productRunId !== attempt.productRunId ||
-          projectContext.sha256 !== attempt.planningProjectContextSha256)
-      ) {
-        fail(`planning attempt ${attempt.attemptId} Project Context引用不一致`);
       }
       const workflowMemoryContext =
         attempt.workflowMemoryContextId === undefined
@@ -274,15 +261,6 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
               },
             }
           : {}),
-        ...(projectContext !== undefined
-          ? {
-              planningProjectContextRef: {
-                planningProjectContextId: projectContext.planningProjectContextId,
-                revision: projectContext.revision,
-                sha256: projectContext.sha256,
-              },
-            }
-          : {}),
         ...(ruleSelection !== undefined
           ? {
               ruleSelectionRef: {
@@ -324,8 +302,6 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         attempt.planningMemorySelectionSha256 !== undefined ||
         attempt.workflowMemoryContextId !== undefined ||
         attempt.workflowMemoryContextSha256 !== undefined ||
-        attempt.planningProjectContextId !== undefined ||
-        attempt.planningProjectContextSha256 !== undefined ||
         attempt.ruleSelectionId !== undefined ||
         attempt.ruleSelectionSha256 !== undefined ||
         attempt.executionCandidateId !== undefined
@@ -429,8 +405,6 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         attempt.planningMemorySelectionSha256 !== undefined ||
         attempt.workflowMemoryContextId !== undefined ||
         attempt.workflowMemoryContextSha256 !== undefined ||
-        attempt.planningProjectContextId !== undefined ||
-        attempt.planningProjectContextSha256 !== undefined ||
         attempt.ruleSelectionId !== undefined ||
         attempt.ruleSelectionSha256 !== undefined
       ) {
@@ -516,8 +490,6 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
         attempt.contextPackageSha256 !== undefined ||
         attempt.planningMemorySelectionId !== undefined ||
         attempt.planningMemorySelectionSha256 !== undefined ||
-        attempt.planningProjectContextId !== undefined ||
-        attempt.planningProjectContextSha256 !== undefined ||
         attempt.ruleSelectionId !== undefined ||
         attempt.ruleSelectionSha256 !== undefined ||
         attempt.executionCandidateId !== undefined
@@ -587,8 +559,6 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
       attempt.planningMemorySelectionSha256 !== undefined ||
       attempt.workflowMemoryContextId !== undefined ||
       attempt.workflowMemoryContextSha256 !== undefined ||
-      attempt.planningProjectContextId !== undefined ||
-      attempt.planningProjectContextSha256 !== undefined ||
       attempt.ruleSelectionId !== undefined ||
       attempt.ruleSelectionSha256 !== undefined ||
       attempt.executionCandidateId !== undefined ||

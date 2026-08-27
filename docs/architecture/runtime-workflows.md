@@ -2,7 +2,7 @@
 
 > 文档类型：当前实现（as-built）
 >
-> 当前公开系统Definition包括“规划执行工作流”、原“Memory 增强规划与执行”、普通Direct，以及四个显式Memory Direct变体：“Memory 增强执行 Agent”“Memory Agent 增强执行”“只查询 Memory 后回答”“只整理为 Memory 候选”。旧“默认规划工作流”和“默认笔记工作流”不再进入产品选择器；对应Runner与稳定证据为历史恢复及兼容调用保留。其他内部耐久流程包括`memory-write-workflow.v1`、历史兼容`memory-import-workflow.v1`、`project-intake-workflow.v1`、`project-advancement-workflow.v1`。
+> 当前公开系统Definition包括“规划执行工作流”、原“Memory 增强规划与执行”、普通Direct，以及四个显式Memory Direct变体：“Memory 增强执行 Agent”“Memory Agent 增强执行”“只查询 Memory 后回答”“只整理为 Memory 候选”。旧“默认规划工作流”和“默认笔记工作流”不再进入产品选择器；对应Runner与稳定证据为历史恢复及兼容调用保留。其他内部耐久流程包括`memory-write-workflow.v1`、历史兼容`memory-import-workflow.v1`。
 >
 > 产品事实源：Product Store；Workflow返回值和Runtime状态不是产品终态。
 >
@@ -18,8 +18,6 @@
 4. 历史完整上下文Planning：已从公开目录移除；底层仅保留兼容和既有冻结RunSpec恢复能力。
 5. `MemoryWriteWorkflow`：直接Memory Write Command产生的一次外部写入或一次只读对账；Memory Planning节点只复用其Application状态机，不启动第二个Workflow。
 6. 历史`MemoryImportWorkflow`：只保留旧事实兼容。
-7. `ProjectIntakeWorkflow`：一次真实资源建项理解、候选审核和确认。
-8. `ProjectAdvancementWorkflow`：现有Project的一次Stage/Milestone/负责人Update理解、候选修订和确认。
 
 旧`NoteCaptureWorkflow`不再由产品选择器提供；实现与绑定解析暂留，避免已有等待审核、兼容调用或恢复中的Run失去证据链。
 
@@ -67,10 +65,6 @@ Memory纵向新增两种Outbox事件：
 | `memory_import_reconcile` | Reconcile Command事务 | 启动一次只读对账Workflow |
 | `memory_write_start` | Memory Write Command事务 | 启动一次新方案外部写入Workflow |
 | `memory_write_reconcile` | Memory Write Reconcile事务 | 启动一次只读Provider对账Workflow |
-| `project_intake_start` | Project Intake Command事务 | 启动一次建项Workflow |
-| `project_intake_resume` | Candidate Decision事务 | 恢复对应Project Candidate Hook |
-| `project_advancement_start` | Project Advancement Command事务 | 启动一次现有Project推进Workflow |
-| `project_advancement_resume` | Advancement Decision事务 | 恢复对应推进Candidate Hook |
 
 分发流程遵守“先写意图栅栏，再跨Runtime边界”：
 
@@ -169,7 +163,7 @@ Hook Payload只携带产品Decision引用；Workflow不能信任浏览器原始�
 
 批准后编译不可变Execution Contract。执行按Plan依赖顺序逐步进行，每步有独立Attempt、输入Manifest Hash、依赖结果引用和候选Hash。
 
-Pi Coding Executor完成只产生候选。Approved Step的Capability决定可见工具；非文本能力绑定唯一活动Project Workspace。Workflow必须：
+Pi Coding Executor完成只产生候选。Approved Step的Capability决定可见工具；非文本能力绑定冻结的Workspace Root。Workflow必须：
 
 1. 持久化完整Execution Candidate引用。
 2. 运行确定性Validation。
@@ -214,47 +208,7 @@ loadMemoryWriteStep
 
 旧`MemoryImportWorkflow`、`MemoryImportIntent/Result`和对应API只为历史兼容保留；新功能不得继续向旧对象写入。
 
-## 6. ProjectIntakeWorkflow
-
-```text
-Project Intake Command
-→ Product事务提交Message + queued Candidate + Start Outbox
-→ prepareProjectCandidateStep
-   → API私有Command调用模型无关ProjectIntakeUnderstandingPort
-   → 允许根内并行观察Git、治理文档与脚本清单
-   → Application编译并提交under_review Candidate
-→ 建立Candidate Hook并等待
-→ 用户通过公开Command修订、确认或拒绝
-→ Product事务先提交Project事实/拒绝事实 + Resume Outbox
-→ Runtime恢复同一Hook
-→ Workflow返回product_decided
-```
-
-Project Understanding当前由pi Adapter执行，部署时使用服务端Model Profile选择Provider、模型、endpoint和凭据环境变量；这些配置不进入Domain、公开API或浏览器。真实验收Profile为百炼`qwen3.7-plus`，替换模型不改变Candidate合同。
-
-模型调用和真实Resource Observe位于产品事务外；任一边界失败都会把Candidate提交为`failed`。Workflow Step使用`FatalError`禁止默认重试，避免一次建项故障触发多次付费调用。用户修复配置后显式发起新的建项意图。
-
-待办、决定和贡献的“管理项目”消息不会启动新Workflow：用户已经显式选择命令类型，Application可确定性编译一个绑定Project revision/Hash的可编辑Candidate，不需要用模型重述正文。刷新Observation只提交客观只读观察，也不制造无价值审批层。
-
-### 6.1 ProjectAdvancementWorkflow
-
-```text
-Project Advancement Command
-→ Product事务提交Message + 版本绑定queued Candidate + Start Outbox
-→ prepareProjectAdvancementCandidateStep
-   → API私有Command读取当前Project/Stage/Method最小清单
-   → pi Adapter调用当前服务端Model Profile
-   → Application编译并提交under_review Candidate
-→ 建立Candidate Hook并等待
-→ 用户直接修改Candidate，或确认/拒绝
-→ Product事务先提交Decision与Stage/Milestone/Update事实 + Resume Outbox
-→ Runtime恢复同一Hook
-→ Workflow返回product_decided
-```
-
-Workflow不拥有Stage状态机。Application/Domain校验Principal、Candidate CAS/Hash、Project/Stage/Method绑定和Update作者；确认分支在同一JSON Store事务中写入所有产品事实。模型调用位于事务外，`FatalError`禁止同一Candidate revision自动再次付费；免费恢复测试真实重启API与Workflow后证明调用计数仍为1。
-
-## 7. Runtime Binding与版本证据
+## 6. Runtime Binding与版本证据
 
 Runtime Binding保存以下私有关系：
 
@@ -262,7 +216,6 @@ Runtime Binding保存以下私有关系：
 - Approval Request → Hook Token和Resume状态。
 - Memory Import Outbox → Memory Import Workflow Run。
 - Memory Write Outbox → Memory Write Workflow Run。
-- Project Candidate/Outbox → Project Intake或Advancement Workflow Run和Hook恢复状态。
 
 约束：
 
@@ -270,18 +223,16 @@ Runtime Binding保存以下私有关系：
 2. Binding存在但对应Workflow Run不存在时启动失败关闭。
 3. 活动Planning Run恢复前核对Workflow Definition、bundle和版本证据。
 4. 活动Memory Import/Write Run分别核对各自独立Definition Version。
-5. 活动Project Intake/Advancement Run核对各自Definition Version、Candidate身份和Start/Resume状态。
-6. Runtime ID只用于后端诊断，不进入浏览器、公开API和Product Store身份模型。
+5. Runtime ID只用于后端诊断，不进入浏览器、公开API和Product Store身份模型。
 
 本地开发每次重建Bundle后会在服务启动前检查活动Planning Run。证据完全一致时继续恢复；若代码版本已经变化且旧Bundle不再可执行，则保留全部历史证据，通过Application统一的非成功收敛内核把Product Run、Attempt和Workflow Outbox收敛为`workflow.version_incompatible`，并用Workflow SDK取消旧Runtime Run。普通Runtime终止则留给3.1节的通用监督命令处理，不在启动门重复推导。该路径不删除Store或Runtime文件，也不重启同一产品工作；生产环境应保留旧部署完成原版本恢复。
 
-## 8. 重试与结果未知
+## 7. 重试与结果未知
 
 | 边界 | 当前策略 |
 |---|---|
 | 纯确定性Step | 可由Workflow按耐久语义重放 |
 | Planner/Executor付费模型调用 | `maxRetries=0`；Executor通过同一Operation查询，不猜测性重启AgentSession |
-| Project Understanding付费模型调用 | `FatalError`终止Step；Candidate记录failed，不自动再次扣费 |
 | Memory只读查询 | Provider标记retryable时最多重试2次；最终失败先提交Query/Node证据再决定是否终止父Workflow |
 | Memory外部写入 | `maxRetries=0`；发出后失联进入`outcome_unknown` |
 | Product Commit | 使用稳定Command ID幂等重试，不重新生成候选 |
@@ -289,7 +240,7 @@ Runtime Binding保存以下私有关系：
 | Hook等待 | 同一Workflow、同一Approval绑定；页面断开不取消等待 |
 | Approval过期 | Application确认状态后收敛；已决定但未恢复时继续等同一Hook |
 
-## 9. Trace与回放
+## 8. Trace与回放
 
 Trace记录：命令入口、事务、Outbox、Workflow Start/Resume、Step、Pi Operation/Session/Turn/Message Hash/Tool/Compaction、Provider/Memory Attempt、状态转换、耗时、错误和产品对象引用。
 
@@ -304,7 +255,7 @@ Replay Assembler按产品对象ID、revision和SHA-256组合：
 
 缺少revision或Hash不一致必须显式报告，不能生成“看起来完整”的假回放。
 
-### 9.1 DSH执行轨迹投影
+### 8.1 DSH执行轨迹投影
 
 `GET /api/runs/:productRunId/workflow-execution-trace`是DSH完整Workflow树使用的公开只读投影；
 `GET /api/runs/:productRunId/execution-trace`继续提供实时Pi工具cursor页。Application在Principal校验后组合：
@@ -337,7 +288,7 @@ utility Slot控制；开启时只重投影同一Trace的本地时间范围，不
 Plan/HITL Composer Dock只承载当前可操作审核或结果未知重试，决定确认后退出，历史由Human Review
 NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Query恢复，不拥有任何运行终态。
 
-## 10. 关键源码地图
+## 9. 关键源码地图
 
 | 关注点 | 文件 |
 |---|---|
@@ -349,8 +300,6 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 | Memory Import主编排 | `memory-import-workflow.ts` |
 | Memory Import Step | `memory-import-workflow-steps.ts` |
 | Memory Write主编排/Step | `memory-write-workflow.ts`、`memory-write-workflow-steps.ts` |
-| Project Intake主编排/Step | `project-intake-workflow.ts`、`project-intake-workflow-steps.ts` |
-| Project Advancement主编排/Step | `project-advancement-workflow.ts`、`project-advancement-workflow-steps.ts` |
 | Runtime HTTP与Local World | `runtime-server.ts`、`workflow-world.ts` |
 | Runtime Binding | `runtime-bindings.ts` |
 | Workflow→API私有客户端 | `packages/contracts/src/internal-runtime-client.ts`（稳定运行合同，Workflow Runtime与Pi Executor共用） |
@@ -360,11 +309,9 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 | pi Planner / Executor Client | `packages/pi-runtime/src/planner.ts`、`executor-service-client.ts` |
 | Pi AgentSession与Operation Journal | `coding-agent-executor.ts`、`executor-operation-store.ts`、`executor-service.ts` |
 | Pi Executor进程入口 | `apps/pi-executor/src/index.ts` |
-| Project Understanding/Model Profile | `packages/pi-runtime/src/project-intake-understanding.ts`、`project-advancement-understanding.ts`、`project-model-profile.ts` |
 | Memory Adapter | `packages/memory-runtime/src/*-adapter.ts` |
-| Project Resource Adapter | `packages/project-runtime/src/registry.ts` |
 
-## 11. 当前边界与后续演进
+## 10. 当前边界与后续演进
 
 已经实现（Memory相关条目是历史已交付证据，不代表当前重新启用或进入通用完成门）：
 
@@ -373,20 +320,17 @@ NodeRun继续留在Trajectory。浏览器缓存和Bridge绑定都可由Chat Quer
 3. `memory.write`节点与独立Memory Write/对账Workflow及结果未知语义；旧Import链只做历史兼容。
 4. 历史明确授权下运行过真实百炼`qwen3.7-plus`、真实Memory服务和真实浏览器E2E；当前paid与external门均只允许显式手工运行。
 5. 固定端口F5调试、严格Trace和多源Replay。
-6. 独立Project Intake耐久链、真实Git/文档/脚本观察、候选确认与Project账本。
-7. 独立Project Advancement耐久链、Stage/Milestone/负责人Update审核、State Transition与Timeline。
 
 尚未实现：
 
 1. Chat公开SSE Cursor Runtime Journal。
-2. Project Context进入Planning Workflow的节点；PS1已实现Project、初始Stage、Work/Action和资源观察，但尚未注入任务规划。
 3. 更细粒度的治理规则组合、例外和项目Overlay；当前三个可选组件已经通过Prompt Assembly进入Planner、Executor与独立Governance Reviewer。
 4. 生产多实例Store、正式身份、Worker生产接管和后端部署拓扑。
 5. 外部副作用Tool与通用Workflow编辑器。
 
 未来新增节点前，应先确认它属于现有Workflow的一个步骤，还是拥有独立用户结果和独立恢复生命周期；不能为了“统一”把所有业务塞进一个永久Workflow。
 
-## 12. 验证入口
+## 11. 验证入口
 
 ```bash
 pnpm test

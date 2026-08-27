@@ -74,8 +74,6 @@ export {
 export {
   preparePlanningMemoryContextRequestSchema,
   preparePlanningMemoryContextResponseSchema,
-  preparePlanningProjectContextRequestSchema,
-  preparePlanningProjectContextResponseSchema,
   preparePlanningRulesContextRequestSchema,
   preparePlanningRulesContextResponseSchema,
 } from "./internal-runtime/context-prep.js";
@@ -205,8 +203,6 @@ export {
   type LoadWorkflowRunSpecResponse,
   type PreparePlanningMemoryContextRequest,
   type PreparePlanningMemoryContextResponse,
-  type PreparePlanningProjectContextRequest,
-  type PreparePlanningProjectContextResponse,
   type PreparePlanningRulesContextRequest,
   type PreparePlanningRulesContextResponse,
   type PrepareGovernanceReviewInputRequest,

@@ -96,16 +96,11 @@ const capabilityGovernanceEnvironment = {
   TMPDIR: browserTemporary,
   TMP: browserTemporary,
   TEMP: browserTemporary,
-  CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
+  CHAT_WORKSPACE_ROOTS_JSON: JSON.stringify([
     {
       rootId: "root_chat",
       displayName: "Chat",
       canonicalPath: repoRoot,
-      enabledAdapters: [
-        "local-git-workspace.v1",
-        "project-document-manifest.v1",
-        "package-script-catalog.v1",
-      ],
     },
   ]),
 };
@@ -113,16 +108,11 @@ const promptThreeGatesEnvironment = {
   ...sharedEnvironment,
   CHAT_DSH_E2E_DATA_ROOT: dataRoot,
   CHAT_DSH_E2E_TEMP_ROOT: resolve(repoRoot, ".data/e2e/dsh-t3-tmp"),
-  CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
+  CHAT_WORKSPACE_ROOTS_JSON: JSON.stringify([
     {
       rootId: "root_chat",
       displayName: "Chat 工作区",
       canonicalPath: repoRoot,
-      enabledAdapters: [
-        "local-git-workspace.v1",
-        "project-document-manifest.v1",
-        "package-script-catalog.v1",
-      ],
     },
   ]),
 };

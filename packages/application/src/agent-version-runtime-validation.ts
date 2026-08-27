@@ -92,7 +92,7 @@ export async function resolveCurrentAgentRuntimeBinding(
   const workspaceGrantSha256 =
     input.workspaceRootId === undefined
       ? undefined
-      : deps.projectRoots?.list().find((root) => root.rootId === input.workspaceRootId)
+      : deps.workspaceRoots?.list().find((root) => root.rootId === input.workspaceRootId)
           ?.grantSha256;
   if (input.workspaceRootId !== undefined && workspaceGrantSha256 === undefined) {
     throw revisionConflict("Workspace Root缺少可复核的授权指纹");

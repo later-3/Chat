@@ -36,6 +36,7 @@ import { ApplicationError, forbidden, notFound, revisionConflict } from "./error
 import { emitRunEvent, safeErrorType } from "./trace-helpers.js";
 import { synchronizePlanningWorkflowProjection } from "./planning-workflow-projection.js";
 import { requirePlanningRun } from "./product-run-kind.js";
+import { workflowNodePromptFor } from "./prompt-assembly-use-cases.js";
 
 /**
  * PublishPlanForReview / SubmitPlanDecision用例。
@@ -169,18 +170,6 @@ export async function publishPlanForReview(
       ) {
         throw revisionConflict("Planning Attempt的Workflow Memory Context证据不完整");
       }
-      const projectContext =
-        attempt.planningProjectContextId === undefined
-          ? undefined
-          : draft.entities.planningProjectContexts[attempt.planningProjectContextId];
-      if (
-        attempt.planningProjectContextId !== undefined &&
-        (projectContext === undefined ||
-          projectContext.productRunId !== input.productRunId ||
-          projectContext.sha256 !== attempt.planningProjectContextSha256)
-      ) {
-        throw revisionConflict("Planning Attempt的Project Context证据不完整");
-      }
       const ruleSelection =
         attempt.ruleSelectionId === undefined
           ? undefined
@@ -223,11 +212,6 @@ export async function publishPlanForReview(
         }
         allowedContextRefs.add(
           `${snapshot.workflowMemorySnapshotId}:${String(snapshot.revision)}:${snapshot.sha256}`,
-        );
-      }
-      if (projectContext !== undefined) {
-        allowedContextRefs.add(
-          `${projectContext.planningProjectContextId}:${String(projectContext.revision)}:${projectContext.sha256}`,
         );
       }
       for (const selected of ruleSelection?.selected ?? []) {
@@ -285,20 +269,16 @@ export async function publishPlanForReview(
         ),
       );
       if (requiresWorkspace) {
-        const workspaces =
-          projectContext === undefined
-            ? []
-            : Object.values(draft.entities.projectResources).filter(
-                (resource) =>
-                  resource.projectId === projectContext.projectId &&
-                  resource.kind === "workspace" &&
-                  resource.status === "active",
-              );
-        if (projectContext === undefined || workspaces.length !== 1) {
+        const promptRef = workflowNodePromptFor(draft, input.productRunId, "agent.plan");
+        const promptAssembly =
+          promptRef === undefined
+            ? undefined
+            : draft.entities.promptAssemblies[promptRef.promptAssemblyId];
+        if (promptAssembly?.workspaceRootId === undefined) {
           throw new ApplicationError({
             code: "validation_failed",
             httpStatus: 400,
-            message: "Workspace/Shell Capability必须绑定唯一活动Project Workspace",
+            message: "Workspace/Shell Capability必须绑定受管Workspace",
           });
         }
       }

@@ -3,7 +3,7 @@ import {
   productRunIdSchema,
   workflowRuntimeTraceDtoSchema,
 } from "@chat/contracts";
-import { projectWorkflowRuntimeTrace } from "./runtime-trace-projection.js";
+import { buildWorkflowRuntimeTrace } from "./runtime-trace-projection.js";
 import type { WorkflowRuntimeHttpRouteContext } from "./runtime-http-route-context.js";
 
 /**
@@ -42,7 +42,7 @@ export function registerWorkflowRuntimeTraceHttpRoutes(
     }
     try {
       return c.json(
-        await projectWorkflowRuntimeTrace({
+        await buildWorkflowRuntimeTrace({
           productRunId,
           workflowRunId: binding.workflowRunId,
           world: world.world,

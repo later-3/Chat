@@ -11,52 +11,6 @@ import {
 const timestamp = "2026-08-18T08:00:00.000Z";
 const planSha256 = "a".repeat(64);
 
-test("已解析Project会显示同一开工包的窄协调状态", () => {
-  const coordinated = lifeosProjectionSchema.parse({
-    schemaVersion: "chat-dsh-lifeos-bridge.v3",
-    dshSessionId: "dsh-session-project-coordination",
-    run: null,
-    plan: null,
-    approval: null,
-    pendingDecision: null,
-    noteCandidate: null,
-    pendingNoteDecision: null,
-    workflowSelection: null,
-    executionTraces: [],
-    projectCoordination: {
-      schemaVersion: "project-agent-coordination.v2",
-      resolution: {
-        projectId: "prj_coordination1",
-        sources: ["workspace_root"],
-        workspaceRootId: "root_contentlab",
-      },
-      project: {
-        projectId: "prj_coordination1",
-        name: "Content Lab",
-        goal: "持续产出并改进工作流。",
-        status: "active",
-        revision: 3,
-        methodSnapshotId: "pms_coordination1",
-        methodProfileId: "content-production.v1",
-        methodSnapshotRevision: 1,
-      },
-      participant: null,
-      resource: null,
-      currentWork: null,
-      workCandidates: [],
-      requiresWorkSelection: false,
-      permissions: {
-        allowedActions: [],
-      },
-      completionGate: null,
-      resourceContext: { status: "not_requested" },
-      generatedAt: timestamp,
-    },
-    projectCoordinationTargets: null,
-  });
-  assert.equal(shouldShowLifeosReviewDock(coordinated), true);
-});
-
 function planReviewProjection() {
   return lifeosProjectionSchema.parse({
     schemaVersion: "chat-dsh-lifeos-bridge.v3",

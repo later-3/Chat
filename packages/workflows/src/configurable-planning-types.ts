@@ -57,11 +57,6 @@ export interface PlanningInterpreterState {
     revision: 1;
     sha256: string;
   };
-  planningProjectContextRef?: {
-    planningProjectContextId: string;
-    revision: 1;
-    sha256: string;
-  };
   ruleSelectionRef?: {
     ruleSelectionId: string;
     revision: 1;

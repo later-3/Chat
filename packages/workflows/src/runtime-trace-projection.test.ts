@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LocalWorld } from "@workflow/world-local";
-import { projectWorkflowRuntimeTrace } from "./runtime-trace-projection.js";
+import { buildWorkflowRuntimeTrace } from "./runtime-trace-projection.js";
 
 describe("Vercel Workflow World trace projection", () => {
   it("projects dynamic run and step events without runtime identities or I/O", async () => {
@@ -76,7 +76,7 @@ describe("Vercel Workflow World trace projection", () => {
         list: async () => ({ data: events, hasMore: false, cursor: null }),
       },
     } as unknown as LocalWorld;
-    const trace = await projectWorkflowRuntimeTrace({
+    const trace = await buildWorkflowRuntimeTrace({
       productRunId: "run_public1" as never,
       workflowRunId: "wrun_private",
       world,

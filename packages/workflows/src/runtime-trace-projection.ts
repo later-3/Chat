@@ -259,7 +259,7 @@ async function readEvents(
 }
 
 /** 将World事件投影为无私有身份、无I/O正文的Run/Step/Hook/Sleep时间线。 */
-export async function projectWorkflowRuntimeTrace(input: {
+export async function buildWorkflowRuntimeTrace(input: {
   readonly productRunId: ProductRunId;
   readonly workflowRunId: string;
   readonly world: LocalWorld;

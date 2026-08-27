@@ -5,6 +5,7 @@ import { computePlanSha256 } from "@chat/application";
 import {
   contextPackageIdSchema,
   contextRequestIdSchema,
+  createEmptySnapshot,
   messageIdSchema,
   memoryAdoptionIdSchema,
   memoryBackendIdSchema,
@@ -63,6 +64,7 @@ function tempDir(): string {
 function minimalSnapshot(
   run: Partial<ProductSnapshot["entities"]["runs"][string]> = {},
 ): ProductSnapshot {
+  const empty = createEmptySnapshot(NOW);
   const sourceMessageSha256 = hashCanonical("message.v1", {
     messageId: MESSAGE_ID,
     sessionId: SESSION_ID,
@@ -77,10 +79,12 @@ function minimalSnapshot(
     sourceMessageSha256,
   } as const;
   return productSnapshotSchema.parse({
-    schemaVersion: "chat-product-store.v23",
+    ...empty,
+    schemaVersion: "chat-product-store.v27",
     storeRevision: 1,
     committedAt: NOW,
     entities: {
+      ...empty.entities,
       sessions: {
         [SESSION_ID]: {
           schemaVersion: "product-session.v1",
@@ -177,39 +181,6 @@ function minimalSnapshot(
       workflowMemoryContexts: {},
       memoryWriteIntents: {},
       memoryWriteResults: {},
-      projects: {},
-      projectMethodSnapshots: {},
-      projectStages: {},
-      projectMilestones: {},
-      projectUpdates: {},
-      projectStateTransitions: {},
-      projectResources: {},
-      projectParticipants: {},
-      projectWorks: {},
-      projectActions: {},
-      projectContributions: {},
-      projectEvidence: {},
-      projectDecisions: {},
-      projectObservations: {},
-      projectCandidates: {},
-      projectWorkspaceBindings: {},
-      projectWorkBlocks: {},
-      projectWorkClaims: {},
-      projectWorkHandoffs: {},
-      projectPracticeRevisions: {},
-      projectWorkOutcomes: {},
-      projectContextMaps: {},
-      projectProviderBindings: {},
-      projectProviderProjections: {},
-      projectCoordinationOperations: {},
-      projectInboundChanges: {},
-      projectProfileRevisions: {},
-      projectConfigurationRevisions: {},
-      projectEvents: {},
-      projectNeeds: {},
-      projectRequirements: {},
-      projectArtifactRefs: {},
-      projectMetricObservations: {},
       workflowViewDefinitions: {
         [WORKFLOW_VIEW_ID]: workflowViewDefinitionSchema.parse(
           createLegacyPlanningWorkflowView(NOW),
@@ -230,7 +201,6 @@ function minimalSnapshot(
       ruleTags: {},
       ruleDecisions: {},
       ruleSelections: {},
-      planningProjectContexts: {},
       planningMemorySelections: {},
       workflowPolicyResolutions: {},
     },

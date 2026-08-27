@@ -6,7 +6,7 @@ const AGENT_VERSION_SHA = "b".repeat(64);
 /** 边界测试只需要一份严格合法、无运行时副作用的Prompt预览读模型。 */
 export function promptTurnPreviewFixture(text = "审核后发送"): PromptTurnPreviewDto {
   return promptTurnPreviewDtoSchema.parse({
-    schemaVersion: "chat-product-api.v1",
+    schemaVersion: "chat-prompt-turn-preview-api.v2",
     status: "pre_send",
     currentInput: text,
     assembly: {

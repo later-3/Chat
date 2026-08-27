@@ -35,7 +35,7 @@ import {
   workflowRunViewDtoSchema,
   workflowNodeDetailDtoSchema,
   workflowDefinitionsDtoSchema,
-  workflowDefinitionCommandResultV2DtoSchema,
+  workflowDefinitionCommandResultV3DtoSchema,
   currentPromptReviewResponseSchema,
   promptAssemblyPreviewDtoSchema,
   promptConfigurationPreviewDtoSchema,
@@ -452,7 +452,7 @@ async function testApp(): Promise<{
         return projection;
       },
     },
-    projectRoots: {
+    workspaceRoots: {
       list: () => [
         {
           rootId: "root_chat",
@@ -461,9 +461,6 @@ async function testApp(): Promise<{
           grantSha256: workspaceGrantSha256,
         },
       ],
-      observe: async () => {
-        throw new Error("本API合同测试不读取真实Workspace");
-      },
     },
     memoryBackends: {
       list: () => [backend, tencentBackend],
@@ -1829,7 +1826,7 @@ describe("公开产品API", () => {
     expect(injected.status).toBe(400);
   });
 
-  it("Project推进入口拒绝浏览器指定Provider、模型和Workflow私有身份", async () => {
+  it("Project路由已经退出公开API", async () => {
     const { app } = await testApp();
     const response = await postJson(app, "/api/project-advancements", {
       commandId: nextCmd(),
@@ -1843,8 +1840,7 @@ describe("公开产品API", () => {
         hookToken: "secret",
       },
     });
-    expect(response.status).toBe(400);
-    expect(problemDetailSchema.parse(await response.json()).code).toBe("validation_failed");
+    expect(response.status).toBe(404);
   });
 
   it("安全列出Memory后端并恢复Run Context来源，不暴露服务配置", async () => {
@@ -2491,7 +2487,7 @@ describe("公开产品API", () => {
       },
     );
     expect(bindResponse.status, await bindResponse.clone().text()).toBe(201);
-    const bound = workflowDefinitionCommandResultV2DtoSchema.parse(await bindResponse.json());
+    const bound = workflowDefinitionCommandResultV3DtoSchema.parse(await bindResponse.json());
     expect(bound.affectedRevision?.state).toBe("published");
     expect(bound.affectedRevision?.definitionRevision).toBe(1);
     expect(bound.definition.ownerKind).toBe("principal");

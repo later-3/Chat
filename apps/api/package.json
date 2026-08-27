@@ -32,7 +32,6 @@
     "@chat/application": "workspace:*",
     "@chat/contracts": "workspace:*",
     "@chat/pi-runtime": "workspace:*",
-    "@chat/project-runtime": "workspace:*",
     "@chat/memory-runtime": "workspace:*",
     "@chat/product-store-json": "workspace:*",
     "@chat/realtime": "workspace:*",

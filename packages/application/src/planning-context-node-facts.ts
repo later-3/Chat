@@ -22,7 +22,7 @@ import type { WorkflowMemoryProductRun } from "./product-run-kind.js";
 
 type DraftSnapshot = ProductSnapshot;
 type PlanningContextNodeType =
-  "memory.query" | "agent.memory_retrieve" | "context.memory" | "context.project" | "policy.rules";
+  "memory.query" | "agent.memory_retrieve" | "context.memory" | "policy.rules";
 
 const deriveNodeRunId = (input: {
   readonly productRunId: string;
@@ -82,7 +82,7 @@ function persistImmutableManifest(
 }
 
 /**
- * context.memory/context.project/policy.rules的业务事实与Node终态必须在同一Store事务提交。
+ * context.memory/policy.rules的业务事实与Node终态必须在同一Store事务提交。
  * 调用方先把业务对象写进draft，再调用本函数；任何Manifest、Transition或状态校验失败都会
  * 回滚整个事务，不会留下“业务事实已存在但Node仍running”的半提交。
  */

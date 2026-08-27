@@ -26,7 +26,6 @@ describe("verify:core safety", () => {
   it("clears Provider credentials and disables optional runtimes", () => {
     const input = {
       ...Object.fromEntries(PROVIDER_AND_CREDENTIAL_ENV.map((name) => [name, "sentinel"])),
-      CHAT_PROJECT_MODEL_API_KEY_ENV: "CUSTOM_PROVIDER_API_KEY",
       CUSTOM_PROVIDER_API_KEY: "dynamic-sentinel",
     };
     const environment = createCiSafeEnvironment(input);

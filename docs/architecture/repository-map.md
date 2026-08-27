@@ -16,7 +16,6 @@ packages/
   workflows/              Vercel Workflow定义与活动
   pi-runtime/             pi Planner、AgentSession、Operation Journal与Executor Client
   memory-runtime/         memmy与Tencent MemoryCore Adapter
-  project-runtime/        受权本地Git/文档/脚本资源的只读Project Adapter
   realtime/               Trace与Replay
   testing/                合同、架构与测试工具
 scripts/
@@ -65,7 +64,7 @@ docs/
 ```text
 DSH Client/Host Adapter ──> contracts/public
 Hono Router ──────────────> application ──> domain + ports
-Store/Workflow/Memory/Project Adapter ─> application/domain ports
+Store/Workflow/Memory Adapter ────────> application/domain ports
 pi Adapter ───────────────> contracts中的稳定运行合同
 domain ───────────────────> TypeScript标准能力
 ```

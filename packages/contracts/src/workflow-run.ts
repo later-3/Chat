@@ -17,10 +17,8 @@ import {
   nodeValueManifestIdSchema,
   planRevisionIdSchema,
   planningMemorySelectionIdSchema,
-  planningProjectContextIdSchema,
   promptReviewDecisionIdSchema,
   promptReviewRequestIdSchema,
-  projectIdSchema,
   ruleRevisionIdSchema,
   ruleSelectionIdSchema,
   productRunIdSchema,
@@ -190,14 +188,6 @@ export const nodeProductRefSchema = z.discriminatedUnion("kind", [
       ...productRefBase,
       kind: z.literal("memory_write_result"),
       id: memoryWriteResultIdSchema,
-    })
-    .strict(),
-  z.object({ ...productRefBase, kind: z.literal("project"), id: projectIdSchema }).strict(),
-  z
-    .object({
-      ...productRefBase,
-      kind: z.literal("planning_project_context"),
-      id: planningProjectContextIdSchema,
     })
     .strict(),
   z

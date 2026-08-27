@@ -69,7 +69,7 @@ export type AgentRunResult<TCandidate> =
 export interface RunAgentWithToolOptions<TCandidate> {
   readonly apiKey: string;
   readonly baseUrl: string;
-  /** 缺省保持冻结的B2百炼模型；Project等新节点可由服务端Model Profile注入。 */
+  /** 缺省保持冻结的B2百炼模型；特殊节点可由服务端Model Profile注入。 */
   readonly model?: Model<"openai-completions">;
   readonly systemPrompt: string;
   readonly userPrompt: string;

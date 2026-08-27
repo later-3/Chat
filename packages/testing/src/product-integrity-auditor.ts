@@ -1,15 +1,12 @@
 import type { ProductSnapshot } from "@chat/contracts";
 import { validateWorkflowRunSpecIntegrity } from "@chat/application/workflow-run-spec-compiler";
 import {
-  assertPlanningProjectContextIntegrity,
   assertPlanningMemorySelectionIntegrity,
   assertWorkflowPolicyResolutionIntegrity,
   assertRuleRevisionIntegrity,
   assertWorkflowViewDefinition,
   computeNoteSourceMessageSha256,
   computeNodeValueManifestSha256,
-  computePlanningProjectSourceRefSha256,
-  computeWorkflowProjectResourceSha256,
   hashCanonical,
   resolveNoteSourceText,
   selectRules,
@@ -37,7 +34,6 @@ export interface ProductIntegrityAuditReport {
     readonly attempts: number;
     readonly rules: number;
     readonly ruleSelections: number;
-    readonly planningProjectContexts: number;
     readonly planningMemorySelections: number;
     readonly workflowPolicyResolutions: number;
   };
@@ -85,7 +81,6 @@ export function auditProductIntegrity(snapshot: ProductSnapshot): ProductIntegri
       attempts: Object.keys(snapshot.entities.attempts).length,
       rules: Object.keys(snapshot.entities.rules).length,
       ruleSelections: Object.keys(snapshot.entities.ruleSelections).length,
-      planningProjectContexts: Object.keys(snapshot.entities.planningProjectContexts).length,
       planningMemorySelections: Object.keys(snapshot.entities.planningMemorySelections).length,
       workflowPolicyResolutions: Object.keys(snapshot.entities.workflowPolicyResolutions).length,
     },
@@ -697,79 +692,6 @@ function auditRulesAndPlanningContexts(snapshot: ProductSnapshot, report: IssueS
       );
     }
   }
-  for (const context of Object.values(entities.planningProjectContexts)) {
-    const run = entities.runs[context.productRunId];
-    const owner =
-      run === undefined ? undefined : entities.sessions[run.sessionId]?.ownerPrincipalId;
-    const project = entities.projects[context.projectId];
-    const method = entities.projectMethodSnapshots[context.methodRef.projectMethodSnapshotId];
-    const stage = entities.projectStages[context.stageRef.projectStageId];
-    let contextValid = true;
-    try {
-      assertPlanningProjectContextIntegrity(context);
-    } catch {
-      contextValid = false;
-    }
-    const badSource = context.sourceRefs.find((ref) => {
-      const entity = planningProjectSourceEntity(snapshot, ref.kind, ref.objectId);
-      const currentSha256 =
-        entity === undefined || entity.revision !== ref.revision
-          ? undefined
-          : ref.kind === "project"
-            ? computeWorkflowProjectResourceSha256(
-                entity as ProductSnapshot["entities"]["projects"][string],
-              )
-            : ref.kind === "method" && "sha256" in entity
-              ? String(entity.sha256)
-              : computePlanningProjectSourceRefSha256({ kind: ref.kind, entity });
-      return (
-        entity === undefined ||
-        entity.revision < ref.revision ||
-        (currentSha256 !== undefined && currentSha256 !== ref.sha256)
-      );
-    });
-    if (
-      !contextValid ||
-      run?.runKind !== "planning" ||
-      project === undefined ||
-      project.ownerPrincipalId !== owner ||
-      project.revision < context.projectRevision ||
-      method?.projectId !== context.projectId ||
-      method.revision < context.methodRef.revision ||
-      (method.revision === context.methodRef.revision &&
-        method.sha256 !== context.methodRef.sha256) ||
-      stage?.projectId !== context.projectId ||
-      stage.methodSnapshotId !== context.methodRef.projectMethodSnapshotId ||
-      stage.revision < context.stageRef.revision ||
-      badSource !== undefined
-    ) {
-      issue(
-        report,
-        "planning_project_context.binding_invalid",
-        "planning_project_context",
-        context.planningProjectContextId,
-        "Project Context与Run/Project/来源三元组或Hash不一致",
-      );
-    }
-    if (
-      !hasNodeOutputRef(
-        snapshot,
-        context.productRunId,
-        "context.project",
-        "planning_project_context",
-        context.planningProjectContextId,
-      )
-    ) {
-      issue(
-        report,
-        "planning_project_context.projection_missing",
-        "planning_project_context",
-        context.planningProjectContextId,
-        "Project Context缺少同事务Node终态/Manifest投影",
-      );
-    }
-  }
-
   for (const selection of Object.values(entities.planningMemorySelections)) {
     let valid = true;
     try {
@@ -902,21 +824,6 @@ function hasNodeOutputRef(
   });
 }
 
-function planningProjectSourceEntity(
-  snapshot: ProductSnapshot,
-  kind: ProductSnapshot["entities"]["planningProjectContexts"][string]["sourceRefs"][number]["kind"],
-  objectId: string,
-): ({ readonly revision: number } & object) | undefined {
-  const entities = snapshot.entities;
-  if (kind === "project") return entities.projects[objectId];
-  if (kind === "method") return entities.projectMethodSnapshots[objectId];
-  if (kind === "stage") return entities.projectStages[objectId];
-  if (kind === "milestone") return entities.projectMilestones[objectId];
-  if (kind === "update") return entities.projectUpdates[objectId];
-  if (kind === "work") return entities.projectWorks[objectId];
-  return entities.projectActions[objectId];
-}
-
 function auditReceiptsOutboxAndAttempts(snapshot: ProductSnapshot, report: IssueSink): void {
   const { entities } = snapshot;
   for (const attempt of Object.values(entities.attempts)) {
@@ -936,21 +843,6 @@ function auditReceiptsOutboxAndAttempts(snapshot: ProductSnapshot, report: Issue
         "attempt",
         attempt.attemptId,
         "Attempt与Memory Selection绑定不一致",
-      );
-    }
-    if (
-      attempt.planningProjectContextId !== undefined &&
-      (entities.planningProjectContexts[attempt.planningProjectContextId]?.productRunId !==
-        attempt.productRunId ||
-        entities.planningProjectContexts[attempt.planningProjectContextId]?.sha256 !==
-          attempt.planningProjectContextSha256)
-    ) {
-      issue(
-        report,
-        "attempt.project_context_invalid",
-        "attempt",
-        attempt.attemptId,
-        "Attempt与Project Context绑定不一致",
       );
     }
     if (
@@ -1064,7 +956,6 @@ function receiptCollection(
     ruleRevisionId: entities.ruleRevisions,
     ruleDecisionId: entities.ruleDecisions,
     ruleSelectionId: entities.ruleSelections,
-    planningProjectContextId: entities.planningProjectContexts,
     planningMemorySelectionId: entities.planningMemorySelections,
     workflowPolicyResolutionId: entities.workflowPolicyResolutions,
   }[key];

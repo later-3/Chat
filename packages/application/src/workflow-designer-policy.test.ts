@@ -19,7 +19,7 @@ describe("Workflow Designer Blueprint具体slot投影", () => {
         slotId: "planning.context",
         address: [],
         minimumIndex: 0,
-        maximumIndex: 4,
+        maximumIndex: 3,
       }),
     ]);
     expect(policy.slots[0]?.allowedNodeTypes).toContain("policy.rules");
@@ -35,7 +35,7 @@ describe("Workflow Designer Blueprint具体slot投影", () => {
       removed.semanticRoot,
       requiredBlueprint("planning"),
     );
-    expect(nextPolicy.slots[0]?.maximumIndex).toBe(3);
+    expect(nextPolicy.slots[0]?.maximumIndex).toBe(2);
   });
 
   it("Note线性结构把审核slot固定在classify与commit之间", () => {

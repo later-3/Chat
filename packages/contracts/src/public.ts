@@ -30,38 +30,6 @@ export type {
   PromptFragmentScope,
   PromptWorkspaceRootId,
 } from "./prompt-fragment.js";
-export type {
-  ProjectIntakeProposal,
-  ProjectManagementProposal,
-  ProjectAdvancementProposal,
-} from "./project.js";
-export type {
-  ProjectArtifactRef,
-  ProjectConfigurationRevision,
-  ProjectContextPolicy,
-  ProjectContextPurpose,
-  ProjectEvent,
-  ProjectManagedObjectKind,
-  ProjectMetricObservation,
-  ProjectNeed,
-  ProjectProfileKey,
-  ProjectProfileRevision,
-  ProjectRequirement,
-  ProjectViewCapability,
-  ProjectViewRequirement,
-} from "./project-management.js";
-export * from "./project-management-api.js";
-export type {
-  ProjectContextMap,
-  ProjectPracticeRevision,
-  ProjectWorkBlock,
-  ProjectWorkClaim,
-  ProjectWorkHandoff,
-  ProjectWorkOutcome,
-} from "./project-coordination.js";
-export * from "./project-api.js";
-export * from "./project-coordination-api.js";
-export * from "./project-agent-coordination.js";
 export * from "./workflow-api.js";
 export * from "./workflow-runtime-trace-api.js";
 export * from "./execution-trace-api.js";

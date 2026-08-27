@@ -6,7 +6,7 @@
 |---|---|---|
 | Product Session、Message、Run | Chat Product Store | 否，只显示Query投影 |
 | Plan、Approval、Decision | Chat Product Store | 否，只提交命令 |
-| Project、Work、Memory、Rule、Evidence | Chat Product Store | 否 |
+| Memory、Rule、Evidence | Chat Product Store | 否 |
 | Workflow Run、Checkpoint、Hook | Vercel Workflow与后端私有映射 | 否且不可见 |
 | pi Operation、Runtime Session、模型与Tool调用 | Pi Executor Service/pi/Provider | 否且不可作为产品身份 |
 | DSH Session与轨迹 | DSH Runtime | 仅是UI/运行缓存 |
@@ -29,8 +29,6 @@
 6. code-server命令成功不自动成为Chat交付；需要产品事实时必须通过受治理Command/Evidence进入Chat。
 7. 外部副作用结果未知时进入查询、对账或人工处置，不能普通重试。
 8. Executor Tool执行前必须已有耐久意图事件；服务重启发现未闭合Tool时进入`outcome_unknown`，不能自动重放`edit/write/bash`。
-9. 建项确认事务必须同时产生Decision、queued Operation和pending Outbox；Bridge、Router和页面都不得直接执行Provider。
-10. 页面关闭、刷新或确认响应丢失不取消建项Operation；Dispatcher重放必须先按稳定业务键对账，不能再次盲写。
 
 ## Workbench权限边界
 

@@ -52,16 +52,11 @@ import {
   type PublishPlanReviewRequest,
   type LoadMemoryImportRequest,
   type LoadMemoryWriteRequest,
-  prepareProjectCandidateRequestSchema,
-  prepareProjectAdvancementCandidateRequestSchema,
-  projectCandidateDtoSchema,
   loadWorkflowRunSpecRequestSchema,
   loadWorkflowRunSpecResponseSchema,
   transitionConfigurablePlanningNodeRequestSchema,
   preparePlanningMemoryContextRequestSchema,
   preparePlanningMemoryContextResponseSchema,
-  preparePlanningProjectContextRequestSchema,
-  preparePlanningProjectContextResponseSchema,
   preparePlanningRulesContextRequestSchema,
   preparePlanningRulesContextResponseSchema,
   prepareGovernanceReviewInputRequestSchema,
@@ -101,7 +96,6 @@ import {
   type LoadWorkflowRunSpecRequest,
   type TransitionConfigurablePlanningNodeRequest,
   type PreparePlanningMemoryContextRequest,
-  type PreparePlanningProjectContextRequest,
   type PreparePlanningRulesContextRequest,
   type PrepareGovernanceReviewInputRequest,
   type PublishNoteCandidateRuntimeRequest,
@@ -402,20 +396,6 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
         preparePlanningMemoryContextResponseSchema,
       );
     },
-    /** 准备规划Project上下文：为可配置规划工作流预读Project层上下文。 */
-    preparePlanningProjectContext(
-      input: Omit<PreparePlanningProjectContextRequest, "schemaVersion">,
-    ) {
-      return call(
-        options,
-        "/internal/runtime/v1/prepare-planning-project-context",
-        preparePlanningProjectContextRequestSchema.parse({
-          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
-          ...input,
-        }),
-        preparePlanningProjectContextResponseSchema,
-      );
-    },
     /** 准备规划规则上下文：为可配置规划工作流预读用户规则集上下文。 */
     preparePlanningRulesContext(input: Omit<PreparePlanningRulesContextRequest, "schemaVersion">) {
       return call(
@@ -515,42 +495,6 @@ export function createRuntimeApiClient(options: RuntimeApiClientOptions) {
             status: z.literal("committed"),
           })
           .strict(),
-      );
-    },
-    /** 准备项目候选：ProjectIntake工作流为项目接入生成待审核候选（90秒Provider超时）。 */
-    prepareProjectCandidate(input: {
-      commandId: string;
-      projectCandidateId: string;
-      expectedRevision: number;
-    }) {
-      return call(
-        options,
-        "/internal/runtime/v1/prepare-project-candidate",
-        prepareProjectCandidateRequestSchema.parse({
-          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
-          ...input,
-        }),
-        // 私有响应仍使用公开Candidate投影，避免出现第二套候选合同。
-        z.object({ candidate: projectCandidateDtoSchema }).strict(),
-        // Project理解节点本身有90秒Provider硬超时；HTTP边界必须留出提交响应余量。
-        120_000,
-      );
-    },
-    /** 准备项目推进候选：ProjectAdvancement工作流为项目推进生成待审核候选（90秒Provider超时）。 */
-    prepareProjectAdvancementCandidate(input: {
-      commandId: string;
-      projectCandidateId: string;
-      expectedRevision: number;
-    }) {
-      return call(
-        options,
-        "/internal/runtime/v1/prepare-project-advancement-candidate",
-        prepareProjectAdvancementCandidateRequestSchema.parse({
-          schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
-          ...input,
-        }),
-        z.object({ candidate: projectCandidateDtoSchema }).strict(),
-        120_000,
       );
     },
     /**

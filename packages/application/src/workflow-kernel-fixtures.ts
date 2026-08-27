@@ -91,7 +91,6 @@ export const PLANNING_MIXED_ROOT: WorkflowSequence = {
   kind: "sequence",
   elements: [
     task("planning.memory", "context.memory"),
-    task("planning.project", "context.project"),
     task("planning.rules", "policy.rules"),
     task("planning.skills", "capability.skills"),
     task("planning.research", "agent.research"),

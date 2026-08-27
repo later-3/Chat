@@ -13,27 +13,6 @@ import type {
   RevisionInputId,
   RunAttemptId,
   ValidationResultId,
-  ProjectId,
-  ProjectMethodSnapshotId,
-  ProjectStageId,
-  ProjectResourceId,
-  ProjectParticipantId,
-  ProjectWorkId,
-  ProjectActionId,
-  ProjectContributionId,
-  ProjectEvidenceId,
-  ProjectDecisionId,
-  ProjectObservationId,
-  ProjectCandidateId,
-  ProjectMilestoneId,
-  ProjectUpdateId,
-  ProjectStateTransitionId,
-  ProjectWorkBlockId,
-  ProjectWorkClaimId,
-  ProjectWorkHandoffId,
-  ProjectPracticeRevisionId,
-  ProjectWorkOutcomeId,
-  ProjectContextMapId,
   NoteId,
   NoteRevisionId,
   NoteCandidateId,
@@ -63,11 +42,6 @@ import type { MemoryBackendRegistryPort } from "./memory-ports.js";
 import type { MemoryImportBackendRegistryPort } from "./memory-import-ports.js";
 import type { WorkflowMemoryProviderRegistryPort } from "./workflow-memory-ports.js";
 import type { MemorySessionSourceRegistryPort } from "./memory-session-source-port.js";
-import type {
-  ProjectIntakeUnderstandingPort,
-  ProjectAdvancementUnderstandingPort,
-  ProjectResourceRootRegistryPort,
-} from "./project-ports.js";
 import type { WorkflowRuntimeTraceReaderPort } from "./runtime-ports.js";
 
 /** Trace发射器：由组合根提供（@chat/realtime Sink）；Application不依赖具体Sink。 */
@@ -118,31 +92,6 @@ export interface IdFactory {
   outbox(): OutboxEntryId;
 }
 
-/** Project Solution单独占有自己的ID空间，旧规划/Memory用例不被迫依赖它。 */
-export interface ProjectIdFactory {
-  project(): ProjectId;
-  methodSnapshot(): ProjectMethodSnapshotId;
-  stage(): ProjectStageId;
-  resource(): ProjectResourceId;
-  participant(): ProjectParticipantId;
-  work(): ProjectWorkId;
-  action(): ProjectActionId;
-  contribution(): ProjectContributionId;
-  evidence(): ProjectEvidenceId;
-  decision(): ProjectDecisionId;
-  observation(): ProjectObservationId;
-  candidate(): ProjectCandidateId;
-  milestone(): ProjectMilestoneId;
-  update(): ProjectUpdateId;
-  stateTransition(): ProjectStateTransitionId;
-  workBlock?(): ProjectWorkBlockId;
-  workClaim?(): ProjectWorkClaimId;
-  workHandoff?(): ProjectWorkHandoffId;
-  practiceRevision?(): ProjectPracticeRevisionId;
-  workOutcome?(): ProjectWorkOutcomeId;
-  contextMap?(): ProjectContextMapId;
-}
-
 export interface NoteIdFactory {
   note(): NoteId;
   revision(): NoteRevisionId;
@@ -182,6 +131,17 @@ export interface AgentRuntimeProfileReaderPort {
   ): Promise<AgentRuntimeBaselineDto | undefined>;
 }
 
+export interface WorkspaceRootDescriptor {
+  readonly rootId: string;
+  readonly displayName: string;
+  /** 服务端授权映射的稳定指纹；不暴露canonical path。 */
+  readonly grantSha256: string;
+}
+
+export interface WorkspaceRootRegistryPort {
+  list(): readonly WorkspaceRootDescriptor[];
+}
+
 export interface ApplicationDeps {
   readonly store: ProductStorePort;
   readonly now: () => string;
@@ -202,10 +162,7 @@ export interface ApplicationDeps {
   readonly workflowMemoryProviders?: WorkflowMemoryProviderRegistryPort;
   /** Chat Session由Product Store读取；Codex等外部Session只经按需只读Adapter进入。 */
   readonly memorySessionSources?: MemorySessionSourceRegistryPort;
-  readonly projectRoots?: ProjectResourceRootRegistryPort;
-  readonly projectIntakeUnderstanding?: ProjectIntakeUnderstandingPort;
-  readonly projectAdvancementUnderstanding?: ProjectAdvancementUnderstandingPort;
-  readonly projectIds?: ProjectIdFactory;
+  readonly workspaceRoots?: WorkspaceRootRegistryPort;
   readonly noteIds?: NoteIdFactory;
   readonly ruleIds?: RuleIdFactory;
   readonly directAgentIds?: DirectAgentIdFactory;

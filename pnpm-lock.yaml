@@ -48,9 +48,6 @@ importers:
       '@chat/product-store-json':
         specifier: workspace:*
         version: link:../../packages/product-store-json
-      '@chat/project-runtime':
-        specifier: workspace:*
-        version: link:../../packages/project-runtime
       '@chat/realtime':
         specifier: workspace:*
         version: link:../../packages/realtime
@@ -351,31 +348,6 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(jsdom@30.0.1)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.2)(tsx@4.23.8)(yaml@2.9.0))
 
-  packages/project-runtime:
-    dependencies:
-      '@chat/application':
-        specifier: workspace:*
-        version: link:../application
-      '@chat/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-      '@chat/domain':
-        specifier: workspace:*
-        version: link:../domain
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@types/node':
-        specifier: ^26.1.2
-        version: 26.1.2
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(jsdom@30.0.1)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.2)(tsx@4.23.8)(yaml@2.9.0))
-
   packages/realtime:
     dependencies:
       '@chat/application':
@@ -424,9 +396,6 @@ importers:
       '@chat/product-store-json':
         specifier: workspace:*
         version: link:../product-store-json
-      '@chat/project-runtime':
-        specifier: workspace:*
-        version: link:../project-runtime
       '@chat/realtime':
         specifier: workspace:*
         version: link:../realtime
@@ -4824,6 +4793,7 @@ packages:
   eslint@9.39.5:
     resolution: {integrity: sha512-DgZS62aPLXKlnxILS/AYCoRvHaZeXceIzlXPkkGGzJWSow1aEk0lbTlxUSlyjC8jcaKxAdOnTDz+o1JFSBsyjw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'

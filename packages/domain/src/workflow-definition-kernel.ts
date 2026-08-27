@@ -12,6 +12,7 @@ export const WORKFLOW_NODE_TYPES = [
   "agent.memory_retrieve",
   "agent.memory_write",
   "context.memory",
+  // 仅让历史Workflow事实能够被解析；当前Node Catalog不注册该类型。
   "context.project",
   "policy.rules",
   "capability.skills",
@@ -78,7 +79,6 @@ export type WorkflowSlotValueKind =
   | "memory_write_ref"
   | "memory_write_candidate_ref"
   | "context_package_ref"
-  | "project_context_ref"
   | "rule_resolution_ref"
   | "skill_resolution_ref"
   | "evidence_ref"

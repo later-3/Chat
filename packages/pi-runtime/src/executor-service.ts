@@ -9,6 +9,7 @@ import {
   agentProfileAgentKeySchema,
   agentRuntimeBaselineDtoSchema,
   promptWorkspaceRootIdSchema,
+  readWorkspaceRootConfig,
   authorizeExecutorOperationResponseSchema,
   type AuthorizeExecutorOperationRequest,
   type AuthorizeExecutorOperationResponse,
@@ -41,19 +42,6 @@ import {
   startPiExecutorOperationRequestSchema,
 } from "./executor-service-contract.js";
 
-const projectRootConfigSchema = z
-  .array(
-    z
-      .object({
-        rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
-        displayName: z.string().min(1).max(160),
-        canonicalPath: z.string().min(1).max(2_000),
-        enabledAdapters: z.array(z.string()).min(1).max(20),
-      })
-      .strict(),
-  )
-  .max(20);
-
 export interface PiExecutorWorkspaceRoot {
   readonly rootId: string;
   readonly canonicalPath: string;
@@ -63,9 +51,7 @@ export interface PiExecutorWorkspaceRoot {
 export async function loadPiExecutorWorkspaceRoots(
   env: NodeJS.ProcessEnv,
 ): Promise<ReadonlyMap<string, PiExecutorWorkspaceRoot>> {
-  const raw = env.CHAT_PROJECT_ROOTS_JSON;
-  if (raw === undefined || raw.trim() === "") return new Map();
-  const parsed = projectRootConfigSchema.parse(JSON.parse(raw));
+  const parsed = readWorkspaceRootConfig(env);
   const roots = new Map<string, PiExecutorWorkspaceRoot>();
   for (const item of parsed) {
     if (roots.has(item.rootId)) throw new Error("Pi Executor Workspace Root重复");

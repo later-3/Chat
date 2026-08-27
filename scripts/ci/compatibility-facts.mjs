@@ -180,15 +180,6 @@ function declarationClosure(
   if (seen.has(key)) return output;
   seen.add(key);
   const sourcePath = relative(ROOT, declaration.getSourceFile().fileName)
-    .replace("packages/contracts/src/project-api-v2-compat.ts", "packages/contracts/src/project.ts")
-    .replace(
-      "packages/product-store-json/src/internal-compat/project-v20.ts",
-      "packages/contracts/src/project.ts",
-    )
-    .replace(
-      "packages/product-store-json/src/internal-compat/planning-project-context-v1.ts",
-      "packages/contracts/src/planning-project-context.ts",
-    )
     .replace(
       "packages/product-store-json/src/internal-compat/product-store-v20.ts",
       "packages/contracts/src/product-store.ts",
@@ -224,14 +215,6 @@ function declarationClosure(
     .replace(
       "packages/product-store-json/src/internal-compat/legacy-v20-capability-reader.ts",
       "packages/product-store-json/src/legacy-v20-capability.ts",
-    )
-    .replace(
-      "packages/pi-runtime/src/internal-compat/project-v20.ts",
-      "packages/contracts/src/project.ts",
-    )
-    .replace(
-      "packages/pi-runtime/src/internal-compat/planning-project-context-v1.ts",
-      "packages/contracts/src/planning-project-context.ts",
     )
     .replace(
       "packages/pi-runtime/src/internal-compat/execution-v1.ts",
@@ -274,41 +257,6 @@ function journalGenerationDeclarationOverrides(program) {
   ) {
     return overrides;
   }
-  for (const name of [
-    "projectActionStatusSchema",
-    "projectHealthSchema",
-    "projectMethodProfileIdSchema",
-    "projectMilestoneStatusSchema",
-    "projectStatusSchema",
-    "projectWorkStatusSchema",
-  ]) {
-    const current = findDeclaration(
-      program,
-      "packages/contracts/src/project.ts",
-      name,
-      ts.isVariableDeclaration,
-    );
-    const frozen = findDeclaration(
-      program,
-      "packages/pi-runtime/src/internal-compat/project-v20.ts",
-      name,
-      ts.isVariableDeclaration,
-    );
-    overrides.set(current, frozen);
-  }
-  const readerFacade = findDeclaration(
-    program,
-    "packages/pi-runtime/src/internal-compat/executor-request-reader.ts",
-    "startPiExecutorOperationRequestSchema",
-    ts.isVariableDeclaration,
-  );
-  const frozenRequest = findDeclaration(
-    program,
-    "packages/pi-runtime/src/internal-compat/executor-request-v1.ts",
-    "startPiExecutorOperationRequestSchema",
-    ts.isVariableDeclaration,
-  );
-  overrides.set(readerFacade, frozenRequest);
   return overrides;
 }
 
@@ -657,9 +605,9 @@ function productStoreFacts(domain, files) {
       }
       const record = generationRecord(identity, evidence, previousExtractorEvidence);
       const previous = mechanicallyGeneratedExtractorMigrationProofs().get(
-        `${domain.id}:${identity}`,
+        `${domain.id}:${identity}:3`,
       );
-      if (previous !== undefined) record.previousExtractorCanonicalSha256 = previous;
+      if (previous !== undefined) applyExtractorMigrationProof(record, previous);
       return record;
     })
     .sort((left, right) => left.generation - right.generation);
@@ -822,18 +770,187 @@ function bridgeStateFacts(domain, files) {
 
 let extractorMigrationProofCache;
 let authorityProofCache;
-const extractorBaseFactsCache = new Map();
+const extractorBaseSnapshotCache = new Map();
 
 function loadExtractorProofRegistry() {
   const parsed = JSON.parse(readFileSync(EXTRACTOR_MIGRATIONS_PATH, "utf8"));
   if (
-    parsed?.schemaVersion !== "chat-compatibility-extractor-migrations.v1" ||
+    parsed?.schemaVersion !== "chat-compatibility-extractor-migrations.v3" ||
     !Array.isArray(parsed.migrations) ||
-    !Array.isArray(parsed.authorityProofs)
+    !Array.isArray(parsed.authorityProofs) ||
+    !Array.isArray(parsed.baselineRepairs) ||
+    !Array.isArray(parsed.breakingChanges)
   ) {
     throw new Error("compat extractor migration登记损坏");
   }
   return parsed;
+}
+
+function approvedAuthorityRepairs(baseCommit) {
+  const result = new Map();
+  if (baseCommit === undefined) return result;
+  for (const repair of loadExtractorProofRegistry().baselineRepairs) {
+    if (repair.target === "generation") continue;
+    if (
+      !/^[0-9a-f]{40}$/u.test(repair.baseCommit ?? "") ||
+      typeof repair.domainId !== "string" ||
+      !["legacyAuthority", "writeAuthority"].includes(repair.target) ||
+      !/^[0-9a-f]{64}$/u.test(repair.recordedCanonicalSha256 ?? "") ||
+      !/^[0-9a-f]{64}$/u.test(repair.recomputedCanonicalSha256 ?? "") ||
+      repair.recordedCanonicalSha256 === repair.recomputedCanonicalSha256 ||
+      repair.repairReason !== "historical-source-baseline-divergence"
+    ) {
+      throw new Error("compat authority baseline repair登记字段非法");
+    }
+    if (repair.baseCommit !== baseCommit) continue;
+    assertMechanicallyProvenBaselineRepair(repair);
+    const key = `${repair.domainId}:${repair.target}`;
+    if (result.has(key)) throw new Error(`compat authority baseline repair重复：${key}`);
+    result.set(key, {
+      recordedCanonicalSha256: repair.recordedCanonicalSha256,
+      recomputedCanonicalSha256: repair.recomputedCanonicalSha256,
+    });
+  }
+  return result;
+}
+
+function approvedGenerationRepairs(baseCommit) {
+  const result = new Map();
+  if (baseCommit === undefined) return result;
+  for (const repair of loadExtractorProofRegistry().baselineRepairs) {
+    if (repair.target !== "generation") continue;
+    if (
+      !/^[0-9a-f]{40}$/u.test(repair.baseCommit ?? "") ||
+      typeof repair.domainId !== "string" ||
+      typeof repair.identity !== "string" ||
+      repair.identity === "" ||
+      !/^[0-9a-f]{64}$/u.test(repair.recordedCanonicalSha256 ?? "") ||
+      !/^[0-9a-f]{64}$/u.test(repair.recomputedCanonicalSha256 ?? "") ||
+      repair.recordedCanonicalSha256 === repair.recomputedCanonicalSha256 ||
+      repair.repairReason !== "historical-source-baseline-divergence"
+    ) {
+      throw new Error("compat generation baseline repair登记字段非法");
+    }
+    if (repair.baseCommit !== baseCommit) continue;
+    assertMechanicallyProvenBaselineRepair(repair);
+    const key = `${repair.domainId}:${repair.identity}`;
+    if (result.has(key)) throw new Error(`compat generation baseline repair重复：${key}`);
+    result.set(key, {
+      recordedCanonicalSha256: repair.recordedCanonicalSha256,
+      recomputedCanonicalSha256: repair.recomputedCanonicalSha256,
+    });
+  }
+  return result;
+}
+
+/**
+ * repair不是人工豁免：旧Hash必须来自base已提交的事实文件，新Hash必须由同一base归档中的
+ * 旧源码和旧提取器机械重算得到。当前源码随后还要精确命中新Hash，三者缺一不可。
+ */
+function assertMechanicallyProvenBaselineRepair(repair) {
+  const snapshot = mechanicallyGeneratedBaseSnapshot(repair.baseCommit, repair.domainId);
+  const recordedDomain = snapshot.recordedFacts.domains.find(
+    (entry) => entry.id === repair.domainId,
+  );
+  const generatedDomain = snapshot.generatedFacts.domains.find(
+    (entry) => entry.id === repair.domainId,
+  );
+  if (recordedDomain === undefined || generatedDomain === undefined) {
+    throw new Error("compat baseline repair缺少base事实域");
+  }
+  if (repair.target === "generation") {
+    const recorded = recordedDomain.generations.find((entry) => entry.identity === repair.identity);
+    const generated = generatedDomain.generations.find(
+      (entry) => entry.identity === repair.identity,
+    );
+    if (recorded === undefined || generated === undefined) {
+      throw new Error(`compat generation baseline repair缺少代际：${repair.identity}`);
+    }
+    const metadata = (entry) => ({
+      identity: entry.identity,
+      family: entry.family,
+      generation: entry.generation,
+    });
+    if (json(metadata(recorded)) !== json(metadata(generated))) {
+      throw new Error(`compat generation baseline repair证据结构漂移：${repair.identity}`);
+    }
+    if (
+      recorded.canonicalSha256 !== repair.recordedCanonicalSha256 ||
+      generated.canonicalSha256 !== repair.recomputedCanonicalSha256
+    ) {
+      throw new Error(
+        `compat generation baseline repair未通过base源码机械证明：${repair.identity}`,
+      );
+    }
+    return;
+  }
+  const recorded = recordedDomain[repair.target];
+  const generated = generatedDomain[repair.target];
+  const authorityMetadata = (entry) => ({
+    entry: entry.entry,
+    generations: [...entry.generations].sort(),
+    allowedActions: [...entry.allowedActions].sort(),
+  });
+  if (json(authorityMetadata(recorded)) !== json(authorityMetadata(generated))) {
+    throw new Error(`compat authority baseline repair证据结构漂移：${repair.domainId}`);
+  }
+  if (
+    recorded.canonicalSha256 !== repair.recordedCanonicalSha256 ||
+    generated.canonicalSha256 !== repair.recomputedCanonicalSha256
+  ) {
+    throw new Error(`compat authority baseline repair未通过base源码机械证明：${repair.domainId}`);
+  }
+}
+
+/**
+ * 产品纵向整体退役不同于普通Schema升代：旧读入口会与产品本身一起消失。这里仍然
+ * 失败关闭，只接受绑定精确base commit、旧Hash、新Hash（或明确删除）和用户原话的记录。
+ * API Surface继续逐项看护符号/字段级变化；本表只处理compatibility generation层的断代。
+ */
+function approvedGenerationBreaks(baseCommit) {
+  const result = new Map();
+  if (baseCommit === undefined) return result;
+  for (const approval of loadExtractorProofRegistry().breakingChanges) {
+    if (
+      !/^[0-9a-f]{40}$/u.test(approval.baseCommit ?? "") ||
+      !Array.isArray(approval.domainIds) ||
+      approval.domainIds.length === 0 ||
+      approval.domainIds.some((value) => typeof value !== "string" || value === "") ||
+      !Array.isArray(approval.generations) ||
+      approval.generations.length === 0 ||
+      typeof approval.approvedBy !== "string" ||
+      approval.approvedBy === "" ||
+      typeof approval.approvalReference !== "string" ||
+      approval.approvalReference === "" ||
+      ["detect", "why", "fix", "verify", "rollback"].some(
+        (field) => typeof approval[field] !== "string" || approval[field] === "",
+      )
+    ) {
+      throw new Error("compat breaking change登记字段非法");
+    }
+    for (const generation of approval.generations) {
+      if (
+        typeof generation.identity !== "string" ||
+        generation.identity === "" ||
+        !/^[0-9a-f]{64}$/u.test(generation.previousCanonicalSha256 ?? "") ||
+        (generation.currentCanonicalSha256 !== null &&
+          !/^[0-9a-f]{64}$/u.test(generation.currentCanonicalSha256 ?? "")) ||
+        generation.currentCanonicalSha256 === generation.previousCanonicalSha256
+      ) {
+        throw new Error("compat breaking generation登记字段非法");
+      }
+      if (approval.baseCommit !== baseCommit) continue;
+      for (const domainId of approval.domainIds) {
+        const key = `${domainId}:${generation.identity}`;
+        if (result.has(key)) throw new Error(`compat breaking generation重复：${key}`);
+        result.set(key, {
+          previousCanonicalSha256: generation.previousCanonicalSha256,
+          currentCanonicalSha256: generation.currentCanonicalSha256,
+        });
+      }
+    }
+  }
+  return result;
 }
 
 /**
@@ -841,11 +958,12 @@ function loadExtractorProofRegistry() {
  * 再运行该commit自己的旧提取器。随后还要与base commit内的事实文件逐字语义相等；
  * 只有通过这两个机械门的旧事实，才能供extractor升代或历史reader authority复用。
  */
-function mechanicallyGeneratedBaseFacts(baseCommit) {
+function mechanicallyGeneratedBaseSnapshot(baseCommit, domainId) {
   if (!/^[0-9a-f]{40}$/u.test(baseCommit)) {
     throw new Error("compat extractor base commit非法");
   }
-  const cached = extractorBaseFactsCache.get(baseCommit);
+  const cacheKey = `${baseCommit}:${domainId ?? "*"}`;
+  const cached = extractorBaseSnapshotCache.get(cacheKey);
   if (cached !== undefined) return cached;
   const directory = mkdtempSync(join(tmpdir(), "chat-compat-extractor-base-"));
   try {
@@ -906,7 +1024,11 @@ function mechanicallyGeneratedBaseFacts(baseCommit) {
           `const root = ${JSON.stringify(directory)};`,
           "const module = await import(pathToFileURL(`${root}/scripts/ci/compatibility-facts.mjs`));",
           'const policy = JSON.parse(readFileSync(`${root}/config/compatibility-policy.json`, "utf8"));',
-          "process.stdout.write(JSON.stringify(module.generateCompatibilityFacts(policy)));",
+          domainId === undefined
+            ? "process.stdout.write(JSON.stringify(module.generateCompatibilityFacts(policy)));"
+            : `policy.domains = policy.domains.filter((entry) => entry.id === ${JSON.stringify(
+                domainId,
+              )}); process.stdout.write(JSON.stringify(module.generateCompatibilityFacts(policy)));`,
         ].join(" "),
       ],
       {
@@ -927,14 +1049,90 @@ function mechanicallyGeneratedBaseFacts(baseCommit) {
     });
     if (recordedSource === undefined) throw new Error("extractor base缺少事实baseline");
     const recordedFacts = JSON.parse(recordedSource);
-    if (json(generatedFacts) !== json(recordedFacts)) {
-      throw new Error("extractor base旧源码机械重算结果与其事实记录不一致");
+    if (domainId !== undefined) {
+      recordedFacts.domains = recordedFacts.domains.filter((entry) => entry.id === domainId);
     }
-    extractorBaseFactsCache.set(baseCommit, generatedFacts);
-    return generatedFacts;
+    const snapshot = { generatedFacts, recordedFacts };
+    extractorBaseSnapshotCache.set(cacheKey, snapshot);
+    return snapshot;
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+}
+
+function mechanicallyGeneratedBaseFacts(baseCommit) {
+  const snapshot = mechanicallyGeneratedBaseSnapshot(baseCommit);
+  if (json(snapshot.generatedFacts) !== json(snapshot.recordedFacts)) {
+    throw new Error("extractor base旧源码机械重算结果与其事实记录不一致");
+  }
+  return snapshot.generatedFacts;
+}
+
+function recordedBaselineRepairProof(migration, snapshot) {
+  if (migration.repairReason !== "historical-source-baseline-divergence") {
+    throw new Error("compat baseline repair原因非法");
+  }
+  const generatedDomain = snapshot.generatedFacts.domains.find(
+    (entry) => entry.id === migration.domainId,
+  );
+  const recordedDomain = snapshot.recordedFacts.domains.find(
+    (entry) => entry.id === migration.domainId,
+  );
+  if (generatedDomain === undefined || recordedDomain === undefined) {
+    throw new Error("compat baseline repair缺少目标Owner域");
+  }
+  if (
+    (generatedDomain.generationCanonicalVersion ?? 1) !== migration.fromCanonicalVersion ||
+    (recordedDomain.generationCanonicalVersion ?? 1) !== migration.fromCanonicalVersion
+  ) {
+    throw new Error("compat baseline repair的base canonical版本不匹配");
+  }
+
+  const generatedWithoutGenerations = structuredClone(generatedDomain);
+  const recordedWithoutGenerations = structuredClone(recordedDomain);
+  delete generatedWithoutGenerations.generations;
+  delete recordedWithoutGenerations.generations;
+  if (json(generatedWithoutGenerations) !== json(recordedWithoutGenerations)) {
+    throw new Error("compat baseline repair目标域仍有非generation漂移");
+  }
+
+  const generatedIdentities = generatedDomain.generations.map((entry) => entry.identity).sort();
+  const recordedIdentities = recordedDomain.generations.map((entry) => entry.identity).sort();
+  const registeredIdentities = [...new Set(migration.identities)].sort();
+  if (
+    json(generatedIdentities) !== json(recordedIdentities) ||
+    json(generatedIdentities) !== json(registeredIdentities)
+  ) {
+    throw new Error("compat baseline repair必须覆盖目标域全部代际");
+  }
+
+  const result = new Map();
+  for (const identity of registeredIdentities) {
+    const generated = generatedDomain.generations.find((entry) => entry.identity === identity);
+    const recorded = recordedDomain.generations.find((entry) => entry.identity === identity);
+    if (generated === undefined || recorded === undefined) {
+      throw new Error(`compat baseline repair缺少代际：${identity}`);
+    }
+    const generationMetadata = (entry) => ({
+      identity: entry.identity,
+      family: entry.family,
+      generation: entry.generation,
+      evidenceCount: entry.evidenceCount,
+    });
+    if (json(generationMetadata(generated)) !== json(generationMetadata(recorded))) {
+      throw new Error(`compat baseline repair代际证据结构漂移：${identity}`);
+    }
+    if (generated.canonicalSha256 === recorded.canonicalSha256) {
+      throw new Error(`compat baseline repair没有可修复分歧：${identity}`);
+    }
+    result.set(identity, {
+      proofKind: "recorded-baseline-repair",
+      baseCommit: migration.baseCommit,
+      previousCanonicalSha256: recorded.canonicalSha256,
+      recomputedBaseCanonicalSha256: generated.canonicalSha256,
+    });
+  }
+  return result;
 }
 
 function mechanicallyGeneratedExtractorMigrationProofs() {
@@ -942,6 +1140,7 @@ function mechanicallyGeneratedExtractorMigrationProofs() {
   const proofs = new Map();
   for (const migration of loadExtractorProofRegistry().migrations) {
     if (
+      !["reproducible-base", "recorded-baseline-repair"].includes(migration.proofKind) ||
       typeof migration.domainId !== "string" ||
       !Number.isInteger(migration.fromCanonicalVersion) ||
       migration.fromCanonicalVersion < 1 ||
@@ -951,17 +1150,45 @@ function mechanicallyGeneratedExtractorMigrationProofs() {
     ) {
       throw new Error("compat extractor migration登记字段非法");
     }
-    const generatedFacts = mechanicallyGeneratedBaseFacts(migration.baseCommit);
-    const domain = generatedFacts.domains.find((entry) => entry.id === migration.domainId);
-    if (domain === undefined) throw new Error("extractor migration base缺少目标Owner域");
+    let domain;
+    let repairProofs;
+    if (migration.proofKind === "reproducible-base") {
+      if (migration.repairReason !== undefined) {
+        throw new Error("普通compat extractor migration不得登记repair原因");
+      }
+      const generatedFacts = mechanicallyGeneratedBaseFacts(migration.baseCommit);
+      domain = generatedFacts.domains.find((entry) => entry.id === migration.domainId);
+      if (domain === undefined) throw new Error("extractor migration base缺少目标Owner域");
+    } else {
+      const snapshot = mechanicallyGeneratedBaseSnapshot(migration.baseCommit);
+      repairProofs = recordedBaselineRepairProof(migration, snapshot);
+      domain = snapshot.recordedFacts.domains.find((entry) => entry.id === migration.domainId);
+    }
     for (const identity of migration.identities) {
       const generation = domain.generations.find((entry) => entry.identity === identity);
       if (generation === undefined) throw new Error(`extractor base缺少代际：${identity}`);
-      proofs.set(`${migration.domainId}:${identity}`, generation.canonicalSha256);
+      const key = `${migration.domainId}:${identity}:${String(migration.toCanonicalVersion)}`;
+      if (proofs.has(key)) throw new Error(`compat extractor migration证明重复：${key}`);
+      proofs.set(
+        key,
+        repairProofs?.get(identity) ?? {
+          proofKind: "reproducible-base",
+          baseCommit: migration.baseCommit,
+          previousCanonicalSha256: generation.canonicalSha256,
+        },
+      );
     }
   }
   extractorMigrationProofCache = proofs;
   return proofs;
+}
+
+function applyExtractorMigrationProof(record, proof) {
+  record.previousExtractorCanonicalSha256 = proof.previousCanonicalSha256;
+  if (proof.proofKind !== "recorded-baseline-repair") return;
+  record.previousExtractorProofKind = proof.proofKind;
+  record.previousExtractorBaseCommit = proof.baseCommit;
+  record.previousExtractorRecomputedCanonicalSha256 = proof.recomputedBaseCanonicalSha256;
 }
 
 function mechanicallyGeneratedAuthorityProofs() {
@@ -1043,8 +1270,25 @@ export function mechanicallyGeneratedExtractorMigrationProofsForTest() {
   return Object.fromEntries(mechanicallyGeneratedExtractorMigrationProofs());
 }
 
+export function mechanicallyGeneratedBaseFactsForTest(baseCommit) {
+  return mechanicallyGeneratedBaseFacts(baseCommit);
+}
+
+export function recordedBaselineRepairProofForTest(migration) {
+  return Object.fromEntries(
+    recordedBaselineRepairProof(migration, mechanicallyGeneratedBaseSnapshot(migration.baseCommit)),
+  );
+}
+
 export function mechanicallyGeneratedAuthorityProofsForTest() {
   return Object.fromEntries(mechanicallyGeneratedAuthorityProofs());
+}
+
+export function mechanicallyApprovedBaselineRepairsForTest(baseCommit) {
+  return {
+    generations: Object.fromEntries(approvedGenerationRepairs(baseCommit)),
+    authorities: Object.fromEntries(approvedAuthorityRepairs(baseCommit)),
+  };
 }
 
 let rootedGenerationEvidenceCache = new Map();
@@ -1168,6 +1412,7 @@ function rootedDomainFacts(domain, files) {
     normalized(ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true)),
   );
   const isolateJournalGenerations = domain.id === "direct-generic-journals";
+  const generationCanonicalVersion = domain.id === "workflow-run-spec" ? 3 : 2;
   const journalOverrides = isolateJournalGenerations
     ? journalGenerationDeclarationOverrides(program)
     : new Map();
@@ -1193,11 +1438,11 @@ function rootedDomainFacts(domain, files) {
         );
         const record = generationRecord(identity, evidence, previousExtractorEvidence);
         const previous = mechanicallyGeneratedExtractorMigrationProofs().get(
-          `${domain.id}:${identity}`,
+          `${domain.id}:${identity}:${String(generationCanonicalVersion)}`,
         );
         if (previous === undefined && !currentWriteGenerations.includes(identity))
           throw new Error(`RunSpec extractor migration缺少旧代证明：${identity}`);
-        if (previous !== undefined) record.previousExtractorCanonicalSha256 = previous;
+        if (previous !== undefined) applyExtractorMigrationProof(record, previous);
         return record;
       }
 
@@ -1265,7 +1510,7 @@ function rootedDomainFacts(domain, files) {
         evidenceKind: "schema-reader-validator-binding",
         canonicalSha256: sha256(`${identity}:${normalized(writerEntry)}`),
       })),
-      generationCanonicalVersion: 2,
+      generationCanonicalVersion,
     },
   );
 }
@@ -1432,29 +1677,84 @@ export function generateCompatibilityFacts(policy) {
   return stable({ schemaVersion: "chat-compatibility-facts.v2", domains });
 }
 
-export function assertCompatibilityFactsCompatible(baseline, current) {
+export function assertCompatibilityFactsCompatible(baseline, current, options = {}) {
   if (current?.schemaVersion !== "chat-compatibility-facts.v2") {
     throw new Error("compatibility facts缺少真实合同闭包v2提取器");
   }
+  const approvedBreaks = options.approvedGenerationBreaks ?? new Map();
+  const generationRepairs = options.approvedGenerationRepairs ?? new Map();
+  const authorityRepairs = options.approvedAuthorityRepairs ?? new Map();
+  const usedApprovedBreaks = new Set();
+  const usedGenerationRepairs = new Set();
+  const usedAuthorityRepairs = new Set();
+  const isApprovedBreak = (domainId, previous, candidate) => {
+    const key = `${domainId}:${previous.identity}`;
+    const approval = approvedBreaks.get(key);
+    if (
+      approval === undefined ||
+      approval.previousCanonicalSha256 !== previous.canonicalSha256 ||
+      approval.currentCanonicalSha256 !== (candidate?.canonicalSha256 ?? null)
+    ) {
+      return false;
+    }
+    usedApprovedBreaks.add(key);
+    return true;
+  };
+  const isApprovedGenerationRepair = (domainId, previous, next) => {
+    const key = `${domainId}:${previous.identity}`;
+    const repair = generationRepairs.get(key);
+    if (
+      repair === undefined ||
+      repair.recordedCanonicalSha256 !== previous.canonicalSha256 ||
+      repair.recomputedCanonicalSha256 !== next.canonicalSha256
+    ) {
+      return false;
+    }
+    usedGenerationRepairs.add(key);
+    return true;
+  };
+  const isApprovedAuthorityRepair = (domainId, target, previous, next) => {
+    const key = `${domainId}:${target}`;
+    const repair = authorityRepairs.get(key);
+    if (
+      repair === undefined ||
+      repair.recordedCanonicalSha256 !== previous.canonicalSha256 ||
+      repair.recomputedCanonicalSha256 !== next.canonicalSha256
+    ) {
+      return false;
+    }
+    usedAuthorityRepairs.add(key);
+    return true;
+  };
   for (const domain of current.domains) assertDomainFactsWellFormed(domain);
   const currentDomains = new Map(current.domains.map((domain) => [domain.id, domain]));
   const extractorUpgrade = baseline?.schemaVersion === "chat-compatibility-facts.v1";
   for (const previous of baseline.domains) {
     const next = currentDomains.get(previous.id);
     if (next === undefined) throw new Error(`兼容事实域被删除：${previous.id}`);
-    if (!extractorUpgrade) assertAuthorityPolicyCompatible(previous, next);
+    if (!extractorUpgrade) {
+      assertAuthorityPolicyCompatible(previous, next, isApprovedAuthorityRepair);
+    }
     const generations = new Map(next.generations.map((entry) => [entry.identity, entry]));
     const previousCanonicalVersion = previous.generationCanonicalVersion ?? 1;
     const nextCanonicalVersion = next.generationCanonicalVersion ?? 1;
     for (const generation of previous.generations) {
       const candidate = generations.get(generation.identity);
-      if (candidate === undefined)
+      if (candidate === undefined && isApprovedBreak(previous.id, generation, candidate)) continue;
+      if (candidate === undefined) {
         throw new Error(`${previous.id}删除历史代际：${generation.identity}`);
+      }
       const sameCanonical = candidate.canonicalSha256 === generation.canonicalSha256;
       const provenExtractorUpgrade =
         nextCanonicalVersion === previousCanonicalVersion + 1 &&
         candidate.previousExtractorCanonicalSha256 === generation.canonicalSha256;
-      if (!extractorUpgrade && !sameCanonical && !provenExtractorUpgrade) {
+      if (
+        !extractorUpgrade &&
+        !sameCanonical &&
+        !provenExtractorUpgrade &&
+        !isApprovedGenerationRepair(previous.id, generation, candidate) &&
+        !isApprovedBreak(previous.id, generation, candidate)
+      ) {
         throw new Error(`${previous.id}同一schema literal原地语义漂移：${generation.identity}`);
       }
     }
@@ -1467,6 +1767,12 @@ export function assertCompatibilityFactsCompatible(baseline, current) {
     for (const currentIdentity of previous.currentWriteGenerations) {
       if (!next.currentWriteGenerations.includes(currentIdentity)) {
         const prior = previous.generations.find((entry) => entry.identity === currentIdentity);
+        if (
+          prior !== undefined &&
+          isApprovedBreak(previous.id, prior, generations.get(currentIdentity))
+        ) {
+          continue;
+        }
         const replacement = next.generations.find(
           (entry) =>
             next.currentWriteGenerations.includes(entry.identity) &&
@@ -1486,6 +1792,26 @@ export function assertCompatibilityFactsCompatible(baseline, current) {
       }
     }
   }
+  const unusedApprovals = [...approvedBreaks.keys()].filter((key) => !usedApprovedBreaks.has(key));
+  if (unusedApprovals.length > 0) {
+    throw new Error(`compat breaking change登记未被精确消费：${unusedApprovals.join(",")}`);
+  }
+  const unusedGenerationRepairs = [...generationRepairs.keys()].filter(
+    (key) => !usedGenerationRepairs.has(key),
+  );
+  if (unusedGenerationRepairs.length > 0) {
+    throw new Error(
+      `compat generation baseline repair未被精确消费：${unusedGenerationRepairs.join(",")}`,
+    );
+  }
+  const unusedAuthorityRepairs = [...authorityRepairs.keys()].filter(
+    (key) => !usedAuthorityRepairs.has(key),
+  );
+  if (unusedAuthorityRepairs.length > 0) {
+    throw new Error(
+      `compat authority baseline repair未被精确消费：${unusedAuthorityRepairs.join(",")}`,
+    );
+  }
   return current;
 }
 
@@ -1493,7 +1819,7 @@ function stringSetEqual(left, right) {
   return json([...left].sort()) === json([...right].sort());
 }
 
-function assertAuthorityPolicyCompatible(previous, next) {
+function assertAuthorityPolicyCompatible(previous, next, isApprovedAuthorityRepair) {
   const previousCanonicalVersion = previous.authorityCanonicalVersion ?? 1;
   const nextCanonicalVersion = next.authorityCanonicalVersion ?? 1;
   const authorityExtractorUpgrade = nextCanonicalVersion === previousCanonicalVersion + 1;
@@ -1556,7 +1882,13 @@ function assertAuthorityPolicyCompatible(previous, next) {
   if (
     !historicalGenerationsChanged &&
     previous.legacyAuthority.canonicalSha256 !== next.legacyAuthority.canonicalSha256 &&
-    !provenLegacyAuthorityUpgrade
+    !provenLegacyAuthorityUpgrade &&
+    !isApprovedAuthorityRepair(
+      previous.id,
+      "legacyAuthority",
+      previous.legacyAuthority,
+      next.legacyAuthority,
+    )
   ) {
     throw new Error(`${previous.id} reader implementation未升代际漂移`);
   }
@@ -1584,6 +1916,24 @@ function assertDomainFactsWellFormed(domain) {
         !/^[0-9a-f]{64}$/u.test(entry.previousExtractorCanonicalSha256))
     ) {
       throw new Error(`${domain.id}:${entry.identity}缺少真实合同闭包证据`);
+    }
+    const repairFields = [
+      entry.previousExtractorProofKind,
+      entry.previousExtractorBaseCommit,
+      entry.previousExtractorRecomputedCanonicalSha256,
+    ];
+    const presentRepairFields = repairFields.filter((value) => value !== undefined).length;
+    if (
+      presentRepairFields !== 0 &&
+      (presentRepairFields !== repairFields.length ||
+        entry.previousExtractorProofKind !== "recorded-baseline-repair" ||
+        !/^[0-9a-f]{40}$/u.test(entry.previousExtractorBaseCommit ?? "") ||
+        !/^[0-9a-f]{64}$/u.test(entry.previousExtractorRecomputedCanonicalSha256 ?? "") ||
+        entry.previousExtractorRecomputedCanonicalSha256 ===
+          entry.previousExtractorCanonicalSha256 ||
+        domain.generationCanonicalVersion !== 3)
+    ) {
+      throw new Error(`${domain.id}:${entry.identity} baseline repair证明非法`);
     }
   }
   if (
@@ -1664,11 +2014,18 @@ function assertDomainFactsWellFormed(domain) {
   }
 }
 
-export function assertCompatibilityFactsBaselineChain(baseBaseline, checkedInBaseline, current) {
+export function assertCompatibilityFactsBaselineChain(
+  baseBaseline,
+  checkedInBaseline,
+  current,
+  options = {},
+) {
   if (json(checkedInBaseline) !== json(current)) {
     throw new Error("compatibility facts生成结果与checked-in baseline漂移");
   }
-  if (baseBaseline !== undefined) assertCompatibilityFactsCompatible(baseBaseline, current);
+  if (baseBaseline !== undefined) {
+    assertCompatibilityFactsCompatible(baseBaseline, current, options);
+  }
   return current;
 }
 
@@ -1716,7 +2073,11 @@ export function checkCompatibilityFacts(policy, options = {}) {
   if (!existsSync(BASELINE_PATH)) throw new Error("缺少checked-in compatibility facts baseline");
   const checkedInBaseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
   const compatibilityBase = loadCompatibilityBase();
-  assertCompatibilityFactsBaselineChain(compatibilityBase.baseline, checkedInBaseline, current);
+  assertCompatibilityFactsBaselineChain(compatibilityBase.baseline, checkedInBaseline, current, {
+    approvedGenerationBreaks: approvedGenerationBreaks(compatibilityBase.sha),
+    approvedGenerationRepairs: approvedGenerationRepairs(compatibilityBase.sha),
+    approvedAuthorityRepairs: approvedAuthorityRepairs(compatibilityBase.sha),
+  });
   if (options.quiet !== true) {
     console.log(`compatibility facts有效：${String(current.domains.length)}个真实Owner域`);
     if (compatibilityBase.sha !== undefined) {

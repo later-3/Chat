@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
  * 架构依赖方向测试（工程规范§2）。
  *
  * 固定依赖方向：
- *   Hono与服务端Store/Workflow/Memory/Project Adapter → Application → Domain + Contracts
+ *   Hono与服务端Store/Workflow/Memory Adapter → Application → Domain + Contracts
  *   DSH Bridge → public Contracts；pi Adapter → stable runtime Contracts
  *
  * Domain不得依赖React、Hono、数据库、Vercel Workflow、AG-UI或pi；
@@ -50,7 +50,6 @@ const rules: Record<
       "@chat/domain",
       "@chat/memory-runtime",
       "@chat/pi-runtime",
-      "@chat/project-runtime",
       "@chat/product-store-json",
       "@chat/realtime",
       "@chat/workflows",
@@ -94,11 +93,6 @@ const rules: Record<
   "packages/memory-runtime": {
     external: ["zod"],
     // Adapter 可依赖内层 Domain 的 canonical hash / token 预算算法。
-    internal: ["@chat/contracts", "@chat/application", "@chat/domain"],
-    forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
-  },
-  "packages/project-runtime": {
-    external: ["zod"],
     internal: ["@chat/contracts", "@chat/application", "@chat/domain"],
     forbidden: [/^react/, /^hono$/, /^@hono\//, /^workflow$/, /^pi-/, /^@ag-ui\//],
   },
@@ -157,7 +151,6 @@ const rules: Record<
       "@chat/realtime",
       "@chat/product-store-json",
       "@chat/pi-runtime",
-      "@chat/project-runtime",
       "@chat/workflows",
     ],
     forbidden: [/^react/, /^workflow$/, /^pi-/],

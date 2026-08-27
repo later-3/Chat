@@ -96,7 +96,6 @@ export {
   type LoadWorkflowRunSpecRequest,
   type TransitionConfigurablePlanningNodeRequest,
   type PreparePlanningMemoryContextRequest,
-  type PreparePlanningProjectContextRequest,
   type PreparePlanningRulesContextRequest,
   type PrepareGovernanceReviewInputRequest,
   type PublishNoteCandidateRuntimeRequest,
@@ -115,12 +114,6 @@ export {
 } from "./internal-runtime/types.js";
 
 export {
-  prepareProjectCandidateRequestSchema,
-  prepareProjectAdvancementCandidateRequestSchema,
-} from "./project-internal-runtime.js";
-export { projectCandidateDtoSchema } from "./project-api.js";
-
-export {
   transitionConfigurablePlanningNodeRequestSchema,
   publishNoteCandidateRuntimeRequestSchema,
   publishNoteCandidateRuntimeResponseSchema,
@@ -135,8 +128,6 @@ export {
 export {
   preparePlanningMemoryContextRequestSchema,
   preparePlanningMemoryContextResponseSchema,
-  preparePlanningProjectContextRequestSchema,
-  preparePlanningProjectContextResponseSchema,
   preparePlanningRulesContextRequestSchema,
   preparePlanningRulesContextResponseSchema,
 } from "./internal-runtime/context-prep.js";

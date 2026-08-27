@@ -18,8 +18,8 @@ import { normalizeWorkflowDefinition } from "./workflow-definition-normalize.js"
 export const SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID = "wfd_systemplanningv1" as const;
 export const LEGACY_SYSTEM_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemplanningv1" as const;
 export const LEGACY_SYSTEM_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemplanningv1" as const;
-export const SYSTEM_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemplanningv2" as const;
-export const SYSTEM_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemplanningv2" as const;
+export const SYSTEM_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemplanningv3" as const;
+export const SYSTEM_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemplanningv3" as const;
 export const SYSTEM_SIMPLE_PLANNING_WORKFLOW_DEFINITION_ID = "wfd_systemsimpleplanningv1" as const;
 export const LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID =
   "wfr_systemsimpleplanningv1" as const;
@@ -27,8 +27,8 @@ export const LEGACY_SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemsimplep
 export const SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemsimpleplanningv2" as const;
 export const SYSTEM_SIMPLE_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemsimpleplanningv2" as const;
 export const SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID = "wfd_systemmemoryplanningv1" as const;
-export const SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemmemoryplanningv1" as const;
-export const SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemmemoryplanningv1" as const;
+export const SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID = "wfr_systemmemoryplanningv2" as const;
+export const SYSTEM_MEMORY_PLANNING_WORKFLOW_VIEW_ID = "wvd_systemmemoryplanningv2" as const;
 export const SYSTEM_NOTE_WORKFLOW_DEFINITION_ID = "wfd_systemnotev1" as const;
 export const SYSTEM_NOTE_WORKFLOW_REVISION_ID = "wfr_systemnotev1" as const;
 export const SYSTEM_NOTE_WORKFLOW_VIEW_ID = "wvd_systemnotev1" as const;
@@ -85,7 +85,6 @@ export function systemPlanningSemanticRoot(): WorkflowSequence {
     kind: "sequence",
     elements: [
       systemTask("planning.memory", "context.memory"),
-      systemTask("planning.project", "context.project"),
       systemTask("planning.rules", "policy.rules"),
       systemTask("planning.skills", "capability.skills"),
       {
@@ -201,7 +200,6 @@ export function systemMemoryPlanningSemanticRoot(): WorkflowSequence {
         source: "source_message",
         contentType: "conversation_turn",
       }),
-      systemTask("memory-planning.project", "context.project"),
       systemTask("memory-planning.rules", "policy.rules"),
       systemTask("memory-planning.skills", "capability.skills"),
       {
@@ -425,7 +423,7 @@ export function createSystemPlanningDefinition(createdAt: string): {
     blueprintVersion: 1,
     status: "active",
     publishedRevisionId: SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
-    revision: 1,
+    revision: 3,
     createdAt,
     updatedAt: createdAt,
   });
@@ -433,7 +431,7 @@ export function createSystemPlanningDefinition(createdAt: string): {
     schemaVersion: "workflow-definition-revision.v1",
     workflowDefinitionRevisionId: SYSTEM_PLANNING_WORKFLOW_REVISION_ID,
     workflowDefinitionId: SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
-    definitionRevision: 2,
+    definitionRevision: 3,
     state: "published",
     blueprintKey: "planning",
     blueprintVersion: 1,
@@ -590,7 +588,7 @@ export function createSystemMemoryPlanningDefinition(createdAt: string): {
     blueprintVersion: 1,
     status: "active",
     publishedRevisionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
-    revision: 1,
+    revision: 2,
     createdAt,
     updatedAt: createdAt,
   });
@@ -598,7 +596,7 @@ export function createSystemMemoryPlanningDefinition(createdAt: string): {
     schemaVersion: "workflow-definition-revision.v1",
     workflowDefinitionRevisionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_REVISION_ID,
     workflowDefinitionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID,
-    definitionRevision: 1,
+    definitionRevision: 2,
     state: "published",
     blueprintKey: "planning",
     blueprintVersion: 1,
@@ -1015,7 +1013,6 @@ function createSystemPlanningWorkflowView(input: {
 }): WorkflowViewDefinition {
   const nodes: readonly WorkflowViewNodeShape[] = [
     viewNode("planning.memory", "context.memory", "读取记忆", "task", true),
-    viewNode("planning.project", "context.project", "读取项目上下文", "task", true),
     viewNode("planning.rules", "policy.rules", "解析规则", "task", true),
     viewNode("planning.skills", "capability.skills", "解析技能", "task", true),
     viewNode("planning.plan", "agent.plan", "生成计划", "task", false),
@@ -1025,8 +1022,7 @@ function createSystemPlanningWorkflowView(input: {
     viewNode("planning.commit", "product.commit", "提交结果", "product_commit", false),
   ];
   const edges: readonly WorkflowViewEdgeShape[] = [
-    edge("planning.memory", "planning.project", "control"),
-    edge("planning.project", "planning.rules", "control"),
+    edge("planning.memory", "planning.rules", "control"),
     edge("planning.rules", "planning.skills", "control"),
     edge("planning.skills", "planning.plan", "control"),
     edge("planning.plan", "planning.review", "control"),
@@ -1040,7 +1036,7 @@ function createSystemPlanningWorkflowView(input: {
     source: {
       kind: "published_definition" as const,
       workflowDefinitionId: SYSTEM_PLANNING_WORKFLOW_DEFINITION_ID,
-      definitionRevision: 2,
+      definitionRevision: 3,
       definitionSha256: input.definitionSha256,
       blueprintKey: "planning",
       blueprintVersion: "1",
@@ -1150,7 +1146,6 @@ function createSystemMemoryPlanningWorkflowView(input: {
   const nodes: readonly WorkflowViewNodeShape[] = [
     viewNode("memory-planning.query", "memory.query", "查询记忆", "task", false),
     viewNode("memory-planning.write", "memory.write", "保存本次输入", "task", false),
-    viewNode("memory-planning.project", "context.project", "读取项目上下文", "task", true),
     viewNode("memory-planning.rules", "policy.rules", "解析规则", "task", true),
     viewNode("memory-planning.skills", "capability.skills", "解析技能", "task", true),
     viewNode("memory-planning.plan", "agent.plan", "生成计划", "task", false),
@@ -1161,8 +1156,7 @@ function createSystemMemoryPlanningWorkflowView(input: {
   ];
   const edges: readonly WorkflowViewEdgeShape[] = [
     edge("memory-planning.query", "memory-planning.write", "control"),
-    edge("memory-planning.write", "memory-planning.project", "control"),
-    edge("memory-planning.project", "memory-planning.rules", "control"),
+    edge("memory-planning.write", "memory-planning.rules", "control"),
     edge("memory-planning.rules", "memory-planning.skills", "control"),
     edge("memory-planning.skills", "memory-planning.plan", "control"),
     edge("memory-planning.plan", "memory-planning.review", "control"),
@@ -1176,7 +1170,7 @@ function createSystemMemoryPlanningWorkflowView(input: {
     source: {
       kind: "published_definition" as const,
       workflowDefinitionId: SYSTEM_MEMORY_PLANNING_WORKFLOW_DEFINITION_ID,
-      definitionRevision: 1,
+      definitionRevision: 2,
       definitionSha256: input.definitionSha256,
       blueprintKey: "planning",
       blueprintVersion: "1",
@@ -1437,7 +1431,6 @@ function systemTask(
     | "agent.memory_retrieve"
     | "agent.memory_write"
     | "context.memory"
-    | "context.project"
     | "policy.rules"
     | "capability.skills"
     | "agent.research"

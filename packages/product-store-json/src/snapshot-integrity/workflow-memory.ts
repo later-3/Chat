@@ -34,6 +34,7 @@ import {
   computeMemoryWriteAgentCandidateRequestSha256,
   computeMemoryWriteAgentCandidateSemanticDedupeSha256,
   resolveMemoryWriteAgentCandidateContent,
+  assertPlanningMemorySelectionIntegrity,
   renderMemoryAgentWriteCandidateItem,
   computeMemoryAgentOperationInputSha256,
   computeMemoryAgentOperationResultSha256,
@@ -45,6 +46,96 @@ import {
   sha256Hex,
 } from "@chat/domain";
 import type { Fail } from "./shared.js";
+
+export function assertPlanningMemorySelections(snapshot: ProductSnapshot, fail: Fail): void {
+  const { entities } = snapshot;
+  const identityKeys = new Set<string>();
+  for (const selection of Object.values(entities.planningMemorySelections)) {
+    try {
+      assertPlanningMemorySelectionIntegrity(selection);
+    } catch (error) {
+      fail(
+        `planningMemorySelection ${selection.planningMemorySelectionId} ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    const identityKey = `${selection.productRunId}\0${selection.definitionNodeId}`;
+    if (identityKeys.has(identityKey)) {
+      fail(`planningMemorySelection ${selection.planningMemorySelectionId} Run/Node重复`);
+    }
+    identityKeys.add(identityKey);
+    const run = entities.runs[selection.productRunId];
+    const session = run === undefined ? undefined : entities.sessions[run.sessionId];
+    const runSpec = entities.workflowRunSpecs[selection.workflowRunSpecId];
+    const validated = runSpec === undefined ? undefined : validateWorkflowRunSpecIntegrity(runSpec);
+    if (
+      run?.runKind !== "planning" ||
+      session === undefined ||
+      run.workflowRunSpecId !== selection.workflowRunSpecId ||
+      runSpec?.productRunId !== selection.productRunId ||
+      runSpec.sha256 !== selection.workflowRunSpecSha256 ||
+      validated === undefined ||
+      !validated.success
+    ) {
+      fail(`planningMemorySelection ${selection.planningMemorySelectionId} Run/RunSpec绑定无效`);
+    }
+    const node = validated?.success
+      ? validated.runSpec.nodeResolutions.find(
+          (candidate) => candidate.definitionNodeId === selection.definitionNodeId,
+        )
+      : undefined;
+    const maxItems = node?.config["maxItems"];
+    if (
+      node?.nodeType !== "context.memory" ||
+      node.activation === "skipped" ||
+      typeof maxItems !== "number" ||
+      !Number.isInteger(maxItems) ||
+      maxItems !== selection.maxItems
+    ) {
+      fail(`planningMemorySelection ${selection.planningMemorySelectionId} Node/maxItems无效`);
+    }
+    const included = (validated?.success ? validated.runSpec.resourceResolutions : [])
+      .flatMap((resource) =>
+        resource.definitionNodeId === selection.definitionNodeId &&
+        resource.resourceKind === "memory" &&
+        resource.resolution === "included"
+          ? [
+              {
+                memoryResultSnapshotId: resource.resourceId,
+                revision: resource.expectedRevision,
+                sha256: resource.expectedSha256,
+              },
+            ]
+          : [],
+      )
+      .sort((left, right) =>
+        left.memoryResultSnapshotId.localeCompare(right.memoryResultSnapshotId),
+      );
+    if (JSON.stringify(included) !== JSON.stringify(selection.selected)) {
+      fail(`planningMemorySelection ${selection.planningMemorySelectionId} 与RunSpec选择不一致`);
+    }
+    for (const selected of selection.selected) {
+      const memory = entities.memoryResultSnapshots[selected.memoryResultSnapshotId];
+      const query = memory === undefined ? undefined : entities.memoryQueries[memory.memoryQueryId];
+      const sourceRun = query === undefined ? undefined : entities.runs[query.productRunId];
+      const sourceOwner =
+        sourceRun === undefined
+          ? undefined
+          : entities.sessions[sourceRun.sessionId]?.ownerPrincipalId;
+      if (
+        memory === undefined ||
+        memory.revision !== selected.revision ||
+        memory.sha256 !== selected.sha256 ||
+        sourceOwner !== session?.ownerPrincipalId
+      ) {
+        fail(
+          `planningMemorySelection ${selection.planningMemorySelectionId} Snapshot越权、悬空或Hash不一致`,
+        );
+      }
+    }
+  }
+}
 
 type MemoryAgentWriteCandidateEntity =
   ProductSnapshot["entities"]["memoryAgentWriteCandidates"][string];

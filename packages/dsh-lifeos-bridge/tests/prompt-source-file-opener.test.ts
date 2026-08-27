@@ -67,12 +67,11 @@ test("Prompt来源只允许Catalog与受管Workspace文件，并把本机已安�
       repoRoot: root,
       managedPiRoot,
       env: {
-        CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
+        CHAT_WORKSPACE_ROOTS_JSON: JSON.stringify([
           {
             rootId: "root_chat",
             displayName: "Chat",
             canonicalPath: root,
-            enabledAdapters: [],
           },
         ]),
       },

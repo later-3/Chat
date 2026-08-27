@@ -422,11 +422,6 @@ describe("Memory Workflow 私有合同", () => {
         revision: 1,
         sha256: SHA_B,
       },
-      planningProjectContextRef: {
-        planningProjectContextId: "pcx_contract1",
-        revision: 1,
-        sha256: SHA_B,
-      },
       ruleSelectionRef: {
         ruleSelectionId: "rsl_contract1",
         revision: 1,

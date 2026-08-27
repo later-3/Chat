@@ -250,12 +250,6 @@ export function assertRules(snapshot: ProductSnapshot, fail: Fail): void {
     if (run?.runKind !== "planning" || session === undefined) {
       fail(`ruleSelection ${selection.ruleSelectionId} 必须绑定Planning Run`);
     }
-    if (
-      selection.context.projectId !== undefined &&
-      entities.projects[selection.context.projectId]?.ownerPrincipalId !== session.ownerPrincipalId
-    ) {
-      fail(`ruleSelection ${selection.ruleSelectionId} Context Project越权`);
-    }
     for (const tagId of selection.request.selectedTagIds) {
       if (entities.ruleTags[tagId]?.ownerPrincipalId !== session.ownerPrincipalId) {
         fail(`ruleSelection ${selection.ruleSelectionId} Tag越权或悬空`);
@@ -948,34 +942,11 @@ function assertRuleRevisionReferences(
       fail(`ruleRevision ${revision.ruleRevisionId} 冲突Rule越权或悬空`);
     }
   }
-  for (const scope of revision.scopes) {
-    if (scope.kind === "contextual" && scope.projectId !== undefined) {
-      const project = entities.projects[scope.projectId];
-      const methodMatches =
-        scope.projectMethodProfileId === undefined ||
-        Object.values(entities.projectMethodSnapshots).some(
-          (method) =>
-            method.projectId === project?.projectId &&
-            method.profileId === scope.projectMethodProfileId,
-        );
-      const stageMatches =
-        scope.projectStageKey === undefined ||
-        Object.values(entities.projectStages).some(
-          (stage) => stage.projectId === project?.projectId && stage.key === scope.projectStageKey,
-        );
-      if (project?.ownerPrincipalId !== rule.ownerPrincipalId || !methodMatches || !stageMatches) {
-        fail(`ruleRevision ${revision.ruleRevisionId} Scope Project/Method/Stage无效`);
-      }
-    }
-  }
   for (const source of revision.sourceCases) {
     const owner =
       source.kind === "message"
         ? entities.sessions[entities.messages[source.messageId]?.sessionId ?? ""]?.ownerPrincipalId
-        : source.kind === "product_run"
-          ? entities.sessions[entities.runs[source.productRunId]?.sessionId ?? ""]?.ownerPrincipalId
-          : entities.projects[entities.projectDecisions[source.projectDecisionId]?.projectId ?? ""]
-              ?.ownerPrincipalId;
+        : entities.sessions[entities.runs[source.productRunId]?.sessionId ?? ""]?.ownerPrincipalId;
     if (owner !== rule.ownerPrincipalId) {
       fail(`ruleRevision ${revision.ruleRevisionId} Source Case越权或悬空`);
     }

@@ -30,8 +30,6 @@ export interface WorkflowWorldHandle {
   readonly workflowId: string;
   readonly memoryImportWorkflowId: string;
   readonly memoryWriteWorkflowId: string;
-  readonly projectIntakeWorkflowId: string;
-  readonly projectAdvancementWorkflowId: string;
   /** S3实验室入口；Runtime Server不公开分发路由，不影响活动产品Run。 */
   readonly definitionKernelLabWorkflowId: string;
   /** S4正式可配置Planning入口；Runtime按已保存runnerFamily静态选择。 */
@@ -55,8 +53,6 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
   planningExecution: string;
   memoryImport: string;
   memoryWrite: string;
-  projectIntake: string;
-  projectAdvancement: string;
   definitionKernelLab: string;
   configurablePlanning: string;
   noteCapture: string;
@@ -69,8 +65,6 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
   let planningExecution: string | undefined;
   let memoryImport: string | undefined;
   let memoryWrite: string | undefined;
-  let projectIntake: string | undefined;
-  let projectAdvancement: string | undefined;
   let definitionKernelLab: string | undefined;
   let configurablePlanning: string | undefined;
   let noteCapture: string | undefined;
@@ -89,14 +83,6 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
     if (filePath.includes("memory-write-workflow")) {
       const entry = entries["memoryWriteWorkflow"];
       if (entry !== undefined) memoryWrite = entry.workflowId;
-    }
-    if (filePath.includes("project-intake-workflow")) {
-      const entry = entries["projectIntakeWorkflow"];
-      if (entry !== undefined) projectIntake = entry.workflowId;
-    }
-    if (filePath.includes("project-advancement-workflow")) {
-      const entry = entries["projectAdvancementWorkflow"];
-      if (entry !== undefined) projectAdvancement = entry.workflowId;
     }
     if (filePath.includes("definition-kernel-lab-workflow")) {
       const entry = entries["definitionKernelLabWorkflow"];
@@ -127,8 +113,6 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
     planningExecution === undefined ||
     memoryImport === undefined ||
     memoryWrite === undefined ||
-    projectIntake === undefined ||
-    projectAdvancement === undefined ||
     definitionKernelLab === undefined ||
     configurablePlanning === undefined ||
     noteCapture === undefined ||
@@ -142,8 +126,6 @@ async function resolveWorkflowIds(bundleDir: string): Promise<{
     planningExecution,
     memoryImport,
     memoryWrite,
-    projectIntake,
-    projectAdvancement,
     definitionKernelLab,
     configurablePlanning,
     noteCapture,
@@ -201,8 +183,6 @@ export async function setupWorkflowWorld(
     workflowId: workflowIds.planningExecution,
     memoryImportWorkflowId: workflowIds.memoryImport,
     memoryWriteWorkflowId: workflowIds.memoryWrite,
-    projectIntakeWorkflowId: workflowIds.projectIntake,
-    projectAdvancementWorkflowId: workflowIds.projectAdvancement,
     definitionKernelLabWorkflowId: workflowIds.definitionKernelLab,
     configurablePlanningWorkflowId: workflowIds.configurablePlanning,
     noteCaptureWorkflowId: workflowIds.noteCapture,

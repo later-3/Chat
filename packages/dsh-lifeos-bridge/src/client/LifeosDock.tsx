@@ -311,8 +311,7 @@ export function shouldShowLifeosReviewDock(projection: LifeosProjection | null):
     projection?.pendingDecision != null ||
     projection?.pendingNoteDecision != null ||
     projection?.pendingPromptReviewDecision != null ||
-    projection?.pendingToolExecutionDecision != null ||
-    projection?.projectCoordination != null
+    projection?.pendingToolExecutionDecision != null
   );
 }
 
@@ -343,7 +342,6 @@ export function LifeosDock({
   const bridgeDispatchReview = projection?.bridgeDispatchReview ?? null;
   const reviewableNoteCandidate =
     canReviewNote && noteCandidate?.status === "under_review" ? noteCandidate : null;
-  const projectCoordination = projection?.projectCoordination ?? null;
   if (!shouldShowLifeosReviewDock(projection)) return null;
 
   const submitPlan = async (kind: DecisionRequest["kind"]): Promise<void> => {
@@ -785,64 +783,6 @@ export function LifeosDock({
           </>
         ) : null}
       </PromptAuditSurface>
-    );
-  }
-
-  const hasOtherReview =
-    canReviewPlan ||
-    canReviewNote ||
-    canReviewPrompt ||
-    toolExecution !== null ||
-    dshSendReview !== null ||
-    bridgeDispatchReview !== null ||
-    projection?.pendingDecision != null ||
-    projection?.pendingNoteDecision != null ||
-    projection?.pendingPromptReviewDecision != null ||
-    projection?.pendingToolExecutionDecision != null;
-  if (projectCoordination !== null && !hasOtherReview) {
-    const currentWork = projectCoordination.currentWork;
-    return (
-      <section
-        className="lifeos-card lifeos-project-coordination-card"
-        data-testid="lifeos-project-coordination-card"
-        aria-label="当前项目协作状态"
-      >
-        <header className="lifeos-header">
-          <strong>{projectCoordination.project.name}</strong>
-          <span className="lifeos-status">项目上下文已恢复</span>
-        </header>
-        <div className="lifeos-plan">
-          {currentWork === null ? (
-            <div className="lifeos-objective">
-              {projectCoordination.requiresWorkSelection
-                ? `需要选择当前工作 · ${projectCoordination.workCandidates.length} 项待选`
-                : "当前没有活动工作"}
-            </div>
-          ) : (
-            <>
-              <div className="lifeos-objective">{currentWork.title}</div>
-              <div className="lifeos-summary">
-                {currentWork.workKey} · {currentWork.status} · revision {currentWork.revision}
-              </div>
-              {currentWork.activeBlock === null ? null : (
-                <p className="lifeos-warning">阻塞：{currentWork.activeBlock.reason}</p>
-              )}
-            </>
-          )}
-          <div className="lifeos-note-tags" aria-label="项目协作提醒">
-            <span>{projectCoordination.project.methodProfileId}</span>
-            {projectCoordination.resource?.changeCandidateClassification !==
-            "review_required" ? null : (
-              <span>目录变化待审核</span>
-            )}
-          </div>
-        </div>
-        {state.error === null ? null : (
-          <p className="lifeos-error" role="alert">
-            {state.error}
-          </p>
-        )}
-      </section>
     );
   }
 

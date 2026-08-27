@@ -165,8 +165,14 @@ const validationRef = (
     productRunId: validation.productRunId,
     executionContractId: validation.executionContractId,
     executionCandidateId: validation.executionCandidateId,
-    strictEvidence: validation.strictEvidence,
-    governanceReview: validation.governanceReview,
+    ...(validation.schemaVersion === "validation-result.v2"
+      ? {
+          strictEvidence: validation.strictEvidence,
+          ...(validation.governanceReview !== undefined
+            ? { governanceReview: validation.governanceReview }
+            : {}),
+        }
+      : {}),
     outcome: validation.outcome,
     failures: validation.failures,
   }),

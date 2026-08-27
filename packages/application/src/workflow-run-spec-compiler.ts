@@ -301,14 +301,24 @@ export function validateRunSpecResourcesCurrent(
   currentResources: readonly WorkflowFrozenResource[],
 ): readonly WorkflowDiagnostic[] {
   const current = new Map(
-    currentResources.map((resource) => [
-      resourceKey(resource.resourceKind, resource.resourceId),
-      resource,
-    ]),
+    currentResources.flatMap((resource) =>
+      resource.resourceKind === "project"
+        ? []
+        : [[resourceKey(resource.resourceKind, resource.resourceId), resource] as const],
+    ),
   );
   const diagnostics: WorkflowDiagnostic[] = [];
   for (const resolution of runSpec.resourceResolutions) {
     if (resolution.resolution !== "included") continue;
+    if (resolution.resourceKind === "project") {
+      diagnostics.push({
+        family: "resource_stale",
+        code: "resource.project_removed",
+        path: `$.resourceResolutions.${resolution.definitionNodeId}`,
+        params: { resourceKind: resolution.resourceKind, resourceId: resolution.resourceId },
+      });
+      continue;
+    }
     const resource = current.get(resourceKey(resolution.resourceKind, resolution.resourceId));
     if (
       resource === undefined ||
@@ -828,15 +838,6 @@ function resolveResources(
       );
       continue;
     }
-    if (node.nodeType === "context.project" && override.selections.length > 1) {
-      diagnostics.push(
-        policyDiagnostic("resource.project_selection_limit_exceeded", node.path, {
-          selectedCount: override.selections.length,
-          maxSelections: 1,
-        }),
-      );
-      continue;
-    }
     const configuredMaxItems =
       node.nodeType === "context.memory" && typeof node.config.maxItems === "number"
         ? node.config.maxItems
@@ -958,7 +959,6 @@ function overrideIdentity(override: WorkflowRunOverride): string {
 
 function resourceKindForNode(nodeType: WorkflowNodeTypeKey): WorkflowResourceKind | undefined {
   if (nodeType === "context.memory") return "memory";
-  if (nodeType === "context.project") return "project";
   if (nodeType === "policy.rules") return "rule";
   if (nodeType === "capability.skills") return "skill";
   return undefined;
@@ -966,7 +966,6 @@ function resourceKindForNode(nodeType: WorkflowNodeTypeKey): WorkflowResourceKin
 
 function resourcePrefix(kind: WorkflowResourceKind): string {
   if (kind === "memory") return "mrs";
-  if (kind === "project") return "prj";
   if (kind === "rule") return "rul";
   return "skl";
 }

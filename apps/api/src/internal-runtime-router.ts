@@ -45,8 +45,6 @@ import {
   transitionConfigurablePlanningNodeRequestSchema,
   preparePlanningMemoryContextRequestSchema,
   preparePlanningMemoryContextResponseSchema,
-  preparePlanningProjectContextRequestSchema,
-  preparePlanningProjectContextResponseSchema,
   preparePlanningRulesContextRequestSchema,
   preparePlanningRulesContextResponseSchema,
   prepareGovernanceReviewInputRequestSchema,
@@ -67,8 +65,6 @@ import {
   markMemoryAgentOperationOutcomeUnknownRequestSchema,
   memoryAgentOperationResponseSchema,
   INTERNAL_RUNTIME_SCHEMA_VERSION,
-  prepareProjectCandidateRequestSchema,
-  prepareProjectAdvancementCandidateRequestSchema,
   DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
   DIRECT_AGENT_RUNTIME_PATHS,
   beginDirectAgentAttemptRuntimeRequestSchema,
@@ -131,15 +127,12 @@ import {
   commitMemoryWriteMaterialized,
   commitMemoryWriteFailed,
   commitMemoryWriteOutcomeUnknown,
-  prepareProjectCandidateForReview,
-  prepareProjectAdvancementCandidate,
   getWorkflowRunSpecForRuntime,
   loadNoteDecisionForRuntime,
   prepareNoteCaptureInputForRuntime,
   publishNoteCandidate,
   transitionConfigurablePlanningNode,
   preparePlanningMemoryContext,
-  preparePlanningProjectContext,
   preparePlanningRulesContext,
   beginWorkflowMemoryQuery,
   persistWorkflowMemoryQueryResult,
@@ -573,20 +566,6 @@ export function createInternalRuntimeRouter(
   );
 
   router.post(
-    "/prepare-planning-project-context",
-    handle(200, async (c) => {
-      const request = preparePlanningProjectContextRequestSchema.parse(await parseInternalBody(c));
-      const prepared = await preparePlanningProjectContext(options.deps, request);
-      return preparePlanningProjectContextResponseSchema.parse({
-        schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION,
-        productRunId: request.productRunId,
-        workflowRunSpecId: request.workflowRunSpecId,
-        ...prepared,
-      });
-    }),
-  );
-
-  router.post(
     "/prepare-planning-rules-context",
     handle(200, async (c) => {
       const request = preparePlanningRulesContextRequestSchema.parse(await parseInternalBody(c));
@@ -695,32 +674,6 @@ export function createInternalRuntimeRouter(
         summary: request.summary,
       });
       return { schemaVersion: INTERNAL_RUNTIME_SCHEMA_VERSION, status: "committed" as const };
-    }),
-  );
-
-  router.post(
-    "/prepare-project-candidate",
-    handle(200, async (c) => {
-      const request = prepareProjectCandidateRequestSchema.parse(await parseInternalBody(c));
-      return prepareProjectCandidateForReview(options.deps, {
-        commandId: request.commandId,
-        projectCandidateId: request.projectCandidateId,
-        expectedRevision: request.expectedRevision,
-      });
-    }),
-  );
-
-  router.post(
-    "/prepare-project-advancement-candidate",
-    handle(200, async (c) => {
-      const request = prepareProjectAdvancementCandidateRequestSchema.parse(
-        await parseInternalBody(c),
-      );
-      return prepareProjectAdvancementCandidate(options.deps, {
-        commandId: request.commandId,
-        projectCandidateId: request.projectCandidateId,
-        expectedRevision: request.expectedRevision,
-      });
     }),
   );
 

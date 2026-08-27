@@ -4,11 +4,7 @@ import { createMemoryRegistrySet, parseMemoryMode } from "@chat/memory-runtime";
 import { composeApiMemoryRegistries, composeApiWorkflowMemoryProviders } from "./composition.js";
 
 // 本测试只验证组合根配置门，不加载受管Pi Fork或发起任何模型调用。
-vi.mock("@chat/pi-runtime", () => ({
-  loadProjectModelProfile: vi.fn(),
-  PiProjectAdvancementUnderstandingAdapter: class {},
-  PiProjectIntakeUnderstandingAdapter: class {},
-}));
+vi.mock("@chat/pi-runtime", () => ({}));
 
 const enabledEnv = (mode: "memorycore" | "memmy" | "compare"): NodeJS.ProcessEnv => ({
   CHAT_MEMORY_MODE: mode,

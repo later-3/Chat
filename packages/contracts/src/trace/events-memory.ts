@@ -169,4 +169,4 @@ export const memoryImportReconcileFailedSchema = defineTraceEvent(
   },
 );
 
-// Project Trace只保存产品身份、revision、Hash与结果，不复制目标、路径或候选正文。
+// Trace只保存产品身份、revision、Hash与结果，不复制目标、路径或候选正文。

@@ -30,7 +30,6 @@ const scope = {
   ruleScopeId: "rsc_planning",
   kind: "contextual" as const,
   scenario: "planning" as const,
-  projectMethodProfileId: "software-delivery.v1" as const,
   workflowNodeKey: "policy.rules",
 };
 const revision = {
@@ -128,7 +127,6 @@ describe("Rule持久合同", () => {
       contextPackageId: "ctxp_rule1",
       context: {
         scenario: "planning" as const,
-        projectMethodProfileId: "software-delivery.v1" as const,
         workflowNodeKey: "policy.rules",
       },
       request: {

@@ -122,54 +122,9 @@ describe("RuntimeApiClient M1 Context", () => {
   });
 });
 
-describe("RuntimeApiClient Project Context", () => {
+describe("RuntimeApiClient Planning Resource Context", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-  });
-
-  it("只传RunSpec节点身份并解析不可变Context引用", async () => {
-    const fetchMock = vi.fn<typeof fetch>(
-      async () =>
-        new Response(
-          JSON.stringify({
-            schemaVersion: "chat-internal-runtime.v1",
-            status: "ready",
-            productRunId: "run_projectcontext1",
-            workflowRunSpecId: "wrs_projectcontext1",
-            contextRef: {
-              planningProjectContextId: "pcx_projectcontext1",
-              revision: 1,
-              sha256: "a".repeat(64),
-            },
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const client = createRuntimeApiClient({
-      baseUrl: "http://127.0.0.1:43111",
-      credential: "rtk_test",
-    });
-    const result = await client.preparePlanningProjectContext({
-      commandId: "cmd_projectcontext1" as never,
-      productRunId: "run_projectcontext1" as never,
-      workflowRunSpecId: "wrs_projectcontext1" as never,
-      definitionNodeId: "planning.project",
-      executionPath: [],
-      attemptNumber: 1,
-    });
-    expect(result.status).toBe("ready");
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toBe("http://127.0.0.1:43111/internal/runtime/v1/prepare-planning-project-context");
-    expect(JSON.parse(String(init?.body))).toEqual({
-      schemaVersion: "chat-internal-runtime.v1",
-      commandId: "cmd_projectcontext1",
-      productRunId: "run_projectcontext1",
-      workflowRunSpecId: "wrs_projectcontext1",
-      definitionNodeId: "planning.project",
-      executionPath: [],
-      attemptNumber: 1,
-    });
   });
 
   it("Memory私有边界严格解析Selection与正文响应，调用方可只保留ref", async () => {

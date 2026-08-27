@@ -6,7 +6,6 @@ import {
   commandIdSchema,
   productRunIdSchema,
   workflowRunSpecIdSchema,
-  planningProjectContextIdSchema,
   ruleSelectionIdSchema,
   ruleIdSchema,
   ruleRevisionIdSchema,
@@ -59,45 +58,6 @@ export const preparePlanningMemoryContextResponseSchema = z.discriminatedUnion("
       selectionRef: internalPlanningMemorySelectionRefSchema,
       snapshots: z.array(preparedMemorySnapshotSchema).min(1).max(20),
       totalContentCharacters: z.number().int().positive().max(1_000_000),
-    })
-    .strict(),
-]);
-
-/** Project正文由Application冻结；Workflow只拿精确Context引用。 */
-export const preparePlanningProjectContextRequestSchema = z
-  .object({
-    ...versioned,
-    commandId: commandIdSchema,
-    productRunId: productRunIdSchema,
-    workflowRunSpecId: workflowRunSpecIdSchema,
-    definitionNodeId: z.string().min(1).max(120),
-    executionPath: z.array(workflowExecutionPathSegmentSchema).max(8),
-    attemptNumber: z.number().int().positive().max(100),
-  })
-  .strict();
-
-export const preparePlanningProjectContextResponseSchema = z.discriminatedUnion("status", [
-  z
-    .object({
-      ...versioned,
-      status: z.literal("none"),
-      productRunId: productRunIdSchema,
-      workflowRunSpecId: workflowRunSpecIdSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...versioned,
-      status: z.literal("ready"),
-      productRunId: productRunIdSchema,
-      workflowRunSpecId: workflowRunSpecIdSchema,
-      contextRef: z
-        .object({
-          planningProjectContextId: planningProjectContextIdSchema,
-          revision: z.literal(1),
-          sha256: sha256Schema,
-        })
-        .strict(),
     })
     .strict(),
 ]);

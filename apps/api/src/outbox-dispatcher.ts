@@ -1,6 +1,4 @@
 import {
-  PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION,
-  PROJECT_ADVANCEMENT_WORKFLOW_DEFINITION_VERSION,
   WORKFLOW_DEFINITION_ID,
   WORKFLOW_DEFINITION_VERSION,
   workflowResumeResponseSchema,
@@ -34,7 +32,6 @@ import {
   type ApplicationDeps,
 } from "@chat/application";
 import { sha256Hex } from "@chat/domain";
-import { z } from "zod";
 
 /**
  * Outbox Dispatcher（任务书§10、§14.1）。
@@ -78,20 +75,6 @@ type MemoryWriteEntry = Extract<
   OutboxEntry,
   { kind: "memory_write_start" | "memory_write_reconcile" }
 >;
-type ProjectIntakeEntry = Extract<
-  OutboxEntry,
-  { kind: "project_intake_start" | "project_intake_resume" }
->;
-type ProjectAdvancementEntry = Extract<
-  OutboxEntry,
-  { kind: "project_advancement_start" | "project_advancement_resume" }
->;
-const projectDispatchResponseSchema = z
-  .object({
-    schemaVersion: z.literal("chat-workflow-dispatch.v1"),
-    status: z.enum(["started", "already_started", "resumed", "already_resumed", "outcome_unknown"]),
-  })
-  .strict();
 const OUTCOME_UNKNOWN_SETTLE_MS = 30_000;
 const ACKNOWLEDGED_IMPORT_SUPERVISE_MS = 1_000;
 const ACKNOWLEDGED_WORKFLOW_SUPERVISE_MS = 1_000;
@@ -595,94 +578,6 @@ async function dispatchMemoryWrite(
   await markStatus(options, entry, "acknowledged", undefined, true);
 }
 
-async function dispatchProjectIntake(
-  options: OutboxDispatcherOptions,
-  entry: ProjectIntakeEntry,
-): Promise<void> {
-  const response = await postToWorkflowRuntime(
-    options,
-    entry.kind === "project_intake_start"
-      ? "/internal/workflow/v1/project-intake/start"
-      : "/internal/workflow/v1/project-intake/resume",
-    {
-      schemaVersion: "chat-workflow-dispatch.v1",
-      workflowDefinitionVersion: PROJECT_INTAKE_WORKFLOW_DEFINITION_VERSION,
-      projectCandidateId: entry.projectCandidateId,
-      expectedCandidateRevision: entry.expectedCandidateRevision,
-      outboxId: entry.outboxId,
-    },
-  );
-  if (response === "unknown") {
-    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
-    return;
-  }
-  if (!response.ok) {
-    if (response.status >= 500) {
-      await markStatus(
-        options,
-        entry,
-        "outcome_unknown",
-        `dispatch.http_${String(response.status)}`,
-        true,
-      );
-    } else {
-      await markStatus(
-        options,
-        entry,
-        "failed_terminal",
-        `dispatch.http_${String(response.status)}`,
-        true,
-      );
-    }
-    return;
-  }
-  const parsed = projectDispatchResponseSchema.safeParse(response.json);
-  if (!parsed.success || parsed.data.status === "outcome_unknown") {
-    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
-    return;
-  }
-  await markStatus(options, entry, "acknowledged", undefined, true);
-}
-
-async function dispatchProjectAdvancement(
-  options: OutboxDispatcherOptions,
-  entry: ProjectAdvancementEntry,
-): Promise<void> {
-  const response = await postToWorkflowRuntime(
-    options,
-    entry.kind === "project_advancement_start"
-      ? "/internal/workflow/v1/project-advancement/start"
-      : "/internal/workflow/v1/project-advancement/resume",
-    {
-      schemaVersion: "chat-workflow-dispatch.v1",
-      workflowDefinitionVersion: PROJECT_ADVANCEMENT_WORKFLOW_DEFINITION_VERSION,
-      projectCandidateId: entry.projectCandidateId,
-      expectedCandidateRevision: entry.expectedCandidateRevision,
-      outboxId: entry.outboxId,
-    },
-  );
-  if (response === "unknown") {
-    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
-    return;
-  }
-  if (!response.ok) {
-    await markStatus(
-      options,
-      entry,
-      response.status >= 500 ? "outcome_unknown" : "failed_terminal",
-      `dispatch.http_${String(response.status)}`,
-      true,
-    );
-    return;
-  }
-  const parsed = projectDispatchResponseSchema.safeParse(response.json);
-  if (!parsed.success || parsed.data.status === "outcome_unknown") {
-    await markStatus(options, entry, "outcome_unknown", "dispatch.outcome_unknown", true);
-    return;
-  }
-  await markStatus(options, entry, "acknowledged", undefined, true);
-}
-
 async function settleImportDispatchUnknown(
   options: OutboxDispatcherOptions,
   snapshot: Snapshot,
@@ -1148,13 +1043,6 @@ export class OutboxDispatcher {
           await dispatchMemoryImport(this.options, snapshot, entry);
         else if (entry.kind === "memory_write_start" || entry.kind === "memory_write_reconcile")
           await dispatchMemoryWrite(this.options, snapshot, entry);
-        else if (entry.kind === "project_intake_start" || entry.kind === "project_intake_resume")
-          await dispatchProjectIntake(this.options, entry);
-        else if (
-          entry.kind === "project_advancement_start" ||
-          entry.kind === "project_advancement_resume"
-        )
-          await dispatchProjectAdvancement(this.options, entry);
       }
       const unknownEntries = Object.values(snapshot.outbox)
         .filter((entry) => entry.status === "outcome_unknown")
@@ -1169,13 +1057,6 @@ export class OutboxDispatcher {
           await reconcileImportUnknown(this.options, snapshot, entry);
         } else if (entry.kind === "memory_write_start" || entry.kind === "memory_write_reconcile") {
           await reconcileMemoryWriteUnknown(this.options, snapshot, entry);
-        } else if (
-          Date.parse(this.options.deps.now()) - Date.parse(entry.updatedAt) >=
-          OUTCOME_UNKNOWN_SETTLE_MS
-        ) {
-          // Project Candidate没有外部业务副作用；Runtime结果长期未知时停止自动派发，
-          // 保留Candidate供用户刷新后重新发起，而不是盲目创建第二个Workflow。
-          await markStatus(this.options, entry, "failed_terminal", "dispatch.outcome_unknown");
         }
       }
       const acknowledgedWorkflows = Object.values(snapshot.outbox)

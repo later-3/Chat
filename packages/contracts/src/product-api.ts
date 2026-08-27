@@ -654,7 +654,7 @@ export const workflowRunConfigSummaryV2DtoSchema = z
         z
           .object({
             definitionNodeId: workflowDefinitionNodeIdSchema,
-            resourceKind: z.enum(["memory", "project", "rule", "skill"]),
+            resourceKind: z.enum(["memory", "rule", "skill"]),
             resolution: z.enum(["included", "excluded"]),
             reason: z.string().min(1).max(64).optional(),
           })
@@ -691,7 +691,7 @@ export const workflowRunConfigSummaryDtoSchema = z
         z
           .object({
             definitionNodeId: workflowDefinitionNodeIdSchema,
-            resourceKind: z.enum(["memory", "project", "rule", "skill"]),
+            resourceKind: z.enum(["memory", "rule", "skill"]),
             resolution: z.enum(["included", "excluded"]),
             reason: z.string().min(1).max(64).optional(),
           })
@@ -718,7 +718,7 @@ export const workflowRunConfigSummaryV3DtoSchema = workflowRunConfigSummaryDtoSc
 export const workflowResourceRefDtoSchema = z
   .object({
     schemaVersion: z.literal(PRODUCT_API_SCHEMA_VERSION),
-    resourceKind: z.enum(["memory", "project", "rule", "skill"]),
+    resourceKind: z.enum(["memory", "rule", "skill"]),
     resourceId: z
       .string()
       .min(3)

@@ -81,18 +81,21 @@ export function resolveRuntimeInstance(root, instance = "production", environmen
     ? join(dataRoot, "browser-profile")
     : join(dataRoot, "debug", "browser-profile");
   const debugDir = debug ? join(dataRoot, "processes") : undefined;
-  const projectRootsJson =
-    environment.CHAT_PROJECT_ROOTS_JSON?.trim() ||
+  if (
+    !environment.CHAT_WORKSPACE_ROOTS_JSON?.trim() &&
+    environment.CHAT_PROJECT_ROOTS_JSON?.trim()
+  ) {
+    throw new Error(
+      "CHAT_PROJECT_ROOTS_JSON已退役，请改用CHAT_WORKSPACE_ROOTS_JSON并删除Project Adapter字段",
+    );
+  }
+  const workspaceRootsJson =
+    environment.CHAT_WORKSPACE_ROOTS_JSON?.trim() ||
     JSON.stringify([
       {
         rootId: "root_chat",
         displayName: "Chat 工作区",
         canonicalPath: repoRoot,
-        enabledAdapters: [
-          "local-git-workspace.v1",
-          "project-document-manifest.v1",
-          "package-script-catalog.v1",
-        ],
       },
     ]);
   const environmentOverrides = {
@@ -101,7 +104,7 @@ export function resolveRuntimeInstance(root, instance = "production", environmen
     CHAT_PUBLIC_WEB_PORT: String(ports.web),
     CHAT_DSH_INTERNAL_WEB_PORT: String(ports.webInternal),
     CHAT_CODE_WORKBENCH_LEASE_PORT: String(ports.workbenchLease),
-    CHAT_PROJECT_ROOTS_JSON: projectRootsJson,
+    CHAT_WORKSPACE_ROOTS_JSON: workspaceRootsJson,
     ...(debug
       ? {
           CHAT_PRODUCT_STORE_PATH: join(dataRoot, "product", "chat-product-store.v1.json"),

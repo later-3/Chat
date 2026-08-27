@@ -44,7 +44,6 @@ export interface KernelExecutorRegistration extends WorkflowExecutorManifestEntr
     | "query_memory"
     | "write_memory"
     | "load_memory_context"
-    | "load_project_context"
     | "resolve_rules"
     | "resolve_skills"
     | "research"
@@ -71,7 +70,6 @@ const REGISTRATIONS: readonly KernelExecutorRegistration[] = [
   entry("agent.memory_retrieve", "step", "retrieve_memory_with_agent"),
   entry("agent.memory_write", "step", "propose_memory_write_with_agent"),
   entry("context.memory", "step", "load_memory_context"),
-  entry("context.project", "step", "load_project_context"),
   entry("policy.rules", "step", "resolve_rules"),
   entry("capability.skills", "step", "resolve_skills"),
   entry("agent.research", "step", "research"),
@@ -129,9 +127,9 @@ export class KernelExecutorRegistry {
 export const DEFINITION_KERNEL_EXECUTORS = new KernelExecutorRegistry(REGISTRATIONS);
 
 // 静态表同时被Workflow函数解释器引用，不能为一个key helper拉入Application或
-// Domain运行时代码（其中含Node crypto，Workflow sandbox不允许）。22是冻结内置集合，
+// Domain运行时代码（其中含Node crypto，Workflow sandbox不允许）。21是冻结内置集合，
 // Catalog/Compiler的完整集合一致性另由definition-kernel conformance测试逐项证明。
-if (DEFINITION_KERNEL_EXECUTORS.list().length !== 22) {
+if (DEFINITION_KERNEL_EXECUTORS.list().length !== 21) {
   throw new Error("workflow.executor_registry.incomplete_builtin_set");
 }
 

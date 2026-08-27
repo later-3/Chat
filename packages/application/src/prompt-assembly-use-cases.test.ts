@@ -392,7 +392,7 @@ function fixture(): {
       }),
       resolveBuiltinRevision: async () => undefined,
     },
-    projectRoots: {
+    workspaceRoots: {
       list: () => [
         {
           rootId: "root_chat",

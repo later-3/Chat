@@ -22,10 +22,7 @@ export interface RuleSelectionCandidateShape {
 
 export interface RuleSelectionContextShape {
   readonly scenario: RuleScenarioShape;
-  readonly projectMethodProfileId?: string | undefined;
-  readonly projectStageKey?: string | undefined;
   readonly workflowNodeKey?: string | undefined;
-  readonly projectId?: string | undefined;
 }
 
 export interface RequestedRuleRevisionShape {
@@ -240,10 +237,8 @@ export function ruleScopeMatches(
   if (scope.kind === "global") return true;
   return (
     scope.scenario === context.scenario &&
-    matchesOptional(scope.projectMethodProfileId, context.projectMethodProfileId) &&
-    matchesOptional(scope.projectStageKey, context.projectStageKey) &&
     matchesOptional(scope.workflowNodeKey, context.workflowNodeKey) &&
-    matchesOptional(scope.projectId, context.projectId)
+    true
   );
 }
 
@@ -772,9 +767,6 @@ function sortedUnique(values: readonly string[]): string[] {
 function normalizeContext(context: RuleSelectionContextShape): Record<string, string | null> {
   return {
     scenario: context.scenario,
-    projectMethodProfileId: context.projectMethodProfileId ?? null,
-    projectStageKey: context.projectStageKey ?? null,
     workflowNodeKey: context.workflowNodeKey ?? null,
-    projectId: context.projectId ?? null,
   };
 }

@@ -37,7 +37,6 @@ const DEFAULT_OUTCOMES: Readonly<Record<string, string>> = {
   "memory.query": "success",
   "memory.write": "accepted",
   "context.memory": "success",
-  "context.project": "success",
   "policy.rules": "resolved",
   "capability.skills": "resolved",
   "agent.research": "researched",
@@ -136,8 +135,6 @@ export class DefinitionKernelFileHarness implements KernelLabRuntimePort {
   writeMemory = (context: KernelNodeExecutionContext) => this.completeNode(context, "memory.write");
   loadMemoryContext = (context: KernelNodeExecutionContext) =>
     this.completeNode(context, "context.memory");
-  loadProjectContext = (context: KernelNodeExecutionContext) =>
-    this.completeNode(context, "context.project");
   resolveRules = (context: KernelNodeExecutionContext) =>
     this.completeNode(context, "policy.rules");
   resolveSkills = (context: KernelNodeExecutionContext) =>

@@ -92,7 +92,7 @@ function assertDraftAllowed(
 
 function assertScopeAllowed(deps: ApplicationDeps, scope: PromptFragment["scope"]): void {
   if (scope.kind === "global") return;
-  const root = deps.projectRoots?.list().find((item) => item.rootId === scope.rootId);
+  const root = deps.workspaceRoots?.list().find((item) => item.rootId === scope.rootId);
   if (root === undefined) throw forbidden("Workspace未配置或不允许用于Prompt");
 }
 
@@ -344,7 +344,7 @@ export async function listPromptRegions(deps: ApplicationDeps) {
 export async function listPromptWorkspaces(deps: ApplicationDeps) {
   return promptWorkspacesDtoSchema.parse({
     schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
-    items: (deps.projectRoots?.list() ?? []).map((root) => ({
+    items: (deps.workspaceRoots?.list() ?? []).map((root) => ({
       schemaVersion: PROMPT_STUDIO_API_SCHEMA_VERSION,
       rootId: root.rootId,
       title: root.displayName,

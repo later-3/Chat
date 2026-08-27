@@ -18,27 +18,6 @@ import {
   revisionInputIdSchema,
   runAttemptIdSchema,
   validationResultIdSchema,
-  projectIdSchema,
-  projectMethodSnapshotIdSchema,
-  projectStageIdSchema,
-  projectResourceIdSchema,
-  projectParticipantIdSchema,
-  projectWorkIdSchema,
-  projectActionIdSchema,
-  projectContributionIdSchema,
-  projectEvidenceIdSchema,
-  projectDecisionIdSchema,
-  projectObservationIdSchema,
-  projectCandidateIdSchema,
-  projectMilestoneIdSchema,
-  projectUpdateIdSchema,
-  projectStateTransitionIdSchema,
-  projectWorkBlockIdSchema,
-  projectWorkClaimIdSchema,
-  projectWorkHandoffIdSchema,
-  projectPracticeRevisionIdSchema,
-  projectWorkOutcomeIdSchema,
-  projectContextMapIdSchema,
   noteIdSchema,
   noteRevisionIdSchema,
   noteCandidateIdSchema,
@@ -62,24 +41,18 @@ import type {
   IdFactory,
   NoteIdFactory,
   ProductStorePort,
-  ProjectIdFactory,
   RuleIdFactory,
   PromptFragmentIdFactory,
 } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
-import { createProjectResourceRegistry } from "@chat/project-runtime";
 import {
   createCodexSessionSourceRegistry,
   createMemoryRegistrySet,
   parseMemoryMode,
 } from "@chat/memory-runtime";
-import {
-  loadProjectModelProfile,
-  PiProjectAdvancementUnderstandingAdapter,
-  PiProjectIntakeUnderstandingAdapter,
-} from "@chat/pi-runtime";
 import { createFilePromptCatalog } from "./prompt-catalog.js";
 import { createPromptFileLibrary } from "./prompt-file-library.js";
+import { createWorkspaceRootRegistry } from "./workspace-root-registry.js";
 
 /**
  * API组合根。
@@ -111,32 +84,6 @@ export function createIdFactory(): IdFactory {
     validationResult: () => validationResultIdSchema.parse(`val_${randomSuffix()}`),
     artifact: () => artifactIdSchema.parse(`art_${randomSuffix()}`),
     outbox: () => outboxEntryIdSchema.parse(`obx_${randomSuffix()}`),
-  };
-}
-
-export function createProjectIdFactory(): ProjectIdFactory {
-  return {
-    project: () => projectIdSchema.parse(`prj_${randomSuffix()}`),
-    methodSnapshot: () => projectMethodSnapshotIdSchema.parse(`pms_${randomSuffix()}`),
-    stage: () => projectStageIdSchema.parse(`pst_${randomSuffix()}`),
-    resource: () => projectResourceIdSchema.parse(`prs_${randomSuffix()}`),
-    participant: () => projectParticipantIdSchema.parse(`ppt_${randomSuffix()}`),
-    work: () => projectWorkIdSchema.parse(`pwk_${randomSuffix()}`),
-    action: () => projectActionIdSchema.parse(`pac_${randomSuffix()}`),
-    contribution: () => projectContributionIdSchema.parse(`pct_${randomSuffix()}`),
-    evidence: () => projectEvidenceIdSchema.parse(`pev_${randomSuffix()}`),
-    decision: () => projectDecisionIdSchema.parse(`pdc_${randomSuffix()}`),
-    observation: () => projectObservationIdSchema.parse(`pob_${randomSuffix()}`),
-    candidate: () => projectCandidateIdSchema.parse(`pca_${randomSuffix()}`),
-    milestone: () => projectMilestoneIdSchema.parse(`pml_${randomSuffix()}`),
-    update: () => projectUpdateIdSchema.parse(`pup_${randomSuffix()}`),
-    stateTransition: () => projectStateTransitionIdSchema.parse(`ptr_${randomSuffix()}`),
-    workBlock: () => projectWorkBlockIdSchema.parse(`pbl_${randomSuffix()}`),
-    workClaim: () => projectWorkClaimIdSchema.parse(`pcl_${randomSuffix()}`),
-    workHandoff: () => projectWorkHandoffIdSchema.parse(`phf_${randomSuffix()}`),
-    practiceRevision: () => projectPracticeRevisionIdSchema.parse(`ppr_${randomSuffix()}`),
-    workOutcome: () => projectWorkOutcomeIdSchema.parse(`pwo_${randomSuffix()}`),
-    contextMap: () => projectContextMapIdSchema.parse(`pcm_${randomSuffix()}`),
   };
 }
 
@@ -221,18 +168,13 @@ export async function createApplicationDeps(
   const memorySessionSources = createCodexSessionSourceRegistry(
     process.env.CODEX_HOME ?? join(homedir(), ".codex"),
   );
-  const store = await openProductStore(filePath, trace);
-  const projectRoots = await createProjectResourceRegistry(process.env);
-  const projectModelProfile = loadProjectModelProfile(process.env);
-  const projectUnderstanding = new PiProjectIntakeUnderstandingAdapter(projectModelProfile);
-  const advancementUnderstanding = new PiProjectAdvancementUnderstandingAdapter(
-    projectModelProfile,
-  );
+  const workspaceRoots = await createWorkspaceRootRegistry(process.env);
   const promptCatalog = await createFilePromptCatalog();
   const promptFiles = await createPromptFileLibrary({
     repoRoot: process.env.CHAT_REPO_ROOT ?? resolve(process.cwd(), "../.."),
     env: process.env,
   });
+  const store = await openProductStore(filePath, trace);
   return {
     store,
     now: () => new Date().toISOString(),
@@ -240,10 +182,7 @@ export async function createApplicationDeps(
     memoryBackends,
     workflowMemoryProviders,
     memorySessionSources,
-    projectRoots,
-    projectIntakeUnderstanding: projectUnderstanding,
-    projectAdvancementUnderstanding: advancementUnderstanding,
-    projectIds: createProjectIdFactory(),
+    workspaceRoots,
     noteIds: createNoteIdFactory(),
     ruleIds: createRuleIdFactory(),
     directAgentIds: createDirectAgentIdFactory(),

@@ -80,7 +80,6 @@ export async function validateTestSafetyGate(input, loadEnvironment) {
   const declaredCredentials = Object.fromEntries(
     input.credentials.map((name) => [name, loaded[name]]),
   );
-  const dynamicProviderKey = loaded.CHAT_PROJECT_MODEL_API_KEY_ENV?.trim();
   const child = Object.fromEntries(
     CHILD_ENV_ALLOWLIST.flatMap((name) =>
       typeof loaded[name] === "string" ? [[name, loaded[name]]] : [],
@@ -91,7 +90,6 @@ export async function validateTestSafetyGate(input, loadEnvironment) {
     ...EXTERNAL_OPT_IN_ENV,
     ...Object.keys(loaded).filter((name) => SENSITIVE_ENV_NAME.test(name)),
   ]);
-  if (/^[A-Z_][A-Z0-9_]*$/u.test(dynamicProviderKey ?? "")) sensitiveNames.add(dynamicProviderKey);
   for (const name of sensitiveNames) child[name] = "";
   child.CHAT_EXTERNAL_TEST_COMMAND_NAME = "";
   child.CHAT_PAID_TEST_COMMAND_NAME = "";

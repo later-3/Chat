@@ -13,7 +13,6 @@ import type {
   PlanningInputDto,
   PreparePlanningContextResponse,
   PreparePlanningMemoryContextResponse,
-  PreparePlanningProjectContextResponse,
   PreparePlanningRulesContextResponse,
 } from "@chat/contracts";
 import { memoryQueryExecutionResultSchema } from "@chat/contracts";
@@ -96,53 +95,6 @@ export async function preparePlanningMemoryContextStep(
         return prepared.status === "none"
           ? { status: "none" as const }
           : { status: "ready" as const, selectionRef: prepared.selectionRef };
-      } catch (error) {
-        wrapApiError(error);
-      }
-    },
-  );
-}
-
-/** Project正文只在私有API与本Step内短暂出现；耐久checkpoint只保存不可变ref。 */
-export async function preparePlanningProjectContextStep(
-  input: PlanningResourceStepIdentity,
-): Promise<
-  | { readonly status: "none" }
-  | {
-      readonly status: "ready";
-      readonly contextRef: Extract<
-        PreparePlanningProjectContextResponse,
-        { readonly status: "ready" }
-      >["contextRef"];
-    }
-> {
-  "use step";
-  return runStep(
-    input.productRunId,
-    input.attemptId,
-    "prepare_planning_project_context",
-    async () => {
-      try {
-        const prepared = await getWorkflowRuntimeContext().api.preparePlanningProjectContext({
-          commandId: cmdId(
-            "prepare-planning-project-context",
-            input.productRunId,
-            input.workflowRunSpecId,
-            input.definitionNodeId,
-            resourceExecutionIdentity(input),
-          ) as never,
-          productRunId: input.productRunId as never,
-          workflowRunSpecId: input.workflowRunSpecId as never,
-          definitionNodeId: input.definitionNodeId,
-          executionPath: input.executionPath.map((segment) => ({
-            containerNodeId: segment.containerNodeId as never,
-            iteration: segment.iteration,
-          })),
-          attemptNumber: input.attemptNumber,
-        });
-        return prepared.status === "none"
-          ? { status: "none" as const }
-          : { status: "ready" as const, contextRef: prepared.contextRef };
       } catch (error) {
         wrapApiError(error);
       }
@@ -482,11 +434,6 @@ interface PlanningGenerationStepInput {
     revision: 1;
     sha256: string;
   };
-  planningProjectContextRef?: {
-    planningProjectContextId: string;
-    revision: 1;
-    sha256: string;
-  };
   ruleSelectionRef?: {
     ruleSelectionId: string;
     revision: 1;
@@ -517,9 +464,6 @@ async function compilePlanningInputWithinStep(
         : {}),
       ...(input.workflowMemoryContextRef !== undefined
         ? { workflowMemoryContextRef: input.workflowMemoryContextRef as never }
-        : {}),
-      ...(input.planningProjectContextRef !== undefined
-        ? { planningProjectContextRef: input.planningProjectContextRef as never }
         : {}),
       ...(input.ruleSelectionRef !== undefined
         ? { ruleSelectionRef: input.ruleSelectionRef as never }

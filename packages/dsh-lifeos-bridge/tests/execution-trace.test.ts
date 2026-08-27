@@ -15,7 +15,7 @@ import {
 
 function trace(revision = "a".repeat(64)): WorkflowExecutionTraceDto {
   return workflowExecutionTraceDtoSchema.parse({
-    schemaVersion: "chat-workflow-execution-trace.v1",
+    schemaVersion: "chat-workflow-execution-trace.v2",
     productRunId: "run_trace1",
     traceRevision: revision,
     updatedAt: "2026-08-17T08:00:04.000Z",

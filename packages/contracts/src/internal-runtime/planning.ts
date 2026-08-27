@@ -16,7 +16,6 @@ import {
   memoryResultSnapshotIdSchema,
   productSessionIdSchema,
   workflowRunSpecIdSchema,
-  projectIdSchema,
   ruleIdSchema,
   ruleRevisionIdSchema,
   workflowMemoryQueryIdSchema,
@@ -34,7 +33,6 @@ import {
   workspaceInstructionsSnapshotSchema,
 } from "../context.js";
 import { workflowExecutionPathSegmentSchema } from "../workflow-run.js";
-import { planningProjectSnapshotSchema } from "../planning-project-context.js";
 import { ruleSelectionSourceSchema } from "../rules.js";
 import {
   memoryProviderDescriptorSchema,
@@ -53,7 +51,6 @@ import {
 import {
   versioned,
   internalContextPackageRefSchema,
-  internalPlanningProjectContextRefSchema,
   internalPlanningMemorySelectionRefSchema,
   internalWorkspaceInstructionsRefSchema,
   internalRuleSelectionRefSchema,
@@ -70,7 +67,6 @@ export const compilePlanningInputRequestSchema = z
     contextPackageRef: internalContextPackageRefSchema.optional(),
     planningMemorySelectionRef: internalPlanningMemorySelectionRefSchema.optional(),
     workflowMemoryContextRef: internalWorkflowMemoryContextRefSchema.optional(),
-    planningProjectContextRef: internalPlanningProjectContextRefSchema.optional(),
     ruleSelectionRef: internalRuleSelectionRefSchema.optional(),
   })
   .strict();
@@ -199,16 +195,6 @@ export const planningInputDtoSchema = z
               .max(20),
           })
           .strict(),
-      })
-      .strict()
-      .optional(),
-    projectContext: z
-      .object({
-        ref: internalPlanningProjectContextRefSchema,
-        projectId: projectIdSchema,
-        projectRevision: z.number().int().positive(),
-        projectSha256: sha256Schema,
-        snapshot: planningProjectSnapshotSchema,
       })
       .strict()
       .optional(),

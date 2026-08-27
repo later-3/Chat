@@ -6,7 +6,6 @@ import {
   contextPackageIdSchema,
   contextRequestIdSchema,
   promptAssemblyIdSchema,
-  planningProjectContextIdSchema,
   planningMemorySelectionIdSchema,
   ruleSelectionIdSchema,
   workflowMemoryContextIdSchema,
@@ -24,13 +23,6 @@ export const contextPackageRefFields = {
   sha256: sha256Schema,
 };
 export const internalContextPackageRefSchema = z.object(contextPackageRefFields).strict();
-export const internalPlanningProjectContextRefSchema = z
-  .object({
-    planningProjectContextId: planningProjectContextIdSchema,
-    revision: z.literal(1),
-    sha256: sha256Schema,
-  })
-  .strict();
 export const internalPlanningMemorySelectionRefSchema = z
   .object({
     planningMemorySelectionId: planningMemorySelectionIdSchema,

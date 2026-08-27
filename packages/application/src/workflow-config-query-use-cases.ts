@@ -158,7 +158,7 @@ export async function getWorkflowResources(
   deps: ApplicationDeps,
   input: {
     readonly principalId: PrincipalId;
-    readonly resourceKind?: "memory" | "project" | "rule" | "skill" | undefined;
+    readonly resourceKind?: "memory" | "rule" | "skill" | undefined;
   },
 ) {
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
@@ -209,12 +209,20 @@ export async function getWorkflowRunConfigSummary(
         : {}),
       nodeCount: runSpec?.nodeResolutions.length ?? 0,
       resourceSummary:
-        runSpec?.resourceResolutions.map((resource) => ({
-          definitionNodeId: resource.definitionNodeId,
-          resourceKind: resource.resourceKind,
-          resolution: resource.resolution === "included" ? "included" : "excluded",
-          ...(resource.resolution === "excluded" ? { reason: resource.exclusionReason } : {}),
-        })) ?? [],
+        runSpec?.resourceResolutions.flatMap((resource) =>
+          resource.resourceKind === "project"
+            ? []
+            : [
+                {
+                  definitionNodeId: resource.definitionNodeId,
+                  resourceKind: resource.resourceKind,
+                  resolution: resource.resolution === "included" ? "included" : "excluded",
+                  ...(resource.resolution === "excluded"
+                    ? { reason: resource.exclusionReason }
+                    : {}),
+                },
+              ],
+        ) ?? [],
       reviewSummary:
         runSpec?.reviewResolutions.map((review) => ({
           definitionNodeId: review.definitionNodeId,

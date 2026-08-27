@@ -23,12 +23,11 @@ test("DSH session membership resolves only to configured Chat root identity", as
         ],
       },
       {
-        CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
+        CHAT_WORKSPACE_ROOTS_JSON: JSON.stringify([
           {
             rootId: "root_chat",
             displayName: "Chat",
             canonicalPath: directory,
-            enabledAdapters: ["local-git-workspace.v1"],
           },
         ]),
       },

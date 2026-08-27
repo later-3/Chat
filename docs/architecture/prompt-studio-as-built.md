@@ -54,7 +54,7 @@ Git 内置组件不复制进 Product Store。用户组件正文不隐藏在 Prod
 
 Catalog Adapter从`import.meta.url`推导仓库根，拒绝绝对路径、`..`、越界symlink、缺失文件、重复ID/Region/Order和SHA-256漂移。普通Catalog/List/详情返回当前可发现投影；冻结Run以`revisionId + sha256`精确解析已发布Revision。
 
-Bridge按`CHAT_PROJECT_ROOTS_JSON`把DSH当前打开目录映射为Chat `rootId`。平台Chat根的精确`AGENTS.md`投影为全局`workspace_instructions`组件；目标Workspace根的精确`AGENTS.md`只在该Scope可见。系统不递归发现父级、子目录或其他Agent文件，也不自动选择这些组件。
+Bridge按`CHAT_WORKSPACE_ROOTS_JSON`把DSH当前打开目录映射为Chat `rootId`。平台Chat根的精确`AGENTS.md`投影为全局`workspace_instructions`组件；目标Workspace根的精确`AGENTS.md`只在该Scope可见。系统不递归发现父级、子目录或其他Agent文件，也不自动选择这些组件。
 
 本机“打开文件”能力支持白名单应用，并重新校验文件必须属于以下边界之一：Git Catalog、Chat全局Prompt目录、当前登记Workspace的`AGENTS.md`或`.chat/prompts`、Chat `pi-runtime/src`，以及受管Pi Fork的`coding-agent/src/core` TypeScript源码。Agent设置按真实构造来源逐文件展示，优先提供“用 VS Code 打开”，不会把由多个文件生成的Pi System Prompt伪装成单一配置文件。
 

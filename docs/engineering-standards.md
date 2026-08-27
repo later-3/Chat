@@ -19,7 +19,6 @@ packages/domain
 packages/application
 packages/product-store-json
 packages/memory-runtime
-packages/project-runtime
 packages/realtime
 packages/workflows
 packages/pi-runtime

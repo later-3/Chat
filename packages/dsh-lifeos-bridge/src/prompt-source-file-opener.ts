@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { access, readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
+import { readWorkspaceRootConfig } from "@chat/contracts/workspace-root-config";
 import { z } from "zod";
 
 const execFileAsync = promisify(execFile);
@@ -20,19 +21,6 @@ const promptCatalogSourcesSchema = z
       .max(10_000),
   })
   .passthrough();
-
-const promptWorkspaceRootsSchema = z
-  .array(
-    z
-      .object({
-        rootId: z.string().regex(/^root_[A-Za-z0-9]+$/u),
-        displayName: z.string().min(1).max(160),
-        canonicalPath: z.string().min(1).max(2_000),
-        enabledAdapters: z.array(z.string()),
-      })
-      .strict(),
-  )
-  .max(20);
 
 export const promptSourceOpenerIdSchema = z.enum([
   "vscode",
@@ -167,8 +155,7 @@ export class PromptSourceFileOpener {
       ...parsed.data.fragments.map((fragment) => fragment.relativePath),
     ]);
     const workspaceRoots = new Map<string, string>();
-    const rootsRaw = options.env?.CHAT_PROJECT_ROOTS_JSON?.trim();
-    for (const root of rootsRaw ? promptWorkspaceRootsSchema.parse(JSON.parse(rootsRaw)) : []) {
+    for (const root of readWorkspaceRootConfig(options.env ?? {})) {
       workspaceRoots.set(root.rootId, await realpath(root.canonicalPath));
     }
     const platform = options.platform ?? process.platform;

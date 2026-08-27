@@ -12,9 +12,8 @@ test("DSH Client用公开加法Slot承载隔离且不卸载的Hosted Workbench",
     devDependencies?: Record<string, string>;
   };
 
-  // 2个公开Sidebar注册（Project、Workbench），每个在name与inject处各出现一次。
-  assert.equal((client.match(/sidebar\.footer\.action/g) ?? []).length, 4);
-  assert.match(client, /lifeos-project-management/u);
+  // Workbench入口在公开Sidebar Slot的name与inject处各出现一次。
+  assert.equal((client.match(/sidebar\.footer\.action/g) ?? []).length, 2);
   assert.doesNotMatch(client, /conversation\.session\.header\.actions/u);
   assert.match(client, /shell\.overlay/u);
   assert.match(surface, /@deepseek-ai\/dsh-client-ui-sidebar\/client/u);

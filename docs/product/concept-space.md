@@ -100,60 +100,6 @@ Chat采用“概念空间”方法：先为当前场景建立共同语言，再�
 4. Workflow Worker退出恢复：依赖Workflow Checkpoint和接管机制。
 5. 外部调用失联恢复：可能需要查询、对账或人工处理，不能盲目重试。
 
-### 3.13 项目（Project）
-
-**普通话**：围绕一个长期目标，把真实资源、参与者、工作、决定和证据组织起来，并可跨会话持续推进的工作边界。
-
-**不是什么**：不是一个聊天Session、Git仓库、Iteration、待办列表或BMAD目录。
-
-### 3.14 阶段与阶段目标（Stage / Stage Goal）
-
-**普通话**：项目在较长时间里的发展位置，以及这个阶段要达成的可验证结果。
-
-**不是什么**：Stage不是Sprint、Iteration或一条任务状态；一个Stage可以包含多次Iteration。
-
-### 3.15 里程碑（Milestone）
-
-**普通话**：项目或阶段中一个重要、可验证的结果检查点。
-
-**不是什么**：不是自动计算的完成百分比，也不是每个Task都要变成Milestone。
-
-### 3.16 迭代与承诺（Iteration / Commitment）
-
-**普通话**：在有限投入或周期内，明确由谁交付什么结果的一次承诺。
-
-**不是什么**：不是Project生命周期；到期不能自动延期或把未完成事项无记录地滚入下一轮。
-
-### 3.17 Proposal与Shaping
-
-**普通话**：把一个模糊想法整理成问题、投入边界、预期结果、方案轮廓、风险和明确不做内容，再决定是否值得投入。
-
-**不是什么**：Proposal不是已经批准的Work；模型生成内容未经用户确认仍只是Candidate。
-
-### 3.18 Work、Scope与Action
-
-1. **Work**：有独立交付结果和验收标准的工作单元。
-2. **Scope**：Work中可以相对独立完成、并常在真实执行中逐步发现的结构区域。
-3. **Action**：现在可以执行、能够分派和完成的具体待办。
-
-三者不能因为都“像任务”而合并。Action全部完成也不能自动证明Work、Iteration或Project完成。
-
-### 3.19 参与、贡献与证据
-
-1. **Participant**：项目中的用户、Agent、自动化或外部参与方。
-2. **Contribution**：谁在何时为哪个Work做了什么、影响了哪些真实资源。
-3. **Evidence**：Commit、PR、测试、文档版本、Artifact或部署等可验证依据。
-
-Agent说“我完成了”最多是reported Contribution，不是verified Evidence。
-
-### 3.20 决定、观察与项目更新
-
-1. **Decision**：谁基于哪些选项和理由确认了什么，以及影响哪些对象版本。
-2. **Observation**：Resource Adapter在某一时刻看到的真实代码、文档、脚本或服务状态。
-3. **Project Update**：负责人署名的健康、变化、阻塞和下一步叙事。
-
-Observation不能自动变成Decision，Activity或模型摘要不能冒充Project Update。
-
 ## 4. 不再直接用来描述用户任务的说法
 
 | 不清楚的内部说法 | 面向任务的表达 |
