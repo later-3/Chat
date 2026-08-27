@@ -1,15 +1,11 @@
-import { Hono } from "hono";
+import { defineEventHandler } from "nitro/h3";
 import { start } from "workflow/api";
 import {
   MINIMAL_PI_CODING_AGENT_PROMPT,
   minimalPiCodingAgentWorkflow,
-} from "./workflows/minimal-pi-coding-agent.js";
+} from "../workflows/minimal-pi-coding-agent.js";
 
-const app = new Hono();
-
-app.get("/health", (context) => context.json({ status: "ok" }));
-
-app.post("/run", async (context) => {
+export default defineEventHandler(async () => {
   const run = await start(minimalPiCodingAgentWorkflow, [
     {
       cwd: process.cwd(),
@@ -18,7 +14,5 @@ app.post("/run", async (context) => {
   ]);
   console.log(`[workflow] started runId=${run.runId}`);
   const result = await run.returnValue;
-  return context.json({ runId: run.runId, result });
+  return { runId: run.runId, result };
 });
-
-export default app;

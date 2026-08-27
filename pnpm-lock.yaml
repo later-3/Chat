@@ -15,9 +15,6 @@ importers:
       '@earendil-works/pi-coding-agent':
         specifier: link:../opc-os/pi/packages/coding-agent
         version: link:../opc-os/pi/packages/coding-agent
-      hono:
-        specifier: 4.13.5
-        version: 4.13.5
       nitro:
         specifier: 3.0.260610-beta
         version: 3.0.260610-beta(@vercel/functions@3.9.5(@aws-sdk/credential-provider-web-identity@3.972.49))(@vercel/queue@0.3.1)(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(rollup@4.63.0)
@@ -31,9 +28,6 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
-      tsx:
-        specifier: ^4.20.0
-        version: 4.23.12
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -1573,10 +1567,6 @@ packages:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
 
-  hono@4.13.5:
-    resolution: {integrity: sha512-O6+/eCYRkzzzy0rPWwKLiGBR1nFuUPZynnwjxN1MBA62NNqbT0wQEzQyK2gSO5yDIDB336sXQleAhOHrzlYyKw==}
-    engines: {node: '>=16.9.0'}
-
   hookable@6.1.1:
     resolution: {integrity: sha512-U9LYDy1CwhMCnprUfeAZWZGByVbhd54hwepegYTK7Pi5NvqEj63ifz5z+xukznehT7i6NIZRu89Ay1AZmRsLEQ==}
 
@@ -2277,11 +2267,6 @@ packages:
 
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
-
-  tsx@4.23.12:
-    resolution: {integrity: sha512-FDf4L4sYzKtzWYhU/Xm0AQFdTjdIxNo9ElTf2mxXM6k8YMHXzYUe4yODVaXP4V9uMFbVg8c0qyBccK2OOxb45Q==}
-    engines: {node: '>=18.0.0'}
-    hasBin: true
 
   type-fest@0.21.3:
     resolution: {integrity: sha512-t0rzBq87m3fVcduHDUFhKmyyX+9eo6WQjZvf51Ea/M0Q7+T374Jp1aUiyUl0GKxp8M/OETVHSDvmkyPgvX+X2w==}
@@ -4074,8 +4059,6 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  hono@4.13.5: {}
-
   hookable@6.1.1: {}
 
   http-cache-semantics@4.2.0: {}
@@ -4780,12 +4763,6 @@ snapshots:
       ieee754: 1.2.1
 
   tslib@2.8.1: {}
-
-  tsx@4.23.12:
-    dependencies:
-      esbuild: 0.28.2
-    optionalDependencies:
-      fsevents: 2.3.3
 
   type-fest@0.21.3: {}
 

@@ -3,8 +3,9 @@ node_modules/
 .output/
 .workflow-data/
 .swc/
-.runtime/
+.pi/agent/*
+!.pi/agent/settings.json
+.pi/sessions/
 .env
 .env.*
 *.log
-/.swc

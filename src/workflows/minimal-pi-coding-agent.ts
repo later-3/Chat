@@ -1,10 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import {
-  createAgentSession,
-  getAgentDir,
-  SessionManager,
-} from "@earendil-works/pi-coding-agent";
+import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 
 export const MINIMAL_PI_CODING_AGENT_PROMPT = `
 请检查当前工作目录，概括这个项目包含的文件，并说明它现在实现了什么。
@@ -35,8 +31,9 @@ async function runPiCodingAgentStep(
   "use step";
 
   const cwd = resolve(input.cwd);
-  const agentDir = getAgentDir();
-  const sessionDir = resolve(cwd, ".runtime/pi/sessions");
+  const agentDir = resolve(cwd, ".pi/agent");
+  const sessionDir = resolve(cwd, ".pi/sessions");
+  await mkdir(agentDir, { recursive: true, mode: 0o700 });
   await mkdir(sessionDir, { recursive: true, mode: 0o700 });
 
   const sessionManager = SessionManager.continueRecent(cwd, sessionDir);

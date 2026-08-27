@@ -1,8 +1,6 @@
 import { defineConfig } from "nitro";
 
 export default defineConfig({
+  serverDir: "src",
   modules: ["workflow/nitro"],
-  routes: {
-    "/**": "./src/index.ts",
-  },
 });

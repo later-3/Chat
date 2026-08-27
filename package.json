@@ -9,20 +9,17 @@
   },
   "scripts": {
     "dev": "HOST=127.0.0.1 PORT=43112 WORKFLOW_TARGET_WORLD=local nitro dev",
-    "trigger": "tsx src/trigger.ts",
     "build": "nitro build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "link:../opc-os/pi/packages/coding-agent",
-    "hono": "4.13.5",
     "nitro": "3.0.260610-beta",
     "rollup": "4.63.0",
     "workflow": "4.8.5"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "tsx": "^4.20.0",
     "typescript": "5.9.3"
   },
   "pnpm": {

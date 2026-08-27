@@ -2,26 +2,31 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Minimal Workflow Runtime",
-      "type": "node-terminal",
+      "name": "Debug Minimal Workflow Runtime",
+      "type": "node",
       "request": "launch",
-      "command": "pnpm dev",
-      "cwd": "${workspaceFolder}"
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**"]
     },
     {
-      "name": "Trigger Minimal Pi Coding Agent Workflow",
+      "name": "Call Minimal Pi Coding Agent Workflow",
       "type": "node-terminal",
       "request": "launch",
-      "command": "pnpm trigger",
+      "command": "curl --fail-with-body --silent --show-error --retry 120 --retry-delay 1 --retry-connrefused --request POST http://127.0.0.1:43112/run",
       "cwd": "${workspaceFolder}"
     }
   ],
   "compounds": [
     {
-      "name": "Run Minimal Pi Coding Agent Workflow",
+      "name": "Debug Minimal Pi Coding Agent Workflow",
       "configurations": [
-        "Minimal Workflow Runtime",
-        "Trigger Minimal Pi Coding Agent Workflow"
+        "Debug Minimal Workflow Runtime",
+        "Call Minimal Pi Coding Agent Workflow"
       ],
       "stopAll": true
     }
