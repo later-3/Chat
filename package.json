@@ -26,6 +26,9 @@
     "overrides": {
       "nanoid": "5.1.16",
       "undici": "7.29.0"
+    },
+    "patchedDependencies": {
+      "@workflow/builders@4.1.10": "patches/@workflow__builders@4.1.10.patch"
     }
   }
 }

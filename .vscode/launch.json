@@ -11,6 +11,14 @@
       "console": "integratedTerminal",
       "autoAttachChildProcesses": true,
       "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
+        "${workspaceFolder}/.output/server/**/*.mjs"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
+        "${workspaceFolder}/.output/server/**/*.mjs"
+      ],
       "skipFiles": ["<node_internals>/**"],
       "serverReadyAction": {
         "pattern": "http://127\\.0\\.0\\.1:43112/",

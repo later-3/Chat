@@ -1,0 +1,17 @@
+diff --git a/dist/apply-swc-transform.js b/dist/apply-swc-transform.js
+index 6584424313b6944c21eacd5da0cf046b73070e4a..864594a68f7e4adbe6bedc5861e3fac6b7ac2116 100644
+--- a/dist/apply-swc-transform.js
++++ b/dist/apply-swc-transform.js
+@@ -83,10 +83,8 @@ moduleSpecifierRoot) {
+                 decoratorMetadata: decoratorOptions.decoratorMetadata,
+             },
+         },
+-        // TODO: investigate proper source map support as they
+-        // won't even be used in Node.js by default unless we
+-        // intercept errors and apply them ourselves
+-        sourceMaps: false,
++        sourceMaps: 'inline',
++        sourceFileName: absoluteFilename,
+         minify: false,
+     });
+     const workflowCommentMatch = result.code.match(/\/\*\*__internal_workflows({.*?})\*\//s);

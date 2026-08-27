@@ -45,8 +45,11 @@ export default defineEventHandler(async () => {
     console.log(
       `${localTimestamp()} [workflow] completed runId=${workflowRun.runId} elapsedMs=${Date.now() - requestStartedAt}`,
     );
+    for (const line of result.text.split(/\r?\n/)) {
+      console.log(`${localTimestamp()} [pi] response: ${line}`);
+    }
 
-    // Nitro把这个对象序列化为HTTP JSON响应，当前调试调用方使用fetch读取它。
+    // 上面把Assistant文本打印到Nitro终端；这里再把完整结果作为HTTP JSON响应返回。
     return { runId: workflowRun.runId, result };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
