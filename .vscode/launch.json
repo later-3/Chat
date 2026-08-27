@@ -2,46 +2,28 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Chat：调试应用",
-      "type": "node",
+      "name": "Minimal Workflow Runtime",
+      "type": "node-terminal",
       "request": "launch",
-      "cwd": "${workspaceFolder}",
-      "program": "${workspaceFolder}/scripts/dev/start.mjs",
-      "args": ["--debug", "--instance=debug", "--memory=off", "--workbench=off"],
-      "runtimeArgs": ["--enable-source-maps"],
-      "autoAttachChildProcesses": true,
-      "sourceMaps": true,
-      "outFiles": [
-        "${workspaceFolder}/packages/dsh-lifeos-bridge/dist/**/*.js",
-        "${workspaceFolder}/packages/workflows/.debug/.workflow-bundle/**/*.mjs",
-        "${workspaceFolder}/packages/workflows/.workflow-bundle/**/*.mjs"
+      "command": "pnpm dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Trigger Minimal Pi Coding Agent Workflow",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm trigger",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Run Minimal Pi Coding Agent Workflow",
+      "configurations": [
+        "Minimal Workflow Runtime",
+        "Trigger Minimal Pi Coding Agent Workflow"
       ],
-      "sourceMapPathOverrides": {
-        "src/*": "${workspaceFolder}/packages/workflows/src/*",
-        "../contracts/src/*": "${workspaceFolder}/packages/contracts/src/*"
-      },
-      "console": "internalConsole",
-      "outputCapture": "std",
-      "skipFiles": ["<node_internals>/**"],
-      "serverReadyAction": {
-        "pattern": "\\[chat\\] ready: (http://127\\.0\\.0\\.1:44110/)",
-        "action": "startDebugging",
-        "killOnServerStop": true,
-        "config": {
-          "name": "Chat：前端浏览器（内部）",
-          "type": "pwa-chrome",
-          "request": "launch",
-          "url": "http://127.0.0.1:44110/",
-          "webRoot": "${workspaceFolder}",
-          "sourceMaps": true,
-          "sourceMapPathOverrides": {
-            "../src/*": "${workspaceFolder}/packages/dsh-lifeos-bridge/src/*"
-          },
-          "userDataDir": "${workspaceFolder}/.data/instances/vscode-debug/browser-profile",
-          "cleanUp": "wholeBrowser",
-          "killBehavior": "forceful"
-        }
-      }
+      "stopAll": true
     }
   ]
 }

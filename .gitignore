@@ -1,60 +1,10 @@
-# dependencies and build output
 node_modules/
-dist/
-build/
-coverage/
-.coverage
-coverage.xml
-htmlcov/
-.turbo/
-.vite/
-
-# local runtime state
-.data/
-.chat/
-.artifacts/
-.test-artifacts/
-.pi/
-.workflow/
+.nitro/
+.output/
 .workflow-data/
-.vercel/
-*.db
-*.db-*
-*.sqlite
-*.sqlite-*
-
-# local configuration and credentials
+.swc/
+.runtime/
 .env
 .env.*
-!.env.example
-*.local
-
-# tooling
-.DS_Store
-.idea/
-.vscode/*
-!.vscode/launch.json
-.pnpm-store/
-playwright-report/
-test-results/
-.pytest_cache/
-.ruff_cache/
-__pycache__/
-*.py[cod]
-*.tsbuildinfo
-
-# temporary files
-.tmp-*
-tmp/
-temp/
-
-# 仓库外个人材料与过程资产，不得再进入当前事实树
-/backend/
-/workflow-examples/
-/learning/
-/docs/tasks/
-/docs/design/qa/
-/design-qa-*.png
-
-# B2 workflow bundles
-.workflow-bundle/
+*.log
+/.swc
