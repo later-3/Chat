@@ -11,14 +11,20 @@
       "console": "integratedTerminal",
       "autoAttachChildProcesses": true,
       "sourceMaps": true,
-      "skipFiles": ["<node_internals>/**"]
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": {
+        "hidden": true
+      }
     },
     {
       "name": "Call Minimal Pi Coding Agent Workflow",
       "type": "node-terminal",
       "request": "launch",
       "command": "curl --fail-with-body --silent --show-error --retry 120 --retry-delay 1 --retry-connrefused --request POST http://127.0.0.1:43112/run",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "presentation": {
+        "hidden": true
+      }
     }
   ],
   "compounds": [
