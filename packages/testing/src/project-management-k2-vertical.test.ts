@@ -8,7 +8,7 @@ import {
   compileProjectAgentContext,
   createContentProductionProject,
   evaluateProjectMaintenance,
-  getProjectAgentOpeningPacket,
+  getProjectAgentOpeningPacketV2,
   getProjectHome,
   proposeProjectConfiguration,
   proposeProjectRequirement,
@@ -49,8 +49,6 @@ function projectIds() {
     practiceRevision: allocate("ppr"),
     workOutcome: allocate("pwo"),
     contextMap: allocate("pcm"),
-    providerBinding: allocate("pvb"),
-    providerProjection: allocate("pvp"),
   } as NonNullable<ApplicationDeps["projectIds"]>;
 }
 
@@ -142,7 +140,7 @@ describe("K2真实Product Store纵向", () => {
           },
           {
             capability: "work",
-            providerKind: "plane-work-tracking.v1",
+            providerKind: "work-tracking.v1",
             bindingRef: "content-lab:work",
             mode: "primary",
           },
@@ -209,12 +207,11 @@ describe("K2真实Product Store纵向", () => {
       projectId,
       trigger: "agent_started",
     });
-    const opening = await getProjectAgentOpeningPacket(recovered, {
+    const opening = await getProjectAgentOpeningPacketV2(recovered, {
       principalId: PRINCIPAL,
       query: {
         projectId,
         includeResourceContext: false,
-        refreshPlane: false,
       },
     });
     expect(home.projectHome.configuration.sha256).toBe(adopted.configuration.sha256);

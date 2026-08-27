@@ -24,7 +24,6 @@ const forbiddenCredentialNames = [
   "GOOGLE_API_KEY",
   "GEMINI_API_KEY",
   "GITHUB_TOKEN",
-  "PLANE_API_TOKEN",
   "SSH_AUTH_SOCK",
 ] as const;
 const visible = forbiddenCredentialNames.filter((name) => process.env[name]?.trim());

@@ -10,7 +10,6 @@ import {
   ApplicationError,
   CommandIdReusedError,
   createProductSession,
-  submitProjectBootstrapUserMessage,
   submitUserMessage,
   settleIncompatibleWorkflowRun,
   publishPlanForReview as publishPlanForReviewUseCase,
@@ -136,9 +135,6 @@ function poisonedReplayDeps(store: ApplicationDeps["store"]): ApplicationDeps {
     ids: poison("ID Factory"),
     promptCatalog: poison("Prompt Catalog"),
     agentRuntimeProfiles: poison("Agent Runtime"),
-    projectManagementBootstrap: poison("Project Provider"),
-    projectWorkspaceProvisioner: poison("Workspace Provider"),
-    projectBootstrapIds: poison("Project Bootstrap ID Factory"),
   };
 }
 
@@ -832,10 +828,6 @@ describe("Message Receipt历史重放闭包", () => {
     expect(replayed.run.productRunId).toBe(run.productRunId);
 
     await expect(
-      submitProjectBootstrapUserMessage(poisonedReplayDeps(store), input),
-    ).rejects.toBeInstanceOf(CommandIdReusedError);
-
-    await expect(
       submitUserMessage(poisonedReplayDeps(store), {
         ...input,
         payload: { text: "不同payload" },
@@ -893,13 +885,6 @@ describe("Message Receipt历史重放闭包", () => {
     const snapshot = structuredClone(
       (await deps.store.read({ kind: "committedSnapshot" })).snapshot,
     );
-    await expect(
-      submitProjectBootstrapUserMessage(poisonedReplayDeps(deps.store), {
-        principalId: PRINCIPAL,
-        commandId,
-        payload: { text: "现代Receipt完整性" },
-      }),
-    ).rejects.toBeInstanceOf(CommandIdReusedError);
     delete snapshot.commandReceipts[commandId]?.resultRefs["workflowRunSpecId"];
     const corruptedStore: ApplicationDeps["store"] = {
       read: async () => ({ snapshot }),

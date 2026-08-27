@@ -39,16 +39,7 @@ import {
   type CopyPromptFragmentPayload,
   type RevisePromptFragmentPayload,
   type ChangePromptFragmentArchiveStatusPayload,
-  projectBootstrapConfigurationSchema,
-  currentProjectBootstrapResponseSchema,
-  projectBootstrapDecisionResponseSchema,
-  projectBootstrapReviewResponseSchema,
-  projectBootstrapOperationSchema,
   toolExecutionsResponseSchema,
-  type ProjectBootstrapConfiguration,
-  type ProjectBootstrapCandidate,
-  type ProjectBootstrapOperation,
-  type ProjectBootstrapReviewResponse,
   projectAgentOpeningPacketV2ResponseSchema,
   type ProjectAgentOpeningPacketV2,
   projectHomeDtoSchema,
@@ -319,103 +310,6 @@ export class ChatProductClient {
     ).result;
   }
 
-  async getProjectBootstrapConfiguration(
-    signal?: AbortSignal,
-  ): Promise<ProjectBootstrapConfiguration> {
-    return this.request(
-      "/api/project-bootstrap/configuration",
-      projectBootstrapConfigurationSchema,
-      withSignal(signal),
-    );
-  }
-
-  async getCurrentProjectBootstrap(
-    sessionId: string,
-    signal?: AbortSignal,
-  ): Promise<z.infer<typeof currentProjectBootstrapResponseSchema>["projectBootstrap"]> {
-    try {
-      const response = await this.request(
-        `/api/sessions/${encodeURIComponent(sessionId)}/project-bootstrap/current`,
-        currentProjectBootstrapResponseSchema,
-        withSignal(signal),
-      );
-      return response.projectBootstrap;
-    } catch (error) {
-      if (error instanceof ChatProductApiError && error.status === 404) return null;
-      throw error;
-    }
-  }
-
-  async decideProjectBootstrap(
-    candidate: {
-      readonly projectBootstrapCandidateId: string;
-      readonly revision: number;
-      readonly sha256: string;
-    },
-    commandId: string,
-    kind: "confirm" | "reject",
-    reason?: string,
-    signal?: AbortSignal,
-  ): Promise<{ candidate: ProjectBootstrapCandidate; operation?: ProjectBootstrapOperation }> {
-    const response = await this.request(
-      `/api/project-bootstrap/candidates/${encodeURIComponent(candidate.projectBootstrapCandidateId)}/decision`,
-      projectBootstrapDecisionResponseSchema,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          commandId,
-          payload: {
-            projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
-            candidateRevision: candidate.revision,
-            candidateSha256: candidate.sha256,
-            kind,
-            ...(reason === undefined ? {} : { reason }),
-          },
-        }),
-        ...withSignal(signal),
-      },
-    );
-    return {
-      candidate: response.candidate,
-      ...(response.operation === undefined ? {} : { operation: response.operation }),
-    };
-  }
-
-  async requestProjectBootstrapRetry(
-    operationId: string,
-    expectedOperationRevision: number,
-    commandId: string,
-    signal?: AbortSignal,
-  ): Promise<ProjectBootstrapOperation> {
-    const response = await this.request(
-      `/api/project-bootstrap/operations/${encodeURIComponent(operationId)}/retry`,
-      z.object({ operation: projectBootstrapOperationSchema }).strict(),
-      {
-        method: "POST",
-        body: JSON.stringify({
-          commandId,
-          payload: {
-            projectBootstrapOperationId: operationId,
-            expectedOperationRevision,
-          },
-        }),
-        ...withSignal(signal),
-      },
-    );
-    return response.operation;
-  }
-
-  async getProjectBootstrapReview(
-    operationId: string,
-    signal?: AbortSignal,
-  ): Promise<ProjectBootstrapReviewResponse> {
-    return this.request(
-      `/api/project-bootstrap/operations/${encodeURIComponent(operationId)}`,
-      projectBootstrapReviewResponseSchema,
-      withSignal(signal),
-    );
-  }
-
   async getMessages(
     sessionId: string,
     cursor: string | undefined,
@@ -472,8 +366,7 @@ export class ChatProductClient {
     signal?: AbortSignal,
   ): Promise<{ message: ChatMessage; run: ChatRun }> {
     const ordinaryPath = `/api/sessions/${encodeURIComponent(sessionId)}/messages`;
-    const bootstrapPath = `/api/sessions/${encodeURIComponent(sessionId)}/project-bootstrap/messages`;
-    if (command.path !== ordinaryPath && command.path !== bootstrapPath) {
+    if (command.path !== ordinaryPath) {
       throw new Error("Bridge dispatch session-message path mismatch");
     }
     const response = await this.request(command.path, submitMessageResponseSchema, {
@@ -489,7 +382,7 @@ export class ChatProductClient {
     command: BridgeChatDispatchPlan["submitMessage"],
     signal?: AbortSignal,
   ): Promise<{ session: ChatSession; message: ChatMessage; run: ChatRun }> {
-    if (command.path !== "/api/messages" && command.path !== "/api/project-bootstrap/messages") {
+    if (command.path !== "/api/messages") {
       throw new Error("Bridge dispatch first-message path mismatch");
     }
     const response = await this.request(command.path, startSessionMessageResponseSchema, {

@@ -103,8 +103,7 @@ export function migrateProductSnapshotV14ToV15(snapshot: ProductSnapshotV14): Pr
       if (
         capabilityMode !== "pi_cli_default" &&
         capabilityMode !== "custom" &&
-        capabilityMode !== "read_only" &&
-        capabilityMode !== "project_bootstrap"
+        capabilityMode !== "read_only"
       ) {
         throw new Error(`v15无法升级历史Direct Attempt ${attempt.attemptId}：RunSpec能力模式非法`);
       }

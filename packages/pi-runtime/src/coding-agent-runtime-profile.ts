@@ -22,10 +22,8 @@ import {
   buildPiDirectCapabilityCatalog,
   portableCapabilityResourcePath,
   resolveCapabilitySnapshots,
-  projectBootstrapProviderScopes,
   type CapabilityCatalogDiagnostic,
 } from "./capability-catalog.js";
-import { createProjectBootstrapExtension } from "./project-bootstrap-tool.js";
 
 export const CHAT_DIRECT_AGENT_RUNTIME_PROMPT = [
   "你正在Chat的Direct Agent只读节点中工作。",
@@ -55,7 +53,6 @@ interface RuntimeVariantDefinition {
   readonly tools?: readonly string[];
   /** Explicitly isolated variants model a user-selected restriction, never the Pi default. */
   readonly isolateResources?: boolean;
-  readonly projectBootstrap?: boolean;
 }
 
 const PI_CLI_DEFAULT_VARIANT: RuntimeVariantDefinition = {
@@ -73,16 +70,6 @@ const DIRECT_VARIANTS: readonly RuntimeVariantDefinition[] = [
     description: "显式可选的只读限制；实际启用read、grep、find、ls。",
     tools: ["read", "grep", "find", "ls"],
     isolateResources: true,
-  },
-  {
-    variantKey: "project_bootstrap",
-    title: "项目初始化候选",
-    description: "Chat受管的候选准备Tool；实际外部写由专用审核链执行。",
-    // 首轮建项尚不存在受权Workspace Grant，不能把workspace_required的文件Tool
-    // 伪装成global能力。候选准备本身只消费用户已审核的结构化参数。
-    tools: ["project_bootstrap_prepare"],
-    isolateResources: true,
-    projectBootstrap: true,
   },
 ];
 
@@ -272,7 +259,6 @@ export async function resolvePiRuntimeManifest(input: {
     descriptors: catalog.descriptors,
     activeToolNames: enabledToolNames,
     ...(input.workspaceRootId === undefined ? {} : { workspaceRootId: input.workspaceRootId }),
-    providerScopes: projectBootstrapProviderScopes(),
   });
   const resources = await inspectResources(
     input.resourceLoader,
@@ -330,37 +316,15 @@ async function inspectVariant(
     agentDir,
     settingsManager,
     modelRuntime,
-    ...(definition.isolateResources || definition.projectBootstrap
+    ...(definition.isolateResources
       ? {
           resourceLoaderOptions: {
-            ...(definition.isolateResources
-              ? {
-                  noExtensions: true,
-                  noSkills: true,
-                  noPromptTemplates: true,
-                  noContextFiles: true,
-                  systemPromptOverride: () => undefined,
-                  noThemes: true,
-                }
-              : {}),
-            ...(definition.projectBootstrap
-              ? {
-                  extensionFactories: [
-                    {
-                      name: "chat-project-bootstrap-tools",
-                      hidden: true,
-                      factory: createProjectBootstrapExtension({
-                        productRunId: "run_profile_preview",
-                        product: {
-                          prepare: async () => {
-                            throw new Error("project_bootstrap.profile_preview_not_executable");
-                          },
-                        },
-                      }),
-                    },
-                  ],
-                }
-              : {}),
+            noExtensions: true,
+            noSkills: true,
+            noPromptTemplates: true,
+            noContextFiles: true,
+            systemPromptOverride: () => undefined,
+            noThemes: true,
           },
         }
       : {}),
@@ -414,7 +378,6 @@ async function inspectVariant(
           ...(options.workspaceRootId === undefined
             ? {}
             : { workspaceRootId: options.workspaceRootId }),
-          providerScopes: projectBootstrapProviderScopes(),
         });
         if (resolved !== undefined) resolvedById.set(descriptor.capabilityId, resolved.ref);
       } catch {
@@ -540,7 +503,7 @@ export function createPiAgentRuntimeProfileReader(
               previewCwd: workspaceRoot.canonicalPath,
               workspaceRootId: workspaceRootId!,
             };
-      return agentKey === "direct" || agentKey === "project_bootstrap"
+      return agentKey === "direct"
         ? inspectProfile(
             DIRECT_VARIANTS,
             CHAT_DIRECT_AGENT_RUNTIME_PROMPT,

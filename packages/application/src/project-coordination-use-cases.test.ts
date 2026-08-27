@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { compileContentLabProjectContext } from "./project-content-context-use-cases.js";
 import {
-  getProjectAgentOpeningPacket,
   getProjectAgentOpeningPacketV2,
   getProjectAgentOpeningPacketV3,
 } from "./project-agent-coordination-use-cases.js";
-import { previewContentLabPlaneRollout } from "./content-lab-plane-rollout-use-cases.js";
 import {
   createEmptySnapshot,
   type PrincipalId,
@@ -155,8 +153,6 @@ function fixture(): Fixture {
     practiceRevision: allocate("ppr"),
     workOutcome: allocate("pwo"),
     contextMap: allocate("pcm"),
-    providerBinding: allocate("pvb"),
-    providerProjection: allocate("pvp"),
   };
   return {
     store,
@@ -213,9 +209,7 @@ function projectRevision(f: ProjectFixture): number {
   return project.revision;
 }
 
-async function bootstrapProject(
-  agentNames: readonly string[] = ["Codex"],
-): Promise<ProjectFixture> {
+async function seedProject(agentNames: readonly string[] = ["Codex"]): Promise<ProjectFixture> {
   const f = fixture();
   const created = await createContentProductionProject(f.deps, {
     principalId: PRINCIPAL,
@@ -650,7 +644,7 @@ async function preparePracticeForReview(f: ProjectFixture, workId: ProjectWorkId
 
 describe("Content Production Coordination纵向", () => {
   it("1. 创建内容项目、Context Map、用户责任人、Agent与Content Work", async () => {
-    const f = await bootstrapProject(["Codex"]);
+    const f = await seedProject(["Codex"]);
     const workId = await createContentWork(f, "content.001");
     const snapshot = f.store.inspect();
     const project = snapshot.entities.projects[f.projectId];
@@ -678,7 +672,7 @@ describe("Content Production Coordination纵向", () => {
   });
 
   it("2. Agent Claim后提交精确Evidence并请求审核，用户决定Ready", async () => {
-    const f = await bootstrapProject();
+    const f = await seedProject();
     const prepared = await prepareContentReady(f, "content.002");
     const snapshot = f.store.inspect();
     const work = snapshot.entities.projectWorks[prepared.workId];
@@ -697,7 +691,7 @@ describe("Content Production Coordination纵向", () => {
   });
 
   it("3. Ready不等于Published：没有confirmed Publication Outcome时拒绝发布终态", async () => {
-    const f = await bootstrapProject();
+    const f = await seedProject();
     const prepared = await prepareContentReady(f, "content.003");
 
     await expect(
@@ -720,7 +714,7 @@ describe("Content Production Coordination纵向", () => {
   });
 
   it("4. verified发布回执形成独立Outcome后，用户才能决定Published", async () => {
-    const f = await bootstrapProject();
+    const f = await seedProject();
     const prepared = await prepareContentReady(f, "content.004");
     const publicationEvidenceId = await recordEvidence(f, {
       workId: prepared.workId,
@@ -777,7 +771,7 @@ describe("Content Production Coordination纵向", () => {
   });
 
   it("5. Blocked Work通过Handoff释放旧Claim，新Agent认领并凭恢复证据回到原State", async () => {
-    const f = await bootstrapProject(["Codex", "Pi"]);
+    const f = await seedProject(["Codex", "Pi"]);
     const workId = await createContentWork(f, "content.005");
     await selectWork(f, workId, "blocked");
     await claimWork(f, workId, f.agentIds[0]!, "blocked");
@@ -872,13 +866,12 @@ describe("Content Production Coordination纵向", () => {
     expect(handedOff.packet.permissions.allowedActions).toEqual(
       expect.arrayContaining(["progress", "block", "request_review", "record_evidence", "handoff"]),
     );
-    expect(handedOff.packet).not.toHaveProperty("plane");
     expect(handedOff.packet).not.toHaveProperty("pendingOperations");
     expect(handedOff.packet).not.toHaveProperty("pendingInboundChanges");
   });
 
   it("6. 活动Claim冲突失败关闭；租约过期后允许另一Agent接管", async () => {
-    const f = await bootstrapProject(["Codex", "Pi"]);
+    const f = await seedProject(["Codex", "Pi"]);
     const workId = await createContentWork(f, "content.006");
     await selectWork(f, workId, "lease");
     await claimWork(f, workId, f.agentIds[0]!, "leaseowner");
@@ -912,7 +905,7 @@ describe("Content Production Coordination纵向", () => {
   });
 
   it("7. 跨Work Evidence不能用于请求审核，失败不释放当前Claim", async () => {
-    const f = await bootstrapProject();
+    const f = await seedProject();
     const foreignWorkId = await createContentWork(f, "content.007a");
     const foreignEvidenceId = await recordEvidence(f, {
       workId: foreignWorkId,
@@ -947,7 +940,7 @@ describe("Content Production Coordination纵向", () => {
   });
 
   it("8. Practice采用形成版本并可显式替代；命令重放幂等且过期revision被拒绝", async () => {
-    const f = await bootstrapProject();
+    const f = await seedProject();
     const firstWorkId = await createPracticeWork(f, "practice.001");
     const firstEvidenceId = await preparePracticeForReview(f, firstWorkId, "practiceone");
     await adoptProjectPractice(f.deps, {
@@ -1046,7 +1039,7 @@ describe("Content Production Coordination纵向", () => {
   });
 
   it("9. Content Lab Observation只产生审核候选，Context Compiler返回最小开工上下文", async () => {
-    const f = await bootstrapProject();
+    const f = await seedProject();
     const workId = await createContentWork(f, "content.observed");
     let generation = 1;
     let receivedSelection: unknown;
@@ -1199,79 +1192,39 @@ describe("Content Production Coordination纵向", () => {
     expect(context).toMatchObject({
       schemaVersion: "content-lab-project-context.v1",
       resource: { changeCandidateClassification: "review_required" },
-      providerSnapshot: null,
       resourceContext: { selectedJobKeys: ["xiaohongshu/jobs/2026-08-24_observed"] },
     });
     expect(context.evidence).toHaveLength(2);
     expect(context.work.status).toBe("intake");
   });
 
-  it("10. Resolver从Product Session恢复唯一Root，多个Work时拒绝猜测并支持显式Work Key", async () => {
-    const f = await bootstrapProject(["Codex"]);
+  it("10. Resolver按Project解析多个Work，并支持显式Work Key", async () => {
+    const f = await seedProject(["Codex"]);
     const firstWorkId = await createContentWork(f, "content.resolver.one", "createresolverone");
     await createContentWork(f, "content.resolver.two", "createresolvertwo");
-    await f.store.transact({
-      commandId: command("seedresolverbinding"),
-      commandType: "SeedProjectResolverBinding",
-      requestSha256: "f".repeat(64),
-      mutate: (draft) => {
-        draft.entities.sessions["psn_resolver1"] = {
-          schemaVersion: "product-session.v1",
-          sessionId: "psn_resolver1" as never,
-          ownerPrincipalId: PRINCIPAL,
-          status: "active",
-          lastMessageSequence: 0,
-          revision: 1,
-          createdAt: INITIAL_NOW,
-          updatedAt: INITIAL_NOW,
-        };
-        draft.entities.projectWorkspaceBindings["pwb_resolver1"] = {
-          schemaVersion: "project-bootstrap.v1",
-          projectWorkspaceBindingId: "pwb_resolver1" as never,
-          ownerPrincipalId: PRINCIPAL,
-          productSessionId: "psn_resolver1" as never,
-          projectBootstrapOperationId: "pbo_resolver1" as never,
-          providerKind: "plane_ce",
-          planeWorkspaceSlug: "ai",
-          planeProjectId: "c77bd889-4a8f-4651-9f39-da79af010781",
-          planeProjectIdentifier: "CONTENTLAB",
-          workspaceRootId: "root_contentlab" as never,
-          directoryName: "ziji-content-lab",
-          status: "active",
-          revision: 1,
-          createdAt: INITIAL_NOW,
-          updatedAt: INITIAL_NOW,
-        };
-        return { resultRefs: { productSessionId: "psn_resolver1" } };
-      },
-    });
-
-    const ambiguous = await getProjectAgentOpeningPacket(f.deps, {
+    const ambiguous = await getProjectAgentOpeningPacketV2(f.deps, {
       principalId: PRINCIPAL,
       query: {
-        productSessionId: "psn_resolver1" as never,
+        projectId: f.projectId as never,
         participantId: f.agentIds[0],
         includeResourceContext: false,
-        refreshPlane: false,
       },
     });
     expect(ambiguous.packet.resolution).toMatchObject({
       projectId: f.projectId,
-      sources: ["product_session"],
-      workspaceRootId: "root_contentlab",
+      sources: ["project_id"],
     });
     expect(ambiguous.packet.currentWork).toBeNull();
     expect(ambiguous.packet.requiresWorkSelection).toBe(true);
     expect(ambiguous.packet.permissions.allowedActions).toContain("select_work");
 
-    const selected = await getProjectAgentOpeningPacket(f.deps, {
+    const selected = await getProjectAgentOpeningPacketV2(f.deps, {
       principalId: PRINCIPAL,
       query: {
-        productSessionId: "psn_resolver1" as never,
+        projectId: f.projectId as never,
         workKey: "content.resolver.one",
         participantId: f.agentIds[0],
         includeResourceContext: false,
-        refreshPlane: false,
       },
     });
     expect(selected.packet.currentWork).toMatchObject({
@@ -1285,251 +1238,6 @@ describe("Content Production Coordination纵向", () => {
       publicationOutcomeRequired: true,
       automaticTerminalTransitionAllowed: false,
     });
-  });
-
-  it("11. P8 Dry Run合并真实Resource语义和完整Plane只读快照，5个样本都保持Candidate", async () => {
-    const f = await bootstrapProject(["Codex"]);
-    const file = (relativePath: string) => ({
-      relativePath,
-      sha256: SHA256,
-      sizeBytes: 64,
-    });
-    const casePath = "cases/2026-07-05_xhs_burned_in_english_caption_replacement_case.md";
-    const job = (
-      jobKey: string,
-      platform: "xiaohongshu" | "bilibili",
-      readiness: "review_ready" | "needs_review" | "blocked",
-      seriesKey?: string,
-    ) => ({
-      jobKey,
-      platform,
-      date: jobKey.match(/\d{4}-\d{2}-\d{2}/u)?.[0] ?? "2026-08-24",
-      ...(seriesKey === undefined ? {} : { seriesKey }),
-      source: file(`${jobKey}/source.md`),
-      publish: file(`${jobKey}/publish.md`),
-      qc: file(`${jobKey}/analysis/qc.md`),
-      sourceUrls: [],
-      workflowRevisionRefs: [],
-      readiness,
-      blockerSignals: readiness === "blocked" ? ["测试环境阻塞"] : [],
-      recommendedArtifacts: [],
-      fingerprintSha256: SHA256,
-    });
-    const contentLab = {
-      schemaVersion: "content-lab-observation.v1" as const,
-      catalog: {
-        governance: [file("AGENTS.md")],
-        workflows: [],
-        templates: [],
-        seriesRegistries: [],
-        cases: [file(casePath)],
-      },
-      jobs: [
-        job(
-          "xiaohongshu/jobs/2026-08-02_elapse_dahlia_seed_sprouting_timelapse",
-          "xiaohongshu",
-          "review_ready",
-        ),
-        job(
-          "xiaohongshu/series/monstrofarm/jobs/2026-07-29_monstrofarm_leaves_told_wrong",
-          "xiaohongshu",
-          "needs_review",
-          "monstrofarm",
-        ),
-        job(
-          "bilibili/series/crash_course_botany/jobs/2026-07-03_ep02_what_are_plants_made_of",
-          "bilibili",
-          "review_ready",
-          "crash_course_botany",
-        ),
-        job(
-          "xiaohongshu/jobs/2026-07-24_elapse_watermelon_sprouting_timelapse",
-          "xiaohongshu",
-          "blocked",
-        ),
-      ],
-      scanStats: {
-        trackedFileCount: 30,
-        relevantTextFileCount: 20,
-        candidateJobCount: 4,
-        selectedArtifactCount: 0,
-        ignoredTrackedMediaCount: 0,
-        hashedArtifactBytes: 0,
-        artifactInspectionPolicy: "recommended_paths_only" as const,
-        truncated: false,
-      },
-    };
-    const deps: ApplicationDeps = {
-      ...f.deps,
-      projectRoots: {
-        list: () => f.deps.projectRoots!.list(),
-        observe: async () => ({
-          descriptor: f.deps.projectRoots!.list()[0]!,
-          data: {
-            git: {
-              headSha: "1".repeat(40),
-              branch: "main",
-              dirty: false,
-              trackedFileCount: 30,
-              recentCommitCount: 1,
-            },
-            documents: [],
-            scripts: [],
-            contentLab,
-          },
-        }),
-        compileContentLabContext: async (input) => {
-          const sourceRef = input.selection.sourceRef ?? input.selection.resourceRefs[0]!;
-          const practice = input.selection.workKind === "workflow_improvement";
-          const title = practice ? "烧录英文字幕替换质量门" : sourceRef.split("/").at(-1)!;
-          return {
-            schemaVersion: "content-lab-context-bundle.v1",
-            observationSha256: input.observationSha256 as never,
-            selectedJobKeys: practice ? [] : [sourceRef],
-            items: [
-              {
-                role: practice ? ("case" as const) : ("current_job" as const),
-                relativePath: practice ? sourceRef : `${sourceRef}/publish.md`,
-                sha256: SHA256,
-                sizeBytes: 64,
-                reason: "Dry Run只读取代表性标题",
-                content: `# ${title}`,
-              },
-            ],
-            history: [],
-            totalCharacters: title.length + 2,
-            excludedItemCount: 0,
-            truncated: false,
-          };
-        },
-      },
-      planeProjectRolloutInspection: {
-        describe: () => ({
-          providerKind: "plane_ce",
-          providerVersion: "1.4.1",
-          allowedWorkspaceSlugs: ["later"],
-        }),
-        inspectProject: async () => ({
-          project: {
-            id: "99999999-9999-4999-8999-999999999999",
-            name: "Ziji Content Lab",
-            identifier: "CONTENTLAB",
-            description: "人类已有描述",
-            network: 0,
-            moduleView: true,
-            cycleView: false,
-            issueViewsView: false,
-            pageView: true,
-            intakeView: false,
-          },
-          states: [
-            {
-              id: "state-intake",
-              name: "Intake",
-              group: "backlog",
-              color: "#60646C",
-              sequence: 10,
-            },
-            {
-              id: "state-human",
-              name: "Human Custom",
-              group: "started",
-              color: "#000000",
-              sequence: 15,
-            },
-          ],
-          surfaceAvailability: {
-            views: "available",
-            pages: "available",
-            intakes: "available",
-          },
-          modules: [
-            { id: "module-xhs", name: "小红书内容交付", description: "" },
-            { id: "module-human", name: "现有人类Module", description: "" },
-          ],
-          labels: [{ id: "label-kind", name: "kind:content", color: "#2563EB" }],
-          views: [
-            {
-              id: "view-human",
-              name: "01 当前执行",
-              description: "人类自定义视图",
-              filtersJson: "{}",
-              displayFiltersJson: "{}",
-              archived: false,
-            },
-          ],
-          pages: [
-            {
-              id: "page-human",
-              name: "Content Lab 项目导航",
-              access: 1,
-              locked: false,
-              archived: false,
-            },
-          ],
-          intakes: [],
-          workItems: [],
-        }),
-      },
-    };
-    const storeRevision = f.store.inspect().storeRevision;
-    const first = await previewContentLabPlaneRollout(deps, {
-      principalId: PRINCIPAL,
-      query: {
-        projectId: f.projectId as never,
-        workspaceRootId: "root_contentlab" as never,
-        planeWorkspaceSlug: "later",
-        planeProjectIdentifier: "CONTENTLAB",
-      },
-    });
-    expect(first.dryRun).toMatchObject({
-      mode: "dry_run",
-      currentCounts: { states: 2, modules: 2, labels: 1, views: 1, pages: 1, intakes: 0 },
-      summary: { destructive: 0 },
-      executionAuthorized: false,
-      planeWrites: 0,
-    });
-    expect(first.dryRun.samples).toHaveLength(5);
-    expect(first.dryRun.samples.every((sample) => sample.authority === "candidate_only")).toBe(
-      true,
-    );
-    expect(first.dryRun.samples.map((sample) => sample.desiredState)).not.toContain("Published");
-    expect(first.dryRun.operations.every((operation) => operation.destructive === false)).toBe(
-      true,
-    );
-    expect(first.dryRun.operations).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ targetKind: "intake", action: "manual_review" }),
-        expect.objectContaining({
-          targetKind: "view",
-          displayName: "01 当前执行",
-          action: "manual_review",
-        }),
-        expect.objectContaining({
-          targetKind: "page",
-          displayName: "Content Lab 项目导航",
-          action: "manual_review",
-        }),
-      ]),
-    );
-    expect(first.dryRun.warnings).toEqual(
-      expect.arrayContaining([
-        "保留未知State，不删除：Human Custom",
-        "保留现有Module，不删除：现有人类Module",
-      ]),
-    );
-    f.setNow("2026-08-24T10:30:00.000Z");
-    const repeated = await previewContentLabPlaneRollout(deps, {
-      principalId: PRINCIPAL,
-      query: {
-        projectId: f.projectId as never,
-        workspaceRootId: "root_contentlab" as never,
-        planeWorkspaceSlug: "later",
-        planeProjectIdentifier: "CONTENTLAB",
-      },
-    });
-    expect(repeated.dryRun.dryRunSha256).toBe(first.dryRun.dryRunSha256);
-    expect(f.store.inspect().storeRevision).toBe(storeRevision);
   });
 });
 
@@ -1641,13 +1349,12 @@ describe("Generic Software Work Coordination纵向", () => {
         recoveryEvidenceIds: [recoveryEvidenceId],
       },
     });
-    const opening = await getProjectAgentOpeningPacket(f.deps, {
+    const opening = await getProjectAgentOpeningPacketV2(f.deps, {
       principalId: PRINCIPAL,
       query: {
         projectId: f.projectId as never,
         participantId: f.agentIds[1],
         includeResourceContext: false,
-        refreshPlane: false,
       },
     });
     expect(opening.packet.currentWork).toMatchObject({

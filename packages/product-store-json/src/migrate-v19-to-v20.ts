@@ -7,8 +7,8 @@ import type { ProductSnapshotV19 } from "./legacy-v19.js";
 import { productSnapshotV20Schema, type ProductSnapshotV20 } from "./legacy-v20.js";
 
 /**
- * v20把Project内核演进到内容生产合同。迁移只转换既有本地事实和增加空集合：
- * 不创建Content Work、Provider Binding、Plane对象、Claim、Outcome或外部副作用。
+ * v20把Project内核演进到内容生产合同。迁移只转换既有本地事实和增加空集合，
+ * 不创建Content Work、Claim、Outcome或外部副作用。
  */
 export function migrateProductSnapshotV19ToV20(snapshot: ProductSnapshotV19): ProductSnapshotV20 {
   const projectMethodSnapshots = Object.fromEntries(
@@ -107,8 +107,6 @@ export function migrateProductSnapshotV19ToV20(snapshot: ProductSnapshotV19): Pr
       projectPracticeRevisions: {},
       projectWorkOutcomes: {},
       projectContextMaps: {},
-      projectProviderBindings: {},
-      projectProviderProjections: {},
     },
   });
 }

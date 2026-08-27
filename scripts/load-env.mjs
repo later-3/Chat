@@ -10,19 +10,6 @@ const repoRoot =
   process.env.CHAT_REPO_ROOT ?? resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const runtimeRole = process.env.CHAT_RUNTIME_ROLE ?? "unscoped";
-const isPlaneRuntimeKey = (key) =>
-  key !== "CHAT_PLANE_ENABLED" &&
-  (key.startsWith("CHAT_PLANE_") ||
-    key.startsWith("CHAT_CONTENT_LAB_PLANE_") ||
-    key === "CHAT_PROJECT_CREATION_ROOTS_JSON");
-// 外部事项Provider默认不进入运行环境；只有显式总开关才能让后续配置生效。
-if (process.env.CHAT_PLANE_ENABLED !== "1") {
-  for (const key of Object.keys(process.env)) {
-    if (isPlaneRuntimeKey(key)) delete process.env[key];
-  }
-}
-// 父进程显式注入也不能绕过角色边界；非API入口先删除，再解析文件。
-if (runtimeRole !== "api") delete process.env.CHAT_PLANE_CE_API_TOKEN;
 const configuredEnvFile = process.env.CHAT_ENV_FILE?.trim();
 function canonicalPrivatePath(value, key) {
   if (!isAbsolute(value)) throw new Error(`${key}必须是绝对路径`);
@@ -86,26 +73,12 @@ for (const candidate of candidates) {
     }
     return [{ key: match[1], value }];
   });
-  const planeEnabled =
-    process.env.CHAT_PLANE_ENABLED === "1" ||
-    entries.some((entry) => entry.key === "CHAT_PLANE_ENABLED" && entry.value === "1");
   for (const { key, value: parsedValue } of entries) {
     if (process.env[key] !== undefined) continue;
-    if (!planeEnabled && isPlaneRuntimeKey(key)) continue;
-    if (
-      key === "CHAT_PLANE_COORDINATION_CLIENT_CREDENTIAL_PATH" &&
-      runtimeRole !== "api" &&
-      runtimeRole !== "piExecutor"
-    ) {
-      continue;
-    }
-    // Plane原始Credential只允许进入API/Provider进程；其他角色即使共享配置文件也看不到。
-    if (key === "CHAT_PLANE_CE_API_TOKEN" && runtimeRole !== "api") continue;
     let value = parsedValue;
     if (
       value !== "" &&
       new Set([
-        "CHAT_PLANE_COORDINATION_CLIENT_CREDENTIAL_PATH",
         "CHAT_RUNTIME_CREDENTIAL_PATH",
         "CHAT_PRODUCT_STORE_PATH",
         "CHAT_WORKFLOW_DATA_DIR",

@@ -26,19 +26,10 @@ export function migrateProductSnapshotV15ToV16(
 }
 
 export function migrateProductSnapshotV16ToV17(snapshot: ProductSnapshotV16): ProductSnapshotV17 {
-  const hasBootstrapFacts = "projectBootstrapCandidates" in snapshot.entities;
   return productSnapshotV17Schema.parse({
     ...snapshot,
     schemaVersion: "chat-product-store.v17",
-    entities: hasBootstrapFacts
-      ? snapshot.entities
-      : {
-          ...snapshot.entities,
-          projectBootstrapCandidates: {},
-          projectBootstrapDecisions: {},
-          projectBootstrapOperations: {},
-          projectWorkspaceBindings: {},
-        },
+    entities: snapshot.entities,
   });
 }
 

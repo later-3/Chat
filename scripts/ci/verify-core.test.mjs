@@ -18,7 +18,7 @@ describe("verify:core safety", () => {
       ["pnpm", "test:core"],
     ]);
     const plan = CORE_VERIFY_COMMANDS.flat().join(" ");
-    for (const forbidden of ["e2e", "memory", "paid", "plane", "provider", "workbench"]) {
+    for (const forbidden of ["e2e", "memory", "paid", "provider", "workbench"]) {
       assert.doesNotMatch(plan, new RegExp(forbidden, "iu"));
     }
   });
@@ -32,12 +32,11 @@ describe("verify:core safety", () => {
     const environment = createCiSafeEnvironment(input);
     for (const name of PROVIDER_AND_CREDENTIAL_ENV) assert.equal(environment[name], "");
     assert.equal(environment.CUSTOM_PROVIDER_API_KEY, "");
-    for (const name of ["GEMINI_API_KEY", "GITHUB_TOKEN", "PLANE_API_TOKEN"]) {
+    for (const name of ["GEMINI_API_KEY", "GITHUB_TOKEN"]) {
       assert.equal(environment[name], "");
     }
     assert.equal(environment.CHAT_CODE_WORKBENCH_ENABLED, "0");
     assert.equal(environment.CHAT_MEMORY_ENABLED, "0");
-    assert.equal(environment.CHAT_PLANE_CE_REAL_TEST, "0");
   });
 
   it("refuses every explicit paid or external-write opt-in", () => {

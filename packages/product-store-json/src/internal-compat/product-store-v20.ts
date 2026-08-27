@@ -50,10 +50,6 @@ import {
   workflowMemoryContextSchema,
   workflowMemoryQuerySchema,
   workflowMemorySnapshotSchema,
-  projectBootstrapCandidateSchema,
-  projectBootstrapDecisionSchema,
-  projectBootstrapOperationSchema,
-  projectWorkspaceBindingSchema,
   agentVersionSchema,
   toolExecutionDecisionSchema,
   toolExecutionIntentSchema,
@@ -170,14 +166,8 @@ export const productSnapshotSchema = z
     schemaVersion: z.literal(PRODUCT_STORE_SCHEMA_VERSION),
     storeRevision: z.number().int().nonnegative(),
     committedAt: z.iso.datetime(),
-    entities: productEntitiesSchema
-      .extend({
-        projectBootstrapCandidates: z.record(idKeySchema, projectBootstrapCandidateSchema),
-        projectBootstrapDecisions: z.record(idKeySchema, projectBootstrapDecisionSchema),
-        projectBootstrapOperations: z.record(idKeySchema, projectBootstrapOperationSchema),
-        projectWorkspaceBindings: z.record(idKeySchema, projectWorkspaceBindingSchema),
-      })
-      .strict(),
+    // 历史代际可能含已经退出当前产品的扩展集合；Reader只提取当时代际的权威主事实。
+    entities: productEntitiesSchema.strip(),
     commandReceipts: z.record(idKeySchema, commandReceiptSchema),
     outbox: z.record(idKeySchema, outboxEntrySchema),
   })
@@ -260,10 +250,6 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       workflowMemoryContexts: {},
       memoryWriteIntents: {},
       memoryWriteResults: {},
-      projectBootstrapCandidates: {},
-      projectBootstrapDecisions: {},
-      projectBootstrapOperations: {},
-      projectWorkspaceBindings: {},
     },
     commandReceipts: {},
     outbox: {},

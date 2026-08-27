@@ -25,11 +25,8 @@
         "chat-workflow-designer-api.v2",
         "chat-workflow-execution-trace.v2",
         "chat-workflow-product-api.v2",
-        "content-lab-plane-rollout.v1",
-        "plane-project-coordination.v2",
         "project-agent-context.v2",
         "project-agent-coordination.v1",
-        "project-bootstrap.v1",
         "project-inbound-change.v1",
         "project-management-api.v1",
         "workflow-run-configuration.v1",
@@ -143,20 +140,6 @@
           "identity": "chat-workflow-product-api.v2"
         },
         {
-          "canonicalSha256": "2e686fe96297a9ff558a23b87f68fb7752c68950670b0de49f90151801e2a6a0",
-          "evidenceCount": 2,
-          "family": "content-lab-plane-rollout.",
-          "generation": 1,
-          "identity": "content-lab-plane-rollout.v1"
-        },
-        {
-          "canonicalSha256": "e27930ba1daef4ab516ed1877a6dade5ea4cfdbd887c47bc9435e63d208838b4",
-          "evidenceCount": 4,
-          "family": "plane-project-coordination.",
-          "generation": 2,
-          "identity": "plane-project-coordination.v2"
-        },
-        {
           "canonicalSha256": "87aff72917b29183825e19205e92cb16b44f5790e18f66a5e265dbc905201409",
           "evidenceCount": 1,
           "family": "project-agent-context.",
@@ -169,13 +152,6 @@
           "family": "project-agent-coordination.",
           "generation": 1,
           "identity": "project-agent-coordination.v1"
-        },
-        {
-          "canonicalSha256": "206c024113e04fe7689bae7bca0a0ace5b22df25e3839ca8ea93c9e1be1bb00a",
-          "evidenceCount": 4,
-          "family": "project-bootstrap.",
-          "generation": 1,
-          "identity": "project-bootstrap.v1"
         },
         {
           "canonicalSha256": "f42a2c415a3c71fb7a1e1556f2a73e4630b77d555f8358c3b11f24fc85755ff0",
@@ -242,11 +218,8 @@
           "chat-workflow-designer-api.v2",
           "chat-workflow-execution-trace.v2",
           "chat-workflow-product-api.v2",
-          "content-lab-plane-rollout.v1",
-          "plane-project-coordination.v2",
           "project-agent-context.v2",
           "project-agent-coordination.v1",
-          "project-bootstrap.v1",
           "project-inbound-change.v1",
           "project-management-api.v1",
           "workflow-run-configuration.v1",
@@ -1745,11 +1718,8 @@
         "chat-workflow-designer-api.v2",
         "chat-workflow-execution-trace.v2",
         "chat-workflow-product-api.v2",
-        "content-lab-plane-rollout.v1",
-        "plane-project-coordination.v2",
         "project-agent-context.v2",
         "project-agent-coordination.v1",
-        "project-bootstrap.v1",
         "project-inbound-change.v1",
         "project-management-api.v1",
         "workflow-run-configuration.v1",
@@ -1863,20 +1833,6 @@
           "identity": "chat-workflow-product-api.v2"
         },
         {
-          "canonicalSha256": "2e686fe96297a9ff558a23b87f68fb7752c68950670b0de49f90151801e2a6a0",
-          "evidenceCount": 2,
-          "family": "content-lab-plane-rollout.",
-          "generation": 1,
-          "identity": "content-lab-plane-rollout.v1"
-        },
-        {
-          "canonicalSha256": "e27930ba1daef4ab516ed1877a6dade5ea4cfdbd887c47bc9435e63d208838b4",
-          "evidenceCount": 4,
-          "family": "plane-project-coordination.",
-          "generation": 2,
-          "identity": "plane-project-coordination.v2"
-        },
-        {
           "canonicalSha256": "87aff72917b29183825e19205e92cb16b44f5790e18f66a5e265dbc905201409",
           "evidenceCount": 1,
           "family": "project-agent-context.",
@@ -1889,13 +1845,6 @@
           "family": "project-agent-coordination.",
           "generation": 1,
           "identity": "project-agent-coordination.v1"
-        },
-        {
-          "canonicalSha256": "206c024113e04fe7689bae7bca0a0ace5b22df25e3839ca8ea93c9e1be1bb00a",
-          "evidenceCount": 4,
-          "family": "project-bootstrap.",
-          "generation": 1,
-          "identity": "project-bootstrap.v1"
         },
         {
           "canonicalSha256": "f42a2c415a3c71fb7a1e1556f2a73e4630b77d555f8358c3b11f24fc85755ff0",
@@ -1966,11 +1915,8 @@
           "chat-workflow-designer-api.v2",
           "chat-workflow-execution-trace.v2",
           "chat-workflow-product-api.v2",
-          "content-lab-plane-rollout.v1",
-          "plane-project-coordination.v2",
           "project-agent-context.v2",
           "project-agent-coordination.v1",
-          "project-bootstrap.v1",
           "project-inbound-change.v1",
           "project-management-api.v1",
           "workflow-run-configuration.v1",

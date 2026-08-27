@@ -26,7 +26,6 @@ import {
 } from "./coding-agent-executor.js";
 import type { PiDirectExecutorOperationStore } from "./direct-executor-operation-store.js";
 import type { StartPiDirectExecutorOperationRequest } from "./direct-executor-service-contract.js";
-import type { ProjectBootstrapProductPort } from "./direct-executor-service.js";
 import { hashExecutorValue } from "./executor-operation-store.js";
 import {
   DirectPromptReviewCoordinator,
@@ -40,7 +39,6 @@ import {
   type ResolvedPiRuntimeManifest,
 } from "./coding-agent-runtime-profile.js";
 import { ToolExecutionCoordinator, type ToolExecutionProductPort } from "./tool-execution-gate.js";
-import { createProjectBootstrapExtension } from "./project-bootstrap-tool.js";
 
 /** 仅用于读取历史Prompt Assembly v1；新Run的默认值由Pi CLI基线与Agent配置决定。 */
 export const P1_DIRECT_AGENT_PROFILE = {
@@ -95,14 +93,7 @@ export interface DirectAgentRunInput {
   readonly agentDir: string;
   readonly sessionsDir: string;
   readonly store: PiDirectExecutorOperationStore;
-  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
-  readonly projectBootstrapContext?: {
-    readonly providerKind: "plane_ce";
-    readonly providerVersion: string;
-    readonly planeWorkspaceSlugs: readonly string[];
-    readonly creationRoots: readonly { readonly rootId: string; readonly displayName: string }[];
-  };
-  readonly projectBootstrapProduct?: ProjectBootstrapProductPort;
+  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only";
   readonly promptReview: DirectPromptReviewCoordinator;
   readonly toolExecutionProduct?: ToolExecutionProductPort;
   readonly promptReviewMode: "manual" | "off";
@@ -400,12 +391,6 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       directAgentAttemptId: input.request.directAgentAttemptId,
       inputManifestSha256: input.request.inputManifestSha256,
     });
-    if (
-      input.capabilityMode === "project_bootstrap" &&
-      (input.projectBootstrapContext === undefined || input.projectBootstrapProduct === undefined)
-    ) {
-      throw new DirectAgentExecutionError("direct_executor.project_bootstrap_context_missing");
-    }
     const journalExtension = createControlledJournalExtension({
       operationId: input.request.operationId,
       sessionId,
@@ -422,25 +407,6 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
         ? {}
         : { resumeExecutionTimeout: input.resumeExecutionTimeout }),
     });
-    const projectBootstrapExtension =
-      input.capabilityMode === "project_bootstrap"
-        ? createProjectBootstrapExtension({
-            productRunId: input.request.productRunId,
-            product: input.projectBootstrapProduct!,
-          })
-        : undefined;
-    const projectBootstrapPrompt =
-      input.projectBootstrapContext === undefined
-        ? undefined
-        : [
-            "你还可以准备一个受控的Plane CE项目初始化候选。",
-            `Plane CE版本:${input.projectBootstrapContext.providerVersion}`,
-            `允许的Plane Workspace:${input.projectBootstrapContext.planeWorkspaceSlugs.join(", ")}`,
-            `允许的本地创建Root:${input.projectBootstrapContext.creationRoots
-              .map((root) => `${root.rootId}(${root.displayName})`)
-              .join(", ")}`,
-            "project_bootstrap_prepare只预检并保存候选；候选必须由用户确认后，Chat Application才会创建Git Workspace和Plane项目。",
-          ].join("\n");
     const userPromptLayer = governedUserPromptLayer(
       [input.systemPromptAppend, input.memoryContextSystemGuidance]
         .filter((value): value is string => value !== undefined && value !== "")
@@ -462,10 +428,7 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
             extensions: "disabled" as const,
           });
     const restrictedRuntimePrompt =
-      input.tools.capabilityMode === "read_only" ||
-      input.tools.capabilityMode === "project_bootstrap"
-        ? CHAT_DIRECT_AGENT_RUNTIME_PROMPT
-        : undefined;
+      input.tools.capabilityMode === "read_only" ? CHAT_DIRECT_AGENT_RUNTIME_PROMPT : undefined;
     const services = await createAgentSessionServices({
       cwd: input.cwd,
       agentDir: input.agentDir,
@@ -474,15 +437,6 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
       resourceLoaderOptions: {
         extensionFactories: [
           { name: "chat-direct-operation-journal", factory: journalExtension, hidden: true },
-          ...(projectBootstrapExtension === undefined
-            ? []
-            : [
-                {
-                  name: "chat-project-bootstrap-tools",
-                  factory: projectBootstrapExtension,
-                  hidden: true,
-                },
-              ]),
         ],
         noExtensions: resourcePolicy.extensions === "disabled",
         noSkills: resourcePolicy.skills === "disabled",
@@ -492,7 +446,6 @@ export class AgentSessionPiDirectAgentRunner implements DirectAgentRunner {
           input.piSystemPrompt?.mode === "replace" ? input.piSystemPrompt.bodyMarkdown : undefined,
         appendSystemPrompt: [
           ...(restrictedRuntimePrompt === undefined ? [] : [restrictedRuntimePrompt]),
-          ...(projectBootstrapPrompt === undefined ? [] : [projectBootstrapPrompt]),
           ...(userPromptLayer === undefined ? [] : [userPromptLayer]),
         ],
         noThemes: true,

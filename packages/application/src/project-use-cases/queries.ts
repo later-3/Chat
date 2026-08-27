@@ -27,23 +27,7 @@ export async function getProjectWorkspace(
   input: { readonly principalId: PrincipalId; readonly projectId: string },
 ): Promise<{ project: ProjectWorkspaceDto }> {
   const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
-  const project = projectWorkspace(snapshot, input.projectId, input.principalId);
-  const disabled = new Set(deps.disabledProjectProviderKinds ?? []);
-  const providerBindings = project.providerBindings.filter(
-    (binding) => !disabled.has(binding.providerKind),
-  );
-  const visibleBindingIds = new Set(
-    providerBindings.map((binding) => binding.projectProviderBindingId),
-  );
-  return {
-    project: {
-      ...project,
-      providerBindings,
-      providerProjections: project.providerProjections.filter((projection) =>
-        visibleBindingIds.has(projection.bindingId),
-      ),
-    },
-  };
+  return { project: projectWorkspace(snapshot, input.projectId, input.principalId) };
 }
 
 export async function getProjectTimeline(

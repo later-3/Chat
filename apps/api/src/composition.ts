@@ -39,10 +39,6 @@ import {
   projectPracticeRevisionIdSchema,
   projectWorkOutcomeIdSchema,
   projectContextMapIdSchema,
-  projectProviderBindingIdSchema,
-  projectProviderProjectionIdSchema,
-  projectCoordinationOperationIdSchema,
-  projectInboundChangeIdSchema,
   noteIdSchema,
   noteRevisionIdSchema,
   noteCandidateIdSchema,
@@ -58,10 +54,6 @@ import {
   directAgentCandidateIdSchema,
   promptFragmentIdSchema,
   promptFragmentRevisionIdSchema,
-  projectBootstrapCandidateIdSchema,
-  projectBootstrapDecisionIdSchema,
-  projectBootstrapOperationIdSchema,
-  projectWorkspaceBindingIdSchema,
   type PrincipalId,
 } from "@chat/contracts";
 import type {
@@ -73,18 +65,9 @@ import type {
   ProjectIdFactory,
   RuleIdFactory,
   PromptFragmentIdFactory,
-  ProjectBootstrapIdFactory,
-  PlaneProjectCoordinationIdFactory,
 } from "@chat/application";
-import { createInProcessProjectBootstrapExecutionCoordinator } from "@chat/application";
 import { JsonProductStore } from "@chat/product-store-json";
-import {
-  createPlaneCeProjectBootstrap,
-  createPlaneCeProjectCoordination,
-  createPlaneCeProjectRolloutInspection,
-  createProjectResourceRegistry,
-  createProjectWorkspaceProvisioner,
-} from "@chat/project-runtime";
+import { createProjectResourceRegistry } from "@chat/project-runtime";
 import {
   createCodexSessionSourceRegistry,
   createMemoryRegistrySet,
@@ -154,15 +137,6 @@ export function createProjectIdFactory(): ProjectIdFactory {
     practiceRevision: () => projectPracticeRevisionIdSchema.parse(`ppr_${randomSuffix()}`),
     workOutcome: () => projectWorkOutcomeIdSchema.parse(`pwo_${randomSuffix()}`),
     contextMap: () => projectContextMapIdSchema.parse(`pcm_${randomSuffix()}`),
-    providerBinding: () => projectProviderBindingIdSchema.parse(`pvb_${randomSuffix()}`),
-    providerProjection: () => projectProviderProjectionIdSchema.parse(`pvp_${randomSuffix()}`),
-  };
-}
-
-export function createPlaneProjectCoordinationIdFactory(): PlaneProjectCoordinationIdFactory {
-  return {
-    operation: () => projectCoordinationOperationIdSchema.parse(`pco_${randomSuffix()}`),
-    inboundChange: () => projectInboundChangeIdSchema.parse(`pic_${randomSuffix()}`),
   };
 }
 
@@ -198,15 +172,6 @@ export function createPromptFragmentIdFactory(): PromptFragmentIdFactory {
   return {
     fragment: () => promptFragmentIdSchema.parse(`pfg_${randomSuffix()}`),
     revision: () => promptFragmentRevisionIdSchema.parse(`pfr_${randomSuffix()}`),
-  };
-}
-
-export function createProjectBootstrapIdFactory(): ProjectBootstrapIdFactory {
-  return {
-    candidate: () => projectBootstrapCandidateIdSchema.parse(`pbc_${randomSuffix()}`),
-    decision: () => projectBootstrapDecisionIdSchema.parse(`pbd_${randomSuffix()}`),
-    operation: () => projectBootstrapOperationIdSchema.parse(`pbo_${randomSuffix()}`),
-    binding: () => projectWorkspaceBindingIdSchema.parse(`pwb_${randomSuffix()}`),
   };
 }
 
@@ -258,24 +223,6 @@ export async function createApplicationDeps(
   );
   const store = await openProductStore(filePath, trace);
   const projectRoots = await createProjectResourceRegistry(process.env);
-  const planeEnabled = process.env.CHAT_PLANE_ENABLED === "1";
-  const projectWorkspaceProvisioner = planeEnabled
-    ? await createProjectWorkspaceProvisioner(process.env)
-    : undefined;
-  const projectManagementBootstrap = planeEnabled
-    ? createPlaneCeProjectBootstrap(process.env)
-    : undefined;
-  const planeProjectCoordination = planeEnabled
-    ? createPlaneCeProjectCoordination(process.env)
-    : undefined;
-  const planeProjectRolloutInspection = planeEnabled
-    ? createPlaneCeProjectRolloutInspection(process.env)
-    : undefined;
-  if ((projectWorkspaceProvisioner === undefined) !== (projectManagementBootstrap === undefined)) {
-    throw new Error(
-      "Project Bootstrap配置不完整：CHAT_PROJECT_CREATION_ROOTS_JSON与Plane CE配置必须同时提供",
-    );
-  }
   const projectModelProfile = loadProjectModelProfile(process.env);
   const projectUnderstanding = new PiProjectIntakeUnderstandingAdapter(projectModelProfile);
   const advancementUnderstanding = new PiProjectAdvancementUnderstandingAdapter(
@@ -297,30 +244,12 @@ export async function createApplicationDeps(
     projectIntakeUnderstanding: projectUnderstanding,
     projectAdvancementUnderstanding: advancementUnderstanding,
     projectIds: createProjectIdFactory(),
-    disabledProjectProviderKinds: planeEnabled ? [] : ["plane_ce", "plane-ce.v1"],
     noteIds: createNoteIdFactory(),
     ruleIds: createRuleIdFactory(),
     directAgentIds: createDirectAgentIdFactory(),
-    // Product Bootstrap Decision ID与Provider配置无关；已有Candidate即使在Provider关闭后
-    // 仍必须能够被拒绝并退出一次性会话生命周期。
-    projectBootstrapIds: createProjectBootstrapIdFactory(),
-    projectBootstrapExecutionCoordinator: createInProcessProjectBootstrapExecutionCoordinator(),
     promptCatalog,
     promptFiles,
     promptFragmentIds: createPromptFragmentIdFactory(),
-    ...(projectWorkspaceProvisioner === undefined
-      ? {}
-      : {
-          projectWorkspaceProvisioner,
-          projectManagementBootstrap: projectManagementBootstrap!,
-        }),
-    ...(planeProjectCoordination === undefined
-      ? {}
-      : {
-          planeProjectCoordination,
-          planeProjectCoordinationIds: createPlaneProjectCoordinationIdFactory(),
-        }),
-    ...(planeProjectRolloutInspection === undefined ? {} : { planeProjectRolloutInspection }),
     ...(trace !== undefined ? { trace } : {}),
   };
 }

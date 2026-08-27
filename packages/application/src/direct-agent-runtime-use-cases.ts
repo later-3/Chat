@@ -49,7 +49,7 @@ function directNodeConfig(
     ReturnType<ApplicationDeps["store"]["read"]>
   >["snapshot"]["entities"]["workflowRunSpecs"][string],
 ): {
-  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
+  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only";
   readonly promptReviewMode: "manual" | "off";
 } {
   const node = runSpec.nodeResolutions.find(
@@ -59,8 +59,7 @@ function directNodeConfig(
     node === undefined ||
     (node.config["capabilityMode"] !== "pi_cli_default" &&
       node.config["capabilityMode"] !== "custom" &&
-      node.config["capabilityMode"] !== "read_only" &&
-      node.config["capabilityMode"] !== "project_bootstrap") ||
+      node.config["capabilityMode"] !== "read_only") ||
     (node.config["promptReviewMode"] !== "manual" && node.config["promptReviewMode"] !== "off")
   ) {
     throw new ApplicationError({
@@ -249,13 +248,7 @@ export async function authorizeDirectAgentOperation(
     readonly runtimeProfileSha256?: string | undefined;
     readonly workspaceGrantSha256?: string | undefined;
   };
-  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
-  readonly projectBootstrapContext?: {
-    readonly providerKind: "plane_ce";
-    readonly providerVersion: string;
-    readonly planeWorkspaceSlugs: readonly string[];
-    readonly creationRoots: readonly { readonly rootId: string; readonly displayName: string }[];
-  };
+  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only";
   readonly promptReviewMode: "manual" | "off";
   readonly limits: {
     readonly maxProviderRequests: number;
@@ -387,32 +380,6 @@ export async function authorizeDirectAgentOperation(
       throw revisionConflict("Prompt Assembly能力与冻结Agent配置不一致");
     }
   }
-  const projectBootstrapContext =
-    config.capabilityMode === "project_bootstrap"
-      ? (() => {
-          if (
-            deps.projectManagementBootstrap === undefined ||
-            deps.projectWorkspaceProvisioner === undefined
-          ) {
-            throw new ApplicationError({
-              code: "revision_conflict",
-              httpStatus: 409,
-              message: "部署未配置Project Bootstrap能力",
-              recoveryAction: "contact_support",
-            });
-          }
-          const provider = deps.projectManagementBootstrap.describe();
-          return {
-            providerKind: provider.providerKind,
-            providerVersion: provider.providerVersion,
-            planeWorkspaceSlugs: [...provider.allowedWorkspaceSlugs],
-            creationRoots: deps.projectWorkspaceProvisioner.listRoots().map((root) => ({
-              rootId: root.rootId,
-              displayName: root.displayName,
-            })),
-          };
-        })()
-      : undefined;
   const recomputedManifest = computeDirectAgentInputManifestSha256({
     productRunId: input.productRunId,
     inputRunRevision: attempt.inputRunRevision,
@@ -469,7 +436,6 @@ export async function authorizeDirectAgentOperation(
         : { workspaceRootId: promptAssembly.workspaceRootId }),
     },
     capabilityMode: config.capabilityMode,
-    ...(projectBootstrapContext === undefined ? {} : { projectBootstrapContext }),
     promptReviewMode: config.promptReviewMode,
     limits: {
       maxProviderRequests: DIRECT_AGENT_MAX_PROVIDER_REQUESTS,

@@ -24,7 +24,7 @@ Git、Memory及其他外部系统只拥有自己的资源。它们的ID不能互
 
 已完成：产品后端、Workflow/Agent Runtime、固定DSH派生、LifeOS Bridge、Capability治理，以及
 Project监督账本、Content Production协作事实、Content Lab有界上下文和DSH项目四视图。历史
-Project Bootstrap仅保留兼容读取，普通运行图不装配外部项目Provider。Workbench实现已完成但仍是Beta，提升为通用发布门已暂停。Memory暂停。当前优先
+Workbench实现已完成但仍是Beta，提升为通用发布门已暂停。Memory暂停。当前优先
 候选是Browser Provider，但尚未授权实现。不要从阶段计划推导开工授权；涉及真实数据处置前还要
 读取[PROJECT_STATE](../../PROJECT_STATE.md)中的最新诊断，接手导航不授予修复权。
 

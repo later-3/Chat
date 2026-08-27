@@ -7,28 +7,8 @@ import { JsonProductStore } from "./json-product-store.js";
 import { productSnapshotV19Schema } from "./legacy-v19.js";
 import { productSnapshotV20Schema } from "./legacy-v20.js";
 import { migrateProductSnapshotV19ToV20 } from "./migrate-v19-to-v20.js";
-import { migrateProductSnapshotV20ToV21 } from "./migrate-v20-to-v21.js";
-import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
-import { migrateProductSnapshotV22ToV23 } from "./migrate-v22-to-v23.js";
-import { migrateProductSnapshotV23ToV24 } from "./migrate-v23-to-v24.js";
-import { migrateProductSnapshotV24ToV25 } from "./migrate-v24-to-v25.js";
-import { migrateProductSnapshotV25ToV26 } from "./migrate-v25-to-v26.js";
-import { assertSnapshotIntegrity } from "./snapshot-integrity.js";
 
 const NOW = "2026-08-24T08:00:00.000Z";
-
-const migrateProductSnapshotV20ToCurrent = (
-  snapshot: Parameters<typeof migrateProductSnapshotV20ToV21>[0],
-) =>
-  migrateProductSnapshotV25ToV26(
-    migrateProductSnapshotV24ToV25(
-      migrateProductSnapshotV23ToV24(
-        migrateProductSnapshotV22ToV23(
-          migrateProductSnapshotV21ToV22(migrateProductSnapshotV20ToV21(snapshot)),
-        ),
-      ),
-    ),
-  );
 
 async function nonEmptyV19() {
   const directory = await mkdtemp(join(tmpdir(), "chat-v19-v20-fixture-"));
@@ -45,10 +25,6 @@ async function nonEmptyV19() {
     "projectPracticeRevisions",
     "projectWorkOutcomes",
     "projectContextMaps",
-    "projectProviderBindings",
-    "projectProviderProjections",
-    "projectCoordinationOperations",
-    "projectInboundChanges",
     "toolExecutionIntents",
     "toolExecutionDecisions",
     "toolExecutionResults",
@@ -211,7 +187,7 @@ async function nonEmptyV19() {
 }
 
 describe("Product Store v19到v20内容协调内核迁移", () => {
-  it("无损升级非空Project事实且不伪造内容Work、Claim、Outcome或Provider Binding", async () => {
+  it("无损升级非空Project事实且不伪造内容Work、Claim或Outcome", async () => {
     const legacy = await nonEmptyV19();
     const migrated = migrateProductSnapshotV19ToV20(legacy);
 
@@ -237,7 +213,6 @@ describe("Product Store v19到v20内容协调内核迁移", () => {
     );
     expect(migrated.entities.projectWorkClaims).toEqual({});
     expect(migrated.entities.projectWorkOutcomes).toEqual({});
-    expect(migrated.entities.projectProviderBindings).toEqual({});
     expect(() => productSnapshotV20Schema.parse(migrated)).not.toThrow();
   });
 
@@ -251,126 +226,5 @@ describe("Product Store v19到v20内容协调内核迁移", () => {
     expect(JSON.parse(once)).toMatchObject({ schemaVersion: "chat-product-store.v24" });
     await JsonProductStore.open({ filePath, now: () => NOW });
     expect(await readFile(filePath, "utf8")).toBe(once);
-  });
-
-  it("v20非空Provider事实升级为待核对v21且不制造Operation或入站事实", async () => {
-    const legacy = migrateProductSnapshotV19ToV20(await nonEmptyV19());
-    legacy.entities.projectResources["prs_v20planeroot1"] = {
-      schemaVersion: "project-resource.v1",
-      projectResourceId: "prs_v20planeroot1" as never,
-      projectId: "prj_v19migration1" as never,
-      rootId: "root_v20plane",
-      displayName: "v20 Plane迁移Root",
-      kind: "workspace",
-      enabledAdapters: ["local-git-workspace.v1"],
-      status: "active",
-      revision: 1,
-      createdAt: NOW,
-      updatedAt: NOW,
-    };
-    legacy.entities.projectProviderBindings["pvb_v20plane1"] = {
-      schemaVersion: "project-provider-binding.v1",
-      projectProviderBindingId: "pvb_v20plane1" as never,
-      projectId: "prj_v19migration1" as never,
-      ownerPrincipalId: "usr_v19migration1" as never,
-      providerKind: "plane_ce",
-      providerVersion: "1.4.1",
-      externalWorkspaceId: "later",
-      externalProjectId: "00000000-0000-4000-8000-000000000020",
-      externalProjectIdentifier: "LEGACY",
-      syncPolicyVersion: "content-lab-plane-mapping.v1",
-      status: "active",
-      revision: 1,
-      createdAt: NOW,
-      updatedAt: NOW,
-    };
-    legacy.entities.projectProviderProjections["pvp_v20plane1"] = {
-      schemaVersion: "project-provider-projection.v1",
-      projectProviderProjectionId: "pvp_v20plane1" as never,
-      projectId: "prj_v19migration1" as never,
-      bindingId: "pvb_v20plane1" as never,
-      objectType: "work",
-      objectId: "pwk_v19migration1",
-      providerObjectType: "work_item",
-      providerObjectId: "00000000-0000-4000-8000-000000000021",
-      externalKey: "legacy:pwk_v19migration1",
-      chatObjectRevision: 2,
-      providerFingerprint: "b".repeat(64),
-      syncStatus: "healthy",
-      revision: 1,
-      createdAt: NOW,
-      updatedAt: NOW,
-    };
-
-    const projectV21 = migrateProductSnapshotV20ToV21(productSnapshotV20Schema.parse(legacy));
-    const migrated = migrateProductSnapshotV21ToV22(projectV21);
-
-    expect(migrated.entities.projectProviderBindings["pvb_v20plane1"]).toMatchObject({
-      schemaVersion: "project-provider-binding.v2",
-      workspaceRootId: "root_v20plane",
-      status: "needs_attention",
-      revision: 2,
-    });
-    expect(migrated.entities.projectProviderProjections["pvp_v20plane1"]).toMatchObject({
-      schemaVersion: "project-provider-projection.v2",
-      syncStatus: "needs_attention",
-      revision: 2,
-    });
-    expect(migrated.entities.projectCoordinationOperations).toEqual({});
-    expect(migrated.entities.projectInboundChanges).toEqual({});
-    expect(migrated.entities.toolExecutionIntents).toEqual({});
-    expect(migrated.entities.toolExecutionDecisions).toEqual({});
-    expect(migrated.entities.toolExecutionResults).toEqual({});
-    expect(() =>
-      assertSnapshotIntegrity(
-        migrateProductSnapshotV25ToV26(
-          migrateProductSnapshotV24ToV25(
-            migrateProductSnapshotV23ToV24(migrateProductSnapshotV22ToV23(migrated)),
-          ),
-        ),
-      ),
-    ).not.toThrow();
-
-    const v21Directory = await mkdtemp(join(tmpdir(), "chat-project-v21-v22-"));
-    const v21Path = join(v21Directory, "product-store.json");
-    await writeFile(v21Path, JSON.stringify(projectV21));
-    const v23Store = await JsonProductStore.open({ filePath: v21Path, now: () => NOW });
-    const v23FromDisk = (await v23Store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(v23FromDisk.schemaVersion).toBe("chat-product-store.v24");
-    expect(v23FromDisk.entities.projectProviderBindings).toEqual(
-      projectV21.entities.projectProviderBindings,
-    );
-    expect(v23FromDisk.entities.projectProfileRevisions).toEqual({});
-    const once = await readFile(v21Path, "utf8");
-    await JsonProductStore.open({ filePath: v21Path, now: () => NOW });
-    expect(await readFile(v21Path, "utf8")).toBe(once);
-
-    const withoutRoot = structuredClone(legacy);
-    delete withoutRoot.entities.projectResources["prs_v20planeroot1"];
-    const quarantinedWithoutRoot = migrateProductSnapshotV20ToCurrent(
-      productSnapshotV20Schema.parse(withoutRoot),
-    );
-    expect(quarantinedWithoutRoot.entities.projectProviderBindings["pvb_v20plane1"]).toMatchObject({
-      status: "needs_attention",
-    });
-    expect(
-      quarantinedWithoutRoot.entities.projectProviderBindings["pvb_v20plane1"]?.workspaceRootId,
-    ).toBeUndefined();
-    expect(() => assertSnapshotIntegrity(quarantinedWithoutRoot)).not.toThrow();
-
-    const withAmbiguousRoots = structuredClone(legacy);
-    withAmbiguousRoots.entities.projectResources["prs_v20planeroot2"] = {
-      ...withAmbiguousRoots.entities.projectResources["prs_v20planeroot1"]!,
-      projectResourceId: "prs_v20planeroot2" as never,
-      rootId: "root_v20planeother",
-      displayName: "v20 Plane迁移另一个Root",
-    };
-    const quarantinedAmbiguous = migrateProductSnapshotV20ToCurrent(
-      productSnapshotV20Schema.parse(withAmbiguousRoots),
-    );
-    expect(
-      quarantinedAmbiguous.entities.projectProviderBindings["pvb_v20plane1"]?.workspaceRootId,
-    ).toBeUndefined();
-    expect(() => assertSnapshotIntegrity(quarantinedAmbiguous)).not.toThrow();
   });
 });

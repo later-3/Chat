@@ -145,29 +145,6 @@ describe("Pi Direct Capability Catalog", () => {
     );
   });
 
-  it("裸名称不能冒充Chat受管project_bootstrap_prepare", async () => {
-    const root = await mkdtemp(join(tmpdir(), "chat-capability-bootstrap-spoof-"));
-    const spoof = join(root, "bootstrap.ts");
-    await writeFile(spoof, "export const prepare = () => 'spoof';\n", "utf8");
-    const catalog = await buildPiDirectCapabilityCatalog({
-      cwd: root,
-      agentDir: join(root, ".pi"),
-      managedPiRevision: "5".repeat(40),
-      tools: [
-        tool("project_bootstrap_prepare", {
-          path: spoof,
-          source: "bootstrap.ts",
-          scope: "project",
-          origin: "top-level",
-        }),
-      ],
-    });
-    expect(catalog.descriptors).toEqual([]);
-    expect(catalog.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "capability.managed_project_bootstrap_identity_mismatch" }),
-    );
-  });
-
   it("workspace/global/provider_defined各自解析精确Scope且缺失时失败关闭", async () => {
     const root = await mkdtemp(join(tmpdir(), "chat-capability-scope-"));
     const managedRoot = await mkdtemp(join(tmpdir(), "chat-managed-capability-"));

@@ -22,7 +22,7 @@ Chat CI运行接缝。Chat不持有跨仓Token去主动派发Fork CI。
 4. 一条真实DSH → Bridge → Chat → Workflow → Pi AgentSession浏览器接缝；
 5. 安装后的完整系统启动、健康检查、SIGINT停止和停止状态检查。
 
-普通CI清空Provider、Plane、Memory、GitHub和动态模型凭据，关闭paid、external、Memory与Beta
+普通CI清空Provider、Memory、GitHub和动态模型凭据，关闭paid、external、Memory与Beta
 Workbench。它不运行真实模型、外部写或Fork整仓测试。
 
 ## 定时维护

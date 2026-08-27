@@ -147,10 +147,6 @@ const productSnapshotV19EntitiesSchema = productSnapshotSchema.shape.entities
     projectPracticeRevisions: true,
     projectWorkOutcomes: true,
     projectContextMaps: true,
-    projectProviderBindings: true,
-    projectProviderProjections: true,
-    projectCoordinationOperations: true,
-    projectInboundChanges: true,
     toolExecutionIntents: true,
     toolExecutionDecisions: true,
     toolExecutionResults: true,
@@ -189,7 +185,7 @@ const productSnapshotV19EntitiesSchema = productSnapshotSchema.shape.entities
     projectEvidence: z.record(idKeySchema, projectEvidenceV19Schema),
     projectDecisions: z.record(idKeySchema, projectDecisionV19Schema),
   })
-  .strict();
+  .strip();
 
 export const productSnapshotV19Schema = productSnapshotSchema
   .extend({

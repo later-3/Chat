@@ -1,7 +1,6 @@
 import {
   createSnapshotStore,
   type ClientContext,
-  type ISessions,
   type SessionId,
 } from "@deepseek-ai/dsh-client-runtime/client";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
@@ -64,9 +63,6 @@ export function apply(ctx: ClientContext): void {
   const workbench = new WorkbenchSurfaceController();
   const promptStudio = new PromptStudioController();
   const projectManagement = new ProjectManagementController();
-  // `@deepseek-ai/dsh-session`与浏览器Runtime都扩展Cordis的`sessions`键；此处运行在
-  // Client插件根，真实对象是公开ISessions face，显式收窄避免服务端类型声明污染。
-  const clientSessions = ctx.sessions as unknown as ISessions;
   const controllers = new Map<SessionId, LifeosProjectionController>();
   const recordControllers = new Map<SessionId, SessionRecordsController>();
   const promptComposerControllers = new Map<SessionId, PromptComposerController>();
@@ -385,12 +381,6 @@ export function apply(ctx: ClientContext): void {
             decideNote: (request) => controller.decideNote(request),
             decidePromptReview: (request) => controller.decidePromptReview(request),
             decideToolExecution: (request) => controller.decideToolExecution(request),
-            decideProjectBootstrap: (request) => controller.decideProjectBootstrap(request),
-            openProjectWorkspace: async (cwd) => {
-              const workspace = await ctx.workspaces.create({ path: cwd });
-              const sessionId = await ctx.workspaces.connectWorkspace(workspace.workspaceId);
-              clientSessions.open(sessionId);
-            },
             decideDshSendReview: (request) => controller.decideDshSendReview(request),
             decideBridgeDispatchReview: (request) => controller.decideBridgeDispatchReview(request),
           };

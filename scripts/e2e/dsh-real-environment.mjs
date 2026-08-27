@@ -11,7 +11,6 @@ export const DSH_BROWSER_FORBIDDEN_ENV_NAMES = Object.freeze([
   "CHAT_DEBUG_PI_KEY_READER",
   "CHAT_DEBUG_PI_PROVIDER_CONFIG",
   "CHAT_MEMMY_TOKEN",
-  "CHAT_PLANE_CE_API_TOKEN",
   "CHAT_PROJECT_MODEL_API_KEY_ENV",
   "CHAT_PROJECT_MODEL_BASE_URL",
   "CHAT_TENCENT_MEMORYCORE_TOKEN",
@@ -25,7 +24,6 @@ export const DSH_BROWSER_FORBIDDEN_ENV_NAMES = Object.freeze([
   "GOOGLE_API_KEY",
   "OPENAI_API_KEY",
   "OPENAI_BASE_URL",
-  "PLANE_API_TOKEN",
   "SSH_AUTH_SOCK",
 ]);
 
@@ -62,7 +60,6 @@ export function deterministicBrowserProcessEnvironment(environment = process.env
     CHAT_CODE_WORKBENCH_ENABLED: "0",
     CHAT_MEMORY_ENABLED: "0",
     CHAT_MEMORY_REAL_TEST: "0",
-    CHAT_PLANE_CE_REAL_TEST: "0",
   };
 }
 
@@ -103,13 +100,6 @@ export const DSH_PROMPT_THREE_GATES_E2E_PORTS = Object.freeze({
   piExecutor: 45_215,
 });
 
-/** 不加载模型或真实Plane；只验证真实DSH Host/Client到耐久建项Outbox的纵向。 */
-export const DSH_PROJECT_BOOTSTRAP_E2E_PORTS = Object.freeze({
-  web: 45_410,
-  api: 45_411,
-  webInternal: 45_414,
-});
-
 /** Capability治理门：真实Workflow/API/Pi/DSH，仅Provider为进程内Faux。 */
 export const DSH_CAPABILITY_GOVERNANCE_E2E_PORTS = Object.freeze({
   web: 45_510,
@@ -145,7 +135,6 @@ export function resolveDshRealDataRoot(root, environment = process.env) {
   const allowed = new Set([
     resolve(repoRoot, ".data/e2e/dsh-real"),
     resolve(repoRoot, ".data/e2e/dsh-prompt-three-gates-real"),
-    resolve(repoRoot, ".data/e2e/dsh-project-bootstrap-real"),
     resolve(repoRoot, ".data/e2e/dsh-capability-governance-real"),
     resolve(repoRoot, ".data/e2e/dsh-planning-faux-real"),
   ]);

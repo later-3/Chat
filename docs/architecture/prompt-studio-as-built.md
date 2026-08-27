@@ -12,7 +12,7 @@
 6. Planner、Coding Executor、Governance Reviewer与Note Extractor只接收Application从同一冻结v3 Assembly授权出的节点Prompt；节点Hash进入对应Input/Validation事实，不从当前Bridge草稿或文件重新推导。
 7. Pi Agent仍负责单次节点内的Agent/Tool Loop。Direct的`pi_cli_default`直接继承Pi真实Context Files、Skills、Prompt Templates与Extensions发现；用户派生的受限Version可逐项关闭。Planning Coding Executor仍按已批准Execution Contract隔离这些自动来源；显式选择的Chat会话Prompt组件继续由Prompt Assembly进入请求。
 8. Direct Provider Gate在每次真实模型请求前暂停。Raw是Provider Adapter将发送的Canonical Payload；Friendly只增加来源、区域、Revision、Hash、Scope和JSON Pointer，不添加模型可见正文。Planner、Executor与Note当前使用已冻结Prompt，但没有新增Provider人工审核语义。
-9. 前端提供三层Chat配置：DSH「设置 → Agent」为已经完成执行消费纵向的Direct Agent管理Principal不可变AgentVersion；Workflow配置页精确绑定Version ID/Hash；发送前还可为当前DSH Session形成结构化临时配置，并在每次Run创建时冻结。选择Workspace Scope或打开会话配置时，页面按受权`workspaceRootId`重新读取Pi Settings、Extension、Tool与资源目录。Pi-backed Agent的无覆盖默认值直接引用Pi真实运行时基线，不复制成Chat Fragment；自定义正文完整替换Pi基础System，Tools精确冻结，四类资源当前按类别继承或关闭。Project Bootstrap、Coding Executor等未完成逐字段Version消费的Agent只读显示真实基线，不提供假保存入口。系统Workflow保存时派生个人版本，个人Workflow保存时原子发布下一Revision；任何Prompt文字都不能增加Tool或Workspace授权。
+9. 前端提供三层Chat配置：DSH「设置 → Agent」为已经完成执行消费纵向的Direct Agent管理Principal不可变AgentVersion；Workflow配置页精确绑定Version ID/Hash；发送前还可为当前DSH Session形成结构化临时配置，并在每次Run创建时冻结。选择Workspace Scope或打开会话配置时，页面按受权`workspaceRootId`重新读取Pi Settings、Extension、Tool与资源目录。Pi-backed Agent的无覆盖默认值直接引用Pi真实运行时基线，不复制成Chat Fragment；自定义正文完整替换Pi基础System，Tools精确冻结，四类资源当前按类别继承或关闭。Coding Executor等未完成逐字段Version消费的Agent只读显示真实基线，不提供假保存入口。系统Workflow保存时派生个人版本，个人Workflow保存时原子发布下一Revision；任何Prompt文字都不能增加Tool或Workspace授权。
 10. DSH→Bridge、Bridge→Chat和Direct Provider Prompt Review不再挤在Composer卡片里；三者复用右侧全高审查面板。只有中间正文区域纵向滚动，标题/状态和决定操作固定，Raw与易读正文不再制造第二个纵向滚动区。
 
 ## 2. 事实所有权
@@ -52,7 +52,7 @@ Git 内置组件不复制进 Product Store。用户组件正文不隐藏在 Prod
 - Catalog Adapter：`apps/api/src/prompt-catalog.ts`
 - 用户文件 Adapter：`apps/api/src/prompt-file-library.ts`
 
-Catalog Adapter从`import.meta.url`推导仓库根，拒绝绝对路径、`..`、越界symlink、缺失文件、重复ID/Region/Order和SHA-256漂移。它明确分开两种读取语义：普通Catalog/List/详情只返回“当前可发现投影”；冻结Run则以`revisionId + sha256`从完整Git Catalog精确解析历史Revision。默认投影会同时移除Project Bootstrap Agent及其引用的Plane Fragment，因此Agent、Fragment、Tool和详情正文都不会泄漏Plane；只有显式`CHAT_PLANE_ENABLED=1`的专项运行图恢复该发现面。历史定义不删除，也不会因当前投影收窄而使既有Run无法解析。
+Catalog Adapter从`import.meta.url`推导仓库根，拒绝绝对路径、`..`、越界symlink、缺失文件、重复ID/Region/Order和SHA-256漂移。普通Catalog/List/详情返回当前可发现投影；冻结Run以`revisionId + sha256`精确解析已发布Revision。
 
 Bridge按`CHAT_PROJECT_ROOTS_JSON`把DSH当前打开目录映射为Chat `rootId`。平台Chat根的精确`AGENTS.md`投影为全局`workspace_instructions`组件；目标Workspace根的精确`AGENTS.md`只在该Scope可见。系统不递归发现父级、子目录或其他Agent文件，也不自动选择这些组件。
 
@@ -69,7 +69,6 @@ Bridge按`CHAT_PROJECT_ROOTS_JSON`把DSH当前打开目录映射为Chat `rootId`
 - `v15 → v16`：用户新Revision改为Markdown内容引用，Direct Assembly升级为四路输入v2；
 - `v16 → v17`：补齐项目初始化相关事实集合；
 - `v17 → v18`：新增不可变AgentVersion集合，并发布继承Pi CLI默认能力的Direct Workflow v2；历史只读Workflow Revision/View继续保留。
-- `v18 → v19`：新增Project Bootstrap Outbox事实；
 - `v19 → v20`：只新增Tool Execution Intent/Decision/Result事实，严格拒绝与任务02格式冲突的歧义v19。
 - `v20 → v21`：保留Simple Planning v1 Revision/View供历史Run恢复，发布Simple Planning v2；新流程用独立`agent.governance_check`替代旧`result.validate`节点。
 
@@ -163,7 +162,7 @@ DSH发送审核使用实际Adapter入口捕获的完整可序列化`GenerateOpti
 | 节点类型 | 锁定Profile | 用户层来源 |
 |---|---|---|
 | `agent.plan` | `planner-prompt.v3` | Planner默认或节点/Run差异 + 会话上下文 |
-| `agent.direct` | `direct-agent-prompt.v1` | Direct/Project Bootstrap默认或节点/Run差异 + 会话上下文 |
+| `agent.direct` | `direct-agent-prompt.v1` | Direct默认或节点/Run差异 + 会话上下文 |
 | `execute.plan` | `executor-coding-agent-prompt.v1` | Coding Executor默认或节点/Run差异 + 会话上下文 |
 | `agent.governance_check` | `governance-review.v1` | Governance Reviewer默认或节点/Run差异 + 会话上下文 |
 | `note.extract` | `note-capture.v1` | Note Extractor默认或节点/Run差异 + 会话上下文 |

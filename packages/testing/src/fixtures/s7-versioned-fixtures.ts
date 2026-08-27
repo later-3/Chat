@@ -350,9 +350,6 @@ function toV10Fixture(snapshot: ProductSnapshot): ProductSnapshotV10 {
   delete entities["promptFragments"];
   delete entities["promptFragmentRevisions"];
   delete entities["promptAssemblies"];
-  delete entities["projectBootstrapCandidates"];
-  delete entities["projectBootstrapDecisions"];
-  delete entities["projectBootstrapOperations"];
   delete entities["projectWorkspaceBindings"];
   delete entities["agentVersions"];
   delete entities["projectWorkBlocks"];

@@ -233,7 +233,7 @@ Lifecycle Script、配置/权限、Workflow/迁移、测试/文档，以及删�
 
 1. 可执行Tool不得只用裸`localName`作为跨边界身份；必须带`runtimeOwner + source namespace`的稳定Capability ID，并冻结descriptor、input schema、实现/工件和scope Hash。
 2. Runtime Profile必须来自真实Runtime解析结果。来源碰撞、Extension加载diagnostic、资源不可读或实现Hash缺失时失败关闭，不得静默缩小目录或回退built-in。
-   Extension实现Hash必须覆盖受管工件或排序后的本地依赖树；只Hash入口文件不合格。`project_bootstrap_prepare`等受管名字还必须验证精确SourceInfo，不能凭裸名认领身份。
+   Extension实现Hash必须覆盖受管工件或排序后的本地依赖树；只Hash入口文件不合格。受管名字还必须验证精确SourceInfo，不能凭裸名认领身份。
 3. `readiness`只表示部署可用性，不代替Principal、Workspace或Run授权。
    `global/workspace_required/provider_defined`必须分别解析；缺Workspace Grant或Provider Scope时不得复制调用方Scope或回退global。
 4. `local_write/shell/external_write`在handler前必须提交Product Intent并消费绑定revision、Capability、参数Hash和scope的一次性Decision；Prompt Review不能代替Tool动作审核。

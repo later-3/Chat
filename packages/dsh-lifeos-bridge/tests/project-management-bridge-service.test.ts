@@ -50,9 +50,6 @@ test("普通DSH项目表面忠实呈现Application已编译的Provider可用性"
       fallbackIntent: "open_internal",
       binding: { providerKind: "dsh-project-management.v1", externalRef: "timeline" },
     });
-    assert.deepEqual(result.project.providerBindings, [
-      { providerKind: "local_git", workspaceRootId: "root_contentlab" },
-    ]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

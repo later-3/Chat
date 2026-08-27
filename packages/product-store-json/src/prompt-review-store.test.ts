@@ -330,9 +330,6 @@ describe("Prompt Review Product Snapshot完整性", () => {
       >;
       delete legacyEntities["promptAssemblies"];
       delete legacyEntities["agentVersions"];
-      delete legacyEntities["projectBootstrapCandidates"];
-      delete legacyEntities["projectBootstrapDecisions"];
-      delete legacyEntities["projectBootstrapOperations"];
       delete legacyEntities["projectWorkspaceBindings"];
       delete legacyEntities["projectWorkBlocks"];
       delete legacyEntities["projectWorkClaims"];
@@ -412,9 +409,6 @@ describe("Prompt Review Product Snapshot完整性", () => {
     const legacyEntities = structuredClone(snapshot.entities) as unknown as Record<string, unknown>;
     delete legacyEntities["promptAssemblies"];
     delete legacyEntities["agentVersions"];
-    delete legacyEntities["projectBootstrapCandidates"];
-    delete legacyEntities["projectBootstrapDecisions"];
-    delete legacyEntities["projectBootstrapOperations"];
     delete legacyEntities["projectWorkspaceBindings"];
     delete legacyEntities["projectWorkBlocks"];
     delete legacyEntities["projectWorkClaims"];

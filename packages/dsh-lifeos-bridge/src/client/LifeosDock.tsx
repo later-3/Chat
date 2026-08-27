@@ -8,7 +8,6 @@ import type {
   DshSendReviewDecisionRequest,
   NoteDecisionRequest,
   PromptReviewDecisionRequest,
-  ProjectBootstrapDecisionRequest,
   ToolExecutionDecisionRequest,
 } from "../contracts.ts";
 import type { LifeosProjection } from "../contracts.ts";
@@ -25,8 +24,6 @@ export interface LifeosDockInjected {
   decideBridgeDispatchReview: (
     request: BridgeChatDispatchReviewDecisionRequest,
   ) => Promise<boolean>;
-  decideProjectBootstrap: (request: ProjectBootstrapDecisionRequest) => Promise<boolean>;
-  openProjectWorkspace: (cwd: string) => Promise<void>;
 }
 
 export type LifeosDockProps = PropsRuntime<"conversation.input.dock"> &
@@ -304,10 +301,6 @@ export function actionableToolExecution(projection: LifeosProjection | null) {
 }
 
 export function shouldShowLifeosReviewDock(projection: LifeosProjection | null): boolean {
-  const projectBootstrapVisible =
-    projection?.projectBootstrap != null &&
-    (projection.projectBootstrap.candidate.status !== "rejected" ||
-      projection.projectBootstrap.binding !== undefined);
   return (
     hasActionablePlanReview(projection) ||
     hasActionableNoteReview(projection) ||
@@ -319,16 +312,8 @@ export function shouldShowLifeosReviewDock(projection: LifeosProjection | null):
     projection?.pendingNoteDecision != null ||
     projection?.pendingPromptReviewDecision != null ||
     projection?.pendingToolExecutionDecision != null ||
-    projectBootstrapVisible ||
     projection?.projectCoordination != null
   );
-}
-
-/** 恢复资格由Product Query根据Outbox/lease事实投影，Client不根据status猜测。 */
-export function canRequestProjectBootstrapRecovery(projectBootstrap: {
-  readonly recovery: { readonly canRecover: boolean };
-}): boolean {
-  return projectBootstrap.recovery.canRecover;
 }
 
 export function LifeosDock({
@@ -339,8 +324,6 @@ export function LifeosDock({
   decideToolExecution,
   decideDshSendReview,
   decideBridgeDispatchReview,
-  decideProjectBootstrap,
-  openProjectWorkspace,
 }: LifeosDockProps) {
   const state = useLifeos((value) => value);
   const [explanation, setExplanation] = useState("");
@@ -360,7 +343,6 @@ export function LifeosDock({
   const bridgeDispatchReview = projection?.bridgeDispatchReview ?? null;
   const reviewableNoteCandidate =
     canReviewNote && noteCandidate?.status === "under_review" ? noteCandidate : null;
-  const projectBootstrap = projection?.projectBootstrap ?? null;
   const projectCoordination = projection?.projectCoordination ?? null;
   if (!shouldShowLifeosReviewDock(projection)) return null;
 
@@ -803,138 +785,6 @@ export function LifeosDock({
           </>
         ) : null}
       </PromptAuditSurface>
-    );
-  }
-
-  if (projectBootstrap !== null) {
-    const candidate = projectBootstrap.candidate;
-    const statusLabel =
-      candidate.status === "prepared"
-        ? "等待你确认"
-        : candidate.status === "ready"
-          ? "初始化完成"
-          : candidate.status === "rejected"
-            ? "已取消创建"
-            : projectBootstrap.operation?.status === "failed"
-              ? "初始化失败，可重试"
-              : candidate.status === "outcome_unknown"
-                ? "结果未知，等待对账"
-                : candidate.status === "needs_attention"
-                  ? "需要处理"
-                  : "正在初始化";
-    const submitProjectBootstrap = async (
-      kind: ProjectBootstrapDecisionRequest["kind"],
-    ): Promise<void> => {
-      const trimmed = explanation.trim();
-      const request: ProjectBootstrapDecisionRequest = {
-        kind,
-        ...(kind === "reject" && trimmed !== "" ? { explanation: trimmed } : {}),
-        binding: {
-          projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
-          candidateRevision: candidate.revision,
-          candidateSha256: candidate.sha256,
-        },
-      };
-      if (await decideProjectBootstrap(request)) setExplanation("");
-    };
-    return (
-      <section
-        className="lifeos-card lifeos-project-bootstrap-card"
-        data-testid="lifeos-project-bootstrap-card"
-        aria-label="项目初始化审核"
-      >
-        <header className="lifeos-header">
-          <strong>创建项目 · {candidate.proposal.name}</strong>
-          <span className="lifeos-status">{statusLabel}</span>
-        </header>
-        <div className="lifeos-plan">
-          <div className="lifeos-objective">{candidate.proposal.objective}</div>
-          <ul>
-            <li>Plane：{candidate.preview.planeProjectLabel}</li>
-            <li>Workspace：{candidate.preview.workspaceLabel}</li>
-            <li>Git：初始化 main 分支仓库</li>
-          </ul>
-          {candidate.preview.initialModules.length === 0 ? null : (
-            <div className="lifeos-note-tags" aria-label="初始项目模块">
-              {candidate.preview.initialModules.map((module) => (
-                <span key={module}>{module}</span>
-              ))}
-            </div>
-          )}
-        </div>
-        {candidate.status === "prepared" ? (
-          <div className="lifeos-review" data-testid="lifeos-project-bootstrap-review">
-            <textarea
-              aria-label="拒绝原因"
-              value={explanation}
-              maxLength={1_000}
-              placeholder="拒绝时可填写原因（可选）"
-              onChange={(event) => setExplanation(event.currentTarget.value)}
-            />
-            <div className="lifeos-actions">
-              <button
-                type="button"
-                disabled={state.submitting}
-                onClick={() => void submitProjectBootstrap("reject")}
-              >
-                取消创建
-              </button>
-              <button
-                type="button"
-                className="lifeos-primary"
-                data-testid="lifeos-confirm-project-bootstrap"
-                disabled={state.submitting}
-                onClick={() => void submitProjectBootstrap("confirm")}
-              >
-                确认并创建
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {canRequestProjectBootstrapRecovery(projectBootstrap) ? (
-          <div className="lifeos-warning">
-            <p>
-              {projectBootstrap.operation?.errorCode ??
-                (projectBootstrap.recovery.reason === "legacy_dispatch_missing"
-                  ? "初始化未收口，检查Provider后可恢复。"
-                  : "初始化未完成，可重新对账。")}
-            </p>
-            <button
-              type="button"
-              disabled={state.submitting}
-              onClick={() => void submitProjectBootstrap("retry")}
-            >
-              {projectBootstrap.recovery.reason === "legacy_dispatch_missing"
-                ? "检查并恢复"
-                : "重新对账并继续"}
-            </button>
-          </div>
-        ) : null}
-        {projectBootstrap.binding === undefined ? null : (
-          <div className="lifeos-warning" data-testid="lifeos-project-bootstrap-ready">
-            <p>项目 Workspace 已验证，项目绑定已生效。</p>
-            <div className="lifeos-actions">
-              {projection?.projectBootstrapTargets?.workspaceCwd === undefined ? null : (
-                <button
-                  type="button"
-                  className="lifeos-primary"
-                  data-testid="lifeos-enter-project-workspace"
-                  onClick={() =>
-                    void openProjectWorkspace(projection.projectBootstrapTargets!.workspaceCwd!)
-                  }
-                >
-                  进入 Workspace
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-        {state.error === null ? null : (
-          <p className="lifeos-error" role="alert">
-            {state.error}
-          </p>
-        )}
-      </section>
     );
   }
 

@@ -118,7 +118,7 @@ DSH Agent设置 / Workflow配置
 当前公开管理面包括：
 
 - `GET /api/agent-profiles`与`GET /api/agent-profiles/:agentKey`：读取 Catalog、真实 Pi Runtime 基线和当前 Principal 的版本；可选严格 Query`workspaceRootId`只返回 Global + 该 Workspace 可用版本，并由 Executor 解析真实 scoped Pi 目录；
-- `POST /api/agent-profiles/:agentKey/versions`：当前只为已完成逐字段消费纵向的 Direct Agent 创建不可变完整版本；Project Bootstrap、Coding Executor 等只读显示真实基线，不能创建“可保存但执行时不生效”的假版本；
+- `POST /api/agent-profiles/:agentKey/versions`：当前只为已完成逐字段消费纵向的 Direct Agent 创建不可变完整版本；Coding Executor 等只读显示真实基线，不能创建“可保存但执行时不生效”的假版本；
 - Workflow Agent 节点保存命令：精确绑定一个版本，或恢复继承默认；
 - Workflow Run Configuration 的`agent_configuration`：选择版本或冻结结构化临时配置。
 
@@ -162,6 +162,6 @@ Agent 配置不是 Session 日志；Trajectory 不是 Agent Version；Debug Trac
 - Prompt 修改不能扩大 Tool/Workspace授权；Shell和写入仍受运行合同与人工审批治理。
 - Version 与 Workflow Revision 保留精确 ID/Hash和Runtime基线引用；运行工件变化时失败关闭，不会静默追随“最新版本”。
 - 新Version和Temporary都冻结有序`enabledCapabilityRefs`；RunSpec与Prompt Assembly v4继续携带完整Resolved Snapshot。历史裸名配置只读，不猜来源或扩大能力。
-- 当前仅`agent.direct`节点使用的 Direct Pi Coding Agent 完成完整 Version、Tools、Resources 和会话临时配置纵向；Project Bootstrap 的固定产品Tool合同、Coding Executor及其他 Agent Profile 仍只读展示既有Prompt/运行时合同，不能创建或绑定完整Version，也不能声称已经拥有同等可配置能力。
+- 当前仅`agent.direct`节点使用的 Direct Pi Coding Agent 完成完整 Version、Tools、Resources 和会话临时配置纵向；Coding Executor及其他 Agent Profile 仍只读展示既有Prompt/运行时合同，不能创建或绑定完整Version，也不能声称已经拥有同等可配置能力。
 - Pi 四类资源当前只支持整类继承或关闭；资源正文和Extension实现树会冻结Hash，但逐项资源选择仍是后续合同，不在本次结果中伪装完成。
 - DSH Tool/Skill/Plugin 目录与执行接缝尚未实现，这是明确的后续 Provider 纵向，不在本次交付中。

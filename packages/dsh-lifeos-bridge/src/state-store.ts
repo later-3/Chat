@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
@@ -178,28 +178,13 @@ const sessionBindingSchema = z
   })
   .strict();
 
-const projectBootstrapLifecycleSchema = z
-  .object({
-    schemaVersion: z.literal("chat-dsh-project-bootstrap-lifecycle.v1"),
-    lifecycleId: z.string().regex(/^pbl_[a-f0-9]{32}$/u),
-    status: z.enum(["active", "ready", "rejected", "failed_terminal"]),
-    bootstrapWorkflowSelection: workflowSelectionSchema,
-    /**
-     * 专用能力结束后恢复的普通会话选择。null明确表示系统默认；它在入口初始化时
-     * 冻结，不能用之后变化的用户偏好反推。
-     */
-    returnWorkflowSelection: workflowSelectionSchema.nullable(),
-  })
-  .strict();
-
 /** v13把“当前会话草稿”和“以后新会话偏好”改成不可混淆的持久字段。 */
 const legacyV13SessionBindingSchema = sessionBindingSchema
   .omit({ workflowSelection: true })
   .extend({
     sessionWorkflowSelection: workflowSelectionSchema.optional(),
-    projectBootstrapLifecycle: projectBootstrapLifecycleSchema.optional(),
   })
-  .strict();
+  .strip();
 
 /** v14只冻结了HTTP提交目标；strict旧格式不能静默接受v15状态字段。 */
 const legacyV14RequestSchema = requestSchema.safeExtend({
@@ -455,47 +440,6 @@ const emptyState = (): BridgeState => ({
   sessions: {},
 });
 
-function bootstrapLifecycleId(dshSessionId: string): string {
-  return `pbl_${createHash("sha256")
-    .update(`chat-dsh-bootstrap-lifecycle.v1\u0000${dshSessionId}`)
-    .digest("hex")
-    .slice(0, 32)}`;
-}
-
-export function isProjectBootstrapWorkflowSelection(
-  selection: z.infer<typeof workflowSelectionSchema> | undefined,
-): boolean {
-  return (
-    selection?.runConfiguration.overrides.some(
-      (override) =>
-        override.kind === "node_config" &&
-        override.field === "capabilityMode" &&
-        override.value === "project_bootstrap",
-    ) === true
-  );
-}
-
-/** 旧Bridge无法证明bootstrap选择来自专用入口；迁移时只剥离该高影响能力。 */
-function withoutProjectBootstrapCapability(
-  selection: z.infer<typeof workflowSelectionSchema> | undefined,
-): z.infer<typeof workflowSelectionSchema> | undefined {
-  if (selection === undefined || !isProjectBootstrapWorkflowSelection(selection)) return selection;
-  return workflowSelectionSchema.parse({
-    ...selection,
-    runConfiguration: {
-      ...selection.runConfiguration,
-      overrides: selection.runConfiguration.overrides.filter(
-        (override) =>
-          !(
-            override.kind === "node_config" &&
-            override.field === "capabilityMode" &&
-            override.value === "project_bootstrap"
-          ),
-      ),
-    },
-  });
-}
-
 /**
  * v15同时持久化每条Request的提交状态。所有v1-v14旧记录只按productRunId这一条
  * 可证明事实迁移：存在即bound，不存在即outcome_unknown；不能用Session、对象顺序、
@@ -545,21 +489,6 @@ function requireRequest(binding: SessionBinding, requestKey: string): RequestBin
   const request = binding.requests[requestKey];
   if (request === undefined) throw new Error("lifeos bridge request does not exist");
   return request;
-}
-
-function completeBootstrapLifecycleInBinding(
-  binding: SessionBinding,
-  status: "ready" | "rejected" | "failed_terminal",
-): boolean {
-  const lifecycle = binding.projectBootstrapLifecycle;
-  if (lifecycle === undefined || lifecycle.status !== "active") return false;
-  lifecycle.status = status;
-  if (lifecycle.returnWorkflowSelection === null) {
-    delete binding.sessionWorkflowSelection;
-  } else {
-    binding.sessionWorkflowSelection = lifecycle.returnWorkflowSelection;
-  }
-  return true;
 }
 
 /**
@@ -696,7 +625,6 @@ export class AtomicBridgeStateStore {
 
   /**
    * 只有HTTP前本地审核拒绝，或HTTP返回白名单确定性4xx，才能证明没有Product提交。
-   * 对bootstrap 4xx可在同一次原子写中消费lifecycle，避免两个本地事实之间崩溃。
    */
   async markRequestDefinitelyUncommitted(
     dshSessionId: string,
@@ -704,7 +632,6 @@ export class AtomicBridgeStateStore {
     requestKey: string,
     options: {
       readonly reason: "local_review_rejected" | "product_definitely_uncommitted";
-      readonly failProjectBootstrapLifecycle?: boolean;
     },
   ): Promise<void> {
     await this.mutateSession(dshSessionId, createSessionCommandId, (binding) => {
@@ -720,9 +647,6 @@ export class AtomicBridgeStateStore {
         throw new Error("response-unknown request cannot be cleared by a later local rejection");
       }
       request.submissionStatus = "definitely_uncommitted";
-      if (options.failProjectBootstrapLifecycle === true) {
-        completeBootstrapLifecycleInBinding(binding, "failed_terminal");
-      }
     });
   }
 
@@ -737,17 +661,11 @@ export class AtomicBridgeStateStore {
     scope: "session" | "new_sessions" | "session_and_new_sessions" = "session",
   ): Promise<void> {
     dshSessionIdSchema.parse(dshSessionId);
-    if (selection !== null && isProjectBootstrapWorkflowSelection(selection)) {
-      throw new Error("project_bootstrap workflow selection requires the dedicated lifecycle");
-    }
     await this.serial(async () => {
       const current = await this.load();
       const next = structuredClone(current);
       if (scope === "session" || scope === "session_and_new_sessions") {
         const binding = this.getOrCreateSessionBinding(next, dshSessionId, createSessionCommandId);
-        if (binding.projectBootstrapLifecycle?.status === "active") {
-          throw new Error("lifeos project bootstrap workflow is frozen until lifecycle exit");
-        }
         if (selection === null) {
           delete binding.sessionWorkflowSelection;
         } else {
@@ -782,64 +700,6 @@ export class AtomicBridgeStateStore {
     dshSessionIdSchema.parse(dshSessionId);
     await this.mutateSession(dshSessionId, createSessionCommandId, (binding) => {
       binding.promptSelection = selection;
-    });
-  }
-
-  /** 专用入口一次性冻结bootstrap选择、返回选择和Prompt，避免多次写入间的半状态。 */
-  async initializeProjectBootstrapSession(
-    dshSessionId: string,
-    createSessionCommandId: string,
-    bootstrapWorkflowSelection: z.infer<typeof workflowSelectionSchema>,
-    promptSelection: z.infer<typeof promptSelectionRequestSchema>["promptSelection"],
-  ): Promise<void> {
-    if (!isProjectBootstrapWorkflowSelection(bootstrapWorkflowSelection)) {
-      throw new Error("project bootstrap lifecycle requires its dedicated workflow selection");
-    }
-    await this.mutateSession(dshSessionId, createSessionCommandId, (binding) => {
-      const lifecycleId = bootstrapLifecycleId(dshSessionId);
-      const existing = binding.projectBootstrapLifecycle;
-      if (existing !== undefined) {
-        if (
-          existing.lifecycleId !== lifecycleId ||
-          existing.status !== "active" ||
-          JSON.stringify(existing.bootstrapWorkflowSelection) !==
-            JSON.stringify(bootstrapWorkflowSelection)
-        ) {
-          throw new Error("lifeos project bootstrap lifecycle already exists with other semantics");
-        }
-      } else {
-        binding.projectBootstrapLifecycle = {
-          schemaVersion: "chat-dsh-project-bootstrap-lifecycle.v1",
-          lifecycleId,
-          status: "active",
-          bootstrapWorkflowSelection,
-          returnWorkflowSelection: binding.sessionWorkflowSelection ?? null,
-        };
-      }
-      binding.sessionWorkflowSelection = bootstrapWorkflowSelection;
-      binding.promptSelection = promptSelection;
-    });
-  }
-
-  /** Product终态只消费一次专用能力；正式建项事实仍全部留在Product Store。 */
-  async completeProjectBootstrapLifecycle(
-    dshSessionId: string,
-    createSessionCommandId: string,
-    status: "ready" | "rejected" | "failed_terminal",
-    preparedRequestKey?: string,
-  ): Promise<void> {
-    await this.mutateSession(dshSessionId, createSessionCommandId, (binding) => {
-      const completed = completeBootstrapLifecycleInBinding(binding, status);
-      if (!completed || preparedRequestKey === undefined) return;
-      const request = requireRequest(binding, preparedRequestKey);
-      if (request.submissionStatus !== "prepared") return;
-      // ensureRequest可能在Product终态查询前冻结了专用选择。只有确定尚未越过HTTP
-      // 边界的prepared请求，才能与lifecycle终态在同一次原子写中恢复普通选择。
-      if (binding.sessionWorkflowSelection === undefined) {
-        delete request.workflowSelection;
-      } else {
-        request.workflowSelection = structuredClone(binding.sessionWorkflowSelection);
-      }
     });
   }
 
@@ -981,10 +841,7 @@ export class AtomicBridgeStateStore {
                       ? legacy.data.preferredWorkflowSelection
                       : null;
                   if (preference === null) return null;
-                  return (
-                    withoutProjectBootstrapCapability(workflowSelectionSchema.parse(preference)) ??
-                    null
-                  );
+                  return workflowSelectionSchema.parse(preference);
                 })(),
                 sessions: Object.fromEntries(
                   Object.entries(legacy.data.sessions).map(([sessionId, binding]) => {
@@ -993,15 +850,13 @@ export class AtomicBridgeStateStore {
                       workflowSelection === undefined
                         ? undefined
                         : workflowSelectionSchema.parse(workflowSelection);
-                    const normalizedWorkflowSelection =
-                      withoutProjectBootstrapCapability(legacyWorkflowSelection);
+                    const normalizedWorkflowSelection = legacyWorkflowSelection;
                     return [
                       sessionId,
                       {
                         ...bindingWithoutWorkflow,
                         // 冻结Request可能已经越过Product Command边界，只是响应在rememberRun前丢失。
-                        // 迁移只增加本地路由目标，不改Product payload；普通新提交仍由Application
-                        // 的专用授权门拒绝。
+                        // 迁移只增加本地路由目标，不改Product payload。
                         requests: requestsFromPreV14(binding),
                         dshSendReviewEnabled:
                           "dshSendReviewEnabled" in binding ? binding.dshSendReviewEnabled : false,

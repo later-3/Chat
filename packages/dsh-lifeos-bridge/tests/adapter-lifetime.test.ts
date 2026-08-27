@@ -36,22 +36,15 @@ async function waitForReview(
   throw new Error("DSH send review did not open");
 }
 
-function historicalBootstrapSelection() {
+function historicalDirectSelection() {
   return workflowSelectionSchema.parse({
     workflowDefinitionRevisionId: "wfr_systemdirectagentv1",
     definitionSha256: "d".repeat(64),
-    title: "创建项目",
+    title: "直接执行",
     blueprintKey: "direct",
     runConfiguration: {
       schemaVersion: "workflow-run-configuration.v1",
-      overrides: [
-        {
-          kind: "node_config",
-          definitionNodeId: "direct.agent",
-          field: "capabilityMode",
-          value: "project_bootstrap",
-        },
-      ],
+      overrides: [],
     },
   });
 }
@@ -76,7 +69,7 @@ async function writeV12UnknownFirstRequest(
   input: GenerateOptions,
 ): Promise<{ readonly requestKey: string; readonly messageCommandId: string }> {
   const prompt = lastUserPrompt(input.messages);
-  const bootstrap = historicalBootstrapSelection();
+  const selection = historicalDirectSelection();
   const messageCommandId = stableCommandId(
     "submit-message",
     dshSessionId,
@@ -87,7 +80,7 @@ async function writeV12UnknownFirstRequest(
     statePath,
     `${JSON.stringify({
       schemaVersion: "chat-dsh-lifeos-state.v12",
-      preferredWorkflowSelection: bootstrap,
+      preferredWorkflowSelection: selection,
       sessions: {
         [dshSessionId]: {
           createSessionCommandId: stableCommandId("create-session", dshSessionId),
@@ -97,10 +90,10 @@ async function writeV12UnknownFirstRequest(
               dshMessageId: prompt.messageId,
               userTextSha256: prompt.textSha256,
               messageCommandId,
-              workflowSelection: bootstrap,
+              workflowSelection: selection,
             },
           },
-          workflowSelection: bootstrap,
+          workflowSelection: selection,
           dshSendReviewEnabled: false,
           bridgeDispatchReviewEnabled: false,
         },
@@ -258,8 +251,7 @@ test("enabled DSH send review blocks every Chat write until approve and reject w
         .stream(input("dsh-review-approve", "并发消息不得越过prepared A"))
         [Symbol.asyncIterator]()
         .next(),
-      (error) =>
-        error instanceof LlmError && error.code === "LIFEOS_PROJECT_BOOTSTRAP_REQUEST_PENDING",
+      (error) => error instanceof LlmError && error.code === "LIFEOS_PREVIOUS_REQUEST_PENDING",
     );
     const whilePrepared = await state.readSession("dsh-review-approve");
     assert.equal(Object.keys(whilePrepared?.requests ?? {}).length, 1);
@@ -422,15 +414,13 @@ test("v12 unknown A blocks B, Receipt replay binds A, and a definite 4xx alone r
       await state.ready();
       await assert.rejects(
         new LifeosLlmAdapter(chat, state).stream(inputB)[Symbol.asyncIterator]().next(),
-        (error) =>
-          error instanceof LlmError && error.code === "LIFEOS_PROJECT_BOOTSTRAP_REQUEST_PENDING",
+        (error) => error instanceof LlmError && error.code === "LIFEOS_PREVIOUS_REQUEST_PENDING",
       );
       const binding = await state.readSession(sessionId);
       assert.equal(submissions, 0);
       assert.equal(Object.keys(binding?.requests ?? {}).length, 1);
       assert.equal(binding?.currentRequestKey, frozen.requestKey);
       assert.equal(binding?.requests[frozen.requestKey]?.submissionStatus, "outcome_unknown");
-      assert.equal(binding?.projectBootstrapLifecycle, undefined);
     }
 
     // B：同一A只能以原Command/原首轮路由恢复，随后一次原子写绑定Session/Message/Run。
@@ -617,8 +607,7 @@ test("transport, every 5xx, and 2xx contract damage keep A unknown and B blocked
       await assert.rejects(adapter.stream(inputA)[Symbol.asyncIterator]().next());
       await assert.rejects(
         adapter.stream(inputB)[Symbol.asyncIterator]().next(),
-        (error) =>
-          error instanceof LlmError && error.code === "LIFEOS_PROJECT_BOOTSTRAP_REQUEST_PENDING",
+        (error) => error instanceof LlmError && error.code === "LIFEOS_PREVIOUS_REQUEST_PENDING",
       );
       const binding = await state.readSession(sessionId);
       assert.equal(submissions, 1, scenario.label);
@@ -695,8 +684,7 @@ test("跨对象矛盾的2xx响应在Bridge绑定前失败并持续阻止B", asyn
 
       await assert.rejects(
         adapter.stream(inputB)[Symbol.asyncIterator]().next(),
-        (error) =>
-          error instanceof LlmError && error.code === "LIFEOS_PROJECT_BOOTSTRAP_REQUEST_PENDING",
+        (error) => error instanceof LlmError && error.code === "LIFEOS_PREVIOUS_REQUEST_PENDING",
       );
       assert.equal(submissions, 1);
       assert.equal(Object.keys((await state.readSession(sessionId))?.requests ?? {}).length, 1);
@@ -740,10 +728,6 @@ test("prepared A与并发unknown A都在全部Chat调用和状态写入前阻止
       const bytesBefore = await readFile(statePath, "utf8");
       let chatCalls = 0;
       const chat = {
-        getCurrentProjectBootstrap: async () => {
-          chatCalls += 1;
-          return null;
-        },
         getRun: async () => {
           chatCalls += 1;
           throw new Error("B不得查询Run");
@@ -759,8 +743,7 @@ test("prepared A与并发unknown A都在全部Chat调用和状态写入前阻止
       } as unknown as ChatProductClient;
       await assert.rejects(
         new LifeosLlmAdapter(chat, state).stream(inputB)[Symbol.asyncIterator]().next(),
-        (error) =>
-          error instanceof LlmError && error.code === "LIFEOS_PROJECT_BOOTSTRAP_REQUEST_PENDING",
+        (error) => error instanceof LlmError && error.code === "LIFEOS_PREVIOUS_REQUEST_PENDING",
       );
       assert.equal(chatCalls, 0);
       assert.equal(await readFile(statePath, "utf8"), bytesBefore);
@@ -803,8 +786,7 @@ test("prepared A与并发unknown A都在全部Chat调用和状态写入前阻止
       await entered;
       await assert.rejects(
         adapter.stream(inputB)[Symbol.asyncIterator]().next(),
-        (error) =>
-          error instanceof LlmError && error.code === "LIFEOS_PROJECT_BOOTSTRAP_REQUEST_PENDING",
+        (error) => error instanceof LlmError && error.code === "LIFEOS_PREVIOUS_REQUEST_PENDING",
       );
       releaseSubmit();
       await assert.rejects(pendingA);
@@ -846,7 +828,7 @@ test("migrated v14 unknown A cannot bypass enabled DSH or Bridge pre-send review
                   prompt.messageId,
                   prompt.textSha256,
                 ),
-                workflowSelection: historicalBootstrapSelection(),
+                workflowSelection: historicalDirectSelection(),
                 submissionTarget: "first_message",
               },
             },
@@ -904,186 +886,6 @@ test("migrated v14 unknown A cannot bypass enabled DSH or Bridge pre-send review
         "outcome_unknown",
         rejectedAt,
       );
-    }
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("v13 active lifecycle still blocks B, while bound history with terminal lifecycle releases B", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-v13-lifecycle-matrix-"));
-  const bootstrap = historicalBootstrapSelection();
-  try {
-    // E：active lifecycle + existing Session的原有A/B guard保持不变。
-    {
-      const statePath = join(directory, "case-e.json");
-      const sessionId = "dsh-v13-active-guard";
-      const productSessionId = "psn_v13activeguard1";
-      const inputA = messageInput(sessionId, "v13活动初始化A");
-      const inputB = messageInput(sessionId, "v13活动期间B");
-      const promptA = lastUserPrompt(inputA.messages);
-      await writeFile(
-        statePath,
-        `${JSON.stringify({
-          schemaVersion: "chat-dsh-lifeos-state.v13",
-          newSessionWorkflowPreference: null,
-          sessions: {
-            [sessionId]: {
-              createSessionCommandId: stableCommandId("create-session", sessionId),
-              chatSessionId: productSessionId,
-              currentRequestKey: promptA.requestKey,
-              requests: {
-                [promptA.requestKey]: {
-                  dshMessageId: promptA.messageId,
-                  userTextSha256: promptA.textSha256,
-                  messageCommandId: stableCommandId(
-                    "submit-message",
-                    sessionId,
-                    promptA.messageId,
-                    promptA.textSha256,
-                  ),
-                  workflowSelection: bootstrap,
-                },
-              },
-              sessionWorkflowSelection: bootstrap,
-              dshSendReviewEnabled: false,
-              bridgeDispatchReviewEnabled: false,
-              projectBootstrapLifecycle: {
-                schemaVersion: "chat-dsh-project-bootstrap-lifecycle.v1",
-                lifecycleId: `pbl_${"a".repeat(32)}`,
-                status: "active",
-                bootstrapWorkflowSelection: bootstrap,
-                returnWorkflowSelection: null,
-              },
-            },
-          },
-        })}\n`,
-        { mode: 0o600 },
-      );
-      let chatCalls = 0;
-      const chat = {
-        getCurrentProjectBootstrap: async () => {
-          chatCalls += 1;
-          return null;
-        },
-        getRun: async () => {
-          chatCalls += 1;
-          throw new Error("active lifecycle B不得查询Run");
-        },
-        submitFirstMessageFromDispatch: async () => {
-          chatCalls += 1;
-          throw new Error("active lifecycle B不得提交");
-        },
-        submitMessageFromDispatch: async () => {
-          chatCalls += 1;
-          throw new Error("active lifecycle B不得提交");
-        },
-      } as unknown as ChatProductClient;
-      const state = new AtomicBridgeStateStore(statePath);
-      await state.ready();
-      const bytesBefore = await readFile(statePath, "utf8");
-      await assert.rejects(
-        new LifeosLlmAdapter(chat, state).stream(inputB)[Symbol.asyncIterator]().next(),
-        (error) =>
-          error instanceof LlmError && error.code === "LIFEOS_PROJECT_BOOTSTRAP_REQUEST_PENDING",
-      );
-      const binding = await state.readSession(sessionId);
-      assert.equal(chatCalls, 0);
-      assert.equal(await readFile(statePath, "utf8"), bytesBefore);
-      assert.equal(Object.keys(binding?.requests ?? {}).length, 1);
-      assert.equal(binding?.currentRequestKey, promptA.requestKey);
-      assert.equal(binding?.projectBootstrapLifecycle?.status, "active");
-    }
-
-    // F：已经bound的历史Request与terminal lifecycle都不再阻塞下一条普通消息。
-    {
-      const statePath = join(directory, "case-f.json");
-      const sessionId = "dsh-v13-terminal-bound";
-      const productSessionId = "psn_v13terminalbound1";
-      const inputA = messageInput(sessionId, "已绑定历史A");
-      const inputB = messageInput(sessionId, "终态后的普通B");
-      const promptA = lastUserPrompt(inputA.messages);
-      await writeFile(
-        statePath,
-        `${JSON.stringify({
-          schemaVersion: "chat-dsh-lifeos-state.v13",
-          newSessionWorkflowPreference: null,
-          sessions: {
-            [sessionId]: {
-              createSessionCommandId: stableCommandId("create-session", sessionId),
-              chatSessionId: productSessionId,
-              currentRequestKey: promptA.requestKey,
-              requests: {
-                [promptA.requestKey]: {
-                  dshMessageId: promptA.messageId,
-                  userTextSha256: promptA.textSha256,
-                  messageCommandId: stableCommandId(
-                    "submit-message",
-                    sessionId,
-                    promptA.messageId,
-                    promptA.textSha256,
-                  ),
-                  productUserMessageId: "msg_v13terminalbounduser1",
-                  productRunId: "run_v13terminalbound1",
-                  workflowSelection: bootstrap,
-                },
-              },
-              dshSendReviewEnabled: false,
-              bridgeDispatchReviewEnabled: false,
-              projectBootstrapLifecycle: {
-                schemaVersion: "chat-dsh-project-bootstrap-lifecycle.v1",
-                lifecycleId: `pbl_${"b".repeat(32)}`,
-                status: "ready",
-                bootstrapWorkflowSelection: bootstrap,
-                returnWorkflowSelection: null,
-              },
-            },
-          },
-        })}\n`,
-        { mode: 0o600 },
-      );
-      const submittedPlans: BridgeChatDispatchPlan["submitMessage"][] = [];
-      const chat = {
-        submitMessageFromDispatch: async (
-          observedSessionId: string,
-          plan: BridgeChatDispatchPlan["submitMessage"],
-        ) => {
-          assert.equal(observedSessionId, productSessionId);
-          submittedPlans.push(plan);
-          return {
-            message: { messageId: "msg_v13terminalbuser1", sessionId: productSessionId },
-            run: {
-              productRunId: "run_v13terminalb1",
-              sourceMessageId: "msg_v13terminalbuser1",
-              status: "succeeded",
-              finalMessageId: "msg_v13terminalbassistant1",
-            } as ChatRun,
-          };
-        },
-        getMessage: async () => ({
-          messageId: "msg_v13terminalbassistant1",
-          role: "assistant",
-          content: { format: "markdown", text: "终态没有永久阻塞" },
-        }),
-      } as unknown as ChatProductClient;
-      const state = new AtomicBridgeStateStore(statePath);
-      await state.ready();
-      const chunks: StreamChunk[] = [];
-      for await (const chunk of new LifeosLlmAdapter(chat, state).stream(inputB)) {
-        chunks.push(chunk);
-      }
-      const binding = await state.readSession(sessionId);
-      const requestB =
-        binding?.currentRequestKey === undefined
-          ? undefined
-          : binding.requests[binding.currentRequestKey];
-      assert.ok(chunks.some((chunk) => chunk.type === "finish"));
-      assert.equal(submittedPlans.length, 1);
-      assert.equal(submittedPlans[0]?.path, `/api/sessions/${productSessionId}/messages`);
-      assert.equal(submittedPlans[0]?.payload.workflowSelection, undefined);
-      assert.equal(binding?.requests[promptA.requestKey]?.submissionStatus, "bound");
-      assert.equal(requestB?.submissionStatus, "bound");
-      assert.equal(binding?.projectBootstrapLifecycle?.status, "ready");
     }
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -1316,391 +1118,6 @@ test("unknown submit outcome never reintroduces DSH Workspace instructions outsi
         ? undefined
         : binding.requests[binding.currentRequestKey];
     assert.equal(request?.workspaceInstructions, undefined);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("v12 half-bound first message uses the safe existing target for Receipt recovery", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-v12-bootstrap-unknown-"));
-  const statePath = join(directory, "state.json");
-  const sessionId = "dsh-v12-bootstrap-unknown";
-  const input: GenerateOptions = {
-    provider: "lifeos",
-    model: "workflow",
-    sessionId: sessionId as never,
-    messages: [
-      createUserMessage({
-        source: { kind: "user" },
-        content: [{ type: "text", text: "恢复响应未知的项目初始化" }],
-      }),
-    ],
-  };
-  try {
-    const capturingState = new AtomicBridgeStateStore(statePath);
-    await capturingState.ready();
-    const lostChat = {
-      submitFirstMessageFromDispatch: async () => {
-        throw new ChatProductApiError(
-          503,
-          "chat_api_unreachable",
-          true,
-          "retry_same_command",
-          "response lost after Product commit",
-        );
-      },
-    } as unknown as ChatProductClient;
-    await assert.rejects(
-      new LifeosLlmAdapter(lostChat, capturingState).stream(input)[Symbol.asyncIterator]().next(),
-    );
-    const captured = await capturingState.readSession(sessionId);
-    if (captured?.currentRequestKey === undefined) throw new Error("未冻结响应未知Request");
-    const request = captured.requests[captured.currentRequestKey];
-    if (request === undefined) throw new Error("响应未知Request不存在");
-    const bootstrapSelection = workflowSelectionSchema.parse({
-      workflowDefinitionRevisionId: "wfr_systemdirectagentv1",
-      definitionSha256: "d".repeat(64),
-      title: "创建项目",
-      blueprintKey: "direct",
-      runConfiguration: {
-        schemaVersion: "workflow-run-configuration.v1",
-        overrides: [
-          {
-            kind: "node_config",
-            definitionNodeId: "direct.agent",
-            field: "capabilityMode",
-            value: "project_bootstrap",
-          },
-        ],
-      },
-    });
-    const {
-      submissionTarget: _currentSubmissionTarget,
-      submissionStatus: _currentSubmissionStatus,
-      ...legacyRequest
-    } = request;
-    void _currentSubmissionTarget;
-    void _currentSubmissionStatus;
-    const frozenRequest = { ...legacyRequest, workflowSelection: bootstrapSelection };
-    await writeFile(
-      statePath,
-      `${JSON.stringify({
-        schemaVersion: "chat-dsh-lifeos-state.v12",
-        preferredWorkflowSelection: bootstrapSelection,
-        sessions: {
-          [sessionId]: {
-            createSessionCommandId: captured.createSessionCommandId,
-            chatSessionId: "psn_v12bootstraprecovered1",
-            currentRequestKey: captured.currentRequestKey,
-            requests: { [captured.currentRequestKey]: frozenRequest },
-            workflowSelection: bootstrapSelection,
-            dshSendReviewEnabled: false,
-            bridgeDispatchReviewEnabled: false,
-          },
-        },
-      })}\n`,
-      { mode: 0o600 },
-    );
-
-    const migratedState = new AtomicBridgeStateStore(statePath);
-    await migratedState.ready();
-    const migrated = await migratedState.readSession(sessionId);
-    assert.deepEqual(migrated?.requests[captured.currentRequestKey], {
-      ...frozenRequest,
-      submissionTarget: "existing_session",
-      submissionStatus: "outcome_unknown",
-    });
-    assert.equal(migrated?.chatSessionId, "psn_v12bootstraprecovered1");
-    let replayedPlan: { path: string; payload: unknown; commandId: string } | undefined;
-    let firstMessageSubmissions = 0;
-    const recoveredChat = {
-      submitFirstMessageFromDispatch: async () => {
-        firstMessageSubmissions += 1;
-        throw new Error("legacy state with a Session must not create a second Product Session");
-      },
-      submitMessageFromDispatch: async (
-        observedSessionId: string,
-        plan: {
-          path: string;
-          payload: unknown;
-          commandId: string;
-        },
-      ) => {
-        assert.equal(observedSessionId, "psn_v12bootstraprecovered1");
-        replayedPlan = plan;
-        return {
-          message: {
-            messageId: "msg_v12bootstraprecovereduser1",
-            sessionId: "psn_v12bootstraprecovered1",
-          },
-          run: {
-            productRunId: "run_v12bootstraprecovered1",
-            status: "succeeded",
-            finalMessageId: "msg_v12bootstraprecoveredassistant1",
-          } as ChatRun,
-        };
-      },
-      getMessage: async () => ({
-        messageId: "msg_v12bootstraprecoveredassistant1",
-        role: "assistant",
-        content: { format: "markdown", text: "已从Receipt恢复" },
-      }),
-    } as unknown as ChatProductClient;
-
-    const chunks: StreamChunk[] = [];
-    for await (const chunk of new LifeosLlmAdapter(recoveredChat, migratedState).stream(input)) {
-      chunks.push(chunk);
-    }
-    assert.ok(chunks.some((chunk) => chunk.type === "finish"));
-    assert.equal(replayedPlan?.path, "/api/sessions/psn_v12bootstraprecovered1/messages");
-    assert.equal(firstMessageSubmissions, 0);
-    assert.equal(replayedPlan?.commandId, request.messageCommandId);
-    assert.deepEqual((replayedPlan?.payload as { workflowSelection?: unknown }).workflowSelection, {
-      kind: "published_revision",
-      workflowDefinitionRevisionId: bootstrapSelection.workflowDefinitionRevisionId,
-      definitionSha256: bootstrapSelection.definitionSha256,
-      runConfiguration: bootstrapSelection.runConfiguration,
-    });
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("v12 composite half-binding persists a safe target and recovers the first Receipt", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-v12-composite-half-binding-"));
-  const statePath = join(directory, "state.json");
-  const sessionId = "dsh-v12-composite-half-binding";
-  const productSessionId = "psn_v12composite1";
-  const input: GenerateOptions = {
-    provider: "lifeos",
-    model: "workflow",
-    sessionId: sessionId as never,
-    messages: [
-      createUserMessage({
-        source: { kind: "user" },
-        content: [{ type: "text", text: "恢复旧首轮A" }],
-      }),
-    ],
-  };
-  const prompt = lastUserPrompt(input.messages);
-  const bootstrapSelection = workflowSelectionSchema.parse({
-    workflowDefinitionRevisionId: "wfr_systemdirectagentv1",
-    definitionSha256: "d".repeat(64),
-    title: "创建项目",
-    blueprintKey: "direct",
-    runConfiguration: {
-      schemaVersion: "workflow-run-configuration.v1",
-      overrides: [
-        {
-          kind: "node_config",
-          definitionNodeId: "direct.agent",
-          field: "capabilityMode",
-          value: "project_bootstrap",
-        },
-      ],
-    },
-  });
-  try {
-    await writeFile(
-      statePath,
-      `${JSON.stringify({
-        schemaVersion: "chat-dsh-lifeos-state.v12",
-        preferredWorkflowSelection: bootstrapSelection,
-        sessions: {
-          [sessionId]: {
-            createSessionCommandId: stableCommandId("create-session", sessionId),
-            chatSessionId: productSessionId,
-            currentRequestKey: prompt.requestKey,
-            requests: {
-              [prompt.requestKey]: {
-                dshMessageId: prompt.messageId,
-                userTextSha256: prompt.textSha256,
-                messageCommandId: stableCommandId(
-                  "submit-message",
-                  sessionId,
-                  prompt.messageId,
-                  prompt.textSha256,
-                ),
-                workflowSelection: bootstrapSelection,
-                promptSelection: {
-                  schemaVersion: "prompt-turn-selection-input.v1",
-                  regions: [],
-                },
-              },
-              "request-b-bound": {
-                dshMessageId: "msg_v12compositeb1",
-                userTextSha256: "b".repeat(64),
-                messageCommandId: stableCommandId("submit-message", sessionId, "request-b"),
-                productUserMessageId: "msg_v12compositebuser1",
-                productRunId: "run_v12compositeb1",
-                workflowSelection: bootstrapSelection,
-                promptSelection: {
-                  schemaVersion: "prompt-turn-selection-input.v1",
-                  regions: [],
-                },
-              },
-            },
-            workflowSelection: bootstrapSelection,
-            dshSendReviewEnabled: false,
-            bridgeDispatchReviewEnabled: false,
-          },
-        },
-      })}\n`,
-      { mode: 0o600 },
-    );
-
-    const state = new AtomicBridgeStateStore(statePath);
-    await state.ready();
-    const migrated = await state.readSession(sessionId);
-    assert.equal(migrated?.requests[prompt.requestKey]?.submissionTarget, "existing_session");
-    let firstSubmissions = 0;
-    let replayedPath: string | undefined;
-    const chat = {
-      submitFirstMessageFromDispatch: async () => {
-        firstSubmissions += 1;
-        throw new Error("composite legacy target must stay persisted");
-      },
-      submitMessageFromDispatch: async (observedSessionId: string, plan: { path: string }) => {
-        assert.equal(observedSessionId, productSessionId);
-        replayedPath = plan.path;
-        return {
-          message: { messageId: "msg_v12compositeauser1", sessionId: productSessionId },
-          run: {
-            productRunId: "run_v12compositea1",
-            sourceMessageId: "msg_v12compositeauser1",
-            status: "succeeded",
-            finalMessageId: "msg_v12compositeaassistant1",
-          } as ChatRun,
-        };
-      },
-      getMessage: async () => ({
-        messageId: "msg_v12compositeaassistant1",
-        role: "assistant",
-        content: { format: "markdown", text: "复合历史已恢复" },
-      }),
-    } as unknown as ChatProductClient;
-
-    const chunks: StreamChunk[] = [];
-    for await (const chunk of new LifeosLlmAdapter(chat, state).stream(input)) chunks.push(chunk);
-    assert.ok(chunks.some((chunk) => chunk.type === "finish"));
-    assert.equal(firstSubmissions, 0);
-    assert.equal(replayedPath, `/api/sessions/${productSessionId}/messages`);
-    assert.equal(
-      (await state.readSession(sessionId))?.requests[prompt.requestKey]?.submissionTarget,
-      "existing_session",
-    );
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test("v13 terminal lifecycle keeps a half-bound Request recoverable on the ordinary route", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "chat-dsh-v13-terminal-bootstrap-replay-"));
-  const statePath = join(directory, "state.json");
-  const sessionId = "dsh-v13-terminal-bootstrap-replay";
-  const productSessionId = "psn_v13terminalbootstrap1";
-  const input: GenerateOptions = {
-    provider: "lifeos",
-    model: "workflow",
-    sessionId: sessionId as never,
-    messages: [
-      createUserMessage({
-        source: { kind: "user" },
-        content: [{ type: "text", text: "恢复已完成的项目初始化首轮" }],
-      }),
-    ],
-  };
-  const prompt = lastUserPrompt(input.messages);
-  const bootstrapSelection = workflowSelectionSchema.parse({
-    workflowDefinitionRevisionId: "wfr_systemdirectagentv1",
-    definitionSha256: "d".repeat(64),
-    title: "创建项目",
-    blueprintKey: "direct",
-    runConfiguration: {
-      schemaVersion: "workflow-run-configuration.v1",
-      overrides: [
-        {
-          kind: "node_config",
-          definitionNodeId: "direct.agent",
-          field: "capabilityMode",
-          value: "project_bootstrap",
-        },
-      ],
-    },
-  });
-  try {
-    await writeFile(
-      statePath,
-      `${JSON.stringify({
-        schemaVersion: "chat-dsh-lifeos-state.v13",
-        newSessionWorkflowPreference: null,
-        sessions: {
-          [sessionId]: {
-            createSessionCommandId: stableCommandId("create-session", sessionId),
-            chatSessionId: productSessionId,
-            currentRequestKey: prompt.requestKey,
-            requests: {
-              [prompt.requestKey]: {
-                dshMessageId: prompt.messageId,
-                userTextSha256: prompt.textSha256,
-                messageCommandId: stableCommandId(
-                  "submit-message",
-                  sessionId,
-                  prompt.messageId,
-                  prompt.textSha256,
-                ),
-                workflowSelection: bootstrapSelection,
-                promptSelection: {
-                  schemaVersion: "prompt-turn-selection-input.v1",
-                  regions: [],
-                },
-              },
-            },
-            dshSendReviewEnabled: false,
-            bridgeDispatchReviewEnabled: false,
-            projectBootstrapLifecycle: {
-              schemaVersion: "chat-dsh-project-bootstrap-lifecycle.v1",
-              lifecycleId: `pbl_${"a".repeat(32)}`,
-              status: "ready",
-              bootstrapWorkflowSelection: bootstrapSelection,
-              returnWorkflowSelection: null,
-            },
-          },
-        },
-      })}\n`,
-      { mode: 0o600 },
-    );
-
-    const state = new AtomicBridgeStateStore(statePath);
-    await state.ready();
-    const migrated = await state.readSession(sessionId);
-    assert.equal(migrated?.requests[prompt.requestKey]?.submissionTarget, "existing_session");
-    let replayedPath: string | undefined;
-    const chat = {
-      submitMessageFromDispatch: async (observedSessionId: string, plan: { path: string }) => {
-        assert.equal(observedSessionId, productSessionId);
-        replayedPath = plan.path;
-        return {
-          message: { messageId: "msg_v13terminalbootstrapuser1", sessionId: productSessionId },
-          run: {
-            productRunId: "run_v13terminalbootstrap1",
-            sourceMessageId: "msg_v13terminalbootstrapuser1",
-            status: "succeeded",
-            finalMessageId: "msg_v13terminalbootstrapassistant1",
-          } as ChatRun,
-        };
-      },
-      getMessage: async () => ({
-        messageId: "msg_v13terminalbootstrapassistant1",
-        role: "assistant",
-        content: { format: "markdown", text: "终态专用Receipt已恢复" },
-      }),
-    } as unknown as ChatProductClient;
-
-    const chunks: StreamChunk[] = [];
-    for await (const chunk of new LifeosLlmAdapter(chat, state).stream(input)) chunks.push(chunk);
-    assert.ok(chunks.some((chunk) => chunk.type === "finish"));
-    assert.equal(replayedPath, `/api/sessions/${productSessionId}/messages`);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

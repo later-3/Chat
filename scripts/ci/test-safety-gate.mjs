@@ -27,9 +27,6 @@ const CHILD_ENV_ALLOWLIST = Object.freeze([
   "NPM_CONFIG_REGISTRY",
   "npm_config_registry",
   "CHAT_REPO_ROOT",
-  "CHAT_PLANE_CE_REAL_TEST_PROFILE",
-  "CHAT_PLANE_CE_REAL_TEST_MODULES_JSON",
-  "CHAT_PLANE_CE_REAL_TEST_REUSE",
 ]);
 const SENSITIVE_ENV_NAME =
   /(?:_KEY(?:_|$)|_TOKEN(?:_|$)|_SECRET(?:_|$)|_CREDENTIAL|_AUTH|_PASSWORD(?:_|$)|_COOKIE(?:_|$))/u;

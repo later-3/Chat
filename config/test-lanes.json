@@ -58,11 +58,6 @@
       "runner": "covered-by-command"
     },
     {
-      "path": "apps/dsh-web/e2e/dsh-project-bootstrap-real.spec.ts",
-      "lane": "browser",
-      "runner": "covered-by-command"
-    },
-    {
       "path": "apps/dsh-web/e2e/dsh-prompt-studio-real.spec.ts",
       "lane": "browser",
       "runner": "covered-by-command"
@@ -104,11 +99,6 @@
     },
     {
       "path": "packages/application/src/planning-workflow-projection.test.ts",
-      "lane": "core",
-      "runner": "vitest"
-    },
-    {
-      "path": "packages/application/src/project-bootstrap-use-cases.test.ts",
       "lane": "core",
       "runner": "vitest"
     },
@@ -283,11 +273,6 @@
       "runner": "vitest"
     },
     {
-      "path": "packages/domain/src/project-bootstrap.test.ts",
-      "lane": "core",
-      "runner": "vitest"
-    },
-    {
       "path": "packages/domain/src/project.test.ts",
       "lane": "core",
       "runner": "vitest"
@@ -409,16 +394,6 @@
     },
     {
       "path": "packages/dsh-lifeos-bridge/tests/note-vertical-flow.test.ts",
-      "lane": "integration",
-      "runner": "node-tsx"
-    },
-    {
-      "path": "packages/dsh-lifeos-bridge/tests/project-bootstrap-flow.test.ts",
-      "lane": "integration",
-      "runner": "node-tsx"
-    },
-    {
-      "path": "packages/dsh-lifeos-bridge/tests/project-bootstrap-navigation.test.ts",
       "lane": "integration",
       "runner": "node-tsx"
     },
@@ -608,17 +583,7 @@
       "runner": "vitest"
     },
     {
-      "path": "packages/product-store-json/src/migrate-v16-to-v17.test.ts",
-      "lane": "compat",
-      "runner": "vitest"
-    },
-    {
       "path": "packages/product-store-json/src/migrate-v17-to-v18.test.ts",
-      "lane": "compat",
-      "runner": "vitest"
-    },
-    {
-      "path": "packages/product-store-json/src/migrate-v18-to-v19.test.ts",
       "lane": "compat",
       "runner": "vitest"
     },
@@ -633,18 +598,8 @@
       "runner": "vitest"
     },
     {
-      "path": "packages/project-runtime/src/plane-ce-bootstrap.test.ts",
-      "lane": "integration",
-      "runner": "vitest"
-    },
-    {
       "path": "packages/project-runtime/src/registry.test.ts",
       "lane": "contract",
-      "runner": "vitest"
-    },
-    {
-      "path": "packages/project-runtime/src/workspace-provisioner.test.ts",
-      "lane": "integration",
       "runner": "vitest"
     },
     {
@@ -1023,24 +978,9 @@
       "runner": "node"
     },
     {
-      "path": "scripts/plane-ce/manage.test.mjs",
-      "lane": "contract",
-      "runner": "node"
-    },
-    {
       "path": "scripts/workbench/fixed-code-server.test.mjs",
       "lane": "beta",
       "runner": "node"
-    },
-    {
-      "path": "apps/api/src/plane-coordination-client-credential.test.ts",
-      "lane": "contract",
-      "runner": "vitest"
-    },
-    {
-      "path": "apps/api/src/plane-project-coordination-routes.test.ts",
-      "lane": "contract",
-      "runner": "vitest"
     },
     {
       "path": "apps/api/src/project-management-routes.test.ts",
@@ -1063,18 +1003,8 @@
       "runner": "vitest"
     },
     {
-      "path": "packages/contracts/src/plane-project-coordination.test.ts",
-      "lane": "contract",
-      "runner": "vitest"
-    },
-    {
       "path": "packages/contracts/src/project-management.test.ts",
       "lane": "contract",
-      "runner": "vitest"
-    },
-    {
-      "path": "packages/domain/src/plane-project-coordination.test.ts",
-      "lane": "core",
       "runner": "vitest"
     },
     {
@@ -1099,21 +1029,6 @@
     },
     {
       "path": "packages/project-runtime/src/content-lab-resource.test.ts",
-      "lane": "core",
-      "runner": "vitest"
-    },
-    {
-      "path": "packages/project-runtime/src/plane-ce-coordination.test.ts",
-      "lane": "core",
-      "runner": "vitest"
-    },
-    {
-      "path": "packages/project-runtime/src/plane-ce-rollout-execution.test.ts",
-      "lane": "core",
-      "runner": "vitest"
-    },
-    {
-      "path": "packages/project-runtime/src/plane-ce-rollout-inspection.test.ts",
       "lane": "core",
       "runner": "vitest"
     },
@@ -1188,19 +1103,13 @@
       "name": "test:browser",
       "kind": "aggregate",
       "lanes": ["browser"],
-      "command": "pnpm test:browser:pwa-mobile && pnpm test:browser:planning && pnpm test:browser:prompt-studio && pnpm test:browser:trajectory && pnpm test:browser:project-bootstrap && pnpm test:browser:capability-governance"
+      "command": "pnpm test:browser:pwa-mobile && pnpm test:browser:planning && pnpm test:browser:prompt-studio && pnpm test:browser:trajectory && pnpm test:browser:capability-governance"
     },
     {
       "name": "test:browser:capability-governance",
       "kind": "lane",
       "lane": "browser",
       "command": "node scripts/e2e/run-dsh-mode.mjs capability-governance"
-    },
-    {
-      "name": "test:browser:project-bootstrap",
-      "kind": "lane",
-      "lane": "browser",
-      "command": "node scripts/e2e/run-dsh-mode.mjs project-bootstrap"
     },
     {
       "name": "test:browser:planning",
@@ -1269,12 +1178,6 @@
       "command": "node scripts/ci/test-safety-gate.mjs external --command-name=test:external:memory:response-drop --switch=CHAT_MEMORY_REAL_TEST -- pnpm --filter @chat/api exec tsx ../../scripts/memory/verify-response-drop.ts"
     },
     {
-      "name": "test:external:plane-ce",
-      "kind": "lane",
-      "lane": "external",
-      "command": "node scripts/ci/test-safety-gate.mjs external --command-name=test:external:plane-ce --switch=CHAT_PLANE_CE_REAL_TEST --credential=CHAT_PLANE_CE_API_TOKEN -- pnpm --filter @chat/api exec node --import tsx ../../scripts/plane-ce/verify-real-bootstrap.ts"
-    },
-    {
       "name": "test:integration",
       "kind": "lane",
       "lane": "integration",
@@ -1315,12 +1218,6 @@
       "kind": "lane",
       "lane": "paid",
       "command": "pnpm --filter @chat/pi-runtime test:paid:provider:bailian:note"
-    },
-    {
-      "name": "test:plane-ce:scripts",
-      "kind": "lane",
-      "lane": "contract",
-      "command": "node --test scripts/plane-ce/manage.test.mjs"
     },
     {
       "name": "test:workbench-runtime",

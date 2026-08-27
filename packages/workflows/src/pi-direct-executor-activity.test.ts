@@ -37,59 +37,58 @@ function capability(localName: string, capabilityId: string): ResolvedCapability
 }
 
 describe("Pi Direct qualified Capability activity projection", () => {
-  it.each([
-    [
-      "project_bootstrap_prepare",
-      "pi_direct:tool:managed_extension:chat:project_bootstrap_prepare",
-    ],
-    ["acme:probe", "pi_direct:tool:workspace_extension:0123456789abcdef0123:acme:probe"],
-  ])("%s无损保留localName、qualified ID、source sequence与source hash", (localName, id) => {
-    const snapshot = capability(localName, id);
-    const started = piDirectExecutorActivities(
-      scope,
-      piDirectExecutorEventSchema.parse({
-        operationId: "pio_qualifiedtool1",
-        sequence: 7,
-        timestamp: "2026-08-23T08:00:00.000Z",
-        type: "tool.intent_persisted",
-        sessionId: "pis_qualifiedtool1",
-        toolCallId: "call_qualifiedtool1",
-        toolName: localName,
-        inputSha256: SHA,
-        capability: snapshot,
-      }),
-    );
-    const completed = piDirectExecutorActivities(
-      scope,
-      piDirectExecutorEventSchema.parse({
-        operationId: "pio_qualifiedtool1",
-        sequence: 8,
-        timestamp: "2026-08-23T08:00:01.000Z",
-        type: "tool.completed",
-        sessionId: "pis_qualifiedtool1",
-        toolCallId: "call_qualifiedtool1",
-        toolName: localName,
-        resultSha256: "1".repeat(64),
-        capability: snapshot,
-      }),
-    );
-    expect(started).toEqual([
-      expect.objectContaining({
-        sourceSequence: 7,
-        toolName: localName,
-        capability: expect.objectContaining({
-          ref: expect.objectContaining({ capabilityId: id }),
-          sourceRef: expect.objectContaining({ artifactSha256: "e".repeat(64) }),
+  it.each([["acme:probe", "pi_direct:tool:workspace_extension:0123456789abcdef0123:acme:probe"]])(
+    "%s无损保留localName、qualified ID、source sequence与source hash",
+    (localName, id) => {
+      const snapshot = capability(localName, id);
+      const started = piDirectExecutorActivities(
+        scope,
+        piDirectExecutorEventSchema.parse({
+          operationId: "pio_qualifiedtool1",
+          sequence: 7,
+          timestamp: "2026-08-23T08:00:00.000Z",
+          type: "tool.intent_persisted",
+          sessionId: "pis_qualifiedtool1",
+          toolCallId: "call_qualifiedtool1",
+          toolName: localName,
+          inputSha256: SHA,
+          capability: snapshot,
         }),
-      }),
-    ]);
-    expect(completed).toEqual([
-      expect.objectContaining({
-        sourceSequence: 8,
-        phase: "completed",
-        toolName: localName,
-        capability: expect.objectContaining({ ref: expect.objectContaining({ capabilityId: id }) }),
-      }),
-    ]);
-  });
+      );
+      const completed = piDirectExecutorActivities(
+        scope,
+        piDirectExecutorEventSchema.parse({
+          operationId: "pio_qualifiedtool1",
+          sequence: 8,
+          timestamp: "2026-08-23T08:00:01.000Z",
+          type: "tool.completed",
+          sessionId: "pis_qualifiedtool1",
+          toolCallId: "call_qualifiedtool1",
+          toolName: localName,
+          resultSha256: "1".repeat(64),
+          capability: snapshot,
+        }),
+      );
+      expect(started).toEqual([
+        expect.objectContaining({
+          sourceSequence: 7,
+          toolName: localName,
+          capability: expect.objectContaining({
+            ref: expect.objectContaining({ capabilityId: id }),
+            sourceRef: expect.objectContaining({ artifactSha256: "e".repeat(64) }),
+          }),
+        }),
+      ]);
+      expect(completed).toEqual([
+        expect.objectContaining({
+          sourceSequence: 8,
+          phase: "completed",
+          toolName: localName,
+          capability: expect.objectContaining({
+            ref: expect.objectContaining({ capabilityId: id }),
+          }),
+        }),
+      ]);
+    },
+  );
 });

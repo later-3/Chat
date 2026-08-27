@@ -21,7 +21,7 @@ import {
   prepareProjectCandidateForReview,
   beginProjectAdvancement,
   adoptProjectConfiguration,
-  getProjectAgentOpeningPacket,
+  getProjectAgentOpeningPacketV2,
   prepareProjectAdvancementCandidate,
   proposeProjectConfiguration,
   decideProjectAdvancementCandidate,
@@ -352,12 +352,11 @@ describe("PS1 Project Intake Application纵向链", () => {
         rationale: "用户审核后采用软件交付管理配置。",
       },
     });
-    const opening = await getProjectAgentOpeningPacket(application, {
+    const opening = await getProjectAgentOpeningPacketV2(application, {
       principalId,
       query: {
         projectId,
         includeResourceContext: false,
-        refreshPlane: false,
       },
     });
     expect(opening.packet.management).toMatchObject({

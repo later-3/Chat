@@ -139,11 +139,6 @@ export function dshWebEnvironment(root, environment = process.env) {
     ...(environment.CHAT_PROJECT_ROOTS_JSON === undefined
       ? {}
       : { CHAT_PROJECT_ROOTS_JSON: environment.CHAT_PROJECT_ROOTS_JSON }),
-    // Bridge只需要把已提交Binding中的rootId+一级目录解析回受管Workspace路径。
-    // Plane Token/Base URL仍只属于API进程；绝不把Provider凭据传给DSH插件宿主。
-    ...(environment.CHAT_PROJECT_CREATION_ROOTS_JSON === undefined
-      ? {}
-      : { CHAT_PROJECT_CREATION_ROOTS_JSON: environment.CHAT_PROJECT_CREATION_ROOTS_JSON }),
     // 服务器部署模式：公开主机名与认证文件路径（路径不是凭据；口令散列与
     // 会话密钥只存在于文件内容中，绝不进入环境变量值）。未设置时这些键不存在，
     // 网关与 bridge 保持纯 loopback 姿态。

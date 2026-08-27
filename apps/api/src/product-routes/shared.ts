@@ -32,8 +32,6 @@ export type ProductRouter = Hono<{ Variables: Variables }>;
 export interface ProductRouteContext {
   readonly deps: ApplicationDeps;
   readonly principalId: PrincipalId;
-  readonly planeEnabled: boolean;
-  readonly planeCoordinationCredential?: string;
 }
 
 export type Variables = { requestId: RequestId };

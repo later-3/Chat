@@ -135,7 +135,7 @@ Resource Compiler再按Work选择：
 | 只读扫描、Manifest、Context选择 | `packages/project-runtime/src/content-lab-resource.ts` |
 | Root授权和Adapter装配 | `packages/project-runtime/src/registry.ts` |
 | Candidate生成与Observation事务 | `packages/application/src/project-use-cases/lifecycle.ts` |
-| Project/Work/Decision/Evidence/Plane Snapshot上下文 | `packages/application/src/project-content-context-use-cases.ts` |
+| Project/Work/Decision/Evidence上下文 | `packages/application/src/project-content-context-use-cases.ts` |
 | Store完整性 | `packages/product-store-json/src/snapshot-integrity/projects.ts` |
 | 六类Fixture与安全测试 | `packages/project-runtime/src/content-lab-resource.test.ts` |
 | Application纵向测试 | `packages/application/src/project-coordination-use-cases.test.ts` |
@@ -150,7 +150,7 @@ CHAT_CONTENT_LAB_REAL_ROOT=/private/absolute/path \
   pnpm test:project:content-lab-real-read
 ```
 
-结果为917个tracked文件、200个受管文本、41个Job、39个案例和105个推荐工件；连续两次Observation Hash一致。小红书/B站开工上下文分别选择11/13个文本项，没有媒体正文，执行前后Git状态字节级一致，Plane写入为0。个人绝对路径不写入合同、文档输出或Product Store。
+结果为917个tracked文件、200个受管文本、41个Job、39个案例和105个推荐工件；连续两次Observation Hash一致。小红书/B站开工上下文分别选择11/13个文本项，没有媒体正文，执行前后Git状态字节级一致，外部写入为0。个人绝对路径不写入合同、文档输出或Product Store。
 
 ## 7. 后续Agent怎样使用
 
@@ -164,4 +164,4 @@ P6提供“可观察、可判断、可裁剪”的基础能力；P7已经通过[
   -> 通过统一Application命令提交Evidence、进度、阻塞或审核交接
 ```
 
-P8前仍禁止把这些观察结果批量写入正式Plane；`review_required`首先是Chat中的审核输入，不是外部同步授权。
+这些观察结果不得自动批量写入外部系统；`review_required`首先是Chat中的审核输入，不是外部同步授权。

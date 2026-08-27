@@ -1,23 +1,11 @@
 # @chat/project-runtime
 
-## 拥有
+受权 Workspace、Git 与项目文档的只读观察适配器。
 
-受权Workspace/Git/文档观察、Project Bootstrap本地Provision与Plane CE窄Adapter。
+本包不拥有 Project 产品账本、用户授权或 Workflow 编排；Application 决定资源访问权，Product Store 保存权威事实。
 
-## 不拥有
+## 边界
 
-不拥有Project产品账本、用户授权或Workflow编排；外部Plane ID与Git目录不是Product ID。
-
-## 入口与边界
-
-- internal：[`src/index.ts`](./src/index.ts)；资源观察：[`src/registry.ts`](./src/registry.ts)。
-- 上游是Application Project Port；下游是受限根目录、Git和可选Plane CE。
-- 创建使用专用Command/Outbox/lease/fencing；未知外部结果须查询对账，不能再次POST。
-- 纵向见[Plane Project Bootstrap](../../docs/architecture/plane-ce-project-bootstrap-as-built.md)。
-
-## 命令
-
-- `pnpm --filter @chat/project-runtime build`
-- `pnpm --filter @chat/project-runtime typecheck`
-- `pnpm --filter @chat/project-runtime test`
-- 普通测试只写临时目录；真实Plane写必须使用根`:external:`三闸门。
+- 上游是 Application Project Port；下游是受限根目录与本地 Git。
+- Adapter 只做资源识别、读取、校验与失败归一，不直接写 Product Store。
+- 普通测试只访问临时目录，不触达用户 Workspace。

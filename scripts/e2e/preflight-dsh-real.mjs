@@ -16,7 +16,6 @@ import {
 import {
   DSH_PROMPT_STUDIO_E2E_PORTS,
   DSH_PROMPT_THREE_GATES_E2E_PORTS,
-  DSH_PROJECT_BOOTSTRAP_E2E_PORTS,
   DSH_CAPABILITY_GOVERNANCE_E2E_PORTS,
   DSH_PLANNING_FAUX_E2E_PORTS,
   DSH_REAL_E2E_PORTS,
@@ -43,7 +42,6 @@ const pwaOnly = args.includes("--pwa-only");
 const trajectoryOnly = args.includes("--trajectory-only");
 const promptStudioOnly = args.includes("--prompt-studio-only");
 const promptThreeGatesOnly = args.includes("--prompt-three-gates-only");
-const projectBootstrapOnly = args.includes("--project-bootstrap-only");
 const capabilityGovernanceOnly = args.includes("--capability-governance-only");
 const planningFauxOnly = args.includes("--planning-faux-only");
 const paidMode =
@@ -52,7 +50,6 @@ const paidMode =
     !pwaOnly &&
     !trajectoryOnly &&
     !promptStudioOnly &&
-    !projectBootstrapOnly &&
     !capabilityGovernanceOnly &&
     !planningFauxOnly);
 const dataRoot = resolve(
@@ -61,11 +58,9 @@ const dataRoot = resolve(
     ? ".data/e2e/dsh-prompt-three-gates-real"
     : planningFauxOnly
       ? ".data/e2e/dsh-planning-faux-real"
-      : projectBootstrapOnly
-        ? ".data/e2e/dsh-project-bootstrap-real"
-        : capabilityGovernanceOnly
-          ? ".data/e2e/dsh-capability-governance-real"
-          : ".data/e2e/dsh-real",
+      : capabilityGovernanceOnly
+        ? ".data/e2e/dsh-capability-governance-real"
+        : ".data/e2e/dsh-real",
 );
 const expectedRoot = resolve(
   repoRoot,
@@ -73,11 +68,9 @@ const expectedRoot = resolve(
     ? ".data/e2e/dsh-prompt-three-gates-real"
     : planningFauxOnly
       ? ".data/e2e/dsh-planning-faux-real"
-      : projectBootstrapOnly
-        ? ".data/e2e/dsh-project-bootstrap-real"
-        : capabilityGovernanceOnly
-          ? ".data/e2e/dsh-capability-governance-real"
-          : ".data/e2e/dsh-real",
+      : capabilityGovernanceOnly
+        ? ".data/e2e/dsh-capability-governance-real"
+        : ".data/e2e/dsh-real",
 );
 
 async function assertE2ePortsFree(ports) {
@@ -107,7 +100,6 @@ if (
       argument !== "--trajectory-only" &&
       argument !== "--prompt-studio-only" &&
       argument !== "--prompt-three-gates-only" &&
-      argument !== "--project-bootstrap-only" &&
       argument !== "--capability-governance-only" &&
       argument !== "--planning-faux-only",
   )
@@ -127,7 +119,6 @@ if (
   ![
     "/.data/e2e/dsh-real",
     "/.data/e2e/dsh-prompt-three-gates-real",
-    "/.data/e2e/dsh-project-bootstrap-real",
     "/.data/e2e/dsh-capability-governance-real",
     "/.data/e2e/dsh-planning-faux-real",
   ].some((suffix) => dataRoot.endsWith(suffix))
@@ -155,20 +146,18 @@ const reservedPorts = promptStudioOnly
   ? Object.values(DSH_PROMPT_STUDIO_E2E_PORTS)
   : promptThreeGatesOnly
     ? Object.values(DSH_PROMPT_THREE_GATES_E2E_PORTS)
-    : projectBootstrapOnly
-      ? Object.values(DSH_PROJECT_BOOTSTRAP_E2E_PORTS)
-      : capabilityGovernanceOnly
-        ? Object.values(DSH_CAPABILITY_GOVERNANCE_E2E_PORTS)
-        : planningFauxOnly
-          ? Object.values(DSH_PLANNING_FAUX_E2E_PORTS)
-          : Object.values(DSH_REAL_E2E_PORTS);
+    : capabilityGovernanceOnly
+      ? Object.values(DSH_CAPABILITY_GOVERNANCE_E2E_PORTS)
+      : planningFauxOnly
+        ? Object.values(DSH_PLANNING_FAUX_E2E_PORTS)
+        : Object.values(DSH_REAL_E2E_PORTS);
 await assertE2ePortsFree(reservedPorts);
 rmSync(dataRoot, { recursive: true, force: true });
 mkdirSync(dataRoot, { recursive: true });
 for (const directory of [resolve(dataRoot, "process-home"), resolve(dataRoot, "process-tmp")]) {
   mkdirSync(directory, { recursive: true });
 }
-if (projectBootstrapOnly || capabilityGovernanceOnly) {
+if (capabilityGovernanceOnly) {
   mkdirSync(join(dataRoot, "workspace-root"), { recursive: true });
 }
 const paidPromptTemporary = promptThreeGatesOnly
@@ -276,12 +265,7 @@ await runCommand(
   { cwd: repoRoot, env: environment, label: "DSH E2E Bridge构建" },
 );
 if (
-  (!workbenchOnly &&
-    !pwaOnly &&
-    !trajectoryOnly &&
-    !promptStudioOnly &&
-    !projectBootstrapOnly &&
-    !planningFauxOnly) ||
+  (!workbenchOnly && !pwaOnly && !trajectoryOnly && !promptStudioOnly && !planningFauxOnly) ||
   promptThreeGatesOnly ||
   capabilityGovernanceOnly ||
   planningFauxOnly
@@ -318,15 +302,13 @@ console.log(
       ? "[e2e-preflight] rc.6 DSH profile与PWA浏览器表面已就绪（未加载Provider/Workflow/Workbench）"
       : promptStudioOnly
         ? "[e2e-preflight] rc.6 DSH Prompt Studio已就绪（Pi只读配置已加载；未加载Provider/Workflow/Workbench）"
-        : projectBootstrapOnly
-          ? "[e2e-preflight] rc.6 DSH建项纵向已就绪（确定性Provider；未加载真实Plane/模型/Workflow/Workbench）"
-          : capabilityGovernanceOnly
-            ? "[e2e-preflight] rc.6 Capability治理纵向已就绪（进程内Faux Provider；未加载真实凭据/Plane/Memory/Workbench）"
-            : planningFauxOnly
-              ? "[e2e-preflight] rc.6 Planning审核纵向已就绪（真实API/Product Store/Workflow/Pi AgentSession；进程内Faux Provider）"
-              : promptThreeGatesOnly
-                ? "[e2e-preflight] rc.6 DSH三闸门、真实Provider与Workflow Bundle已就绪（未启动Workbench/Memory）"
-                : trajectoryOnly
-                  ? "[e2e-preflight] rc.6 DSH profile与原生Trajectory/会话记录表面已就绪（使用测试Trace Provider，不加载Provider/Workflow/Workbench）"
-                  : "[e2e-preflight] rc.6 DSH profile、真实Provider与Workflow Bundle已就绪（未启动Workbench/Memory）",
+        : capabilityGovernanceOnly
+          ? "[e2e-preflight] rc.6 Capability治理纵向已就绪（进程内Faux Provider；未加载真实凭据/Memory/Workbench）"
+          : planningFauxOnly
+            ? "[e2e-preflight] rc.6 Planning审核纵向已就绪（真实API/Product Store/Workflow/Pi AgentSession；进程内Faux Provider）"
+            : promptThreeGatesOnly
+              ? "[e2e-preflight] rc.6 DSH三闸门、真实Provider与Workflow Bundle已就绪（未启动Workbench/Memory）"
+              : trajectoryOnly
+                ? "[e2e-preflight] rc.6 DSH profile与原生Trajectory/会话记录表面已就绪（使用测试Trace Provider，不加载Provider/Workflow/Workbench）"
+                : "[e2e-preflight] rc.6 DSH profile、真实Provider与Workflow Bundle已就绪（未启动Workbench/Memory）",
 );

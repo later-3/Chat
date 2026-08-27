@@ -48,48 +48,12 @@ export function assertMapKeys(snapshot: ProductSnapshot, fail: Fail): void {
     ],
     ["projectWorkOutcome", snapshot.entities.projectWorkOutcomes, "projectWorkOutcomeId"],
     ["projectContextMap", snapshot.entities.projectContextMaps, "projectContextMapId"],
-    [
-      "projectProviderBinding",
-      snapshot.entities.projectProviderBindings,
-      "projectProviderBindingId",
-    ],
-    [
-      "projectProviderProjection",
-      snapshot.entities.projectProviderProjections,
-      "projectProviderProjectionId",
-    ],
-    [
-      "projectCoordinationOperation",
-      snapshot.entities.projectCoordinationOperations,
-      "planeProjectOperationId",
-    ],
-    ["projectInboundChange", snapshot.entities.projectInboundChanges, "projectInboundChangeId"],
     ["projectAction", snapshot.entities.projectActions, "projectActionId"],
     ["projectContribution", snapshot.entities.projectContributions, "projectContributionId"],
     ["projectEvidence", snapshot.entities.projectEvidence, "projectEvidenceId"],
     ["projectDecision", snapshot.entities.projectDecisions, "projectDecisionId"],
     ["projectObservation", snapshot.entities.projectObservations, "projectObservationId"],
     ["projectCandidate", snapshot.entities.projectCandidates, "projectCandidateId"],
-    [
-      "projectBootstrapCandidate",
-      snapshot.entities.projectBootstrapCandidates,
-      "projectBootstrapCandidateId",
-    ],
-    [
-      "projectBootstrapDecision",
-      snapshot.entities.projectBootstrapDecisions,
-      "projectBootstrapDecisionId",
-    ],
-    [
-      "projectBootstrapOperation",
-      snapshot.entities.projectBootstrapOperations,
-      "projectBootstrapOperationId",
-    ],
-    [
-      "projectWorkspaceBinding",
-      snapshot.entities.projectWorkspaceBindings,
-      "projectWorkspaceBindingId",
-    ],
     ["workflowDefinition", snapshot.entities.workflowDefinitions, "workflowDefinitionId"],
     [
       "workflowDefinitionRevision",

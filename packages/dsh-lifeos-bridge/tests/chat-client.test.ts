@@ -336,7 +336,6 @@ test("Project开工包查询只发送稳定Session/Root身份和显式读取开�
   assert.equal(requested?.searchParams.get("productSessionId"), "psn_chatclient1");
   assert.equal(requested?.searchParams.get("workspaceRootId"), "root_contentlab");
   assert.equal(requested?.searchParams.get("includeResourceContext"), "false");
-  assert.equal(requested?.searchParams.has("refreshPlane"), false);
   assert.equal(requested?.searchParams.has("cwd"), false);
 });
 

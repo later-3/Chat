@@ -43,10 +43,7 @@ import {
   projectAgentOpeningPacketV2QuerySchema,
   projectAgentOpeningPacketV2ResponseSchema,
   projectAgentOpeningPacketV3ResponseSchema,
-  contentLabPlaneRolloutDryRunQuerySchema,
-  contentLabPlaneRolloutDryRunResponseSchema,
   adoptProjectConfigurationPayloadSchema,
-  adoptExistingPlaneProjectPayloadSchema,
   captureProjectNeedPayloadSchema,
   projectContextPurposeSchema,
   projectManagedObjectKindSchema,
@@ -93,9 +90,7 @@ import {
   observeProjectResource,
   getProjectAgentOpeningPacketV2,
   getProjectAgentOpeningPacketV3,
-  previewContentLabPlaneRollout,
   adoptProjectConfiguration,
-  adoptExistingPlaneProject,
   captureProjectNeed,
   compileProjectAgentContext,
   compileProjectAgentContextV2,
@@ -203,35 +198,6 @@ export function registerProjectRoutes(router: ProductRouter, ctx: ProductRouteCo
       return mapError(c, error);
     }
   });
-
-  if (ctx.planeEnabled) {
-    router.get("/content-production-projects/:projectId/plane-rollout-dry-run", async (c) => {
-      try {
-        const params = strictQueryParams(
-          c.req.url,
-          ["workspaceRootId", "planeWorkspaceSlug", "planeProjectIdentifier"],
-          "Content Lab Plane Rollout Dry Run",
-        );
-        const query = contentLabPlaneRolloutDryRunQuerySchema.parse({
-          projectId: c.req.param("projectId"),
-          workspaceRootId: params.get("workspaceRootId"),
-          planeWorkspaceSlug: params.get("planeWorkspaceSlug"),
-          planeProjectIdentifier: params.get("planeProjectIdentifier"),
-        });
-        return c.json(
-          contentLabPlaneRolloutDryRunResponseSchema.parse(
-            await previewContentLabPlaneRollout(ctx.deps, {
-              principalId: ctx.principalId,
-              query,
-            }),
-          ),
-          200,
-        );
-      } catch (error) {
-        return mapError(c, error);
-      }
-    });
-  }
 
   router.post("/content-production-projects", async (c) => {
     try {
@@ -783,40 +749,6 @@ export function registerProjectRoutes(router: ProductRouter, ctx: ProductRouteCo
       return mapError(c, error);
     }
   });
-
-  /**
-   * 一次性认领既有Plane项目是用户产品命令，不属于 scoped daily coordination key。
-   * Application会先实时核验Project、State、Module和Label，再原子提交Binding。
-   */
-  if (ctx.planeEnabled) {
-    router.post("/projects/:projectId/plane-binding-adoptions", async (c) => {
-      try {
-        const projectId = projectIdSchema.parse(c.req.param("projectId"));
-        const envelope = commandEnvelopeSchema.parse(await parseJsonBody(c));
-        const payload = adoptExistingPlaneProjectPayloadSchema.parse(envelope.payload);
-        if (payload.projectId !== projectId) {
-          throw new ApplicationError({
-            code: "validation_failed",
-            httpStatus: 400,
-            message: "路径与Payload的Project不一致",
-          });
-        }
-        const result = await adoptExistingPlaneProject(ctx.deps, {
-          principalId: ctx.principalId,
-          commandId: envelope.commandId,
-          ...payload,
-        });
-        emitCommandAccepted(ctx, c, {
-          commandId: envelope.commandId,
-          routeTemplate: "/api/projects/:projectId/plane-binding-adoptions",
-          statusCode: 201,
-        });
-        return c.json(result, 201);
-      } catch (error) {
-        return mapError(c, error);
-      }
-    });
-  }
 
   router.get("/projects/:projectId/contexts/:purpose", async (c) => {
     try {

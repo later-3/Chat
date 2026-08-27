@@ -298,7 +298,6 @@ export async function createFilePromptCatalog(
     if (
       agent.defaultPrompt.kind === "pi_coding_agent" &&
       agent.agentKey !== "direct" &&
-      agent.agentKey !== "project_bootstrap" &&
       agent.agentKey !== "coding_executor"
     ) {
       throw new Error(`只有Pi-backed Agent可以引用Pi运行时默认Prompt:${agent.agentKey}`);
@@ -307,33 +306,18 @@ export async function createFilePromptCatalog(
       throw new Error(`Agent工具重复:${agent.agentKey}`);
     }
   }
-  const planeEnabled = env.CHAT_PLANE_ENABLED === "1";
-  const hiddenAgentKeys = new Set(planeEnabled ? [] : ["project_bootstrap"]);
-  const hiddenBuiltinRevisionIds = new Set(
-    manifest.agents
-      .filter((agent) => hiddenAgentKeys.has(agent.agentKey))
-      .flatMap((agent) =>
-        agent.defaultPrompt.promptFragmentRevisionId === undefined
-          ? []
-          : [agent.defaultPrompt.promptFragmentRevisionId],
-      ),
-  );
-  const agents = manifest.agents.filter((agent) => !hiddenAgentKeys.has(agent.agentKey));
-  const discoverableBuiltinFragments = builtinFragments.filter(
-    (fragment) => !hiddenBuiltinRevisionIds.has(fragment.promptFragmentRevisionId),
-  );
   const snapshot: PromptCatalogSnapshot = {
     catalogSha256: hashCanonical("prompt-catalog.v1", {
       catalogRevision: manifest.catalogRevision,
       sharedSelectionProfile: manifest.sharedSelectionProfile,
-      agents,
+      agents: manifest.agents,
       regions,
-      builtinFragments: discoverableBuiltinFragments.map(({ content: _content, ...item }) => item),
+      builtinFragments: builtinFragments.map(({ content: _content, ...item }) => item),
     }),
     sharedSelectionProfile: manifest.sharedSelectionProfile,
     regions,
-    builtinFragments: discoverableBuiltinFragments,
-    agents,
+    builtinFragments,
+    agents: manifest.agents,
   };
   return {
     load: async () => structuredClone(snapshot),

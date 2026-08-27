@@ -109,7 +109,6 @@ test("LifeOS dock exposes a mobile-safe Note review surface and all product deci
   assert.match(dock, /来源定位和Plan元数据仅供界面审核，不会发给Chat后端/u);
   assert.match(dock, /data-testid="lifeos-project-coordination-card"/u);
   assert.match(dock, /项目上下文已恢复/u);
-  assert.doesNotMatch(dock, /lifeos-open-coordinated-plane-project/u);
   assert.match(dock, /需要选择当前工作/u);
 });
 

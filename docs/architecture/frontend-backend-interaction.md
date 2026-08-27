@@ -74,8 +74,6 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 |---|---|---|
 | `POST` | `/api/messages` | 首轮原子提交Message并由Application创建Product Session/Run/Outbox |
 | `POST` | `/api/sessions/:sessionId/messages` | 幂等提交Message并创建Product Run |
-| `POST` | `/api/project-bootstrap/messages` | 首轮专用建项Message Command；只接受系统Direct Revision的显式单轮bootstrap授权 |
-| `POST` | `/api/sessions/:sessionId/project-bootstrap/messages` | 已有Product Session的专用建项Message Command |
 | `POST` | `/api/sessions` | 非Bridge主链的显式Product Session管理入口 |
 | `GET` | `/api/workflow/definitions` | 读取当前Principal可用的active published Workflow |
 | `GET` | `/api/sessions/:sessionId/messages` | 读取正式Message |
@@ -89,9 +87,6 @@ DSH显示出来的Assistant文本是Chat正式事实的副本，不是模型直�
 | `POST` | `/api/runs/:productRunId/decisions` | 提交版本/Hash绑定的决定 |
 | `GET` | `/api/runs/:productRunId/note-candidates/current` | 读取当前安全Note Candidate审核DTO |
 | `POST` | `/api/runs/:productRunId/note-decisions` | 提交Candidate版本/Hash绑定的Note决定 |
-| `GET` | `/api/sessions/:sessionId/project-bootstrap/current` | 读取当前建项Candidate、Operation、Binding与服务端恢复资格 |
-| `POST` | `/api/project-bootstrap/candidates/:candidateId/decision` | 版本/Hash绑定地确认或拒绝建项；确认事务同时创建Operation与Outbox |
-| `POST` | `/api/project-bootstrap/operations/:operationId/retry` | 只创建显式对账意图；不在Router或Bridge执行Provider |
 
 字段真相以`@chat/contracts/public`的Zod Schema为准。Host插件必须运行时解析外部响应，不能用TypeScript断言跳过校验。
 
@@ -121,49 +116,6 @@ Product Assistant Message身份；它不复制任何Message或Provider Payload�
 `sessionWorkflowSelection`只属于当前会话，`newSessionWorkflowPreference`只影响之后首次物化的会话。Client选择
 Workflow时显式提交`session`、`new_sessions`或`session_and_new_sessions`作用域；普通当前会话选择不会再暗中改写
 全局偏好。v12及更早状态迁移到v14时保留能证明的顶层偏好；v1-v7没有该字段，迁移不得按对象顺序猜出偏好。
-
-项目初始化另有一次性`projectBootstrapLifecycle`：入口原子冻结bootstrap Workflow、返回Workflow和Prompt；
-`ready`、`rejected`或确定失败后恢复入口时冻结的普通Workflow。页面轮询不是正确性前提，Adapter在下一次冻结
-普通请求前也会查询Product终态并消费该能力。Bridge确认只提交一次Product Decision Command；Application在一个
-事务内创建Decision、queued Operation与耐久Outbox，API进程的Dispatcher在页面生命周期之外执行Provider和对账。
-多Dispatcher通过私有Outbox lease和单调fencing token分辨活跃执行者与过期崩溃；每个tick使用新的Claim attempt。
-当前单API进程还用共享执行协调器把同一Operation从claim到finalize完整互斥，因此旧执行者在写前校验后暂停时，
-新Dispatcher不能仅凭lease过期接管。token进入Provider Port，Plane每个Project/Module POST与Workspace每个真实写
-边界前都会重新验证并续租。未来多进程Store必须把协调器替换为数据库advisory lock。Bridge普通Workflow写命令不接受`project_bootstrap`；Application在编译有效RunSpec后同样
-拒绝普通Message携带该能力，因此个人Workflow Definition默认值也不能旁路。只有专用Product Message Command、
-系统Direct Revision和显式单轮override三者同时成立才获得一次性授权。
-Product Query明确返回`recovery.canRecover/recovery.reason`；Client不再按`queued/dispatching`猜测恢复资格，健康v20
-后台执行不会显示遗留恢复按钮，公开Retry也会复用任何现有活动Outbox。v12迁移逐字保留冻结Request：缺少
-`productRunId`仍可能是提交成功但响应丢失，Adapter会以原commandId+payload触发已有Receipt恢复；没有Receipt的
-普通bootstrap提交仍稳定403。拒绝Candidate是纯Product命令，Provider配置缺失时仍可提交并退出生命周期；已提交的
-Message会先用Store中的Receipt、RunSpec与Message重建原Command Type/Hash，在`now`、ID分配、任何Prompt Catalog、
-Agent Runtime或Provider读取前返回首次结果；普通/专用Message入口可按Receipt证明的原种类恢复，其他Command类型或
-错误Hash的同ID Receipt立即拒绝。真实v1/v2迁移后的`legacy-planning.v1` Receipt可以合法只有Message/Run引用；只有
-该Runner允许缺少`workflowRunSpecId`，且仍严格验证legacy Runner/View、Definition Revision/Hash、principal、
-Message↔Run↔Session及旧Hash域。Receipt如果携带RunSpec引用必须与Run一致，现代Run缺失该引用失败关闭。
-Candidate、Confirm与Retry Receipt也都在
-Provider、Preflight和当前状态校验前恢复。Candidate出现前专用Run已经终态时，Bridge收敛
-`failed_terminal`并恢复普通Workflow；rejected且无动作的Candidate不再显示审核Dock。首轮Product响应中的
-Session、User Message与Run身份在一次Bridge State原子写内绑定，进程不能留下“已有Session但无Run”的半状态并让
-同一Command从首次消息路径漂移到既有Session路径。Bridge State v14为每条Request持久化首轮/既有Session目标，v15
-再持久化`prepared/outcome_unknown/bound/definitely_uncommitted`提交状态；当前v16只增加Tool Decision本地重试投影，
-不复制Product Intent/Decision；
-v12/v13复合历史无法单独证明原路由或lifecycle终态前的专用种类时，Application只在已有Receipt前提下采用Store记录的
-原Message种类并同时验证两种旧Hash域，不会把猜测变成新命令。active bootstrap存在响应未知Request时，不同消息会
-失败关闭，不能覆盖`currentRequestKey`或创建第二个Run；
-legacy已有Session一律使用既有Session目标，避免无Receipt时创建第二Session。若首次Message收到白名单内可证明未提交
-的4xx Problem，则Request转为`definitely_uncommitted`、lifecycle收敛`failed_terminal`并允许下一条普通消息；5xx、
-transport及成功响应合同损坏都保留原Request按响应未知恢复。兼容旧路由与Message种类后仍返回的
-`command_id_reused`证明A没有可恢复提交，也按确定4xx释放B。所有v1-v14迁移只根据
-`productRunId`推导`bound/outcome_unknown`，不查询Product、不从Session、顺序、current key或lifecycle猜测，也不
-删除Request、改写冻结payload或制造lifecycle。新Request在Product HTTP写前必须先从`prepared`原子转为unknown，
-合法响应再把Session/User Message/Run一次性绑定为bound；任何其他prepared/unknown Request都会阻止不同消息。
-旧unknown重放仍通过当前启用的DSH/Bridge审核；unknown阶段的本地拒绝只停止本次调用，不伪造未提交结论。
-发生请求已发但响应丢失时，只允许相同命令和内容原样重试或Query恢复，不生成新身份。
-
-Workflow Start已确认后，API会用私有、脱敏的Runtime状态监督同一个Start Binding。Runtime仍活动时不触碰
-`waiting_human`等Product状态；Runtime终止或长期无法确认时只提交稳定、幂等的非成功收敛命令，不重启Workflow，
-不向浏览器泄露Workflow Run ID、Runtime错误正文、Prompt或Provider Payload。已经形成Product终态后，任何迟到Runtime证据都不能覆盖它。
 
 ## 6. DSH插件表面边界
 

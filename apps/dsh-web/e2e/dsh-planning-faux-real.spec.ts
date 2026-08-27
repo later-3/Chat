@@ -93,7 +93,7 @@ test("真实DSH/API/Product Store/Workflow：Faux Plan审核、刷新恢复、�
     await readFile(resolve(dataRoot, "environment-sentinel.json"), "utf8"),
   ) as { providerCredentialsVisible: boolean; checked: string[] };
   expect(sentinel.providerCredentialsVisible).toBe(false);
-  for (const name of ["DASHSCOPE_API_KEY", "GITHUB_TOKEN", "PLANE_API_TOKEN", "SSH_AUTH_SOCK"]) {
+  for (const name of ["DASHSCOPE_API_KEY", "GITHUB_TOKEN", "SSH_AUTH_SOCK"]) {
     expect(sentinel.checked).toContain(name);
   }
   const piSentinel = JSON.parse(
@@ -105,6 +105,6 @@ test("真实DSH/API/Product Store/Workflow：Faux Plan审核、刷新恢复、�
     storage: Object.fromEntries(Object.entries(localStorage)),
   }));
   expect(JSON.stringify(browserSurface)).not.toMatch(
-    /DASHSCOPE_API_KEY|GITHUB_TOKEN|PLANE_API_TOKEN|SSH_AUTH_SOCK|hookToken|workflowRunId|piSessionId/u,
+    /DASHSCOPE_API_KEY|GITHUB_TOKEN|SSH_AUTH_SOCK|hookToken|workflowRunId|piSessionId/u,
   );
 });

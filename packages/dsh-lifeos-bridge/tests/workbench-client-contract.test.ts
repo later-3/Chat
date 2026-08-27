@@ -14,7 +14,6 @@ test("DSH Client用公开加法Slot承载隔离且不卸载的Hosted Workbench",
 
   // 2个公开Sidebar注册（Project、Workbench），每个在name与inject处各出现一次。
   assert.equal((client.match(/sidebar\.footer\.action/g) ?? []).length, 4);
-  assert.doesNotMatch(client, /lifeos-project-bootstrap/u);
   assert.match(client, /lifeos-project-management/u);
   assert.doesNotMatch(client, /conversation\.session\.header\.actions/u);
   assert.match(client, /shell\.overlay/u);

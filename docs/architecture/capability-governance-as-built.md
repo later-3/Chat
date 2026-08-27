@@ -50,8 +50,6 @@ Scope 按 Descriptor 自己的 `scopePolicy` 解析：
 - `workspace_required` 必须取得当前产品授权的 Workspace Root/Grant，缺失时没有 `resolvedRef`，创建 Run 或执行前失败；
 - `provider_defined` 必须由 Provider 注册表提供精确 `{kind: "provider", providerRef}`。
 
-首轮 `project_bootstrap` 尚无新项目 Workspace Grant，因此只启用受管 `project_bootstrap_prepare`，不把文件 Tool 伪装成 global。该 Tool 必须具有精确 inline SourceInfo、Chat 受管实现树和 provider scope；同名第三方 Extension 直接 diagnostic。它只准备 Candidate，仍由 Project Bootstrap 专用 Decision/Outbox/Dispatcher 执行实际 Plane/Workspace 写，不创建 Generic Tool Decision。
-
 ## 5. Run 全链冻结
 
 新 Direct Run 的链路为：
@@ -121,6 +119,6 @@ Intent状态使用一张完整矩阵：reject只形成`rejected`；approve才可
 `.data/e2e/dsh-capability-governance-real`。DSH Host/Client、Chat Router/Application、Workflow、
 真实Pi AgentSession/bash handler全部为生产实现，只有模型Provider是进程内确定性Faux。
 
-该门用append型调用日志证明批准handler恰好1次、拒绝handler为0次。Product Result已提交后，E2E Adapter故意悬停而不返回；Supervisor在该响应未知窗口真实SIGTERM并启动新Pi进程，Journal/Receipt恢复与再次重启都保持调用计数为1。环境sentinel证明Pi子进程看不到DashScope/OpenAI/Anthropic/Google/Gemini、GitHub、Plane和SSH凭据。
+该门用append型调用日志证明批准handler恰好1次、拒绝handler为0次。Product Result已提交后，E2E Adapter故意悬停而不返回；Supervisor在该响应未知窗口真实SIGTERM并启动新Pi进程，Journal/Receipt恢复与再次重启都保持调用计数为1。环境sentinel证明Pi子进程看不到DashScope/OpenAI/Anthropic/Google/Gemini、GitHub和SSH凭据。
 
 Run Activity不再使用全局“一次迁移完成”marker。每次进程启动扫描全部Operation/source sequence，依赖Activity Sink耐久`sourceKey`实现重复幂等、缺失sequence补投和同key不同payload失败关闭；投影失败不会重跑Provider或Tool。

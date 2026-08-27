@@ -13,7 +13,6 @@ Browser lane只复用[`playwright.dsh-real.config.ts`](../../apps/dsh-web/playwr
 | Planning Faux | 真实DSH/API/Product Store/Workflow/Pi AgentSession与`full-operation.v3`，Plan审核、刷新恢复、批准与正式Assistant |
 | Prompt Studio | 编辑、版本/来源、Agent最低只读配置表面 |
 | Trajectory | 原生Trajectory、正式Assistant、刷新、双源Session记录 |
-| Project Bootstrap | 真实Message/Run/Candidate、一次决定、关页执行、重开与下一轮普通消息 |
 | Capability Governance | Tool Intent/Decision、一次handler、响应未知后重启恢复、拒绝零执行 |
 
 根命令`pnpm test:browser`顺序运行上述确定性spec。实际case数由
@@ -29,12 +28,11 @@ Workbench spec继续复用同一配置的`workbench-only`模式。
 
 - `CHAT_ALLOW_PAID_TESTS=0`、`CHAT_ALLOW_EXTERNAL_WRITES=0`；
 - Memory与Workbench关闭；
-- Provider、GitHub、Plane和SSH凭据不进入子进程；
+- Provider、GitHub和SSH凭据不进入子进程；
 - DSH Telemetry关闭，不继承宿主`process.env`作为子进程起点。
 
 Capability与Planning Faux在真实子进程内落0600环境sentinel；合同测试还用注入假Key的反例验证
-allowlist。Provider只使用进程内Faux，不发起真实网络模型调用；Project Bootstrap的Plane与
-Workspace写仅发生在隔离fixture，并使用确定性Provider。
+allowlist。Provider只使用进程内Faux，不发起真实网络模型调用或外部写。
 
 普通`ci` Job通过`pnpm bootstrap`只准备一次固定源码，再运行Capability Governance作为完整系统
 接缝；`maintenance`定时/手工Job运行根Browser lane。两者都不运行paid、external或beta。

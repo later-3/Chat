@@ -395,7 +395,6 @@ pnpm --filter @chat/testing test
 CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:provider:bailian
 CHAT_ALLOW_PAID_TESTS=1 pnpm test:paid:dsh-planning
 CHAT_ALLOW_EXTERNAL_WRITES=1 CHAT_MEMORY_REAL_TEST=1 pnpm test:external:memory:memorycore
-pnpm test:browser:project-bootstrap
 ```
 
 普通质量门与真实付费/外部服务门必须分开运行；没有真实凭据时不得用fixture冒充真实完成证据。

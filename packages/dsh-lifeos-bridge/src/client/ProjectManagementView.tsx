@@ -146,7 +146,7 @@ function HomeView({ state }: { readonly state: ProjectManagementState }) {
         <section className="lifeos-project-panel">
           <header>
             <h3>资源与连接</h3>
-            <span>{workspace.resources.length + workspace.providerBindings.length} 个连接</span>
+            <span>{workspace.resources.length} 个连接</span>
           </header>
           <div className="lifeos-project-binding-list">
             {workspace.resources.map((resource) => (
@@ -156,15 +156,6 @@ function HomeView({ state }: { readonly state: ProjectManagementState }) {
                   <span>Workspace Resource</span>
                 </div>
                 <code>{resource.status}</code>
-              </article>
-            ))}
-            {workspace.providerBindings.map((binding) => (
-              <article key={binding.projectProviderBindingId} data-provider={binding.providerKind}>
-                <div>
-                  <strong>{binding.providerKind}</strong>
-                  <span>{binding.externalProjectIdentifier}</span>
-                </div>
-                <code>{binding.status}</code>
               </article>
             ))}
           </div>

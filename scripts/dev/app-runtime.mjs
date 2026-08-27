@@ -248,22 +248,6 @@ function vsCodeAutoAttachEnvironment(environment) {
 
 function commonEnvironment(root, environment, role) {
   const isolated = { ...environment };
-  if (isolated.CHAT_PLANE_ENABLED !== "1") {
-    for (const key of Object.keys(isolated)) {
-      if (
-        key !== "CHAT_PLANE_ENABLED" &&
-        (key.startsWith("CHAT_PLANE_") ||
-          key.startsWith("CHAT_CONTENT_LAB_PLANE_") ||
-          key === "CHAT_PROJECT_CREATION_ROOTS_JSON")
-      ) {
-        delete isolated[key];
-      }
-    }
-  }
-  if (role !== "api") delete isolated.CHAT_PLANE_CE_API_TOKEN;
-  if (role !== "api" && role !== "piExecutor") {
-    delete isolated.CHAT_PLANE_COORDINATION_CLIENT_CREDENTIAL_PATH;
-  }
   return {
     ...isolated,
     CHAT_REPO_ROOT: root,

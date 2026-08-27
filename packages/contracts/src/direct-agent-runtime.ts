@@ -46,11 +46,6 @@ import {
   promptEnvelopeToolsV4Schema,
   piSystemPromptResolutionSchema,
 } from "./prompt-assembly.js";
-import {
-  planeCeWorkspaceSlugSchema,
-  projectBootstrapCandidateSchema,
-  projectBootstrapProposalSchema,
-} from "./project-bootstrap.js";
 
 /**
  * Direct Agent私有Runtime合同。它只挂在loopback Runtime Router，不进入public导出：
@@ -67,7 +62,6 @@ export const DIRECT_AGENT_RUNTIME_PATHS = {
   consumePromptReviewDecision: "/consume-prompt-review-decision",
   commitPromptReviewDispatchOutcome: "/commit-prompt-review-dispatch-outcome",
   persistCandidate: "/persist-direct-agent-candidate",
-  prepareProjectBootstrap: "/prepare-project-bootstrap",
   commitResult: "/commit-direct-agent-result",
   publishToolExecutionIntent: "/publish-tool-execution-intent",
   claimToolExecutionDecision: "/claim-tool-execution-decision",
@@ -200,26 +194,7 @@ export const authorizeDirectAgentOperationRuntimeResponseSchema = z
       })
       .strict()
       .optional(),
-    capabilityMode: z.enum(["pi_cli_default", "custom", "read_only", "project_bootstrap"]),
-    projectBootstrapContext: z
-      .object({
-        providerKind: z.literal("plane_ce"),
-        providerVersion: z.string().min(1).max(40),
-        planeWorkspaceSlugs: z.array(planeCeWorkspaceSlugSchema).min(1).max(20),
-        creationRoots: z
-          .array(
-            z
-              .object({
-                rootId: promptWorkspaceRootIdSchema,
-                displayName: z.string().min(1).max(160),
-              })
-              .strict(),
-          )
-          .min(1)
-          .max(20),
-      })
-      .strict()
-      .optional(),
+    capabilityMode: z.enum(["pi_cli_default", "custom", "read_only"]),
     promptReviewMode: z.enum(["manual", "off"]),
     limits: z
       .object({
@@ -228,24 +203,6 @@ export const authorizeDirectAgentOperationRuntimeResponseSchema = z
         tokenBudget: z.literal(DIRECT_AGENT_TOKEN_BUDGET),
       })
       .strict(),
-  })
-  .strict();
-
-/** ---------- Project Bootstrap Tool：只准备候选，不直接创建外部资源 ---------- */
-
-export const prepareProjectBootstrapRuntimeRequestSchema = z
-  .object({
-    ...versioned,
-    commandId: commandIdSchema,
-    productRunId: productRunIdSchema,
-    proposal: projectBootstrapProposalSchema,
-  })
-  .strict();
-
-export const prepareProjectBootstrapRuntimeResponseSchema = z
-  .object({
-    ...versioned,
-    candidate: projectBootstrapCandidateSchema,
   })
   .strict();
 
@@ -563,12 +520,6 @@ export type AuthorizeDirectAgentOperationRuntimeRequest = z.infer<
 >;
 export type AuthorizeDirectAgentOperationRuntimeResponse = z.infer<
   typeof authorizeDirectAgentOperationRuntimeResponseSchema
->;
-export type PrepareProjectBootstrapRuntimeRequest = z.infer<
-  typeof prepareProjectBootstrapRuntimeRequestSchema
->;
-export type PrepareProjectBootstrapRuntimeResponse = z.infer<
-  typeof prepareProjectBootstrapRuntimeResponseSchema
 >;
 export type PublishPromptReviewRuntimeRequest = z.infer<
   typeof publishPromptReviewRuntimeRequestSchema

@@ -374,7 +374,7 @@ function configureAgentNode(
 
 const AGENT_NODE_SUPPORT: Readonly<Record<string, readonly string[]>> = {
   "agent.plan": ["planner"],
-  "agent.direct": ["direct", "project_bootstrap"],
+  "agent.direct": ["direct"],
   "agent.governance_check": ["governance_reviewer"],
   "execute.plan": ["coding_executor"],
   "note.extract": ["note_extractor"],

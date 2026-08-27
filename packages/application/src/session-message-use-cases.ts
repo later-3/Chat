@@ -168,7 +168,6 @@ export interface SubmitUserMessageInput {
 function submitUserMessageRequestSha256(
   input: SubmitUserMessageInput,
   snapshot: Readonly<ProductSnapshot>,
-  submissionKind: MessageSubmissionKind,
 ): string {
   const submittedWorkflowSelection = input.payload.workflowSelection;
   const selectedRevisionId =
@@ -210,60 +209,11 @@ function submitUserMessageRequestSha256(
       ...(requestBusinessInput === undefined ? {} : { businessInput: requestBusinessInput }),
     },
   };
-  return hashCanonical(messageCommandHashDomain(submissionKind, input.sessionId === undefined), {
+  return hashCanonical(messageCommandHashDomain(input.sessionId === undefined), {
     principalId: input.principalId,
     ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
     payload: normalizedPayload,
   });
-}
-
-type MessageSubmissionKind = "ordinary" | "project_bootstrap_dedicated_entry";
-
-function assertProjectBootstrapSubmissionAuthorized(
-  submissionKind: MessageSubmissionKind,
-  input: {
-    readonly selectedRevision: WorkflowDefinitionRevision;
-    readonly runConfiguration: WorkflowRunConfiguration;
-    readonly runSpec: {
-      readonly nodeResolutions: readonly {
-        readonly definitionNodeId: string;
-        readonly nodeType: string;
-        readonly activation: string;
-        readonly config: Readonly<Record<string, unknown>>;
-      }[];
-    };
-  },
-): void {
-  const bootstrapNode = input.runSpec.nodeResolutions.find(
-    (node) =>
-      node.nodeType === "agent.direct" &&
-      node.activation === "enabled" &&
-      node.config["capabilityMode"] === "project_bootstrap",
-  );
-  if (bootstrapNode === undefined) {
-    if (submissionKind === "project_bootstrap_dedicated_entry") {
-      throw forbidden("项目初始化专用Message必须显式选择project_bootstrap能力");
-    }
-    return;
-  }
-  if (submissionKind !== "project_bootstrap_dedicated_entry") {
-    throw forbidden("project_bootstrap只能通过项目初始化专用Product Command启用");
-  }
-  const explicitOverride = input.runConfiguration.overrides.some(
-    (override) =>
-      override.kind === "node_config" &&
-      override.definitionNodeId === bootstrapNode.definitionNodeId &&
-      override.field === "capabilityMode" &&
-      override.value === "project_bootstrap",
-  );
-  if (
-    input.selectedRevision.workflowDefinitionRevisionId !==
-      SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID ||
-    input.selectedRevision.blueprintKey !== "direct" ||
-    !explicitOverride
-  ) {
-    throw forbidden("项目初始化专用Message只接受系统Direct Workflow的显式单轮能力授权");
-  }
 }
 
 /** 会话标题是Chat产品策略；只从首条已提交User Message派生。 */
@@ -284,9 +234,6 @@ interface PreparePromptTurnInput {
   readonly workflowRunSpecId: ReturnType<typeof workflowRunSpecIdSchema.parse>;
   readonly sessionSequence: number;
   readonly sourceMessageSha256: string;
-  readonly submissionAuthorization?: {
-    readonly kind: MessageSubmissionKind;
-  };
 }
 
 /**
@@ -415,15 +362,6 @@ async function preparePromptTurn(deps: ApplicationDeps, input: PreparePromptTurn
       : {}),
   });
   if (!compiled.success) throw compilerDiagnosticsToError(compiled.diagnostics);
-  if (input.submissionAuthorization !== undefined) {
-    // 高影响能力检查位于纯Definition/RunSpec编译之后、任何Prompt或Runtime Adapter
-    // 读取之前；普通入口在Runtime故障时仍稳定返回403。
-    assertProjectBootstrapSubmissionAuthorized(input.submissionAuthorization.kind, {
-      selectedRevision,
-      runConfiguration,
-      runSpec: compiled.runSpec,
-    });
-  }
   const promptSelection = input.payload.promptSelection ?? {
     schemaVersion: "prompt-turn-selection-input.v1" as const,
     regions: [],
@@ -542,9 +480,7 @@ export async function previewPromptTurn(
           : undefined;
       if (nodeAssembly === undefined) throw new Error("Prompt节点Assembly不存在");
       const stage = directAssembly
-        ? promptAssembly.tools.capabilityMode === "project_bootstrap"
-          ? ("direct_pre_send_dynamic_extension" as const)
-          : ("direct_pre_send" as const)
+        ? ("direct_pre_send" as const)
         : node.nodeType === "execute.plan"
           ? ("deferred_step_runtime" as const)
           : ("workflow_node_template" as const);
@@ -566,11 +502,9 @@ export async function previewPromptTurn(
           note:
             stage === "direct_pre_send"
               ? "Direct节点的能力与Chat层已经冻结；Workspace占位符会在Pi运行时填充，逐字节Provider请求以Prompt Review为准。"
-              : stage === "direct_pre_send_dynamic_extension"
-                ? "项目初始化复用Direct Pi AgentSession；基础能力已冻结，Plane/创建Root等动态合同会在执行授权后追加。"
-                : stage === "deferred_step_runtime"
-                  ? "Coding Executor的实际Pi System与Tools取决于用户批准计划中当前步骤的capabilityRefs，此时只能预览节点模板。"
-                  : "这是Workflow节点发送前冻结的Chat管理层；节点固定Runtime System与最终Provider请求在执行时解析。",
+              : stage === "deferred_step_runtime"
+                ? "Coding Executor的实际Pi System与Tools取决于用户批准计划中当前步骤的capabilityRefs，此时只能预览节点模板。"
+                : "这是Workflow节点发送前冻结的Chat管理层；节点固定Runtime System与最终Provider请求在执行时解析。",
         },
       };
     }),
@@ -588,65 +522,43 @@ export async function submitUserMessage(
   deps: ApplicationDeps,
   input: SubmitUserMessageInput,
 ): Promise<{ session: SessionDto; message: MessageDto; run: RunDto }> {
-  return submitUserMessageInternal(deps, input, "ordinary");
+  return submitUserMessageInternal(deps, input);
 }
 
-/**
- * 项目初始化专用Product Command。普通Message入口即使选择了默认值为bootstrap的
- * Workflow Definition也会失败；只有本用例能把显式的系统Direct单轮覆盖写入RunSpec。
- */
-export async function submitProjectBootstrapUserMessage(
-  deps: ApplicationDeps,
-  input: SubmitUserMessageInput,
-): Promise<{ session: SessionDto; message: MessageDto; run: RunDto }> {
-  return submitUserMessageInternal(deps, input, "project_bootstrap_dedicated_entry");
-}
-
-function messageCommandHashDomain(
-  submissionKind: MessageSubmissionKind,
-  creatingProductSession: boolean,
-): string {
-  return submissionKind === "project_bootstrap_dedicated_entry"
-    ? creatingProductSession
-      ? "command.start-project-bootstrap-session-with-user-message.v1"
-      : "command.submit-project-bootstrap-user-message.v1"
-    : creatingProductSession
-      ? "command.start-product-session-with-user-message.v1"
-      : "command.submit-user-message.v1";
+function messageCommandHashDomain(creatingProductSession: boolean): string {
+  return creatingProductSession
+    ? "command.start-product-session-with-user-message.v1"
+    : "command.submit-user-message.v1";
 }
 
 function computeMessageCommandRequestSha256(input: {
   readonly input: SubmitUserMessageInput;
-  readonly submissionKind: MessageSubmissionKind;
   readonly creatingProductSession: boolean;
   readonly targetSessionId: ProductSessionId;
   readonly selectedRevision: WorkflowDefinitionRevision;
   readonly runConfiguration: WorkflowRunConfiguration;
   readonly requestBusinessInput: NoteCaptureSubmitInput | undefined;
 }): string {
-  return hashCanonical(
-    messageCommandHashDomain(input.submissionKind, input.creatingProductSession),
-    {
-      principalId: input.input.principalId,
-      ...(input.creatingProductSession ? {} : { sessionId: input.targetSessionId }),
-      payload: {
-        ...input.input.payload,
-        workflowSelection: {
-          kind: "published_revision",
-          workflowDefinitionRevisionId: input.selectedRevision.workflowDefinitionRevisionId,
-          // 显式CAS是Command payload的一部分，必须逐字进入Receipt Hash。只有调用方
-          // 整个省略workflowSelection时，才能补系统默认Revision/Hash。
-          definitionSha256:
-            input.input.payload.workflowSelection?.definitionSha256 ??
-            input.selectedRevision.definitionSha256,
-          runConfiguration: input.runConfiguration,
-          ...(input.requestBusinessInput === undefined
-            ? {}
-            : { businessInput: input.requestBusinessInput }),
-        },
+  return hashCanonical(messageCommandHashDomain(input.creatingProductSession), {
+    principalId: input.input.principalId,
+    ...(input.creatingProductSession ? {} : { sessionId: input.targetSessionId }),
+    payload: {
+      ...input.input.payload,
+      workflowSelection: {
+        kind: "published_revision",
+        workflowDefinitionRevisionId: input.selectedRevision.workflowDefinitionRevisionId,
+        // 显式CAS是Command payload的一部分，必须逐字进入Receipt Hash。只有调用方
+        // 整个省略workflowSelection时，才能补系统默认Revision/Hash。
+        definitionSha256:
+          input.input.payload.workflowSelection?.definitionSha256 ??
+          input.selectedRevision.definitionSha256,
+        runConfiguration: input.runConfiguration,
+        ...(input.requestBusinessInput === undefined
+          ? {}
+          : { businessInput: input.requestBusinessInput }),
       },
     },
-  );
+  });
 }
 
 function messageReceiptCorrupted(message: string): never {
@@ -755,22 +667,6 @@ function validateReplayRunSpec(
   return { selectedRevision, runSpec };
 }
 
-function isDedicatedProjectBootstrapReplay(
-  selectedRevision: WorkflowDefinitionRevision,
-  runSpec: WorkflowRunSpec,
-): boolean {
-  return (
-    selectedRevision.workflowDefinitionRevisionId === SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID &&
-    selectedRevision.blueprintKey === "direct" &&
-    runSpec.nodeResolutions.some(
-      (node) =>
-        node.nodeType === "agent.direct" &&
-        node.activation === "enabled" &&
-        node.config["capabilityMode"] === "project_bootstrap",
-    )
-  );
-}
-
 /**
  * 最老v1/v2 Message在Definition Kernel出现前提交，Run没有RunSpec，Receipt也只有
  * Message/Run引用。这里不伪造RunSpec，而是严格验证迁移冻结的legacy runner、View、
@@ -840,7 +736,7 @@ function readLegacyPlanningMessageReplay(
 }
 
 interface MessageCommandReplayProbe {
-  readonly commandType: "SubmitUserMessage" | "SubmitProjectBootstrapUserMessage";
+  readonly commandType: "SubmitUserMessage";
   readonly expectedRequestSha256: string;
   readonly result: { session: SessionDto; message: MessageDto; run: RunDto };
 }
@@ -853,24 +749,10 @@ interface MessageCommandReplayProbe {
 function readMessageCommandReplay(
   snapshot: ProductSnapshot,
   input: SubmitUserMessageInput,
-  currentSubmissionKind: MessageSubmissionKind,
 ): MessageCommandReplayProbe | undefined {
   const receipt = snapshot.commandReceipts[input.commandId];
   if (receipt === undefined) return undefined;
-  const receiptSubmissionKind: MessageSubmissionKind =
-    receipt.commandType === "SubmitUserMessage"
-      ? "ordinary"
-      : receipt.commandType === "SubmitProjectBootstrapUserMessage"
-        ? "project_bootstrap_dedicated_entry"
-        : (() => {
-            throw new CommandIdReusedError(input.commandId);
-          })();
-  // 专用入口是一次性授权边界，不能消费任何普通Receipt，包括最老legacy Receipt。
-  // 该矩阵判断只依赖已读取的Receipt，必须早于产品事实遍历和所有外部依赖。
-  if (
-    currentSubmissionKind === "project_bootstrap_dedicated_entry" &&
-    receiptSubmissionKind === "ordinary"
-  ) {
+  if (receipt.commandType !== "SubmitUserMessage") {
     throw new CommandIdReusedError(input.commandId);
   }
   const facts = readMessageReplayBase(snapshot, receipt.resultRefs);
@@ -889,17 +771,7 @@ function readMessageCommandReplay(
   ) {
     return messageReceiptCorrupted("Message Command Receipt缺少精确RunSpec引用");
   }
-  const { selectedRevision, runSpec } = validateReplayRunSpec(snapshot, facts.run);
-  if (
-    currentSubmissionKind === "ordinary" &&
-    receiptSubmissionKind === "project_bootstrap_dedicated_entry" &&
-    (input.sessionId === undefined || !isDedicatedProjectBootstrapReplay(selectedRevision, runSpec))
-  ) {
-    // 唯一跨入口兼容是v12/v13半绑定恢复：当前必须已知Product Session，且Product
-    // RunSpec必须证明原命令确实冻结了专用bootstrap能力。新Command没有Receipt，
-    // 永远到不了此分支。
-    throw new CommandIdReusedError(input.commandId);
-  }
+  const { selectedRevision } = validateReplayRunSpec(snapshot, facts.run);
   const requestedRevisionId =
     input.payload.workflowSelection?.workflowDefinitionRevisionId ??
     SYSTEM_SIMPLE_PLANNING_WORKFLOW_REVISION_ID;
@@ -935,9 +807,6 @@ function readMessageCommandReplay(
   }
   const requestHashInput = {
     input,
-    // v12无法仅凭Bridge状态证明旧Request是否来自专用入口。只有已提交的Product
-    // Receipt能证明原Command种类；重放按该种类验Hash，不会给新命令开放授权旁路。
-    submissionKind: receiptSubmissionKind,
     targetSessionId: facts.session.sessionId,
     selectedRevision,
     runConfiguration: input.payload.workflowSelection?.runConfiguration ?? {
@@ -952,7 +821,7 @@ function readMessageCommandReplay(
       creatingProductSession,
     }),
   ];
-  if (currentSubmissionKind === "ordinary" && input.sessionId !== undefined) {
+  if (input.sessionId !== undefined) {
     // v12/v13可能留下“Product Session已保存、Run尚未保存”的首轮半绑定。只允许
     // 当前普通existing-session恢复原首轮Hash；反方向和当前专用入口都不接受另一域。
     possibleRequestHashes.push(
@@ -969,10 +838,7 @@ function readMessageCommandReplay(
     return messageReceiptCorrupted("Message Command Receipt缺少可验证Hash域");
   }
   return {
-    commandType:
-      receiptSubmissionKind === "project_bootstrap_dedicated_entry"
-        ? "SubmitProjectBootstrapUserMessage"
-        : "SubmitUserMessage",
+    commandType: "SubmitUserMessage",
     expectedRequestSha256,
     result: {
       session: toSessionDto(facts.session),
@@ -985,7 +851,6 @@ function readMessageCommandReplay(
 async function submitUserMessageInternal(
   deps: ApplicationDeps,
   input: SubmitUserMessageInput,
-  submissionKind: MessageSubmissionKind,
 ): Promise<{ session: SessionDto; message: MessageDto; run: RunDto }> {
   let replayResult: MessageCommandReplayProbe["result"] | undefined;
   const {
@@ -993,7 +858,7 @@ async function submitUserMessageInternal(
     identity: { requestSha256 },
     receipt: priorReceipt,
   } = await readExactCommandReceipt(deps.store, (snapshot) => {
-    const replay = readMessageCommandReplay(snapshot, input, submissionKind);
+    const replay = readMessageCommandReplay(snapshot, input);
     if (replay !== undefined) {
       replayResult = replay.result;
       return {
@@ -1004,11 +869,8 @@ async function submitUserMessageInternal(
     }
     return {
       commandId: input.commandId,
-      commandType:
-        submissionKind === "project_bootstrap_dedicated_entry"
-          ? "SubmitProjectBootstrapUserMessage"
-          : "SubmitUserMessage",
-      requestSha256: submitUserMessageRequestSha256(input, snapshot, submissionKind),
+      commandType: "SubmitUserMessage",
+      requestSha256: submitUserMessageRequestSha256(input, snapshot),
     };
   });
   if (priorReceipt !== undefined) {
@@ -1074,31 +936,14 @@ async function submitUserMessageInternal(
       workflowRunSpecId,
       sessionSequence: preflightSessionSequence,
       sourceMessageSha256,
-      submissionAuthorization: { kind: submissionKind },
     });
-  if (
-    submissionKind === "project_bootstrap_dedicated_entry" &&
-    (deps.projectBootstrapIds === undefined ||
-      deps.projectManagementBootstrap === undefined ||
-      deps.projectWorkspaceProvisioner === undefined)
-  ) {
-    throw new ApplicationError({
-      code: "revision_conflict",
-      httpStatus: 409,
-      message: "Project Bootstrap能力未配置",
-      recoveryAction: "rehydrate_and_retry",
-    });
-  }
   const contextRequestId = contextRequestIdSchema.parse(
     `ctxr_${hashCanonical("id.run-context-request.v1", { productRunId }).slice(0, 32)}`,
   );
 
   const result = await deps.store.transact({
     commandId: input.commandId,
-    commandType:
-      submissionKind === "project_bootstrap_dedicated_entry"
-        ? "SubmitProjectBootstrapUserMessage"
-        : "SubmitUserMessage",
+    commandType: "SubmitUserMessage",
     requestSha256,
     traceContext: { productRunId, productSessionId: targetSessionId },
     mutate: (draft) => {

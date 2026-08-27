@@ -12,7 +12,7 @@ export interface ProjectResourceRootDescriptor {
   readonly rootId: string;
   readonly displayName: string;
   readonly enabledAdapters: readonly ProjectResourceAdapterKind[];
-  /** 只有外置Git身份Pin稳定时才允许把Commit作为Plane审核证据。 */
+  /** 只有外置Git身份Pin稳定时才允许把Commit作为审核证据。 */
   readonly gitEvidenceEnabled?: boolean | undefined;
   /** 只在服务端比较rootId映射；不得投影canonical path或把Hash当公开资源身份。 */
   readonly grantSha256?: string | undefined;

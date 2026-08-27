@@ -20,7 +20,7 @@ import {
 import type { ProductSnapshotV25 } from "./legacy-v25.js";
 
 /**
- * v26发布Memory Session Import、Memory Agent产品事实集合和Memory Direct系统定义。
+ * 当前写代际发布Memory Session Import、Memory Agent产品事实集合和Memory Direct系统定义。
  * 迁移只从固定部署种子和已提交v25事实推导；模型候选、Provider对象、外部Memory ID和
  * 外部Session ID都不会在迁移时生成或伪装成产品身份。
  */

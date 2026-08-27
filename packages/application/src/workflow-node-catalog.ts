@@ -560,11 +560,9 @@ export const NODE_CATALOG_DESCRIPTORS: readonly NodeCatalogDescriptor[] = [
     category: "agent",
     configSchema: z
       .strictObject({
-        capabilityMode: z
-          .enum(["pi_cli_default", "custom", "read_only", "project_bootstrap"])
-          .default("pi_cli_default"),
+        capabilityMode: z.enum(["pi_cli_default", "custom", "read_only"]).default("pi_cli_default"),
         promptReviewMode: z.enum(["manual", "off"]).default("manual"),
-        agentKey: z.enum(["direct", "project_bootstrap"]).optional(),
+        agentKey: z.literal("direct").optional(),
         agentVersionId: agentVersionIdSchema.optional(),
         agentVersionSha256: sha256Schema.optional(),
         agentPromptOverride: z.string().max(65_536).optional(),

@@ -77,17 +77,16 @@ describe("paid and external test safety gate", () => {
   it("external writes require both the global and service-specific switches", async () => {
     const base = {
       mode: "external",
-      commandName: "test:external:plane-ce",
-      credentials: ["CHAT_PLANE_CE_API_TOKEN"],
-      switches: ["CHAT_PLANE_CE_REAL_TEST"],
+      commandName: "test:external:memory:memmy",
+      credentials: [],
+      switches: ["CHAT_MEMORY_REAL_TEST"],
     };
     await assert.rejects(
       validateTestSafetyGate(
         {
           ...base,
           environment: {
-            CHAT_PLANE_CE_REAL_TEST: "1",
-            CHAT_PLANE_CE_API_TOKEN: "secret",
+            CHAT_MEMORY_REAL_TEST: "1",
           },
         },
         async (environment) => environment,
@@ -100,12 +99,11 @@ describe("paid and external test safety gate", () => {
           ...base,
           environment: {
             CHAT_ALLOW_EXTERNAL_WRITES: "1",
-            CHAT_PLANE_CE_API_TOKEN: "secret",
           },
         },
         async (environment) => environment,
       ),
-      /CHAT_PLANE_CE_REAL_TEST/u,
+      /CHAT_MEMORY_REAL_TEST/u,
     );
   });
 
@@ -131,7 +129,6 @@ describe("paid and external test safety gate", () => {
         OPENAI_API_KEY: "openai-secret",
         GEMINI_API_KEY: "gemini-secret",
         CHAT_MEMMY_TOKEN: "memory-secret",
-        CHAT_PLANE_CE_API_TOKEN: "plane-secret",
         GITHUB_TOKEN: "github-secret",
         NPM_TOKEN: "npm-secret",
         SSH_AUTH_SOCK: "/ssh-agent",
@@ -156,7 +153,6 @@ describe("paid and external test safety gate", () => {
       "OPENAI_API_KEY",
       "GEMINI_API_KEY",
       "CHAT_MEMMY_TOKEN",
-      "CHAT_PLANE_CE_API_TOKEN",
       "GITHUB_TOKEN",
       "NPM_TOKEN",
       "SSH_AUTH_SOCK",
@@ -173,13 +169,11 @@ describe("paid and external test safety gate", () => {
     assert.equal(child.UNDECLARED_NON_SENSITIVE_CONFIG, undefined);
   });
 
-  it("Memory and Plane children receive disjoint minimum sensitive environments", async () => {
+  it("Memory child receives only its declared minimum sensitive environment", async () => {
     const loaded = {
       PATH: "/toolchain/bin",
       CHAT_ALLOW_EXTERNAL_WRITES: "1",
       CHAT_MEMORY_REAL_TEST: "1",
-      CHAT_PLANE_CE_REAL_TEST: "1",
-      CHAT_PLANE_CE_API_TOKEN: "plane-secret",
       CHAT_MEMMY_TOKEN: "memory-secret",
       CHAT_TENCENT_MEMORYCORE_TOKEN: "memorycore-secret",
       DASHSCOPE_API_KEY: "provider-secret",
@@ -200,8 +194,6 @@ describe("paid and external test safety gate", () => {
     assert.equal(memory.CHAT_MEMORY_REAL_TEST, "1");
     assert.equal(memory.CHAT_EXTERNAL_TEST_COMMAND_NAME, "test:external:memory:memmy");
     for (const name of [
-      "CHAT_PLANE_CE_REAL_TEST",
-      "CHAT_PLANE_CE_API_TOKEN",
       "CHAT_MEMMY_TOKEN",
       "CHAT_TENCENT_MEMORYCORE_TOKEN",
       "DASHSCOPE_API_KEY",
@@ -209,29 +201,6 @@ describe("paid and external test safety gate", () => {
       "SSH_AUTH_SOCK",
     ]) {
       assert.equal(memory[name], "", `${name}不得进入Memory child`);
-    }
-
-    const plane = await validateTestSafetyGate(
-      {
-        mode: "external",
-        commandName: "test:external:plane-ce",
-        credentials: ["CHAT_PLANE_CE_API_TOKEN"],
-        switches: ["CHAT_PLANE_CE_REAL_TEST"],
-        environment: loaded,
-      },
-      async () => loaded,
-    );
-    assert.equal(plane.CHAT_PLANE_CE_API_TOKEN, "plane-secret");
-    assert.equal(plane.CHAT_PLANE_CE_REAL_TEST, "1");
-    for (const name of [
-      "CHAT_MEMORY_REAL_TEST",
-      "CHAT_MEMMY_TOKEN",
-      "CHAT_TENCENT_MEMORYCORE_TOKEN",
-      "DASHSCOPE_API_KEY",
-      "GITHUB_TOKEN",
-      "SSH_AUTH_SOCK",
-    ]) {
-      assert.equal(plane[name], "", `${name}不得进入Plane child`);
     }
   });
 

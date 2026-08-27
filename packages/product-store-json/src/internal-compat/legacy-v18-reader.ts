@@ -8,11 +8,6 @@ import {
 import { z } from "zod";
 import { productSnapshotSchema } from "./product-store-v20.js";
 
-const productOutboxEntryV18Schema = outboxEntrySchema.refine(
-  (entry) => entry.kind !== "project_bootstrap_execute",
-  "v18不支持Project Bootstrap执行Outbox",
-);
-
 const historicalProductEntitiesV18Schema = productSnapshotSchema.shape.entities
   .omit({
     toolExecutionIntents: true,
@@ -26,13 +21,13 @@ const historicalProductEntitiesV18Schema = productSnapshotSchema.shape.entities
     ),
     agentVersions: z.record(z.string().min(1).max(200), legacyAgentVersionV1Schema),
   })
-  .strict();
+  .strip();
 
 export const productSnapshotV18Schema = productSnapshotSchema
   .extend({
     schemaVersion: z.literal("chat-product-store.v18"),
     entities: historicalProductEntitiesV18Schema,
-    outbox: z.record(z.string().min(1).max(200), productOutboxEntryV18Schema),
+    outbox: z.record(z.string().min(1).max(200), outboxEntrySchema),
   })
   .strict();
 

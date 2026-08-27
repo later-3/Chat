@@ -43,7 +43,7 @@ export const authorizedDirectAgentProfileSchema = z
     runRevision: z.number().int().positive(),
     sourceMessageId: messageIdSchema,
     sourceMessageSha256: sha256Schema,
-    capabilityMode: z.enum(["pi_cli_default", "custom", "read_only", "project_bootstrap"]),
+    capabilityMode: z.enum(["pi_cli_default", "custom", "read_only"]),
     limits: directAgentLimitsSchema,
   })
   .strict();

@@ -2,7 +2,6 @@ import { z } from "zod";
 import { sha256Schema } from "./hash.js";
 import {
   commandIdSchema,
-  principalIdSchema,
   projectContextMapIdSchema,
   projectDecisionIdSchema,
   projectEvidenceIdSchema,
@@ -10,16 +9,12 @@ import {
   projectMethodSnapshotIdSchema,
   projectParticipantIdSchema,
   projectPracticeRevisionIdSchema,
-  projectProviderBindingIdSchema,
-  projectProviderProjectionIdSchema,
-  projectWorkspaceBindingIdSchema,
   projectWorkBlockIdSchema,
   projectWorkClaimIdSchema,
   projectWorkHandoffIdSchema,
   projectWorkIdSchema,
   projectWorkOutcomeIdSchema,
 } from "./ids.js";
-import { projectWorkKeySchema, projectWorkKindSchema, projectWorkStatusSchema } from "./project.js";
 
 const isoDateTimeSchema = z.iso.datetime();
 const shortText = z.string().trim().min(1).max(500);
@@ -267,109 +262,10 @@ export const projectContextMapSchema = z
   })
   .strict();
 
-const projectProviderStateMappingSchema = z
-  .object({
-    workKind: projectWorkKindSchema,
-    chatState: projectWorkStatusSchema,
-    providerStateId: z.string().trim().min(1).max(200),
-    providerStateName: z.string().trim().min(1).max(100),
-    providerStateGroup: z.enum(["backlog", "unstarted", "started", "completed", "cancelled"]),
-  })
-  .strict();
-
-const projectProviderModuleMappingSchema = z
-  .object({
-    mappingKey: z.string().regex(/^[a-z0-9][a-z0-9:._-]{0,119}$/u),
-    providerModuleId: z.string().trim().min(1).max(200),
-    providerModuleName: z.string().trim().min(1).max(255),
-  })
-  .strict();
-
-const projectProviderLabelMappingSchema = z
-  .object({
-    mappingKey: z.string().regex(/^(?:kind|platform|series|executor):[a-z0-9][a-z0-9._-]{0,119}$/u),
-    providerLabelId: z.uuid(),
-    providerLabelName: z.string().trim().min(1).max(255),
-  })
-  .strict();
-
-export const projectProviderBindingSchema = z
-  .object({
-    schemaVersion: z.literal("project-provider-binding.v2"),
-    projectProviderBindingId: projectProviderBindingIdSchema,
-    projectId: projectIdSchema,
-    ownerPrincipalId: principalIdSchema,
-    projectKey: z.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/u),
-    /** v20迁移可能无法无歧义恢复Root；只有非活动隔离Binding允许暂缺。 */
-    workspaceRootId: z
-      .string()
-      .regex(/^root_[A-Za-z0-9]+$/u)
-      .optional(),
-    coordinationAgentParticipantId: projectParticipantIdSchema.optional(),
-    humanActorExternalIds: z.array(z.string().trim().min(1).max(200)).max(20),
-    providerKind: z.literal("plane_ce"),
-    providerVersion: z.string().trim().min(1).max(80),
-    externalWorkspaceId: z.string().trim().min(1).max(200),
-    externalProjectId: z.string().trim().min(1).max(200),
-    externalProjectIdentifier: z.string().trim().min(1).max(80),
-    syncPolicyVersion: z.literal("content-lab-plane-mapping.v1"),
-    stateMappings: z.array(projectProviderStateMappingSchema).max(100),
-    moduleMappings: z.array(projectProviderModuleMappingSchema).max(100),
-    labelMappings: z.array(projectProviderLabelMappingSchema).max(200),
-    reconciledWorkspaceBindingId: projectWorkspaceBindingIdSchema.optional(),
-    status: z.enum(["active", "needs_attention", "archived"]),
-    ...entityBase,
-  })
-  .strict()
-  .superRefine((binding, context) => {
-    if (binding.status === "active" && binding.workspaceRootId === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["workspaceRootId"],
-        message: "活动Provider Binding必须绑定唯一Workspace Root",
-      });
-    }
-  });
-
-export const projectProviderProjectionSchema = z
-  .object({
-    schemaVersion: z.literal("project-provider-projection.v2"),
-    projectProviderProjectionId: projectProviderProjectionIdSchema,
-    projectId: projectIdSchema,
-    bindingId: projectProviderBindingIdSchema,
-    objectType: z.enum(["work", "practice_revision", "context_page", "publication_history_page"]),
-    objectId: z.string().trim().min(1).max(200),
-    providerObjectType: z.enum(["work_item", "page"]),
-    providerObjectId: z.string().trim().min(1).max(200),
-    externalKey: projectWorkKeySchema.optional(),
-    chatObjectRevision: z.number().int().positive(),
-    providerFingerprint: sha256Schema,
-    providerSnapshot: z
-      .object({
-        name: z.string().trim().min(1).max(255),
-        description: z.string().max(10_000).optional(),
-        priority: z.enum(["none", "urgent", "high", "medium", "low"]),
-        stateId: z.string().trim().min(1).max(200),
-        stateName: z.string().trim().min(1).max(100),
-        stateGroup: z.enum(["backlog", "unstarted", "started", "completed", "cancelled"]),
-        updatedAt: isoDateTimeSchema,
-        moduleIds: z.array(z.uuid()).max(20),
-        labelIds: z.array(z.uuid()).max(100),
-      })
-      .strict()
-      .optional(),
-    syncStatus: z.enum(["healthy", "pending", "outcome_unknown", "needs_attention"]),
-    lastSyncedAt: isoDateTimeSchema.optional(),
-    ...entityBase,
-  })
-  .strict();
-
 export type ProjectWorkBlock = z.infer<typeof projectWorkBlockSchema>;
 export type ProjectWorkClaim = z.infer<typeof projectWorkClaimSchema>;
 export type ProjectWorkHandoff = z.infer<typeof projectWorkHandoffSchema>;
 export type ProjectPracticeRevision = z.infer<typeof projectPracticeRevisionSchema>;
 export type ProjectWorkOutcome = z.infer<typeof projectWorkOutcomeSchema>;
 export type ProjectContextMap = z.infer<typeof projectContextMapSchema>;
-export type ProjectProviderBinding = z.infer<typeof projectProviderBindingSchema>;
-export type ProjectProviderProjection = z.infer<typeof projectProviderProjectionSchema>;
 export type ProjectContextSelector = z.infer<typeof projectContextSelectorSchema>;

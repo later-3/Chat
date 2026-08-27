@@ -47,28 +47,6 @@
       ]
     },
     {
-      "agentKey": "project_bootstrap",
-      "title": "项目初始化 Agent",
-      "description": "收集项目初始化信息并通过受控工具准备候选，等待用户确认。",
-      "profileVersion": "project-bootstrap-agent.v1",
-      "supportedNodeTypes": ["agent.direct"],
-      "defaultPrompt": {
-        "kind": "pi_coding_agent",
-        "defaultVariantKey": "read_only",
-        "promptFragmentRevisionId": "pfr_builtinprojectbootstrapv1"
-      },
-      "tools": [
-        { "name": "read", "description": "读取受权Workspace中的文件。" },
-        { "name": "grep", "description": "在受权Workspace中搜索文本。" },
-        { "name": "find", "description": "在受权Workspace中查找文件。" },
-        { "name": "ls", "description": "列出受权Workspace目录。" },
-        {
-          "name": "project_bootstrap_prepare",
-          "description": "准备项目初始化候选；候选必须经用户确认后才能提交产品事实。"
-        }
-      ]
-    },
-    {
       "agentKey": "coding_executor",
       "title": "Pi Coding Agent · 规划步骤执行",
       "description": "复用Pi Coding Agent运行时，按照已批准执行合同完成当前步骤并验证结果。",
@@ -376,17 +354,6 @@
       "createdAt": "2026-08-22T00:00:00.000Z",
       "relativePath": "prompts/fragments/agent-identity/general-chat-agent.md",
       "sourceSha256": "781a997a9c1d24c3aca2523e2b467e7025bb58600d5513dd5dfaf0b00f5dd441"
-    },
-    {
-      "promptFragmentId": "pfg_builtinprojectbootstrap",
-      "promptFragmentRevisionId": "pfr_builtinprojectbootstrapv1",
-      "revision": 1,
-      "regionKey": "agent_identity",
-      "title": "项目创建协作 Agent",
-      "description": "配合受控Plane CE项目初始化工具收集信息、准备候选并等待用户确认。",
-      "createdAt": "2026-08-22T00:00:00.000Z",
-      "relativePath": "prompts/fragments/agent-identity/project-bootstrap-agent.md",
-      "sourceSha256": "4e9108f97a86d355efd2c8cd543a95d10b7faee6769f4b0cf086675517712986"
     },
     {
       "promptFragmentId": "pfg_builtinplanneragent",

@@ -58,14 +58,14 @@ describe("Pi Agent运行时配置私有客户端", () => {
     });
 
     await expect(client.read("planner")).resolves.toBeUndefined();
-    const first = await client.read("project_bootstrap", "root_chat");
-    const second = await client.read("project_bootstrap", "root_chat");
+    const first = await client.read("direct", "root_chat");
+    const second = await client.read("direct", "root_chat");
 
     expect(first).toEqual(runtimeBaseline());
     expect(second).toEqual(first);
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(requestedUrl).toBe(
-      "http://executor.test/internal/pi-executor/v1/agent-runtime-profiles/project_bootstrap?workspaceRootId=root_chat",
+      "http://executor.test/internal/pi-executor/v1/agent-runtime-profiles/direct?workspaceRootId=root_chat",
     );
     expect(requestedInit?.headers).toMatchObject({
       accept: "application/json",

@@ -30,34 +30,24 @@ function runtimeTool(name: string, workspaceRootId?: string) {
         ? ("local_write" as const)
         : ("external_write" as const);
   const capabilityId =
-    name === "project_bootstrap_prepare"
-      ? "pi_direct:tool:managed_extension:project_bootstrap:project_bootstrap_prepare"
-      : name === "runtime_probe"
-        ? "pi_direct:tool:workspace_extension:test:runtime_probe"
-        : `pi_direct:tool:builtin:${name}`;
+    name === "runtime_probe"
+      ? "pi_direct:tool:workspace_extension:test:runtime_probe"
+      : `pi_direct:tool:builtin:${name}`;
   const sourceRef =
-    name === "project_bootstrap_prepare"
+    name === "runtime_probe"
       ? {
-          sourceKind: "managed_extension" as const,
-          repository: "later-3/Chat",
-          revision: "chat-project-bootstrap-tool.v1",
-          artifactSha256: "7".repeat(64),
-          resourcePath: "packages/pi-runtime/src/project-bootstrap-tool.ts",
+          sourceKind: "workspace_extension" as const,
+          package: "workspace-test",
+          resourcePath: "<WORKSPACE_ROOT>/.pi/extensions/runtime-probe.ts",
+          contentSha256: "8".repeat(64),
         }
-      : name === "runtime_probe"
-        ? {
-            sourceKind: "workspace_extension" as const,
-            package: "workspace-test",
-            resourcePath: "<WORKSPACE_ROOT>/.pi/extensions/runtime-probe.ts",
-            contentSha256: "8".repeat(64),
-          }
-        : {
-            sourceKind: "builtin" as const,
-            package: "@earendil-works/pi-coding-agent",
-            repository: "later-3/pi",
-            revision: "1".repeat(40),
-            resourcePath: `pi/packages/coding-agent/src/core/tools/${name}.ts`,
-          };
+      : {
+          sourceKind: "builtin" as const,
+          package: "@earendil-works/pi-coding-agent",
+          repository: "later-3/pi",
+          revision: "1".repeat(40),
+          resourcePath: `pi/packages/coding-agent/src/core/tools/${name}.ts`,
+        };
   const descriptorInput = {
     schemaVersion: "capability-descriptor.v1" as const,
     capabilityId,
@@ -67,18 +57,11 @@ function runtimeTool(name: string, workspaceRootId?: string) {
     sourceRef,
     inputSchemaSha256: hashCanonical("test-tool-schema.v1", { name }),
     effect,
-    scopePolicy:
-      name === "project_bootstrap_prepare"
-        ? ("provider_defined" as const)
-        : ("workspace_required" as const),
+    scopePolicy: "workspace_required" as const,
     approvalPolicy:
-      effect === "read" || name === "project_bootstrap_prepare"
-        ? ("run_policy" as const)
-        : ("product_decision_required" as const),
+      effect === "read" ? ("run_policy" as const) : ("product_decision_required" as const),
     evidencePolicy:
-      effect === "read" || name === "project_bootstrap_prepare"
-        ? ("runtime_journal" as const)
-        : ("product_intent_result" as const),
+      effect === "read" ? ("runtime_journal" as const) : ("product_intent_result" as const),
     readiness: "available" as const,
   };
   const descriptorSha256 = hashCanonical("capability-descriptor.v1", descriptorInput);
@@ -95,26 +78,20 @@ function runtimeTool(name: string, workspaceRootId?: string) {
       inputSchemaSha256: descriptorInput.inputSchemaSha256,
       resolvedImplementationSha256: hashCanonical("test-tool-implementation.v1", sourceRef),
       scopeRef:
-        name === "project_bootstrap_prepare"
-          ? ({ kind: "provider", providerRef: "chat:project-bootstrap-candidate.v1" } as const)
-          : workspaceRootId === undefined
-            ? ({ kind: "global" } as const)
-            : ({ kind: "workspace", rootId: workspaceRootId } as const),
+        workspaceRootId === undefined
+          ? ({ kind: "global" } as const)
+          : ({ kind: "workspace", rootId: workspaceRootId } as const),
     },
   };
 }
 
 function runtimeProfile(agentKey: AgentKey) {
-  if (agentKey !== "direct" && agentKey !== "project_bootstrap" && agentKey !== "coding_executor")
-    return undefined;
+  if (agentKey !== "direct" && agentKey !== "coding_executor") return undefined;
   const direct = agentKey === "direct";
-  const bootstrap = agentKey === "project_bootstrap";
-  const variantKey = direct ? "pi_cli_default" : bootstrap ? "read_only" : "workspace_write_shell";
+  const variantKey = direct ? "pi_cli_default" : "workspace_write_shell";
   const tools = direct
     ? ["read", "bash", "edit", "write"]
-    : bootstrap
-      ? ["project_bootstrap_prepare"]
-      : ["read", "bash", "edit", "write", "grep", "find", "ls"];
+    : ["read", "bash", "edit", "write", "grep", "find", "ls"];
   return agentRuntimeBaselineDtoSchema.parse({
     kind: "pi_coding_agent",
     title: "Pi Coding Agent",
@@ -125,18 +102,12 @@ function runtimeProfile(agentKey: AgentKey) {
     compositionStrategy:
       "pi_runtime_then_agent_version_then_workflow_session_run_then_chat_context",
     chatRuntimeAppend: {
-      bodyMarkdown: direct || bootstrap ? "Direct Runtime Contract" : "Coding Runtime Contract",
+      bodyMarkdown: direct ? "Direct Runtime Contract" : "Coding Runtime Contract",
       sha256: "b".repeat(64),
       sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
       appliesToVariantKeys: [variantKey],
     },
-    variants: (bootstrap
-      ? [
-          { key: "read_only", names: ["read", "grep", "find", "ls"] },
-          { key: "project_bootstrap", names: tools },
-        ]
-      : [{ key: variantKey, names: tools }]
-    ).map((definition) => ({
+    variants: [{ key: variantKey, names: tools }].map((definition) => ({
       variantKey: definition.key,
       title: definition.key,
       description: "测试Pi能力",
@@ -353,7 +324,6 @@ function fixture(): {
           ...[
             ["planner", "规划 Agent", "你是规划 Agent。"],
             ["direct", "直接执行 Agent", "你是直接执行 Agent。"],
-            ["projectbootstrap", "项目初始化 Agent", "你是项目初始化 Agent。"],
             ["codingexecutor", "编码执行 Agent", "你是编码执行 Agent。"],
             ["noteextractor", "笔记提取 Agent", "你是笔记提取 Agent。"],
           ].map(([key, title, body]) => ({
@@ -393,22 +363,6 @@ function fixture(): {
               defaultVariantKey: "pi_cli_default",
             },
             tools: [{ name: "read", description: "读取文件" }],
-          },
-          {
-            agentKey: "project_bootstrap" as const,
-            title: "项目初始化 Agent",
-            description: "负责准备项目初始化候选",
-            profileVersion: "project-bootstrap-agent.v1",
-            supportedNodeTypes: ["agent.direct"],
-            defaultPrompt: {
-              kind: "pi_coding_agent",
-              defaultVariantKey: "read_only",
-              promptFragmentRevisionId: "pfr_builtinprojectbootstrapv1" as never,
-            },
-            tools: [
-              { name: "read", description: "读取文件" },
-              { name: "project_bootstrap_prepare", description: "准备项目候选" },
-            ],
           },
           {
             agentKey: "coding_executor" as const,
@@ -1054,54 +1008,5 @@ describe("Direct Prompt Assembly", () => {
         },
       }),
     ).resolves.toMatchObject({ tools: { names: ["runtime_probe"] } });
-  });
-
-  it("Project Bootstrap的Capability Tool清单在V4 Assembly中冻结", async () => {
-    const { deps } = fixture();
-    const assembly = await compileDirectPromptAssembly(deps, {
-      principalId: "usr_promptassembly" as never,
-      text: "创建项目",
-      selection: { schemaVersion: "prompt-turn-selection-input.v1", regions: [] },
-      productSessionId: "psn_promptbootstrap1" as never,
-      productRunId: "run_promptbootstrap1" as never,
-      sourceMessageId: "msg_promptbootstrap1" as never,
-      sourceMessageSequence: 1,
-      sourceMessageSha256: "c".repeat(64),
-      workflowDefinitionRevisionId: "wfr_promptbootstrap1" as never,
-      nodeResolutions: [
-        {
-          definitionNodeId: "direct.agent",
-          nodeType: "agent.direct",
-          schemaVersion: 1,
-          config: {
-            capabilityMode: "project_bootstrap",
-            promptReviewMode: "manual",
-          },
-          activation: "enabled",
-        },
-      ],
-      createdAt: NOW,
-    });
-    expect(assembly.tools).toMatchObject({
-      capabilityMode: "project_bootstrap",
-      selectionMode: "explicit",
-      names: ["project_bootstrap_prepare"],
-      resources: {
-        contextFiles: "disabled",
-        skills: "disabled",
-        promptTemplates: "disabled",
-        extensions: "disabled",
-      },
-      estimatedTokens: 8_000,
-    });
-    expect(assembly.tools.capabilities.map((capability) => capability.localName)).toEqual([
-      "project_bootstrap_prepare",
-    ]);
-    expect(assembly.systemPromptAppend).not.toContain("你是项目初始化 Agent");
-    expect(assembly.piSystemPrompt).toMatchObject({
-      kind: "pi_coding_agent",
-      mode: "replace",
-      bodyMarkdown: expect.stringContaining("你是项目初始化 Agent"),
-    });
   });
 });

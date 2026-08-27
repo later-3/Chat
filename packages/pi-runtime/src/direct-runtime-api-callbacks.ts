@@ -11,8 +11,6 @@ import {
   persistDirectAgentCandidateRuntimeResponseSchema,
   publishPromptReviewRuntimeRequestSchema,
   publishPromptReviewRuntimeResponseSchema,
-  prepareProjectBootstrapRuntimeRequestSchema,
-  prepareProjectBootstrapRuntimeResponseSchema,
   publishToolExecutionIntentRuntimeRequestSchema,
   publishToolExecutionIntentRuntimeResponseSchema,
   claimToolExecutionDecisionRuntimeRequestSchema,
@@ -31,7 +29,6 @@ import type {
   AuthorizedDirectAgentInput,
   PiDirectExecutorServiceOptions,
   PublishDirectAgentResultInput,
-  ProjectBootstrapProductPort,
 } from "./direct-executor-service.js";
 import type {
   DirectPromptReviewProductPort,
@@ -102,11 +99,7 @@ export function createDirectAgentRuntimeApiCallbacks(
   options: DirectAgentRuntimeApiCallbacksOptions,
 ): Pick<
   PiDirectExecutorServiceOptions,
-  | "authorizeOperation"
-  | "promptReviewProduct"
-  | "toolExecutionProduct"
-  | "publishResult"
-  | "projectBootstrapProduct"
+  "authorizeOperation" | "promptReviewProduct" | "toolExecutionProduct" | "publishResult"
 > {
   const authorizeOperation = async (
     request: StartPiDirectExecutorOperationRequest,
@@ -142,9 +135,6 @@ export function createDirectAgentRuntimeApiCallbacks(
       promptAssembly,
       ...(response.memoryContext === undefined ? {} : { memoryContext: response.memoryContext }),
       capabilityMode: response.capabilityMode,
-      ...(response.projectBootstrapContext === undefined
-        ? {}
-        : { projectBootstrapContext: response.projectBootstrapContext }),
       promptReviewMode: response.promptReviewMode,
       limits: response.limits,
     };
@@ -391,34 +381,10 @@ export function createDirectAgentRuntimeApiCallbacks(
     },
   };
 
-  const projectBootstrapProduct: ProjectBootstrapProductPort = {
-    async prepare(input) {
-      const response = await postRuntime({
-        options,
-        path: DIRECT_AGENT_RUNTIME_PATHS.prepareProjectBootstrap,
-        body: prepareProjectBootstrapRuntimeRequestSchema.parse({
-          schemaVersion: DIRECT_AGENT_INTERNAL_RUNTIME_SCHEMA_VERSION,
-          commandId: input.commandId,
-          productRunId: input.productRunId,
-          proposal: input.proposal,
-        }),
-        responseSchema: prepareProjectBootstrapRuntimeResponseSchema,
-      });
-      if (response.candidate.sourceProductRunId !== input.productRunId) {
-        throw new DirectAgentRuntimeCallbackError(
-          "direct_runtime.project_bootstrap_binding_mismatch",
-          false,
-        );
-      }
-      return response.candidate;
-    },
-  };
-
   return {
     authorizeOperation,
     promptReviewProduct,
     toolExecutionProduct,
     publishResult,
-    projectBootstrapProduct,
   };
 }

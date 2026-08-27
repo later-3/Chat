@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { lifeosProjectionSchema } from "../src/contracts.ts";
 import {
-  canRequestProjectBootstrapRecovery,
   hasActionableNoteReview,
   hasActionablePlanReview,
   hasActionablePromptReview,
@@ -11,68 +10,6 @@ import {
 
 const timestamp = "2026-08-18T08:00:00.000Z";
 const planSha256 = "a".repeat(64);
-
-test("Client只使用Product Query投影的恢复资格，不按queued/dispatching猜测", () => {
-  assert.equal(
-    canRequestProjectBootstrapRecovery({
-      recovery: { canRecover: true },
-    }),
-    true,
-  );
-  assert.equal(
-    canRequestProjectBootstrapRecovery({
-      recovery: { canRecover: false },
-    }),
-    false,
-  );
-});
-
-test("已拒绝且无后续动作的建项Candidate不会让审核Dock常驻", () => {
-  const rejected = lifeosProjectionSchema.parse({
-    schemaVersion: "chat-dsh-lifeos-bridge.v3",
-    dshSessionId: "dsh-session-bootstrap-rejected",
-    run: null,
-    plan: null,
-    approval: null,
-    pendingDecision: null,
-    noteCandidate: null,
-    pendingNoteDecision: null,
-    workflowSelection: null,
-    executionTraces: [],
-    projectBootstrap: {
-      candidate: {
-        schemaVersion: "project-bootstrap.v1",
-        projectBootstrapCandidateId: "pbc_dockrejected1",
-        ownerPrincipalId: "usr_debug",
-        sourceProductSessionId: "psn_dockrejected1",
-        sourceProductRunId: "run_dockrejected1",
-        proposal: {
-          name: "拒绝测试",
-          objective: "验证审核Dock退出。",
-          planeWorkspaceSlug: "learning",
-          planeProjectIdentifier: "REJECT",
-          workspaceRootId: "root_code",
-          directoryName: "dock-rejected",
-          initializerProfile: "blank",
-          initialModules: [],
-        },
-        preview: {
-          planeProjectLabel: "Learning/REJECT",
-          workspaceLabel: "Code/dock-rejected",
-          gitAction: "initialize",
-          initialModules: [],
-        },
-        status: "rejected",
-        sha256: "a".repeat(64),
-        revision: 2,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-      recovery: { canRecover: false, reason: "not_applicable" },
-    },
-  });
-  assert.equal(shouldShowLifeosReviewDock(rejected), false);
-});
 
 test("已解析Project会显示同一开工包的窄协调状态", () => {
   const coordinated = lifeosProjectionSchema.parse({

@@ -544,7 +544,6 @@ export const AGENT_BINDINGS_BY_NODE_TYPE: Readonly<
 const AGENT_PROFILE_VERSION_BY_KEY: Readonly<Record<AgentKey, string>> = {
   planner: "planner-prompt.v3",
   direct: "direct-agent-prompt.v1",
-  project_bootstrap: "project-bootstrap-agent.v1",
   coding_executor: "executor-coding-agent-prompt.v1",
   governance_reviewer: "governance-review.v1",
   note_extractor: "note-capture.v1",
@@ -603,18 +602,6 @@ export function agentBindingForNode(
       ...(promptOverrideMarkdown === undefined ? {} : { promptOverrideMarkdown }),
     };
   }
-  if (nodeType === "agent.direct" && config["capabilityMode"] === "project_bootstrap") {
-    return {
-      agentKey: "project_bootstrap",
-      profileVersion: "project-bootstrap-agent.v1",
-      ...versionRef,
-      ...(temporarySystemPrompt?.["mode"] === "inherit_runtime" ||
-      temporarySystemPrompt?.["mode"] === "replace"
-        ? { systemPromptMode: temporarySystemPrompt["mode"] }
-        : {}),
-      ...(promptOverrideMarkdown === undefined ? {} : { promptOverrideMarkdown }),
-    };
-  }
   return {
     ...AGENT_BINDINGS_BY_NODE_TYPE[nodeType],
     ...versionRef,
@@ -649,26 +636,22 @@ export function agentNodeBindingDescriptor(
                 summary:
                   typeof config["agentVersionId"] === "string"
                     ? "由绑定的不可变Agent Version决定"
-                    : config["capabilityMode"] === "project_bootstrap"
-                      ? "可准备受控项目初始化候选"
-                      : config["capabilityMode"] === "read_only"
-                        ? "显式只读Agent版本"
-                        : config["capabilityMode"] === "custom"
-                          ? "由本次会话的Agent配置决定"
-                          : "继承Pi CLI默认编码能力；调用审批另行治理",
+                    : config["capabilityMode"] === "read_only"
+                      ? "显式只读Agent版本"
+                      : config["capabilityMode"] === "custom"
+                        ? "由本次会话的Agent配置决定"
+                        : "继承Pi CLI默认编码能力；调用审批另行治理",
                 defaultTools:
                   typeof config["agentVersionId"] === "string"
                     ? []
-                    : config["capabilityMode"] === "project_bootstrap"
-                      ? ["project_bootstrap_prepare"]
-                      : config["capabilityMode"] === "read_only"
-                        ? ["read", "grep", "find", "ls"]
-                        : config["capabilityMode"] === "custom" &&
-                            Array.isArray(config["enabledToolNames"])
-                          ? config["enabledToolNames"].filter(
-                              (name): name is string => typeof name === "string",
-                            )
-                          : ["read", "bash", "edit", "write"],
+                    : config["capabilityMode"] === "read_only"
+                      ? ["read", "grep", "find", "ls"]
+                      : config["capabilityMode"] === "custom" &&
+                          Array.isArray(config["enabledToolNames"])
+                        ? config["enabledToolNames"].filter(
+                            (name): name is string => typeof name === "string",
+                          )
+                        : ["read", "bash", "edit", "write"],
               }
             : {
                 summary: "由批准的Execution Contract能力引用在运行时冻结",
@@ -895,15 +878,13 @@ function resolveCurrentDirectAgentExecutionEnvelope(input: {
   }
   const resolvedConfiguration = temporaryConfiguration ?? input.agentVersion;
   const capabilityMode =
-    input.directNodeConfig["capabilityMode"] === "project_bootstrap"
-      ? ("project_bootstrap" as const)
-      : resolvedConfiguration !== undefined
-        ? ("custom" as const)
-        : input.directNodeConfig["capabilityMode"] === "read_only"
-          ? ("read_only" as const)
-          : input.directNodeConfig["capabilityMode"] === "custom"
-            ? ("custom" as const)
-            : ("pi_cli_default" as const);
+    resolvedConfiguration !== undefined
+      ? ("custom" as const)
+      : input.directNodeConfig["capabilityMode"] === "read_only"
+        ? ("read_only" as const)
+        : input.directNodeConfig["capabilityMode"] === "custom"
+          ? ("custom" as const)
+          : ("pi_cli_default" as const);
   const configuredToolNames =
     resolvedConfiguration?.enabledToolNames ??
     (Array.isArray(input.directNodeConfig["enabledToolNames"])
@@ -928,13 +909,11 @@ function resolveCurrentDirectAgentExecutionEnvelope(input: {
     capabilityMode,
     selectionMode: capabilityMode === "pi_cli_default" ? "inherit_runtime_default" : "explicit",
     names:
-      capabilityMode === "project_bootstrap"
-        ? ["project_bootstrap_prepare"]
-        : capabilityMode === "read_only"
-          ? ["read", "grep", "find", "ls"]
-          : capabilityMode === "pi_cli_default"
-            ? []
-            : configuredToolNames!,
+      capabilityMode === "read_only"
+        ? ["read", "grep", "find", "ls"]
+        : capabilityMode === "pi_cli_default"
+          ? []
+          : configuredToolNames!,
     resources:
       resolvedConfiguration?.resources ??
       (input.directNodeConfig["resourcePolicy"] === undefined
@@ -1006,12 +985,8 @@ export function resolveDirectAgentExecutionEnvelopeV4(input: {
     rawTemporary === undefined ? undefined : agentTemporaryConfigurationSchema.parse(rawTemporary);
   const configured = temporary ?? input.agentVersion;
   const variantKey =
-    input.directNodeConfig["capabilityMode"] === "project_bootstrap"
-      ? "project_bootstrap"
-      : (configured?.runtime.baseVariantKey ??
-        (input.directNodeConfig["capabilityMode"] === "read_only"
-          ? "read_only"
-          : "pi_cli_default"));
+    configured?.runtime.baseVariantKey ??
+    (input.directNodeConfig["capabilityMode"] === "read_only" ? "read_only" : "pi_cli_default");
   const variant = input.profile.runtimeBaseline?.variants.find(
     (candidate) => candidate.variantKey === variantKey,
   );

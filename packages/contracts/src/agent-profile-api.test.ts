@@ -128,27 +128,6 @@ describe("Prompt Assembly Tool代际合同", () => {
     },
   };
 
-  it("v2 project_bootstrap只接受真实历史五工具，v4只接受prepare", () => {
-    const historical = {
-      ...historicalBase,
-      capabilityMode: "project_bootstrap" as const,
-      names: ["read", "grep", "find", "ls", "project_bootstrap_prepare"],
-    };
-    expect(promptEnvelopeToolsSchema.safeParse(historical).success).toBe(true);
-    expect(
-      promptEnvelopeToolsSchema.safeParse({ ...historical, names: ["project_bootstrap_prepare"] })
-        .success,
-    ).toBe(false);
-    expect(
-      promptEnvelopeToolsV4Schema.safeParse({
-        ...currentBase,
-        capabilityMode: "project_bootstrap",
-        names: ["project_bootstrap_prepare"],
-        capabilities: [],
-      }).success,
-    ).toBe(false);
-  });
-
   it("v4显式零Tool Agent合法", () => {
     expect(
       promptEnvelopeToolsV4Schema.safeParse({

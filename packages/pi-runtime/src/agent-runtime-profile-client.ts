@@ -25,11 +25,7 @@ export function createPiAgentRuntimeProfileClient(options: PiAgentRuntimeProfile
       workspaceRootId?: string,
     ): Promise<AgentRuntimeBaselineDto | undefined> {
       const parsedAgentKey = agentProfileAgentKeySchema.parse(agentKey);
-      if (
-        parsedAgentKey !== "direct" &&
-        parsedAgentKey !== "project_bootstrap" &&
-        parsedAgentKey !== "coding_executor"
-      ) {
+      if (parsedAgentKey !== "direct" && parsedAgentKey !== "coding_executor") {
         return Promise.resolve(undefined);
       }
       return (async () => {

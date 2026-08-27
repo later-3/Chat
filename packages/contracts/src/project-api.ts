@@ -12,8 +12,6 @@ import {
   projectObservationIdSchema,
   projectParticipantIdSchema,
   projectPracticeRevisionIdSchema,
-  projectProviderBindingIdSchema,
-  projectProviderProjectionIdSchema,
   projectResourceIdSchema,
   projectStageIdSchema,
   projectUpdateIdSchema,
@@ -584,36 +582,6 @@ const contextMapDtoSchema = z
   })
   .strict();
 
-const providerBindingDtoSchema = z
-  .object({
-    projectProviderBindingId: projectProviderBindingIdSchema,
-    providerKind: z.literal("plane_ce"),
-    providerVersion: z.string(),
-    externalWorkspaceId: z.string(),
-    externalProjectId: z.string(),
-    externalProjectIdentifier: z.string(),
-    syncPolicyVersion: z.string(),
-    status: z.enum(["active", "needs_attention", "archived"]),
-    revision: z.number().int().positive(),
-  })
-  .strict();
-
-const providerProjectionDtoSchema = z
-  .object({
-    projectProviderProjectionId: projectProviderProjectionIdSchema,
-    bindingId: projectProviderBindingIdSchema,
-    objectType: z.enum(["work", "practice_revision", "context_page", "publication_history_page"]),
-    objectId: z.string(),
-    providerObjectType: z.enum(["work_item", "page"]),
-    providerObjectId: z.string(),
-    externalKey: projectWorkKeySchema.optional(),
-    chatObjectRevision: z.number().int().positive(),
-    syncStatus: z.enum(["healthy", "pending", "outcome_unknown", "needs_attention"]),
-    lastSyncedAt: z.iso.datetime().optional(),
-    revision: z.number().int().positive(),
-  })
-  .strict();
-
 export const projectWorkspaceV3DtoSchema = z
   .object({
     schemaVersion: z.literal(PROJECT_API_V3_SCHEMA_VERSION),
@@ -676,8 +644,6 @@ export const projectWorkspaceV3DtoSchema = z
     practices: z.array(practiceRevisionDtoSchema).max(100),
     publicationOutcomes: z.array(workOutcomeDtoSchema).max(500),
     contextMap: contextMapDtoSchema.nullable(),
-    providerBindings: z.array(providerBindingDtoSchema).max(20),
-    providerProjections: z.array(providerProjectionDtoSchema).max(1_000),
     decisions: z
       .array(
         z

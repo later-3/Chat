@@ -4,7 +4,6 @@ import type {
   PrincipalId,
   ProjectDecision,
   ProjectEvidence,
-  ProjectProviderProjection,
   ProjectWork,
 } from "@chat/contracts";
 import type { ApplicationDeps } from "./deps.js";
@@ -37,7 +36,6 @@ export interface ContentLabProjectContextBundle {
     readonly observationSha256: string;
     readonly changeCandidateClassification: "baseline" | "none" | "review_required";
   };
-  readonly providerSnapshot: ProjectProviderProjection["providerSnapshot"] | null;
   readonly decisions: readonly Pick<
     ProjectDecision,
     | "projectDecisionId"
@@ -61,8 +59,8 @@ export interface ContentLabProjectContextBundle {
 }
 
 /**
- * Agent上下文由Chat权威事实和只读Resource快照共同编译；Plane只使用最近一次Store投影，
- * 这里不发外部请求，也不把目录变化自动解释为Published/Adopted。
+ * Agent上下文由Chat权威事实和只读Resource快照共同编译；这里不发外部请求，
+ * 也不把目录变化自动解释为Published/Adopted。
  */
 export async function compileContentLabProjectContext(
   deps: ApplicationDeps,
@@ -116,20 +114,6 @@ export async function compileContentLabProjectContext(
     observation: observation.data.contentLab,
     selection: contextSelection(work),
   });
-  const activeBindingIds = new Set(
-    Object.values(snapshot.entities.projectProviderBindings)
-      .filter((item) => item.projectId === project.projectId && item.status === "active")
-      .map((item) => item.projectProviderBindingId),
-  );
-  const projection = Object.values(snapshot.entities.projectProviderProjections)
-    .filter(
-      (item) =>
-        item.projectId === project.projectId &&
-        item.objectType === "work" &&
-        item.objectId === work.projectWorkId &&
-        activeBindingIds.has(item.bindingId),
-    )
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
   const decisions = Object.values(snapshot.entities.projectDecisions)
     .filter(
       (item) =>
@@ -193,7 +177,6 @@ export async function compileContentLabProjectContext(
       observationSha256: observation.sha256,
       changeCandidateClassification: observation.changeCandidate?.classification ?? "none",
     },
-    providerSnapshot: projection?.providerSnapshot ?? null,
     decisions,
     evidence,
     resourceContext,

@@ -79,27 +79,15 @@ import {
   memoryAgentWriteCandidateSchema,
   memoryAgentWriteDecisionSchema,
 } from "./memory-agent.js";
-import {
-  projectBootstrapCandidateSchema,
-  projectBootstrapDecisionSchema,
-  projectBootstrapOperationSchema,
-  projectWorkspaceBindingSchema,
-} from "./project-bootstrap.js";
 import { agentVersionSchema } from "./agent-configuration.js";
 import {
   projectContextMapSchema,
   projectPracticeRevisionSchema,
-  projectProviderBindingSchema,
-  projectProviderProjectionSchema,
   projectWorkBlockSchema,
   projectWorkClaimSchema,
   projectWorkHandoffSchema,
   projectWorkOutcomeSchema,
 } from "./project-coordination.js";
-import {
-  planeProjectOperationSchema,
-  projectInboundChangeSchema,
-} from "./plane-project-coordination.js";
 import {
   toolExecutionDecisionSchema,
   toolExecutionIntentSchema,
@@ -203,10 +191,6 @@ const productEntitiesSchema = z
     projectPracticeRevisions: z.record(idKeySchema, projectPracticeRevisionSchema),
     projectWorkOutcomes: z.record(idKeySchema, projectWorkOutcomeSchema),
     projectContextMaps: z.record(idKeySchema, projectContextMapSchema),
-    projectProviderBindings: z.record(idKeySchema, projectProviderBindingSchema),
-    projectProviderProjections: z.record(idKeySchema, projectProviderProjectionSchema),
-    projectCoordinationOperations: z.record(idKeySchema, planeProjectOperationSchema),
-    projectInboundChanges: z.record(idKeySchema, projectInboundChangeSchema),
     projectProfileRevisions: z.record(idKeySchema, projectProfileRevisionSchema),
     projectConfigurationRevisions: z.record(idKeySchema, projectConfigurationRevisionSchema),
     projectEvents: z.record(idKeySchema, projectEventSchema),
@@ -255,14 +239,7 @@ export const productSnapshotSchema = z
     schemaVersion: z.literal(PRODUCT_STORE_SCHEMA_VERSION),
     storeRevision: z.number().int().nonnegative(),
     committedAt: z.iso.datetime(),
-    entities: productEntitiesSchema
-      .extend({
-        projectBootstrapCandidates: z.record(idKeySchema, projectBootstrapCandidateSchema),
-        projectBootstrapDecisions: z.record(idKeySchema, projectBootstrapDecisionSchema),
-        projectBootstrapOperations: z.record(idKeySchema, projectBootstrapOperationSchema),
-        projectWorkspaceBindings: z.record(idKeySchema, projectWorkspaceBindingSchema),
-      })
-      .strict(),
+    entities: productEntitiesSchema,
     commandReceipts: z.record(idKeySchema, commandReceiptSchema),
     outbox: z.record(idKeySchema, outboxEntrySchema),
   })
@@ -333,10 +310,6 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       projectPracticeRevisions: {},
       projectWorkOutcomes: {},
       projectContextMaps: {},
-      projectProviderBindings: {},
-      projectProviderProjections: {},
-      projectCoordinationOperations: {},
-      projectInboundChanges: {},
       projectProfileRevisions: {},
       projectConfigurationRevisions: {},
       projectEvents: {},
@@ -377,10 +350,6 @@ export function createEmptySnapshot(committedAt: string): ProductSnapshot {
       memoryAgentOperations: {},
       memoryAgentWriteCandidates: {},
       memoryAgentWriteDecisions: {},
-      projectBootstrapCandidates: {},
-      projectBootstrapDecisions: {},
-      projectBootstrapOperations: {},
-      projectWorkspaceBindings: {},
     },
     commandReceipts: {},
     outbox: {},

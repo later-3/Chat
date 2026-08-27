@@ -9,7 +9,7 @@ import { migrateProductSnapshotV21ToV22 } from "./migrate-v21-to-v22.js";
  * 将正式main的Capability v20汇入v22。
  *
  * 先把旧Project部分按P8已经验证的v19→v20→v21链升级，再逐字保留原来的
- * Tool Intent/Decision/Result集合。整个过程只转换内存中的本地快照；不会调用Plane、Git或文件Resource。
+ * Tool Intent/Decision/Result集合。整个过程只转换内存中的本地快照，不调用外部Resource。
  */
 export function migrateProductSnapshotV20CapabilityToV22(
   snapshot: ProductSnapshotV20Capability,

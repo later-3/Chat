@@ -402,9 +402,6 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
     CommitPromptReviewOutcomeUnknown: ["promptReviewRequestId"],
     PersistDirectAgentCandidate: ["directAgentCandidateId"],
     CommitDirectAgentResult: ["directAgentCandidateId", "messageId", "productRunId"],
-    PrepareProjectBootstrapCandidate: ["projectBootstrapCandidateId"],
-    RequestProjectBootstrapOperationRetry: ["projectBootstrapOperationId", "outboxId"],
-    RenewProjectBootstrapExecutionLease: [],
     CommitRejectedRun: ["productRunId"],
     ExpireApproval: ["status"],
     CommitRunFailure: ["productRunId"],
@@ -512,18 +509,6 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
       "projectPracticeRevisionId",
       "projectDecisionId",
     ],
-    AdoptExistingPlaneProject: ["projectProviderBindingId"],
-    PreparePlaneProjectOperation: ["projectCoordinationOperationId"],
-    ClaimPlaneProjectOperation: ["projectCoordinationOperationId"],
-    FinalizePlaneProjectOperation: ["projectCoordinationOperationId"],
-    ReconcilePlaneProjectOperation: ["projectCoordinationOperationId"],
-    ManuallyDisposePlaneProjectOperation: ["projectCoordinationOperationId"],
-    RecordProjectInboundChange: ["projectInboundChangeId"],
-    AdoptPlaneProjectWorkMetadata: ["projectWorkId"],
-    AdoptProjectInboundChange: ["projectInboundChangeId"],
-    FailProjectInboundChangeAdoption: ["projectInboundChangeId"],
-    ResolvePlaneProjectInboundChange: ["projectInboundChangeId"],
-    SyncPlaneProject: ["projectProviderBindingId"],
     ReviseNote: ["noteId", "noteRevisionId"],
     ArchiveNote: ["noteId"],
     RestoreNote: ["noteId"],
@@ -557,8 +542,7 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
     }
     const receiptRun = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
     const expectedKeys =
-      receipt.commandType === "SubmitUserMessage" ||
-      receipt.commandType === "SubmitProjectBootstrapUserMessage"
+      receipt.commandType === "SubmitUserMessage"
         ? receiptRun?.runnerFamily === "legacy-planning.v1"
           ? ["messageId", "productRunId"]
           : ["messageId", "productRunId", "workflowRunSpecId"]
@@ -566,65 +550,40 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
           ? receipt.resultRefs["approvalExpired"] === "true"
             ? ["approvalExpired", "productRunId"]
             : ["decisionId", "productRunId"]
-          : receipt.commandType === "DecideProjectBootstrapCandidate"
-            ? receipt.resultRefs["projectBootstrapOperationId"] === undefined
-              ? ["projectBootstrapCandidateId", "projectBootstrapDecisionId"]
-              : receipt.resultRefs["outboxId"] === undefined
-                ? [
-                    "projectBootstrapCandidateId",
-                    "projectBootstrapDecisionId",
-                    "projectBootstrapOperationId",
-                  ]
+          : receipt.commandType === "DecideProjectCandidate"
+            ? receipt.resultRefs["projectId"] === undefined
+              ? ["projectCandidateId"]
+              : ["projectCandidateId", "projectId"]
+            : receipt.commandType === "PreparePlanningMemoryContext"
+              ? receipt.resultRefs["planningMemorySelectionId"] === undefined
+                ? ["contextStatus", "productRunId", "workflowNodeRunId"]
                 : [
-                    "outboxId",
-                    "projectBootstrapCandidateId",
-                    "projectBootstrapDecisionId",
-                    "projectBootstrapOperationId",
+                    "contextStatus",
+                    "planningMemorySelectionId",
+                    "productRunId",
+                    "workflowNodeRunId",
                   ]
-            : receipt.commandType === "ClaimProjectBootstrapOperation"
-              ? receipt.resultRefs["outboxId"] === undefined
-                ? ["projectBootstrapOperationId"]
-                : receipt.resultRefs["fencingToken"] === undefined
-                  ? ["executionMode", "outboxId", "projectBootstrapOperationId"]
-                  : ["executionMode", "fencingToken", "outboxId", "projectBootstrapOperationId"]
-              : receipt.commandType === "FinalizeProjectBootstrapOperation"
-                ? receipt.resultRefs["projectWorkspaceBindingId"] === undefined
-                  ? ["projectBootstrapOperationId"]
-                  : ["projectBootstrapOperationId", "projectWorkspaceBindingId"]
-                : receipt.commandType === "DecideProjectCandidate"
-                  ? receipt.resultRefs["projectId"] === undefined
-                    ? ["projectCandidateId"]
-                    : ["projectCandidateId", "projectId"]
-                  : receipt.commandType === "PreparePlanningMemoryContext"
-                    ? receipt.resultRefs["planningMemorySelectionId"] === undefined
-                      ? ["contextStatus", "productRunId", "workflowNodeRunId"]
-                      : [
-                          "contextStatus",
-                          "planningMemorySelectionId",
-                          "productRunId",
-                          "workflowNodeRunId",
-                        ]
-                    : receipt.commandType === "PreparePlanningProjectContext"
-                      ? receipt.resultRefs["planningProjectContextId"] === undefined
-                        ? ["productRunId", "workflowNodeRunId"]
-                        : ["planningProjectContextId", "productRunId", "workflowNodeRunId"]
-                      : receipt.commandType === "PreparePlanningRulesContext"
-                        ? receipt.resultRefs["ruleSelectionId"] === undefined
-                          ? ["productRunId", "workflowNodeRunId"]
-                          : ["productRunId", "ruleSelectionId", "workflowNodeRunId"]
-                        : receipt.commandType === "PublishNoteCandidate"
-                          ? receipt.resultRefs["workflowPolicyResolutionId"] === undefined
-                            ? ["noteCandidateId", "productRunId"]
-                            : ["noteCandidateId", "productRunId", "workflowPolicyResolutionId"]
-                          : receipt.commandType === "FreezeWorkflowMemoryContext"
-                            ? receipt.resultRefs["workflowMemoryContextId"] === undefined
-                              ? ["productRunId"]
-                              : ["productRunId", "workflowMemoryContextId"]
-                            : receipt.commandType === "PersistMemoryWriteAgentCandidate"
-                              ? receipt.resultRefs["memoryAgentWriteCandidateId"] === undefined
-                                ? ["productRunId"]
-                                : ["memoryAgentWriteCandidateId", "productRunId"]
-                              : receiptShapes[receipt.commandType];
+              : receipt.commandType === "PreparePlanningProjectContext"
+                ? receipt.resultRefs["planningProjectContextId"] === undefined
+                  ? ["productRunId", "workflowNodeRunId"]
+                  : ["planningProjectContextId", "productRunId", "workflowNodeRunId"]
+                : receipt.commandType === "PreparePlanningRulesContext"
+                  ? receipt.resultRefs["ruleSelectionId"] === undefined
+                    ? ["productRunId", "workflowNodeRunId"]
+                    : ["productRunId", "ruleSelectionId", "workflowNodeRunId"]
+                  : receipt.commandType === "PublishNoteCandidate"
+                    ? receipt.resultRefs["workflowPolicyResolutionId"] === undefined
+                      ? ["noteCandidateId", "productRunId"]
+                      : ["noteCandidateId", "productRunId", "workflowPolicyResolutionId"]
+                    : receipt.commandType === "FreezeWorkflowMemoryContext"
+                      ? receipt.resultRefs["workflowMemoryContextId"] === undefined
+                        ? ["productRunId"]
+                        : ["productRunId", "workflowMemoryContextId"]
+                      : receipt.commandType === "PersistMemoryWriteAgentCandidate"
+                        ? receipt.resultRefs["memoryAgentWriteCandidateId"] === undefined
+                          ? ["productRunId"]
+                          : ["memoryAgentWriteCandidateId", "productRunId"]
+                        : receiptShapes[receipt.commandType];
     if (expectedKeys === undefined) fail(`receipt ${receipt.commandId} commandType未知`);
     const actualKeys = Object.keys(receipt.resultRefs).sort();
     if (JSON.stringify(actualKeys) !== JSON.stringify([...expectedKeys].sort())) {
@@ -673,17 +632,7 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
                                               : key === "projectPracticeRevisionId"
                                                 ? entities.projectPracticeRevisions[value] !==
                                                   undefined
-                                                : key === "projectProviderBindingId"
-                                                  ? entities.projectProviderBindings[value] !==
-                                                    undefined
-                                                  : key === "projectCoordinationOperationId"
-                                                    ? entities.projectCoordinationOperations[
-                                                        value
-                                                      ] !== undefined
-                                                    : key === "projectInboundChangeId"
-                                                      ? entities.projectInboundChanges[value] !==
-                                                        undefined
-                                                      : undefined;
+                                                : undefined;
       const exists =
         coordinationRefExists ??
         (key === "sessionId"
@@ -706,306 +655,275 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
                           ? entities.approvalRequests[value] !== undefined
                           : key === "decisionId"
                             ? entities.decisions[value] !== undefined
-                            : key === "projectBootstrapCandidateId"
-                              ? entities.projectBootstrapCandidates[value] !== undefined
-                              : key === "projectBootstrapDecisionId"
-                                ? entities.projectBootstrapDecisions[value] !== undefined
-                                : key === "projectBootstrapOperationId"
-                                  ? entities.projectBootstrapOperations[value] !== undefined
-                                  : key === "projectWorkspaceBindingId"
-                                    ? entities.projectWorkspaceBindings[value] !== undefined
-                                    : key === "promptReviewRequestId"
-                                      ? entities.promptReviewRequests[value] !== undefined
-                                      : key === "promptReviewDecisionId"
-                                        ? entities.promptReviewDecisions[value] !== undefined
-                                        : key === "directAgentCandidateId"
-                                          ? entities.directAgentCandidates[value] !== undefined
-                                          : key === "promptFragmentId"
-                                            ? entities.promptFragments[value] !== undefined
-                                            : key === "promptFragmentRevisionId"
-                                              ? entities.promptFragmentRevisions[value] !==
-                                                undefined
-                                              : key === "executionContractId"
-                                                ? entities.executionContracts[value] !== undefined
-                                                : key === "executionCandidateId"
-                                                  ? entities.executionCandidates[value] !==
-                                                    undefined
-                                                  : key === "validationResultId"
-                                                    ? entities.validationResults[value] !==
-                                                      undefined
-                                                    : key === "workflowNodeRunId"
-                                                      ? entities.workflowNodeRuns[value] !==
+                            : key === "promptReviewRequestId"
+                              ? entities.promptReviewRequests[value] !== undefined
+                              : key === "promptReviewDecisionId"
+                                ? entities.promptReviewDecisions[value] !== undefined
+                                : key === "directAgentCandidateId"
+                                  ? entities.directAgentCandidates[value] !== undefined
+                                  : key === "promptFragmentId"
+                                    ? entities.promptFragments[value] !== undefined
+                                    : key === "promptFragmentRevisionId"
+                                      ? entities.promptFragmentRevisions[value] !== undefined
+                                      : key === "executionContractId"
+                                        ? entities.executionContracts[value] !== undefined
+                                        : key === "executionCandidateId"
+                                          ? entities.executionCandidates[value] !== undefined
+                                          : key === "validationResultId"
+                                            ? entities.validationResults[value] !== undefined
+                                            : key === "workflowNodeRunId"
+                                              ? entities.workflowNodeRuns[value] !== undefined
+                                              : key === "memoryQueryId"
+                                                ? entities.memoryQueries[value] !== undefined
+                                                : key === "contextRequestId"
+                                                  ? entities.contextRequests[value] !== undefined
+                                                  : key === "contextPackageId"
+                                                    ? entities.contextPackages[value] !== undefined
+                                                    : key === "memoryImportIntentId"
+                                                      ? entities.memoryImportIntents[value] !==
                                                         undefined
-                                                      : key === "memoryQueryId"
-                                                        ? entities.memoryQueries[value] !==
+                                                      : key === "memoryImportResultId"
+                                                        ? entities.memoryImportResults[value] !==
                                                           undefined
-                                                        : key === "contextRequestId"
-                                                          ? entities.contextRequests[value] !==
-                                                            undefined
-                                                          : key === "contextPackageId"
-                                                            ? entities.contextPackages[value] !==
-                                                              undefined
-                                                            : key === "memoryImportIntentId"
-                                                              ? entities.memoryImportIntents[
+                                                        : key === "workflowMemoryQueryId"
+                                                          ? entities.workflowMemoryQueries[
+                                                              value
+                                                            ] !== undefined
+                                                          : key === "workflowMemoryContextId"
+                                                            ? entities.workflowMemoryContexts[
+                                                                value
+                                                              ] !== undefined
+                                                            : key === "memoryWriteIntentId"
+                                                              ? entities.memoryWriteIntents[
                                                                   value
                                                                 ] !== undefined
-                                                              : key === "memoryImportResultId"
-                                                                ? entities.memoryImportResults[
+                                                              : key === "memoryWriteResultId"
+                                                                ? entities.memoryWriteResults[
                                                                     value
                                                                   ] !== undefined
-                                                                : key === "workflowMemoryQueryId"
-                                                                  ? entities.workflowMemoryQueries[
+                                                                : key === "memorySessionImportId"
+                                                                  ? entities.memorySessionImports[
                                                                       value
                                                                     ] !== undefined
-                                                                  : key ===
-                                                                      "workflowMemoryContextId"
+                                                                  : key === "memoryAgentOperationId"
                                                                     ? entities
-                                                                        .workflowMemoryContexts[
+                                                                        .memoryAgentOperations[
                                                                         value
                                                                       ] !== undefined
-                                                                    : key === "memoryWriteIntentId"
-                                                                      ? entities.memoryWriteIntents[
+                                                                    : key ===
+                                                                        "memoryAgentWriteCandidateId"
+                                                                      ? entities
+                                                                          .memoryAgentWriteCandidates[
                                                                           value
                                                                         ] !== undefined
                                                                       : key ===
-                                                                          "memoryWriteResultId"
+                                                                          "memoryAgentWriteDecisionId"
                                                                         ? entities
-                                                                            .memoryWriteResults[
+                                                                            .memoryAgentWriteDecisions[
                                                                             value
                                                                           ] !== undefined
-                                                                        : key ===
-                                                                            "memorySessionImportId"
-                                                                          ? entities
-                                                                              .memorySessionImports[
+                                                                        : key === "outboxId" ||
+                                                                            key ===
+                                                                              "recoveryOutboxId"
+                                                                          ? snapshot.outbox[
                                                                               value
                                                                             ] !== undefined
-                                                                          : key ===
-                                                                              "memoryAgentOperationId"
-                                                                            ? entities
-                                                                                .memoryAgentOperations[
+                                                                          : key === "projectId"
+                                                                            ? entities.projects[
                                                                                 value
                                                                               ] !== undefined
                                                                             : key ===
-                                                                                "memoryAgentWriteCandidateId"
+                                                                                "projectCandidateId"
                                                                               ? entities
-                                                                                  .memoryAgentWriteCandidates[
+                                                                                  .projectCandidates[
                                                                                   value
                                                                                 ] !== undefined
                                                                               : key ===
-                                                                                  "memoryAgentWriteDecisionId"
+                                                                                  "projectStageId"
                                                                                 ? entities
-                                                                                    .memoryAgentWriteDecisions[
+                                                                                    .projectStages[
                                                                                     value
                                                                                   ] !== undefined
                                                                                 : key ===
-                                                                                      "outboxId" ||
-                                                                                    key ===
-                                                                                      "recoveryOutboxId"
-                                                                                  ? snapshot.outbox[
+                                                                                    "projectMilestoneId"
+                                                                                  ? entities
+                                                                                      .projectMilestones[
                                                                                       value
                                                                                     ] !== undefined
                                                                                   : key ===
-                                                                                      "projectId"
+                                                                                      "projectActionId"
                                                                                     ? entities
-                                                                                        .projects[
+                                                                                        .projectActions[
                                                                                         value
                                                                                       ] !==
                                                                                       undefined
                                                                                     : key ===
-                                                                                        "projectCandidateId"
+                                                                                        "projectDecisionId"
                                                                                       ? entities
-                                                                                          .projectCandidates[
+                                                                                          .projectDecisions[
                                                                                           value
                                                                                         ] !==
                                                                                         undefined
                                                                                       : key ===
-                                                                                          "projectStageId"
+                                                                                          "projectStateTransitionId"
                                                                                         ? entities
-                                                                                            .projectStages[
+                                                                                            .projectStateTransitions[
                                                                                             value
                                                                                           ] !==
                                                                                           undefined
                                                                                         : key ===
-                                                                                            "projectMilestoneId"
+                                                                                            "projectContributionId"
                                                                                           ? entities
-                                                                                              .projectMilestones[
+                                                                                              .projectContributions[
                                                                                               value
                                                                                             ] !==
                                                                                             undefined
                                                                                           : key ===
-                                                                                              "projectActionId"
+                                                                                              "projectObservationId"
                                                                                             ? entities
-                                                                                                .projectActions[
+                                                                                                .projectObservations[
                                                                                                 value
                                                                                               ] !==
                                                                                               undefined
                                                                                             : key ===
-                                                                                                "projectDecisionId"
+                                                                                                "noteId"
                                                                                               ? entities
-                                                                                                  .projectDecisions[
+                                                                                                  .notes[
                                                                                                   value
                                                                                                 ] !==
                                                                                                 undefined
                                                                                               : key ===
-                                                                                                  "projectStateTransitionId"
+                                                                                                  "noteRevisionId"
                                                                                                 ? entities
-                                                                                                    .projectStateTransitions[
+                                                                                                    .noteRevisions[
                                                                                                     value
                                                                                                   ] !==
                                                                                                   undefined
                                                                                                 : key ===
-                                                                                                    "projectContributionId"
+                                                                                                    "noteCandidateId"
                                                                                                   ? entities
-                                                                                                      .projectContributions[
+                                                                                                      .noteCandidates[
                                                                                                       value
                                                                                                     ] !==
                                                                                                     undefined
                                                                                                   : key ===
-                                                                                                      "projectObservationId"
+                                                                                                      "noteDecisionId"
                                                                                                     ? entities
-                                                                                                        .projectObservations[
+                                                                                                        .noteDecisions[
                                                                                                         value
                                                                                                       ] !==
                                                                                                       undefined
                                                                                                     : key ===
-                                                                                                        "noteId"
+                                                                                                        "ruleId"
                                                                                                       ? entities
-                                                                                                          .notes[
+                                                                                                          .rules[
                                                                                                           value
                                                                                                         ] !==
                                                                                                         undefined
                                                                                                       : key ===
-                                                                                                          "noteRevisionId"
+                                                                                                          "ruleRevisionId"
                                                                                                         ? entities
-                                                                                                            .noteRevisions[
+                                                                                                            .ruleRevisions[
                                                                                                             value
                                                                                                           ] !==
                                                                                                           undefined
                                                                                                         : key ===
-                                                                                                            "noteCandidateId"
+                                                                                                            "ruleTagId"
                                                                                                           ? entities
-                                                                                                              .noteCandidates[
+                                                                                                              .ruleTags[
                                                                                                               value
                                                                                                             ] !==
                                                                                                             undefined
                                                                                                           : key ===
-                                                                                                              "noteDecisionId"
+                                                                                                              "ruleDecisionId"
                                                                                                             ? entities
-                                                                                                                .noteDecisions[
+                                                                                                                .ruleDecisions[
                                                                                                                 value
                                                                                                               ] !==
                                                                                                               undefined
                                                                                                             : key ===
-                                                                                                                "ruleId"
+                                                                                                                "agentVersionId"
                                                                                                               ? entities
-                                                                                                                  .rules[
+                                                                                                                  .agentVersions[
                                                                                                                   value
                                                                                                                 ] !==
                                                                                                                 undefined
                                                                                                               : key ===
-                                                                                                                  "ruleRevisionId"
+                                                                                                                  "ruleSelectionId"
                                                                                                                 ? entities
-                                                                                                                    .ruleRevisions[
+                                                                                                                    .ruleSelections[
                                                                                                                     value
                                                                                                                   ] !==
                                                                                                                   undefined
                                                                                                                 : key ===
-                                                                                                                    "ruleTagId"
+                                                                                                                    "planningProjectContextId"
                                                                                                                   ? entities
-                                                                                                                      .ruleTags[
+                                                                                                                      .planningProjectContexts[
                                                                                                                       value
                                                                                                                     ] !==
                                                                                                                     undefined
                                                                                                                   : key ===
-                                                                                                                      "ruleDecisionId"
+                                                                                                                      "planningMemorySelectionId"
                                                                                                                     ? entities
-                                                                                                                        .ruleDecisions[
+                                                                                                                        .planningMemorySelections[
                                                                                                                         value
                                                                                                                       ] !==
                                                                                                                       undefined
                                                                                                                     : key ===
-                                                                                                                        "agentVersionId"
+                                                                                                                        "workflowPolicyResolutionId"
                                                                                                                       ? entities
-                                                                                                                          .agentVersions[
+                                                                                                                          .workflowPolicyResolutions[
                                                                                                                           value
                                                                                                                         ] !==
                                                                                                                         undefined
                                                                                                                       : key ===
-                                                                                                                          "ruleSelectionId"
-                                                                                                                        ? entities
-                                                                                                                            .ruleSelections[
-                                                                                                                            value
-                                                                                                                          ] !==
-                                                                                                                          undefined
+                                                                                                                          "contextStatus"
+                                                                                                                        ? value ===
+                                                                                                                            "none" ||
+                                                                                                                          value ===
+                                                                                                                            "ready"
                                                                                                                         : key ===
-                                                                                                                            "planningProjectContextId"
-                                                                                                                          ? entities
-                                                                                                                              .planningProjectContexts[
-                                                                                                                              value
-                                                                                                                            ] !==
-                                                                                                                            undefined
+                                                                                                                            "dispatchDisposition"
+                                                                                                                          ? value ===
+                                                                                                                              "created" ||
+                                                                                                                            value ===
+                                                                                                                              "existing"
                                                                                                                           : key ===
-                                                                                                                              "planningMemorySelectionId"
-                                                                                                                            ? entities
-                                                                                                                                .planningMemorySelections[
-                                                                                                                                value
-                                                                                                                              ] !==
-                                                                                                                              undefined
+                                                                                                                              "fencingToken"
+                                                                                                                            ? /^\d+$/u.test(
+                                                                                                                                value,
+                                                                                                                              ) &&
+                                                                                                                              Number(
+                                                                                                                                value,
+                                                                                                                              ) >
+                                                                                                                                0
                                                                                                                             : key ===
-                                                                                                                                "workflowPolicyResolutionId"
-                                                                                                                              ? entities
-                                                                                                                                  .workflowPolicyResolutions[
-                                                                                                                                  value
-                                                                                                                                ] !==
-                                                                                                                                undefined
+                                                                                                                                "executionMode"
+                                                                                                                              ? value ===
+                                                                                                                                  "execute" ||
+                                                                                                                                value ===
+                                                                                                                                  "reconcile"
                                                                                                                               : key ===
-                                                                                                                                  "contextStatus"
-                                                                                                                                ? value ===
-                                                                                                                                    "none" ||
-                                                                                                                                  value ===
-                                                                                                                                    "ready"
+                                                                                                                                  "messageSha256"
+                                                                                                                                ? /^[a-f0-9]{64}$/.test(
+                                                                                                                                    value,
+                                                                                                                                  )
                                                                                                                                 : key ===
-                                                                                                                                    "dispatchDisposition"
+                                                                                                                                    "approvalExpired"
                                                                                                                                   ? value ===
-                                                                                                                                      "created" ||
-                                                                                                                                    value ===
-                                                                                                                                      "existing"
+                                                                                                                                    "true"
                                                                                                                                   : key ===
-                                                                                                                                      "fencingToken"
-                                                                                                                                    ? /^\d+$/u.test(
-                                                                                                                                        value,
-                                                                                                                                      ) &&
-                                                                                                                                      Number(
-                                                                                                                                        value,
-                                                                                                                                      ) >
-                                                                                                                                        0
+                                                                                                                                      "status"
+                                                                                                                                    ? value ===
+                                                                                                                                        "expired" ||
+                                                                                                                                      value ===
+                                                                                                                                        "already_decided"
                                                                                                                                     : key ===
-                                                                                                                                        "executionMode"
-                                                                                                                                      ? value ===
-                                                                                                                                          "execute" ||
-                                                                                                                                        value ===
-                                                                                                                                          "reconcile"
-                                                                                                                                      : key ===
-                                                                                                                                          "messageSha256"
-                                                                                                                                        ? /^[a-f0-9]{64}$/.test(
-                                                                                                                                            value,
-                                                                                                                                          )
-                                                                                                                                        : key ===
-                                                                                                                                            "approvalExpired"
-                                                                                                                                          ? value ===
-                                                                                                                                            "true"
-                                                                                                                                          : key ===
-                                                                                                                                              "status"
-                                                                                                                                            ? value ===
-                                                                                                                                                "expired" ||
-                                                                                                                                              value ===
-                                                                                                                                                "already_decided"
-                                                                                                                                            : key ===
-                                                                                                                                                "evidenceReceiptSha256"
-                                                                                                                                              ? /^[a-f0-9]{64}$/.test(
-                                                                                                                                                  value,
-                                                                                                                                                )
-                                                                                                                                              : false);
+                                                                                                                                        "evidenceReceiptSha256"
+                                                                                                                                      ? /^[a-f0-9]{64}$/.test(
+                                                                                                                                          value,
+                                                                                                                                        )
+                                                                                                                                      : false);
       if (!exists) fail(`receipt ${receipt.commandId} 的${key}引用无效`);
     }
     const receiptDefinitionId = receipt.resultRefs["workflowDefinitionId"];
@@ -1016,10 +934,7 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
         fail(`receipt ${receipt.commandId} Definition与Revision交叉绑定不一致`);
       }
     }
-    if (
-      receipt.commandType === "SubmitUserMessage" ||
-      receipt.commandType === "SubmitProjectBootstrapUserMessage"
-    ) {
+    if (receipt.commandType === "SubmitUserMessage") {
       const message = entities.messages[receipt.resultRefs["messageId"] ?? ""];
       const run = entities.runs[receipt.resultRefs["productRunId"] ?? ""];
       if (
@@ -1183,33 +1098,7 @@ export function assertReceiptsAndOutbox(snapshot: ProductSnapshot, fail: Fail): 
       }
     }
   }
-  const leasedProjectBootstrapOperations = new Set<string>();
   for (const entry of Object.values(snapshot.outbox)) {
-    if (entry.kind === "project_bootstrap_execute") {
-      const operation = entities.projectBootstrapOperations[entry.projectBootstrapOperationId];
-      if (operation === undefined || entry.expectedOperationRevision > operation.revision) {
-        fail(`outbox ${entry.outboxId} Project Bootstrap绑定不完整`);
-      }
-      if (entry.executionLease !== undefined) {
-        if (
-          operation?.status !== "dispatching" ||
-          !["pending", "dispatched", "outcome_unknown"].includes(entry.status)
-        ) {
-          fail(`outbox ${entry.outboxId} Project Bootstrap lease与执行状态不一致`);
-        }
-        if (leasedProjectBootstrapOperations.has(entry.projectBootstrapOperationId)) {
-          fail(`operation ${entry.projectBootstrapOperationId} 存在多个Project Bootstrap lease`);
-        }
-        if (
-          entry.executionLease.fencingToken !== undefined &&
-          entry.executionLease.fencingToken !== operation?.revision
-        ) {
-          fail(`outbox ${entry.outboxId} Project Bootstrap fencing token与Operation不一致`);
-        }
-        leasedProjectBootstrapOperations.add(entry.projectBootstrapOperationId);
-      }
-      continue;
-    }
     if (entry.kind === "project_intake_start" || entry.kind === "project_intake_resume") {
       const candidate = entities.projectCandidates[entry.projectCandidateId];
       if (

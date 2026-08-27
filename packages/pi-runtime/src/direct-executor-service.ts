@@ -37,11 +37,7 @@ import {
 } from "./prompt-review-gate.js";
 import { hashExecutorValue } from "./executor-operation-store.js";
 import type { PiExecutorWorkspaceRoot } from "./executor-service.js";
-import type {
-  ProjectBootstrapCandidate,
-  ProjectBootstrapProposal,
-  ResolvedCapabilitySnapshot,
-} from "@chat/contracts";
+import type { ResolvedCapabilitySnapshot } from "@chat/contracts";
 import {
   computeWorkspaceGrantSha256,
   DIRECT_AGENT_MEMORY_CONTEXT_SYSTEM_GUIDANCE,
@@ -88,7 +84,7 @@ export interface AuthorizedDirectAgentInput {
           readonly estimatedTokens: number;
         }[];
         readonly tools: {
-          readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
+          readonly capabilityMode: "pi_cli_default" | "custom" | "read_only";
           readonly selectionMode?: "inherit_runtime_default" | "explicit" | undefined;
           /** Extension Tool也是Pi运行时能力，不能把私有协议收窄为内置枚举。 */
           readonly names: string[];
@@ -115,7 +111,7 @@ export interface AuthorizedDirectAgentInput {
         readonly runtimeProfileSha256?: string | undefined;
         readonly workspaceGrantSha256?: string | undefined;
       };
-  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only" | "project_bootstrap";
+  readonly capabilityMode: "pi_cli_default" | "custom" | "read_only";
   readonly memoryContext?: {
     readonly workflowMemoryContextId: string;
     readonly revision: 1;
@@ -130,12 +126,6 @@ export interface AuthorizedDirectAgentInput {
       readonly revision: 1;
       readonly sha256: string;
     }[];
-  };
-  readonly projectBootstrapContext?: {
-    readonly providerKind: "plane_ce";
-    readonly providerVersion: string;
-    readonly planeWorkspaceSlugs: readonly string[];
-    readonly creationRoots: readonly { readonly rootId: string; readonly displayName: string }[];
   };
   readonly promptReviewMode: "manual" | "off";
   readonly limits: AuthorizedDirectAgentProfile["limits"];
@@ -168,14 +158,6 @@ export interface PublishDirectAgentResultInput {
   readonly output: { readonly format: "markdown"; readonly text: string };
 }
 
-export interface ProjectBootstrapProductPort {
-  prepare(input: {
-    readonly commandId: string;
-    readonly productRunId: string;
-    readonly proposal: ProjectBootstrapProposal;
-  }): Promise<ProjectBootstrapCandidate>;
-}
-
 export interface PiDirectExecutorServiceOptions {
   readonly credential: string;
   readonly store: PiDirectExecutorOperationStore;
@@ -190,7 +172,6 @@ export interface PiDirectExecutorServiceOptions {
   readonly promptReviewProduct: DirectPromptReviewProductPort;
   readonly toolExecutionProduct?: ToolExecutionProductPort;
   readonly publishResult: (input: PublishDirectAgentResultInput) => Promise<DirectAgentResultRef>;
-  readonly projectBootstrapProduct?: ProjectBootstrapProductPort;
   readonly runner?: DirectAgentRunner;
 }
 
@@ -521,12 +502,6 @@ export function createPiDirectExecutorService(options: PiDirectExecutorServiceOp
         sessionsDir: options.sessionsDir,
         store: options.store,
         capabilityMode: authorizedInput.capabilityMode,
-        ...(authorizedInput.projectBootstrapContext === undefined
-          ? {}
-          : { projectBootstrapContext: authorizedInput.projectBootstrapContext }),
-        ...(options.projectBootstrapProduct === undefined
-          ? {}
-          : { projectBootstrapProduct: options.projectBootstrapProduct }),
         promptReview,
         ...(options.toolExecutionProduct === undefined
           ? {}

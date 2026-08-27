@@ -1,6 +1,6 @@
 # Content Production Project内核 As-built
 
-> As-built：2026-08-26。本文记录默认Provider无关的项目事实；目录观察见[Content Lab资源观察与上下文编译](./content-lab-resource-context-as-built.md)。外部项目Provider只保留历史兼容与专项研究，不属于默认运行图。
+> As-built：2026-08-26。本文记录Provider无关的项目事实；目录观察见[Content Lab资源观察与上下文编译](./content-lab-resource-context-as-built.md)。
 
 ## 1. 已交付结果
 
@@ -10,8 +10,8 @@ Chat现有Project内核已经演进为同一套可版本化事实，而不是为
 2. `ProjectWork.v2`在同一集合中判别`generic | content_delivery | workflow_improvement`，带稳定`workKey`、责任人、Practice Revision和Resource引用。
 3. Content Work、方法改进Work、Blocked恢复、临时Agent Claim、Handoff、Publication Outcome、Practice Revision和Context Map都有Product Store事实与Application命令。
 4. 用户Decision绑定Project/Work revision和可复算Payload Hash；Evidence绑定具体Work revision、来源和验证等级。
-5. Project Query返回Work kind、Block、Claim、最新Handoff、Practice、发布Outcome、Context Map和Provider投影，Agent恢复不依赖旧Session。
-6. P4不调用Plane、不修改Content Lab目录、不发布内容；没有Provider时Project Query、Decision、Context和八个核心场景仍成立。
+5. Project Query返回Work kind、Block、Claim、最新Handoff、Practice、发布Outcome和Context Map，Agent恢复不依赖旧Session。
+6. Project内核不修改Content Lab目录、不发布内容；Project Query、Decision、Context和八个核心场景独立成立。
 
 ## 2. 版本与所有权
 
@@ -25,10 +25,6 @@ Chat现有Project内核已经演进为同一套可版本化事实，而不是为
 | Decision | `project-decision.v2` | Chat Project内核 |
 | Block / Claim / Handoff | 各`v1` | Chat Project内核 |
 | Practice Revision / Work Outcome / Context Map | 各`v1` | Chat Project内核 |
-| Provider Binding / Projection | 各`v2` | Chat保存绑定、映射和投影；Plane拥有外部对象 |
-| Coordination Operation / Inbound Change | `v2` / `v1` | Chat保存外部写Journal与人类漂移处置 |
-
-旧`projectWorkspaceBindings`只保留Project Bootstrap历史，不再作为内容项目的日常Binding。新Binding若复用同一Plane Project，必须显式记录`reconciledWorkspaceBindingId`；Snapshot Integrity会拒绝未对账重复外部Project。
 
 ## 3. 生命周期与决定门
 
@@ -87,7 +83,7 @@ Router只解析认证Principal、路径ID、`commandEnvelope`和Payload；CAS、
 - 通用用户Evidence入口只允许把`user_decision`来源的`user_review`或`publication_receipt`标为`verified`。Provider verified必须由P5受管Adapter命令产生，不能由调用方自报。
 - Claim有`acquiredAt/leaseExpiresAt`。新Claim在同一事务内把过期旧Claim标为`expired`并取得唯一活动租约；有效Claim冲突不会产生半事实。
 - Handoff保存已完成、未完成、风险、下一步、Required Reads和Evidence，并释放旧Claim；新Agent随后Claim同一稳定Work。
-- Project Workspace Query返回活动Block/Claim、最新Handoff、Practice/Outcome/Context和Provider投影；Content终态不再被统计为活动Work，Timeline正确标记Work转换。
+- Project Workspace Query返回活动Block/Claim、最新Handoff、Practice/Outcome与Context；Content终态不再被统计为活动Work，Timeline正确标记Work转换。
 
 ## 6. Store迁移与完整性
 
@@ -97,7 +93,7 @@ Router只解析认证Principal、路径ID、`commandEnvelope`和Payload；CAS、
 - Work v1迁为`generic` Work v2并生成`legacy:<workId>`稳定键；
 - Evidence v1按旧kind映射role/provenance，永不自动升级为verified；
 - Decision v1升级为v2并生成Payload Hash；
-- 新内容集合初始化为空，不创建Plane对象、Content Work、Claim、Outcome或Binding。
+- 新内容集合初始化为空，不创建Content Work、Claim或Outcome。
 
 v5-v19 reader使用冻结的旧Project Schema；非空v4 Project会串行穿过全部版本，另有非空v19真实字节Fixture验证原子落盘和重启幂等。Snapshot Integrity还校验：
 
@@ -107,7 +103,6 @@ v5-v19 reader使用冻结的旧Project Schema；非空v4 Project会串行穿过�
 - Publication目标平台覆盖；
 - Practice前后版本链；
 - Context Map唯一性和Hash；
-- Provider外部Project、Projection对象、external key和Provider Object唯一性。
 
 ## 7. 当前边界与下一阶段
 

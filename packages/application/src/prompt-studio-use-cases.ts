@@ -930,30 +930,7 @@ async function agentProfileProjection(
   const definition = catalog.agents.find((agent) => agent.agentKey === agentKey);
   if (definition === undefined) throw notFound("Agent不存在");
   const loadedRuntimeBaseline = await deps.agentRuntimeProfiles?.read(agentKey, workspaceRootId);
-  // Prompt Studio展示的是当前Catalog投影，不能让已经从Catalog隐藏的专用Agent通过
-  // Pi运行时的完整variant清单反向泄漏。冻结Run仍由Prompt Assembly按历史精确引用解析，
-  // 这里仅收窄当前List/Detail DTO。
-  const projectBootstrapDiscoverable = catalog.agents.some(
-    (agent) => agent.agentKey === "project_bootstrap",
-  );
-  const isRuntimeVariantDiscoverable = (variantKey: string) =>
-    projectBootstrapDiscoverable || variantKey !== "project_bootstrap";
-  const runtimeBaseline =
-    loadedRuntimeBaseline === undefined
-      ? undefined
-      : {
-          ...loadedRuntimeBaseline,
-          chatRuntimeAppend: {
-            ...loadedRuntimeBaseline.chatRuntimeAppend,
-            appliesToVariantKeys:
-              loadedRuntimeBaseline.chatRuntimeAppend.appliesToVariantKeys.filter(
-                isRuntimeVariantDiscoverable,
-              ),
-          },
-          variants: loadedRuntimeBaseline.variants.filter((variant) =>
-            isRuntimeVariantDiscoverable(variant.variantKey),
-          ),
-        };
+  const runtimeBaseline = loadedRuntimeBaseline;
   const defaultPrompt = definition.defaultPrompt;
   const builtinRevisionId = defaultPrompt.promptFragmentRevisionId;
   const builtin =

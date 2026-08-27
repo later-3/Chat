@@ -120,17 +120,13 @@ export const projectMilestoneIdSchema = prefixedId("pml");
 export const projectUpdateIdSchema = prefixedId("pup");
 export const projectStateTransitionIdSchema = prefixedId("ptr");
 
-/* P4 Provider无关项目协调身份；不能复用Plane UUID、Agent Session或Git身份。 */
+/* Project Work协调身份；不能复用Agent Session或Git身份。 */
 export const projectWorkBlockIdSchema = prefixedId("pbl");
 export const projectWorkClaimIdSchema = prefixedId("pcl");
 export const projectWorkHandoffIdSchema = prefixedId("phf");
 export const projectPracticeRevisionIdSchema = prefixedId("ppr");
 export const projectWorkOutcomeIdSchema = prefixedId("pwo");
 export const projectContextMapIdSchema = prefixedId("pcm");
-export const projectProviderBindingIdSchema = prefixedId("pvb");
-export const projectProviderProjectionIdSchema = prefixedId("pvp");
-export const projectCoordinationOperationIdSchema = prefixedId("pco");
-export const projectInboundChangeIdSchema = prefixedId("pic");
 
 /* 全项目生命周期K1身份；Profile/Configuration/Event不能复用Method Snapshot或Transition身份。 */
 export const projectProfileRevisionIdSchema = prefixedId("pfr");
@@ -140,12 +136,6 @@ export const projectNeedIdSchema = prefixedId("pnd");
 export const projectRequirementIdSchema = prefixedId("prq");
 export const projectArtifactRefIdSchema = prefixedId("paf");
 export const projectMetricObservationIdSchema = prefixedId("pmo");
-
-/* Plane CE项目初始化身份；不是旧Project聚合、Plane UUID或本地目录身份。 */
-export const projectBootstrapCandidateIdSchema = prefixedId("pbc");
-export const projectBootstrapDecisionIdSchema = prefixedId("pbd");
-export const projectBootstrapOperationIdSchema = prefixedId("pbo");
-export const projectWorkspaceBindingIdSchema = prefixedId("pwb");
 
 /* R1/R2 用户规则身份；Revision与Selection必须能独立冻结、回放和审计。 */
 export const ruleIdSchema = prefixedId("rul");
@@ -256,10 +246,6 @@ export type ProjectWorkHandoffId = z.infer<typeof projectWorkHandoffIdSchema>;
 export type ProjectPracticeRevisionId = z.infer<typeof projectPracticeRevisionIdSchema>;
 export type ProjectWorkOutcomeId = z.infer<typeof projectWorkOutcomeIdSchema>;
 export type ProjectContextMapId = z.infer<typeof projectContextMapIdSchema>;
-export type ProjectProviderBindingId = z.infer<typeof projectProviderBindingIdSchema>;
-export type ProjectProviderProjectionId = z.infer<typeof projectProviderProjectionIdSchema>;
-export type ProjectCoordinationOperationId = z.infer<typeof projectCoordinationOperationIdSchema>;
-export type ProjectInboundChangeId = z.infer<typeof projectInboundChangeIdSchema>;
 export type ProjectProfileRevisionId = z.infer<typeof projectProfileRevisionIdSchema>;
 export type ProjectConfigurationRevisionId = z.infer<typeof projectConfigurationRevisionIdSchema>;
 export type ProjectEventId = z.infer<typeof projectEventIdSchema>;
@@ -267,10 +253,6 @@ export type ProjectNeedId = z.infer<typeof projectNeedIdSchema>;
 export type ProjectRequirementId = z.infer<typeof projectRequirementIdSchema>;
 export type ProjectArtifactRefId = z.infer<typeof projectArtifactRefIdSchema>;
 export type ProjectMetricObservationId = z.infer<typeof projectMetricObservationIdSchema>;
-export type ProjectBootstrapCandidateId = z.infer<typeof projectBootstrapCandidateIdSchema>;
-export type ProjectBootstrapDecisionId = z.infer<typeof projectBootstrapDecisionIdSchema>;
-export type ProjectBootstrapOperationId = z.infer<typeof projectBootstrapOperationIdSchema>;
-export type ProjectWorkspaceBindingId = z.infer<typeof projectWorkspaceBindingIdSchema>;
 export type RuleId = z.infer<typeof ruleIdSchema>;
 export type RuleRevisionId = z.infer<typeof ruleRevisionIdSchema>;
 export type RuleTagId = z.infer<typeof ruleTagIdSchema>;

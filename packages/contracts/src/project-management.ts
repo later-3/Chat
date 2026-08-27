@@ -97,7 +97,7 @@ export const projectViewCapabilitySchema = z.enum([
   "attention",
 ]);
 
-/** View Requirement只声明用户必须看见什么，不写死DSH、Plane或任何Viewer。 */
+/** View Requirement只声明用户必须看见什么，不写死具体前端或Viewer。 */
 export const projectViewRequirementSchema = z
   .object({
     capability: projectViewCapabilitySchema,

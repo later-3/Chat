@@ -12,7 +12,6 @@ import {
   type NoteDecisionRequest,
   type PromptReviewDecisionRequest,
   type ToolExecutionDecisionRequest,
-  type ProjectBootstrapDecisionRequest,
   type WorkflowSelection,
 } from "../contracts.ts";
 
@@ -271,15 +270,6 @@ export class LifeosProjectionController {
       "POST",
       request,
       "LifeOS Tool决定提交失败",
-    );
-  }
-
-  async decideProjectBootstrap(request: ProjectBootstrapDecisionRequest): Promise<boolean> {
-    return await this.submitProjectionCommand(
-      `/lifeos/sessions/${encodeURIComponent(this.sessionId)}/project-bootstrap-decisions`,
-      "POST",
-      request,
-      "项目初始化决定提交失败",
     );
   }
 

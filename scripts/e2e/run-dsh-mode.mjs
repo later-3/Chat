@@ -20,10 +20,6 @@ const modes = Object.freeze({
     preflight: ["--prompt-three-gates-only"],
     environment: "prompt-three-gates-only",
   },
-  "project-bootstrap": {
-    preflight: ["--project-bootstrap-only"],
-    environment: "project-bootstrap-only",
-  },
   "capability-governance": {
     preflight: ["--capability-governance-only"],
     environment: "capability-governance-only",
@@ -35,7 +31,6 @@ const modes = Object.freeze({
 });
 const modeDataRoots = Object.freeze({
   "prompt-three-gates": ".data/e2e/dsh-prompt-three-gates-real",
-  "project-bootstrap": ".data/e2e/dsh-project-bootstrap-real",
   "capability-governance": ".data/e2e/dsh-capability-governance-real",
   "planning-faux": ".data/e2e/dsh-planning-faux-real",
 });

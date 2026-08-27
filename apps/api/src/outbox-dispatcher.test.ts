@@ -19,21 +19,16 @@ import {
   compileExecutionContract,
   compilePlanningInput,
   commitMemoryImportAccepted,
-  createInProcessProjectBootstrapExecutionCoordinator,
   createMemoryWrite,
   createMemoryImport,
   createProductSession,
   getCurrentNoteCandidate,
-  decideProjectBootstrapCandidate,
-  getCurrentProjectBootstrapForSession,
   markMemoryImportDispatching,
-  prepareProjectBootstrapCandidate,
   publishPromptReviewRequest,
   publishNoteCandidate,
   publishPlanForReview,
   submitPromptReviewDecision,
   submitPlanDecision,
-  submitProjectBootstrapUserMessage,
   submitUserMessage,
   transitionConfigurablePlanningNode,
   updateOutboxStatus,
@@ -150,24 +145,13 @@ const workflowMemoryProvider = {
 };
 
 function runtimeProfile(agentKey: AgentKey) {
-  if (agentKey !== "direct" && agentKey !== "project_bootstrap" && agentKey !== "coding_executor")
-    return undefined;
-  const variantKey =
-    agentKey === "coding_executor"
-      ? "workspace_write_shell"
-      : agentKey === "project_bootstrap"
-        ? "read_only"
-        : "pi_cli_default";
+  if (agentKey !== "direct" && agentKey !== "coding_executor") return undefined;
+  const variantKey = agentKey === "coding_executor" ? "workspace_write_shell" : "pi_cli_default";
   const tools =
     agentKey === "coding_executor"
       ? ["read", "bash", "edit", "write", "grep", "find", "ls"]
       : ["read", "bash", "edit", "write"];
-  const variants = [
-    { variantKey, tools },
-    ...(agentKey === "direct" || agentKey === "project_bootstrap"
-      ? [{ variantKey: "project_bootstrap", tools: ["project_bootstrap_prepare"] }]
-      : []),
-  ];
+  const variants = [{ variantKey, tools }];
   return agentRuntimeBaselineDtoSchema.parse({
     kind: "pi_coding_agent",
     title: "Pi Coding Agent",
@@ -198,10 +182,7 @@ function runtimeProfile(agentKey: AgentKey) {
         sourceRelativePaths: ["pi/packages/coding-agent/src/core/system-prompt.ts"],
       },
       tools: variant.tools.map((name) =>
-        runtimeToolFixture(
-          name,
-          name === "project_bootstrap_prepare" ? {} : { workspaceRootId: "root_code" },
-        ),
+        runtimeToolFixture(name, { workspaceRootId: "root_code" }),
       ),
     })),
     finalReviewNote: "发送前复核。",
@@ -231,10 +212,7 @@ async function seed(): Promise<{
     ids: ids(),
     directAgentIds: directAgentIds(),
     noteIds: noteIds(),
-    promptCatalog: await createFilePromptCatalog(undefined, {
-      ...process.env,
-      CHAT_PLANE_ENABLED: "1",
-    }),
+    promptCatalog: await createFilePromptCatalog(),
     agentRuntimeProfiles: {
       read: async (agentKey) =>
         agentKey === "governance_reviewer" ? undefined : runtimeProfile(agentKey),
@@ -499,139 +477,6 @@ async function seedPromptReviewResume() {
     resumeOutbox,
   };
 }
-
-/**
- * 用真实JsonProductStore形成具备project_bootstrap能力的Direct Run与prepared Candidate。
- * Workspace/Plane只在Dispatcher消费确认事务产生的Outbox后执行，不依赖Bridge或浏览器。
- */
-async function seedProjectBootstrapDispatch() {
-  const seeded = await seed();
-  const workspace = {
-    listRoots: () => [{ rootId: "root_code" as never, displayName: "Code" }],
-    preflight: vi.fn(async () => ({
-      root: { rootId: "root_code" as never, displayName: "Code" },
-      directoryName: "ai-learning",
-      workspaceLabel: "Code/ai-learning",
-    })),
-    provision: vi.fn(
-      async (
-        _input: Parameters<
-          NonNullable<ApplicationDeps["projectWorkspaceProvisioner"]>["provision"]
-        >[0],
-      ) => ({
-        status: "completed" as const,
-        workspaceLabel: "Code/ai-learning",
-      }),
-    ),
-    reconcile: vi.fn(async () => ({
-      status: "completed" as const,
-      workspaceLabel: "Code/ai-learning",
-    })),
-  };
-  const plane = {
-    describe: () => ({
-      providerKind: "plane_ce" as const,
-      providerVersion: "1.4.1",
-      providerWebBaseUrl: "http://127.0.0.1:8080",
-      allowedWorkspaceSlugs: ["learning"],
-    }),
-    preflight: vi.fn(async () => ({ planeProjectLabel: "Learning/AI2026" })),
-    provision: vi.fn(
-      async (
-        _input: Parameters<
-          NonNullable<ApplicationDeps["projectManagementBootstrap"]>["provision"]
-        >[0],
-      ) => ({
-        status: "completed" as const,
-        planeProjectId: "66cf0460-84e0-4d3d-b1ef-d193b83b7562" as never,
-      }),
-    ),
-    reconcile: vi.fn(async () => ({
-      status: "completed" as const,
-      planeProjectId: "66cf0460-84e0-4d3d-b1ef-d193b83b7562" as never,
-    })),
-  };
-  const deps: ApplicationDeps = {
-    ...seeded.deps,
-    projectBootstrapIds: {
-      candidate: () => "pbc_candidate1" as never,
-      decision: () => "pbd_decision1" as never,
-      operation: () => "pbo_operation1" as never,
-      binding: () => "pwb_binding1" as never,
-    },
-    projectBootstrapExecutionCoordinator: createInProcessProjectBootstrapExecutionCoordinator(),
-    projectWorkspaceProvisioner: workspace,
-    projectManagementBootstrap: plane,
-  };
-  const initial = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-  const directRevision =
-    initial.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
-  if (directRevision === undefined) throw new Error("缺少Direct Agent系统Definition");
-  const submitted = await submitProjectBootstrapUserMessage(deps, {
-    principalId: "usr_dispatchtest" as never,
-    sessionId: seeded.sessionId as never,
-    commandId: "cmd_bootstrapsubmit" as never,
-    payload: {
-      text: "创建一个持续学习AI课程、论文和开源项目的项目",
-      workflowSelection: {
-        kind: "published_revision",
-        workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
-        definitionSha256: directRevision.definitionSha256,
-        runConfiguration: {
-          schemaVersion: "workflow-run-configuration.v1",
-          overrides: [
-            {
-              kind: "node_config",
-              definitionNodeId: "direct.agent",
-              field: "capabilityMode",
-              value: "project_bootstrap",
-            },
-          ],
-        },
-      },
-    },
-  });
-  const afterSubmit = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-  const workflowAttempt = Object.values(afterSubmit.entities.attempts).find(
-    (attempt) => attempt.productRunId === submitted.run.productRunId && attempt.kind === "workflow",
-  );
-  if (workflowAttempt === undefined) throw new Error("缺少Direct Workflow Attempt");
-  await beginDirectAgentAttempt(deps, {
-    commandId: "cmd_bootstrapbegin" as never,
-    productRunId: submitted.run.productRunId,
-    workflowAttemptId: workflowAttempt.attemptId,
-  });
-  const candidate = await prepareProjectBootstrapCandidate(deps, {
-    principalId: "usr_dispatchtest" as never,
-    productSessionId: seeded.sessionId as never,
-    productRunId: submitted.run.productRunId,
-    commandId: "cmd_bootstrapprepare" as never,
-    proposal: {
-      name: "AI学习",
-      objective: "学习公开课程、论文和开源项目，并形成自己的实践项目。",
-      planeWorkspaceSlug: "learning",
-      planeProjectIdentifier: "AI2026",
-      workspaceRootId: "root_code",
-      directoryName: "ai-learning",
-      initializerProfile: "ai_learning",
-      initialModules: ["公开课", "论文", "开源项目", "实践项目"],
-    },
-  });
-  const beforeDisable = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-  const workflowStarts = Object.values(beforeDisable.outbox).filter(
-    (entry) => entry.kind === "workflow_start" && entry.status === "pending",
-  );
-  for (const [index, entry] of workflowStarts.entries()) {
-    await updateOutboxStatus(deps, {
-      commandId: `cmd_disablebootstrapstart${String(index + 1)}` as never,
-      outboxId: entry.outboxId,
-      status: "failed_terminal",
-    });
-  }
-  return { ...seeded, candidate, deps, plane, workspace };
-}
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe("Outbox结果未知栅栏", () => {
   it("Runtime成功响应体损坏时进入outcome_unknown，对账不得第二次Start", async () => {
@@ -1071,7 +916,6 @@ describe("通用Product Workflow终态监督", () => {
       deps: seeded.deps,
       workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
       credential: "rtk_test",
-      projectBootstrapEnabled: true,
     });
 
     await dispatcher.tick();
@@ -1733,306 +1577,5 @@ describe("通用Product Workflow终态监督", () => {
       ),
     ).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("Project Bootstrap Outbox耐久执行", () => {
-  it("默认关闭Provider时保留旧Bootstrap Outbox且不触达外部写", async () => {
-    const seeded = await seedProjectBootstrapDispatch();
-    await decideProjectBootstrapCandidate(seeded.deps, {
-      principalId: "usr_dispatchtest" as never,
-      commandId: "cmd_bootstrapdisabledconfirm" as never,
-      projectBootstrapCandidateId: seeded.candidate.projectBootstrapCandidateId,
-      candidateRevision: seeded.candidate.revision,
-      candidateSha256: seeded.candidate.sha256,
-      kind: "confirm",
-    });
-    const providerDisabledDeps = { ...seeded.deps };
-    Reflect.deleteProperty(providerDisabledDeps, "projectManagementBootstrap");
-    Reflect.deleteProperty(providerDisabledDeps, "projectWorkspaceProvisioner");
-    const dispatcher = new OutboxDispatcher({
-      deps: providerDisabledDeps,
-      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
-      credential: "rtk_test",
-      projectBootstrapEnabled: false,
-    });
-
-    await expect(dispatcher.tick()).resolves.toBeUndefined();
-
-    const snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(
-      Object.values(snapshot.outbox).find((entry) => entry.kind === "project_bootstrap_execute"),
-    ).toMatchObject({ status: "pending", dispatchAttempts: 0 });
-    expect(seeded.workspace.provision).not.toHaveBeenCalled();
-    expect(seeded.plane.provision).not.toHaveBeenCalled();
-  });
-
-  it("确认事务原子创建Operation与Outbox，Dispatcher无Bridge收敛且幂等重放不重复建项", async () => {
-    const seeded = await seedProjectBootstrapDispatch();
-    const beforeDecision = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(seeded.workspace.provision).not.toHaveBeenCalled();
-    expect(seeded.plane.provision).not.toHaveBeenCalled();
-
-    const confirmation = {
-      principalId: "usr_dispatchtest" as never,
-      commandId: "cmd_bootstrapconfirm" as never,
-      projectBootstrapCandidateId: seeded.candidate.projectBootstrapCandidateId,
-      candidateRevision: seeded.candidate.revision,
-      candidateSha256: seeded.candidate.sha256,
-      kind: "confirm" as const,
-    };
-    const decided = await decideProjectBootstrapCandidate(seeded.deps, confirmation);
-    const afterDecision = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    const operations = Object.values(afterDecision.entities.projectBootstrapOperations);
-    const bootstrapOutboxes = Object.values(afterDecision.outbox).filter(
-      (entry) => entry.kind === "project_bootstrap_execute",
-    );
-    expect(afterDecision.storeRevision).toBe(beforeDecision.storeRevision + 1);
-    expect(decided.operation).toMatchObject({ status: "queued", revision: 1 });
-    expect(operations).toHaveLength(1);
-    expect(operations[0]).toMatchObject({ status: "queued", revision: 1 });
-    expect(bootstrapOutboxes).toHaveLength(1);
-    expect(bootstrapOutboxes[0]).toMatchObject({
-      projectBootstrapOperationId: decided.operation?.projectBootstrapOperationId,
-      mode: "execute",
-      status: "pending",
-      dispatchAttempts: 0,
-    });
-
-    const replayed = await decideProjectBootstrapCandidate(seeded.deps, confirmation);
-    const afterReplay = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(afterReplay.storeRevision).toBe(afterDecision.storeRevision);
-    expect(replayed.operation?.projectBootstrapOperationId).toBe(
-      decided.operation?.projectBootstrapOperationId,
-    );
-    expect(Object.values(afterReplay.entities.projectBootstrapOperations)).toHaveLength(1);
-    expect(
-      Object.values(afterReplay.outbox).filter(
-        (entry) => entry.kind === "project_bootstrap_execute",
-      ),
-    ).toHaveLength(1);
-
-    const fetch = vi.fn(async () => {
-      throw new Error("Project Bootstrap派发不应调用Bridge或Workflow HTTP");
-    });
-    vi.stubGlobal("fetch", fetch);
-    const dispatcher = new OutboxDispatcher({
-      deps: seeded.deps,
-      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
-      credential: "rtk_test",
-      projectBootstrapEnabled: true,
-    });
-    await dispatcher.tick();
-    await dispatcher.tick();
-
-    const completed = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    const operation = Object.values(completed.entities.projectBootstrapOperations)[0];
-    const outbox = Object.values(completed.outbox).find(
-      (entry) => entry.kind === "project_bootstrap_execute",
-    );
-    expect(operation).toMatchObject({
-      status: "ready",
-      workspaceStep: "completed",
-      planeStep: "completed",
-      bindingStep: "completed",
-      planeProjectId: "66cf0460-84e0-4d3d-b1ef-d193b83b7562",
-    });
-    expect(
-      completed.entities.projectBootstrapCandidates[seeded.candidate.projectBootstrapCandidateId],
-    ).toMatchObject({ status: "ready" });
-    expect(Object.values(completed.entities.projectWorkspaceBindings)).toEqual([
-      expect.objectContaining({
-        productSessionId: seeded.sessionId,
-        projectBootstrapOperationId: operation?.projectBootstrapOperationId,
-        providerKind: "plane_ce",
-        planeWorkspaceSlug: "learning",
-        planeProjectIdentifier: "AI2026",
-        workspaceRootId: "root_code",
-        directoryName: "ai-learning",
-        status: "active",
-      }),
-    ]);
-    expect(outbox).toMatchObject({ status: "acknowledged", dispatchAttempts: 1 });
-    expect(fetch).not.toHaveBeenCalled();
-    expect(seeded.workspace.provision).toHaveBeenCalledTimes(1);
-    expect(seeded.plane.provision).toHaveBeenCalledTimes(1);
-    expect(seeded.workspace.reconcile).not.toHaveBeenCalled();
-    expect(seeded.plane.reconcile).not.toHaveBeenCalled();
-  });
-
-  it("两个Dispatcher重叠执行时活跃lease阻止第二次Provider写入", async () => {
-    const seeded = await seedProjectBootstrapDispatch();
-    await decideProjectBootstrapCandidate(seeded.deps, {
-      principalId: "usr_dispatchtest" as never,
-      commandId: "cmd_bootstrapconcurrentconfirm" as never,
-      projectBootstrapCandidateId: seeded.candidate.projectBootstrapCandidateId,
-      candidateRevision: seeded.candidate.revision,
-      candidateSha256: seeded.candidate.sha256,
-      kind: "confirm",
-    });
-    let releaseProvision!: () => void;
-    let provisionStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      provisionStarted = resolve;
-    });
-    const blocked = new Promise<void>((resolve) => {
-      releaseProvision = resolve;
-    });
-    seeded.workspace.provision.mockImplementationOnce(async () => {
-      provisionStarted();
-      await blocked;
-      return { status: "completed" as const, workspaceLabel: "Code/ai-learning" };
-    });
-    const first = new OutboxDispatcher({
-      deps: seeded.deps,
-      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
-      credential: "rtk_test",
-      projectBootstrapEnabled: true,
-      dispatcherInstanceId: "dispatcher-a",
-    });
-    const second = new OutboxDispatcher({
-      deps: seeded.deps,
-      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
-      credential: "rtk_test",
-      projectBootstrapEnabled: true,
-      dispatcherInstanceId: "dispatcher-b",
-    });
-
-    const firstTick = first.tick();
-    await started;
-    const activeProjection = await getCurrentProjectBootstrapForSession(seeded.deps, {
-      principalId: "usr_dispatchtest" as never,
-      productSessionId: seeded.sessionId as never,
-    });
-    if (activeProjection === null) throw new Error("活跃Operation缺少建项投影");
-    expect(activeProjection.recovery).toEqual({
-      canRecover: false,
-      reason: "active_execution",
-    });
-    const secondTick = second.tick();
-    await Promise.resolve();
-    expect(seeded.workspace.provision).toHaveBeenCalledTimes(1);
-    expect(seeded.workspace.reconcile).not.toHaveBeenCalled();
-    expect(seeded.plane.provision).not.toHaveBeenCalled();
-
-    releaseProvision();
-    await Promise.all([firstTick, secondTick]);
-    const completed = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(Object.values(completed.entities.projectBootstrapOperations)[0]?.status).toBe("ready");
-    expect(seeded.workspace.provision).toHaveBeenCalledTimes(1);
-    expect(seeded.plane.provision).toHaveBeenCalledTimes(1);
-  });
-
-  it("同一Dispatcher崩溃后在lease过期的新tick形成新attempt并先对账", async () => {
-    const seeded = await seedProjectBootstrapDispatch();
-    await decideProjectBootstrapCandidate(seeded.deps, {
-      principalId: "usr_dispatchtest" as never,
-      commandId: "cmd_bootstrapstaleconfirm" as never,
-      projectBootstrapCandidateId: seeded.candidate.projectBootstrapCandidateId,
-      candidateRevision: seeded.candidate.revision,
-      candidateSha256: seeded.candidate.sha256,
-      kind: "confirm",
-    });
-    seeded.workspace.provision.mockRejectedValueOnce(new Error("simulated process crash"));
-    const crashed = new OutboxDispatcher({
-      deps: seeded.deps,
-      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
-      credential: "rtk_test",
-      projectBootstrapEnabled: true,
-      dispatcherInstanceId: "dispatcher-crashed",
-    });
-    await expect(crashed.tick()).rejects.toThrow("simulated process crash");
-    let snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    const pending = Object.values(snapshot.outbox).find(
-      (entry) => entry.kind === "project_bootstrap_execute",
-    );
-    expect(pending).toMatchObject({
-      status: "pending",
-      executionLease: { mode: "execute" },
-    });
-    expect(Object.values(snapshot.entities.projectBootstrapOperations)[0]?.status).toBe(
-      "dispatching",
-    );
-
-    seeded.advance(600_001);
-    await crashed.tick();
-    snapshot = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(Object.values(snapshot.entities.projectBootstrapOperations)[0]?.status).toBe("ready");
-    expect(seeded.workspace.provision).toHaveBeenCalledTimes(1);
-    expect(seeded.plane.provision).not.toHaveBeenCalled();
-    expect(seeded.workspace.reconcile).toHaveBeenCalledTimes(1);
-    expect(seeded.plane.reconcile).toHaveBeenCalledTimes(1);
-    expect(
-      Object.values(snapshot.commandReceipts).filter(
-        (receipt) => receipt.commandType === "ClaimProjectBootstrapOperation",
-      ),
-    ).toHaveLength(2);
-  });
-
-  it("旧attempt写前校验后暂停超过lease时，新Dispatcher必须等待其退出再对账", async () => {
-    const seeded = await seedProjectBootstrapDispatch();
-    await decideProjectBootstrapCandidate(seeded.deps, {
-      principalId: "usr_dispatchtest" as never,
-      commandId: "cmd_bootstrapfenceconfirm" as never,
-      projectBootstrapCandidateId: seeded.candidate.projectBootstrapCandidateId,
-      candidateRevision: seeded.candidate.revision,
-      candidateSha256: seeded.candidate.sha256,
-      kind: "confirm",
-    });
-    let releaseOldAttempt!: () => void;
-    let oldAttemptValidated!: () => void;
-    let externalWrites = 0;
-    const validated = new Promise<void>((resolve) => {
-      oldAttemptValidated = resolve;
-    });
-    const blocked = new Promise<void>((resolve) => {
-      releaseOldAttempt = resolve;
-    });
-    seeded.workspace.provision.mockImplementationOnce(async (input) => {
-      await input.writeFence.assertCurrent("test.workspace.external-post");
-      oldAttemptValidated();
-      await blocked;
-      externalWrites += 1;
-      return { status: "completed" as const, workspaceLabel: "Code/ai-learning" };
-    });
-    seeded.workspace.reconcile.mockImplementation(async () =>
-      externalWrites === 1
-        ? { status: "completed" as const, workspaceLabel: "Code/ai-learning" }
-        : ({ status: "failed", errorCode: "project_workspace_not_found" } as never),
-    );
-
-    const dispatcherA = new OutboxDispatcher({
-      deps: seeded.deps,
-      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
-      credential: "rtk_test",
-      projectBootstrapEnabled: true,
-      dispatcherInstanceId: "dispatcher-fence-a",
-    });
-    const oldTick = dispatcherA.tick();
-    await validated;
-    seeded.advance(600_001);
-    const dispatcherB = new OutboxDispatcher({
-      deps: seeded.deps,
-      workflowRuntimeBaseUrl: "http://127.0.0.1:43112",
-      credential: "rtk_test",
-      projectBootstrapEnabled: true,
-      dispatcherInstanceId: "dispatcher-fence-b",
-    });
-
-    const takeoverTick = dispatcherB.tick();
-    await Promise.resolve();
-    expect(externalWrites).toBe(0);
-    expect(seeded.workspace.provision).toHaveBeenCalledTimes(1);
-    expect(seeded.workspace.reconcile).not.toHaveBeenCalled();
-
-    releaseOldAttempt();
-    await expect(oldTick).rejects.toMatchObject({ code: "revision_conflict" });
-    await takeoverTick;
-    const completed = (await seeded.deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(Object.values(completed.entities.projectBootstrapOperations)[0]?.status).toBe("ready");
-    expect(externalWrites).toBe(1);
-    expect(seeded.workspace.provision).toHaveBeenCalledTimes(1);
-    expect(seeded.workspace.reconcile).toHaveBeenCalledTimes(1);
-    expect(seeded.plane.provision).not.toHaveBeenCalled();
   });
 });

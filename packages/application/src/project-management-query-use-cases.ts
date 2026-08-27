@@ -502,11 +502,10 @@ export async function getProjectHome(
     attention,
     recentEvents: eventObjects,
     presentationSurfaces: profile.viewRequirements.map((requirement) => {
-      const disabled = new Set(deps.disabledProjectProviderKinds ?? []);
       const bindingByCapabilityAndMode = new Map(
-        configuration.presentationBindings
-          .filter((candidate) => !disabled.has(candidate.providerKind))
-          .map((candidate) => [`${candidate.capability}\0${candidate.mode}`, candidate] as const),
+        configuration.presentationBindings.map(
+          (candidate) => [`${candidate.capability}\0${candidate.mode}`, candidate] as const,
+        ),
       );
       const binding = bindingByCapabilityAndMode.get(`${requirement.capability}\0primary`);
       const fallback = bindingByCapabilityAndMode.get(`${requirement.capability}\0fallback`);

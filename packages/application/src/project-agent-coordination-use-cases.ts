@@ -1,24 +1,19 @@
 import {
-  projectAgentOpeningPacketSchema,
   projectAgentOpeningPacketV2Schema,
   projectAgentOpeningPacketV3Schema,
   type PrincipalId,
   type ProductSnapshot,
   type Project,
-  type ProjectAgentOpeningPacket,
-  type ProjectAgentOpeningPacketQuery,
   type ProjectAgentOpeningPacketV2,
   type ProjectAgentOpeningPacketV2Query,
   type ProjectAgentOpeningPacketV3,
   type ProjectParticipant,
-  type ProjectProviderBinding,
   type ProjectResource,
   type ProjectWork,
 } from "@chat/contracts";
 import type { ApplicationDeps } from "./deps.js";
-import { ApplicationError, forbidden, notFound, revisionConflict } from "./errors.js";
+import { forbidden, notFound, revisionConflict } from "./errors.js";
 import { compileContentLabProjectContext } from "./project-content-context-use-cases.js";
-import { getPlaneProjectSnapshot } from "./plane-project-coordination-use-cases.js";
 import {
   compileProjectAgentContext,
   compileProjectAgentContextV2,
@@ -31,7 +26,7 @@ interface ResolvedProject {
   readonly resource?: ProjectResource | undefined;
   readonly participant?: ProjectParticipant | undefined;
   readonly workspaceRootId?: string | undefined;
-  readonly sources: ProjectAgentOpeningPacket["resolution"]["sources"];
+  readonly sources: ProjectAgentOpeningPacketV2["resolution"]["sources"];
 }
 
 const TERMINAL_WORK_STATES = new Set([
@@ -42,31 +37,12 @@ const TERMINAL_WORK_STATES = new Set([
   "adopted",
   "rejected",
 ]);
-const PENDING_OPERATION_STATES = new Set([
-  "queued",
-  "dispatching",
-  "outcome_unknown",
-  "needs_attention",
-]);
-const PENDING_INBOUND_STATES = new Set(["observed", "candidate", "needs_attention"]);
 
 /**
  * Codex、Pi和Chat内Agent共享同一个确定性开工入口。Resolver只使用Product ID和受管Root ID；
  * Session、工作目录或模型记忆都不能单独制造Project关联。
  */
-export async function getProjectAgentOpeningPacket(
-  deps: ApplicationDeps,
-  input: {
-    readonly principalId: PrincipalId;
-    readonly query: ProjectAgentOpeningPacketQuery;
-  },
-): Promise<{ packet: ProjectAgentOpeningPacket }> {
-  return compileProjectAgentOpeningPacket(deps, input, "v1") as Promise<{
-    packet: ProjectAgentOpeningPacket;
-  }>;
-}
-
-/** 普通Agent入口只编译Chat事实，不读取或投影任何外部事项Provider状态。 */
+/** 普通Agent入口只编译Chat拥有的Project事实。 */
 export async function getProjectAgentOpeningPacketV2(
   deps: ApplicationDeps,
   input: {
@@ -96,13 +72,12 @@ async function compileProjectAgentOpeningPacket(
   deps: ApplicationDeps,
   input: {
     readonly principalId: PrincipalId;
-    readonly query: ProjectAgentOpeningPacketQuery | ProjectAgentOpeningPacketV2Query;
+    readonly query: ProjectAgentOpeningPacketV2Query;
   },
-  version: "v1" | "v2" | "v3",
+  version: "v2" | "v3",
 ): Promise<{
-  packet: ProjectAgentOpeningPacket | ProjectAgentOpeningPacketV2 | ProjectAgentOpeningPacketV3;
+  packet: ProjectAgentOpeningPacketV2 | ProjectAgentOpeningPacketV3;
 }> {
-  const includeProviderCoordination = version === "v1";
   const resolved = await resolveProject(deps, input.principalId, input.query);
   const { snapshot, project, participant, resource } = resolved;
   const method = snapshot.entities.projectMethodSnapshots[project.methodSnapshotId];
@@ -125,62 +100,9 @@ async function compileProjectAgentOpeningPacket(
   const workCandidates = candidates
     .slice(0, 100)
     .map((work) => workBrief(snapshot, work, participant?.projectParticipantId, deps.now()));
-  const bindings = includeProviderCoordination
-    ? Object.values(snapshot.entities.projectProviderBindings).filter(
-        (binding) =>
-          binding.projectId === project.projectId &&
-          binding.ownerPrincipalId === input.principalId &&
-          binding.status !== "archived" &&
-          (resolved.workspaceRootId === undefined ||
-            binding.workspaceRootId === resolved.workspaceRootId),
-      )
-    : [];
-  if (bindings.length > 1) throw revisionConflict("Project存在多个可用Plane Binding");
-  const binding = bindings[0];
-  const pendingOperations = includeProviderCoordination
-    ? Object.values(snapshot.entities.projectCoordinationOperations)
-        .filter(
-          (operation) =>
-            operation.projectId === project.projectId &&
-            PENDING_OPERATION_STATES.has(operation.status),
-        )
-        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-        .slice(0, 100)
-        .map((operation) => ({
-          planeProjectOperationId: operation.planeProjectOperationId,
-          projectWorkId: operation.projectWorkId,
-          kind: operation.intent.kind,
-          status: operation.status,
-          ...(operation.errorCode === undefined ? {} : { errorCode: operation.errorCode }),
-          revision: operation.revision,
-          updatedAt: operation.updatedAt,
-        }))
-    : [];
-  const pendingInboundChanges = includeProviderCoordination
-    ? Object.values(snapshot.entities.projectInboundChanges)
-        .filter(
-          (change) =>
-            change.projectId === project.projectId && PENDING_INBOUND_STATES.has(change.status),
-        )
-        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-        .slice(0, 100)
-        .map((change) => ({
-          projectInboundChangeId: change.projectInboundChangeId,
-          projectWorkId: change.workId,
-          classification: change.classification,
-          status: change.status,
-          revision: change.revision,
-          updatedAt: change.updatedAt,
-        }))
-    : [];
-
   const packetInput = {
     schemaVersion:
-      version === "v1"
-        ? "project-agent-coordination.v1"
-        : version === "v2"
-          ? "project-agent-coordination.v2"
-          : "project-agent-coordination.v3",
+      version === "v2" ? "project-agent-coordination.v2" : "project-agent-coordination.v3",
     resolution: {
       projectId: project.projectId,
       sources: resolved.sources,
@@ -228,29 +150,12 @@ async function compileProjectAgentOpeningPacket(
         snapshot,
         currentWork,
         participant,
-        pendingOperations,
         claimPolicy: method.policies.coordination.claimPolicy,
         now: deps.now(),
       }),
-      ...(includeProviderCoordination
-        ? { planeWritesThroughChatOnly: true, rawPlaneCredentialAvailable: false }
-        : {}),
     },
     completionGate:
       currentWork === undefined ? null : completionGate(currentWork, method.profileId),
-    ...(includeProviderCoordination
-      ? {
-          plane: await planeProjection(
-            deps,
-            input.principalId,
-            binding,
-            currentWork,
-            "refreshPlane" in input.query ? input.query.refreshPlane : true,
-          ),
-          pendingOperations,
-          pendingInboundChanges,
-        }
-      : {}),
     resourceContext: await resourceContext(deps, {
       principalId: input.principalId,
       project,
@@ -268,11 +173,9 @@ async function compileProjectAgentOpeningPacket(
     generatedAt: deps.now(),
   };
   const packet =
-    version === "v1"
-      ? projectAgentOpeningPacketSchema.parse(packetInput)
-      : version === "v2"
-        ? projectAgentOpeningPacketV2Schema.parse(packetInput)
-        : projectAgentOpeningPacketV3Schema.parse(packetInput);
+    version === "v2"
+      ? projectAgentOpeningPacketV2Schema.parse(packetInput)
+      : projectAgentOpeningPacketV3Schema.parse(packetInput);
   return { packet };
 }
 
@@ -283,7 +186,7 @@ async function managementProjection(
   project: Project,
   contextV2: boolean,
 ): Promise<
-  NonNullable<ProjectAgentOpeningPacket["management"] | ProjectAgentOpeningPacketV3["management"]>
+  NonNullable<ProjectAgentOpeningPacketV2["management"] | ProjectAgentOpeningPacketV3["management"]>
 > {
   const hasAdoptedConfiguration = Object.values(
     snapshot.entities.projectConfigurationRevisions,
@@ -294,7 +197,7 @@ async function managementProjection(
   if (!hasAdoptedConfiguration) {
     return {
       status: "not_configured",
-      reason: "Project尚未采用工具无关的管理Configuration；旧协调事实仍可读取。",
+      reason: "Project尚未采用工具无关的管理Configuration。",
     };
   }
   if (contextV2) {
@@ -331,7 +234,7 @@ async function managementProjection(
 async function resolveProject(
   deps: ApplicationDeps,
   principalId: PrincipalId,
-  query: ProjectAgentOpeningPacketQuery | ProjectAgentOpeningPacketV2Query,
+  query: ProjectAgentOpeningPacketV2Query,
 ): Promise<ResolvedProject> {
   const { snapshot: readonlySnapshot } = await deps.store.read({ kind: "committedSnapshot" });
   const snapshot = structuredClone(readonlySnapshot);
@@ -346,6 +249,7 @@ async function resolveProject(
   }
 
   const rootIds = new Set<string>();
+  let sessionProjectId: string | undefined;
   if (query.workspaceRootId !== undefined) {
     rootIds.add(query.workspaceRootId);
     sources.push("workspace_root");
@@ -354,14 +258,21 @@ async function resolveProject(
     const session = snapshot.entities.sessions[query.productSessionId];
     if (session === undefined) throw notFound("Product Session不存在");
     if (session.ownerPrincipalId !== principalId) throw forbidden("无权解析该Product Session");
-    const sessionBindings = Object.values(snapshot.entities.projectWorkspaceBindings).filter(
-      (binding) =>
-        binding.ownerPrincipalId === principalId &&
-        binding.productSessionId === query.productSessionId &&
-        binding.status === "active",
+    const sessionProjectIds = new Set(
+      Object.values(snapshot.entities.projectCandidates).flatMap((candidate) =>
+        candidate.candidateKind === "intake" &&
+        candidate.status === "confirmed" &&
+        candidate.sessionId === query.productSessionId &&
+        "confirmedProjectId" in candidate
+          ? [candidate.confirmedProjectId]
+          : [],
+      ),
     );
-    for (const binding of sessionBindings) rootIds.add(binding.workspaceRootId);
-    if (sessionBindings.length > 0) sources.push("product_session");
+    if (sessionProjectIds.size > 1) {
+      throw revisionConflict("Product Session关联了多个Project");
+    }
+    sessionProjectId = [...sessionProjectIds][0];
+    if (sessionProjectId !== undefined) sources.push("product_session");
   }
   if (rootIds.size > 1) throw revisionConflict("Resolver输入指向不同Workspace Root");
   const workspaceRootId = [...rootIds][0];
@@ -379,16 +290,18 @@ async function resolveProject(
   const resourceProjectIds = new Set(matchingResources.map((resource) => resource.projectId));
   if (resourceProjectIds.size > 1) throw revisionConflict("Workspace Root关联了多个活动Project");
   const rootProjectId = [...resourceProjectIds][0];
-  if (
-    requestedProject !== undefined &&
-    rootProjectId !== undefined &&
-    rootProjectId !== requestedProject.projectId
-  ) {
-    throw revisionConflict("Project与Workspace Root关联不一致");
+  const resolvedProjectIds = new Set(
+    [requestedProject?.projectId, rootProjectId, sessionProjectId].filter(
+      (value): value is string => value !== undefined,
+    ),
+  );
+  if (resolvedProjectIds.size > 1) {
+    throw revisionConflict("Project、Product Session与Workspace Root关联不一致");
   }
   const project =
     requestedProject ??
-    (rootProjectId === undefined ? undefined : snapshot.entities.projects[rootProjectId]);
+    (rootProjectId === undefined ? undefined : snapshot.entities.projects[rootProjectId]) ??
+    (sessionProjectId === undefined ? undefined : snapshot.entities.projects[sessionProjectId]);
   if (project === undefined) {
     throw notFound("没有从Product Session或Workspace Root解析到Chat Project");
   }
@@ -494,7 +407,7 @@ function workBrief(
   work: ProjectWork,
   participantId: string | undefined,
   now: string,
-): ProjectAgentOpeningPacket["workCandidates"][number] {
+): ProjectAgentOpeningPacketV2["workCandidates"][number] {
   const claim =
     work.activeClaimId === undefined
       ? undefined
@@ -555,7 +468,7 @@ function workBrief(
 function resourceSummary(
   snapshot: ProductSnapshot,
   resource: ProjectResource | undefined,
-): ProjectAgentOpeningPacket["resource"] {
+): ProjectAgentOpeningPacketV2["resource"] {
   if (resource === undefined) return null;
   const observation = Object.values(snapshot.entities.projectObservations)
     .filter((item) => item.resourceId === resource.projectResourceId)
@@ -582,7 +495,7 @@ function resourceSummary(
 function completionGate(
   work: ProjectWork,
   methodProfileId: string,
-): ProjectAgentOpeningPacket["completionGate"] {
+): ProjectAgentOpeningPacketV2["completionGate"] {
   if (work.kind === "content_delivery") {
     return {
       terminalState: "published",
@@ -611,7 +524,7 @@ function completionGate(
       humanDecisionRequired: true,
       publicationOutcomeRequired: false,
       automaticTerminalTransitionAllowed: false,
-      explanation: "完成事实必须经过Chat既有Work/Evidence合同；Agent不能用Plane状态代替完成门。",
+      explanation: "完成事实必须经过Chat既有Work、Decision与Evidence合同。",
     };
   return {
     terminalState: "done",
@@ -619,7 +532,7 @@ function completionGate(
     humanDecisionRequired: true,
     publicationOutcomeRequired: false,
     automaticTerminalTransitionAllowed: false,
-    explanation: "完成事实遵守当前Project Profile与Work验收条件；Agent不能用Plane状态代替完成门。",
+    explanation: "完成事实遵守当前Project Profile与Work验收条件。",
   };
 }
 
@@ -627,13 +540,11 @@ function allowedActions(input: {
   readonly snapshot: ProductSnapshot;
   readonly currentWork?: ProjectWork | undefined;
   readonly participant?: ProjectParticipant | undefined;
-  readonly pendingOperations: readonly unknown[];
   readonly claimPolicy: "disabled" | "optional" | "required_for_agent";
   readonly now: string;
-}): ProjectAgentOpeningPacket["permissions"]["allowedActions"] {
-  const actions: ProjectAgentOpeningPacket["permissions"]["allowedActions"][number][] = [];
+}): ProjectAgentOpeningPacketV2["permissions"]["allowedActions"] {
+  const actions: ProjectAgentOpeningPacketV2["permissions"]["allowedActions"][number][] = [];
   if (input.currentWork === undefined) actions.push("select_work");
-  if (input.pendingOperations.length > 0) actions.push("reconcile");
   const work = input.currentWork;
   const participant = input.participant;
   if (work === undefined || participant === undefined) return actions;
@@ -672,82 +583,6 @@ function allowedActions(input: {
   return [...new Set(actions)];
 }
 
-async function planeProjection(
-  deps: ApplicationDeps,
-  principalId: PrincipalId,
-  binding: ProjectProviderBinding | undefined,
-  currentWork: ProjectWork | undefined,
-  refreshPlane: boolean,
-): Promise<ProjectAgentOpeningPacket["plane"]> {
-  if (binding === undefined) return { status: "not_bound" };
-  if (binding.status !== "active") {
-    return {
-      status: "needs_attention",
-      planeProjectBindingId: binding.projectProviderBindingId,
-      errorCode: "plane_binding_needs_attention",
-    };
-  }
-  if (!refreshPlane) {
-    return {
-      status: "unavailable",
-      planeProjectBindingId: binding.projectProviderBindingId,
-      errorCode: "plane_refresh_not_requested",
-    };
-  }
-  try {
-    const plane = await getPlaneProjectSnapshot(deps, {
-      principalId,
-      planeProjectBindingId: binding.projectProviderBindingId,
-    });
-    const currentItem =
-      currentWork === undefined
-        ? undefined
-        : plane.workItems.find((item) => item.projectWorkId === currentWork.projectWorkId);
-    return {
-      status: "ready",
-      planeProjectBindingId: binding.projectProviderBindingId,
-      planeWorkspaceSlug: plane.planeWorkspaceSlug,
-      planeProjectId: plane.project.planeProjectId,
-      planeProjectIdentifier: plane.project.identifier,
-      planeProjectName: plane.project.name,
-      currentWorkItem:
-        currentItem === undefined
-          ? null
-          : {
-              planeWorkItemId: currentItem.planeWorkItemId,
-              sequenceId: currentItem.sequenceId,
-              name: currentItem.name,
-              priority: currentItem.priority,
-              stateName: currentItem.state.name,
-              stateGroup: currentItem.state.group,
-              updatedAt: currentItem.updatedAt,
-            },
-      totalWorkItemCount: plane.totalWorkItemCount,
-      unresolvedOperationCount: plane.unresolvedOperationCount,
-      pendingInboundChangeCount: plane.pendingInboundChangeCount,
-      capturedAt: plane.capturedAt,
-    };
-  } catch (error) {
-    const code =
-      error instanceof ApplicationError
-        ? error.code
-        : typeof error === "object" &&
-            error !== null &&
-            "code" in error &&
-            typeof error.code === "string"
-          ? error.code
-          : "plane_snapshot_unavailable";
-    return {
-      status:
-        error instanceof ApplicationError && error.code === "revision_conflict"
-          ? "needs_attention"
-          : "unavailable",
-      planeProjectBindingId: binding.projectProviderBindingId,
-      errorCode: code,
-    };
-  }
-}
-
 async function resourceContext(
   deps: ApplicationDeps,
   input: {
@@ -757,7 +592,7 @@ async function resourceContext(
     readonly work?: ProjectWork | undefined;
     readonly include: boolean;
   },
-): Promise<ProjectAgentOpeningPacket["resourceContext"]> {
+): Promise<ProjectAgentOpeningPacketV2["resourceContext"]> {
   if (!input.include) return { status: "not_requested" };
   if (
     input.resource === undefined ||

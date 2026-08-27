@@ -12,7 +12,6 @@ import {
 } from "./snapshot-integrity/workflow-definitions.js";
 import {
   assertProjects,
-  assertProjectBootstraps,
   assertPlanningProjectContexts,
   assertPlanningMemorySelections,
 } from "./snapshot-integrity/projects.js";
@@ -37,7 +36,6 @@ import {
   assertDirectAgentCandidates,
 } from "./snapshot-integrity/runs-plans.js";
 import { assertExecution, assertReceiptsAndOutbox } from "./snapshot-integrity/execution.js";
-import { assertProjectCoordination } from "./snapshot-integrity/project-coordination.js";
 import { assertToolExecutions } from "./snapshot-integrity/tool-executions.js";
 import { assertProjectManagement } from "./snapshot-integrity/project-management.js";
 import { assertSupervisedPlanningV3 } from "./snapshot-integrity/supervised-planning-v3.js";
@@ -69,9 +67,7 @@ export function assertSnapshotIntegrity(snapshot: ProductSnapshot): void {
   assertLongTermContext(snapshot, fail);
   assertMemoryImports(snapshot, fail);
   assertProjects(snapshot, fail);
-  assertProjectCoordination(snapshot, fail);
   assertProjectManagement(snapshot, fail);
-  assertProjectBootstraps(snapshot, fail);
   assertPlanningProjectContexts(snapshot, fail);
   assertPlanningMemorySelections(snapshot, fail);
   assertWorkflowMemory(snapshot, fail);

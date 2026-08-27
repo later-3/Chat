@@ -541,8 +541,7 @@ export function assertAttempts(snapshot: ProductSnapshot, fail: Fail): void {
       if (
         capabilityMode !== "pi_cli_default" &&
         capabilityMode !== "custom" &&
-        capabilityMode !== "read_only" &&
-        capabilityMode !== "project_bootstrap"
+        capabilityMode !== "read_only"
       ) {
         fail(`direct_agent attempt ${attempt.attemptId} capabilityMode无效`);
       }

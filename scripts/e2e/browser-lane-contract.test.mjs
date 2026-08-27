@@ -16,7 +16,7 @@ describe("deterministic browser lane contract", () => {
     const root = JSON.parse(read("package.json"));
     assert.equal(
       root.scripts["test:browser"],
-      "pnpm test:browser:pwa-mobile && pnpm test:browser:planning && pnpm test:browser:prompt-studio && pnpm test:browser:trajectory && pnpm test:browser:project-bootstrap && pnpm test:browser:capability-governance",
+      "pnpm test:browser:pwa-mobile && pnpm test:browser:planning && pnpm test:browser:prompt-studio && pnpm test:browser:trajectory && pnpm test:browser:capability-governance",
     );
     for (const [name, command] of Object.entries(root.scripts)) {
       if (name === "test:browser" || name.startsWith("test:browser:")) {
@@ -26,13 +26,12 @@ describe("deterministic browser lane contract", () => {
     }
   });
 
-  it("keeps the required 7 + 1 + 3 Chromium cases and existing deterministic surfaces", () => {
+  it("keeps the required deterministic Chromium surfaces", () => {
     assert.equal(
       testCount("apps/dsh-web/e2e/dsh-pwa-real.spec.ts") +
         testCount("apps/dsh-web/e2e/dsh-mobile-hanui-real.spec.ts"),
       7,
     );
-    assert.equal(testCount("apps/dsh-web/e2e/dsh-project-bootstrap-real.spec.ts"), 1);
     assert.equal(testCount("apps/dsh-web/e2e/dsh-capability-governance-real.spec.ts"), 3);
     assert.equal(testCount("apps/dsh-web/e2e/dsh-planning-faux-real.spec.ts"), 1);
     assert.equal(testCount("apps/dsh-web/e2e/dsh-prompt-studio-real.spec.ts"), 5);
@@ -48,7 +47,6 @@ describe("deterministic browser lane contract", () => {
         "apps/dsh-web/e2e/dsh-capability-governance-real.spec.ts",
         "apps/dsh-web/e2e/dsh-mobile-hanui-real.spec.ts",
         "apps/dsh-web/e2e/dsh-planning-faux-real.spec.ts",
-        "apps/dsh-web/e2e/dsh-project-bootstrap-real.spec.ts",
         "apps/dsh-web/e2e/dsh-prompt-studio-real.spec.ts",
         "apps/dsh-web/e2e/dsh-pwa-real.spec.ts",
         "apps/dsh-web/e2e/dsh-trajectory-real.spec.ts",

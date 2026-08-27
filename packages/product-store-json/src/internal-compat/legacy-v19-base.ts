@@ -20,7 +20,7 @@ const historicalProductEntitiesV19Schema = productSnapshotSchema.shape.entities
     ),
     agentVersions: z.record(z.string().min(1).max(200), legacyAgentVersionV1Schema),
   })
-  .strict();
+  .strip();
 
 /** main已经发布的v19冻结根；只供Store历史reader，不进入当前Contracts/API。 */
 export const productSnapshotV19Schema = productSnapshotSchema

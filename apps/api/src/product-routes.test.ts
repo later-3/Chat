@@ -35,7 +35,6 @@ import {
   workflowRunViewDtoSchema,
   workflowNodeDetailDtoSchema,
   workflowDefinitionsDtoSchema,
-  workflowSequenceBoundarySchema,
   workflowDefinitionCommandResultV2DtoSchema,
   currentPromptReviewResponseSchema,
   promptAssemblyPreviewDtoSchema,
@@ -48,20 +47,14 @@ import {
   type PrincipalId,
   type ProductRunId,
   type AgentKey,
-  currentProjectBootstrapResponseSchema,
-  prepareProjectBootstrapRuntimeResponseSchema,
-  projectBootstrapDecisionResponseSchema,
 } from "@chat/contracts";
 import {
   authorizeDirectAgentOperation,
   beginDirectAgentAttempt,
   compilePlanningInput,
-  createWorkflowDefinitionCopy,
   normalizeMemoryQueryResult,
   markMemoryWriteDispatching,
-  publishWorkflowDefinition,
   publishPromptReviewRequest,
-  saveWorkflowDefinitionDraft,
   transitionConfigurablePlanningNode,
   updateOutboxStatus,
   publishPlanForReview as publishPlanForReviewUseCase,
@@ -70,7 +63,6 @@ import {
   type IdFactory,
   type RuleIdFactory,
   type PromptFragmentIdFactory,
-  type ProjectBootstrapIdFactory,
 } from "@chat/application";
 import {
   SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID,
@@ -106,32 +98,22 @@ const now = (): string =>
 
 function testPiRuntimeBaseline(agentKey: AgentKey, workspaceRootId?: string) {
   const direct = agentKey === "direct";
-  const bootstrap = agentKey === "project_bootstrap";
   const variants = direct
     ? [
         {
           variantKey: "pi_cli_default",
           tools: ["read", "bash", "edit", "write"],
         },
-        {
-          variantKey: "project_bootstrap",
-          tools: ["project_bootstrap_prepare"],
-        },
       ]
-    : bootstrap
+    : agentKey === "coding_executor"
       ? [
-          { variantKey: "read_only", tools: ["read", "grep", "find", "ls"] },
-          { variantKey: "project_bootstrap", tools: ["project_bootstrap_prepare"] },
+          { variantKey: "markdown_text_compose", tools: [] },
+          {
+            variantKey: "workspace_write_shell",
+            tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
+          },
         ]
-      : agentKey === "coding_executor"
-        ? [
-            { variantKey: "markdown_text_compose", tools: [] },
-            {
-              variantKey: "workspace_write_shell",
-              tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
-            },
-          ]
-        : [];
+      : [];
   if (variants.length === 0) return undefined;
   const baseline = agentRuntimeBaselineDtoSchema.parse({
     kind: "pi_coding_agent",
@@ -143,7 +125,7 @@ function testPiRuntimeBaseline(agentKey: AgentKey, workspaceRootId?: string) {
     compositionStrategy:
       "pi_runtime_then_agent_version_then_workflow_session_run_then_chat_context",
     chatRuntimeAppend: {
-      bodyMarkdown: direct || bootstrap ? "Direct Runtime Contract" : "Coding Runtime Contract",
+      bodyMarkdown: direct ? "Direct Runtime Contract" : "Coding Runtime Contract",
       sha256: "a".repeat(64),
       sourceRelativePath: "packages/pi-runtime/src/coding-agent-runtime-profile.ts",
       appliesToVariantKeys: variants.map((variant) => variant.variantKey),
@@ -237,16 +219,7 @@ async function testApp(): Promise<{
     string,
     { sourceRelativePath: string; sourceSha256: string; content: never }
   >();
-  const projectBootstrapIds = {
-    candidate: () => gen("pbc"),
-    decision: () => gen("pbd"),
-    operation: () => gen("pbo"),
-    binding: () => gen("pwb"),
-  } as ProjectBootstrapIdFactory;
-  const promptCatalog = await createFilePromptCatalog(undefined, {
-    ...process.env,
-    CHAT_PLANE_ENABLED: "1",
-  });
+  const promptCatalog = await createFilePromptCatalog();
   const backend = {
     describeProvider: () => ({
       schemaVersion: "memory-provider-descriptor.v1" as const,
@@ -436,7 +409,6 @@ async function testApp(): Promise<{
     ruleIds,
     directAgentIds,
     promptFragmentIds,
-    projectBootstrapIds,
     promptCatalog,
     agentRuntimeProfiles: {
       read: async (agentKey, workspaceRootId) => {
@@ -479,41 +451,6 @@ async function testApp(): Promise<{
         if (projection === undefined) throw new Error("测试Prompt文件不存在");
         return projection;
       },
-    },
-    projectWorkspaceProvisioner: {
-      listRoots: () => [{ rootId: "root_code" as never, displayName: "Code" }],
-      preflight: async ({ directoryName }) => ({
-        root: { rootId: "root_code" as never, displayName: "Code" },
-        directoryName,
-        workspaceLabel: `Code/${directoryName}`,
-      }),
-      provision: async ({ proposal }) => ({
-        status: "completed" as const,
-        workspaceLabel: `Code/${proposal.directoryName}`,
-      }),
-      reconcile: async ({ proposal }) => ({
-        status: "completed" as const,
-        workspaceLabel: `Code/${proposal.directoryName}`,
-      }),
-    },
-    projectManagementBootstrap: {
-      describe: () => ({
-        providerKind: "plane_ce" as const,
-        providerVersion: "1.4.1",
-        providerWebBaseUrl: "http://127.0.0.1:8088",
-        allowedWorkspaceSlugs: ["learning"],
-      }),
-      preflight: async ({ projectIdentifier }) => ({
-        planeProjectLabel: `learning/${projectIdentifier}`,
-      }),
-      provision: async () => ({
-        status: "completed" as const,
-        planeProjectId: "66cf0460-84e0-4d3d-b1ef-d193b83b7562" as never,
-      }),
-      reconcile: async () => ({
-        status: "completed" as const,
-        planeProjectId: "66cf0460-84e0-4d3d-b1ef-d193b83b7562" as never,
-      }),
     },
     projectRoots: {
       list: () => [
@@ -597,7 +534,7 @@ async function testApp(): Promise<{
   };
   const app = createApiApp({
     traceSink: null,
-    product: { deps, principalId: DEBUG_PRINCIPAL_ID, planeEnabled: true },
+    product: { deps, principalId: DEBUG_PRINCIPAL_ID },
     internalRuntime: { credential: "rtk_test" },
   });
   return {
@@ -730,521 +667,6 @@ describe("公开产品API", () => {
     expect(Object.values(snapshot.entities.sessions)).toHaveLength(1);
     expect(Object.values(snapshot.entities.messages)).toHaveLength(1);
     expect(Object.values(snapshot.entities.runs)).toHaveLength(1);
-  });
-
-  it("普通Message入口拒绝显式覆盖和Definition默认值携带的project_bootstrap能力", async () => {
-    const { deps } = await testApp();
-    const initial = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    const directRevision =
-      initial.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
-    if (directRevision === undefined) throw new Error("缺少Direct Agent系统Definition");
-    const guardedApp = createApiApp({
-      traceSink: null,
-      product: {
-        principalId: DEBUG_PRINCIPAL_ID,
-        deps: {
-          ...deps,
-          agentRuntimeProfiles: {
-            read: async () => {
-              throw new Error("runtime adapter unavailable");
-            },
-          },
-        },
-      },
-      internalRuntime: { credential: "rtk_test" },
-    });
-
-    const overrideResponse = await postJson(guardedApp, "/api/messages", {
-      commandId: nextCmd(),
-      payload: {
-        text: "尝试从普通入口启用项目初始化",
-        workflowSelection: {
-          kind: "published_revision",
-          workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
-          definitionSha256: directRevision.definitionSha256,
-          runConfiguration: {
-            schemaVersion: "workflow-run-configuration.v1",
-            overrides: [
-              {
-                kind: "node_config",
-                definitionNodeId: "direct.agent",
-                field: "capabilityMode",
-                value: "project_bootstrap",
-              },
-            ],
-          },
-        },
-      },
-    });
-    expect(overrideResponse.status).toBe(403);
-    expect(problemDetailSchema.parse(await overrideResponse.json())).toMatchObject({
-      code: "forbidden",
-    });
-
-    const copied = await createWorkflowDefinitionCopy(deps, {
-      principalId: DEBUG_PRINCIPAL_ID,
-      commandId: nextCmd(),
-      payload: {
-        sourceWorkflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
-        sourceDefinitionSha256: directRevision.definitionSha256,
-        title: "默认初始化能力旁路测试",
-        description: "验证普通Workflow Definition不能把项目初始化能力带入消息。",
-      },
-    });
-    if (copied.definition.compatibility !== "editable") {
-      throw new Error("复制的Direct Definition不可编辑");
-    }
-    const bootstrapRoot = {
-      ...copied.definition.semanticRoot,
-      elements: copied.definition.semanticRoot.elements.map((element) =>
-        element.kind === "composite" && element.definitionNodeId === "direct.agent"
-          ? {
-              ...element,
-              config: { ...element.config, capabilityMode: "project_bootstrap" },
-            }
-          : element,
-      ),
-    };
-    const saved = await saveWorkflowDefinitionDraft(deps, {
-      principalId: DEBUG_PRINCIPAL_ID,
-      commandId: nextCmd(),
-      workflowDefinitionId: copied.definition.workflowDefinitionId,
-      expectedRevision: copied.definition.revision,
-      payload: {
-        baseRevisionId: copied.definition.baseRevisionId,
-        baseDefinitionSha256: copied.definition.baseDefinitionSha256,
-        semanticRoot: workflowSequenceBoundarySchema.parse(bootstrapRoot),
-      },
-    });
-    const draft = saved.definition.currentDraftRevision;
-    if (draft === undefined) throw new Error("默认初始化能力Definition缺少Draft");
-    const published = await publishWorkflowDefinition(deps, {
-      principalId: DEBUG_PRINCIPAL_ID,
-      commandId: nextCmd(),
-      workflowDefinitionId: saved.definition.workflowDefinitionId,
-      expectedRevision: saved.definition.revision,
-      payload: {
-        draftRevisionId: draft.workflowDefinitionRevisionId,
-        draftDefinitionSha256: draft.definitionSha256,
-      },
-    });
-    const publishedRevision = published.definition.publishedRevision;
-    if (publishedRevision === undefined) throw new Error("默认初始化能力Definition未发布");
-
-    const defaultResponse = await postJson(guardedApp, "/api/messages", {
-      commandId: nextCmd(),
-      payload: {
-        text: "尝试通过Definition默认配置启用项目初始化",
-        workflowSelection: {
-          kind: "published_revision",
-          workflowDefinitionRevisionId: publishedRevision.workflowDefinitionRevisionId,
-          definitionSha256: publishedRevision.definitionSha256,
-        },
-      },
-    });
-    expect(defaultResponse.status).toBe(403);
-    expect(problemDetailSchema.parse(await defaultResponse.json())).toMatchObject({
-      code: "forbidden",
-    });
-    const after = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(Object.values(after.entities.sessions)).toHaveLength(0);
-    expect(Object.values(after.entities.messages)).toHaveLength(0);
-    expect(Object.values(after.entities.runs)).toHaveLength(0);
-  });
-
-  it("首轮专用Message Receipt重放不依赖随后仍存在的Provider配置", async () => {
-    const { app, deps } = await testApp();
-    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    const directRevision =
-      snapshot.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
-    if (directRevision === undefined) throw new Error("缺少Direct Agent系统Definition");
-    const commandId = nextCmd();
-    const body = {
-      commandId,
-      payload: {
-        text: "创建一个响应未知恢复测试项目",
-        workflowSelection: {
-          kind: "published_revision" as const,
-          workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
-          definitionSha256: directRevision.definitionSha256,
-          runConfiguration: {
-            schemaVersion: "workflow-run-configuration.v1" as const,
-            overrides: [
-              {
-                kind: "node_config" as const,
-                definitionNodeId: "direct.agent",
-                field: "capabilityMode",
-                value: "project_bootstrap",
-              },
-            ],
-          },
-        },
-      },
-    };
-    const firstResponse = await postJson(app, "/api/project-bootstrap/messages", body);
-    expect(firstResponse.status, await firstResponse.clone().text()).toBe(201);
-    const first = z
-      .object({ session: sessionDtoSchema, message: messageDtoSchema, run: runDtoSchema })
-      .strict()
-      .parse(await firstResponse.json());
-
-    const {
-      projectManagementBootstrap: _plane,
-      projectWorkspaceProvisioner: _workspace,
-      ...withoutProviders
-    } = deps;
-    void _plane;
-    void _workspace;
-    const {
-      promptCatalog: _promptCatalog,
-      agentRuntimeProfiles: _agentRuntimeProfiles,
-      ...receiptOnlyDeps
-    } = withoutProviders;
-    void _promptCatalog;
-    void _agentRuntimeProfiles;
-    const replayApp = createApiApp({
-      traceSink: null,
-      product: {
-        deps: receiptOnlyDeps,
-        principalId: DEBUG_PRINCIPAL_ID,
-        planeEnabled: true,
-      },
-      internalRuntime: { credential: "rtk_test" },
-    });
-    const replayResponse = await postJson(replayApp, "/api/project-bootstrap/messages", body);
-    expect(replayResponse.status, await replayResponse.clone().text()).toBe(201);
-    const replayed = z
-      .object({ session: sessionDtoSchema, message: messageDtoSchema, run: runDtoSchema })
-      .strict()
-      .parse(await replayResponse.json());
-    expect(replayed.session.sessionId).toBe(first.session.sessionId);
-    expect(replayed.message.messageId).toBe(first.message.messageId);
-    expect(replayed.run.productRunId).toBe(first.run.productRunId);
-  });
-
-  it("其他Command的同ID Receipt在任何Runtime读取前稳定拒绝Message重用", async () => {
-    const { app, deps } = await testApp();
-    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    const directRevision =
-      snapshot.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
-    if (directRevision === undefined) throw new Error("缺少Direct Agent系统Definition");
-    const reusedCommandId = nextCmd();
-    const created = await postJson(app, "/api/sessions", {
-      commandId: reusedCommandId,
-      payload: { title: "占用Command身份" },
-    });
-    expect(created.status).toBe(201);
-    const { promptCatalog: _promptCatalog, ...withoutPromptCatalog } = deps;
-    void _promptCatalog;
-    const runtimeUnavailableApp = createApiApp({
-      traceSink: null,
-      product: {
-        principalId: DEBUG_PRINCIPAL_ID,
-        deps: {
-          ...withoutPromptCatalog,
-          agentRuntimeProfiles: {
-            read: async () => {
-              throw new Error("runtime must not be reached");
-            },
-          },
-        },
-      },
-      internalRuntime: { credential: "rtk_test" },
-    });
-
-    const response = await postJson(runtimeUnavailableApp, "/api/messages", {
-      commandId: reusedCommandId,
-      payload: {
-        text: "不能借其他Receipt绕过授权",
-        workflowSelection: {
-          kind: "published_revision",
-          workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
-          definitionSha256: directRevision.definitionSha256,
-          runConfiguration: {
-            schemaVersion: "workflow-run-configuration.v1",
-            overrides: [
-              {
-                kind: "node_config",
-                definitionNodeId: "direct.agent",
-                field: "capabilityMode",
-                value: "project_bootstrap",
-              },
-            ],
-          },
-        },
-      },
-    });
-
-    expect(response.status).toBe(409);
-    expect(problemDetailSchema.parse(await response.json())).toMatchObject({
-      code: "command_id_reused",
-    });
-  });
-
-  it("旧普通Message Receipt可在bootstrap授权门前按原Payload恢复", async () => {
-    const { app, deps } = await testApp();
-    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    const directRevision =
-      snapshot.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
-    if (directRevision === undefined) throw new Error("缺少Direct Agent系统Definition");
-    const payload = {
-      text: "恢复v12响应未知项目初始化",
-      workflowSelection: {
-        kind: "published_revision" as const,
-        workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
-        definitionSha256: directRevision.definitionSha256,
-        runConfiguration: {
-          schemaVersion: "workflow-run-configuration.v1" as const,
-          overrides: [
-            {
-              kind: "node_config" as const,
-              definitionNodeId: "direct.agent",
-              field: "capabilityMode",
-              value: "project_bootstrap",
-            },
-          ],
-        },
-      },
-    };
-    const seededResponse = await postJson(app, "/api/project-bootstrap/messages", {
-      commandId: nextCmd(),
-      payload,
-    });
-    expect(seededResponse.status, await seededResponse.clone().text()).toBe(201);
-    const seeded = z
-      .object({ session: sessionDtoSchema, message: messageDtoSchema, run: runDtoSchema })
-      .strict()
-      .parse(await seededResponse.json());
-    const afterSeed = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    const persistedRun = afterSeed.entities.runs[seeded.run.productRunId];
-    if (persistedRun?.workflowRunSpecId === undefined) throw new Error("旧Run缺少RunSpec");
-    const workflowRunSpecId = persistedRun.workflowRunSpecId;
-    const legacyCommandId = nextCmd();
-    await deps.store.transact({
-      commandId: legacyCommandId,
-      commandType: "SubmitUserMessage",
-      requestSha256: hashCanonical("command.start-product-session-with-user-message.v1", {
-        principalId: DEBUG_PRINCIPAL_ID,
-        payload,
-      }),
-      mutate: () => ({
-        resultRefs: {
-          messageId: seeded.message.messageId,
-          productRunId: seeded.run.productRunId,
-          workflowRunSpecId,
-        },
-      }),
-    });
-
-    const replayResponse = await postJson(app, "/api/messages", {
-      commandId: legacyCommandId,
-      payload,
-    });
-    expect(replayResponse.status, await replayResponse.clone().text()).toBe(201);
-    const replayed = z
-      .object({ session: sessionDtoSchema, message: messageDtoSchema, run: runDtoSchema })
-      .strict()
-      .parse(await replayResponse.json());
-    expect(replayed.session.sessionId).toBe(seeded.session.sessionId);
-    expect(replayed.message.messageId).toBe(seeded.message.messageId);
-    expect(replayed.run.productRunId).toBe(seeded.run.productRunId);
-  });
-
-  it("旧专用Message Receipt可从普通existing-session路由按Product事实恢复", async () => {
-    const { app, deps } = await testApp();
-    const snapshot = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    const directRevision =
-      snapshot.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
-    if (directRevision === undefined) throw new Error("缺少Direct Agent系统Definition");
-    const payload = {
-      text: "恢复已到终态的v13项目初始化首轮",
-      workflowSelection: {
-        kind: "published_revision" as const,
-        workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
-        definitionSha256: directRevision.definitionSha256,
-        runConfiguration: {
-          schemaVersion: "workflow-run-configuration.v1" as const,
-          overrides: [
-            {
-              kind: "node_config" as const,
-              definitionNodeId: "direct.agent",
-              field: "capabilityMode",
-              value: "project_bootstrap",
-            },
-          ],
-        },
-      },
-    };
-    const commandId = nextCmd();
-    const submittedResponse = await postJson(app, "/api/project-bootstrap/messages", {
-      commandId,
-      payload,
-    });
-    expect(submittedResponse.status, await submittedResponse.clone().text()).toBe(201);
-    const submitted = z
-      .object({ session: sessionDtoSchema, message: messageDtoSchema, run: runDtoSchema })
-      .strict()
-      .parse(await submittedResponse.json());
-
-    // v12无法证明旧Request种类时会保守走普通existing-session路由；Application只在
-    // 已存在的Message Receipt前置重放中采用Store记录的原专用Command种类与Hash域。
-    const replayResponse = await postJson(
-      app,
-      `/api/sessions/${submitted.session.sessionId}/messages`,
-      { commandId, payload },
-    );
-    expect(replayResponse.status, await replayResponse.clone().text()).toBe(201);
-    const replayed = z
-      .object({ message: messageDtoSchema, run: runDtoSchema })
-      .strict()
-      .parse(await replayResponse.json());
-    expect(replayed.message.messageId).toBe(submitted.message.messageId);
-    expect(replayed.run.productRunId).toBe(submitted.run.productRunId);
-    expect(
-      (await deps.store.read({ kind: "committedSnapshot" })).snapshot.commandReceipts[commandId]
-        ?.commandType,
-    ).toBe("SubmitProjectBootstrapUserMessage");
-  });
-
-  it("受控建项确认原子提交Decision、Operation与后台Outbox，不在Router执行Provider", async () => {
-    const { app, deps } = await testApp();
-    const configuration = await app.request("/api/project-bootstrap/configuration");
-    expect(configuration.status).toBe(200);
-    expect(await configuration.json()).toMatchObject({
-      enabled: true,
-      providerKind: "plane_ce",
-      providerVersion: "1.4.1",
-      planeWorkspaceSlugs: ["learning"],
-      creationRoots: [{ rootId: "root_code", displayName: "Code" }],
-    });
-
-    const created = await postJson(app, "/api/sessions", {
-      commandId: nextCmd(),
-      payload: {},
-    });
-    const session = sessionDtoSchema.parse(
-      ((await created.json()) as { session: unknown }).session,
-    );
-    const { snapshot: seeded } = await deps.store.read({ kind: "committedSnapshot" });
-    const directRevision =
-      seeded.entities.workflowDefinitionRevisions[SYSTEM_DIRECT_AGENT_WORKFLOW_REVISION_ID];
-    if (directRevision === undefined) throw new Error("缺少Direct Agent系统Definition");
-    const bootstrapMessageCommandId = nextCmd();
-    const sent = await postJson(
-      app,
-      `/api/sessions/${session.sessionId}/project-bootstrap/messages`,
-      {
-        commandId: bootstrapMessageCommandId,
-        payload: {
-          text: "创建一个持续学习AI课程、论文和开源项目的项目",
-          workflowSelection: {
-            kind: "published_revision",
-            workflowDefinitionRevisionId: directRevision.workflowDefinitionRevisionId,
-            definitionSha256: directRevision.definitionSha256,
-            runConfiguration: {
-              schemaVersion: "workflow-run-configuration.v1",
-              overrides: [
-                {
-                  kind: "node_config",
-                  definitionNodeId: "direct.agent",
-                  field: "capabilityMode",
-                  value: "project_bootstrap",
-                },
-              ],
-            },
-          },
-        },
-      },
-    );
-    expect(sent.status, await sent.clone().text()).toBe(201);
-    const submitted = z
-      .object({ message: messageDtoSchema, run: runDtoSchema })
-      .strict()
-      .parse(await sent.json());
-    const { snapshot } = await deps.store.read({ kind: "committedSnapshot" });
-    expect(snapshot.commandReceipts[bootstrapMessageCommandId]?.commandType).toBe(
-      "SubmitProjectBootstrapUserMessage",
-    );
-    const workflowAttempt = Object.values(snapshot.entities.attempts).find(
-      (attempt) =>
-        attempt.productRunId === submitted.run.productRunId && attempt.kind === "workflow",
-    );
-    if (workflowAttempt === undefined) throw new Error("缺少Direct Workflow Attempt");
-    await beginDirectAgentAttempt(deps, {
-      commandId: nextCmd(),
-      productRunId: submitted.run.productRunId,
-      workflowAttemptId: workflowAttempt.attemptId,
-    });
-
-    const proposal = {
-      name: "AI学习",
-      objective: "学习公开课程、论文和开源项目，并形成自己的实践项目。",
-      planeWorkspaceSlug: "learning",
-      planeProjectIdentifier: "AI2026",
-      workspaceRootId: "root_code",
-      directoryName: "ai-learning",
-      initializerProfile: "ai_learning" as const,
-      initialModules: ["公开课", "论文", "开源项目", "实践项目"],
-    };
-    const prepared = await postInternal(app, "/internal/runtime/v1/prepare-project-bootstrap", {
-      schemaVersion: "chat-internal-runtime.v1",
-      commandId: nextCmd(),
-      productRunId: submitted.run.productRunId,
-      proposal,
-    });
-    expect(prepared.status, await prepared.clone().text()).toBe(201);
-    const candidate = prepareProjectBootstrapRuntimeResponseSchema.parse(
-      await prepared.json(),
-    ).candidate;
-
-    const beforeDecision = currentProjectBootstrapResponseSchema.parse(
-      await (
-        await app.request(`/api/sessions/${session.sessionId}/project-bootstrap/current`)
-      ).json(),
-    );
-    expect(beforeDecision.projectBootstrap).toMatchObject({
-      candidate: { status: "prepared", preview: { gitAction: "initialize" } },
-    });
-
-    const decided = await postJson(
-      app,
-      `/api/project-bootstrap/candidates/${candidate.projectBootstrapCandidateId}/decision`,
-      {
-        commandId: nextCmd(),
-        payload: {
-          projectBootstrapCandidateId: candidate.projectBootstrapCandidateId,
-          candidateRevision: candidate.revision,
-          candidateSha256: candidate.sha256,
-          kind: "confirm",
-        },
-      },
-    );
-    expect(decided.status, await decided.clone().text()).toBe(201);
-    const operation = projectBootstrapDecisionResponseSchema.parse(await decided.json()).operation;
-    if (operation === undefined) throw new Error("确认后缺少建项Operation");
-    const afterDecision = (await deps.store.read({ kind: "committedSnapshot" })).snapshot;
-    expect(
-      Object.values(afterDecision.outbox).filter(
-        (entry) =>
-          entry.kind === "project_bootstrap_execute" &&
-          entry.projectBootstrapOperationId === operation.projectBootstrapOperationId,
-      ),
-    ).toEqual([
-      expect.objectContaining({ status: "pending", mode: "execute", expectedOperationRevision: 1 }),
-    ]);
-    expect(Object.values(afterDecision.entities.projectWorkspaceBindings)).toHaveLength(0);
-
-    const queued = currentProjectBootstrapResponseSchema.parse(
-      await (
-        await app.request(`/api/sessions/${session.sessionId}/project-bootstrap/current`)
-      ).json(),
-    );
-    expect(queued.projectBootstrap).toMatchObject({
-      candidate: { status: "confirmed" },
-      operation: { status: "queued" },
-      recovery: { canRecover: false, reason: "background_dispatch_pending" },
-    });
-    expect(queued.projectBootstrap).not.toHaveProperty("binding");
   });
 
   it("普通Planning与Memory Planning作为两个独立选项发布，选择Memory后Run绑定独立轨迹", async () => {
@@ -3517,17 +2939,6 @@ describe("公开产品API", () => {
       payload: firstPayload,
     });
     expect(unsupportedVersion.status).toBe(403);
-
-    const bootstrapProfileResponse = await app.request("/api/agent-profiles/project_bootstrap");
-    expect(bootstrapProfileResponse.status).toBe(200);
-    const bootstrapProfile = agentProfileDtoSchema.parse(await bootstrapProfileResponse.json());
-    expect(bootstrapProfile.allowedActions).not.toContain("create_version");
-    const unsupportedBootstrapVersion = await postJson(
-      app,
-      "/api/agent-profiles/project_bootstrap/versions",
-      { commandId: nextCmd(), payload: firstPayload },
-    );
-    expect(unsupportedBootstrapVersion.status).toBe(403);
   });
 
   it("Agent Version拒绝跨Principal、未知Workspace及跨Scope派生", async () => {
@@ -3653,7 +3064,6 @@ describe("公开产品API", () => {
     expect(profiles.items.map((item) => item.agentKey)).toEqual([
       "planner",
       "direct",
-      "project_bootstrap",
       "coding_executor",
       "governance_reviewer",
       "note_extractor",
@@ -3666,14 +3076,6 @@ describe("公开产品API", () => {
       runtimeVariantKey: "pi_cli_default",
     });
     expect(directProfile.tools.map((tool) => tool.name)).toEqual(["read", "bash", "edit", "write"]);
-    const projectBootstrapProfile = profiles.items.find(
-      (item) => item.agentKey === "project_bootstrap",
-    );
-    expect(projectBootstrapProfile).toMatchObject({
-      systemPrompt: { source: "builtin", mode: "replace" },
-      runtimeBaseline: { kind: "pi_coding_agent" },
-    });
-
     const genericIdentityCreate = await postJson(app, "/api/prompt-fragments", {
       commandId: nextCmd(),
       payload: {
@@ -4002,39 +3404,5 @@ describe("公开产品API", () => {
     expect(agentProfileDtoSchema.parse(await restoredResponse.json()).systemPrompt.source).toBe(
       "runtime_default",
     );
-  });
-
-  it("默认Prompt Studio的Agent、Fragment、Detail与Tool均不发现Plane历史定义", async () => {
-    const { deps } = await testApp();
-    const promptCatalog = await createFilePromptCatalog(undefined, {});
-    const app = createApiApp({
-      traceSink: null,
-      product: {
-        deps: { ...deps, promptCatalog },
-        principalId: DEBUG_PRINCIPAL_ID,
-        planeEnabled: false,
-      },
-      internalRuntime: { credential: "rtk_test" },
-    });
-
-    const profilesResponse = await app.request("/api/agent-profiles");
-    expect(profilesResponse.status).toBe(200);
-    const profilesJson = JSON.stringify(await profilesResponse.json());
-    expect(profilesJson).not.toContain("project_bootstrap");
-    expect(profilesJson).not.toContain("project_bootstrap_prepare");
-    expect(profilesJson).not.toContain("Plane");
-    expect((await app.request("/api/agent-profiles/project_bootstrap")).status).toBe(404);
-
-    const fragmentsResponse = await app.request("/api/prompt-fragments");
-    expect(fragmentsResponse.status).toBe(200);
-    const fragmentsJson = JSON.stringify(await fragmentsResponse.json());
-    expect(fragmentsJson).not.toContain("pfg_builtinprojectbootstrap");
-    expect(fragmentsJson).not.toContain("Plane");
-    expect((await app.request("/api/prompt-fragments/pfg_builtinprojectbootstrap")).status).toBe(
-      404,
-    );
-    expect(
-      (await app.request("/api/prompt-fragment-revisions/pfr_builtinprojectbootstrapv1")).status,
-    ).toBe(404);
   });
 });

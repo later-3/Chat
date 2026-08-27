@@ -25,7 +25,6 @@ const forbiddenCredentialNames = [
   "GOOGLE_API_KEY",
   "GEMINI_API_KEY",
   "GITHUB_TOKEN",
-  "PLANE_API_TOKEN",
   "SSH_AUTH_SOCK",
 ] as const;
 const visible = forbiddenCredentialNames.filter((name) => process.env[name]?.trim());
@@ -70,7 +69,6 @@ const dispatcher = new OutboxDispatcher({
   workflowRuntimeBaseUrl: `http://127.0.0.1:${String(workflowPort)}`,
   credential,
   intervalMs: 50,
-  dispatcherInstanceId: "dsh-planning-faux-e2e",
 });
 dispatcher.start();
 

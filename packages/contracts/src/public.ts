@@ -54,8 +54,6 @@ export * from "./project-management-api.js";
 export type {
   ProjectContextMap,
   ProjectPracticeRevision,
-  ProjectProviderBinding,
-  ProjectProviderProjection,
   ProjectWorkBlock,
   ProjectWorkClaim,
   ProjectWorkHandoff,
@@ -64,11 +62,6 @@ export type {
 export * from "./project-api.js";
 export * from "./project-coordination-api.js";
 export * from "./project-agent-coordination.js";
-export * from "./content-lab-plane-rollout.js";
-export * from "./plane-project-coordination.js";
-export * from "./plane-project-coordination-api.js";
-export * from "./project-bootstrap.js";
-export * from "./project-bootstrap-api.js";
 export * from "./workflow-api.js";
 export * from "./workflow-runtime-trace-api.js";
 export * from "./execution-trace-api.js";

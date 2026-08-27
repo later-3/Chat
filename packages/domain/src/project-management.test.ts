@@ -58,7 +58,7 @@ describe("全项目生命周期Profile编译", () => {
     expect(journal.defaultTimePolicy).not.toHaveProperty("cadences");
   });
 
-  it("Profile编译确定且不把Plane、Obsidian、VS Code或DSH写入核心定义", () => {
+  it("Profile编译确定且不把Obsidian、VS Code或DSH写入核心定义", () => {
     const first = compileBuiltInProjectProfileRevision({
       profileKey: "content-production",
       now: NOW,
@@ -68,7 +68,7 @@ describe("全项目生命周期Profile编译", () => {
       now: NOW,
     });
     expect(second).toEqual(first);
-    expect(JSON.stringify(first).toLowerCase()).not.toMatch(/plane|obsidian|vs code|deepseek/u);
+    expect(JSON.stringify(first).toLowerCase()).not.toMatch(/obsidian|vs code|deepseek/u);
   });
 
   it("合成第五Profile复用同一编译函数，不需要增加核心类型分支", () => {

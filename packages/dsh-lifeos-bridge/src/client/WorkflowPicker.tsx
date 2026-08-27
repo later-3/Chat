@@ -49,7 +49,6 @@ const BLUEPRINT_LABEL: Record<LifeosWorkflowOption["blueprintKey"], string> = {
 const AGENT_LABEL: Record<LifeosWorkflowOption["agentNodes"][number]["agentKey"], string> = {
   planner: "规划 Agent",
   direct: "Pi Coding Agent · 直接执行",
-  project_bootstrap: "项目初始化 Agent",
   coding_executor: "Pi Coding Agent · 规划步骤执行",
   governance_reviewer: "工程治理检查 Agent",
   note_extractor: "笔记提取 Agent",
@@ -351,26 +350,19 @@ export function WorkflowPicker({
           </button>
         }
       />
-      {selection?.runConfiguration.overrides.some(
-        (override) =>
-          override.kind === "node_config" &&
-          override.field === "capabilityMode" &&
-          override.value === "project_bootstrap",
-      ) === true ? null : (
-        <button
-          type="button"
-          className="lifeos-workflow-config-toggle"
-          data-testid="lifeos-workflow-new-session-default"
-          disabled={locked || JSON.stringify(selection) === JSON.stringify(newSessionPreference)}
-          aria-label="将当前工作流选择设为以后新会话默认"
-          title="只修改以后新建的空白会话，不改变其他已绑定会话"
-          onClick={() => void selectWorkflow(selection, "new_sessions")}
-        >
-          {JSON.stringify(selection) === JSON.stringify(newSessionPreference)
-            ? "新会话默认"
-            : "设为新会话默认"}
-        </button>
-      )}
+      <button
+        type="button"
+        className="lifeos-workflow-config-toggle"
+        data-testid="lifeos-workflow-new-session-default"
+        disabled={locked || JSON.stringify(selection) === JSON.stringify(newSessionPreference)}
+        aria-label="将当前工作流选择设为以后新会话默认"
+        title="只修改以后新建的空白会话，不改变其他已绑定会话"
+        onClick={() => void selectWorkflow(selection, "new_sessions")}
+      >
+        {JSON.stringify(selection) === JSON.stringify(newSessionPreference)
+          ? "新会话默认"
+          : "设为新会话默认"}
+      </button>
       {configurable ? (
         <button
           type="button"

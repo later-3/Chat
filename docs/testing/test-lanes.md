@@ -14,7 +14,7 @@ Owner。测试继续靠近对应Workspace，lane runner只负责分类、批次�
 | `beta` | Workbench等Beta纵向 | 仅显式手工 |
 | `browser` | 无付费Provider的确定性Chromium | PR/main跑一条系统接缝；完整套件定时或手工 |
 | `paid` | 真实模型与Provider | 仅显式手工，永不进入普通CI |
-| `external` | 真实Plane、Memory及其他外部写 | 仅显式手工，永不进入普通CI |
+| `external` | 真实Memory及其他外部写 | 仅显式手工，永不进入普通CI |
 
 常用入口：
 
@@ -45,11 +45,10 @@ pnpm verify:core
 3. 该Provider声明的精确凭据存在。
 
 例如百炼门使用`test:paid:provider:bailian*`和`DASHSCOPE_API_KEY`。真实外部写命令使用
-`:external:`命名、`CHAT_ALLOW_EXTERNAL_WRITES=1`以及服务专用开关；Plane还要求
-`CHAT_PLANE_CE_API_TOKEN`。普通CI统一清空Provider、GitHub、Plane、SSH和动态模型Key，关闭
+`:external:`命名、`CHAT_ALLOW_EXTERNAL_WRITES=1`以及服务专用开关。普通CI统一清空Provider、GitHub、SSH和动态模型Key，关闭
 Memory、Workbench、paid与external开关。仅本机存在Key不会触发凭据加载或外部子进程。
 
-父级launcher读取`.env`后会重新清空全部Provider/base URL、Memory、Plane、GitHub/npm/SSH及动态模型Key，
+父级launcher读取`.env`后会重新清空全部Provider/base URL、Memory、GitHub/npm/SSH及动态模型Key，
 只恢复本命令声明的精确Credential、全局mode、服务开关和命令名。真实Memory与Bailian入口还在任何Key
 读取、文件删除/写入、子进程或网络之前执行child-side精确命令门；绕过launcher直接运行会非零退出且无副作用。
 

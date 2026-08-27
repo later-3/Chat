@@ -100,7 +100,7 @@ process.stdout.write(
       ),
       contextSummaries,
       workspaceUnchanged: true,
-      planeWrites: 0,
+      externalWrites: 0,
     },
     null,
     2,

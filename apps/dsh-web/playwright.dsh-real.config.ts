@@ -3,7 +3,6 @@ import { defineConfig, devices } from "@playwright/test";
 import {
   DSH_PROMPT_STUDIO_E2E_PORTS,
   DSH_PROMPT_THREE_GATES_E2E_PORTS,
-  DSH_PROJECT_BOOTSTRAP_E2E_PORTS,
   DSH_CAPABILITY_GOVERNANCE_E2E_PORTS,
   DSH_PLANNING_FAUX_E2E_PORTS,
   DSH_REAL_E2E_PORTS,
@@ -18,7 +17,6 @@ const pwaOnly = process.env.CHAT_DSH_E2E_MODE === "pwa-only";
 const trajectoryOnly = process.env.CHAT_DSH_E2E_MODE === "trajectory-only";
 const promptStudioOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-studio-only";
 const promptThreeGatesOnly = process.env.CHAT_DSH_E2E_MODE === "prompt-three-gates-only";
-const projectBootstrapOnly = process.env.CHAT_DSH_E2E_MODE === "project-bootstrap-only";
 const capabilityGovernanceOnly = process.env.CHAT_DSH_E2E_MODE === "capability-governance-only";
 const planningFauxOnly = process.env.CHAT_DSH_E2E_MODE === "planning-faux-only";
 const paidMode =
@@ -27,7 +25,6 @@ const paidMode =
     !pwaOnly &&
     !trajectoryOnly &&
     !promptStudioOnly &&
-    !projectBootstrapOnly &&
     !capabilityGovernanceOnly &&
     !planningFauxOnly);
 const providerEnvironmentModule = "../../scripts/debug/load-provider-env.mjs";
@@ -46,11 +43,9 @@ const dataRoot = resolve(
     ? ".data/e2e/dsh-prompt-three-gates-real"
     : planningFauxOnly
       ? ".data/e2e/dsh-planning-faux-real"
-      : projectBootstrapOnly
-        ? ".data/e2e/dsh-project-bootstrap-real"
-        : capabilityGovernanceOnly
-          ? ".data/e2e/dsh-capability-governance-real"
-          : ".data/e2e/dsh-real",
+      : capabilityGovernanceOnly
+        ? ".data/e2e/dsh-capability-governance-real"
+        : ".data/e2e/dsh-real",
 );
 const processEnvironment = deterministicBrowserProcessEnvironment(process.env);
 // Playwright会在选择webServer前求值整份配置。Browser lane把系统mktemp根只交给
@@ -225,56 +220,6 @@ const trajectoryApi = {
   reuseExistingServer: false,
   timeout: 30_000,
   env: { ...sharedEnvironment, PORT: String(DSH_REAL_E2E_PORTS.api) },
-} as const;
-const projectBootstrapEnvironment = {
-  ...sharedEnvironment,
-  CHAT_DSH_E2E_DATA_ROOT: dataRoot,
-  CHAT_PROJECT_ROOTS_JSON: JSON.stringify([
-    {
-      rootId: "root_chat",
-      displayName: "Chat",
-      canonicalPath: repoRoot,
-      enabledAdapters: [
-        "local-git-workspace.v1",
-        "project-document-manifest.v1",
-        "package-script-catalog.v1",
-      ],
-    },
-  ]),
-  CHAT_PROJECT_CREATION_ROOTS_JSON: JSON.stringify([
-    {
-      rootId: "root_code",
-      displayName: "Code",
-      canonicalPath: resolve(dataRoot, "workspace-root"),
-    },
-  ]),
-};
-const projectBootstrapApi = {
-  command: "pnpm --filter @chat/api exec tsx e2e/dsh-project-bootstrap-runtime.ts",
-  cwd: repoRoot,
-  url: `http://127.0.0.1:${String(DSH_PROJECT_BOOTSTRAP_E2E_PORTS.api)}/api/readyz`,
-  reuseExistingServer: false,
-  timeout: 60_000,
-  env: {
-    ...projectBootstrapEnvironment,
-    PORT: String(DSH_PROJECT_BOOTSTRAP_E2E_PORTS.api),
-    CHAT_PRODUCT_STORE_PATH: resolve(dataRoot, "product-store.v1.json"),
-  },
-} as const;
-const projectBootstrapDsh = {
-  command: "node scripts/e2e/start-dsh-pwa-real.mjs",
-  cwd: repoRoot,
-  url: `http://127.0.0.1:${String(DSH_PROJECT_BOOTSTRAP_E2E_PORTS.web)}/healthz`,
-  reuseExistingServer: false,
-  timeout: 120_000,
-  env: dshEnvironmentForMode(projectBootstrapOnly, {
-    ...projectBootstrapEnvironment,
-    CHAT_API_BASE_URL: `http://127.0.0.1:${String(DSH_PROJECT_BOOTSTRAP_E2E_PORTS.api)}`,
-    CHAT_PUBLIC_WEB_PORT: String(DSH_PROJECT_BOOTSTRAP_E2E_PORTS.web),
-    CHAT_DSH_INTERNAL_WEB_PORT: String(DSH_PROJECT_BOOTSTRAP_E2E_PORTS.webInternal),
-    CHAT_PUBLIC_WEB_HOSTNAME: undefined,
-    CHAT_WEB_AUTH_REQUIRED: "0",
-  }),
 } as const;
 const capabilityGovernancePiExecutor = {
   command: "node scripts/e2e/start-capability-governance-pi.mjs",
@@ -489,17 +434,15 @@ export default defineConfig({
       ? ["dsh-pwa-real.spec.ts", "dsh-mobile-hanui-real.spec.ts"]
       : promptStudioOnly
         ? "dsh-prompt-studio-real.spec.ts"
-        : projectBootstrapOnly
-          ? "dsh-project-bootstrap-real.spec.ts"
-          : capabilityGovernanceOnly
-            ? "dsh-capability-governance-real.spec.ts"
-            : planningFauxOnly
-              ? "dsh-planning-faux-real.spec.ts"
-              : promptThreeGatesOnly
-                ? "dsh-prompt-three-gates-real.spec.ts"
-                : trajectoryOnly
-                  ? "dsh-trajectory-real.spec.ts"
-                  : "dsh-planning-real.spec.ts",
+        : capabilityGovernanceOnly
+          ? "dsh-capability-governance-real.spec.ts"
+          : planningFauxOnly
+            ? "dsh-planning-faux-real.spec.ts"
+            : promptThreeGatesOnly
+              ? "dsh-prompt-three-gates-real.spec.ts"
+              : trajectoryOnly
+                ? "dsh-trajectory-real.spec.ts"
+                : "dsh-planning-real.spec.ts",
   ...(workbenchOnly
     ? { globalTeardown: resolve(repoRoot, "scripts/e2e/dsh-real-workbench-lifecycle.mjs") }
     : {}),
@@ -513,15 +456,13 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${String(
       promptStudioOnly
         ? DSH_PROMPT_STUDIO_E2E_PORTS.web
-        : projectBootstrapOnly
-          ? DSH_PROJECT_BOOTSTRAP_E2E_PORTS.web
-          : capabilityGovernanceOnly
-            ? DSH_CAPABILITY_GOVERNANCE_E2E_PORTS.web
-            : planningFauxOnly
-              ? DSH_PLANNING_FAUX_E2E_PORTS.web
-              : promptThreeGatesOnly
-                ? DSH_PROMPT_THREE_GATES_E2E_PORTS.web
-                : DSH_REAL_E2E_PORTS.web,
+        : capabilityGovernanceOnly
+          ? DSH_CAPABILITY_GOVERNANCE_E2E_PORTS.web
+          : planningFauxOnly
+            ? DSH_PLANNING_FAUX_E2E_PORTS.web
+            : promptThreeGatesOnly
+              ? DSH_PROMPT_THREE_GATES_E2E_PORTS.web
+              : DSH_REAL_E2E_PORTS.web,
     )}`,
     trace: "off",
     screenshot: "off",
@@ -534,26 +475,24 @@ export default defineConfig({
       ? [dshPwa]
       : promptStudioOnly
         ? [promptStudioRuntime]
-        : projectBootstrapOnly
-          ? [projectBootstrapApi, projectBootstrapDsh]
-          : capabilityGovernanceOnly
-            ? [
-                capabilityGovernancePiExecutor,
-                capabilityGovernanceWorkflow,
-                capabilityGovernanceApi,
-                capabilityGovernanceDsh,
-              ]
-            : planningFauxOnly
-              ? [planningFauxRuntime, planningFauxPiExecutor, planningFauxWorkflow, planningFauxDsh]
-              : promptThreeGatesOnly
-                ? [
-                    promptThreeGatesPiExecutor,
-                    promptThreeGatesWorkflow,
-                    promptThreeGatesApi,
-                    promptThreeGatesDsh,
-                  ]
-                : trajectoryOnly
-                  ? [trajectoryApi, trajectoryDsh]
-                  : [piExecutor, workflow, api, dsh],
+        : capabilityGovernanceOnly
+          ? [
+              capabilityGovernancePiExecutor,
+              capabilityGovernanceWorkflow,
+              capabilityGovernanceApi,
+              capabilityGovernanceDsh,
+            ]
+          : planningFauxOnly
+            ? [planningFauxRuntime, planningFauxPiExecutor, planningFauxWorkflow, planningFauxDsh]
+            : promptThreeGatesOnly
+              ? [
+                  promptThreeGatesPiExecutor,
+                  promptThreeGatesWorkflow,
+                  promptThreeGatesApi,
+                  promptThreeGatesDsh,
+                ]
+              : trajectoryOnly
+                ? [trajectoryApi, trajectoryDsh]
+                : [piExecutor, workflow, api, dsh],
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

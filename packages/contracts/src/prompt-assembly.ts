@@ -237,12 +237,7 @@ export const promptEnvelopeMessageSchema = z
  * 属于执行策略，不能再通过删掉Pi默认能力来表达。`pi_cli_default`必须与受管Pi SDK
  * 的默认激活集合一致；`custom`用于Agent Version、Workflow或会话的显式选择。
  */
-export const directAgentCapabilityModeSchema = z.enum([
-  "pi_cli_default",
-  "custom",
-  "read_only",
-  "project_bootstrap",
-]);
+export const directAgentCapabilityModeSchema = z.enum(["pi_cli_default", "custom", "read_only"]);
 
 export const agentRuntimeResourcePolicySchema = z
   .object({
@@ -292,30 +287,15 @@ export const promptEnvelopeToolsSchema = z
         message: "自定义或受限Agent必须显式冻结Tool清单",
       });
     }
-    if (
-      value.capabilityMode !== "project_bootstrap" &&
-      value.names.includes("project_bootstrap_prepare")
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["names"],
-        message: "项目初始化Tool只能由project_bootstrap模式启用",
-      });
-    }
-    assertPresetToolNames(value, ["read", "grep", "find", "ls", "project_bootstrap_prepare"], ctx);
+    assertPresetToolNames(value, ctx);
   });
 
 function assertPresetToolNames(
   value: { readonly capabilityMode: string; readonly names: readonly string[] },
-  expectedProjectBootstrapTools: readonly string[],
   ctx: z.RefinementCtx,
 ): void {
   const expected =
-    value.capabilityMode === "read_only"
-      ? ["read", "grep", "find", "ls"]
-      : value.capabilityMode === "project_bootstrap"
-        ? expectedProjectBootstrapTools
-        : undefined;
+    value.capabilityMode === "read_only" ? ["read", "grep", "find", "ls"] : undefined;
   if (expected !== undefined && JSON.stringify(value.names) !== JSON.stringify(expected)) {
     ctx.addIssue({
       code: "custom",
@@ -326,8 +306,7 @@ function assertPresetToolNames(
 }
 
 /**
- * v4新Run必须冻结qualified Capability和资源政策。合法零Tool Agent仍是显式空集合；
- * 只有project_bootstrap预设在v4收窄为单一候选准备能力。
+ * v4新Run必须冻结qualified Capability和资源政策。合法零Tool Agent仍是显式空集合。
  */
 export const promptEnvelopeToolsV4Schema = z
   .object({
@@ -371,17 +350,7 @@ export const promptEnvelopeToolsV4Schema = z
         message: "自定义或受限Agent必须显式冻结Tool清单",
       });
     }
-    if (
-      value.capabilityMode !== "project_bootstrap" &&
-      value.names.includes("project_bootstrap_prepare")
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["names"],
-        message: "项目初始化Tool只能由project_bootstrap模式启用",
-      });
-    }
-    assertPresetToolNames(value, ["project_bootstrap_prepare"], ctx);
+    assertPresetToolNames(value, ctx);
   });
 
 export const promptEnvelopeRequestOptionsSchema = z
@@ -646,13 +615,6 @@ export const supervisedPromptRoleAssemblyV5Schema = z
             code: "custom",
             path: ["capabilities"],
             message: "监督角色的Tool、Capability ID与qualified Ref不能重复",
-          });
-        }
-        if (value.names.includes("project_bootstrap_prepare")) {
-          ctx.addIssue({
-            code: "custom",
-            path: ["names"],
-            message: "监督执行不能借用专用Project Bootstrap Tool",
           });
         }
       }),

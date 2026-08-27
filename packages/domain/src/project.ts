@@ -547,7 +547,7 @@ const GENERIC_WORK_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
- * Work状态由Domain执行，而不是由Plane拖卡或模型解释。Blocked同时拥有可投影状态和
+ * Work状态由Domain执行，而不是由外部事项系统拖卡或模型解释。Blocked同时拥有可投影状态和
  * 独立Block事实；恢复必须回到Block记录的原State。
  */
 export function assertProjectWorkTransition(input: {

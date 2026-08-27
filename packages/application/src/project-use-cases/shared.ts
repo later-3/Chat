@@ -306,12 +306,6 @@ export function projectWorkspace(
   const contextMap = Object.values(snapshot.entities.projectContextMaps).find(
     (item) => item.projectId === project.projectId && item.status === "active",
   );
-  const providerBindings = Object.values(snapshot.entities.projectProviderBindings).filter(
-    (item) => item.projectId === project.projectId,
-  );
-  const providerProjections = Object.values(snapshot.entities.projectProviderProjections).filter(
-    (item) => item.projectId === project.projectId,
-  );
   const stage = snapshot.entities.projectStages[project.currentStageId];
   if (stage === undefined) throw notFound("Project当前Stage不存在");
   const milestones = Object.values(snapshot.entities.projectMilestones).filter(
@@ -496,30 +490,6 @@ export function projectWorkspace(
             sha256: contextMap.sha256,
             revision: contextMap.revision,
           },
-    providerBindings: providerBindings.map((binding) => ({
-      projectProviderBindingId: binding.projectProviderBindingId,
-      providerKind: binding.providerKind,
-      providerVersion: binding.providerVersion,
-      externalWorkspaceId: binding.externalWorkspaceId,
-      externalProjectId: binding.externalProjectId,
-      externalProjectIdentifier: binding.externalProjectIdentifier,
-      syncPolicyVersion: binding.syncPolicyVersion,
-      status: binding.status,
-      revision: binding.revision,
-    })),
-    providerProjections: providerProjections.map((projection) => ({
-      projectProviderProjectionId: projection.projectProviderProjectionId,
-      bindingId: projection.bindingId,
-      objectType: projection.objectType,
-      objectId: projection.objectId,
-      providerObjectType: projection.providerObjectType,
-      providerObjectId: projection.providerObjectId,
-      ...(projection.externalKey === undefined ? {} : { externalKey: projection.externalKey }),
-      chatObjectRevision: projection.chatObjectRevision,
-      syncStatus: projection.syncStatus,
-      ...(projection.lastSyncedAt === undefined ? {} : { lastSyncedAt: projection.lastSyncedAt }),
-      revision: projection.revision,
-    })),
     decisions: decisions
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map((item) => ({

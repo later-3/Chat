@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type {
   CapabilityDescriptor,
   CapabilityDescriptorHashInput,
@@ -13,10 +12,6 @@ import { capabilityDescriptorHashInputSchema, capabilityDescriptorSchema } from 
 import { hashCanonical } from "@chat/domain";
 import type { SourceInfo, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { hashExecutorValue } from "./executor-operation-store.js";
-import {
-  PROJECT_BOOTSTRAP_PROVIDER_SCOPE,
-  PROJECT_BOOTSTRAP_TOOL,
-} from "./project-bootstrap-tool.js";
 
 const BUILTIN_SOURCE: Readonly<Record<string, string>> = {
   read: "pi/packages/coding-agent/src/core/tools/read.ts",
@@ -29,14 +24,6 @@ const BUILTIN_SOURCE: Readonly<Record<string, string>> = {
 };
 
 const BUILTIN_NAMES = new Set(Object.keys(BUILTIN_SOURCE));
-const PROJECT_BOOTSTRAP_REVISION = "chat-project-bootstrap-tool.v1";
-const PROJECT_BOOTSTRAP_SOURCE = {
-  path: "<inline:chat-project-bootstrap-tools>",
-  source: "inline",
-  scope: "temporary",
-  origin: "top-level",
-} as const;
-const CHAT_PI_RUNTIME_SOURCE_ROOT = dirname(fileURLToPath(import.meta.url));
 const TREE_HASH_MAX_FILES = 10_000;
 const TREE_HASH_MAX_BYTES = 64 * 1024 * 1024;
 
@@ -147,40 +134,6 @@ function capabilityId(input: {
   return `pi_direct:tool:${input.sourceKind}:${sourceKey}:${local}`;
 }
 
-function isManagedProjectBootstrapSource(source: SourceInfo): boolean {
-  return (
-    source.path === PROJECT_BOOTSTRAP_SOURCE.path &&
-    source.source === PROJECT_BOOTSTRAP_SOURCE.source &&
-    source.scope === PROJECT_BOOTSTRAP_SOURCE.scope &&
-    source.origin === PROJECT_BOOTSTRAP_SOURCE.origin
-  );
-}
-
-async function descriptorForManagedProjectBootstrap(tool: ToolInfo): Promise<CapabilityDescriptor> {
-  const artifactSha256 = await hashCapabilityImplementationTree(CHAT_PI_RUNTIME_SOURCE_ROOT);
-  return createCapabilityDescriptor({
-    schemaVersion: "capability-descriptor.v1",
-    capabilityId: "pi_direct:tool:managed_extension:project_bootstrap:project_bootstrap_prepare",
-    kind: "host_action",
-    runtimeOwner: "pi_direct",
-    localName: tool.name,
-    sourceRef: {
-      sourceKind: "managed_extension",
-      repository: "later-3/Chat",
-      revision: PROJECT_BOOTSTRAP_REVISION,
-      artifactSha256,
-      resourcePath: "packages/pi-runtime/src/project-bootstrap-tool.ts",
-    },
-    inputSchemaSha256: hashExecutorValue(tool.parameters ?? {}),
-    effect: "external_write",
-    scopePolicy: "provider_defined",
-    // 这里只准备候选；真正外部写由Project Bootstrap专用Candidate/Outbox审核链拥有。
-    approvalPolicy: "run_policy",
-    evidencePolicy: "runtime_journal",
-    readiness: "available",
-  });
-}
-
 /**
  * Pi最终目录已经应用Runtime覆盖顺序。v1明确禁止Extension覆盖built-in本地名；
  * 其余Extension用SourceInfo生成qualified ID，并把源码正文Hash钉进描述符。
@@ -274,26 +227,6 @@ export async function buildPiDirectCapabilityCatalog(input: {
       );
       continue;
     }
-    if (tool.name === PROJECT_BOOTSTRAP_TOOL) {
-      if (!isManagedProjectBootstrapSource(source)) {
-        diagnostics.push({
-          code: "capability.managed_project_bootstrap_identity_mismatch",
-          message: "保留Tool名project_bootstrap_prepare不是Chat受管实现",
-          sourcePath: portableCapabilityResourcePath(source.path, input.cwd, input.agentDir),
-        });
-        continue;
-      }
-      try {
-        descriptors.push(await descriptorForManagedProjectBootstrap(tool));
-      } catch {
-        diagnostics.push({
-          code: "capability.managed_project_bootstrap_artifact_unreadable",
-          message: "Chat受管Project Bootstrap实现树无法冻结",
-        });
-      }
-      continue;
-    }
-
     const resourcePath = portableCapabilityResourcePath(source.path, input.cwd, input.agentDir);
     const workspace = source.scope === "project" || resourcePath.startsWith("<WORKSPACE_ROOT>/");
     const contentSha256 = await sourceTreeSha256(source);
@@ -408,16 +341,4 @@ export function resolveCapabilitySnapshots(input: {
       evidencePolicy: descriptor.evidencePolicy,
     };
   });
-}
-
-export function projectBootstrapProviderScopes(): ReadonlyMap<
-  string,
-  Extract<CapabilityScopeRef, { kind: "provider" }>
-> {
-  return new Map([
-    [
-      "pi_direct:tool:managed_extension:project_bootstrap:project_bootstrap_prepare",
-      { kind: "provider", providerRef: PROJECT_BOOTSTRAP_PROVIDER_SCOPE },
-    ],
-  ]);
 }
