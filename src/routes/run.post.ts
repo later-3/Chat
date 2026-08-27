@@ -4,15 +4,57 @@ import {
   MINIMAL_PI_CODING_AGENT_PROMPT,
   minimalPiCodingAgentWorkflow,
 } from "../workflows/minimal-pi-coding-agent.js";
+import { localTimestamp } from "../runtime-log.js";
 
+/**
+ * Nitro从`src/routes`扫描HTTP路由文件。当前文件名决定了请求方法和路径：
+ *
+ * - `run`对应路径`/run`；
+ * - `post`对应HTTP POST方法；
+ * - 默认导出的Event Handler处理匹配的请求。
+ *
+ * 因此这个文件处理`POST /run`。`src`下不在`routes`或`api`目录中的
+ * `*.post.ts`文件不会因为文件名而成为HTTP路由。
+ */
 export default defineEventHandler(async () => {
-  const run = await start(minimalPiCodingAgentWorkflow, [
+  // 当前Handler不读取请求头、请求体或路径参数，因此没有声明`event`参数。
+  const requestStartedAt = Date.now();
+  console.log(`${localTimestamp()} [http] POST /run received`);
+
+  /**
+   * `start()`创建并调度一次Workflow Run，返回的对象提供Run ID和结果Promise。
+   * 变量名`workflowRun`与HTTP路径`/run`没有关联。
+   *
+   * 第二个参数是传给Workflow函数的参数数组。当前Workflow只接收一个对象，
+   * 所以数组中只有一个对象。`process.cwd()`返回Nitro进程的启动目录；
+   * 当前VS Code配置把这个目录设置为`${workspaceFolder}`。
+   */
+  const workflowRun = await start(minimalPiCodingAgentWorkflow, [
     {
       cwd: process.cwd(),
       prompt: MINIMAL_PI_CODING_AGENT_PROMPT,
     },
   ]);
-  console.log(`[workflow] started runId=${run.runId}`);
-  const result = await run.returnValue;
-  return { runId: run.runId, result };
+  console.log(
+    `${localTimestamp()} [workflow] started runId=${workflowRun.runId} elapsedMs=${Date.now() - requestStartedAt}`,
+  );
+
+  try {
+    // 等待Workflow结束。成功时得到返回值；失败或取消时Promise会被拒绝。
+    const result = await workflowRun.returnValue;
+    console.log(
+      `${localTimestamp()} [workflow] completed runId=${workflowRun.runId} elapsedMs=${Date.now() - requestStartedAt}`,
+    );
+
+    // Nitro把这个对象序列化为HTTP JSON响应，当前调试调用方使用fetch读取它。
+    return { runId: workflowRun.runId, result };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `${localTimestamp()} [workflow] failed runId=${workflowRun.runId} elapsedMs=${Date.now() - requestStartedAt} error=${message}`,
+    );
+
+    // 抛出原错误，由Nitro生成失败的HTTP响应。
+    throw error;
+  }
 });

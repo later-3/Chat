@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Minimal Workflow Runtime",
+      "name": "Debug Minimal Pi Coding Agent Workflow",
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "pnpm",
@@ -12,29 +12,28 @@
       "autoAttachChildProcesses": true,
       "sourceMaps": true,
       "skipFiles": ["<node_internals>/**"],
-      "presentation": {
-        "hidden": true
+      "serverReadyAction": {
+        "pattern": "http://127\\.0\\.0\\.1:43112/",
+        "action": "startDebugging",
+        "name": "Call Minimal Pi Coding Agent Workflow"
       }
     },
     {
       "name": "Call Minimal Pi Coding Agent Workflow",
-      "type": "node-terminal",
+      "type": "node",
       "request": "launch",
-      "command": "curl --fail-with-body --silent --show-error --retry 120 --retry-delay 1 --retry-connrefused --request POST http://127.0.0.1:43112/run",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--input-type=module",
+        "--eval",
+        "const response = await fetch('http://127.0.0.1:43112/run', { method: 'POST' }); const body = await response.text(); console.log(body); if (!response.ok) process.exitCode = 1;"
+      ],
       "cwd": "${workspaceFolder}",
+      "console": "internalConsole",
+      "skipFiles": ["<node_internals>/**"],
       "presentation": {
         "hidden": true
       }
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Debug Minimal Pi Coding Agent Workflow",
-      "configurations": [
-        "Debug Minimal Workflow Runtime",
-        "Call Minimal Pi Coding Agent Workflow"
-      ],
-      "stopAll": true
     }
   ]
 }
