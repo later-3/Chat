@@ -1,13 +1,15 @@
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { start } from "workflow/api";
 import {
-  parseMinimalWorkflowHttpInput,
-  type MinimalWorkflowHttpInput,
+  DEFAULT_CHAT_WORKFLOW_ID,
+  parseChatWorkflowHttpInput,
+  type ChatWorkflowHttpInput,
 } from "../run-request.js";
 import {
   MINIMAL_PI_CODING_AGENT_PROMPT,
   minimalPiCodingAgentWorkflow,
 } from "../workflows/minimal-pi-coding-agent.js";
+import { planningExecutionWorkflow } from "../workflows/planning-execution.js";
 import { localTimestamp } from "../runtime-log.js";
 
 /**
@@ -24,12 +26,13 @@ export default defineEventHandler(async (event) => {
   const requestStartedAt = Date.now();
   console.log(`${localTimestamp()} [http] POST /run received`);
 
-  let input: MinimalWorkflowHttpInput;
+  let input: ChatWorkflowHttpInput;
   try {
     const body = await readBody<unknown>(event);
-    input = parseMinimalWorkflowHttpInput(body, {
+    input = parseChatWorkflowHttpInput(body, {
       cwd: process.cwd(),
       prompt: MINIMAL_PI_CODING_AGENT_PROMPT,
+      workflow: DEFAULT_CHAT_WORKFLOW_ID,
     });
   } catch (error) {
     throw createError({
@@ -46,11 +49,12 @@ export default defineEventHandler(async (event) => {
    * 所以数组中只有一个对象。无请求体时，`input`使用固定Prompt和Nitro进程
    * 的启动目录；显式请求体可以传入其他Prompt和工作目录。
    */
-  const workflowRun = await start(minimalPiCodingAgentWorkflow, [
-    input,
-  ]);
+  const { workflow, ...workflowInput } = input;
+  const workflowRun = workflow === "planning-execution"
+    ? await start(planningExecutionWorkflow, [workflowInput])
+    : await start(minimalPiCodingAgentWorkflow, [workflowInput]);
   console.log(
-    `${localTimestamp()} [workflow] started runId=${workflowRun.runId} elapsedMs=${Date.now() - requestStartedAt}`,
+    `${localTimestamp()} [workflow] started workflow=${workflow} runId=${workflowRun.runId} elapsedMs=${Date.now() - requestStartedAt}`,
   );
 
   try {

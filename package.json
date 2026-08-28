@@ -1,5 +1,5 @@
 {
-  "name": "minimal-pi-coding-agent-workflow",
+  "name": "chat",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,12 +9,26 @@
   },
   "scripts": {
     "dev": "HOST=127.0.0.1 PORT=43112 WORKFLOW_TARGET_WORLD=local nitro dev",
-    "build": "nitro build",
-    "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/**/*.test.mjs"
+    "dev:frontend": "pnpm --dir frontend dev",
+    "pi:install": "npm --prefix pi ci --ignore-scripts",
+    "pi:build": "npm --prefix pi run build:offline",
+    "pi:prepare": "pnpm pi:install && pnpm pi:build",
+    "start": "node .output/server/index.mjs",
+    "build": "pnpm build:frontend && pnpm build:backend",
+    "build:backend": "nitro build",
+    "build:frontend": "pnpm --dir frontend build",
+    "typecheck": "tsc --noEmit && pnpm --dir frontend typecheck",
+    "test": "pnpm test:backend && pnpm test:frontend",
+    "test:backend": "node --experimental-strip-types --test src/*.test.mjs src/**/*.test.mjs scripts/deployment-config.test.mjs",
+    "test:frontend": "pnpm --dir frontend test",
+    "test:built": "node --test scripts/built-server.test.mjs",
+    "verify": "pnpm test && pnpm typecheck && pnpm build && pnpm test:built"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "link:../opc-os/pi/packages/coding-agent",
+    "@earendil-works/pi-agent-core": "link:./pi/packages/agent",
+    "@earendil-works/pi-coding-agent": "link:./pi/packages/coding-agent",
+    "@opentelemetry/api": "1.9.0",
+    "mammoth": "^1.12.0",
     "nitro": "3.0.260610-beta",
     "rollup": "4.63.0",
     "workflow": "4.8.5"

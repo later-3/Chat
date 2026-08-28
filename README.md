@@ -1,210 +1,180 @@
-# Chat：最小 Pi Coding Agent Workflow
+# Chat：Pi Web前端与Pi Agent Workflow
 
-当前系统只实现一条纵向：Pi Web 将新会话中的普通文本 Prompt 交给 Chat，Chat 启动 Vercel Workflow，Workflow 调用 Pi Coding Agent，并把最终 Assistant 文本返回 Pi Web。
+Chat当前实现两条可运行纵向：浏览器中的Pi Web前端向Chat提交普通文本Prompt并选择Workflow，Chat启动对应的Vercel Workflow，最后将Assistant回复和Pi Session展示在前端。
 
-## 外部源码位置
-
-Pi 和 Pi Web 都是独立 Git 仓库，不复制到 Chat 仓库中。三个仓库的正式本地布局如下：
+## 架构
 
 ```text
-<Code>/
-├── Chat/       Chat 后端与 Workflow
-├── pi-web/     Pi Web 前端及其原有 Next.js 服务
-└── opc-os/pi/  Pi Agent 源码
+Chat/frontend（Pi Web纯浏览器前端子模块）
+  → Chat Nitro HTTP API
+    ├── Session读取 → Chat/.pi/sessions
+    └── Vercel Workflow
+          ├── Minimal Pi Coding Agent → Pi Coding Agent
+          └── Planning + Execution
+                ├── Planner：pi-agent-core，无工具、不创建Session
+                └── Executor：Pi Coding Agent
+                      ├── 配置 → Chat/.pi/agent
+                      └── Session → Chat/.pi/sessions
 ```
 
-本机 `<Code>` 是 `/Users/xulater/Code`，所以正式目录为：
+前端可选择两个Workflow：
 
-| 项目 | 本地目录 | Later Fork | 稳定分支 | 只读上游 |
-|---|---|---|---|---|
-| Chat | `/Users/xulater/Code/Chat` | <https://github.com/later-3/Chat> | `main` | 无 |
-| Pi Web | `/Users/xulater/Code/pi-web` | <https://github.com/later-3/pi-web> | `codex/later-custom` | <https://github.com/agegr/pi-web> |
-| Pi | `/Users/xulater/Code/opc-os/pi` | <https://github.com/later-3/pi> | `codex/later-custom` | <https://github.com/earendil-works/pi> |
+- `minimal-pi-coding-agent`（直接执行）：一个Step直接运行Pi Coding Agent。
+- `planning-execution`（规划执行）：`pi-agent-core` Planner先生成计划，Executor再按计划运行Pi Coding Agent。Planner没有工具且不创建Session；计划通过执行阶段的补充系统指令传递，Pi Session仍保存用户原始消息。
 
-Chat 通过 `package.json` 中的以下依赖直接使用本地 Pi 源码构建：
+Pi Web不再作为独立服务运行。它原来的Next.js后端、`app/api`、Agent RPC服务和Session文件读取代码都不属于运行架构。前端不能导入Pi SDK，也不能直接读取文件系统。
+
+Pi Web现有功能全部属于Chat的目标能力。当前接入状态和后续必须迁移的接口见[Pi Web前端API迁移清单](./docs/pi-web-frontend-api-migration.md)。
+
+## 源码位置
+
+Chat仓库固定记录两个私有子模块的精确提交：
 
 ```text
-link:../opc-os/pi/packages/coding-agent
+Chat/
+├── frontend/  Pi Web纯浏览器前端子模块
+├── pi/        Pi Agent源码子模块
+├── src/       Chat HTTP API与Workflow
+└── ...
 ```
 
-Pi Web 也通过相邻的 `../opc-os/pi/packages/*` 使用同一个 Pi checkout。不得把 Pi 源码复制进 Chat 或 Pi Web，也不得用 registry 包静默替代这个本地源码绑定。
+| 目录 | Later私有仓库 | 长期集成分支 | 职责 |
+|---|---|---|---|
+| `pi/` | <https://github.com/later-3/pi> | `codex/later-custom` | Pi Agent源码与构建产物 |
+| `frontend/` | <https://github.com/later-3/pi-web> | `codex/chat-frontend` | Pi Web派生的纯浏览器前端 |
 
-## 正式运行目录
-
-合入后的开发和运行只使用三个正式目录：
+Chat通过以下依赖使用本地Pi源码构建：
 
 ```text
-/Users/xulater/Code/Chat
-/Users/xulater/Code/pi-web
-/Users/xulater/Code/opc-os/pi
+link:./pi/packages/agent
+link:./pi/packages/coding-agent
 ```
 
-带任务名称的 Git worktree 只用于隔离尚未合入的开发分支，不属于运行架构。分支合入后不得让启动配置继续依赖临时 worktree。
+`frontend/`的上游、提取基线和许可证记录在[frontend/UPSTREAM.md](./frontend/UPSTREAM.md)。Chat父仓库中的gitlink决定实际运行的Pi和前端版本；`.gitmodules`中的`branch`只供显式更新使用，不会让部署自动漂移到分支最新提交。
 
-## 当前调用关系
+两个私有Fork的开发、提交、回合官方上游修复以及更新Chat固定提交的操作见[子模块维护指南](./docs/managed-submodules.md)。
+
+## Session语义
+
+Chat只从以下目录管理Pi Session：
 
 ```text
-Pi Web 页面
-  → POST Pi Web /api/chat-workflow
-  → POST Chat /runs
-  → GET Chat /runs/:runId
-  → Vercel Workflow
-  → Pi Coding Agent
-  → 最终 Assistant 文本返回 Pi Web
+Chat/.pi/sessions
 ```
 
-用户停止时，Pi Web Adapter 调用 `DELETE /runs/:runId` 取消对应的 Workflow Run。图片、Slash Command、已有 Pi Web 会话及 Pi Web 的其他功能仍走原有实现，不由当前 Workflow Adapter 接管。
+Session文件头中的`cwd`表示Agent实际操作的工作目录。浏览器只传`sessionId`：
 
-## VS Code 调试
+- 没有`sessionId`：创建新Session。
+- 有`sessionId`：Chat验证Session ID和`cwd`后打开已有Session。
+- 浏览器不能指定Session文件或Session目录。
 
-当前从 Chat 侧调试时打开：
+Chat不会扫描用户主目录下的`~/.pi`。
 
-```text
-/Users/xulater/Code/Chat
-```
+## 本地开发
 
-在 VS Code 中按 `F5`，选择：
-
-```text
-Debug Pi Web Workflow Integration
-```
-
-该配置调试 Chat Workflow（`127.0.0.1:43112`）和 Pi Web 服务端（`127.0.0.1:30145`），并在默认浏览器中打开 Pi Web 页面。浏览器不附加前端调试器，避免前端暂停影响 Workflow 调试操作。
-
-## 在其他环境部署
-
-### 部署边界
-
-当前版本是单机部署：Chat、Pi Web 和 Pi checkout 必须位于同一台机器，并能访问同一个文件系统。Pi Web 会把用户选择的绝对工作目录作为 `cwd` 传给 Chat；如果两者位于不同机器，相同字符串不一定指向同一目录，当前版本不支持这种部署。
-
-Workflow 使用 Local World，把运行、Step 和 Event 保存在 Chat 工作目录的 `.workflow-data/`。当前方式适合单进程部署，不提供多实例共享队列或高可用调度。
-
-### 1. 准备源码目录
-
-要求 Node.js `>=22.19.0`、Git、npm 和 Corepack。先把 `CHAT_CODE_ROOT` 设置为三个仓库的共同父目录；以下示例使用 `/opt/later`：
+要求Node.js `>=22.19.0`和pnpm `10.13.1`，并且当前GitHub身份有权读取两个私有子模块。
 
 ```bash
-export CHAT_CODE_ROOT=/opt/later
-mkdir -p "$CHAT_CODE_ROOT/opc-os"
-cd "$CHAT_CODE_ROOT"
-
-git clone --branch main https://github.com/later-3/Chat.git Chat
-git clone --branch codex/later-custom https://github.com/later-3/pi-web.git pi-web
-git clone --branch codex/later-custom https://github.com/later-3/pi.git opc-os/pi
-```
-
-私有环境可以把 URL 改为已经配置凭据的 HTTPS 或 SSH 地址，但目录结构不能改变。
-
-### 2. 准备 Pi 源码
-
-```bash
-cd "$CHAT_CODE_ROOT/opc-os/pi"
-npm ci
-```
-
-Pi Web 的 `pi:prepare` 会执行 Pi 的离线构建，并把全部 `@earendil-works/pi-*` 运行包链接到这个 checkout。
-
-### 3. 准备 Pi Web
-
-```bash
-cd "$CHAT_CODE_ROOT/pi-web"
-npm ci
-npm run pi:prepare
-npm run pi:verify
-```
-
-`pi:verify` 必须显示所有运行包都解析到 `$CHAT_CODE_ROOT/opc-os/pi`。缺少 Pi checkout、分支不正确、源码构建过期或链接被 registry 包覆盖时必须停止部署。
-
-### 4. 准备 Chat 与私有配置
-
-```bash
-cd "$CHAT_CODE_ROOT/Chat"
+git clone --recurse-submodules git@github.com:later-3/Chat.git
+cd Chat
 corepack enable
+pnpm pi:prepare
 pnpm install --frozen-lockfile
-mkdir -p .pi/agent .pi/sessions
-chmod 700 .pi .pi/agent .pi/sessions
 ```
 
-Workflow 明确从用户所选工作目录下的 `.pi/agent/` 读取 Pi 配置。选择 `$CHAT_CODE_ROOT/Chat` 作为工作目录时，至少检查：
-
-```text
-$CHAT_CODE_ROOT/Chat/.pi/agent/settings.json
-$CHAT_CODE_ROOT/Chat/.pi/agent/models.json
-$CHAT_CODE_ROOT/Chat/.pi/agent/auth.json
-```
-
-只复制目标机器实际需要的配置；Provider 密钥应在目标机器重新配置或通过安全通道迁移。`.pi/`、密钥和 Session 文件不得提交到 Git。
-
-### 5. 构建
-
-构建 Chat：
+已有Chat工作目录只需执行一次：
 
 ```bash
-cd "$CHAT_CODE_ROOT/Chat"
+git submodule update --init --recursive
+pnpm pi:prepare
+pnpm install --frozen-lockfile
+```
+
+`pnpm pi:prepare`先以Pi自己的锁文件安装依赖，再使用仓库已经固定的模型目录离线构建`pi/packages/*/dist`。Chat运行时从这些构建产物加载代码，source map会把VS Code断点映射回`pi/packages/*/src`。
+
+在VS Code中打开Chat目录，按`F5`选择：
+
+```text
+Debug Chat
+```
+
+它会启动：
+
+- Chat Nitro与Workflow Runtime：`http://127.0.0.1:43112`
+- Vite前端：`http://127.0.0.1:30145`
+
+Vite只在开发环境提供页面热更新，并把`/api`和`/runs`代理到Chat。生产环境不运行Vite。
+
+也可以分别启动：
+
+```bash
+pnpm dev
+pnpm dev:frontend
+```
+
+## 当前调用链
+
+```text
+POST /runs
+  → 校验workflow字段并返回Workflow Run ID
+GET /runs/:runId
+  → 查询状态和最终结果
+DELETE /runs/:runId
+  → 用户停止时取消Workflow
+GET /api/sessions
+  → 返回Chat管理的Session列表
+GET /api/sessions/:sessionId
+  → 返回Session消息和树
+GET /api/files/[...path]
+  → 在Chat授权的工作目录内列出、读取、下载和预览文件
+```
+
+`POST /run`仍保留为阻塞式人工调试接口，前端不使用它。
+
+## 构建与运行
+
+```bash
 pnpm test
 pnpm typecheck
 pnpm build
 ```
 
-构建启用 Workflow Adapter 的 Pi Web：
+一次运行全部单元、前端合同、构建和构建产物HTTP测试：
 
 ```bash
-cd "$CHAT_CODE_ROOT/pi-web"
-PI_WEB_DIST_DIR=.next-chat-workflow \
-NEXT_PUBLIC_CHAT_WORKFLOW_ADAPTER=1 \
-npm run build
+pnpm verify
 ```
 
-`NEXT_PUBLIC_CHAT_WORKFLOW_ADAPTER=1` 是前端构建变量，必须在 `next build` 时设置；只在启动时设置不能修改已经生成的浏览器代码。
-
-### 6. 启动两个服务
-
-先启动 Chat：
+`pnpm build`先生成`frontend/dist`，再由Nitro将其放入正式服务产物。生产环境只启动一个Chat进程：
 
 ```bash
-cd "$CHAT_CODE_ROOT/Chat"
 HOST=127.0.0.1 \
 PORT=43112 \
 WORKFLOW_TARGET_WORLD=local \
 node .output/server/index.mjs
 ```
 
-再启动 Pi Web：
-
-```bash
-cd "$CHAT_CODE_ROOT/pi-web"
-CHAT_WORKFLOW_URL=http://127.0.0.1:43112 \
-NEXT_PUBLIC_CHAT_WORKFLOW_ADAPTER=1 \
-PI_WEB_DIST_DIR=.next-chat-workflow \
-npm run start
-```
-
-生产启动时 Pi Web 默认监听 `127.0.0.1:30141`。需要从其他设备访问时，应由已有的反向代理和 HTTPS 暴露 Pi Web；Chat 的 `43112` 端口继续只监听 loopback，不直接暴露给浏览器或公网。
-
-### 7. 验证
-
-```bash
-curl -i http://127.0.0.1:30141/
-curl -i http://127.0.0.1:43112/runs/not-a-real-run
-```
-
-Pi Web 应返回页面或认证跳转；第二个请求应返回 `404 Workflow run ... not found`，它证明 Chat 服务和 Workflow Run 路由已经加载。`GET http://127.0.0.1:43112/` 返回 404 是正常的，因为 Chat 当前只有 API，没有根页面。
-
-最后在 Pi Web 新会话中发送普通文本，并确认：
-
-1. Chat 的 `.workflow-data/runs/` 出现新的 Run；
-2. Run 状态最终为 `completed`；
-3. `<cwd>/.pi/sessions/` 对应 Session 文件更新；
-4. Pi Web 显示 Workflow 返回的 Assistant 文本。
-
-### 8. 持久数据与升级
-
-需要备份但不能提交 Git 的目录：
+访问：
 
 ```text
-<cwd>/.pi/agent/       Pi模型与认证配置
-<cwd>/.pi/sessions/    Pi Coding Agent Session
-$CHAT_CODE_ROOT/Chat/.workflow-data/  Local Workflow Run、Step和Event
+http://127.0.0.1:43112/
 ```
 
-升级时先停止 Pi Web 和 Chat，然后依次更新 Pi、执行 Pi Web 的 `npm ci && npm run pi:prepare`、更新 Chat 并重新构建，最后按照“先 Chat、后 Pi Web”的顺序启动。每次更新都重新运行 `npm run pi:verify`、Chat 测试和类型检查。
+该地址同时提供前端静态文件和Chat API，不需要启动Pi Web服务。
+
+网页默认启用登录，初始账号为`later / 123456`。生产环境通过
+`CHAT_WEB_AUTH_USERNAME`、`CHAT_WEB_AUTH_PASSWORD`和
+`CHAT_WEB_AUTH_SESSION_SECRET`覆盖；只在受信任的本地环境中才可以设置
+`CHAT_WEB_AUTH_ENABLED=0`关闭登录。
+
+服务器部署和`https://chat.ai4child.asia`域名配置见[部署指南](./docs/deployment.md)。
+
+## 需要持久化但不能提交的目录
+
+```text
+Chat/.pi/agent/       Pi模型、设置和认证配置
+Chat/.pi/sessions/    Pi Coding Agent Session
+Chat/.workflow-data/  Workflow Run、Step和Event
+```
+
+部署到其他环境时，使用`--recurse-submodules`克隆Chat，准备两个私有子模块的Git读取凭证，安装依赖、构建Pi、准备`.pi/agent`私有配置并执行`pnpm build`。Pi Web不再作为独立后端或独立服务启动。

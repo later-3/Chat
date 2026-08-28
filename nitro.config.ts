@@ -10,4 +10,14 @@ import { defineConfig } from "nitro";
 export default defineConfig({
   serverDir: "src",
   modules: ["workflow/nitro"],
+  // index.html必须经过Web认证中间件；其余版本化前端资源保持公开，
+  // 登录页和PWA安装无需先下载完整应用包。
+  publicAssets: [{
+    dir: "frontend/dist",
+    baseURL: "/",
+    maxAge: 0,
+    // Nitro把不以`*`开头的ignore解释为相对项目根目录的路径；这里必须使用glob。
+    ignore: ["**/index.html", "**/*.test.mjs"],
+  }],
+  serverAssets: [{ baseName: "frontend", dir: "frontend/dist", pattern: "index.html" }],
 });

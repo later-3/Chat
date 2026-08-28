@@ -1,6 +1,7 @@
 node_modules/
 .nitro/
 .output/
+frontend/dist/
 .workflow-data/
 .swc/
 .pi/agent/*

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.later.chat.production</string>
+
+  <!-- 安装时将__CHAT_ROOT__、__NODE__、__HOME__和__LOG_DIR__替换为真实绝对路径。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>__CHAT_ROOT__/.output/server/index.mjs</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__CHAT_ROOT__</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>HOST</key>
+    <string>127.0.0.1</string>
+    <key>PORT</key>
+    <string>43110</string>
+    <key>WORKFLOW_TARGET_WORLD</key>
+    <string>local</string>
+    <key>CHAT_PUBLIC_URL</key>
+    <string>https://chat.ai4child.asia</string>
+    <key>CHAT_WEB_AUTH_ENABLED</key>
+    <string>1</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/chat-production.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/chat-production.stderr.log</string>
+</dict>
+</plist>

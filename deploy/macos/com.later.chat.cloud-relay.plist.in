@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.later.chat.cloud-relay</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__CHAT_ROOT__/scripts/service/run-chat-cloud-relay.sh</string>
+    <string>--cloud-target</string>
+    <string>later-cloud-admin</string>
+    <string>--remote-port</string>
+    <string>33051</string>
+    <string>--local-port</string>
+    <string>43110</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/chat-cloud-relay.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/chat-cloud-relay.stderr.log</string>
+</dict>
+</plist>

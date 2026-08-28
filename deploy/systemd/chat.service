@@ -1,0 +1,21 @@
+[Unit]
+Description=Chat web, Workflow runtime, and Pi Coding Agent service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chat
+Group=chat
+WorkingDirectory=/opt/chat
+EnvironmentFile=/etc/chat/chat.env
+ExecStart=/usr/bin/node /opt/chat/.output/server/index.mjs
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

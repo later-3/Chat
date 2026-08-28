@@ -1,0 +1,6 @@
+# Mac直连Cloudflare连接器。Cloudflare负责公网HTTPS，
+# Nitro只监听Mac loopback，不直接暴露端口。
+ingress:
+  - hostname: chat.ai4child.asia
+    service: http://127.0.0.1:43110
+  - service: http_status:404

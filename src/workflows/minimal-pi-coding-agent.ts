@@ -1,7 +1,13 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  SessionManager,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 import { localTimestamp } from "../runtime-log.js";
+import { buildExecutionPlanSystemPrompt } from "./planning-execution-prompts.js";
 
 // `POST /run`把这个固定Prompt作为Workflow输入。
 export const MINIMAL_PI_CODING_AGENT_PROMPT = `
@@ -12,6 +18,12 @@ export const MINIMAL_PI_CODING_AGENT_PROMPT = `
 export interface MinimalPiCodingAgentWorkflowInput {
   readonly cwd: string;
   readonly prompt: string;
+  readonly sessionId?: string;
+}
+
+export interface PiCodingAgentStepInput extends MinimalPiCodingAgentWorkflowInput {
+  /** 仅由Planning + Execution Workflow生成，不接受浏览器直接传入。 */
+  readonly executionPlan?: string;
 }
 
 // Workflow返回Assistant文本、本次使用的模型以及Pi Session ID和文件路径。
@@ -37,8 +49,8 @@ export async function minimalPiCodingAgentWorkflow(
   return runPiCodingAgentStep(input);
 }
 
-async function runPiCodingAgentStep(
-  input: MinimalPiCodingAgentWorkflowInput,
+export async function runPiCodingAgentStep(
+  input: PiCodingAgentStepInput,
 ): Promise<MinimalPiCodingAgentWorkflowResult> {
   /**
    * `"use step"`让`workflow/nitro`把这个函数编译为Workflow Step。
@@ -49,31 +61,66 @@ async function runPiCodingAgentStep(
 
   const stepStartedAt = Date.now();
   const cwd = resolve(input.cwd);
+  const chatProjectDir = resolve(process.cwd());
 
   /**
    * 当前运行使用三个不同的位置保存数据：
-   * - `<input.cwd>/.pi/agent`：Pi的settings、models和auth配置；
-   * - `<input.cwd>/.pi/sessions`：Pi Coding Agent的Session文件；
+   * - `<Chat进程工作目录>/.pi/agent`：Pi的settings、models和auth配置；
+   * - `<Chat进程工作目录>/.pi/sessions`：Pi Coding Agent的Session文件；
    * - `<Chat进程工作目录>/.workflow-data`：Workflow Local World的Run、Step和Event文件。
+   * `input.cwd`只决定Agent操作哪个工作目录，不改变Chat自己的数据目录。
    */
-  const agentDir = resolve(cwd, ".pi/agent");
-  const sessionDir = resolve(cwd, ".pi/sessions");
+  const agentDir = resolve(chatProjectDir, ".pi/agent");
+  const sessionDir = resolve(chatProjectDir, ".pi/sessions");
   console.log(`${localTimestamp()} [pi] step starting cwd=${cwd}`);
   await mkdir(agentDir, { recursive: true, mode: 0o700 });
   await mkdir(sessionDir, { recursive: true, mode: 0o700 });
 
-  // 加载sessionDir中cwd相同的最近Session；找不到时创建新Session。
-  const sessionManager = SessionManager.continueRecent(cwd, sessionDir);
+  /**
+   * 前端没有传sessionId时明确创建新Session；传入时只按Chat管理的Session ID
+   * 查找并打开，浏览器不提供文件路径。这样“新会话”和“继续会话”不会混淆。
+   */
+  let sessionManager: SessionManager;
+  if (input.sessionId === undefined) {
+    sessionManager = SessionManager.create(cwd, sessionDir);
+  } else {
+    const sessionInfo = (await SessionManager.listAll(sessionDir))
+      .find((candidate) => candidate.id === input.sessionId);
+    if (sessionInfo === undefined) throw new Error(`找不到Session: ${input.sessionId}`);
+    if (resolve(sessionInfo.cwd) !== cwd) {
+      throw new Error(`Session ${input.sessionId}不属于工作目录${cwd}`);
+    }
+    sessionManager = SessionManager.open(sessionInfo.path, sessionDir);
+  }
   console.log(`${localTimestamp()} [pi] creating AgentSession`);
 
   /**
    * `agentDir`指定Pi读取settings.json、models.json和auth.json的目录。
    * `sessionManager`指定本次使用的Session和Session文件目录。
    */
+  const executionPlan = input.executionPlan;
+  const executionSystemPrompt = executionPlan === undefined
+    ? undefined
+    : buildExecutionPlanSystemPrompt(executionPlan);
+  let settingsManager: SettingsManager | undefined;
+  let resourceLoader: DefaultResourceLoader | undefined;
+  if (executionSystemPrompt !== undefined) {
+    settingsManager = SettingsManager.create(cwd, agentDir);
+    resourceLoader = new DefaultResourceLoader({
+      cwd,
+      agentDir,
+      settingsManager,
+      appendSystemPrompt: [executionSystemPrompt],
+    });
+  }
+  await resourceLoader?.reload();
+
   const { session, modelFallbackMessage } = await createAgentSession({
     cwd,
     agentDir,
     sessionManager,
+    ...(settingsManager === undefined ? {} : { settingsManager }),
+    ...(resourceLoader === undefined ? {} : { resourceLoader }),
   });
 
   const piSessionFile = session.sessionFile;

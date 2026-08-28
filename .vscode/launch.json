@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Minimal Pi Coding Agent Workflow",
+      "name": "Debug Chat",
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "pnpm",
@@ -11,77 +11,37 @@
       "console": "integratedTerminal",
       "autoAttachChildProcesses": true,
       "sourceMaps": true,
-      "outFiles": [
-        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
-        "${workspaceFolder}/.output/server/**/*.mjs"
-      ],
-      "resolveSourceMapLocations": [
-        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
-        "${workspaceFolder}/.output/server/**/*.mjs"
-      ],
-      "skipFiles": ["<node_internals>/**"],
-      "serverReadyAction": {
-        "pattern": "http://127\\.0\\.0\\.1:43112/",
-        "action": "startDebugging",
-        "name": "Call Minimal Pi Coding Agent Workflow"
-      }
-    },
-    {
-      "name": "Call Minimal Pi Coding Agent Workflow",
-      "type": "node",
-      "request": "launch",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "--input-type=module",
-        "--eval",
-        "const response = await fetch('http://127.0.0.1:43112/run', { method: 'POST' }); const body = await response.text(); console.log(body); if (!response.ok) process.exitCode = 1;"
-      ],
-      "cwd": "${workspaceFolder}",
-      "console": "internalConsole",
-      "skipFiles": ["<node_internals>/**"],
-      "presentation": {
-        "hidden": true
-      }
-    },
-    {
-      "name": "Debug Pi Web Workflow Integration",
-      "type": "node",
-      "request": "launch",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
-      "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "autoAttachChildProcesses": true,
-      "sourceMaps": true,
-      "outFiles": [
-        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
-        "${workspaceFolder}/.output/server/**/*.mjs"
-      ],
-      "resolveSourceMapLocations": [
-        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
-        "${workspaceFolder}/.output/server/**/*.mjs"
-      ],
-      "skipFiles": ["<node_internals>/**"],
-      "serverReadyAction": {
-        "pattern": "http://127\\.0\\.0\\.1:43112/",
-        "action": "startDebugging",
-        "name": "Start Pi Web Workflow Adapter"
-      }
-    },
-    {
-      "name": "Start Pi Web Workflow Adapter",
-      "type": "node",
-      "request": "launch",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:chat-workflow"],
-      "cwd": "${workspaceFolder}/../pi-web",
-      "env": {
-        "CHAT_WORKFLOW_URL": "http://127.0.0.1:43112",
-        "NEXT_PUBLIC_CHAT_WORKFLOW_ADAPTER": "1"
+      "pauseForSourceMap": true,
+      "sourceMapPathOverrides": {
+        "src/*": "${workspaceFolder}/src/*",
+        "../../../src/*": "${workspaceFolder}/src/*"
       },
+      "outFiles": [
+        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
+        "${workspaceFolder}/.output/server/**/*.mjs",
+        "${workspaceFolder}/pi/packages/**/dist/**/*.js"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
+        "${workspaceFolder}/.output/server/**/*.mjs",
+        "${workspaceFolder}/pi/packages/**/dist/**/*.js"
+      ],
+      "skipFiles": ["<node_internals>/**"],
+      "serverReadyAction": {
+        "pattern": "http://127\\.0\\.0\\.1:43112/",
+        "action": "startDebugging",
+        "name": "Start Chat Frontend"
+      }
+    },
+    {
+      "name": "Start Chat Frontend",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev:frontend"],
+      "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "autoAttachChildProcesses": true,
-      "sourceMaps": true,
       "skipFiles": ["<node_internals>/**"],
       "serverReadyAction": {
         "pattern": "http://127\\.0\\.0\\.1:30145",
