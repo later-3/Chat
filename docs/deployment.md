@@ -89,7 +89,9 @@ sudo systemctl restart chat
 sudo journalctl -u chat -n 100 --no-pager
 ```
 
-macOS常驻运行使用[生产LaunchAgent模板](../deploy/macos/com.later.chat.production.plist.in)。如果Cloudflare还有云服务器连接器，再安装[反向Relay模板](../deploy/macos/com.later.chat.cloud-relay.plist.in)，让云端`127.0.0.1:33051`回到Mac的`127.0.0.1:43110`。模板中的路径占位符必须替换为本机绝对路径，生产入口同样是`.output/server/index.mjs`，不是开发服务器或历史`start.mjs`。
+macOS常驻运行使用[生产LaunchAgent模板](../deploy/macos/com.later.chat.production.plist.in)。Mac直连Cloudflare使用[直连Tunnel模板](../deploy/macos/com.later.chat.cloudflare-direct.plist.in)，其私有配置和Tunnel Credential应放在`~/Library/Application Support/Chat/cloudflared/`，不能放在旧Pi Web目录或提交到Git。
+
+如果Cloudflare还有云服务器连接器，再安装[反向Relay模板](../deploy/macos/com.later.chat.cloud-relay.plist.in)，让云端`127.0.0.1:33051`回到Mac的`127.0.0.1:43110`。模板中的路径占位符必须替换为本机绝对路径，生产入口同样是`.output/server/index.mjs`，不是开发服务器或历史`start.mjs`。
 
 ## Chat域名
 

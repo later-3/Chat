@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.later.chat.cloudflare-direct</string>
+
+  <!-- 安装时将__CLOUDFLARED__、__CONFIG__和__LOG_DIR__替换为真实绝对路径。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__CLOUDFLARED__</string>
+    <string>--config</string>
+    <string>__CONFIG__</string>
+    <string>tunnel</string>
+    <string>run</string>
+  </array>
+
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/chat-cloudflared.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/chat-cloudflared.stderr.log</string>
+</dict>
+</plist>

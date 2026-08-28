@@ -8,6 +8,7 @@ function read(relativePath) {
 
 test("macOS production and relay templates point at the built Chat service", () => {
   const production = read("deploy/macos/com.later.chat.production.plist.in");
+  const directTunnel = read("deploy/macos/com.later.chat.cloudflare-direct.plist.in");
   const relay = read("deploy/macos/com.later.chat.cloud-relay.plist.in");
   const relayScript = read("scripts/service/run-chat-cloud-relay.sh");
 
@@ -15,6 +16,11 @@ test("macOS production and relay templates point at the built Chat service", () 
   assert.match(production, /<key>PORT<\/key>\s*<string>43110<\/string>/);
   assert.match(production, /https:\/\/chat\.ai4child\.asia/);
   assert.doesNotMatch(production, /scripts\/dev\/start\.mjs/);
+
+  assert.match(directTunnel, /com\.later\.chat\.cloudflare-direct/);
+  assert.match(directTunnel, /__CLOUDFLARED__/);
+  assert.match(directTunnel, /__CONFIG__/);
+  assert.doesNotMatch(directTunnel, /pi-web|30141/);
 
   assert.match(relay, /later-cloud-admin/);
   assert.match(relay, /<string>33051<\/string>/);
