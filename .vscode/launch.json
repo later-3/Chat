@@ -86,7 +86,7 @@
       "serverReadyAction": {
         "pattern": "http://127\\.0\\.0\\.1:30145",
         "uriFormat": "http://127.0.0.1:30145",
-        "action": "debugWithChrome"
+        "action": "openExternally"
       },
       "presentation": {
         "hidden": true

@@ -75,4 +75,4 @@ Pi Web 页面
 Debug Pi Web Workflow Integration
 ```
 
-该配置启动 Chat Workflow（`127.0.0.1:43112`）、当前 Pi Web Adapter worktree（`127.0.0.1:30145`）和 Chrome 调试器。Pi Web 分支合入正式目录时，必须把调试配置中的路径同步改为 `../pi-web`。
+该配置调试 Chat Workflow（`127.0.0.1:43112`）和 Pi Web 服务端（`127.0.0.1:30145`），并在默认浏览器中打开 Pi Web 页面。浏览器不附加前端调试器，避免前端暂停影响 Workflow 调试操作。Pi Web 分支合入正式目录时，必须把调试配置中的路径同步改为 `../pi-web`。
