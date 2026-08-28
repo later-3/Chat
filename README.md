@@ -29,16 +29,23 @@ link:../opc-os/pi/packages/coding-agent
 
 Pi Web 也通过相邻的 `../opc-os/pi/packages/*` 使用同一个 Pi checkout。不得把 Pi 源码复制进 Chat 或 Pi Web，也不得用 registry 包静默替代这个本地源码绑定。
 
-## 当前开发 Worktree
+## 当前开发检出
 
-当前 Workflow 对接尚未合入正式目录，使用 Git worktree 隔离开发：
+Chat 的 Workflow 对接代码已经放在正式 Chat 目录的本地开发分支中：
 
-| 仓库 | 临时开发目录 | 本地开发分支 |
-|---|---|---|
-| Chat | `/Users/xulater/Code/Chat-pi-web-workflow-adapter` | `codex/pi-web-workflow-adapter` |
-| Pi Web | `/Users/xulater/Code/pi-web-chat-frontend-adapter` | `codex/chat-frontend-adapter` |
+```text
+目录：/Users/xulater/Code/Chat
+分支：codex/pi-web-frontend-analysis
+```
 
-这些 worktree 只是同一 Git 仓库的额外检出目录，不是新项目、运行时服务或长期架构模块。分支合入后应使用正式目录，并删除不再需要的 worktree。
+Pi Web Adapter 目前仍使用一个临时 worktree：
+
+```text
+目录：/Users/xulater/Code/pi-web-chat-frontend-adapter
+分支：codex/chat-frontend-adapter
+```
+
+Pi Web worktree 只是同一 Pi Web Git 仓库的额外检出目录，不是新项目或运行时服务。该分支合入后应恢复使用正式目录 `/Users/xulater/Code/pi-web`，并删除临时 worktree。
 
 ## 当前调用关系
 
@@ -56,16 +63,16 @@ Pi Web 页面
 
 ## VS Code 调试
 
-当前开发阶段打开：
+当前从 Chat 侧调试时打开：
 
 ```text
-/Users/xulater/Code/pi-web-chat-frontend-adapter
+/Users/xulater/Code/Chat
 ```
 
 在 VS Code 中按 `F5`，选择：
 
 ```text
-Debug Pi Web + Chat Workflow
+Debug Pi Web Workflow Integration
 ```
 
-该配置启动 Chat Workflow（`127.0.0.1:43112`）、Pi Web（`127.0.0.1:30145`）和 Chrome 调试器。分支合入正式目录时，必须把调试配置中的临时 worktree 路径同步改为 `../Chat` 和 `../pi-web`。
+该配置启动 Chat Workflow（`127.0.0.1:43112`）、当前 Pi Web Adapter worktree（`127.0.0.1:30145`）和 Chrome 调试器。Pi Web 分支合入正式目录时，必须把调试配置中的路径同步改为 `../pi-web`。
