@@ -42,6 +42,55 @@
       "presentation": {
         "hidden": true
       }
+    },
+    {
+      "name": "Debug Pi Web Workflow Integration",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
+        "${workspaceFolder}/.output/server/**/*.mjs"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
+        "${workspaceFolder}/.output/server/**/*.mjs"
+      ],
+      "skipFiles": ["<node_internals>/**"],
+      "serverReadyAction": {
+        "pattern": "http://127\\.0\\.0\\.1:43112/",
+        "action": "startDebugging",
+        "name": "Start Pi Web Workflow Adapter"
+      }
+    },
+    {
+      "name": "Start Pi Web Workflow Adapter",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:chat-workflow"],
+      "cwd": "${workspaceFolder}/../pi-web-chat-frontend-adapter",
+      "env": {
+        "CHAT_WORKFLOW_URL": "http://127.0.0.1:43112",
+        "NEXT_PUBLIC_CHAT_WORKFLOW_ADAPTER": "1"
+      },
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**"],
+      "serverReadyAction": {
+        "pattern": "http://127\\.0\\.0\\.1:30145",
+        "uriFormat": "http://127.0.0.1:30145",
+        "action": "debugWithChrome"
+      },
+      "presentation": {
+        "hidden": true
+      }
     }
   ]
 }

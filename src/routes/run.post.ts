@@ -1,5 +1,9 @@
-import { defineEventHandler } from "nitro/h3";
+import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { start } from "workflow/api";
+import {
+  parseMinimalWorkflowHttpInput,
+  type MinimalWorkflowHttpInput,
+} from "../run-request.js";
 import {
   MINIMAL_PI_CODING_AGENT_PROMPT,
   minimalPiCodingAgentWorkflow,
@@ -16,24 +20,34 @@ import { localTimestamp } from "../runtime-log.js";
  * 因此这个文件处理`POST /run`。`src`下不在`routes`或`api`目录中的
  * `*.post.ts`文件不会因为文件名而成为HTTP路由。
  */
-export default defineEventHandler(async () => {
-  // 当前Handler不读取请求头、请求体或路径参数，因此没有声明`event`参数。
+export default defineEventHandler(async (event) => {
   const requestStartedAt = Date.now();
   console.log(`${localTimestamp()} [http] POST /run received`);
+
+  let input: MinimalWorkflowHttpInput;
+  try {
+    const body = await readBody<unknown>(event);
+    input = parseMinimalWorkflowHttpInput(body, {
+      cwd: process.cwd(),
+      prompt: MINIMAL_PI_CODING_AGENT_PROMPT,
+    });
+  } catch (error) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   /**
    * `start()`创建并调度一次Workflow Run，返回的对象提供Run ID和结果Promise。
    * 变量名`workflowRun`与HTTP路径`/run`没有关联。
    *
    * 第二个参数是传给Workflow函数的参数数组。当前Workflow只接收一个对象，
-   * 所以数组中只有一个对象。`process.cwd()`返回Nitro进程的启动目录；
-   * 当前VS Code配置把这个目录设置为`${workspaceFolder}`。
+   * 所以数组中只有一个对象。无请求体时，`input`使用固定Prompt和Nitro进程
+   * 的启动目录；显式请求体可以传入其他Prompt和工作目录。
    */
   const workflowRun = await start(minimalPiCodingAgentWorkflow, [
-    {
-      cwd: process.cwd(),
-      prompt: MINIMAL_PI_CODING_AGENT_PROMPT,
-    },
+    input,
   ]);
   console.log(
     `${localTimestamp()} [workflow] started runId=${workflowRun.runId} elapsedMs=${Date.now() - requestStartedAt}`,

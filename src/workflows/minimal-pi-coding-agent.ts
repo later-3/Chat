@@ -14,11 +14,15 @@ export interface MinimalPiCodingAgentWorkflowInput {
   readonly prompt: string;
 }
 
-// Workflow返回Assistant文本以及本次使用的Pi Session ID和文件路径。
+// Workflow返回Assistant文本、本次使用的模型以及Pi Session ID和文件路径。
 export interface MinimalPiCodingAgentWorkflowResult {
   readonly text: string;
   readonly piSessionId: string;
   readonly piSessionFile: string;
+  readonly model: {
+    readonly provider: string;
+    readonly modelId: string;
+  } | null;
 }
 
 export async function minimalPiCodingAgentWorkflow(
@@ -48,9 +52,9 @@ async function runPiCodingAgentStep(
 
   /**
    * 当前运行使用三个不同的位置保存数据：
-   * - `.pi/agent`：Pi的settings、models和auth配置；
-   * - `.pi/sessions`：Pi Coding Agent的Session文件；
-   * - `.workflow-data`：Workflow Local World的Run、Step和Event文件。
+   * - `<input.cwd>/.pi/agent`：Pi的settings、models和auth配置；
+   * - `<input.cwd>/.pi/sessions`：Pi Coding Agent的Session文件；
+   * - `<Chat进程工作目录>/.workflow-data`：Workflow Local World的Run、Step和Event文件。
    */
   const agentDir = resolve(cwd, ".pi/agent");
   const sessionDir = resolve(cwd, ".pi/sessions");
@@ -147,7 +151,14 @@ async function runPiCodingAgentStep(
             .trim()
         : "";
     if (text === "") throw new Error("Pi Coding Agent没有返回Assistant文本");
-    return { text, piSessionId: session.sessionId, piSessionFile };
+    return {
+      text,
+      piSessionId: session.sessionId,
+      piSessionFile,
+      model: session.model === undefined
+        ? null
+        : { provider: session.model.provider, modelId: session.model.id },
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(

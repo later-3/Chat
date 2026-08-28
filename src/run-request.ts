@@ -1,0 +1,38 @@
+export const MAX_WORKFLOW_PROMPT_CHARS = 100_000;
+
+export interface MinimalWorkflowHttpInput {
+  readonly cwd: string;
+  readonly prompt: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 解析`POST /run`的可选JSON请求体。
+ *
+ * VS Code中的原有调试请求不发送请求体，因此继续使用默认Prompt和进程目录；
+ * Pi Web Adapter会显式传入用户Prompt和当前选择的工作目录。
+ */
+export function parseMinimalWorkflowHttpInput(
+  value: unknown,
+  defaults: MinimalWorkflowHttpInput,
+): MinimalWorkflowHttpInput {
+  if (value === undefined || value === null) return defaults;
+  if (!isRecord(value)) throw new Error("请求体必须是JSON对象");
+
+  const cwd = value.cwd ?? defaults.cwd;
+  const prompt = value.prompt ?? defaults.prompt;
+  if (typeof cwd !== "string" || cwd.trim() === "") {
+    throw new Error("cwd必须是非空字符串");
+  }
+  if (typeof prompt !== "string" || prompt.trim() === "") {
+    throw new Error("prompt必须是非空字符串");
+  }
+  if (prompt.length > MAX_WORKFLOW_PROMPT_CHARS) {
+    throw new Error(`prompt不能超过${MAX_WORKFLOW_PROMPT_CHARS}个字符`);
+  }
+
+  return { cwd, prompt };
+}
