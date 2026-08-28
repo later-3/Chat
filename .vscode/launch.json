@@ -74,7 +74,7 @@
       "request": "launch",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:chat-workflow"],
-      "cwd": "${workspaceFolder}/../pi-web-chat-frontend-adapter",
+      "cwd": "${workspaceFolder}/../pi-web",
       "env": {
         "CHAT_WORKFLOW_URL": "http://127.0.0.1:43112",
         "NEXT_PUBLIC_CHAT_WORKFLOW_ADAPTER": "1"
