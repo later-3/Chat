@@ -35,6 +35,7 @@ test("server and Cloudflare examples expose only the intended Chat origin", () =
   const nginx = read("deploy/nginx/chat.conf");
   const environment = read("deploy/chat.env.example");
   const deployment = read("docs/deployment.md");
+  const packageJson = JSON.parse(read("package.json"));
 
   assert.match(systemd, /\/opt\/chat\/\.output\/server\/index\.mjs/);
   assert.match(macCloudflared, /hostname: chat\.ai4child\.asia/);
@@ -49,4 +50,6 @@ test("server and Cloudflare examples expose only the intended Chat origin", () =
   assert.match(deployment, /\.pi\/agent\/models\.json/);
   assert.match(deployment, /\.pi\/agent\/auth\.json/);
   assert.match(deployment, /sudo -u chat -H sh -lc 'cd \/opt\/chat && pnpm verify'/);
+  assert.match(packageJson.scripts["pi:prepare"], /pi:hydrate-model-data/);
+  assert.match(packageJson.scripts["pi:hydrate-model-data"], /hydrate:model-data/);
 });

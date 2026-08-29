@@ -27,8 +27,9 @@ https://chat.ai4child.asia
 
 1. Node.js `>=22.19.0`、Corepack、Git，以及能够运行`npm ci`所需的基础构建环境。
 2. Git身份能读取`later-3/Chat`、`later-3/pi`和`later-3/pi-web`三个私有仓库。
-3. 目标机器上安全准备Pi模型和Provider认证；这些凭证不在Git中。
-4. 在目标机器上执行构建。`.output`包含与构建机器操作系统和CPU架构有关的原生依赖，不能跨平台复制。
+3. 构建阶段能访问Pi使用的公开模型目录；`pnpm pi:prepare`需要生成Git中不保存的Provider模型数据。
+4. 目标机器上安全准备Pi模型和Provider认证；这些凭证不在Git中。
+5. 在目标机器上执行构建。`.output`包含与构建机器操作系统和CPU架构有关的原生依赖，不能跨平台复制。
 
 当前评审版本位于`codex/pi-web-frontend-in-chat`。在该分支合入`main`之前，首次安装命令必须带上`--branch codex/pi-web-frontend-in-chat`；合入后可以省略该参数。无论部署哪个分支或Tag，真正生效的Pi和前端版本都由Chat父仓库记录的两个Submodule Commit决定。
 
@@ -60,7 +61,7 @@ sudo -u chat -H sh -lc 'cd /opt/chat && pnpm verify'
 
 命令职责如下：
 
-- `pnpm pi:prepare`按Pi自己的锁文件安装依赖并生成`pi/packages/*/dist`。
+- `pnpm pi:prepare`按Pi自己的锁文件安装依赖，联网生成`pi/packages/ai/src/providers/data/`，再生成`pi/packages/*/dist`。模型数据目录由Pi忽略，不会污染Submodule状态。
 - `pnpm install --frozen-lockfile`按Chat锁文件安装后端与`frontend/`依赖，并把Chat依赖连接到当前`pi/`源码。
 - `pnpm verify`运行后端与前端测试、类型检查、生产构建和隔离生产服务HTTP测试。
 

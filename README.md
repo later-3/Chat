@@ -90,7 +90,7 @@ pnpm pi:prepare
 pnpm install --frozen-lockfile
 ```
 
-`pnpm pi:prepare`先以Pi自己的锁文件安装依赖，再使用仓库已经固定的模型目录离线构建`pi/packages/*/dist`。Chat运行时从这些构建产物加载代码，source map会把VS Code断点映射回`pi/packages/*/src`。
+`pnpm pi:prepare`先以Pi自己的锁文件安装依赖，再从Pi配置的公开模型目录生成本地Provider数据，最后离线构建`pi/packages/*/dist`。首次准备需要访问模型目录；生成的数据位于Pi忽略的`packages/ai/src/providers/data/`，不提交Git。Chat运行时从构建产物加载代码，source map会把VS Code断点映射回`pi/packages/*/src`。
 
 在VS Code中打开Chat目录，按`F5`选择：
 
