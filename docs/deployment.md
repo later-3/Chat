@@ -85,20 +85,20 @@ sudo -u chat -H sh -lc 'cd /opt/chat && pnpm verify'
 
 这是当前约定的初始账号。公网长期运行时应修改`CHAT_WEB_AUTH_PASSWORD`，并设置至少32字符的随机`CHAT_WEB_AUTH_SESSION_SECRET`。修改密码或签名密钥后，已有登录Cookie会失效。
 
-Pi运行时固定读取`/opt/chat/.pi/agent`。其中：
+Pi运行时固定读取`/opt/chat/.chat/agent`。其中：
 
-- `/opt/chat/.pi/agent/settings.json`选择默认Provider、模型和Thinking Level；仓库提供当前默认值。
-- `/opt/chat/.pi/agent/models.json`保存自定义Provider与模型定义，可能包含Credential，不能提交Git。
-- `/opt/chat/.pi/agent/auth.json`保存Pi Provider认证，不能提交Git。
+- `/opt/chat/.chat/agent/settings.json`选择默认Provider、模型和Thinking Level；仓库提供当前默认值。
+- `/opt/chat/.chat/agent/models.json`保存自定义Provider与模型定义，可能包含Credential，不能提交Git。
+- `/opt/chat/.chat/agent/auth.json`保存Pi Provider认证，不能提交Git。
 
 如果使用Pi内置模型目录，可以不提供自定义`models.json`，但必须通过Pi支持的认证方式让默认Provider可用。部署前至少确认`settings.json`选择的Provider与模型在该机器上存在且已经认证。不要从终端打印或从Git传递Credential。
 
 需要持久保存且不能提交Git的目录：
 
 ```text
-/opt/chat/.pi/agent/
-/opt/chat/.pi/sessions/
-/opt/chat/.workflow-data/
+/opt/chat/.chat/agent/
+/opt/chat/.chat/sessions/
+/opt/chat/.chat/workflow-data/
 ```
 
 systemd模板使用`chat`用户运行。安装服务前应确保仓库及Agent允许操作的工作目录属于`chat`用户，以上3个运行时目录可写：
@@ -106,10 +106,10 @@ systemd模板使用`chat`用户运行。安装服务前应确保仓库及Agent�
 ```bash
 sudo chown -R chat:chat /opt/chat
 sudo install -d -o chat -g chat -m 0700 \
-  /opt/chat/.pi/agent \
-  /opt/chat/.pi/sessions \
-  /opt/chat/.workflow-data
-sudo chown -R chat:chat /opt/chat/.pi /opt/chat/.workflow-data
+  /opt/chat/.chat/agent \
+  /opt/chat/.chat/sessions \
+  /opt/chat/.chat/workflow-data
+sudo chown -R chat:chat /opt/chat/.chat
 ```
 
 当前前端默认使用Chat进程的工作目录；在下面的systemd模板中就是`/opt/chat`。已有Session的`cwd`是绝对路径，把Session迁移到另一台机器时必须同时准备对应工作目录，否则Chat会拒绝以不匹配的`cwd`继续该Session。

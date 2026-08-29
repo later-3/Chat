@@ -40,10 +40,10 @@ export default defineEventHandler(async (event) => {
       headers: {
         "Cache-Control": "no-store",
         "Content-Disposition": contentDisposition(exported.fileName, inline),
-        "Content-Security-Policy": "frame-ancestors 'none'",
+        "Content-Security-Policy": "frame-ancestors 'self'",
         "Content-Type": "text/html; charset=utf-8",
         "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "DENY",
+        "X-Frame-Options": "SAMEORIGIN",
       },
     });
   } catch (error) {

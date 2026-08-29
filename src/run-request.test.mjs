@@ -53,6 +53,40 @@ test("an existing Chat session can be selected by id", () => {
   );
 });
 
+test("Agent configuration files are scoped to Agents in the selected Workflow", () => {
+  assert.deepEqual(
+    parseChatWorkflowHttpInput({
+      workflow: "planning-execution",
+      agentConfigs: {
+        planner: { primary: "/configs/planner.json" },
+        "pi-coding-agent": {
+          append: ["/configs/coding.json"],
+          promptFiles: ["/rules/typescript.md"],
+        },
+      },
+    }, defaults),
+    {
+      cwd: "/workspace",
+      prompt: "default",
+      workflow: "planning-execution",
+      agentConfigs: {
+        planner: { primary: "/configs/planner.json" },
+        "pi-coding-agent": {
+          append: ["/configs/coding.json"],
+          promptFiles: ["/rules/typescript.md"],
+        },
+      },
+    },
+  );
+  assert.throws(
+    () => parseChatWorkflowHttpInput({
+      workflow: "minimal-pi-coding-agent",
+      agentConfigs: { planner: { primary: "/configs/planner.json" } },
+    }, defaults),
+    /不存在Agent: planner/,
+  );
+});
+
 test("invalid and oversized prompts are rejected", () => {
   assert.throws(
     () => parseChatWorkflowHttpInput({ prompt: "   " }, defaults),

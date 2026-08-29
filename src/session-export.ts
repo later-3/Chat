@@ -279,6 +279,33 @@ const CHAT_WORKFLOW_HISTORY_CSS = `
       letter-spacing: .06em;
       text-transform: uppercase;
     }
+    .chat-session-configuration {
+      display: grid;
+      gap: 6px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--container-bg);
+    }
+    .chat-session-configuration-row {
+      display: grid;
+      grid-template-columns: minmax(150px, auto) 1fr auto;
+      gap: 10px;
+      align-items: baseline;
+    }
+    .chat-session-configuration-name {
+      color: var(--muted);
+      font-size: 10px;
+    }
+    .chat-session-configuration-value {
+      color: var(--accent);
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+    .chat-session-configuration-time {
+      color: var(--dim);
+      font-size: 9px;
+    }
   </style>`;
 
 const CHAT_WORKFLOW_HISTORY_RUNTIME = `
@@ -408,20 +435,71 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
         return region;
       }
 
-      function appendChatAgentEntry(target, entry) {
+      function renderChatHistoryRegionEntry(entry) {
+        // Pi caches rendered nodes by entry.id. One Assistant entry is rendered
+        // once per region here, so these partial views must bypass that cache.
+        const html = renderEntry(entry);
+        if (!html) return null;
+        const template = document.createElement("template");
+        template.innerHTML = html;
+        const node = template.content.firstElementChild;
+        if (node) {
+          node.removeAttribute("id");
+          node.querySelector(".copy-link-btn")?.remove();
+        }
+        return node;
+      }
+
+      function appendChatSessionConfiguration(target, entry, agentId) {
+        let region = target.lastElementChild;
+        let configuration = region?.querySelector(".chat-session-configuration");
+        if (!configuration) {
+          configuration = document.createElement("div");
+          configuration.className = "chat-session-configuration";
+          region = createChatHistoryRegion("Session configuration", configuration);
+          target.appendChild(region);
+        }
+
+        const agentLabel = agentId ? chatHistoryLabel(chatAgentLabels, agentId) : "Agent";
+        const row = document.createElement("div");
+        row.className = "chat-session-configuration-row";
+        const name = document.createElement("span");
+        name.className = "chat-session-configuration-name";
+        const value = document.createElement("span");
+        value.className = "chat-session-configuration-value";
+        const time = document.createElement("span");
+        time.className = "chat-session-configuration-time";
+        time.textContent = formatTimestamp(entry.timestamp);
+        if (entry.type === "model_change") {
+          name.textContent = agentLabel + " effective model";
+          value.textContent = entry.provider + "/" + entry.modelId;
+        } else {
+          name.textContent = agentLabel + " effective thinking level";
+          value.textContent = entry.thinkingLevel;
+        }
+        row.append(name, value, time);
+        configuration.appendChild(row);
+      }
+
+      function appendChatAgentEntry(target, entry, agentId) {
+        if (entry.type === "model_change" || entry.type === "thinking_level_change") {
+          appendChatSessionConfiguration(target, entry, agentId);
+          return;
+        }
         if (entry.type === "message" && entry.message && entry.message.role === "assistant") {
           const message = entry.message;
+          const agentLabel = agentId ? chatHistoryLabel(chatAgentLabels, agentId) : "Assistant";
           const groups = [
-            ["Model thinking", message.content.filter((block) => block.type === "thinking")],
+            [agentLabel + " thinking", message.content.filter((block) => block.type === "thinking")],
             ["Tool call and output", message.content.filter((block) => block.type === "toolCall")],
-            ["Agent output", message.content.filter((block) => block.type !== "thinking" && block.type !== "toolCall")]
+            [agentLabel + " output", message.content.filter((block) => block.type !== "thinking" && block.type !== "toolCall")]
           ];
           let rendered = false;
           for (const [label, content] of groups) {
             if (!content.length) continue;
-            const node = renderEntryToNode({
+            const node = renderChatHistoryRegionEntry({
               ...entry,
-              message: { ...message, content, usage: label === "Agent output" ? message.usage : undefined }
+              message: { ...message, content, usage: label.endsWith(" output") ? message.usage : undefined }
             });
             if (node) {
               target.appendChild(createChatHistoryRegion(label, node));
@@ -437,7 +515,7 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
           ? "Tool output"
           : entry.type === "message" && entry.message && entry.message.role === "user"
             ? "Input"
-            : "Agent event";
+            : "Session event";
         target.appendChild(createChatHistoryRegion(label, node));
       }
 `;
@@ -472,6 +550,7 @@ export function patchChatWorkflowHistory(html: string): string {
         let activeInvocationId = null;
         let activeWorkflowStages = null;
         let activeStageContent = null;
+        let activeAgentId = null;
         let activeStageHasInput = false;
         const renderedAgentInputEntryIds = new Set();
 
@@ -487,6 +566,7 @@ export function patchChatWorkflowHistory(html: string): string {
             const stageView = createChatAgentStage(workflowStage);
             activeWorkflowStages.appendChild(stageView.section);
             activeStageContent = stageView.content;
+            activeAgentId = workflowStage.agentId;
             const stageInputKey = workflowStage.invocationId + "\u0000" + workflowStage.stageId + "\u0000" + workflowStage.agentId;
             const stageInput = chatWorkflowAgentInputByStage.get(stageInputKey);
             activeStageHasInput = Boolean(stageInput);
@@ -500,6 +580,7 @@ export function patchChatWorkflowHistory(html: string): string {
             activeInvocationId = null;
             activeWorkflowStages = null;
             activeStageContent = null;
+            activeAgentId = null;
             activeStageHasInput = false;
             continue;
           }
@@ -519,7 +600,7 @@ export function patchChatWorkflowHistory(html: string): string {
               ...entry,
               type: "message",
               message: workflowMessage.message
-            });
+            }, activeAgentId);
             continue;
           }
 
@@ -531,7 +612,7 @@ export function patchChatWorkflowHistory(html: string): string {
           ) {
             continue;
           }
-          appendChatAgentEntry(activeStageContent || fragment, entry);
+          appendChatAgentEntry(activeStageContent || fragment, entry, activeAgentId);
         }`,
   );
 }

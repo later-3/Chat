@@ -2,11 +2,14 @@ node_modules/
 .nitro/
 .output/
 frontend/dist/
-.workflow-data/
+.chat/*
+!.chat/agent/
+.chat/agent/*
+!.chat/agent/settings.json
 .swc/
-.pi/agent/*
-!.pi/agent/settings.json
-.pi/sessions/
+# Legacy runtime data is only read by the one-way .chat migration.
+.pi/
+.workflow-data/
 .env
 .env.*
 *.log

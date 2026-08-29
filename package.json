@@ -8,19 +8,19 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "dev": "HOST=127.0.0.1 PORT=43112 WORKFLOW_TARGET_WORLD=local nitro dev",
+    "dev": "HOST=127.0.0.1 PORT=43112 WORKFLOW_TARGET_WORLD=local WORKFLOW_LOCAL_DATA_DIR=.chat/workflow-data nitro dev",
     "dev:frontend": "pnpm --dir frontend dev",
     "pi:install": "npm --prefix pi ci --ignore-scripts",
     "pi:hydrate-model-data": "npm --prefix pi run hydrate:model-data",
     "pi:build": "npm --prefix pi run build:offline",
     "pi:prepare": "pnpm pi:install && pnpm pi:hydrate-model-data && pnpm pi:build",
-    "start": "node .output/server/index.mjs",
+    "start": "WORKFLOW_LOCAL_DATA_DIR=.chat/workflow-data node .output/server/index.mjs",
     "build": "pnpm build:frontend && pnpm build:backend",
     "build:backend": "nitro build",
     "build:frontend": "pnpm --dir frontend build",
     "typecheck": "tsc --noEmit && pnpm --dir frontend typecheck",
     "test": "pnpm test:backend && pnpm test:frontend",
-    "test:backend": "node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types --test src/*.test.mjs src/**/*.test.mjs scripts/deployment-config.test.mjs",
+    "test:backend": "node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types scripts/run-backend-tests.mjs",
     "test:frontend": "pnpm --dir frontend test",
     "test:built": "node --test scripts/built-server.test.mjs",
     "verify": "pnpm test && pnpm typecheck && pnpm build && pnpm test:built"

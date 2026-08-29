@@ -64,9 +64,18 @@ before(async () => {
   runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "chat-built-server-"));
   workspace = path.join(runtimeRoot, "workspace");
   const sessionDir = path.join(runtimeRoot, ".pi", "sessions");
+  const legacyAgentDir = path.join(runtimeRoot, ".pi", "agent");
+  const legacySkillDir = path.join(legacyAgentDir, "skills", "built-review");
+  const legacyExtensionDir = path.join(legacyAgentDir, "extensions");
   fs.mkdirSync(workspace, { recursive: true });
   fs.mkdirSync(sessionDir, { recursive: true });
+  fs.mkdirSync(legacySkillDir, { recursive: true });
+  fs.mkdirSync(legacyExtensionDir, { recursive: true });
   fs.writeFileSync(path.join(workspace, "fixture.md"), "# Built server fixture\n");
+  fs.writeFileSync(path.join(legacySkillDir, "SKILL.md"), [
+    "---", "name: built-review", "description: Built server review", "---", "Review built output.",
+  ].join("\n"));
+  fs.writeFileSync(path.join(legacyExtensionDir, "built-extension.ts"), "export default function register() {}\n");
 
   const manager = SessionManager.create(workspace, sessionDir);
   appendChatWorkflowStage(manager, {
@@ -210,6 +219,47 @@ test("session list and detail come from the isolated Chat session directory", as
   assert.equal(detail.context.messages.length, detail.context.entryIds.length);
 });
 
+test("Workflow containers and their Agents come from the backend registry", async () => {
+  const response = await authenticatedFetch("/api/workflows");
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.workflows.map((workflow) => workflow.id), [
+    "minimal-pi-coding-agent",
+    "planning-execution",
+  ]);
+  assert.deepEqual(body.workflows.map((workflow) => workflow.agents.map((agent) => agent.id)), [
+    ["pi-coding-agent"],
+    ["planner", "pi-coding-agent"],
+  ]);
+  assert.deepEqual(body.workflows.map((workflow) => workflow.stages.map((stage) => stage.agentId)), [
+    ["pi-coding-agent"],
+    ["planner", "pi-coding-agent"],
+  ]);
+});
+
+test("Pi resources are served by Chat from the managed Agent directory", async () => {
+  const skillsResponse = await authenticatedFetch(`/api/skills?cwd=${encodeURIComponent(workspace)}`);
+  assert.equal(skillsResponse.status, 200);
+  const skills = await skillsResponse.json();
+  const skill = skills.skills.find((item) => item.name === "built-review");
+  assert.ok(skill);
+
+  const toggleResponse = await authenticatedFetch("/api/skills", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cwd: workspace, filePath: skill.filePath, disableModelInvocation: true }),
+  });
+  assert.equal(toggleResponse.status, 200);
+
+  const extensionsResponse = await authenticatedFetch(`/api/extensions?cwd=${encodeURIComponent(workspace)}`);
+  assert.equal(extensionsResponse.status, 200);
+  assert.ok((await extensionsResponse.json()).extensions.some((extension) => extension.name === "built-extension"));
+
+  const pluginsResponse = await authenticatedFetch(`/api/plugins?cwd=${encodeURIComponent(workspace)}`);
+  assert.equal(pluginsResponse.status, 200);
+  assert.deepEqual((await pluginsResponse.json()).packages, []);
+});
+
 test("full history exports the managed Chat Session as standalone HTML", async () => {
   const inlineResponse = await authenticatedFetch(
     `/api/sessions/${encodeURIComponent(sessionId)}/export?inline=1`,
@@ -217,6 +267,8 @@ test("full history exports the managed Chat Session as standalone HTML", async (
   assert.equal(inlineResponse.status, 200);
   assert.match(inlineResponse.headers.get("content-type") ?? "", /text\/html/);
   assert.match(inlineResponse.headers.get("content-disposition") ?? "", /^inline;/);
+  assert.equal(inlineResponse.headers.get("x-frame-options"), "SAMEORIGIN");
+  assert.equal(inlineResponse.headers.get("content-security-policy"), "frame-ancestors 'self'");
   assert.equal(inlineResponse.headers.get("x-content-type-options"), "nosniff");
   const html = await inlineResponse.text();
   assert.match(html, /^<!DOCTYPE html>/);

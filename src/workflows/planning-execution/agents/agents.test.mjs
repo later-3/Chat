@@ -1,21 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  buildPlanningExecutionInput,
   buildPlanningPrompt,
-  PLANNING_EXECUTION_SYSTEM_PROMPT,
-  PLANNING_SYSTEM_PROMPT,
-} from "./workflows/planning-execution-prompts.ts";
+  PLANNER_AGENT,
+} from "./planner.ts";
+import { PLANNING_EXECUTION_AGENT } from "./pi-coding-agent.ts";
+import { buildPlanningExecutionInput } from "../context.ts";
 
 test("planner is instructed to use the current Session and only produce a plan", () => {
-  assert.match(PLANNING_SYSTEM_PROMPT, /当前Session历史/);
-  assert.match(PLANNING_SYSTEM_PROMPT, /不是执行任务/);
+  assert.equal(PLANNER_AGENT.systemPrompt.mode, "replace");
+  assert.match(PLANNER_AGENT.systemPrompt.text, /当前Session历史/);
+  assert.match(PLANNER_AGENT.systemPrompt.text, /不是执行任务/);
 });
 
 test("execution rules distinguish the user's request from Planner output", () => {
-  assert.match(PLANNING_EXECUTION_SYSTEM_PROMPT, /userRequest是用户原始输入/);
-  assert.match(PLANNING_EXECUTION_SYSTEM_PROMPT, /plannerOutput是Planner Agent的输出/);
-  assert.match(PLANNING_EXECUTION_SYSTEM_PROMPT, /不要只复述计划/);
+  const instructions = PLANNING_EXECUTION_AGENT.customInstructions.map((item) => item.text).join("\n");
+  assert.match(instructions, /userRequest是用户原始输入/);
+  assert.match(instructions, /plannerOutput是Planner Agent的输出/);
+  assert.match(instructions, /不要只复述计划/);
   const input = buildPlanningExecutionInput("original request", "one plan");
   assert.match(input, /"userRequest": "original request"/);
   assert.match(input, /"plannerOutput": "one plan"/);

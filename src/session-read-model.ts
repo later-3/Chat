@@ -7,6 +7,7 @@ import {
   type SessionEntry,
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
+import { ensureChatDataLayout } from "./chat-data.js";
 import { getChatSessionDir } from "./chat-session.js";
 import {
   collectChatWorkflowMessages,
@@ -60,9 +61,10 @@ function toListItems(infos: SessionInfo[]): ChatSessionListItem[] {
   });
 }
 
-/** 只枚举Chat自己的`.pi/sessions`，不会扫描用户主目录下的`~/.pi`。 */
+/** 只枚举Chat自己的`.chat/sessions`，不会扫描用户主目录下的`~/.pi`。 */
 export async function listChatSessions(): Promise<ChatSessionListItem[]> {
-  return toListItems(await SessionManager.listAll(getChatSessionDir()));
+  const { sessionDir } = await ensureChatDataLayout();
+  return toListItems(await SessionManager.listAll(sessionDir));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

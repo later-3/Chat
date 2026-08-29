@@ -1,8 +1,11 @@
+import type { AgentConfigSelection } from "./agent-config.js";
+
 export interface ChatWorkflowInput {
   readonly cwd: string;
   readonly prompt: string;
   readonly sessionId?: string;
   readonly workflowInvocationId: string;
+  readonly agentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
 }
 
 export interface ChatWorkflowResult {

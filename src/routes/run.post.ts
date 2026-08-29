@@ -4,7 +4,7 @@ import {
   parseChatWorkflowHttpInput,
   type ChatWorkflowHttpInput,
 } from "../run-request.js";
-import { MINIMAL_PI_CODING_AGENT_PROMPT } from "../workflows/minimal-pi-coding-agent.js";
+import { MINIMAL_PI_CODING_AGENT_PROMPT } from "../workflows/minimal-pi-coding-agent/index.js";
 import { localTimestamp } from "../runtime-log.js";
 import { startChatWorkflow } from "../workflows/start-chat-workflow.js";
 

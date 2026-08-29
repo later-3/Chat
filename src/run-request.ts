@@ -1,19 +1,28 @@
+import {
+  CHAT_WORKFLOW_IDS,
+  DEFAULT_CHAT_WORKFLOW_ID,
+  getChatWorkflowDefinition,
+  type ChatWorkflowId,
+} from "./workflows/registry.js";
+import {
+  parseAgentConfigSelection,
+  type AgentConfigSelection,
+} from "./workflows/agent-config.js";
+
 export const MAX_WORKFLOW_PROMPT_CHARS = 100_000;
 
-export const CHAT_WORKFLOW_IDS = [
-  "minimal-pi-coding-agent",
-  "planning-execution",
-] as const;
-
-export type ChatWorkflowId = (typeof CHAT_WORKFLOW_IDS)[number];
-
-export const DEFAULT_CHAT_WORKFLOW_ID: ChatWorkflowId = "minimal-pi-coding-agent";
+export {
+  CHAT_WORKFLOW_IDS,
+  DEFAULT_CHAT_WORKFLOW_ID,
+  type ChatWorkflowId,
+};
 
 export interface ChatWorkflowHttpInput {
   readonly cwd: string;
   readonly prompt: string;
   readonly sessionId?: string;
   readonly workflow: ChatWorkflowId;
+  readonly agentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -37,6 +46,7 @@ export function parseChatWorkflowHttpInput(
   const prompt = value.prompt ?? defaults.prompt;
   const sessionId = value.sessionId ?? defaults.sessionId;
   const workflow = value.workflow ?? defaults.workflow;
+  const rawAgentConfigs = value.agentConfigs ?? defaults.agentConfigs;
   if (typeof cwd !== "string" || cwd.trim() === "") {
     throw new Error("cwd必须是非空字符串");
   }
@@ -49,8 +59,19 @@ export function parseChatWorkflowHttpInput(
   if (sessionId !== undefined && (typeof sessionId !== "string" || sessionId.trim() === "")) {
     throw new Error("sessionId必须是非空字符串");
   }
-  if (!CHAT_WORKFLOW_IDS.some((candidate) => candidate === workflow)) {
+  if (typeof workflow !== "string" || getChatWorkflowDefinition(workflow) === undefined) {
     throw new Error(`workflow必须是${CHAT_WORKFLOW_IDS.join("或")}`);
+  }
+  let agentConfigs: Record<string, AgentConfigSelection> | undefined;
+  if (rawAgentConfigs !== undefined) {
+    if (!isRecord(rawAgentConfigs)) throw new Error("agentConfigs必须是对象");
+    const definition = getChatWorkflowDefinition(workflow);
+    const agentIds = new Set(definition?.agents.map((agent) => agent.id) ?? []);
+    agentConfigs = {};
+    for (const [agentId, selection] of Object.entries(rawAgentConfigs)) {
+      if (!agentIds.has(agentId)) throw new Error(`Workflow ${workflow}不存在Agent: ${agentId}`);
+      agentConfigs[agentId] = parseAgentConfigSelection(selection);
+    }
   }
 
   return {
@@ -58,5 +79,6 @@ export function parseChatWorkflowHttpInput(
     prompt,
     workflow: workflow as ChatWorkflowId,
     ...(sessionId === undefined ? {} : { sessionId }),
+    ...(agentConfigs === undefined ? {} : { agentConfigs }),
   };
 }

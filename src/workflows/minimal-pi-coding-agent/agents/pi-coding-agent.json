@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "pi-coding-agent",
+  "name": "Pi Coding Agent",
+  "description": "使用Pi Coding Agent原生能力直接处理用户请求。",
+  "systemPrompt": {
+    "mode": "pi-default"
+  },
+  "customInstructions": [],
+  "tools": {
+    "mode": "pi-default"
+  }
+}

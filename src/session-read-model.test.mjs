@@ -190,7 +190,7 @@ test("only base64 tool-result images are omitted from the initial payload", () =
   assert.match(context.messages[1].content[2].text, /1 tool result image omitted.*image\/png.*~4 bytes/);
 });
 
-test("session listing scans only Chat .pi/sessions", { concurrency: false }, async (t) => {
+test("session listing scans only Chat .chat/sessions", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-list-"));
   t.after(() => {
@@ -198,7 +198,7 @@ test("session listing scans only Chat .pi/sessions", { concurrency: false }, asy
     fs.rmSync(base, { recursive: true, force: true });
   });
   const workspace = path.join(base, "workspace");
-  const chatSessionDir = path.join(base, ".pi", "sessions");
+  const chatSessionDir = path.join(base, ".chat", "sessions");
   const unrelatedDir = path.join(base, "unrelated-sessions");
   fs.mkdirSync(workspace, { recursive: true });
   fs.mkdirSync(chatSessionDir, { recursive: true });

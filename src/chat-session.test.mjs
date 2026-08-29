@@ -33,7 +33,7 @@ test("Chat Session is created once and reopened by ID", { concurrency: false }, 
   assert.equal(reopened.manager.getSessionId(), created.manager.getSessionId());
   assert.equal(reopened.manager.getSessionFile(), created.manager.getSessionFile());
   assert.equal(reopened.manager.buildSessionContext().messages.length, 2);
-  assert.deepEqual(fs.readdirSync(path.join(base, ".pi", "sessions")), [
+  assert.deepEqual(fs.readdirSync(path.join(base, ".chat", "sessions")), [
     path.basename(created.manager.getSessionFile()),
   ]);
 });

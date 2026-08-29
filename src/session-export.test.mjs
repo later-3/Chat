@@ -42,7 +42,10 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
       provider: "test",
       model: "planner-model",
       api: "test",
-      content: [{ type: "text", text: "internal plan" }],
+      content: [
+        { type: "thinking", thinking: "planner reasoning" },
+        { type: "text", text: "internal plan" },
+      ],
       usage: {
         input: 1,
         output: 1,
@@ -68,11 +71,14 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
     },
   });
   manager.appendMessage({ role: "user", content: "history fixture", timestamp: Date.now() });
-  manager.appendMessage({
+  const executorMessageId = manager.appendMessage({
     role: "assistant",
     provider: "test",
     model: "test-model",
-    content: [{ type: "text", text: "history response" }],
+    content: [
+      { type: "thinking", thinking: "executor reasoning" },
+      { type: "text", text: "history response" },
+    ],
     timestamp: Date.now(),
   });
   const sessionFile = manager.getSessionFile();
@@ -93,9 +99,20 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
   assert.match(exported.html, /chatWorkflowMessageByEntryId/);
   assert.match(exported.html, /chatWorkflowAgentInputByEntryId/);
   assert.match(exported.html, /createChatAgentInput/);
-  assert.match(exported.html, /Model thinking/);
+  assert.match(exported.html, /agentLabel \+ " thinking"/);
   assert.match(exported.html, /Tool call and output/);
-  assert.match(exported.html, /Agent output/);
+  assert.match(exported.html, /agentLabel \+ " output"/);
+  assert.match(exported.html, /Session configuration/);
+  assert.match(exported.html, /effective model/);
+  assert.match(exported.html, /effective thinking level/);
+  assert.doesNotMatch(exported.html, /\? "Input"\s*:\s*"Agent event"/);
+  assert.match(exported.html, /function renderChatHistoryRegionEntry\(entry\)/);
+  assert.match(exported.html, /const html = renderEntry\(entry\)/);
+  assert.match(exported.html, /node\.querySelector\("\.copy-link-btn"\)\?\.remove\(\)/);
+  assert.doesNotMatch(
+    exported.html,
+    /const node = renderEntryToNode\(\{[\s\S]*?message: \{ \.\.\.message, content/,
+  );
   assert.match(exported.html, /activeStageContent/);
   const scripts = [...exported.html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
   const mainScript = scripts.at(-1)?.[1];
@@ -113,7 +130,15 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
   }]);
   assert.equal(sessionData.chatWorkflowMessages.length, 1);
   assert.equal(sessionData.chatWorkflowMessages[0].entryId, workflowMessageId);
-  assert.equal(sessionData.chatWorkflowMessages[0].message.content[0].text, "internal plan");
+  assert.deepEqual(sessionData.chatWorkflowMessages[0].message.content, [
+    { type: "thinking", thinking: "planner reasoning" },
+    { type: "text", text: "internal plan" },
+  ]);
+  const executorMessage = sessionData.entries.find((entry) => entry.id === executorMessageId);
+  assert.deepEqual(executorMessage.message.content, [
+    { type: "thinking", thinking: "executor reasoning" },
+    { type: "text", text: "history response" },
+  ]);
   assert.equal(sessionData.chatWorkflowAgentInputs.length, 2);
   const plannerInput = sessionData.chatWorkflowAgentInputs.find((input) => input.agentId === "planner");
   assert.equal(plannerInput.entryId, `derived-${agentInputId}`);

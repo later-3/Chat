@@ -1,7 +1,15 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { buildPlanningExecutionInput } from "./planning-execution-prompts.js";
 
 export const LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE = "planning-execution-handoff";
+
+/** Exact Workflow input supplied to Pi Coding Agent for this execution. */
+export function buildPlanningExecutionInput(userPrompt: string, plan: string): string {
+  return [
+    "<workflow_execution_input>",
+    JSON.stringify({ userRequest: userPrompt, plannerOutput: plan }, null, 2),
+    "</workflow_execution_input>",
+  ].join("\n");
+}
 
 /** Removes handoff messages written by older Chat builds before they reach the model. */
 export function stripLegacyPlanningHandoffs(messages: AgentMessage[]): AgentMessage[] {

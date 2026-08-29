@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   injectPlanningExecutionContext,
   stripLegacyPlanningHandoffs,
-} from "./planning-execution-context.ts";
+} from "./context.ts";
 
 test("legacy persisted handoffs are removed before the model sees Session history", () => {
   const messages = [

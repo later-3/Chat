@@ -8,11 +8,13 @@ import {
   registerFauxProvider,
 } from "@earendil-works/pi-ai/compat";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { runPiCodingAgentPromptStep } from "./minimal-pi-coding-agent.ts";
+import { runPiCodingAgentPromptStep } from "./minimal-pi-coding-agent/step.ts";
+import { PI_CODING_AGENT } from "./minimal-pi-coding-agent/agents/pi-coding-agent.ts";
+import { inspectWorkflowAgent } from "./agent-inspection.ts";
 import {
   runPlanningExecutionStep,
   runPlanningStep,
-} from "./planning-execution.ts";
+} from "./planning-execution/steps.ts";
 import {
   collectChatWorkflowAgentInputs,
   collectChatWorkflowMessages,
@@ -76,7 +78,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
   process.chdir(base);
   const workspace = path.join(base, "workspace");
   fs.mkdirSync(workspace);
-  writeFauxConfiguration(path.join(base, ".pi", "agent"), faux);
+  writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
 
   const calls = [];
   faux.setResponses([
@@ -128,9 +130,9 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
   assert.equal(last.sessionId, first.sessionId);
   assert.equal(execution.sessionFile, first.sessionFile);
   assert.equal(last.sessionFile, first.sessionFile);
-  assert.equal(fs.readdirSync(path.join(base, ".pi", "sessions")).length, 1);
+  assert.equal(fs.readdirSync(path.join(base, ".chat", "sessions")).length, 1);
 
-  const manager = SessionManager.open(first.sessionFile, path.join(base, ".pi", "sessions"));
+  const manager = SessionManager.open(first.sessionFile, path.join(base, ".chat", "sessions"));
   const workflowStages = manager.getEntries()
     .filter((entry) => entry.type === "custom" && entry.customType === "chat.workflow_stage")
     .map((entry) => entry.data);
@@ -242,7 +244,7 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
   process.chdir(base);
   const workspace = path.join(base, "workspace");
   fs.mkdirSync(workspace);
-  writeFauxConfiguration(path.join(base, ".pi", "agent"), faux);
+  writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
 
   const calls = [];
   faux.setResponses([
@@ -261,7 +263,7 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
     prompt: "first planned request",
     workflowInvocationId: "first-planning-invocation",
   });
-  const sessionDir = path.join(base, ".pi", "sessions");
+  const sessionDir = path.join(base, ".chat", "sessions");
   assert.equal(fs.readdirSync(sessionDir).length, 1);
 
   const execution = await runPlanningExecutionStep({
@@ -289,6 +291,113 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
   ));
 });
 
+test("Direct Workflow applies the selected Pi Coding Agent configuration", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-agent-config-workflow-"));
+  const faux = registerFauxProvider({ api: "chat-agent-config-faux", provider: "chat-agent-config-faux" });
+  t.after(() => {
+    faux.unregister();
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  process.chdir(base);
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace);
+  writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
+  const model = faux.getModel();
+  const skillDir = path.join(workspace, "skills", "configured-review");
+  fs.mkdirSync(skillDir, { recursive: true });
+  fs.writeFileSync(path.join(skillDir, "SKILL.md"), [
+    "---", "name: configured-review", "description: Configured review", "---", "Review configured output.",
+  ].join("\n"));
+  const configPath = path.join(workspace, "configured-agent.json");
+  fs.writeFileSync(configPath, JSON.stringify({
+    schemaVersion: 1,
+    id: "pi-coding-agent",
+    name: "Configured Pi Coding Agent",
+    description: "Integration test Agent",
+    model: { provider: model.provider, modelId: model.id },
+    thinkingLevel: "off",
+    systemPrompt: { mode: "replace", text: "Configured system prompt" },
+    customInstructions: ["Configured additional rule"],
+    tools: { mode: "explicit", names: ["read"], exclude: [] },
+    resources: {
+      mode: "explicit",
+      skillPaths: [skillDir],
+      extensionPaths: [],
+      pluginSources: [],
+    },
+  }));
+
+  const calls = [];
+  faux.setResponses([(context) => {
+    recordCall(calls, context);
+    return fauxAssistantMessage("configured response");
+  }]);
+  const result = await runPiCodingAgentPromptStep({
+    cwd: workspace,
+    prompt: "configured request",
+    workflowInvocationId: "configured-invocation",
+    agentConfigs: {
+      "pi-coding-agent": { primary: configPath },
+    },
+  });
+
+  assert.equal(result.text, "configured response");
+  assert.equal(result.model?.provider, model.provider);
+  assert.equal(result.model?.modelId, model.id);
+  assert.match(calls[0].systemPrompt, /Configured system prompt/);
+  assert.match(calls[0].systemPrompt, /<chat_agent_custom_instructions>/);
+  assert.match(calls[0].systemPrompt, /Configured additional rule/);
+  assert.match(calls[0].systemPrompt, /Configured review/);
+  assert.deepEqual(calls[0].toolNames, ["read"]);
+});
+
+test("Agent inspection uses the same resolved Prompt, resources and tools as execution", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-agent-inspection-"));
+  const faux = registerFauxProvider({ api: "chat-inspection-faux", provider: "chat-inspection-faux" });
+  t.after(() => {
+    faux.unregister();
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  process.chdir(base);
+  const workspace = path.join(base, "workspace");
+  const skillDir = path.join(workspace, "skills", "review");
+  fs.mkdirSync(skillDir, { recursive: true });
+  fs.writeFileSync(path.join(skillDir, "SKILL.md"), [
+    "---",
+    "name: review",
+    "description: Review code",
+    "---",
+    "Review the changed code carefully.",
+  ].join("\n"));
+  writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
+
+  const inspection = await inspectWorkflowAgent({
+    cwd: workspace,
+    defaultAgent: PI_CODING_AGENT,
+    selection: {
+      append: [],
+      resources: {
+        mode: "explicit",
+        skillPaths: [skillDir],
+        extensionPaths: [],
+        pluginSources: [],
+      },
+    },
+  });
+
+  assert.equal(inspection.agent.effectiveModel.provider, faux.getModel().provider);
+  assert.equal(inspection.skills.length, 1);
+  assert.equal(inspection.skills[0].name, "review");
+  assert.match(inspection.skills[0].content, /Review the changed code carefully/);
+  assert.match(inspection.prompt.final, /Review code/);
+  assert.ok(inspection.tools.some((tool) => tool.name === "read" && tool.active));
+  assert.deepEqual(inspection.extensions, []);
+});
+
 test("Pi auto-compaction remains part of the same Chat Session", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-compaction-"));
@@ -304,7 +413,7 @@ test("Pi auto-compaction remains part of the same Chat Session", { concurrency: 
   });
   process.chdir(base);
   const workspace = path.join(base, "workspace");
-  const agentDir = path.join(base, ".pi", "agent");
+  const agentDir = path.join(base, ".chat", "agent");
   fs.mkdirSync(workspace);
   writeFauxConfiguration(agentDir, faux, {
     compaction: { enabled: true, reserveTokens: 9_000, keepRecentTokens: 10 },
@@ -334,7 +443,7 @@ test("Pi auto-compaction remains part of the same Chat Session", { concurrency: 
   });
   assert.equal(first.text, firstResponse);
 
-  const managerAfterFirst = SessionManager.open(first.sessionFile, path.join(base, ".pi", "sessions"));
+  const managerAfterFirst = SessionManager.open(first.sessionFile, path.join(base, ".chat", "sessions"));
   assert.equal(managerAfterFirst.getEntries().filter((entry) => entry.type === "compaction").length, 1);
   assert.equal(managerAfterFirst.buildSessionContext().messages[0]?.role, "compactionSummary");
 

@@ -1,20 +1,24 @@
 # Chat：Pi Web前端与Pi Agent Workflow
 
-Chat当前实现两条可运行纵向：浏览器中的Pi Web前端向Chat提交普通文本Prompt并选择Workflow，Chat启动对应的Vercel Workflow，最后将Assistant回复和Pi Session展示在前端。
+Chat允许用户在同一个连续Session中逐轮选择Workflow。浏览器中的Pi Web派生前端把Prompt、Workflow和Agent配置选择提交给Chat，Chat启动对应的Vercel Workflow，并把Agent执行过程、Assistant回复和Pi Session展示在前端。
+
+Chat以Workflow作为一级管理对象。每个Workflow目录归拢自己的Workflow定义、Stage、Agent定义、专用Prompt、上下文适配和测试；HTTP、Session、Workflow Runtime及Pi Agent运行能力由公共代码提供。
+
+Pi、Pi Web与Chat的源码分析、需求推导和详细设计按顺序维护在[架构、需求与详细设计文档](./docs/architecture/README.md)中。当前README只描述已经实现并验证的运行方式，不替代上游架构分析。
 
 ## 架构
 
 ```text
 Chat/frontend（Pi Web纯浏览器前端子模块）
   → Chat Nitro HTTP API
-    ├── Session读取 → Chat/.pi/sessions
+    ├── Session读取 → Chat/.chat/sessions
     └── Vercel Workflow
-          ├── Minimal Pi Coding Agent → Pi Coding Agent
+          ├── Direct Workflow → Pi Coding Agent
           └── Planning + Execution
                 ├── Planner：无工具的Pi AgentSession，使用当前Chat Session的内存副本
                 └── Executor：Pi Coding Agent，继续当前Chat Session
-          ├── 配置 → Chat/.pi/agent
-          └── Session → Chat/.pi/sessions
+          ├── 配置与全局资源 → Chat/.chat/agent
+          └── Session → Chat/.chat/sessions
 ```
 
 前端可选择两个Workflow：
@@ -34,7 +38,15 @@ Chat仓库固定记录两个私有子模块的精确提交：
 Chat/
 ├── frontend/  Pi Web纯浏览器前端子模块
 ├── pi/        Pi Agent源码子模块
-├── src/       Chat HTTP API与Workflow
+├── src/workflows/
+│   ├── minimal-pi-coding-agent/  直接执行Workflow模块
+│   ├── planning-execution/       规划执行Workflow模块
+│   ├── registry.ts               后端Workflow注册事实源
+│   ├── agent-config.ts           Agent配置格式与校验
+│   ├── agent-config-loader.ts    配置文件读取、合并与路径解析
+│   └── agent-definition.ts       公共Pi AgentSession装配边界
+├── src/resources/                Skill、Extension与Plugin管理
+├── src/routes/                   Chat HTTP API
 └── ...
 ```
 
@@ -59,7 +71,7 @@ link:./pi/packages/coding-agent
 Chat只从以下目录管理Pi Session：
 
 ```text
-Chat/.pi/sessions
+Chat/.chat/sessions
 ```
 
 Session文件头中的`cwd`表示Agent实际操作的工作目录。浏览器只传`sessionId`：
@@ -129,6 +141,14 @@ GET /api/sessions/:sessionId
   → 返回Session消息和树
 GET /api/sessions/:sessionId/export
   → 导出按Workflow、Stage和Agent整理的完整历史HTML
+GET /api/workflows
+  → 返回后端注册的Workflow、Stage和Agent定义
+POST /api/workflows/:workflowId/agents/:agentId/resolve
+  → 按实际Pi AgentSession装配过程返回Agent配置、最终Prompt、Tools和资源
+GET/PATCH /api/skills
+GET/POST /api/extensions
+GET/POST /api/plugins
+  → 管理Chat控制的Pi全局资源并供Workflow内Agent选择
 GET /api/files/[...path]
   → 在Chat授权的工作目录内列出、读取、下载和预览文件
 ```
@@ -176,9 +196,9 @@ http://127.0.0.1:43112/
 ## 需要持久化但不能提交的目录
 
 ```text
-Chat/.pi/agent/       Pi模型、设置和认证配置
-Chat/.pi/sessions/    Pi Coding Agent Session
-Chat/.workflow-data/  Workflow Run、Step和Event
+Chat/.chat/agent/          Pi模型、设置、认证与全局资源
+Chat/.chat/sessions/       Pi Coding Agent Session
+Chat/.chat/workflow-data/  Workflow Run、Step和Event
 ```
 
-部署到其他环境时，使用`--recurse-submodules`克隆Chat，准备两个私有子模块的Git读取凭证，安装依赖、构建Pi、准备`.pi/agent`私有配置并执行`pnpm verify`。必须在目标操作系统和CPU架构上构建，不能把其他机器的`.output`直接复制过去。Pi Web不再作为独立后端或独立服务启动；完整的可移植部署步骤、私有配置清单和验收命令见[部署指南](./docs/deployment.md)。
+部署到其他环境时，使用`--recurse-submodules`克隆Chat，准备两个私有子模块的Git读取凭证，安装依赖、构建Pi、准备`.chat/agent`私有配置并执行`pnpm verify`。必须在目标操作系统和CPU架构上构建，不能把其他机器的`.output`直接复制过去。Pi Web不再作为独立后端或独立服务启动；完整的可移植部署步骤、私有配置清单和验收命令见[部署指南](./docs/deployment.md)。

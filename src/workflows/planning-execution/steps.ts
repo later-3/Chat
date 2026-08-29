@@ -1,56 +1,41 @@
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { openChatSession } from "../../chat-session.js";
+import { localTimestamp } from "../../runtime-log.js";
 import {
-  createAgentSession,
-  DefaultResourceLoader,
-  SessionManager,
-  SettingsManager,
-} from "@earendil-works/pi-coding-agent";
-import { openChatSession } from "../chat-session.js";
-import { localTimestamp } from "../runtime-log.js";
-import { subscribeAgentSessionLog } from "./agent-session-log.js";
-import {
-  buildPlanningPrompt,
-  MAX_PLANNING_RESULT_CHARS,
-  PLANNING_EXECUTION_SYSTEM_PROMPT,
-  PLANNING_SYSTEM_PROMPT,
-} from "./planning-execution-prompts.js";
-import {
-  injectPlanningExecutionContext,
-  stripLegacyPlanningHandoffs,
-} from "./planning-execution-context.js";
-import type { ChatWorkflowInput, ChatWorkflowResult } from "./types.js";
+  createWorkflowAgentSession,
+  resolveWorkflowAgentDefinition,
+  type AgentConfigSelection,
+} from "../agent-definition.js";
+import { subscribeAgentSessionLog } from "../agent-session-log.js";
+import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 import {
   appendChatWorkflowAgentInput,
   appendChatWorkflowMessage,
   appendChatWorkflowStage,
-} from "./workflow-stage.js";
+} from "../workflow-stage.js";
+import {
+  buildPlanningPrompt,
+  MAX_PLANNING_RESULT_CHARS,
+  PLANNER_AGENT,
+} from "./agents/planner.js";
+import { PLANNING_EXECUTION_AGENT } from "./agents/pi-coding-agent.js";
+import {
+  injectPlanningExecutionContext,
+  stripLegacyPlanningHandoffs,
+} from "./context.js";
 
 interface PlanningStepResult {
   readonly sessionId: string;
   readonly plan: string;
 }
 
-interface PlanningExecutionStepInput {
+export interface PlanningExecutionStepInput {
   readonly cwd: string;
   readonly sessionId: string;
   readonly workflowInvocationId: string;
   readonly prompt: string;
   readonly plan: string;
-}
-
-/** Runs Planner Agent and Pi Coding Agent sequentially in one Chat Session. */
-export async function planningExecutionWorkflow(
-  input: ChatWorkflowInput,
-): Promise<ChatWorkflowResult> {
-  "use workflow";
-
-  const planning = await runPlanningStep(input);
-  return runPlanningExecutionStep({
-    cwd: input.cwd,
-    sessionId: planning.sessionId,
-    workflowInvocationId: input.workflowInvocationId,
-    prompt: input.prompt,
-    plan: planning.plan,
-  });
+  readonly agentConfig?: AgentConfigSelection;
 }
 
 export async function runPlanningStep(
@@ -64,35 +49,30 @@ export async function runPlanningStep(
     invocationId: input.workflowInvocationId,
     workflowId: "planning-execution",
     stageId: "plan",
-    agentId: "planner",
+    agentId: PLANNER_AGENT.id,
   });
   appendChatWorkflowAgentInput(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: "planning-execution",
     stageId: "plan",
-    agentId: "planner",
+    agentId: PLANNER_AGENT.id,
     userPrompt: input.prompt,
   });
   const plannerSessionManager = SessionManager.forkInMemory(chatSession.manager);
-  const settingsManager = SettingsManager.create(chatSession.cwd, chatSession.agentDir);
-  const resourceLoader = new DefaultResourceLoader({
-    cwd: chatSession.cwd,
-    agentDir: chatSession.agentDir,
-    settingsManager,
-    systemPromptOverride: () => PLANNING_SYSTEM_PROMPT,
-    appendSystemPromptOverride: () => [],
-  });
-  await resourceLoader.reload();
 
   console.log(`${localTimestamp()} [planner] step starting cwd=${chatSession.cwd}`);
   console.log(`${localTimestamp()} [planner] creating AgentSession`);
-  const { session, modelFallbackMessage } = await createAgentSession({
+  const agent = await resolveWorkflowAgentDefinition({
+    defaultAgent: PLANNER_AGENT,
     cwd: chatSession.cwd,
-    agentDir: chatSession.agentDir,
+    ...(input.agentConfigs?.[PLANNER_AGENT.id] === undefined
+      ? {}
+      : { selection: input.agentConfigs[PLANNER_AGENT.id] }),
+  });
+  const { session, modelFallbackMessage } = await createWorkflowAgentSession({
+    chatSession,
     sessionManager: plannerSessionManager,
-    settingsManager,
-    resourceLoader,
-    noTools: "all",
+    agent,
     transformContext: stripLegacyPlanningHandoffs,
   });
   if (modelFallbackMessage !== undefined) {
@@ -105,7 +85,7 @@ export async function runPlanningStep(
   const observer = subscribeAgentSessionLog(session, "planner", {
     workflowId: "planning-execution",
     stageId: "plan",
-    agentId: "planner",
+    agentId: PLANNER_AGENT.id,
   });
   let completed = false;
   try {
@@ -122,7 +102,7 @@ export async function runPlanningStep(
       invocationId: input.workflowInvocationId,
       workflowId: "planning-execution",
       stageId: "plan",
-      agentId: "planner",
+      agentId: PLANNER_AGENT.id,
       message: plannerMessage,
     });
     chatSession.manager.flush();
@@ -130,10 +110,7 @@ export async function runPlanningStep(
       `${localTimestamp()} [planner] completed chars=${plan.length} elapsedMs=${Date.now() - stepStartedAt}`,
     );
     completed = true;
-    return {
-      sessionId: chatSession.manager.getSessionId(),
-      plan,
-    };
+    return { sessionId: chatSession.manager.getSessionId(), plan };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(
@@ -158,38 +135,32 @@ export async function runPlanningExecutionStep(
     invocationId: input.workflowInvocationId,
     workflowId: "planning-execution",
     stageId: "execute",
-    agentId: "pi-coding-agent",
+    agentId: PLANNING_EXECUTION_AGENT.id,
   });
   appendChatWorkflowAgentInput(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: "planning-execution",
     stageId: "execute",
-    agentId: "pi-coding-agent",
+    agentId: PLANNING_EXECUTION_AGENT.id,
     userPrompt: input.prompt,
     upstream: {
       stageId: "plan",
-      agentId: "planner",
+      agentId: PLANNER_AGENT.id,
       output: input.plan,
     },
   });
   console.log(`${localTimestamp()} [pi] planning execution step starting cwd=${chatSession.cwd}`);
   console.log(`${localTimestamp()} [pi] creating AgentSession`);
 
-  const settingsManager = SettingsManager.create(chatSession.cwd, chatSession.agentDir);
-  const resourceLoader = new DefaultResourceLoader({
+  const agent = await resolveWorkflowAgentDefinition({
+    defaultAgent: PLANNING_EXECUTION_AGENT,
     cwd: chatSession.cwd,
-    agentDir: chatSession.agentDir,
-    settingsManager,
-    appendSystemPromptOverride: (base) => [...base, PLANNING_EXECUTION_SYSTEM_PROMPT],
+    ...(input.agentConfig === undefined ? {} : { selection: input.agentConfig }),
   });
-  await resourceLoader.reload();
-
-  const { session, modelFallbackMessage } = await createAgentSession({
-    cwd: chatSession.cwd,
-    agentDir: chatSession.agentDir,
+  const { session, modelFallbackMessage } = await createWorkflowAgentSession({
+    chatSession,
     sessionManager: chatSession.manager,
-    settingsManager,
-    resourceLoader,
+    agent,
     transformContext: (messages) => injectPlanningExecutionContext(
       messages,
       input.prompt,
@@ -212,7 +183,7 @@ export async function runPlanningExecutionStep(
   const observer = subscribeAgentSessionLog(session, "pi", {
     workflowId: "planning-execution",
     stageId: "execute",
-    agentId: "pi-coding-agent",
+    agentId: PLANNING_EXECUTION_AGENT.id,
   });
   try {
     await session.prompt(input.prompt);
@@ -243,6 +214,5 @@ export async function runPlanningExecutionStep(
 }
 
 // Agent Steps can append messages and change files before reporting a failure.
-// Automatic Step retries would repeat those effects.
 runPlanningStep.maxRetries = 0;
 runPlanningExecutionStep.maxRetries = 0;

@@ -1,10 +1,10 @@
-import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   type SessionEntry,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import { LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE } from "./workflows/planning-execution-context.js";
+import { ensureChatDataLayout, getChatDataPaths } from "./chat-data.js";
+import { LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE } from "./workflows/planning-execution/context.js";
 import { collectChatWorkflowStageMarkers } from "./workflows/workflow-stage.js";
 
 export interface ChatSessionInput {
@@ -20,11 +20,11 @@ export interface ChatSession {
 }
 
 export function getChatAgentDir(): string {
-  return resolve(process.cwd(), ".pi/agent");
+  return getChatDataPaths().agentDir;
 }
 
 export function getChatSessionDir(): string {
-  return resolve(process.cwd(), ".pi/sessions");
+  return getChatDataPaths().sessionDir;
 }
 
 /** Keeps obsolete Chat-internal handoffs out of restore and compaction context. */
@@ -65,10 +65,7 @@ function configureChatSessionManager(manager: SessionManager): SessionManager {
  */
 export async function openChatSession(input: ChatSessionInput): Promise<ChatSession> {
   const cwd = resolve(input.cwd);
-  const agentDir = getChatAgentDir();
-  const sessionDir = getChatSessionDir();
-  await mkdir(agentDir, { recursive: true, mode: 0o700 });
-  await mkdir(sessionDir, { recursive: true, mode: 0o700 });
+  const { agentDir, sessionDir } = await ensureChatDataLayout();
 
   if (input.sessionId === undefined) {
     return {

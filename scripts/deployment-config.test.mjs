@@ -47,8 +47,8 @@ test("server and Cloudflare examples expose only the intended Chat origin", () =
   assert.match(environment, /CHAT_WEB_AUTH_PASSWORD=123456/);
   assert.match(deployment, /--branch codex\/pi-web-frontend-in-chat/);
   assert.match(deployment, /不能跨平台复制/);
-  assert.match(deployment, /\.pi\/agent\/models\.json/);
-  assert.match(deployment, /\.pi\/agent\/auth\.json/);
+  assert.match(deployment, /\.chat\/agent\/models\.json/);
+  assert.match(deployment, /\.chat\/agent\/auth\.json/);
   assert.match(deployment, /sudo -u chat -H sh -lc 'cd \/opt\/chat && pnpm verify'/);
   assert.match(packageJson.scripts["pi:prepare"], /pi:hydrate-model-data/);
   assert.match(packageJson.scripts["pi:hydrate-model-data"], /hydrate:model-data/);
