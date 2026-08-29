@@ -70,3 +70,12 @@ git submodule update --init --recursive
 ```
 
 部署环境不要执行`git submodule update --remote`，因为该命令会绕过父仓库固定的commit。
+
+发布Chat父仓库前必须确认两个gitlink指向的对象已经推送到各自私有Fork：
+
+```bash
+git -C pi branch -r --contains HEAD
+git -C frontend branch -r --contains HEAD
+```
+
+两个命令都应显示对应的`origin/codex/*`分支。否则当前开发机能够构建，但其他环境在`git submodule update`时会找不到子模块Commit。

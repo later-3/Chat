@@ -13,8 +13,7 @@ test("macOS production and relay templates point at the built Chat service", () 
   const relayScript = read("scripts/service/run-chat-cloud-relay.sh");
 
   assert.match(production, /\.output\/server\/index\.mjs/);
-  assert.match(production, /<key>PORT<\/key>\s*<string>43110<\/string>/);
-  assert.match(production, /https:\/\/chat\.ai4child\.asia/);
+  assert.match(production, /--env-file=__ENV_FILE__/);
   assert.doesNotMatch(production, /scripts\/dev\/start\.mjs/);
 
   assert.match(directTunnel, /com\.later\.chat\.cloudflare-direct/);
@@ -35,6 +34,7 @@ test("server and Cloudflare examples expose only the intended Chat origin", () =
   const cloudCloudflared = read("deploy/cloudflared/cloud-relay.example.yml");
   const nginx = read("deploy/nginx/chat.conf");
   const environment = read("deploy/chat.env.example");
+  const deployment = read("docs/deployment.md");
 
   assert.match(systemd, /\/opt\/chat\/\.output\/server\/index\.mjs/);
   assert.match(macCloudflared, /hostname: chat\.ai4child\.asia/);
@@ -44,4 +44,9 @@ test("server and Cloudflare examples expose only the intended Chat origin", () =
   assert.match(nginx, /server 127\.0\.0\.1:33051/);
   assert.match(environment, /CHAT_WEB_AUTH_USERNAME=later/);
   assert.match(environment, /CHAT_WEB_AUTH_PASSWORD=123456/);
+  assert.match(deployment, /--branch codex\/pi-web-frontend-in-chat/);
+  assert.match(deployment, /不能跨平台复制/);
+  assert.match(deployment, /\.pi\/agent\/models\.json/);
+  assert.match(deployment, /\.pi\/agent\/auth\.json/);
+  assert.match(deployment, /sudo -u chat -H sh -lc 'cd \/opt\/chat && pnpm verify'/);
 });

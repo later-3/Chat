@@ -19,7 +19,7 @@
     "build:frontend": "pnpm --dir frontend build",
     "typecheck": "tsc --noEmit && pnpm --dir frontend typecheck",
     "test": "pnpm test:backend && pnpm test:frontend",
-    "test:backend": "node --experimental-strip-types --test src/*.test.mjs src/**/*.test.mjs scripts/deployment-config.test.mjs",
+    "test:backend": "node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types --test src/*.test.mjs src/**/*.test.mjs scripts/deployment-config.test.mjs",
     "test:frontend": "pnpm --dir frontend test",
     "test:built": "node --test scripts/built-server.test.mjs",
     "verify": "pnpm test && pnpm typecheck && pnpm build && pnpm test:built"
@@ -34,6 +34,7 @@
     "workflow": "4.8.5"
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "link:./pi/packages/ai",
     "@types/node": "^24.0.0",
     "typescript": "5.9.3"
   },

@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test, { after, before } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { appendChatWorkflowStage } from "../src/workflows/workflow-stage.ts";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const serverEntry = path.join(projectRoot, ".output/server/index.mjs");
@@ -68,6 +69,12 @@ before(async () => {
   fs.writeFileSync(path.join(workspace, "fixture.md"), "# Built server fixture\n");
 
   const manager = SessionManager.create(workspace, sessionDir);
+  appendChatWorkflowStage(manager, {
+    invocationId: "built-history-invocation",
+    workflowId: "minimal-pi-coding-agent",
+    stageId: "execute",
+    agentId: "pi-coding-agent",
+  });
   manager.appendMessage({ role: "user", content: "fixture prompt", timestamp: Date.now() });
   manager.appendMessage({
     role: "assistant",
@@ -201,6 +208,23 @@ test("session list and detail come from the isolated Chat session directory", as
   const detail = await detailResponse.json();
   assert.deepEqual(detail.context.messages.map((message) => message.role), ["user", "assistant"]);
   assert.equal(detail.context.messages.length, detail.context.entryIds.length);
+});
+
+test("full history exports the managed Chat Session as standalone HTML", async () => {
+  const inlineResponse = await authenticatedFetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/export?inline=1`,
+  );
+  assert.equal(inlineResponse.status, 200);
+  assert.match(inlineResponse.headers.get("content-type") ?? "", /text\/html/);
+  assert.match(inlineResponse.headers.get("content-disposition") ?? "", /^inline;/);
+  assert.equal(inlineResponse.headers.get("x-content-type-options"), "nosniff");
+  const html = await inlineResponse.text();
+  assert.match(html, /^<!DOCTYPE html>/);
+  assert.match(html, /id="chat-workflow-history-styles"/);
+  assert.match(html, /createChatWorkflowGroup/);
+
+  const missingResponse = await authenticatedFetch("/api/sessions/not-a-chat-session/export?inline=1");
+  assert.equal(missingResponse.status, 404);
 });
 
 test("file list, metadata, and text reads use the Pi Web-compatible contract", async () => {

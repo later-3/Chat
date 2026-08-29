@@ -11,16 +11,16 @@ Chat/frontend（Pi Web纯浏览器前端子模块）
     └── Vercel Workflow
           ├── Minimal Pi Coding Agent → Pi Coding Agent
           └── Planning + Execution
-                ├── Planner：pi-agent-core，无工具、不创建Session
-                └── Executor：Pi Coding Agent
-                      ├── 配置 → Chat/.pi/agent
-                      └── Session → Chat/.pi/sessions
+                ├── Planner：无工具的Pi AgentSession，使用当前Chat Session的内存副本
+                └── Executor：Pi Coding Agent，继续当前Chat Session
+          ├── 配置 → Chat/.pi/agent
+          └── Session → Chat/.pi/sessions
 ```
 
 前端可选择两个Workflow：
 
 - `minimal-pi-coding-agent`（直接执行）：一个Step直接运行Pi Coding Agent。
-- `planning-execution`（规划执行）：`pi-agent-core` Planner先生成计划，Executor再按计划运行Pi Coding Agent。Planner没有工具且不创建Session；计划通过执行阶段的补充系统指令传递，Pi Session仍保存用户原始消息。
+- `planning-execution`（规划执行）：Planner Agent先生成计划，Executor再按计划运行Pi Coding Agent。Planner使用从当前Chat Session复制出的内存Session，不创建第二个持久Session文件；Planner输出、Executor输入来源和两个Stage的Agent身份都记录在同一个Chat Session中。Executor收到用户原话和Planner输出，但持久对话仍保留用户原始消息。
 
 Pi Web不再作为独立服务运行。它原来的Next.js后端、`app/api`、Agent RPC服务和Session文件读取代码都不属于运行架构。前端不能导入Pi SDK，也不能直接读取文件系统。
 
@@ -117,6 +117,8 @@ pnpm dev:frontend
 ```text
 POST /runs
   → 校验workflow字段并返回Workflow Run ID
+GET /runs/:runId/events
+  → 按顺序流式返回Stage、Thinking、文本与工具执行事件
 GET /runs/:runId
   → 查询状态和最终结果
 DELETE /runs/:runId
@@ -125,6 +127,8 @@ GET /api/sessions
   → 返回Chat管理的Session列表
 GET /api/sessions/:sessionId
   → 返回Session消息和树
+GET /api/sessions/:sessionId/export
+  → 导出按Workflow、Stage和Agent整理的完整历史HTML
 GET /api/files/[...path]
   → 在Chat授权的工作目录内列出、读取、下载和预览文件
 ```
@@ -177,4 +181,4 @@ Chat/.pi/sessions/    Pi Coding Agent Session
 Chat/.workflow-data/  Workflow Run、Step和Event
 ```
 
-部署到其他环境时，使用`--recurse-submodules`克隆Chat，准备两个私有子模块的Git读取凭证，安装依赖、构建Pi、准备`.pi/agent`私有配置并执行`pnpm build`。Pi Web不再作为独立后端或独立服务启动。
+部署到其他环境时，使用`--recurse-submodules`克隆Chat，准备两个私有子模块的Git读取凭证，安装依赖、构建Pi、准备`.pi/agent`私有配置并执行`pnpm verify`。必须在目标操作系统和CPU架构上构建，不能把其他机器的`.output`直接复制过去。Pi Web不再作为独立后端或独立服务启动；完整的可移植部署步骤、私有配置清单和验收命令见[部署指南](./docs/deployment.md)。

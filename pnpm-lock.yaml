@@ -39,6 +39,9 @@ importers:
         specifier: 4.8.5
         version: 4.8.5(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.1(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@opentelemetry/api@1.9.0)(@swc/cli@0.8.1(@swc/core@1.15.3)(chokidar@5.0.0))(@swc/core@1.15.3)(typescript@5.9.3)
     devDependencies:
+      '@earendil-works/pi-ai':
+        specifier: link:./pi/packages/ai
+        version: link:pi/packages/ai
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3

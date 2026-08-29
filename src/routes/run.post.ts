@@ -1,16 +1,12 @@
 import { createError, defineEventHandler, readBody } from "nitro/h3";
-import { start } from "workflow/api";
 import {
   DEFAULT_CHAT_WORKFLOW_ID,
   parseChatWorkflowHttpInput,
   type ChatWorkflowHttpInput,
 } from "../run-request.js";
-import {
-  MINIMAL_PI_CODING_AGENT_PROMPT,
-  minimalPiCodingAgentWorkflow,
-} from "../workflows/minimal-pi-coding-agent.js";
-import { planningExecutionWorkflow } from "../workflows/planning-execution.js";
+import { MINIMAL_PI_CODING_AGENT_PROMPT } from "../workflows/minimal-pi-coding-agent.js";
 import { localTimestamp } from "../runtime-log.js";
+import { startChatWorkflow } from "../workflows/start-chat-workflow.js";
 
 /**
  * Nitro从`src/routes`扫描HTTP路由文件。当前文件名决定了请求方法和路径：
@@ -42,19 +38,15 @@ export default defineEventHandler(async (event) => {
   }
 
   /**
-   * `start()`创建并调度一次Workflow Run，返回的对象提供Run ID和结果Promise。
+   * `startChatWorkflow()`调用Workflow Runtime创建一次Run，返回Run ID和结果Promise。
    * 变量名`workflowRun`与HTTP路径`/run`没有关联。
    *
-   * 第二个参数是传给Workflow函数的参数数组。当前Workflow只接收一个对象，
-   * 所以数组中只有一个对象。无请求体时，`input`使用固定Prompt和Nitro进程
-   * 的启动目录；显式请求体可以传入其他Prompt和工作目录。
+   * 无请求体时，`input`使用固定Prompt和Nitro进程的启动目录；显式请求体
+   * 可以传入其他Prompt和工作目录。
    */
-  const { workflow, ...workflowInput } = input;
-  const workflowRun = workflow === "planning-execution"
-    ? await start(planningExecutionWorkflow, [workflowInput])
-    : await start(minimalPiCodingAgentWorkflow, [workflowInput]);
+  const { run: workflowRun, workflow, workflowInvocationId } = await startChatWorkflow(input);
   console.log(
-    `${localTimestamp()} [workflow] started workflow=${workflow} runId=${workflowRun.runId} elapsedMs=${Date.now() - requestStartedAt}`,
+    `${localTimestamp()} [workflow] started workflow=${workflow} invocationId=${workflowInvocationId} runId=${workflowRun.runId} elapsedMs=${Date.now() - requestStartedAt}`,
   );
 
   try {

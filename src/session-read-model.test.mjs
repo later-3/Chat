@@ -9,6 +9,10 @@ import {
   normalizeMessageForFrontend,
   projectSessionContext,
 } from "./session-read-model.ts";
+import {
+  appendChatWorkflowMessage,
+  appendChatWorkflowStage,
+} from "./workflows/workflow-stage.ts";
 
 function userEntry(id, parentId, content) {
   return {
@@ -107,6 +111,58 @@ test("historical thinking is deferred only when requested", () => {
     deferred: true,
   });
   assert.equal(projectSessionContext(entries).messages[1].content[0].thinking, "large reasoning");
+});
+
+test("Planner output stays visible after the user request without entering Pi context", () => {
+  const manager = SessionManager.inMemory("/workspace");
+  appendChatWorkflowStage(manager, {
+    invocationId: "invocation-1",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+  });
+  const plannerEntryId = appendChatWorkflowMessage(manager, {
+    invocationId: "invocation-1",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+    message: {
+      role: "assistant",
+      provider: "test",
+      model: "planner-model",
+      content: [
+        { type: "thinking", thinking: "planner reasoning" },
+        { type: "text", text: "planner plan" },
+      ],
+      timestamp: 2,
+    },
+  });
+  appendChatWorkflowStage(manager, {
+    invocationId: "invocation-1",
+    workflowId: "planning-execution",
+    stageId: "execute",
+    agentId: "pi-coding-agent",
+  });
+  const userEntryId = manager.appendMessage({ role: "user", content: "original request", timestamp: 3 });
+  const executorEntryId = manager.appendMessage({
+    role: "assistant",
+    provider: "test",
+    model: "executor-model",
+    content: [{ type: "text", text: "final answer" }],
+    timestamp: 4,
+  });
+
+  const projected = projectSessionContext(manager.getEntries(), undefined, { deferThinking: true });
+  assert.deepEqual(projected.messages.map((message) => message.role), ["user", "assistant", "assistant"]);
+  assert.deepEqual(projected.entryIds, [userEntryId, plannerEntryId, executorEntryId]);
+  assert.equal(projected.messages[0].content, "original request");
+  assert.equal(projected.messages[1].content[0].thinking, "planner reasoning");
+  assert.equal(projected.messages[1].chatWorkflow.agentId, "planner");
+  assert.equal(projected.messages[2].content[0].text, "final answer");
+  assert.deepEqual(
+    manager.buildSessionContext().messages.map((message) => message.role),
+    ["user", "assistant"],
+  );
 });
 
 test("only base64 tool-result images are omitted from the initial payload", () => {

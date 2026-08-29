@@ -1,6 +1,6 @@
 import { createError, defineEventHandler, getRouterParam, setResponseHeader } from "nitro/h3";
 import { getRun } from "workflow/api";
-import type { MinimalPiCodingAgentWorkflowResult } from "../../workflows/minimal-pi-coding-agent.js";
+import type { ChatWorkflowResult } from "../../workflows/types.js";
 
 /** 返回一次Workflow Run的当前状态；只有完成后才包含`result`。 */
 export default defineEventHandler(async (event) => {
@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   if (!runId) throw createError({ statusCode: 400, statusMessage: "缺少runId" });
   setResponseHeader(event, "Cache-Control", "no-store");
 
-  const workflowRun = getRun<MinimalPiCodingAgentWorkflowResult>(runId);
+  const workflowRun = getRun<ChatWorkflowResult>(runId);
   let status;
   try {
     status = await workflowRun.status;

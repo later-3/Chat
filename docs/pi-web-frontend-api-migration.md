@@ -27,8 +27,9 @@ Chat/frontend（纯浏览器）
 | 前端能力 | Pi Web原接口 | Chat接口 | 当前实现 | 最终责任 |
 |---|---|---|---|---|
 | 发送普通文本Prompt | `POST /api/chat-workflow` | `POST /runs` | 当前纵向，由Chat替代 | 浏览器提交白名单`workflow`字段，Chat启动直接执行或规划执行Workflow并由浏览器轮询Run状态 |
-| 取消运行 | 原Adapter转调Chat | `DELETE /runs/:runId` | 后端已有，前端阻塞调用尚未接入Run ID取消 | Chat取消Workflow Run |
-| 查询运行 | 原Adapter轮询Chat | `GET /runs/:runId` | 后端已有 | Chat返回Workflow状态和最终结果 |
+| 取消运行 | 原Adapter转调Chat | `DELETE /runs/:runId` | 当前纵向 | 浏览器取消请求时同步取消Chat Workflow Run |
+| 查询运行 | 原Adapter轮询Chat | `GET /runs/:runId` | 当前纵向 | Chat返回Workflow状态和最终结果 |
+| 展示Agent执行过程 | 原Agent RPC事件 | `GET /runs/:runId/events` | 当前纵向，由Chat替代 | Chat按Stage流式返回Thinking、文本、Tool Call和Tool Result事件 |
 | Session列表 | `GET /api/sessions` | `GET /api/sessions` | 当前纵向 | Chat只扫描`Chat/.pi/sessions` |
 | Session详情 | `GET /api/sessions/:id` | 同路径 | 当前纵向，只读 | Chat按Session ID读取Pi Session |
 | Session上下文 | `GET /api/sessions/:id/context` | 同路径 | 当前纵向，只读 | Chat投影消息、节点ID、模型和Thinking Level |
@@ -47,7 +48,7 @@ Chat/frontend（纯浏览器）
 | `PATCH /api/sessions/:id` | Session重命名 | 待迁移 | Chat按Session ID调用Pi Session元数据能力 |
 | `DELETE /api/sessions/:id` | 删除Session | 待迁移 | Chat校验目标与并发状态后删除 |
 | `GET /api/sessions/:id/entries/:entryId/thinking` | 延迟加载Thinking | 待迁移 | Chat只返回指定Session节点的展示内容 |
-| `GET /api/sessions/:id/export` | 导出Session | 待迁移 | Chat生成下载响应，浏览器不读取路径 |
+| `GET /api/sessions/:id/export` | 导出Session | 当前纵向 | Chat基于Pi导出完整历史，并按Workflow、Stage和Agent整理输入、Thinking、工具调用与输出和最终回复 |
 | `GET /api/sessions/:id/state` | 页面状态恢复 | 待迁移 | 评估保留Pi格式或改为Chat前端偏好 |
 
 ### 4.2 文件、目录与Git
@@ -98,7 +99,7 @@ Chat/frontend（纯浏览器）
 | `GET/POST/DELETE /api/push` | Web Push状态、订阅和取消 | 待迁移 | Chat持有订阅和通知发送 |
 | `GET /api/app-update` | 前端更新提示 | 待迁移 | 改为Chat版本与发布来源 |
 | `POST /api/devices/select` | 多设备切换 | 待迁移 | Chat设备目录和连接策略 |
-| `GET /api/health` | 健康检查 | 待迁移 | Chat进程和关键依赖的轻量健康状态 |
+| `GET /api/health` | 健康检查 | 当前纵向 | 匿名返回Chat进程的轻量健康状态 |
 
 ## 5. 迁移规则
 
@@ -119,6 +120,8 @@ Chat/frontend（纯浏览器）
 - 文件路径拒绝目录前缀伪装、`..`穿越和符号链接逃逸。
 - 前后端对图片、音频、PDF和DOCX类型的判断一致。
 - Workflow输入区分新Session与已有Session，并只接受`minimal-pi-coding-agent`或`planning-execution`两个注册值。
+- Workflow过程通过可恢复读取的NDJSON事件流传给浏览器，Planner输出不会在Executor开始后被替换。
+- 完整历史保留Pi实际持久化的Thinking与工具数据，并展示每个Agent Stage收到的真实输入来源。
 - 构建后的单进程同时提供前端、Session API和文件API。
 - 默认Web账号可以登录，未认证请求不能访问Session、文件和Workflow API。
 - PWA manifest、Service Worker、离线页和图标在构建产物中保持可安装。

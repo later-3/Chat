@@ -6,10 +6,11 @@
   <key>Label</key>
   <string>com.later.chat.production</string>
 
-  <!-- 安装时将__CHAT_ROOT__、__NODE__、__HOME__和__LOG_DIR__替换为真实绝对路径。 -->
+  <!-- 安装时将__CHAT_ROOT__、__NODE__、__ENV_FILE__、__HOME__和__LOG_DIR__替换为真实绝对路径。 -->
   <key>ProgramArguments</key>
   <array>
     <string>__NODE__</string>
+    <string>--env-file=__ENV_FILE__</string>
     <string>__CHAT_ROOT__/.output/server/index.mjs</string>
   </array>
 
@@ -24,16 +25,6 @@
     <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
     <key>NODE_ENV</key>
     <string>production</string>
-    <key>HOST</key>
-    <string>127.0.0.1</string>
-    <key>PORT</key>
-    <string>43110</string>
-    <key>WORKFLOW_TARGET_WORLD</key>
-    <string>local</string>
-    <key>CHAT_PUBLIC_URL</key>
-    <string>https://chat.ai4child.asia</string>
-    <key>CHAT_WEB_AUTH_ENABLED</key>
-    <string>1</string>
   </dict>
 
   <key>RunAtLoad</key>

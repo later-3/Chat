@@ -7,11 +7,14 @@ import {
   type SessionEntry,
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
+import { getChatSessionDir } from "./chat-session.js";
+import {
+  collectChatWorkflowMessages,
+  collectChatWorkflowStageMarkers,
+  type ChatWorkflowMessageMarker,
+} from "./workflows/workflow-stage.js";
 
-/** Chat统一保存Pi Coding Agent运行记录的目录。浏览器不能直接访问该目录。 */
-export function getChatSessionDir(): string {
-  return resolve(process.cwd(), ".pi/sessions");
-}
+export { getChatSessionDir } from "./chat-session.js";
 
 export interface ChatSessionListItem {
   path: string;
@@ -96,6 +99,18 @@ export interface SessionProjectionOptions {
   readonly deferToolResultImages?: boolean;
 }
 
+function workflowMessageForFrontend(marker: ChatWorkflowMessageMarker): unknown {
+  return {
+    ...marker.message,
+    chatWorkflow: {
+      invocationId: marker.invocationId,
+      workflowId: marker.workflowId,
+      stageId: marker.stageId,
+      agentId: marker.agentId,
+    },
+  };
+}
+
 function base64ImageInfo(block: unknown): { bytes: number; mime?: string } | null {
   if (!isRecord(block) || block.type !== "image") return null;
   let data: string | undefined;
@@ -158,11 +173,56 @@ export function projectSessionContext(
   const context = buildSessionContext(entries, leafId);
   const messages: unknown[] = [];
   const entryIds: string[] = [];
+  const stageByEntryId = new Map(
+    collectChatWorkflowStageMarkers(contextEntries).map((stage) => [stage.entryId, stage]),
+  );
+  const workflowMessageByEntryId = new Map(
+    collectChatWorkflowMessages(contextEntries).map((message) => [message.entryId, message]),
+  );
+  const pendingWorkflowMessages = new Map<string, ChatWorkflowMessageMarker[]>();
+  let activeStage = undefined as ReturnType<typeof collectChatWorkflowStageMarkers>[number] | undefined;
+
+  const appendWorkflowMessage = (marker: ChatWorkflowMessageMarker) => {
+    messages.push(applyProjectionOptions(
+      normalizeMessageForFrontend(workflowMessageForFrontend(marker)),
+      { ...options, deferThinking: false },
+    ));
+    entryIds.push(marker.entryId);
+  };
+  const flushWorkflowMessages = (invocationId: string) => {
+    const pending = pendingWorkflowMessages.get(invocationId) ?? [];
+    for (const marker of pending) appendWorkflowMessage(marker);
+    pendingWorkflowMessages.delete(invocationId);
+  };
+
   for (const entry of contextEntries) {
+    const stage = stageByEntryId.get(entry.id);
+    if (stage !== undefined) {
+      activeStage = stage;
+      continue;
+    }
+    const workflowMessage = workflowMessageByEntryId.get(entry.id);
+    if (workflowMessage !== undefined) {
+      const pending = pendingWorkflowMessages.get(workflowMessage.invocationId) ?? [];
+      pending.push(workflowMessage);
+      pendingWorkflowMessages.set(workflowMessage.invocationId, pending);
+      continue;
+    }
     for (const message of sessionEntryToContextMessages(entry)) {
       messages.push(applyProjectionOptions(normalizeMessageForFrontend(message), options));
       entryIds.push(entry.id);
+      if (
+        isRecord(message)
+        && message.role === "user"
+        && activeStage?.workflowId === "planning-execution"
+        && activeStage.stageId === "execute"
+      ) {
+        flushWorkflowMessages(activeStage.invocationId);
+      }
     }
+  }
+  for (const pending of pendingWorkflowMessages.values()) {
+    for (const marker of pending) appendWorkflowMessage(marker);
   }
   return {
     messages,
@@ -172,7 +232,8 @@ export function projectSessionContext(
   };
 }
 
-async function findChatSession(sessionId: string): Promise<ChatSessionListItem> {
+/** Resolves a browser-provided ID only against Chat's managed Session directory. */
+export async function requireChatSession(sessionId: string): Promise<ChatSessionListItem> {
   const session = (await listChatSessions()).find((item) => item.id === sessionId);
   if (session === undefined) throw new Error(`找不到Session: ${sessionId}`);
   return session;
@@ -183,7 +244,7 @@ export async function readChatSession(
   leafId?: string | null,
   options: SessionProjectionOptions = {},
 ) {
-  const info = await findChatSession(sessionId);
+  const info = await requireChatSession(sessionId);
   const manager = SessionManager.open(info.path, getChatSessionDir());
   const entries = manager.getEntries();
   if (leafId && manager.getEntry(leafId) === undefined) {
@@ -194,6 +255,7 @@ export async function readChatSession(
   const context = projectSessionContext(entries, selectedLeafId, options);
 
   return {
+    session: info,
     sessionId: manager.getSessionId(),
     filePath: info.path,
     totalActiveMs: 0,
