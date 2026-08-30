@@ -6,6 +6,7 @@ import { listPiPlugins } from "../../../../../../resources/plugins.js";
 import { listPiSkills } from "../../../../../../resources/skills.js";
 import { inspectWorkflowAgent } from "../../../../../../workflows/agent-inspection.js";
 import { getChatWorkflowDefinition } from "../../../../../../workflows/registry.js";
+import { resolveProjectContext } from "../../../../../../projects/registry.js";
 
 /** Returns resources discoverable for an Agent without a browser-side fake selection. */
 export default defineEventHandler(async (event) => {
@@ -17,7 +18,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: "找不到Workflow或Agent" });
   }
 
-  const rawCwd = getQuery(event).cwd;
+  const query = getQuery(event);
+  const rawProjectId = query.projectId;
+  const project = typeof rawProjectId === "string"
+    ? await resolveProjectContext(rawProjectId)
+    : undefined;
+  const rawCwd = project?.cwd ?? query.cwd;
   if (typeof rawCwd !== "string" || rawCwd.trim() === "") {
     throw createError({ statusCode: 400, statusMessage: "cwd必须是字符串" });
   }
@@ -35,6 +41,7 @@ export default defineEventHandler(async (event) => {
   try {
     const [inspection, availableSkills, availableExtensions, availablePlugins] = await Promise.all([
       inspectWorkflowAgent({
+        ...(project === undefined ? {} : { projectId: project.projectId, chatHome: project.chatHome }),
         cwd,
         defaultAgent: {
           ...agent,
@@ -47,9 +54,9 @@ export default defineEventHandler(async (event) => {
           ? {}
           : { prepareAgentSession: workflow.prepareAgentSession }),
       }),
-      listPiSkills(cwd),
-      listPiExtensions(cwd),
-      listPiPlugins(cwd),
+      listPiSkills(cwd, project?.projectId),
+      listPiExtensions(cwd, project?.projectId),
+      listPiPlugins(cwd, project?.projectId),
     ]);
 
     const skillsByPath = new Map(inspection.skills.map((skill) => [skill.filePath, skill]));
@@ -70,6 +77,8 @@ export default defineEventHandler(async (event) => {
           scope: extension.scope === "global" ? "user" : "project",
           origin: extension.origin === "package" ? "package" : "top-level",
         },
+        address: extension.address,
+        version: extension.version,
         capabilities: {
           tools: [],
           commands: [],

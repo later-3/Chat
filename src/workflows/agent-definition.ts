@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type {
   AgentContextTransform,
   AgentSession,
@@ -12,6 +12,8 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { ChatSession } from "../chat-session.js";
+import { getProjectTrust } from "../projects/trust.js";
+import { ensureChatArchitectureSkill } from "../skills/runtime.js";
 import type { WorkflowAgentDefinition } from "./agent-config.js";
 
 export {
@@ -68,7 +70,18 @@ export async function createWorkflowAgentSession(
   options: CreateWorkflowAgentSessionOptions,
 ): Promise<CreatedWorkflowAgentSession> {
   const { agent, chatSession } = options;
-  const settingsManager = SettingsManager.create(chatSession.cwd, chatSession.agentDir);
+  const projectTrusted = chatSession.projectContext === undefined
+    ? true
+    : (await getProjectTrust(chatSession.projectContext.projectId, chatSession.projectContext.chatHome)).trusted;
+  const architectureSkillPath = await ensureChatArchitectureSkill(
+    resolve(dirname(chatSession.agentDir), "runtime"),
+  );
+  const settingsManager = SettingsManager.create(
+    chatSession.cwd,
+    chatSession.agentDir,
+    { projectTrusted },
+  );
+  const projectResourceDir = chatSession.projectContext?.projectConfigDir;
   const customInstructions = buildChatAgentCustomInstructions(agent.customInstructions);
   const replacementSystemPrompt = agent.systemPrompt.mode === "replace"
     ? agent.systemPrompt.text
@@ -89,7 +102,17 @@ export async function createWorkflowAgentSession(
             ...agent.resources.pluginSources,
           ],
         }),
+    ...(agent.resources.mode === "inherit" && projectTrusted && projectResourceDir !== undefined
+      ? {
+          additionalExtensionPaths: [resolve(projectResourceDir, "extensions")],
+          additionalPromptTemplatePaths: [resolve(projectResourceDir, "prompts")],
+        }
+      : {}),
     additionalSkillPaths: [
+      architectureSkillPath,
+      ...(agent.resources.mode === "inherit" && projectTrusted && projectResourceDir !== undefined
+        ? [resolve(projectResourceDir, "skills")]
+        : []),
       ...(agent.resources.mode === "inherit" ? [] : agent.resources.skillPaths),
       ...(options.additionalSkillPaths ?? []),
     ],

@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { ensureChatDataLayout } from "./chat-data.js";
+import { ensureChatHome, resolveChatHome } from "./chat-home.js";
+import { appendChatAuditEvent } from "./audit-log.js";
+import { resolveProjectContext } from "./projects/registry.js";
+import { getProjectTrust } from "./projects/trust.js";
 import {
   parseAgentConfigSelection,
   type AgentConfigSelection,
@@ -23,6 +25,12 @@ export interface ChatRootConfig {
   readonly schemaVersion: 1;
   readonly defaultWorkflowId: ChatWorkflowId;
   readonly workflows: Readonly<Record<string, ChatStoredWorkflowConfig>>;
+}
+
+export interface ChatConfigOverride {
+  readonly schemaVersion: 1;
+  readonly defaultWorkflowId?: ChatWorkflowId;
+  readonly workflows?: Readonly<Record<string, ChatStoredWorkflowConfig>>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -71,6 +79,23 @@ export function parseChatRootConfig(value: unknown): ChatRootConfig {
   };
 }
 
+export function parseChatConfigOverride(value: unknown): ChatConfigOverride {
+  if (!isRecord(value) || value.schemaVersion !== CHAT_CONFIG_SCHEMA_VERSION) {
+    throw new Error(`Chat Project配置必须使用schemaVersion ${CHAT_CONFIG_SCHEMA_VERSION}`);
+  }
+  assertKnownFields(value, ["schemaVersion", "defaultWorkflowId", "workflows"], "Chat Project配置");
+  const base = parseChatRootConfig({
+    schemaVersion: 1,
+    defaultWorkflowId: value.defaultWorkflowId ?? DEFAULT_CHAT_WORKFLOW_ID,
+    workflows: value.workflows ?? {},
+  });
+  return {
+    schemaVersion: 1,
+    ...(value.defaultWorkflowId === undefined ? {} : { defaultWorkflowId: base.defaultWorkflowId }),
+    ...(value.workflows === undefined ? {} : { workflows: base.workflows }),
+  };
+}
+
 export function defaultChatRootConfig(): ChatRootConfig {
   return {
     schemaVersion: CHAT_CONFIG_SCHEMA_VERSION,
@@ -79,12 +104,11 @@ export function defaultChatRootConfig(): ChatRootConfig {
   };
 }
 
-async function chatConfigPath(): Promise<string> {
-  return resolve((await ensureChatDataLayout()).root, CHAT_CONFIG_FILE_NAME);
+async function personalChatConfigPath(chatHome = resolveChatHome()): Promise<string> {
+  return (await ensureChatHome(chatHome)).configPath;
 }
 
-async function writeValidatedChatRootConfig(config: ChatRootConfig): Promise<void> {
-  const path = await chatConfigPath();
+async function writeValidatedConfig(path: string, config: ChatRootConfig | ChatConfigOverride): Promise<void> {
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
   try {
     await writeFile(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, {
@@ -99,15 +123,15 @@ async function writeValidatedChatRootConfig(config: ChatRootConfig): Promise<voi
   }
 }
 
-export async function readChatRootConfig(): Promise<ChatRootConfig> {
-  const path = await chatConfigPath();
+export async function readChatRootConfig(chatHome = resolveChatHome()): Promise<ChatRootConfig> {
+  const path = await personalChatConfigPath(chatHome);
   let content: string;
   try {
     content = await readFile(path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     const config = defaultChatRootConfig();
-    await writeValidatedChatRootConfig(config);
+    await writeValidatedConfig(path, config);
     return config;
   }
   try {
@@ -117,10 +141,82 @@ export async function readChatRootConfig(): Promise<ChatRootConfig> {
   }
 }
 
-export async function writeChatRootConfig(value: unknown): Promise<ChatRootConfig> {
+export async function writeChatRootConfig(value: unknown, chatHome = resolveChatHome()): Promise<ChatRootConfig> {
   const config = parseChatRootConfig(value);
-  await writeValidatedChatRootConfig(config);
+  await writeValidatedConfig(await personalChatConfigPath(chatHome), config);
+  await appendChatAuditEvent({
+    action: "config.update",
+    target: { type: "personal", kind: "config" },
+    details: { schemaVersion: config.schemaVersion, workflowCount: Object.keys(config.workflows).length },
+  }, chatHome);
   return config;
+}
+
+async function readProjectOverride(projectId: string, chatHome = resolveChatHome()): Promise<ChatConfigOverride> {
+  const project = await resolveProjectContext(projectId, chatHome);
+  try {
+    return parseChatConfigOverride(JSON.parse(await readFile(project.projectConfigPath, "utf8")));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { schemaVersion: 1 };
+    throw new Error(
+      `Chat Project配置无效: ${project.projectConfigPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+export async function writeProjectChatConfig(
+  projectId: string,
+  value: unknown,
+  chatHome = resolveChatHome(),
+): Promise<ChatConfigOverride> {
+  const project = await resolveProjectContext(projectId, chatHome);
+  if (!(await getProjectTrust(projectId, chatHome)).trusted) {
+    throw new Error(`Project尚未信任，不能修改配置: ${projectId}`);
+  }
+  const config = parseChatConfigOverride(value);
+  await writeValidatedConfig(project.projectConfigPath, config);
+  await appendChatAuditEvent({
+    action: "config.update",
+    target: { type: "project", projectId, kind: "config" },
+    details: { schemaVersion: config.schemaVersion, workflowCount: Object.keys(config.workflows ?? {}).length },
+  }, chatHome);
+  return config;
+}
+
+export async function resolveChatConfig(
+  projectId: string,
+  chatHome = resolveChatHome(),
+): Promise<{
+  personal: ChatRootConfig;
+  project: ChatConfigOverride;
+  projectTrusted: boolean;
+  effective: ChatRootConfig;
+}> {
+  const [personal, declaredProject, trust] = await Promise.all([
+    readChatRootConfig(chatHome),
+    readProjectOverride(projectId, chatHome),
+    getProjectTrust(projectId, chatHome),
+  ]);
+  const project = trust.trusted ? declaredProject : { schemaVersion: 1 as const };
+  const workflows: Record<string, ChatStoredWorkflowConfig> = { ...personal.workflows };
+  for (const [workflowId, override] of Object.entries(project.workflows ?? {})) {
+    workflows[workflowId] = {
+      agents: {
+        ...(personal.workflows[workflowId]?.agents ?? {}),
+        ...override.agents,
+      },
+    };
+  }
+  return {
+    personal,
+    project: declaredProject,
+    projectTrusted: trust.trusted,
+    effective: {
+      schemaVersion: 1,
+      defaultWorkflowId: project.defaultWorkflowId ?? personal.defaultWorkflowId,
+      workflows,
+    },
+  };
 }
 
 export function getStoredAgentConfigs(

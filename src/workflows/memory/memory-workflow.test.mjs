@@ -51,14 +51,18 @@ function messageText(message) {
 
 test("Memory Workflow uses Pi Skill expansion and only custom Memory tools", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
+  const previousChatHome = process.env.CHAT_HOME;
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-memory-workflow-"));
   const faux = registerFauxProvider({ api: "chat-memory-faux", provider: "chat-memory-faux" });
   t.after(() => {
     faux.unregister();
     process.chdir(previousCwd);
+    if (previousChatHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousChatHome;
     fs.rmSync(base, { recursive: true, force: true });
   });
   process.chdir(base);
+  process.env.CHAT_HOME = path.join(base, ".chat");
   const workspace = path.join(base, "workspace");
   fs.mkdirSync(workspace);
   writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
@@ -88,7 +92,7 @@ test("Memory Workflow uses Pi Skill expansion and only custom Memory tools", { c
   assert.match(userText, /<skill name="memory"/);
   assert.match(userText, /查找我的架构偏好/);
 
-  const skillPath = path.join(base, ".chat", "memory", "runtime", "skills", "memory", "SKILL.md");
+  const skillPath = path.join(base, ".chat", "runtime", "skills", "memory", "SKILL.md");
   assert.equal(fs.existsSync(skillPath), true);
   const manager = SessionManager.open(result.sessionFile, path.join(base, ".chat", "sessions"));
   assert.deepEqual(collectChatWorkflowStageMarkers(manager.getEntries()).map((stage) => ({
@@ -100,14 +104,18 @@ test("Memory Workflow uses Pi Skill expansion and only custom Memory tools", { c
 
 test("Memory Agent inspection uses the same custom tools and Skill as execution", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
+  const previousChatHome = process.env.CHAT_HOME;
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-memory-inspection-"));
   const faux = registerFauxProvider({ api: "chat-memory-inspection-faux", provider: "chat-memory-inspection-faux" });
   t.after(() => {
     faux.unregister();
     process.chdir(previousCwd);
+    if (previousChatHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousChatHome;
     fs.rmSync(base, { recursive: true, force: true });
   });
   process.chdir(base);
+  process.env.CHAT_HOME = path.join(base, ".chat");
   const workspace = path.join(base, "workspace");
   fs.mkdirSync(workspace);
   writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
@@ -124,6 +132,6 @@ test("Memory Agent inspection uses the same custom tools and Skill as execution"
     inspection.tools.filter((tool) => tool.active).map((tool) => tool.name),
     MEMORY_TOOL_NAMES,
   );
-  assert.deepEqual(inspection.skills.map((skill) => skill.name), ["memory"]);
-  assert.match(inspection.skills[0].content, /The Chat catalog is the source of truth/);
+  assert.deepEqual(inspection.skills.map((skill) => skill.name).sort(), ["chat-architecture", "memory"]);
+  assert.match(inspection.skills.find((skill) => skill.name === "memory")?.content, /The Chat catalog is the source of truth/);
 });

@@ -35,6 +35,8 @@ export async function runMemoryAgentStep(
   });
   const sessionExtensions = await prepareMemoryAgentSession({
     purpose: "execution",
+    ...(chatSession.projectId === undefined ? {} : { projectId: chatSession.projectId }),
+    ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
     cwd: chatSession.cwd,
     workflowId: "memory",
     agentId: MEMORY_AGENT.id,

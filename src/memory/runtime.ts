@@ -1,10 +1,10 @@
 import { resolve } from "node:path";
-import { ensureChatDataLayout } from "../chat-data.js";
+import { ensureChatHome, resolveChatHome } from "../chat-home.js";
+import { resolveProjectContext } from "../projects/registry.js";
 import { MemoryRepository } from "./repository.js";
 import { MemoryService } from "./service.js";
 import type { Mem0MemoryIndexOptions } from "./mem0-index.js";
-
-const services = new Map<string, Promise<MemoryService>>();
+import type { MemoryTarget } from "./types.js";
 
 function positiveInteger(value: string | undefined, name: string): number | undefined {
   if (value === undefined || value.trim() === "") return undefined;
@@ -59,23 +59,16 @@ function mem0IndexOptions(memoryDir: string): Mem0MemoryIndexOptions {
   throw new Error(`Unsupported CHAT_MEMORY_EMBEDDER_PROVIDER: ${provider}`);
 }
 
-export async function createChatMemoryService(projectRoot = process.cwd()): Promise<MemoryService> {
-  const paths = await ensureChatDataLayout(projectRoot);
-  const repository = new MemoryRepository(resolve(paths.memoryDir, "catalog.db"));
+export async function createMemoryServiceForTarget(
+  target: MemoryTarget,
+  chatHome = resolveChatHome(),
+): Promise<MemoryService> {
+  const memoryDir = target.type === "personal"
+    ? (await ensureChatHome(chatHome)).personalMemoryDir
+    : (await resolveProjectContext(target.projectId, chatHome)).memoryDir;
+  const repository = new MemoryRepository(resolve(memoryDir, "catalog.db"));
   return new MemoryService(repository, async () => {
     const { Mem0MemoryIndex } = await import("./mem0-index.js");
-    return Mem0MemoryIndex.create(mem0IndexOptions(paths.memoryDir));
-  });
-}
-
-export function getChatMemoryService(projectRoot = process.cwd()): Promise<MemoryService> {
-  const root = resolve(projectRoot);
-  const existing = services.get(root);
-  if (existing !== undefined) return existing;
-  const created = createChatMemoryService(root).catch((error: unknown) => {
-    services.delete(root);
-    throw error;
-  });
-  services.set(root, created);
-  return created;
+    return Mem0MemoryIndex.create(mem0IndexOptions(memoryDir));
+  }, target);
 }

@@ -21,8 +21,10 @@ interface MemoryRow {
   readonly kind: string;
   readonly scope: string;
   readonly project_id: string | null;
+  readonly group_id: string;
   readonly metadata_json: string;
   readonly source_session_id: string | null;
+  readonly source_project_id: string | null;
   readonly source_entry_ids_json: string;
   readonly source_workflow_invocation_id: string | null;
   readonly status: string;
@@ -63,8 +65,10 @@ function rowToRecord(row: MemoryRow): MemoryRecord {
     kind: row.kind as MemoryKind,
     scope: row.scope as MemoryScope,
     projectId: row.project_id,
+    groupId: row.group_id,
     metadata: parseObject(row.metadata_json),
     sourceSessionId: row.source_session_id,
+    sourceProjectId: row.source_project_id,
     sourceEntryIds: parseStringArray(row.source_entry_ids_json),
     sourceWorkflowInvocationId: row.source_workflow_invocation_id,
     status: row.status as MemoryStatus,
@@ -94,10 +98,69 @@ export class MemoryRepository {
 
   private migrate(): void {
     const version = this.db.pragma("user_version", { simple: true }) as number;
-    if (version > 1) {
-      throw new Error(`Memory catalog schema ${version} is newer than supported schema 1`);
+    if (version > 2) {
+      throw new Error(`Memory catalog schema ${version} is newer than supported schema 2`);
     }
-    if (version === 1) return;
+    if (version === 2) return;
+
+    if (version === 1) {
+      this.db.transaction(() => {
+        this.db.exec(`
+          DROP INDEX memories_mem0_id;
+          DROP INDEX memories_list;
+          DROP INDEX memories_index_status;
+          ALTER TABLE memories RENAME TO memories_v1;
+
+          CREATE TABLE memories (
+            id TEXT PRIMARY KEY,
+            text TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            project_id TEXT,
+            group_id TEXT NOT NULL,
+            metadata_json TEXT NOT NULL,
+            source_project_id TEXT,
+            source_session_id TEXT,
+            source_entry_ids_json TEXT NOT NULL,
+            source_workflow_invocation_id TEXT,
+            status TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            mem0_id TEXT,
+            index_status TEXT NOT NULL,
+            index_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            CHECK (scope IN ('personal', 'project')),
+            CHECK ((scope = 'personal' AND project_id IS NULL) OR (scope = 'project' AND project_id IS NOT NULL)),
+            CHECK (status IN ('active', 'archived')),
+            CHECK (index_status IN ('pending', 'indexed', 'failed'))
+          );
+
+          INSERT INTO memories (
+            id, text, kind, scope, project_id, group_id, metadata_json,
+            source_project_id, source_session_id, source_entry_ids_json,
+            source_workflow_invocation_id, status, version, mem0_id,
+            index_status, index_error, created_at, updated_at
+          )
+          SELECT
+            id, text, kind,
+            CASE WHEN scope = 'global' THEN 'personal' ELSE scope END,
+            project_id, id, metadata_json,
+            CASE WHEN scope = 'project' THEN project_id ELSE NULL END,
+            source_session_id, source_entry_ids_json,
+            source_workflow_invocation_id, status, version, mem0_id,
+            index_status, index_error, created_at, updated_at
+          FROM memories_v1;
+
+          DROP TABLE memories_v1;
+          CREATE UNIQUE INDEX memories_mem0_id ON memories(mem0_id) WHERE mem0_id IS NOT NULL;
+          CREATE INDEX memories_list ON memories(status, scope, project_id, kind, updated_at DESC);
+          CREATE INDEX memories_index_status ON memories(index_status, updated_at);
+          PRAGMA user_version = 2;
+        `);
+      })();
+      return;
+    }
 
     this.db.exec(`
       CREATE TABLE memories (
@@ -106,7 +169,9 @@ export class MemoryRepository {
         kind TEXT NOT NULL,
         scope TEXT NOT NULL,
         project_id TEXT,
+        group_id TEXT NOT NULL,
         metadata_json TEXT NOT NULL,
+        source_project_id TEXT,
         source_session_id TEXT,
         source_entry_ids_json TEXT NOT NULL,
         source_workflow_invocation_id TEXT,
@@ -117,7 +182,8 @@ export class MemoryRepository {
         index_error TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        CHECK (scope IN ('global', 'project')),
+        CHECK (scope IN ('personal', 'project')),
+        CHECK ((scope = 'personal' AND project_id IS NULL) OR (scope = 'project' AND project_id IS NOT NULL)),
         CHECK (status IN ('active', 'archived')),
         CHECK (index_status IN ('pending', 'indexed', 'failed'))
       );
@@ -147,7 +213,7 @@ export class MemoryRepository {
         last_error TEXT
       );
 
-      PRAGMA user_version = 1;
+      PRAGMA user_version = 2;
     `);
   }
 
@@ -155,25 +221,28 @@ export class MemoryRepository {
     const now = new Date().toISOString();
     const id = randomUUID();
     const kind = input.kind ?? "fact";
-    const scope = input.scope ?? "global";
+    const scope = input.scope ?? "personal";
     const projectId = scope === "project" ? input.projectId ?? null : null;
+    const groupId = input.groupId?.trim() || id;
     const source = input.source;
 
     this.db.transaction(() => {
       this.db.prepare(`
         INSERT INTO memories (
-          id, text, kind, scope, project_id, metadata_json,
-          source_session_id, source_entry_ids_json,
+          id, text, kind, scope, project_id, group_id, metadata_json,
+          source_project_id, source_session_id, source_entry_ids_json,
           source_workflow_invocation_id, status, version,
           mem0_id, index_status, index_error, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, NULL, 'pending', NULL, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, NULL, 'pending', NULL, ?, ?)
       `).run(
         id,
         input.text,
         kind,
         scope,
         projectId,
+        groupId,
         JSON.stringify(input.metadata ?? {}),
+        source?.projectId ?? null,
         source?.sessionId ?? null,
         JSON.stringify(source?.entryIds ?? []),
         source?.workflowInvocationId ?? null,
@@ -184,6 +253,44 @@ export class MemoryRepository {
     })();
 
     return this.require(id);
+  }
+
+  importRecord(record: MemoryRecord, scope: MemoryScope, projectId: string | null): MemoryRecord {
+    const existing = this.get(record.id);
+    if (existing !== null) {
+      if (existing.text !== record.text || existing.scope !== scope || existing.projectId !== projectId) {
+        throw new Error(`Memory迁移目标存在冲突记录: ${record.id}`);
+      }
+      return existing;
+    }
+    this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO memories (
+          id, text, kind, scope, project_id, group_id, metadata_json,
+          source_project_id, source_session_id, source_entry_ids_json,
+          source_workflow_invocation_id, status, version,
+          mem0_id, index_status, index_error, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'pending', NULL, ?, ?)
+      `).run(
+        record.id,
+        record.text,
+        record.kind,
+        scope,
+        projectId,
+        record.groupId,
+        JSON.stringify(record.metadata),
+        record.sourceProjectId,
+        record.sourceSessionId,
+        JSON.stringify(record.sourceEntryIds),
+        record.sourceWorkflowInvocationId,
+        record.status,
+        record.version,
+        record.createdAt,
+        record.updatedAt,
+      );
+      this.insertOperation(record.id, "MIGRATE", record.version, new Date().toISOString());
+    })();
+    return this.require(record.id);
   }
 
   get(id: string): MemoryRecord | null {

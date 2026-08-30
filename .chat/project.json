@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "id": "chat",
+  "name": "Chat",
+  "description": "基于Pi Agent的本地多项目Chat、Workflow与Agent管理系统"
+}

@@ -1,5 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "../files/access.js";
+import { resolveProjectContext } from "../projects/registry.js";
+import type { ChatProjectContext } from "../projects/types.js";
 
 export class ResourceAccessError extends Error {
   constructor(readonly statusCode: number, message: string) {
@@ -23,4 +25,27 @@ export async function resolveResourceCwd(value: unknown): Promise<string> {
     throw new ResourceAccessError(403, "Access denied");
   }
   return cwd;
+}
+
+/** Project-aware resource boundary; cwd is accepted only as a verified compatibility hint. */
+export async function resolveResourceProject(
+  projectId: unknown,
+  cwd?: unknown,
+): Promise<ChatProjectContext> {
+  if (typeof projectId !== "string" || projectId.trim() === "") {
+    throw new ResourceAccessError(400, "projectId必须是非空字符串");
+  }
+  try {
+    const project = await resolveProjectContext(projectId.trim());
+    if (cwd !== undefined) {
+      const canonicalCwd = await resolveResourceCwd(cwd);
+      if (canonicalCwd !== project.cwd) {
+        throw new ResourceAccessError(400, `Project ${project.projectId}与cwd不一致`);
+      }
+    }
+    return project;
+  } catch (error) {
+    if (error instanceof ResourceAccessError) throw error;
+    throw new ResourceAccessError(400, error instanceof Error ? error.message : String(error));
+  }
 }

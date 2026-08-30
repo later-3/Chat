@@ -8,6 +8,8 @@
 2. [Pi Web架构与源码分析](./pi-web-design.md)：原网页产品如何消费Pi能力。
 3. [Chat当前架构与源码分析](./chat-current-architecture.md)：当前Workflow、Session和浏览器调用链。
 
+Project目标结构另见[Chat Project架构设计](./chat-project-framework.md)。该设计直接参考Pi的用户级/项目级配置、资源、Session分区和Project Trust，再加入Chat的稳定Project身份、Workflow和Memory场景。
+
 本文定义Chat需要解决什么，不提前规定最终配置文件字段。
 
 ## 2. 已确认的产品方向
@@ -26,9 +28,14 @@
 12. Agent配置文件可以放在用户选择的任意授权路径，不要求进入Git仓库，也不由Chat复制到临时目录。前端提交文件路径和本轮资源选择，后端统一读取、合并和校验。
 13. 每个Workflow先使用独立目录，集中放置该Workflow的代码、默认Agent配置和提示词资源，在物理结构上隔离。后续确有复用需要时再提取共享内容。
 14. Agent的基础System Prompt和追加Prompt规则必须文件化，并能在Pi Web中查看、选择和预览。
-15. Chat以Workflow作为一级管理对象。一个Workflow下面包含工作流定义、参与执行的Agent，以及该Workflow运行所需的配置、提示词、资源声明和适配代码；Agent是其中的实际执行单元和能力承载者。
+15. 在执行功能维度，Chat以Workflow作为一级管理对象。一个Workflow下面包含工作流定义、参与执行的Agent，以及该Workflow运行所需的配置、提示词、资源声明和适配代码；Agent是其中的实际执行单元和能力承载者。
 16. Session独立于Workflow管理：同一个Session中可以逐轮切换Workflow，Workflow只决定本轮由哪些Agent以什么顺序处理消息。
 17. Chat在Workflow内的Agent System Prompt中定义自己的自定义提示词区域；编码规范只是可加入该区域的一类提示词资源。
+18. Chat需要正式管理Project。Project表示用户长期使用Chat维护的外部项目，源码保持原位，不复制到Chat仓库。
+19. Chat默认使用`~/.chat`保存用户级配置、Credential、Memory、Project Registry和按Project分区的Session；每个Project使用自己的`.chat`目录保存Project Manifest、配置和项目资源。
+20. Project使用稳定`projectId`，绝对路径只属于本机Registry；项目移动不能改变Session和Memory归属。
+21. Project和Workflow是正交管理入口：Project决定工作目录、项目配置和资源作用域，Workflow决定本轮执行结构。
+22. 打开Project不等于信任Project。项目级配置、Skill和Extension必须遵守参考Pi Project Trust定义的显式信任边界。
 
 ## 3. 运行逻辑
 
@@ -56,17 +63,24 @@ Pi Session保存需要延续到下一轮的对话事实
 
 因此“可配置”不要求热修改一个正在运行的Agent对象。每个Workflow中的Agent都有一个持久默认配置；修改默认配置后，后续交互持续使用新值。用户也可以在某次交互中选择另一份配置文件，这一整轮Workflow使用被选择的配置。一个已经启动的Workflow应使用启动时读取到的同一份配置结果，避免Planner执行完后修改配置导致Executor突然使用另一套能力。
 
-Chat需要维护的不是一个笼统“项目管理模块”，而是以下四类明确对象。其中Workflow是一级管理对象：
+Chat需要维护以下五类明确对象。Project是工作空间入口，Workflow是本轮执行入口，两者不存在包含关系：
 
-1. Workflow：拥有工作流描述、Stage顺序、Stage输入输出关系、Agent、配置、提示词、资源声明以及该Workflow使用的适配代码和测试。
-2. Workflow Agent：作为具体执行单元，承载身份、基础Prompt、自定义提示词区域、模型、Thinking和所选资源。
-3. Agent资源：Pi能够发现和加载的Model、Tool、Skill、Extension、Package和提示词文件；资源可以来自公共来源，但是否启用由Workflow内的Agent配置声明。
-4. Session：独立保存连续对话上下文，并记录每轮实际选择的Workflow及其Agent执行过程。
+1. Project：拥有稳定身份、本机路径、Project配置、Project资源、Session集合和Project Memory命名空间。
+2. Workflow：拥有工作流描述、Stage顺序、Stage输入输出关系、Agent、配置、提示词、资源声明以及该Workflow使用的适配代码和测试。
+3. Workflow Agent：作为具体执行单元，承载身份、基础Prompt、自定义提示词区域、模型、Thinking和所选资源。
+4. Agent资源：Pi能够发现和加载的Model、Tool、Skill、Extension、Package和提示词文件；资源可以来自用户级、Project级或Workflow私有来源，但是否启用由Workflow内的Agent配置声明。
+5. Session：属于一个Project，独立保存连续对话上下文，并记录每轮实际选择的Workflow及其Agent执行过程。
 
-Workflow是用户和开发者管理功能的入口；Agent是Workflow内部能力和配置的承载者。一个Workflow归拢完成该流程所需的业务内容，但不复制Chat平台和Pi已经提供的公共代码。
+Project是用户切换工作对象的入口；Workflow是用户和开发者管理执行功能的入口；Agent是Workflow内部能力和配置的承载者。一个Workflow归拢完成该流程所需的业务内容，但不复制Chat平台和Pi已经提供的公共代码。
 
 ```text
-Workflow（一级管理对象）
+Project（工作空间入口）
+  ├── Project Manifest与本机路径登记
+  ├── Project配置和资源
+  ├── Project Session集合
+  └── Project Memory命名空间
+
+Workflow（一级执行管理对象）
   ├── Workflow定义
   │     ├── Stage顺序
   │     └── Stage输入输出关系
@@ -80,6 +94,7 @@ Workflow（一级管理对象）
   └── 调用Chat和Pi公共运行能力
 
 Chat Session（独立连续上下文）
+  ├── 属于一个Project
   └── 每轮可选择不同Workflow执行
 ```
 
@@ -145,43 +160,72 @@ Workflow开发者应能复用Pi原生装配点定义一个Agent Stage需要的�
 
 前端不接收或提交Tool函数、Credential或Session文件路径。配置文件和资源路径必须通过Chat已授权工作目录边界，并由后端再次校验和解析。
 
-## 5. Chat控制的配置和Pi项目资源是什么关系
+### 4.6 打开和切换Project
 
-### 5.1 Pi原生的两层资源来源
+用户在Pi Web中选择`ziji-content-lab`目录后，Chat需要：
+
+1. 从最近的`.chat/project.json`确定稳定Project身份；不存在Manifest时只在用户明确确认后创建。
+2. 把规范化绝对路径登记到Project Registry，而不是把路径本身当作Project ID。
+3. 即使Project还没有Session，也能在重启后的项目切换器中显示。
+4. 切换Project时同时切换cwd、Session列表、Project配置、项目资源、文件访问和Project Memory范围。
+5. 保持项目源码位于原目录；Chat只管理配置、索引和运行数据。
+6. 对位于更大Git仓库中的嵌套项目使用最近Manifest规则，不能强制把Git根目录当作Chat Project根目录。
+
+## 5. Chat全局、Project配置和Pi资源是什么关系
+
+### 5.1 Pi提供的原生分层
 
 当Chat调用`SettingsManager.create(cwd, agentDir)`和`DefaultResourceLoader`时，Pi会同时看到：
 
 ```text
-Chat控制的agentDir
+Pi用户级agentDir
   ├── models.json / auth.json / settings.json
   ├── 全局Skill与Extension
   └── 全局Package
 
-本轮目标cwd
+Pi本轮目标cwd
   ├── .pi/settings.json
   ├── .pi/skills、.pi/extensions等项目资源
   ├── .agents/skills
   └── AGENTS.md等项目上下文
 ```
 
-这里的“项目”只是Agent本轮工作的cwd和Pi项目级资源作用域，不需要创建新的Project业务对象或Project Store。
+Pi以cwd作为项目资源和Session分区依据。Chat保留这套资源与执行语义，但浏览器长期项目管理还需要稳定Project ID、项目简介、路径迁移和Memory命名空间，因此Chat必须增加Project业务对象，不能继续让cwd同时承担路径与长期身份。
 
-### 5.2 Chat需要控制什么
+### 5.2 Chat采用的对应分层
 
-Chat已经控制了Session目录和Pi agentDir，下一步继续沿用这个逻辑：
+Chat直接参考Pi的形状：
 
-1. 模型与认证继续由Chat指定的`.chat/agent`管理。
+```text
+~/.chat/agent
+  ├── Credential、Model和用户级Settings
+  └── 用户级Skill、Extension和Prompt
+
+<project-root>/.chat
+  ├── project.json与Project配置
+  └── Project级Skill、Extension、Prompt和Instructions
+
+~/.chat/projects/<projectId>/sessions
+  └── Pi Session JSONL
+```
+
+Chat需要控制：
+
+1. 模型与认证由`~/.chat/agent`管理，不再依赖Chat源码仓库的工作目录。
 2. Workflow拥有默认Agent定义；用户可以为其中单个Agent选择外部主配置、追加配置和Prompt文件。
 3. 资源列表、安装状态和解析结果通过Pi的ResourceLoader、SettingsManager和PackageManager获取，不复制一套资源扫描器。
 4. 每次交互读取Agent配置，并用Pi公开接口创建本轮ResourceLoader和AgentSession。
-5. cwd中的项目资源仍由Pi按原规则发现；Agent配置以`inherit`或`explicit`决定本轮继承全部资源，还是只使用选中的Skill、Extension和Plugin。
+5. Project`.chat`资源经过路径校验和Project Trust后交给Pi公开加载接口；Tool最终仍由Pi Extension或SDK注册。
+6. cwd中的Pi原生`.pi`和`.agents/skills`资源可以继续由Pi发现，Chat前端必须展示真实来源，不将其伪装成Chat Project资源。
+7. Agent配置以`inherit`或`explicit`决定本轮继承全部可信资源，还是只使用选中的Skill、Extension和Plugin。
 
-因此Chat做的是“Workflow管理 + Workflow内Agent配置 + 资源维护 + Session上下文”，不是整体项目管理。管理入口和目录边界是Workflow，实际运行由其中的Agent完成。
+因此Chat做的是“Project管理 + Workflow管理 + Workflow内Agent配置 + 资源维护 + Session上下文”。Project不取代Workflow，Workflow也不负责发现或持久化Project。
 
-这里的基础设施分为两层：
+这里的基础设施分为三层：
 
 | 层级 | 内容 | 归属 |
 |---|---|---|
+| Project公共基础设施 | Project Manifest、Registry、ProjectContext、Session分区和信任 | Chat平台 |
 | Workflow相关代码 | Stage输入输出结构、配置解析、Prompt与资源声明、Agent装配、阶段适配和Workflow测试 | 对应Workflow目录 |
 | 平台公共基础设施 | HTTP服务、认证、Session持久化、Workflow Runtime接入、事件协议、Pi运行时和公共资源发现 | Chat/Pi平台 |
 
@@ -191,6 +235,9 @@ Chat已经控制了Session目录和Pi agentDir，下一步继续沿用这个逻�
 
 ### 6.1 Chat应该拥有
 
+- Project Manifest、Project Registry和统一`ChatProjectContext`。
+- 用户级`~/.chat`与Project本地`.chat`配置的读取、合并、校验和安全投影。
+- Project切换、Project Trust和按Project划分的Session目录。
 - Workflow注册、描述、Stage顺序和Stage输入关系。
 - Workflow内的Agent定义和Stage引用。
 - Workflow内Agent的自定义提示词区域、能力声明、解析、校验和Pi对象装配。
@@ -208,12 +255,13 @@ Chat已经控制了Session目录和Pi agentDir，下一步继续沿用这个逻�
 
 ### 6.3 Pi Web派生前端应该拥有
 
+- Project发现、打开、不可用状态和切换交互。
 - Workflow和Agent能力的浏览器交互。
 - 消息、Thinking、Tool、Session和文件的展示。
 - 网络合同校验和用户可理解的失败反馈。
 - PWA和移动端体验。
 
-浏览器页面不拥有服务端事实，也不直接推导Pi资源目录。浏览器对`.chat/config.json`的读取和修改必须经过Chat API；前后端使用同一配置事实源，但只有后端实现文件解析和路径授权。
+浏览器页面不拥有服务端事实，也不直接推导Pi资源目录。浏览器对`~/.chat/config.json`和Project`.chat/config.json`的读取与修改必须经过Chat API；前后端使用同一配置事实源，但只有后端实现文件解析、信任判断和路径授权。
 
 ## 7. 配置能力必须满足的语义
 
@@ -223,6 +271,8 @@ Chat已经控制了Session目录和Pi agentDir，下一步继续沿用这个逻�
 
 ```text
 平台级资源与安全策略
+  ≠ Project身份与本机路径
+  ≠ Project配置和资源
   ≠ Workflow定义
   ≠ Agent能力定义
   ≠ Workflow本次输入
@@ -258,34 +308,40 @@ Chat中的Agent配置是本轮运行事实源。默认配置可以引用Chat管�
 
 ## 8. Session和运行要求
 
-1. Workflow切换不得隐式更换Chat Session。
-2. 标准用户、Assistant和Tool Result继续由Pi原生SessionManager保存。
-3. Workflow观察数据使用Pi允许的扩展Entry，并保持不进入模型上下文。
-4. Workflow上游输入是否进入后续模型必须由Stage输入规则明确决定。
-5. 每个Stage重新创建AgentSession时，必须明确哪些状态从Pi Session恢复、哪些由Agent能力定义覆盖。
-6. 自动重试不得重复已经产生文件修改或Session追加的Workflow Step；当前Agent Step保持`maxRetries = 0`，除非未来提供可证明安全的幂等机制。
-7. 实时事件丢失后，前端必须能用Session持久历史和Run状态收敛。
-8. 一次Workflow Run启动后固定使用本轮解析出的Agent配置；配置文件更新从下一条用户消息开始生效。
+1. Session必须属于一个稳定Project；Session目录不能由浏览器路径直接决定。
+2. Workflow切换不得隐式更换Chat Session。
+3. 标准用户、Assistant和Tool Result继续由Pi原生SessionManager保存。
+4. Workflow观察数据使用Pi允许的扩展Entry，并保持不进入模型上下文。
+5. Workflow上游输入是否进入后续模型必须由Stage输入规则明确决定。
+6. 每个Stage重新创建AgentSession时，必须明确哪些状态从Pi Session恢复、哪些由Agent能力定义覆盖。
+7. 自动重试不得重复已经产生文件修改或Session追加的Workflow Step；当前Agent Step保持`maxRetries = 0`，除非未来提供可证明安全的幂等机制。
+8. 实时事件丢失后，前端必须能用Session持久历史和Run状态收敛。
+9. 一次Workflow Run启动后固定使用本轮解析出的全局配置、Project配置和请求覆盖；文件更新从下一条用户消息开始生效。
+10. Project路径迁移只更新Registry路径，不能改变Session与Memory归属。
 
 ## 9. 安全和部署要求
 
 1. Extension是可执行代码，Chat通过Pi原生加载机制使用它，不额外定义“受限Agent”或默认禁用规则。
-2. Credential只保存在Chat后端受控的Pi agentDir中，不出现在配置响应、日志或Session观察数据。
-3. Session ID只能解析到Chat自己的Session目录；cwd必须与Session头匹配。
-4. Package安装、更新和删除属于资源维护；某个Agent是否使用其中资源属于Agent配置，两者不能混成一个开关。
-5. 生产仍保持一个Chat服务；Pi和前端子模块由父仓库gitlink固定版本。
-6. VS Code能从Chat入口调试Workflow，并通过Source Map进入Chat使用的Pi源码。
+2. Project出现于Registry不代表受信任；参考Pi Project Trust，在信任前不得应用项目能力配置或执行Project Extension。
+3. Credential只保存在Chat后端受控的`~/.chat/agent`中，不出现在配置响应、日志或Session观察数据。
+4. Session ID只能解析到对应Project的Chat Session目录；cwd必须与Registry登记和Session头匹配。
+5. Package安装、更新和删除属于资源维护；某个Agent是否使用其中资源属于Agent配置，两者不能混成一个开关。
+6. 生产仍保持一个Chat服务；Pi和前端子模块由父仓库gitlink固定版本。
+7. VS Code能从Chat入口调试Workflow，并通过Source Map进入Chat使用的Pi源码。
 
 ## 10. 当前缺口与优先顺序
 
 | 优先级 | 缺口 | 原因 |
 |---:|---|---|
-| 1 | Agent配置文件只能选择，尚不能在前端创建和编辑 | 当前默认选择已持久化，但文件内容编辑仍需外部工具 |
-| 2 | 普通Node已有Schema和校验，但尚无内置Workflow实例 | 需要在真实需求出现时验证展示和观察数据，不为示例增加空业务 |
-| 3 | Catalog与Resolve已分离，资源来源分组仍可细化 | 当前能区分可选择与实际生效，后续可按资源数量改进分组交互 |
-| 4 | 运行中交互和Session分支未迁移 | 需要先决定持续运行控制面，不应塞进一次Run返回值 |
+| 1 | 尚无用户级Chat Home、Project Manifest/Registry和ProjectContext | 当前路径、Session、配置和Memory仍以Chat进程cwd为隐式根 |
+| 2 | Session尚未按稳定Project分区 | 当前统一目录无法支持可靠项目切换和路径迁移 |
+| 3 | Pi Web项目列表仍由Session反推 | 没有Session的新Project无法成为独立管理对象 |
+| 4 | Project配置、资源和Memory尚未接入稳定projectId | 当前项目能力和Memory隔离仍与cwd路径耦合 |
+| 5 | Agent配置文件只能选择，尚不能在前端创建和编辑 | 当前默认选择已持久化，但文件内容编辑仍需外部工具 |
+| 6 | 普通Node已有Schema和校验，但尚无内置Workflow实例 | 需要在真实需求出现时验证展示和观察数据，不为示例增加空业务 |
+| 7 | 运行中交互和Session分支未迁移 | 需要先决定持续运行控制面，不应塞进一次Run返回值 |
 
-已经完成的架构基线包括：统一Workflow Registry、`defineChatWorkflow()`、两种Node、每Agent目录、`.chat/config.json`、Tool/Skill/Extension Catalog、实际AgentSession Resolve，以及3个现有Workflow的迁移。
+已经完成的架构基线包括：统一Workflow Registry、`defineChatWorkflow()`、两种Node、每Agent目录、当前单根`.chat/config.json`、Tool/Skill/Extension Catalog、实际AgentSession Resolve，以及3个现有Workflow的迁移。Project架构是下一阶段目标，不能在代码完成前写成当前事实。
 
 ## 11. 已确认的配置场景
 
@@ -300,10 +356,12 @@ Session继续提供上下文；模型、Thinking、System Prompt和资源集合�
 Skill和Extension都允许配置多个文件或目录。Chat先通过Pi解析所有可用资源，再按来源提供分组：
 
 1. Pi与Chat默认资源。
-2. Chat agentDir中的全局资源。
-3. 当前cwd中的项目资源。
-4. Package提供的资源，按Package来源分组。
-5. 用户新增的文件或目录，按配置来源或目录分组。
+2. `~/.chat/agent`中的用户级资源。
+3. 当前Project`.chat`中的Chat Project资源。
+4. 当前cwd中的Pi原生`.pi`与`.agents/skills`资源。
+5. Workflow Agent私有资源。
+6. Package提供的资源，按Package来源分组。
+7. 用户新增的文件或目录，按配置来源或目录分组。
 
 Pi Web既可以勾选整个分组，也可以勾选单个资源。默认组只是一个可见分组，组内资源仍然可以单独开关。目录是否进一步展开成子分组由实际资源数量决定，不改变后端配置语义。
 

@@ -4,6 +4,7 @@ import { getAllowedFileRoots, isExistingFilePathAllowed } from "../../../../../.
 import { parseAgentConfigSelection } from "../../../../../../workflows/agent-definition.js";
 import { inspectWorkflowAgent } from "../../../../../../workflows/agent-inspection.js";
 import { getChatWorkflowDefinition } from "../../../../../../workflows/registry.js";
+import { resolveProjectContext } from "../../../../../../projects/registry.js";
 
 function errorResponse(error: unknown): never {
   throw createError({
@@ -22,12 +23,16 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody<unknown>(event);
-  if (typeof body !== "object" || body === null || !("cwd" in body) || typeof body.cwd !== "string") {
-    throw createError({ statusCode: 400, statusMessage: "cwd必须是字符串" });
+  if (typeof body !== "object" || body === null) {
+    throw createError({ statusCode: 400, statusMessage: "请求体必须是对象" });
   }
+  const rawProjectId = "projectId" in body && typeof body.projectId === "string" ? body.projectId : undefined;
+  const project = rawProjectId === undefined ? undefined : await resolveProjectContext(rawProjectId);
+  const rawCwd = project?.cwd ?? ("cwd" in body ? body.cwd : undefined);
+  if (typeof rawCwd !== "string") throw createError({ statusCode: 400, statusMessage: "缺少projectId或cwd" });
   let cwd: string;
   try {
-    cwd = await realpath(body.cwd);
+    cwd = await realpath(rawCwd);
     if (!(await stat(cwd)).isDirectory()) throw new Error("cwd不是目录");
   } catch (error) {
     return errorResponse(error);
@@ -41,6 +46,7 @@ export default defineEventHandler(async (event) => {
       ? parseAgentConfigSelection(body.selection)
       : undefined;
     return await inspectWorkflowAgent({
+      ...(project === undefined ? {} : { projectId: project.projectId, chatHome: project.chatHome }),
       cwd,
       defaultAgent: agent,
       workflowId: workflow.id,

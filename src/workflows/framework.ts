@@ -39,6 +39,8 @@ export interface ChatWorkflowManifest<Id extends string = string> {
 
 export interface ChatWorkflowAgentSessionContext {
   readonly purpose: "execution" | "inspection";
+  readonly projectId?: string;
+  readonly chatHome?: string;
   readonly cwd: string;
   readonly workflowId: string;
   readonly agentId: string;

@@ -1,15 +1,11 @@
 import { Type } from "@earendil-works/pi-ai";
-import {
-  defineTool,
-  type ToolDefinition,
-} from "@earendil-works/pi-coding-agent";
-import { MemoryNotFoundError, type MemoryService } from "../../../../../memory/service.js";
+import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { MemoryStoreManager } from "../../../../../memory/manager.js";
 import {
   MEMORY_KINDS,
   type MemoryKind,
   type MemoryRecord,
-  type MemoryScope,
-  type MemorySearchHit,
+  type MemoryTarget,
 } from "../../../../../memory/types.js";
 
 export const MEMORY_TOOL_NAMES = [
@@ -22,25 +18,40 @@ export const MEMORY_TOOL_NAMES = [
 ] as const;
 
 export interface MemoryToolContext {
-  readonly service: Pick<MemoryService, "search" | "list" | "get" | "create" | "update" | "delete">;
+  readonly manager: Pick<MemoryStoreManager, "search" | "list" | "get" | "createMany" | "update" | "delete">;
   readonly projectId: string;
   readonly sessionId: string;
   readonly workflowInvocationId: string;
+  readonly agentId: string;
 }
 
 const kindSchema = Type.Union(MEMORY_KINDS.map((kind) => Type.Literal(kind)));
-const scopeSchema = Type.Union([Type.Literal("global"), Type.Literal("project")]);
+const targetSchema = Type.Union([
+  Type.Object({ type: Type.Literal("personal") }, { additionalProperties: false }),
+  Type.Object({
+    type: Type.Literal("project"),
+    projectId: Type.String({ minLength: 1 }),
+  }, { additionalProperties: false }),
+]);
 
-function projectFilter(scope: MemoryScope, context: MemoryToolContext) {
-  return scope === "project"
-    ? { scope, projectId: context.projectId } as const
-    : { scope } as const;
+function defaultProjectTarget(context: MemoryToolContext): MemoryTarget {
+  return { type: "project", projectId: context.projectId };
 }
 
-function assertAccessible(record: MemoryRecord, context: MemoryToolContext): void {
-  if (record.scope === "project" && record.projectId !== context.projectId) {
-    throw new MemoryNotFoundError(record.id);
-  }
+function visibleTargets(context: MemoryToolContext): readonly MemoryTarget[] {
+  return [{ type: "personal" }, defaultProjectTarget(context)];
+}
+
+function normalizeTarget(value: { type: "personal" } | { type: "project"; projectId: string }): MemoryTarget {
+  return value.type === "personal"
+    ? { type: "personal" }
+    : { type: "project", projectId: value.projectId };
+}
+
+function targetForRecord(record: MemoryRecord): MemoryTarget {
+  return record.scope === "personal"
+    ? { type: "personal" }
+    : { type: "project", projectId: record.projectId as string };
 }
 
 function assertVersion(record: MemoryRecord, expectedVersion: number): void {
@@ -54,10 +65,14 @@ function assertVersion(record: MemoryRecord, expectedVersion: number): void {
 function memorySummary(record: MemoryRecord): Record<string, unknown> {
   return {
     id: record.id,
+    target: targetForRecord(record),
+    groupId: record.groupId,
     text: record.text,
     kind: record.kind,
     scope: record.scope,
     projectId: record.projectId,
+    sourceProjectId: record.sourceProjectId,
+    sourceSessionId: record.sourceSessionId,
     status: record.status,
     version: record.version,
     indexStatus: record.indexStatus,
@@ -71,69 +86,30 @@ function resultText(value: unknown): string {
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) {
-    throw signal.reason ?? new Error("Memory operation aborted");
-  }
+  if (signal?.aborted) throw signal.reason ?? new Error("Memory operation aborted");
 }
 
-function mergeVisibleHits(
-  globalHits: readonly MemorySearchHit[],
-  projectHits: readonly MemorySearchHit[],
-  topK: number,
-): MemorySearchHit[] {
-  const byId = new Map<string, MemorySearchHit>();
-  for (const hit of [...globalHits, ...projectHits]) {
-    const existing = byId.get(hit.memory.id);
-    if (existing === undefined || (hit.score ?? -1) > (existing.score ?? -1)) {
-      byId.set(hit.memory.id, hit);
-    }
-  }
-  return [...byId.values()]
-    .sort((left, right) => (right.score ?? -1) - (left.score ?? -1))
-    .slice(0, topK);
-}
-
-/** Pi custom tools are the only execution surface exposed to Memory Agent. */
+/** Pi custom tools expose explicit Targets while Chat resolves paths and Project access. */
 export function createMemoryTools(context: MemoryToolContext): ToolDefinition[] {
   const search = defineTool({
     name: "memory_search",
     label: "Search memory",
-    description: "Semantically search active long-term memories visible to the current project.",
+    description: "Search Personal, current-Project, or explicitly selected registered Project memories.",
     parameters: Type.Object({
       query: Type.String({ minLength: 1, description: "Natural-language search query" }),
-      scope: Type.Optional(scopeSchema),
+      targets: Type.Optional(Type.Array(targetSchema, { minItems: 1, maxItems: 20 })),
       kind: Type.Optional(kindSchema),
       topK: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })),
     }),
     async execute(_toolCallId, params, signal) {
       throwIfAborted(signal);
-      const topK = params.topK ?? 5;
-      let hits: readonly MemorySearchHit[];
-      if (params.scope !== undefined) {
-        hits = await context.service.search({
-          query: params.query,
-          topK,
-          ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
-          ...projectFilter(params.scope, context),
-        });
-      } else {
-        const [globalHits, projectHits] = await Promise.all([
-          context.service.search({
-            query: params.query,
-            topK,
-            scope: "global",
-            ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
-          }),
-          context.service.search({
-            query: params.query,
-            topK,
-            scope: "project",
-            projectId: context.projectId,
-            ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
-          }),
-        ]);
-        hits = mergeVisibleHits(globalHits, projectHits, topK);
-      }
+      const targets = params.targets?.map(normalizeTarget) ?? visibleTargets(context);
+      const hits = await context.manager.search({
+        query: params.query,
+        targets,
+        ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
+        ...(params.topK === undefined ? {} : { topK: params.topK }),
+      });
       const details = hits.map((hit) => ({ ...memorySummary(hit.memory), score: hit.score }));
       return { content: [{ type: "text", text: resultText(details) }], details };
     },
@@ -142,24 +118,23 @@ export function createMemoryTools(context: MemoryToolContext): ToolDefinition[] 
   const list = defineTool({
     name: "memory_list",
     label: "List memories",
-    description: "List active memories exactly, without semantic search or model loading.",
+    description: "List one exact Memory namespace without semantic search.",
     parameters: Type.Object({
-      scope: Type.Optional(scopeSchema),
+      target: Type.Optional(targetSchema),
       kind: Type.Optional(kindSchema),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
     }),
     async execute(_toolCallId, params, signal) {
       throwIfAborted(signal);
-      const scope = params.scope ?? "global";
-      const page = context.service.list({
-        ...projectFilter(scope, context),
+      const target = params.target === undefined ? defaultProjectTarget(context) : normalizeTarget(params.target);
+      const page = await context.manager.list(target, {
         status: "active",
         ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
         ...(params.limit === undefined ? {} : { limit: params.limit }),
         ...(params.offset === undefined ? {} : { offset: params.offset }),
       });
-      const details = { ...page, items: page.items.map(memorySummary) };
+      const details = { target, ...page, items: page.items.map(memorySummary) };
       return { content: [{ type: "text", text: resultText(details) }], details };
     },
   });
@@ -167,14 +142,11 @@ export function createMemoryTools(context: MemoryToolContext): ToolDefinition[] 
   const get = defineTool({
     name: "memory_get",
     label: "Get memory",
-    description: "Get one exact memory by Chat memory ID.",
-    parameters: Type.Object({
-      memoryId: Type.String({ minLength: 1 }),
-    }),
+    description: "Get one exact memory by Target and Chat memory ID.",
+    parameters: Type.Object({ target: targetSchema, memoryId: Type.String({ minLength: 1 }) }),
     async execute(_toolCallId, params, signal) {
       throwIfAborted(signal);
-      const memory = context.service.get(params.memoryId);
-      assertAccessible(memory, context);
+      const memory = await context.manager.get({ target: normalizeTarget(params.target), memoryId: params.memoryId });
       const details = memorySummary(memory);
       return { content: [{ type: "text", text: resultText(details) }], details };
     },
@@ -183,56 +155,56 @@ export function createMemoryTools(context: MemoryToolContext): ToolDefinition[] 
   const add = defineTool({
     name: "memory_add",
     label: "Add memory",
-    description: "Add one explicit, durable long-term memory to Chat and its Mem0 index.",
+    description: "Add one durable memory to one or more explicit Personal or Project Targets.",
     executionMode: "sequential",
     parameters: Type.Object({
       text: Type.String({ minLength: 1, maxLength: 50_000 }),
       kind: Type.Optional(kindSchema),
-      scope: Type.Optional(scopeSchema),
+      targets: Type.Optional(Type.Array(targetSchema, { minItems: 1, maxItems: 20 })),
     }),
     async execute(_toolCallId, params, signal) {
       throwIfAborted(signal);
-      const scope = params.scope ?? "global";
-      const memory = await context.service.create({
+      const targets = params.targets?.map(normalizeTarget) ?? [defaultProjectTarget(context)];
+      const details = await context.manager.createMany(targets, {
         text: params.text,
         ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
-        ...projectFilter(scope, context),
         metadata: { managedBy: "memory-agent" },
         source: {
+          projectId: context.projectId,
           sessionId: context.sessionId,
           workflowInvocationId: context.workflowInvocationId,
+          agentId: context.agentId,
         },
       });
-      const details = memorySummary(memory);
-      return { content: [{ type: "text", text: resultText(details) }], details };
+      const result = details.map((item) => ({
+        target: item.target,
+        ...(item.memory === undefined ? {} : { memory: memorySummary(item.memory) }),
+        ...(item.error === undefined ? {} : { error: item.error }),
+      }));
+      return { content: [{ type: "text", text: resultText(result) }], details: result };
     },
   });
 
   const update = defineTool({
     name: "memory_update",
     label: "Update memory",
-    description: "Update an exact visible memory after retrieving its current version.",
+    description: "Update an exact memory in its owning namespace after retrieving its version.",
     executionMode: "sequential",
     parameters: Type.Object({
+      target: targetSchema,
       memoryId: Type.String({ minLength: 1 }),
       expectedVersion: Type.Integer({ minimum: 1 }),
       text: Type.Optional(Type.String({ minLength: 1, maxLength: 50_000 })),
       kind: Type.Optional(kindSchema),
-      scope: Type.Optional(scopeSchema),
     }),
     async execute(_toolCallId, params, signal) {
       throwIfAborted(signal);
-      const current = context.service.get(params.memoryId);
-      assertAccessible(current, context);
+      const target = normalizeTarget(params.target);
+      const current = await context.manager.get({ target, memoryId: params.memoryId });
       assertVersion(current, params.expectedVersion);
-      const memory = await context.service.update(params.memoryId, {
+      const memory = await context.manager.update({ target, memoryId: params.memoryId }, {
         ...(params.text === undefined ? {} : { text: params.text }),
         ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
-        ...(params.scope === undefined
-          ? {}
-          : params.scope === "global"
-            ? { scope: "global", projectId: null }
-            : { scope: "project", projectId: context.projectId }),
       });
       const details = memorySummary(memory);
       return { content: [{ type: "text", text: resultText(details) }], details };
@@ -242,18 +214,19 @@ export function createMemoryTools(context: MemoryToolContext): ToolDefinition[] 
   const remove = defineTool({
     name: "memory_delete",
     label: "Delete memory",
-    description: "Permanently delete one exact visible memory after retrieving its current version.",
+    description: "Delete one exact memory from its owning namespace after retrieving its version.",
     executionMode: "sequential",
     parameters: Type.Object({
+      target: targetSchema,
       memoryId: Type.String({ minLength: 1 }),
       expectedVersion: Type.Integer({ minimum: 1 }),
     }),
     async execute(_toolCallId, params, signal) {
       throwIfAborted(signal);
-      const current = context.service.get(params.memoryId);
-      assertAccessible(current, context);
+      const target = normalizeTarget(params.target);
+      const current = await context.manager.get({ target, memoryId: params.memoryId });
       assertVersion(current, params.expectedVersion);
-      const details = await context.service.delete(params.memoryId);
+      const details = await context.manager.delete({ target, memoryId: params.memoryId });
       return { content: [{ type: "text", text: resultText(details) }], details };
     },
   });

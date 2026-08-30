@@ -7,10 +7,11 @@ export default defineEventHandler(async (event) => {
   setResponseHeader(event, "Cache-Control", "no-store");
   try {
     const query = getQuery(event);
+    const projectId = typeof query.projectId === "string" ? query.projectId : undefined;
     return await readChatSession(sessionId, undefined, {
       deferThinking: "deferThinking" in query,
       deferToolResultImages: "deferMedia" in query,
-    });
+    }, projectId);
   } catch (error) {
     throw createError({
       statusCode: 404,

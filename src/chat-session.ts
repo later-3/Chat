@@ -4,19 +4,25 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { ensureChatDataLayout, getChatDataPaths } from "./chat-data.js";
+import { resolveProjectContext } from "./projects/registry.js";
+import type { ChatProjectContext } from "./projects/types.js";
 import { LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE } from "./workflows/planning-execution/context.js";
 import { collectChatWorkflowStageMarkers } from "./workflows/workflow-stage.js";
 
 export interface ChatSessionInput {
-  readonly cwd: string;
+  readonly projectId?: string;
+  readonly cwd?: string;
+  readonly chatHome?: string;
   readonly sessionId?: string;
 }
 
 export interface ChatSession {
+  readonly projectId?: string;
   readonly cwd: string;
   readonly agentDir: string;
   readonly sessionDir: string;
   readonly manager: SessionManager;
+  readonly projectContext?: ChatProjectContext;
 }
 
 export function getChatAgentDir(): string {
@@ -64,11 +70,27 @@ function configureChatSessionManager(manager: SessionManager): SessionManager {
  * provide a filesystem path.
  */
 export async function openChatSession(input: ChatSessionInput): Promise<ChatSession> {
-  const cwd = resolve(input.cwd);
-  const { agentDir, sessionDir } = await ensureChatDataLayout();
+  let projectContext: ChatProjectContext | undefined;
+  let cwd: string;
+  let agentDir: string;
+  let sessionDir: string;
+  if (input.projectId !== undefined) {
+    projectContext = await resolveProjectContext(input.projectId, input.chatHome);
+    cwd = projectContext.cwd;
+    agentDir = projectContext.agentDir;
+    sessionDir = projectContext.sessionDir;
+    if (input.cwd !== undefined && resolve(input.cwd) !== cwd) {
+      throw new Error(`Project ${input.projectId}与工作目录不一致`);
+    }
+  } else {
+    if (input.cwd === undefined) throw new Error("打开Session必须提供projectId或cwd");
+    cwd = resolve(input.cwd);
+    ({ agentDir, sessionDir } = await ensureChatDataLayout());
+  }
 
   if (input.sessionId === undefined) {
     return {
+      ...(projectContext === undefined ? {} : { projectId: projectContext.projectId, projectContext }),
       cwd,
       agentDir,
       sessionDir,
@@ -84,6 +106,7 @@ export async function openChatSession(input: ChatSessionInput): Promise<ChatSess
   }
 
   return {
+    ...(projectContext === undefined ? {} : { projectId: projectContext.projectId, projectContext }),
     cwd,
     agentDir,
     sessionDir,

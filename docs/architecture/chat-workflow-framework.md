@@ -6,6 +6,8 @@
 
 Chat不实现第二套Agent Runtime。Workflow负责业务编排，Agent节点继续使用Pi `AgentSession`，Tool继续使用Pi `ToolDefinition`和Extension/SDK注册接口。
 
+本文的单根`.chat/config.json`描述当前已实现框架。用户级`~/.chat`、Project本地`.chat`、Project Registry和Session分区的目标结构见[Chat Project架构设计](./chat-project-framework.md)；迁移完成后，Workflow配置合并会增加用户级与Project级两层，但Workflow、Agent、Node和Pi装配合同不变。
+
 ## 2. 三层事实源
 
 ```text
@@ -56,12 +58,12 @@ src/workflows/<workflow-id>/
 
 `tools/`可以用于清晰组织源码，但Pi按Extension加载可执行文件。Agent配置应把`extensions/<extension>`传给Pi的`additionalExtensionPaths`，而不是让Chat扫描并执行任意`tools/`目录。
 
-Chat全局Pi资源继续使用Pi原生目录：
+Chat个人Pi资源继续使用Pi原生Agent目录语义，但根目录由Chat Home提供：
 
 ```text
-.chat/agent/extensions/
-.chat/agent/skills/
-.chat/agent/prompts/
+~/.chat/agent/extensions/
+~/.chat/agent/skills/
+~/.chat/agent/prompts/
 ```
 
 Workflow私有资源不能为了方便复制到全局目录；它们由所属Agent配置显式引用。
@@ -185,7 +187,7 @@ export const memoryWorkflowDefinition = defineChatWorkflow({
 
 配置只表达可声明数据。Tool实现、Extension Factory、Context Transform和领域服务实例必须由代码提供；配置通过稳定名称或路径引用它们。
 
-## 7. `.chat/config.json`
+## 7. 当前`.chat/config.json`
 
 Chat首次准备数据目录时创建根配置：
 

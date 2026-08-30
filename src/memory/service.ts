@@ -9,6 +9,7 @@ import type {
   MemoryRecord,
   MemoryRebuildResult,
   MemorySearchHit,
+  MemoryTarget,
   SearchMemoriesInput,
   UpdateMemoryInput,
 } from "./types.js";
@@ -68,13 +69,16 @@ export class MemoryService {
   private repairPromise: Promise<void> | undefined;
   readonly repository: MemoryRepository;
   private readonly indexFactory: MemoryIndexFactory;
+  private readonly target: MemoryTarget | undefined;
 
   constructor(
     repository: MemoryRepository,
     indexFactory: MemoryIndexFactory,
+    target?: MemoryTarget,
   ) {
     this.repository = repository;
     this.indexFactory = indexFactory;
+    this.target = target;
   }
 
   get(id: string): MemoryRecord {
@@ -96,6 +100,7 @@ export class MemoryService {
     if (text === "") throw new MemoryValidationError("memory text cannot be empty");
     if (text.length > 50_000) throw new MemoryValidationError("memory text cannot exceed 50000 characters");
     validateProjectScope(input.scope, input.projectId);
+    this.validateTarget(input.scope ?? "personal", input.projectId ?? null);
 
     const record = this.repository.create({ ...input, text });
     try {
@@ -108,6 +113,18 @@ export class MemoryService {
       this.repository.markIndexFailed(record.id, errorMessage(error));
       this.repairPromise = undefined;
       throw new MemoryIndexError(record.id, error);
+    }
+  }
+
+  async importRecord(record: MemoryRecord, scope: MemoryRecord["scope"], projectId: string | null): Promise<MemoryRecord> {
+    this.validateTarget(scope, projectId);
+    const imported = this.repository.importRecord(record, scope, projectId);
+    if (imported.status !== "active") return imported;
+    try {
+      return await this.syncRecord(await this.readyIndex(), this.repository.require(imported.id));
+    } catch (error) {
+      this.repository.markIndexFailed(imported.id, errorMessage(error));
+      throw new MemoryIndexError(imported.id, error);
     }
   }
 
@@ -126,6 +143,7 @@ export class MemoryService {
     const nextScope = input.scope ?? current.scope;
     const nextProjectId = input.projectId === undefined ? current.projectId : input.projectId;
     validateProjectScope(nextScope, nextProjectId);
+    this.validateTarget(nextScope, nextProjectId);
 
     const normalized: UpdateMemoryInput = {
       ...input,
@@ -282,5 +300,18 @@ export class MemoryService {
     }
     const mem0Id = await index.add(record);
     return this.repository.markIndexed(record.id, mem0Id);
+  }
+
+  private validateTarget(scope: string, projectId: string | null | undefined): void {
+    if (this.target === undefined) return;
+    if (this.target.type === "personal") {
+      if (scope !== "personal" || projectId != null) {
+        throw new MemoryValidationError("Personal Memory Store只接受personal记录");
+      }
+      return;
+    }
+    if (scope !== "project" || projectId !== this.target.projectId) {
+      throw new MemoryValidationError(`Project Memory Store只接受${this.target.projectId}记录`);
+    }
   }
 }

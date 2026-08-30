@@ -26,6 +26,7 @@ Chat Nitro进程
   ├── 认证与前端静态文件
   ├── /runs：Workflow控制与事件读取
   ├── /api/sessions：Pi Session读取投影
+  ├── /api/projects：Project Registry发现与切换
   ├── /api/files：受限文件读取
   ├── /api/workflows/.../agents/.../resolve：Agent实际装配结果
   ├── /api/workflows/.../agents/.../catalog：Agent可选择资源目录
@@ -49,8 +50,9 @@ Chat Workflow Step
           │
           ▼
 pi/：Pi Coding Agent
-  ├── .chat/agent：模型、认证、Settings和全局资源
-  └── .chat/sessions：Chat对话Session
+  ├── ~/.chat/agent：模型、认证、Settings和个人资源
+  ├── <project>/.chat：Project配置和资源声明
+  └── ~/.chat/projects/<projectId>/sessions：Chat对话Session
 ```
 
 生产部署只运行一个Chat进程。`frontend/dist`由Nitro提供，不再启动Pi Web Next.js服务。开发环境额外运行Vite，只提供页面热更新和到Chat的代理。
@@ -65,7 +67,7 @@ useAgentSession.handleSend()
 GET /api/chat-config
   → 默认Workflow和Agent选择
   ↓
-POST /runs { cwd, prompt, sessionId?, workflow, agentConfigs? }
+POST /runs { projectId, cwd, prompt, sessionId?, workflow, agentConfigs? }
   ↓
 startChatWorkflow()
   ↓
@@ -108,15 +110,15 @@ Pi Web前端从`GET /api/workflows`读取选择项，不再维护支持的Workfl
 
 ### 5.1 事实源
 
-Chat只使用：
+Chat只使用Project Registry解析出的目录：
 
 ```text
-Chat/.chat/sessions
+~/.chat/projects/<projectId>/sessions
 ```
 
 `openChatSession()`负责：
 
-1. 把cwd、agentDir和sessionDir解析为Chat目录下的绝对路径。
+1. 用`projectId`从Registry解析cwd、agentDir和sessionDir，并校验可选cwd一致。
 2. 没有Session ID时，用`SessionManager.create()`创建新Session。
 3. 有Session ID时，只在Chat Session目录中查找，并校验Session的cwd与请求cwd一致。
 4. 配置Chat的Context Entry Filter，避免旧版本规划交接消息继续进入模型上下文。
@@ -213,7 +215,7 @@ Memory Workflow使用一个`memory-agent`：
 
 1. Agent JSON只启用6个`memory_*` Tool。
 2. Tool用Pi `defineTool()`定义，并通过Pi `customTools`注入当前`MemoryService`、cwd、Session ID和Workflow Invocation ID。
-3. Memory Skill源码位于Agent目录的`skills/memory/SKILL.md`；生产构建通过Nitro Server Asset物化到`.chat`运行目录。
+3. Memory Skill源码位于Agent目录的`skills/memory/SKILL.md`；生产构建通过Nitro Server Asset物化到`~/.chat/runtime/skills/memory`。
 4. `resolve`和执行共用同一装配函数；检查模式使用不可执行占位服务，不创建Memory数据库或索引。
 
 Memory管理HTTP API和Memory Agent Tool都调用同一个`MemoryService`，前端管理页不绕过Chat目录数据库直接操作Mem0。
@@ -250,14 +252,14 @@ Chat使用Pi原生`CustomEntry`保存三类不进入模型上下文的数据：
 
 | Agent Stage | 当前能力来源 |
 |---|---|
-| Direct的Pi Coding Agent | Workflow目录内`agents/pi-coding-agent/agent.json` + Chat `.chat/agent` Settings/模型/资源 |
+| Direct的Pi Coding Agent | Workflow目录内`agents/pi-coding-agent/agent.json` + `~/.chat/agent` Settings/模型/资源 + 当前可信Project资源 |
 | Planner | Workflow目录内`agents/planner/agent.json`定义替换System Prompt和无工具策略 |
 | Planning Executor | Workflow目录内`agents/pi-coding-agent/agent.json`定义Chat自定义指令；`context.ts`实现不可序列化的Context Transform |
 | Memory Agent | `agents/memory-agent/agent.json` + 私有Skill + Pi Custom Tool运行时装配 |
 
 `agent-definition.ts`实现身份、基础System Prompt、Chat自定义指令区域、模型、Thinking、工具和资源策略；它集中创建SettingsManager、ResourceLoader和AgentSession。`GET /api/workflows`查询声明，`catalog`查询可选择资源，`resolve`查询本轮实际装配结果。
 
-`.chat/config.json`保存默认Workflow和每个Agent的默认选择。前端使用同一个Chat API读写；请求可覆盖本轮选择。配置文件内容目前仍由外部编辑器创建，前端只管理路径和资源选择。
+`~/.chat/config.json`保存个人默认，`<project-root>/.chat/config.json`保存Project覆盖。前端使用带`projectId`的同一Chat API读写合并投影；本次Run仍可覆盖同名Agent选择。
 
 ## 11. 当前边界问题
 
@@ -268,6 +270,7 @@ Chat使用Pi原生`CustomEntry`保存三类不进入模型上下文的数据：
 3. Context Transform和宿主依赖Tool仍由Workflow代码注册；配置只能引用稳定名称，不能序列化函数。
 4. Catalog表示已安装/可选择资源，Resolve表示当前Agent实际生效能力；前端仍可进一步强化这两个状态的视觉区分。
 5. 运行中Steering、Follow-up、Extension交互式UI和Session Fork依赖持续运行控制面，当前一次一Run的接口尚未支持。
+6. cwd-only Session和Resource入口仅保留给旧数据迁移与现有测试；浏览器正常路径已经提交稳定`projectId`。
 
 ## 12. 源码证据索引
 
@@ -280,7 +283,7 @@ Chat使用Pi原生`CustomEntry`保存三类不进入模型上下文的数据：
 | Planner与Executor | `src/workflows/planning-execution/` |
 | Workflow框架与Manifest | `src/workflows/framework.ts`、各Workflow的`workflow.json` |
 | Agent配置与装配 | `src/workflows/agent-definition.ts`、各Workflow的`agents/<id>/agent.json` |
-| `.chat`根配置 | `src/chat-config.ts`、`src/routes/api/chat-config.*.ts` |
+| 分层配置 | `src/chat-config.ts`、`src/routes/api/chat-config.*.ts` |
 | Memory | `src/memory/`、`src/workflows/memory/`、`src/routes/api/memories/` |
 | Workflow观察数据 | `src/workflows/workflow-stage.ts` |
 | 实时事件 | `src/workflows/agent-session-log.ts`、`chat-run-events.ts` |

@@ -11,6 +11,7 @@ import {
   type MemoryKind,
   type MemoryScope,
   type MemoryStatus,
+  type MemoryTarget,
   type SearchMemoriesInput,
   type UpdateMemoryInput,
 } from "./types.js";
@@ -41,8 +42,8 @@ function memoryKind(value: unknown): MemoryKind | undefined {
 
 function memoryScope(value: unknown): MemoryScope | undefined {
   if (value === undefined) return undefined;
-  if (value !== "global" && value !== "project") {
-    throw new MemoryValidationError("scope must be global or project");
+  if (value !== "personal" && value !== "project") {
+    throw new MemoryValidationError("scope must be personal or project");
   }
   return value;
 }
@@ -136,6 +137,47 @@ export function parseSearchMemoryBody(value: unknown): SearchMemoriesInput {
 function queryScalar(value: unknown): string | undefined {
   if (Array.isArray(value)) return queryScalar(value[0]);
   return typeof value === "string" ? value : undefined;
+}
+
+export function parseMemoryTargetValue(value: unknown): MemoryTarget {
+  const target = objectValue(value, "target must be an object");
+  if (target.type === "personal") return { type: "personal" };
+  if (target.type === "project") {
+    const projectId = stringValue(target.projectId, "target.projectId").trim();
+    if (projectId === "") throw new MemoryValidationError("target.projectId cannot be empty");
+    return { type: "project", projectId };
+  }
+  throw new MemoryValidationError("target.type must be personal or project");
+}
+
+export function parseMemoryTargetsBody(body: Record<string, unknown>): readonly MemoryTarget[] {
+  if (body.targets !== undefined) {
+    if (!Array.isArray(body.targets)) throw new MemoryValidationError("targets must be an array");
+    return body.targets.map(parseMemoryTargetValue);
+  }
+  if (body.target !== undefined) return [parseMemoryTargetValue(body.target)];
+  const scope = memoryScope(body.scope);
+  if (scope === "project") {
+    const projectId = optionalString(body.projectId, "projectId")?.trim();
+    if (!projectId) throw new MemoryValidationError("project target requires projectId");
+    return [{ type: "project", projectId }];
+  }
+  return [{ type: "personal" }];
+}
+
+export function parseMemoryTargetQuery(query: Record<string, unknown>): MemoryTarget {
+  const scope = queryScalar(query.scope);
+  const projectId = queryScalar(query.projectId);
+  if (scope === "project") {
+    if (projectId === undefined || projectId.trim() === "") {
+      throw new MemoryValidationError("project target requires projectId");
+    }
+    return { type: "project", projectId: projectId.trim() };
+  }
+  if (scope !== undefined && scope !== "personal") {
+    throw new MemoryValidationError("scope must be personal or project");
+  }
+  return { type: "personal" };
 }
 
 export function parseListMemoryQuery(query: Record<string, unknown>): ListMemoriesInput {

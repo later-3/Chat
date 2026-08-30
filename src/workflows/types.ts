@@ -1,6 +1,8 @@
 import type { AgentConfigSelection } from "./agent-config.js";
 
 export interface ChatWorkflowInput {
+  readonly projectId?: string;
+  readonly chatHome?: string;
   readonly cwd: string;
   readonly prompt: string;
   readonly sessionId?: string;

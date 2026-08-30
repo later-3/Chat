@@ -9,14 +9,25 @@ export const MEMORY_KINDS = [
 ] as const;
 
 export type MemoryKind = (typeof MEMORY_KINDS)[number];
-export type MemoryScope = "global" | "project";
+export type MemoryScope = "personal" | "project";
+export type MemoryTarget =
+  | { readonly type: "personal" }
+  | { readonly type: "project"; readonly projectId: string };
+
+export interface MemoryAddress {
+  readonly target: MemoryTarget;
+  readonly memoryId: string;
+}
 export type MemoryStatus = "active" | "archived";
 export type MemoryIndexStatus = "pending" | "indexed" | "failed";
 
 export interface MemorySource {
+  readonly projectId?: string;
   readonly sessionId?: string;
   readonly entryIds?: readonly string[];
   readonly workflowInvocationId?: string;
+  readonly agentId?: string;
+  readonly turnId?: string;
 }
 
 export interface MemoryRecord {
@@ -25,8 +36,10 @@ export interface MemoryRecord {
   readonly kind: MemoryKind;
   readonly scope: MemoryScope;
   readonly projectId: string | null;
+  readonly groupId: string;
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly sourceSessionId: string | null;
+  readonly sourceProjectId: string | null;
   readonly sourceEntryIds: readonly string[];
   readonly sourceWorkflowInvocationId: string | null;
   readonly status: MemoryStatus;
@@ -43,6 +56,7 @@ export interface CreateMemoryInput {
   readonly kind?: MemoryKind;
   readonly scope?: MemoryScope;
   readonly projectId?: string;
+  readonly groupId?: string;
   readonly metadata?: Readonly<Record<string, unknown>>;
   readonly source?: MemorySource;
 }
@@ -84,6 +98,20 @@ export interface SearchMemoriesInput {
 export interface MemorySearchHit {
   readonly memory: MemoryRecord;
   readonly score: number | null;
+}
+
+export interface SearchMemoryStoresInput {
+  readonly query: string;
+  readonly targets: readonly MemoryTarget[];
+  readonly kind?: MemoryKind;
+  readonly topK?: number;
+  readonly threshold?: number;
+}
+
+export interface MemoryTargetWriteResult {
+  readonly target: MemoryTarget;
+  readonly memory?: MemoryRecord;
+  readonly error?: string;
 }
 
 export interface MemoryIndexSearchHit {

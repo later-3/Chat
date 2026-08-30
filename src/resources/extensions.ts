@@ -5,7 +5,10 @@ import {
   DefaultPackageManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { ensureChatDataLayout } from "../chat-data.js";
+import { ensureChatHome } from "../chat-home.js";
+import { appendChatAuditEvent } from "../audit-log.js";
+import { getProjectTrust } from "../projects/trust.js";
+import { describeResourceVersion, qualifiedResourceAddress } from "./version.js";
 
 function scanDirs(cwd: string, agentDir: string) {
   return [
@@ -21,9 +24,10 @@ function nameFromPath(filePath: string): string {
   return extension === "" ? file : file.slice(0, -extension.length);
 }
 
-export async function listPiExtensions(cwd: string) {
-  const { agentDir } = await ensureChatDataLayout();
-  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: true });
+export async function listPiExtensions(cwd: string, projectId?: string) {
+  const { agentDir } = await ensureChatHome();
+  const projectTrusted = projectId === undefined ? true : (await getProjectTrust(projectId)).trusted;
+  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
   const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
   const extensions: Array<{
     path: string;
@@ -41,9 +45,10 @@ export async function listPiExtensions(cwd: string) {
     const resolved = await packageManager.resolve(async () => "skip");
     for (const resource of resolved.extensions) {
       const origin = resource.metadata.origin === "package" ? "package" : "file";
+      const resourcePath = realpathSync(resource.path);
       extensions.push({
-        path: resource.path,
-        name: nameFromPath(resource.path),
+        path: resourcePath,
+        name: nameFromPath(resourcePath),
         scope: resource.metadata.scope === "project" ? "project" : "global",
         origin,
         source: resource.metadata.source,
@@ -65,9 +70,10 @@ export async function listPiExtensions(cwd: string) {
       const disabledPath = join(dir, entry);
       const enabledPath = disabledPath.replace(/\.disabled$/, "");
       if (seen.has(resolve(enabledPath))) continue;
+      const canonicalEnabledPath = join(realpathSync(dir), basename(enabledPath));
       extensions.push({
-        path: enabledPath,
-        name: nameFromPath(enabledPath),
+        path: canonicalEnabledPath,
+        name: nameFromPath(canonicalEnabledPath),
         scope,
         origin: "file",
         source: "local",
@@ -80,11 +86,23 @@ export async function listPiExtensions(cwd: string) {
   }
   extensions.sort((left, right) => Number(right.enabled) - Number(left.enabled)
     || left.scope.localeCompare(right.scope) || left.name.localeCompare(right.name));
-  return { extensions, errors };
+  return {
+    extensions: await Promise.all(extensions.map(async (extension) => ({
+      ...extension,
+      address: qualifiedResourceAddress({
+        kind: "extension",
+        id: extension.name,
+        scope: extension.scope,
+        ...(projectId === undefined ? {} : { projectId }),
+      }),
+      version: await describeResourceVersion(extension.enabled ? extension.path : extension.disabledPath ?? extension.path),
+    }))),
+    errors,
+  };
 }
 
-export async function togglePiExtension(cwd: string, targetPath: string, enable: boolean): Promise<void> {
-  const available = await listPiExtensions(cwd);
+export async function togglePiExtension(cwd: string, targetPath: string, enable: boolean, projectId?: string): Promise<void> {
+  const available = await listPiExtensions(cwd, projectId);
   const canonicalTarget = join(realpathSync(dirname(targetPath)), basename(targetPath));
   const extension = available.extensions.find((candidate) => (
     join(realpathSync(dirname(candidate.path)), basename(candidate.path)) === canonicalTarget
@@ -99,4 +117,11 @@ export async function togglePiExtension(cwd: string, targetPath: string, enable:
     if (!existsSync(enabledPath) || existsSync(disabledPath)) throw new Error("Extension启用状态已改变");
     renameSync(enabledPath, disabledPath);
   }
+  await appendChatAuditEvent({
+    action: "extension.toggle",
+    target: projectId === undefined
+      ? { type: "personal", kind: "extension", path: enabledPath }
+      : { type: "project", projectId, kind: "extension", path: enabledPath },
+    details: { enabled: enable },
+  });
 }

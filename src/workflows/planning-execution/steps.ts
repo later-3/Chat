@@ -30,6 +30,8 @@ interface PlanningStepResult {
 }
 
 export interface PlanningExecutionStepInput {
+  readonly projectId?: string;
+  readonly chatHome?: string;
   readonly cwd: string;
   readonly sessionId: string;
   readonly workflowInvocationId: string;

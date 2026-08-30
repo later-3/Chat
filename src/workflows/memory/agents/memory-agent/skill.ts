@@ -18,8 +18,8 @@ async function readMemorySkillSource(): Promise<string> {
 }
 
 /** Materializes the Chat-owned Skill as a private runtime resource for Pi. */
-export async function ensureMemorySkill(memoryDir: string): Promise<string> {
-  const skillDir = resolve(memoryDir, "runtime", "skills", "memory");
+export async function ensureMemorySkill(runtimeDir: string): Promise<string> {
+  const skillDir = resolve(runtimeDir, "skills", "memory");
   const skillPath = resolve(skillDir, "SKILL.md");
   await mkdir(skillDir, { recursive: true, mode: 0o700 });
   const current = await readFile(skillPath, "utf8").catch((error: unknown) => {

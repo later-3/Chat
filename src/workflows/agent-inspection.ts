@@ -1,6 +1,8 @@
 import { readFile, stat } from "node:fs/promises";
+import { basename } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { ensureChatDataLayout } from "../chat-data.js";
+import { resolveProjectContext } from "../projects/registry.js";
 import {
   createWorkflowAgentSession,
   type AgentConfigSelection,
@@ -8,10 +10,13 @@ import {
 } from "./agent-definition.js";
 import { resolveWorkflowAgentDefinition } from "./agent-config-loader.js";
 import type { PrepareChatWorkflowAgentSession } from "./registry.js";
+import { describeResourceVersion, qualifiedResourceAddress } from "../resources/version.js";
 
 const MAX_VISIBLE_RESOURCE_BYTES = 1_000_000;
 
 interface AgentInspectionOptions {
+  readonly projectId?: string;
+  readonly chatHome?: string;
   readonly cwd: string;
   readonly defaultAgent: WorkflowAgentDefinition;
   readonly selection?: AgentConfigSelection;
@@ -48,18 +53,23 @@ type CreatedInspectionSession = Awaited<ReturnType<typeof createWorkflowAgentSes
 
 /** Resolves and creates the same Pi AgentSession used by Workflow execution, without sending a Prompt. */
 export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
-  const dataPaths = await ensureChatDataLayout();
+  const projectContext = options.projectId === undefined
+    ? undefined
+    : await resolveProjectContext(options.projectId, options.chatHome);
+  const dataPaths = projectContext ?? await ensureChatDataLayout();
+  const cwd = projectContext?.cwd ?? options.cwd;
   const agent = await resolveWorkflowAgentDefinition({
     defaultAgent: options.defaultAgent,
-    cwd: options.cwd,
+    cwd,
     ...(options.selection === undefined ? {} : { selection: options.selection }),
   });
-  const sessionManager = SessionManager.inMemory(options.cwd);
+  const sessionManager = SessionManager.inMemory(cwd);
   const workflowId = options.workflowId ?? "agent-inspection";
   const agentId = options.agentId ?? options.defaultAgent.id;
   const sessionExtensions = await options.prepareAgentSession?.({
     purpose: "inspection",
-    cwd: options.cwd,
+    ...(projectContext === undefined ? {} : { projectId: projectContext.projectId, chatHome: projectContext.chatHome }),
+    cwd,
     workflowId,
     agentId,
     sessionId: sessionManager.getSessionId(),
@@ -67,7 +77,8 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
   });
   const created = await createWorkflowAgentSession({
     chatSession: {
-      cwd: options.cwd,
+      ...(projectContext === undefined ? {} : { projectId: projectContext.projectId, projectContext }),
+      cwd,
       agentDir: dataPaths.agentDir,
       sessionDir: dataPaths.sessionDir,
       manager: sessionManager,
@@ -87,23 +98,50 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
       baseDir: skill.baseDir,
       disableModelInvocation: skill.disableModelInvocation,
       sourceInfo: skill.sourceInfo,
+      address: qualifiedResourceAddress({
+        kind: "skill",
+        id: skill.name,
+        scope: skill.sourceInfo.scope,
+        ...(projectContext === undefined ? {} : { projectId: projectContext.projectId }),
+        workflowId,
+        agentId,
+      }),
+      version: await describeResourceVersion(skill.filePath),
       ...await readVisibleResource(skill.filePath),
     })));
     const extensionResult = resourceLoader.getExtensions();
-    const extensions = extensionResult.extensions.map((extension) => ({
+    const extensions = await Promise.all(extensionResult.extensions.map(async (extension) => ({
       path: extension.path,
       resolvedPath: extension.resolvedPath,
       sourceInfo: extension.sourceInfo,
+      address: qualifiedResourceAddress({
+        kind: "extension",
+        id: basename(extension.resolvedPath),
+        scope: extension.sourceInfo.scope,
+        ...(projectContext === undefined ? {} : { projectId: projectContext.projectId }),
+        workflowId,
+        agentId,
+      }),
+      version: await describeResourceVersion(extension.resolvedPath),
       capabilities: extensionCapabilities(extension),
-    }));
+    })));
     const promptResult = resourceLoader.getPrompts();
-    const prompts = promptResult.prompts.map((prompt) => ({
+    const prompts = await Promise.all(promptResult.prompts.map(async (prompt) => ({
       name: prompt.name,
       description: prompt.description,
       filePath: prompt.filePath,
       content: prompt.content,
       sourceInfo: prompt.sourceInfo,
-    }));
+      address: qualifiedResourceAddress({
+        kind: "prompt",
+        id: prompt.name,
+        scope: prompt.sourceInfo.scope,
+        ...(projectContext === undefined ? {} : { projectId: projectContext.projectId }),
+        workflowId,
+        agentId,
+      }),
+      version: await describeResourceVersion(prompt.filePath),
+    })));
 
     const pluginResources = new Map<string, {
       source: string;
@@ -155,15 +193,24 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
         })),
         contextFiles: resourceLoader.getAgentsFiles().agentsFiles,
       },
-      tools: session.getAllTools().map((tool) => ({
+      tools: await Promise.all(session.getAllTools().map(async (tool) => ({
         name: tool.name,
         label: session.getToolDefinition(tool.name)?.label ?? tool.name,
         description: tool.description,
         parameters: tool.parameters,
         promptGuidelines: tool.promptGuidelines ?? [],
         sourceInfo: tool.sourceInfo,
+        address: qualifiedResourceAddress({
+          kind: "tool",
+          id: tool.name,
+          scope: tool.sourceInfo.scope,
+          ...(projectContext === undefined ? {} : { projectId: projectContext.projectId }),
+          workflowId,
+          agentId,
+        }),
+        version: await describeResourceVersion(tool.sourceInfo.path),
         active: activeTools.has(tool.name),
-      })),
+      }))),
       skills,
       extensions,
       plugins: [...pluginResources.values()],

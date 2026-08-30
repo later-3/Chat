@@ -3,7 +3,8 @@ import {
   parseChatWorkflowHttpInput,
   type ChatWorkflowHttpInput,
 } from "../run-request.js";
-import { getStoredAgentConfigs, readChatRootConfig } from "../chat-config.js";
+import { getStoredAgentConfigs, resolveChatConfig } from "../chat-config.js";
+import { resolveRequestProject } from "../projects/request.js";
 import { localTimestamp } from "../runtime-log.js";
 import { startChatWorkflow } from "../workflows/start-chat-workflow.js";
 
@@ -16,15 +17,18 @@ import { startChatWorkflow } from "../workflows/start-chat-workflow.js";
 export default defineEventHandler(async (event) => {
   let input: ChatWorkflowHttpInput;
   try {
-    const config = await readChatRootConfig();
     const body = await readBody<unknown>(event);
+    const project = await resolveRequestProject(body, process.cwd());
+    const config = (await resolveChatConfig(project.projectId, project.chatHome)).effective;
     const requestedWorkflow = typeof body === "object" && body !== null && "workflow" in body
       && typeof body.workflow === "string"
       ? body.workflow
       : config.defaultWorkflowId;
     const storedAgentConfigs = getStoredAgentConfigs(config, requestedWorkflow);
     input = parseChatWorkflowHttpInput(body, {
-      cwd: process.cwd(),
+      projectId: project.projectId,
+      chatHome: project.chatHome,
+      cwd: project.cwd,
       prompt: "",
       workflow: config.defaultWorkflowId,
       ...(storedAgentConfigs === undefined ? {} : { agentConfigs: storedAgentConfigs }),

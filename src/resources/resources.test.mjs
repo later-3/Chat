@@ -9,12 +9,16 @@ import { listPiSkills, setSkillModelInvocation } from "./skills.ts";
 
 test("Chat global Skill, Extension and Plugin resources use .chat/agent", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
+  const previousChatHome = process.env.CHAT_HOME;
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-pi-resources-"));
   t.after(() => {
     process.chdir(previousCwd);
+    if (previousChatHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousChatHome;
     fs.rmSync(base, { recursive: true, force: true });
   });
   process.chdir(base);
+  process.env.CHAT_HOME = path.join(base, ".chat");
   const cwd = path.join(base, "workspace");
   const agentDir = path.join(base, ".chat", "agent");
   const skillDir = path.join(agentDir, "skills", "review");

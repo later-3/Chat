@@ -11,6 +11,8 @@ export async function planningExecutionWorkflow(
 
   const planning = await runPlanningStep(input);
   return runPlanningExecutionStep({
+    ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+    ...(input.chatHome === undefined ? {} : { chatHome: input.chatHome }),
     cwd: input.cwd,
     sessionId: planning.sessionId,
     workflowInvocationId: input.workflowInvocationId,

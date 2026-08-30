@@ -15,9 +15,11 @@ Use this skill only because the user explicitly selected the Memory Workflow.
 4. Before adding, search for an obvious duplicate. Report the existing record instead of silently creating a duplicate.
 5. Store one durable idea per record as a self-contained sentence. Preserve the user's meaning and language.
 6. If the user says to store the exact text, do not summarize or rewrite it.
-7. Use `global` for stable personal preferences and facts that apply everywhere. Use `project` for decisions and constraints that apply only to the current project.
-8. Never store passwords, API keys, access tokens, raw logs, temporary debugging output, or unconfirmed guesses.
-9. Store a session summary only when the user explicitly asks for one, using kind `session_summary`.
-10. After a mutation, report the memory ID, version, scope, kind, and actual stored text.
+7. Default writes to the current Project. Use a `personal` Target for stable user preferences and facts that apply across Projects.
+8. Personal, current-Project, another registered Project, or several Targets are valid when the user explicitly requests them. Never invent a Project ID; search or list registered Projects first when the Target is unclear.
+9. Default search covers Personal and the current Project. Search other Projects only when the user requests it or it is necessary to fulfill an explicit cross-Project task.
+10. Never store passwords, API keys, access tokens, raw logs, temporary debugging output, or unconfirmed guesses.
+11. Store a session summary only when the user explicitly asks for one, using kind `session_summary`.
+12. After a mutation, report every actual Target, memory ID, version, kind, and stored text. Report per-Target failures for multi-Target writes.
 
 The Chat catalog is the source of truth. Mem0 is only its semantic index. Do not claim a write succeeded unless the tool result says it succeeded.

@@ -18,6 +18,8 @@ export {
 };
 
 export interface ChatWorkflowHttpInput {
+  readonly projectId?: string;
+  readonly chatHome?: string;
   readonly cwd: string;
   readonly prompt: string;
   readonly sessionId?: string;
@@ -43,12 +45,16 @@ export function parseChatWorkflowHttpInput(
   if (!isRecord(value)) throw new Error("请求体必须是JSON对象");
 
   const cwd = value.cwd ?? defaults.cwd;
+  const projectId = value.projectId ?? defaults.projectId;
   const prompt = value.prompt ?? defaults.prompt;
   const sessionId = value.sessionId ?? defaults.sessionId;
   const workflow = value.workflow ?? defaults.workflow;
   const rawAgentConfigs = value.agentConfigs;
   if (typeof cwd !== "string" || cwd.trim() === "") {
     throw new Error("cwd必须是非空字符串");
+  }
+  if (projectId !== undefined && (typeof projectId !== "string" || projectId.trim() === "")) {
+    throw new Error("projectId必须是非空字符串");
   }
   if (typeof prompt !== "string" || prompt.trim() === "") {
     throw new Error("prompt必须是非空字符串");
@@ -77,6 +83,8 @@ export function parseChatWorkflowHttpInput(
   }
 
   return {
+    ...(projectId === undefined ? {} : { projectId }),
+    ...(defaults.chatHome === undefined ? {} : { chatHome: defaults.chatHome }),
     cwd,
     prompt,
     workflow: workflow as ChatWorkflowId,

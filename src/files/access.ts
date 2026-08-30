@@ -1,4 +1,4 @@
-import { listChatSessions } from "../session-read-model.js";
+import { listProjects } from "../projects/registry.js";
 export {
   isExistingFilePathAllowed,
   isFilePathAllowed,
@@ -22,9 +22,8 @@ export async function getAllowedFileRoots(): Promise<Set<string>> {
   const now = Date.now();
   if (cached && cached.expiresAt > now) return cached.roots;
   const roots = new Set<string>([normalizeSlashes(process.cwd()), ...additionalRoots]);
-  for (const session of await listChatSessions()) {
-    if (session.cwd) roots.add(normalizeSlashes(session.cwd));
-    if (session.projectRoot) roots.add(normalizeSlashes(session.projectRoot));
+  for (const project of await listProjects()) {
+    if (project.available) roots.add(normalizeSlashes(project.path));
   }
   cached = { roots, expiresAt: now + 5_000 };
   return roots;

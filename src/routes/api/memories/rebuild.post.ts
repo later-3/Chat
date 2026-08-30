@@ -1,11 +1,16 @@
-import { defineEventHandler } from "nitro/h3";
-import { memoryHttpError } from "../../../memory/http.js";
-import { getChatMemoryService } from "../../../memory/runtime.js";
+import { defineEventHandler, readBody } from "nitro/h3";
+import { memoryHttpError, parseMemoryTargetValue } from "../../../memory/http.js";
+import { getMemoryStoreManager } from "../../../memory/manager-runtime.js";
 
-export default defineEventHandler(async () => {
+export default defineEventHandler(async (event) => {
   try {
-    const service = await getChatMemoryService();
-    return await service.rebuild();
+    const body = await readBody<unknown>(event);
+    if (typeof body !== "object" || body === null || Array.isArray(body) || !("target" in body)) {
+      throw new Error("Memory重建必须提供target");
+    }
+    return await getMemoryStoreManager().rebuild(
+      parseMemoryTargetValue((body as Record<string, unknown>).target),
+    );
   } catch (error) {
     return memoryHttpError(error);
   }

@@ -3,24 +3,43 @@ import {
   DefaultResourceLoader,
   parseFrontmatter,
 } from "@earendil-works/pi-coding-agent";
-import { ensureChatDataLayout } from "../chat-data.js";
+import { ensureChatHome } from "../chat-home.js";
+import { appendChatAuditEvent } from "../audit-log.js";
+import { getProjectTrust } from "../projects/trust.js";
+import { resolveProjectContext } from "../projects/registry.js";
+import { describeResourceVersion, qualifiedResourceAddress } from "./version.js";
 
-export async function listPiSkills(cwd: string) {
-  const { agentDir } = await ensureChatDataLayout();
-  const loader = new DefaultResourceLoader({ cwd, agentDir });
+export async function listPiSkills(cwd: string, projectId?: string) {
+  const { agentDir } = await ensureChatHome();
+  const project = projectId === undefined ? undefined : await resolveProjectContext(projectId);
+  const trusted = project === undefined ? true : (await getProjectTrust(project.projectId)).trusted;
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    ...(trusted && project !== undefined
+      ? { additionalSkillPaths: [`${project.projectConfigDir}/skills`] }
+      : {}),
+  });
   await loader.reload();
   const { skills, diagnostics } = loader.getSkills();
   return {
-    skills: skills.map((skill) => ({
+    skills: await Promise.all(skills.map(async (skill) => ({
       name: skill.name,
       description: skill.description,
       filePath: skill.filePath,
       baseDir: skill.baseDir,
       disableModelInvocation: skill.disableModelInvocation,
       sourceInfo: skill.sourceInfo,
-    })),
+      address: qualifiedResourceAddress({
+        kind: "skill",
+        id: skill.name,
+        scope: skill.sourceInfo.scope,
+        ...(projectId === undefined ? {} : { projectId }),
+      }),
+      version: await describeResourceVersion(skill.filePath),
+    }))),
     diagnostics,
-    projectResourcesLoaded: true,
+    projectResourcesLoaded: trusted,
   };
 }
 
@@ -29,8 +48,9 @@ export async function setSkillModelInvocation(
   cwd: string,
   filePath: string,
   disabled: boolean,
+  projectId?: string,
 ): Promise<void> {
-  const available = await listPiSkills(cwd);
+  const available = await listPiSkills(cwd, projectId);
   const canonicalPath = await realpath(filePath);
   const availablePaths = await Promise.all(available.skills.map((skill) => realpath(skill.filePath)));
   if (!availablePaths.includes(canonicalPath)) {
@@ -48,4 +68,11 @@ export async function setSkillModelInvocation(
     updated = content.replace(new RegExp(`^${key}\\s*:.*\\r?\\n`, "m"), "");
   }
   if (updated !== content) await writeFile(canonicalPath, updated, "utf8");
+  await appendChatAuditEvent({
+    action: "skill.model-invocation.update",
+    target: projectId === undefined
+      ? { type: "personal", kind: "skill", path: canonicalPath }
+      : { type: "project", projectId, kind: "skill", path: canonicalPath },
+    details: { disableModelInvocation: disabled },
+  });
 }

@@ -13,6 +13,7 @@ import { appendChatWorkflowStage } from "../src/workflows/workflow-stage.ts";
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const serverEntry = path.join(projectRoot, ".output/server/index.mjs");
 let runtimeRoot;
+let chatHome;
 let workspace;
 let sessionId;
 let server;
@@ -21,6 +22,7 @@ let baseUrl;
 let serverOutput = "";
 let authenticatedCookiePromise;
 const embeddingDimension = 64;
+const projectId = "built-project";
 
 function textEmbedding(text) {
   const vector = Array.from({ length: embeddingDimension }, () => 0);
@@ -114,20 +116,29 @@ async function authenticatedFetch(pathname, init = {}) {
 before(async () => {
   assert.equal(fs.existsSync(serverEntry), true, "run pnpm build before pnpm test:built");
   runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "chat-built-server-"));
+  chatHome = path.join(runtimeRoot, "chat-home");
   workspace = path.join(runtimeRoot, "workspace");
-  const sessionDir = path.join(runtimeRoot, ".pi", "sessions");
-  const legacyAgentDir = path.join(runtimeRoot, ".pi", "agent");
-  const legacySkillDir = path.join(legacyAgentDir, "skills", "built-review");
-  const legacyExtensionDir = path.join(legacyAgentDir, "extensions");
+  const sessionDir = path.join(chatHome, "projects", projectId, "sessions");
+  const agentDir = path.join(chatHome, "agent");
+  const skillDir = path.join(agentDir, "skills", "built-review");
+  const extensionDir = path.join(agentDir, "extensions");
   fs.mkdirSync(workspace, { recursive: true });
+  workspace = fs.realpathSync(workspace);
   fs.mkdirSync(sessionDir, { recursive: true });
-  fs.mkdirSync(legacySkillDir, { recursive: true });
-  fs.mkdirSync(legacyExtensionDir, { recursive: true });
+  fs.mkdirSync(skillDir, { recursive: true });
+  fs.mkdirSync(extensionDir, { recursive: true });
+  fs.mkdirSync(path.join(workspace, ".chat"), { recursive: true });
+  fs.writeFileSync(path.join(workspace, ".chat", "project.json"), JSON.stringify({
+    schemaVersion: 1,
+    id: projectId,
+    name: "Built Project",
+    description: "Production integration test",
+  }));
   fs.writeFileSync(path.join(workspace, "fixture.md"), "# Built server fixture\n");
-  fs.writeFileSync(path.join(legacySkillDir, "SKILL.md"), [
+  fs.writeFileSync(path.join(skillDir, "SKILL.md"), [
     "---", "name: built-review", "description: Built server review", "---", "Review built output.",
   ].join("\n"));
-  fs.writeFileSync(path.join(legacyExtensionDir, "built-extension.ts"), "export default function register() {}\n");
+  fs.writeFileSync(path.join(extensionDir, "built-extension.ts"), "export default function register() {}\n");
 
   const manager = SessionManager.create(workspace, sessionDir);
   appendChatWorkflowStage(manager, {
@@ -156,6 +167,8 @@ before(async () => {
       HOST: "127.0.0.1",
       PORT: String(port),
       WORKFLOW_TARGET_WORLD: "local",
+      WORKFLOW_LOCAL_DATA_DIR: path.join(chatHome, "runtime", "workflow-data"),
+      CHAT_HOME: chatHome,
       CHAT_PUBLIC_URL: "https://chat.ai4child.asia",
       CHAT_WEB_AUTH_ENABLED: "1",
       CHAT_WEB_AUTH_USERNAME: "later",
@@ -193,6 +206,12 @@ before(async () => {
       }
     });
   });
+  const opened = await authenticatedFetch("/api/projects/open", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: workspace }),
+  });
+  assert.equal(opened.status, 200, await opened.text());
 });
 
 after(async () => {
@@ -287,7 +306,7 @@ test("memory management API persists, searches, updates, rebuilds, and deletes",
   const updateResponse = await authenticatedFetch(`/api/memories/${created.id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: updatedText }),
+    body: JSON.stringify({ target: { type: "personal" }, text: updatedText }),
   });
   assert.equal(updateResponse.status, 200);
   const updated = (await updateResponse.json()).memory;
@@ -295,7 +314,11 @@ test("memory management API persists, searches, updates, rebuilds, and deletes",
   assert.equal(updated.version, 2);
   assert.equal(updated.indexStatus, "indexed");
 
-  const rebuildResponse = await authenticatedFetch("/api/memories/rebuild", { method: "POST" });
+  const rebuildResponse = await authenticatedFetch("/api/memories/rebuild", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target: { type: "personal" } }),
+  });
   assert.equal(rebuildResponse.status, 200);
   assert.deepEqual(await rebuildResponse.json(), {
     total: 1,
@@ -330,8 +353,8 @@ test("memory management API persists, searches, updates, rebuilds, and deletes",
     indexCleanup: "completed",
   });
   assert.equal((await (await authenticatedFetch("/api/memories")).json()).total, 0);
-  assert.equal(fs.existsSync(path.join(runtimeRoot, ".chat", "memory", "catalog.db")), true);
-  assert.equal(fs.existsSync(path.join(runtimeRoot, ".chat", "memory", "vector-store.db")), true);
+  assert.equal(fs.existsSync(path.join(chatHome, "memory", "personal", "catalog.db")), true);
+  assert.equal(fs.existsSync(path.join(chatHome, "memory", "personal", "vector-store.db")), true);
 });
 
 test("the default Later account creates a signed HttpOnly session", async () => {
@@ -357,13 +380,13 @@ test("the default Later account creates a signed HttpOnly session", async () => 
 });
 
 test("session list and detail come from the isolated Chat session directory", async () => {
-  const listResponse = await authenticatedFetch("/api/sessions");
+  const listResponse = await authenticatedFetch(`/api/sessions?projectId=${projectId}`);
   assert.equal(listResponse.status, 200);
   assert.match(listResponse.headers.get("cache-control") ?? "", /no-store/);
   const list = await listResponse.json();
   assert.deepEqual(list.sessions.map((session) => session.id), [sessionId]);
 
-  const detailResponse = await authenticatedFetch(`/api/sessions/${encodeURIComponent(sessionId)}?deferThinking=1&deferMedia=1`);
+  const detailResponse = await authenticatedFetch(`/api/sessions/${encodeURIComponent(sessionId)}?projectId=${projectId}&deferThinking=1&deferMedia=1`);
   assert.equal(detailResponse.status, 200);
   const detail = await detailResponse.json();
   assert.deepEqual(detail.context.messages.map((message) => message.role), ["user", "assistant"]);
@@ -386,7 +409,7 @@ test("the frontend and backend share one validated .chat root configuration", as
   });
   assert.equal(updateResponse.status, 200);
   assert.equal((await updateResponse.json()).defaultWorkflowId, "memory");
-  assert.equal(fs.existsSync(path.join(runtimeRoot, ".chat", "config.json")), true);
+  assert.equal(fs.existsSync(path.join(chatHome, "config.json")), true);
 });
 
 test("Workflow containers and their Agents come from the backend registry", async () => {
@@ -417,7 +440,7 @@ test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cwd: workspace }),
+      body: JSON.stringify({ projectId, cwd: workspace }),
     },
   );
   const body = await response.json();
@@ -433,11 +456,11 @@ test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async
       "memory_delete",
     ],
   );
-  assert.deepEqual(body.skills.map((skill) => skill.name), ["memory"]);
+  assert.deepEqual(body.skills.map((skill) => skill.name), ["chat-architecture", "memory"]);
   assert.equal(body.tools.find((tool) => tool.name === "memory_search").sourceInfo.source, "sdk");
 
   const catalogResponse = await authenticatedFetch(
-    `/api/workflows/memory/agents/memory-agent/catalog?cwd=${encodeURIComponent(workspace)}`,
+    `/api/workflows/memory/agents/memory-agent/catalog?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`,
   );
   const catalog = await catalogResponse.json();
   assert.equal(catalogResponse.status, 200, JSON.stringify(catalog));
@@ -450,7 +473,7 @@ test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async
 });
 
 test("Pi resources are served by Chat from the managed Agent directory", async () => {
-  const skillsResponse = await authenticatedFetch(`/api/skills?cwd=${encodeURIComponent(workspace)}`);
+  const skillsResponse = await authenticatedFetch(`/api/skills?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
   assert.equal(skillsResponse.status, 200);
   const skills = await skillsResponse.json();
   const skill = skills.skills.find((item) => item.name === "built-review");
@@ -459,22 +482,22 @@ test("Pi resources are served by Chat from the managed Agent directory", async (
   const toggleResponse = await authenticatedFetch("/api/skills", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cwd: workspace, filePath: skill.filePath, disableModelInvocation: true }),
+    body: JSON.stringify({ projectId, cwd: workspace, filePath: skill.filePath, disableModelInvocation: true }),
   });
   assert.equal(toggleResponse.status, 200);
 
-  const extensionsResponse = await authenticatedFetch(`/api/extensions?cwd=${encodeURIComponent(workspace)}`);
+  const extensionsResponse = await authenticatedFetch(`/api/extensions?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
   assert.equal(extensionsResponse.status, 200);
   assert.ok((await extensionsResponse.json()).extensions.some((extension) => extension.name === "built-extension"));
 
-  const pluginsResponse = await authenticatedFetch(`/api/plugins?cwd=${encodeURIComponent(workspace)}`);
+  const pluginsResponse = await authenticatedFetch(`/api/plugins?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
   assert.equal(pluginsResponse.status, 200);
   assert.deepEqual((await pluginsResponse.json()).packages, []);
 });
 
 test("full history exports the managed Chat Session as standalone HTML", async () => {
   const inlineResponse = await authenticatedFetch(
-    `/api/sessions/${encodeURIComponent(sessionId)}/export?inline=1`,
+    `/api/sessions/${encodeURIComponent(sessionId)}/export?inline=1&projectId=${projectId}`,
   );
   assert.equal(inlineResponse.status, 200);
   assert.match(inlineResponse.headers.get("content-type") ?? "", /text\/html/);

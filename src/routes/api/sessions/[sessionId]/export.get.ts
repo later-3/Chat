@@ -25,7 +25,8 @@ export default defineEventHandler(async (event) => {
 
   let session;
   try {
-    session = await requireChatSession(sessionId);
+    const projectId = getQuery(event).projectId;
+    session = await requireChatSession(sessionId, typeof projectId === "string" ? projectId : undefined);
   } catch (error) {
     throw createError({
       statusCode: 404,

@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import {
   buildContextEntries,
   buildSessionContext,
@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { ensureChatDataLayout } from "./chat-data.js";
 import { getChatSessionDir } from "./chat-session.js";
+import { resolveProjectContext } from "./projects/registry.js";
 import {
   collectChatWorkflowMessages,
   collectChatWorkflowStageMarkers,
@@ -33,9 +34,10 @@ export interface ChatSessionListItem {
   transient: false;
   sessionSource: "chat";
   readOnly: false;
+  projectId?: string;
 }
 
-function toListItems(infos: SessionInfo[]): ChatSessionListItem[] {
+function toListItems(infos: SessionInfo[], projectId?: string): ChatSessionListItem[] {
   const idByPath = new Map(infos.map((info) => [resolve(info.path), info.id]));
   return infos.map((info) => {
     const parentSessionId = info.parentSessionPath === undefined
@@ -53,16 +55,21 @@ function toListItems(infos: SessionInfo[]): ChatSessionListItem[] {
       ...(parentSessionId === undefined ? {} : { parentSessionId }),
       projectRoot: info.cwd,
       projectAvailable: true,
-      projectKey: info.cwd,
+      projectKey: projectId ?? info.cwd,
       transient: false,
       sessionSource: "chat",
       readOnly: false,
+      ...(projectId === undefined ? {} : { projectId }),
     };
   });
 }
 
-/** 只枚举Chat自己的`.chat/sessions`，不会扫描用户主目录下的`~/.pi`。 */
-export async function listChatSessions(): Promise<ChatSessionListItem[]> {
+/** Lists one registered Project; the no-argument form remains only for legacy migration. */
+export async function listChatSessions(projectId?: string, chatHome?: string): Promise<ChatSessionListItem[]> {
+  if (projectId !== undefined) {
+    const project = await resolveProjectContext(projectId, chatHome);
+    return toListItems(await SessionManager.listAll(project.sessionDir), project.projectId);
+  }
   const { sessionDir } = await ensureChatDataLayout();
   return toListItems(await SessionManager.listAll(sessionDir));
 }
@@ -235,8 +242,8 @@ export function projectSessionContext(
 }
 
 /** Resolves a browser-provided ID only against Chat's managed Session directory. */
-export async function requireChatSession(sessionId: string): Promise<ChatSessionListItem> {
-  const session = (await listChatSessions()).find((item) => item.id === sessionId);
+export async function requireChatSession(sessionId: string, projectId?: string): Promise<ChatSessionListItem> {
+  const session = (await listChatSessions(projectId)).find((item) => item.id === sessionId);
   if (session === undefined) throw new Error(`找不到Session: ${sessionId}`);
   return session;
 }
@@ -245,9 +252,10 @@ export async function readChatSession(
   sessionId: string,
   leafId?: string | null,
   options: SessionProjectionOptions = {},
+  projectId?: string,
 ) {
-  const info = await requireChatSession(sessionId);
-  const manager = SessionManager.open(info.path, getChatSessionDir());
+  const info = await requireChatSession(sessionId, projectId);
+  const manager = SessionManager.open(info.path, projectId === undefined ? getChatSessionDir() : dirname(info.path));
   const entries = manager.getEntries();
   if (leafId && manager.getEntry(leafId) === undefined) {
     throw new Error(`找不到Session节点: ${leafId}`);

@@ -8,7 +8,9 @@ import {
   DefaultPackageManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { ensureChatDataLayout } from "../chat-data.js";
+import { ensureChatHome } from "../chat-home.js";
+import { appendChatAuditEvent } from "../audit-log.js";
+import { getProjectTrust } from "../projects/trust.js";
 
 type PluginScope = "global" | "project";
 type ResourceKind = "extension" | "skill" | "prompt" | "theme";
@@ -72,9 +74,10 @@ function collectPackageResources(resources: readonly ResolvedResource[], kind: R
     }));
 }
 
-export async function listPiPlugins(cwd: string) {
-  const { agentDir } = await ensureChatDataLayout();
-  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: true });
+export async function listPiPlugins(cwd: string, projectId?: string) {
+  const { agentDir } = await ensureChatHome();
+  const projectTrusted = projectId === undefined ? true : (await getProjectTrust(projectId)).trusted;
+  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
   const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
   const diagnostics: Array<{ type: "warning" | "error"; message: string; source?: string }> = [];
   const resourcesByPackage = new Map<string, Array<{ kind: ResourceKind; name: string; path: string; relativePath: string }>>();
@@ -153,12 +156,13 @@ function setDisabled(settingsManager: SettingsManager, source: string, scope: Pl
 }
 
 export async function changePiPlugin(options: {
+  projectId?: string;
   cwd: string;
   action: "install" | "remove" | "update" | "disable" | "enable";
   source: string;
   scope: PluginScope;
 }) {
-  const { agentDir } = await ensureChatDataLayout();
+  const { agentDir } = await ensureChatHome();
   const settingsManager = SettingsManager.create(options.cwd, agentDir, { projectTrusted: true });
   const packageManager = new DefaultPackageManager({ cwd: options.cwd, agentDir, settingsManager });
   const local = options.scope === "project";
@@ -166,5 +170,11 @@ export async function changePiPlugin(options: {
   else if (options.action === "remove") await packageManager.removeAndPersist(options.source, { local });
   else if (options.action === "update") await packageManager.update(options.source);
   else setDisabled(settingsManager, options.source, options.scope, options.action === "disable");
-  return listPiPlugins(options.cwd);
+  await appendChatAuditEvent({
+    action: `plugin.${options.action}`,
+    target: options.scope === "project"
+      ? { type: "project", projectId: options.projectId, kind: "plugin", source: options.source }
+      : { type: "personal", kind: "plugin", source: options.source },
+  });
+  return listPiPlugins(options.cwd, options.projectId);
 }

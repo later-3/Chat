@@ -104,11 +104,13 @@ Agent配置被分成两个明确模块：
 
 Memory Workflow拥有一个`memory-agent`和一个Agent Node。Agent默认只启用6个Chat Memory Tool；Tool继续使用Pi `ToolDefinition`和`customTools`接口，`MemoryService`、Session ID和Workflow Invocation ID由该Agent的运行时装配函数注入。
 
-Memory Skill以Agent目录中的真实`SKILL.md`作为源码事实源。开发运行时直接读取源码文件；生产构建把Markdown作为Nitro Server Asset打包，再物化到`.chat/memory/runtime/skills`供Pi按原生Skill路径读取。执行和检查共用同一装配函数。
+Memory Skill以Agent目录中的真实`SKILL.md`作为源码事实源。开发运行时直接读取源码文件；生产构建把Markdown作为Nitro Server Asset打包，再物化到`~/.chat/runtime/skills/memory`供Pi按原生Skill路径读取。执行和检查共用同一装配函数。
 
-## 6. `.chat`根配置
+## 6. 当前`.chat`根配置
 
 `.chat/config.json`保存默认Workflow和每个Workflow Agent的默认选择覆盖。后端严格解析并原子写入；前端通过`GET/PUT /api/chat-config`读取和修改同一文件，不直接访问文件系统。
+
+这是当前已实现结构。下一阶段将按[Chat Project架构设计](./chat-project-framework.md)拆为`~/.chat/config.json`用户级默认和`<project-root>/.chat/config.json`Project覆盖，并把用户级运行数据迁移出Chat源码仓库。
 
 一次运行的配置合并顺序是：
 
@@ -135,6 +137,8 @@ Workflow通过公共接口使用这些能力。只有某个Workflow特有的Stag
 
 ## 8. 下一批实现
 
-1. 在Pi Web中创建和编辑Agent配置文件；当前可以选择文件并把选择持久化到`.chat/config.json`。
-2. 根据真实需求增加新的Workflow，并用普通Node验证非Agent阶段的前端展示和运行证据。
-3. 补齐Skill更新检查、Skill更新和其他Pi Web迁移清单中的接口。
+1. 实现Chat Home、Project Manifest/Registry、ProjectContext和按Project分区的Session，再接入Content Lab。
+2. 把配置解析扩展为“源码默认 → 用户级默认 → Project覆盖 → 本次Run覆盖”。
+3. 在Pi Web中创建和编辑Agent配置文件；当前可以选择文件并把选择持久化到单根`.chat/config.json`。
+4. 根据真实需求增加新的Workflow，并用普通Node验证非Agent阶段的前端展示和运行证据。
+5. 补齐Skill更新检查、Skill更新和其他Pi Web迁移清单中的接口。

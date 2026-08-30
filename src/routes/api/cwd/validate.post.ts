@@ -1,6 +1,5 @@
-import { realpath, stat } from "node:fs/promises";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
-import { allowFileRoot } from "../../../files/access.js";
+import { openProject } from "../../../projects/registry.js";
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<unknown>(event);
@@ -11,10 +10,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "cwd必须是非空字符串" });
   }
   try {
-    const resolved = await realpath(cwd);
-    if (!(await stat(resolved)).isDirectory()) throw new Error("路径不是目录");
-    allowFileRoot(resolved);
-    return { cwd: resolved, projectRoot: resolved, projectKey: resolved };
+    const project = await openProject({ path: cwd });
+    return {
+      projectId: project.projectId,
+      cwd: project.cwd,
+      projectRoot: project.projectRoot,
+      projectKey: project.projectId,
+    };
   } catch (error) {
     throw createError({
       statusCode: 400,

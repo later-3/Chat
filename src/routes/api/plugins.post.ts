@@ -1,5 +1,5 @@
 import { createError, defineEventHandler, readBody } from "nitro/h3";
-import { resolveResourceCwd, ResourceAccessError } from "../../resources/access.js";
+import { resolveResourceCwd, resolveResourceProject, ResourceAccessError } from "../../resources/access.js";
 import { changePiPlugin } from "../../resources/plugins.js";
 
 const ACTIONS = new Set(["install", "remove", "update", "disable", "enable"] as const);
@@ -9,9 +9,12 @@ export default defineEventHandler(async (event) => {
   if (typeof body !== "object" || body === null) {
     throw createError({ statusCode: 400, statusMessage: "请求体必须是对象" });
   }
-  const value = body as { cwd?: unknown; action?: unknown; source?: unknown; scope?: unknown };
+  const value = body as { projectId?: unknown; cwd?: unknown; action?: unknown; source?: unknown; scope?: unknown };
   try {
-    const cwd = await resolveResourceCwd(value.cwd);
+    const project = value.projectId === undefined
+      ? undefined
+      : await resolveResourceProject(value.projectId, value.cwd);
+    const cwd = project?.cwd ?? await resolveResourceCwd(value.cwd);
     if (typeof value.action !== "string" || !ACTIONS.has(value.action as never)) {
       throw new ResourceAccessError(400, "Plugin action无效");
     }
@@ -19,6 +22,7 @@ export default defineEventHandler(async (event) => {
       throw new ResourceAccessError(400, "Plugin source必须是非空字符串");
     }
     return await changePiPlugin({
+      ...(project === undefined ? {} : { projectId: project.projectId }),
       cwd,
       action: value.action as "install" | "remove" | "update" | "disable" | "enable",
       source: value.source.trim(),
