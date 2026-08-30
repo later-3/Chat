@@ -3,8 +3,8 @@ import test from "node:test";
 import {
   buildPlanningPrompt,
   PLANNER_AGENT,
-} from "./planner.ts";
-import { PLANNING_EXECUTION_AGENT } from "./pi-coding-agent.ts";
+} from "./planner/index.ts";
+import { PLANNING_EXECUTION_AGENT } from "./pi-coding-agent/index.ts";
 import { buildPlanningExecutionInput } from "../context.ts";
 
 test("planner is instructed to use the current Session and only produce a plan", () => {

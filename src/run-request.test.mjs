@@ -23,10 +23,14 @@ test("adapter input overrides cwd and prompt", () => {
   );
 });
 
-test("the request selects one of the two registered workflows", () => {
+test("the request selects a registered workflow", () => {
   assert.equal(
     parseChatWorkflowHttpInput({ workflow: "planning-execution" }, defaults).workflow,
     "planning-execution",
+  );
+  assert.equal(
+    parseChatWorkflowHttpInput({ workflow: "memory" }, defaults).workflow,
+    "memory",
   );
   assert.throws(
     () => parseChatWorkflowHttpInput({ workflow: "unknown" }, defaults),
@@ -84,6 +88,29 @@ test("Agent configuration files are scoped to Agents in the selected Workflow", 
       agentConfigs: { planner: { primary: "/configs/planner.json" } },
     }, defaults),
     /不存在Agent: planner/,
+  );
+});
+
+test("request Agent selections override only matching .chat defaults", () => {
+  const configuredDefaults = {
+    ...defaults,
+    workflow: "planning-execution",
+    agentConfigs: {
+      planner: { promptFiles: ["/defaults/planner.md"] },
+      "pi-coding-agent": { append: ["/defaults/coding.json"] },
+    },
+  };
+  assert.deepEqual(
+    parseChatWorkflowHttpInput({
+      agentConfigs: { planner: { promptFiles: ["/request/planner.md"] } },
+    }, configuredDefaults),
+    {
+      ...configuredDefaults,
+      agentConfigs: {
+        planner: { promptFiles: ["/request/planner.md"] },
+        "pi-coding-agent": { append: ["/defaults/coding.json"] },
+      },
+    },
   );
 });
 

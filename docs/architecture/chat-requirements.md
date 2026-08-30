@@ -213,7 +213,7 @@ Chat已经控制了Session目录和Pi agentDir，下一步继续沿用这个逻�
 - 网络合同校验和用户可理解的失败反馈。
 - PWA和移动端体验。
 
-浏览器页面不拥有服务端事实，也不直接推导Pi资源目录。
+浏览器页面不拥有服务端事实，也不直接推导Pi资源目录。浏览器对`.chat/config.json`的读取和修改必须经过Chat API；前后端使用同一配置事实源，但只有后端实现文件解析和路径授权。
 
 ## 7. 配置能力必须满足的语义
 
@@ -280,12 +280,12 @@ Chat中的Agent配置是本轮运行事实源。默认配置可以引用Chat管�
 
 | 优先级 | 缺口 | 原因 |
 |---:|---|---|
-| 1 | 没有后端Agent能力解析与装配边界 | 所有配置和前端能力都依赖它，当前逻辑散落在Workflow代码 |
-| 2 | 没有Workflow描述/Stage/Agent查询事实源 | 前端只能硬编码两个Workflow名称 |
-| 3 | 没有每Agent Skill和Extension选择语义 | 当前不同Stage只能使用代码里隐含的默认资源发现 |
-| 4 | 模型、Thinking和工具选择未接Workflow路径 | 原Pi Web界面被禁用，不能表达用户或Agent策略 |
-| 5 | Skills、Plugins、Extensions后端API未迁移 | 页面存在但Chat没有完整实现 |
-| 6 | 运行中交互和Session分支未迁移 | 需要先决定持续运行控制面，不应塞进一次Run返回值 |
+| 1 | Agent配置文件只能选择，尚不能在前端创建和编辑 | 当前默认选择已持久化，但文件内容编辑仍需外部工具 |
+| 2 | 普通Node已有Schema和校验，但尚无内置Workflow实例 | 需要在真实需求出现时验证展示和观察数据，不为示例增加空业务 |
+| 3 | Catalog与Resolve已分离，资源来源分组仍可细化 | 当前能区分可选择与实际生效，后续可按资源数量改进分组交互 |
+| 4 | 运行中交互和Session分支未迁移 | 需要先决定持续运行控制面，不应塞进一次Run返回值 |
+
+已经完成的架构基线包括：统一Workflow Registry、`defineChatWorkflow()`、两种Node、每Agent目录、`.chat/config.json`、Tool/Skill/Extension Catalog、实际AgentSession Resolve，以及3个现有Workflow的迁移。
 
 ## 11. 已确认的配置场景
 
@@ -329,6 +329,8 @@ workflows/<workflow-id>/
 ```
 
 即使两个Workflow都使用Pi Coding Agent，也先各自在自己的目录中拥有明确配置。允许使用Chat/Pi公共基础设施和公共资源，但不为了复用提前打散Workflow目录，也不在Workflow内复制Session、HTTP服务或Pi Runtime。
+
+目录、两种Node、`workflow.json`、`agent.json`、`.chat/config.json`和前后端接口的规范定义见[Chat Workflow开发框架](./chat-workflow-framework.md)。该文档是后续Agent新增Workflow时的直接开发入口。
 
 ### 11.4 Agent自定义提示词区域
 

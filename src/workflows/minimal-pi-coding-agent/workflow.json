@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "minimal-pi-coding-agent",
+  "name": "直接执行",
+  "description": "使用一个Pi Coding Agent直接处理当前用户请求。",
+  "nodes": [
+    {
+      "kind": "agent",
+      "id": "execute",
+      "name": "执行",
+      "description": "由Pi Coding Agent处理用户请求。",
+      "agentId": "pi-coding-agent"
+    }
+  ],
+  "agents": [
+    {
+      "id": "pi-coding-agent",
+      "config": "./agents/pi-coding-agent/agent.json"
+    }
+  ]
+}

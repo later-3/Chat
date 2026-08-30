@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 export interface ChatDataPaths {
   readonly root: string;
   readonly agentDir: string;
+  readonly memoryDir: string;
   readonly sessionDir: string;
   readonly workflowDataDir: string;
 }
@@ -15,6 +16,7 @@ export function getChatDataPaths(projectRoot = process.cwd()): ChatDataPaths {
   return {
     root,
     agentDir: resolve(root, "agent"),
+    memoryDir: resolve(root, "memory"),
     sessionDir: resolve(root, "sessions"),
     workflowDataDir: resolve(root, "workflow-data"),
   };
@@ -72,6 +74,7 @@ export function ensureChatDataLayout(projectRoot = process.cwd()): Promise<ChatD
     const paths = getChatDataPaths(resolvedRoot);
     await mkdir(paths.root, { recursive: true, mode: 0o700 });
     await prepareDirectory(paths.agentDir, resolve(resolvedRoot, ".pi/agent"));
+    await prepareDirectory(paths.memoryDir);
     await prepareDirectory(paths.sessionDir, resolve(resolvedRoot, ".pi/sessions"));
     await prepareDirectory(paths.workflowDataDir);
     return paths;

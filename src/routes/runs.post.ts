@@ -1,9 +1,9 @@
 import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
 import {
-  DEFAULT_CHAT_WORKFLOW_ID,
   parseChatWorkflowHttpInput,
   type ChatWorkflowHttpInput,
 } from "../run-request.js";
+import { getStoredAgentConfigs, readChatRootConfig } from "../chat-config.js";
 import { localTimestamp } from "../runtime-log.js";
 import { startChatWorkflow } from "../workflows/start-chat-workflow.js";
 
@@ -16,10 +16,18 @@ import { startChatWorkflow } from "../workflows/start-chat-workflow.js";
 export default defineEventHandler(async (event) => {
   let input: ChatWorkflowHttpInput;
   try {
-    input = parseChatWorkflowHttpInput(await readBody<unknown>(event), {
+    const config = await readChatRootConfig();
+    const body = await readBody<unknown>(event);
+    const requestedWorkflow = typeof body === "object" && body !== null && "workflow" in body
+      && typeof body.workflow === "string"
+      ? body.workflow
+      : config.defaultWorkflowId;
+    const storedAgentConfigs = getStoredAgentConfigs(config, requestedWorkflow);
+    input = parseChatWorkflowHttpInput(body, {
       cwd: process.cwd(),
       prompt: "",
-      workflow: DEFAULT_CHAT_WORKFLOW_ID,
+      workflow: config.defaultWorkflowId,
+      ...(storedAgentConfigs === undefined ? {} : { agentConfigs: storedAgentConfigs }),
     });
   } catch (error) {
     throw createError({

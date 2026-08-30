@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-ai/compat";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { runPiCodingAgentPromptStep } from "./minimal-pi-coding-agent/step.ts";
-import { PI_CODING_AGENT } from "./minimal-pi-coding-agent/agents/pi-coding-agent.ts";
+import { PI_CODING_AGENT } from "./minimal-pi-coding-agent/agents/pi-coding-agent/index.ts";
 import { inspectWorkflowAgent } from "./agent-inspection.ts";
 import {
   runPlanningExecutionStep,

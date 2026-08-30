@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "memory",
+  "name": "长期记忆",
+  "description": "由Memory Agent按用户的明确指令管理长期记忆。",
+  "nodes": [
+    {
+      "kind": "agent",
+      "id": "manage",
+      "name": "管理记忆",
+      "description": "查询、添加、更新或删除个人长期记忆。",
+      "agentId": "memory-agent"
+    }
+  ],
+  "agents": [
+    {
+      "id": "memory-agent",
+      "config": "./agents/memory-agent/agent.json"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
-import config from "./planner.json" with { type: "json" };
-import { parseWorkflowAgentDefinition } from "../../agent-definition.js";
+import config from "./agent.json" with { type: "json" };
+import { parseWorkflowAgentDefinition } from "../../../agent-definition.js";
 
 export const MAX_PLANNING_RESULT_CHARS = 50_000;
 

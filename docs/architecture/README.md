@@ -33,7 +33,8 @@ Chat详细设计
 | [Pi Web架构与源码分析](./pi-web-design.md) | 原前端、原后端、Agent RPC、事件和资源管理接口 | 第一版完成 |
 | [Chat当前架构](./chat-current-architecture.md) | 前端、HTTP API、Workflow、Pi AgentSession和Session持久化 | 第一版完成 |
 | [Chat需求分析](./chat-requirements.md) | Workflow管理结构、Workflow内Agent与相关代码、资源分组、Session和自定义提示词区域 | 第一版完成 |
-| [Chat详细设计](./chat-detailed-design.md) | Workflow目录、内部Agent、装配边界、注册API和后续配置扩展 | 第一版完成 |
+| [Chat详细设计](./chat-detailed-design.md) | Workflow目录、内部Agent、装配边界、根配置和注册API | 已按当前实现校正 |
+| [Chat Workflow开发框架](./chat-workflow-framework.md) | 新增Workflow时必须遵守的目录、配置、节点、Tool和前后端合同 | 规范基线 |
 
 现有[Pi Web前端API迁移清单](../pi-web-frontend-api-migration.md)继续作为接口迁移证据，但不能替代Pi Web架构分析。
 

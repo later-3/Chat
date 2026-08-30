@@ -15,7 +15,7 @@ Chat Session
             Chat/Pi公共运行能力
 ```
 
-## 2. 当前落地目录
+## 2. 统一落地目录
 
 ```text
 src/workflows/
@@ -30,22 +30,26 @@ src/workflows/
   │     ├── index.ts
   │     ├── workflow.ts
   │     ├── step.ts
+  │     ├── workflow.json
   │     └── agents/
-  │           ├── pi-coding-agent.json
-  │           └── pi-coding-agent.ts
+  │           └── pi-coding-agent/
+  │                 └── agent.json
   └── planning-execution/
         ├── index.ts
         ├── workflow.ts
         ├── steps.ts
         ├── context.ts
+        ├── workflow.json
         └── agents/
-              ├── planner.json
-              ├── planner.ts
-              ├── pi-coding-agent.json
-              └── pi-coding-agent.ts
+              ├── planner/
+              │     └── agent.json
+              └── pi-coding-agent/
+                    └── agent.json
 ```
 
-Workflow根目录的`index.ts`是注册入口，集中提供Workflow名称、说明、Stage、Agent和运行函数。`workflow.ts`只包含Vercel Workflow编排；`step.ts`或`steps.ts`包含Node与Pi运行代码，避免把Pi SDK引入Workflow纯函数环境。`agents/*.json`保存默认Agent定义；`context.ts`等文件是该Workflow使用的代码。
+Workflow根目录的`index.ts`是代码注册入口；`workflow.json`保存名称、说明、Node和Agent配置路径。`workflow.ts`只包含Vercel Workflow编排；`step.ts`或`steps.ts`包含Node与Pi运行代码，避免把Pi SDK引入Workflow纯函数环境。每个Agent拥有独立目录和`agent.json`，Prompt、Skill、Extension与运行时代码归档在该Agent目录中。
+
+完整规范和新增Workflow检查表见[Chat Workflow开发框架](./chat-workflow-framework.md)。
 
 ## 3. 注册和启动
 
@@ -55,7 +59,9 @@ Workflow根目录的`index.ts`是注册入口，集中提供Workflow名称、说
 2. `startChatWorkflow()`使用它取得实际Workflow函数。
 3. `GET /api/workflows`使用它向前端返回Workflow、Stage和Agent说明。
 
-新增Workflow不再修改HTTP解析和启动条件分支，只增加对应目录并注册一次。运行函数不会进入HTTP响应。
+新增Workflow不再修改HTTP解析和启动条件分支，只增加对应目录、通过`defineChatWorkflow()`创建定义并在中央组合入口注册一次。运行函数不会进入HTTP响应。
+
+Workflow内部统一使用两种Node：`agent`节点引用一个已声明Agent；`task`节点执行普通应用代码且没有Agent ID。框架校验Node ID、Agent ID和引用关系，但不取代Vercel Workflow执行引擎。
 
 ## 4. Agent装配边界
 
@@ -79,7 +85,7 @@ Agent配置被分成两个明确模块：
 
 `createWorkflowAgentSession()`是执行与检查共用的唯一Pi装配入口。`agent-inspection.ts`创建不发送Prompt的内存AgentSession，并从真实ResourceLoader和AgentSession返回最终Prompt、Model、Thinking、Tools、Skill内容、Extension能力、Plugin资源和诊断；浏览器不自行推导生效结果。
 
-## 5. 两个Workflow
+## 5. 三个Workflow
 
 ### 5.1 直接执行
 
@@ -94,7 +100,29 @@ Agent配置被分成两个明确模块：
 
 `context.ts`负责把用户原话和Planner输出只注入Executor本次模型请求；过程证据继续使用Pi CustomEntry写入同一Chat Session。
 
-## 6. 公共基础设施边界
+### 5.3 Memory
+
+Memory Workflow拥有一个`memory-agent`和一个Agent Node。Agent默认只启用6个Chat Memory Tool；Tool继续使用Pi `ToolDefinition`和`customTools`接口，`MemoryService`、Session ID和Workflow Invocation ID由该Agent的运行时装配函数注入。
+
+Memory Skill以Agent目录中的真实`SKILL.md`作为源码事实源。开发运行时直接读取源码文件；生产构建把Markdown作为Nitro Server Asset打包，再物化到`.chat/memory/runtime/skills`供Pi按原生Skill路径读取。执行和检查共用同一装配函数。
+
+## 6. `.chat`根配置
+
+`.chat/config.json`保存默认Workflow和每个Workflow Agent的默认选择覆盖。后端严格解析并原子写入；前端通过`GET/PUT /api/chat-config`读取和修改同一文件，不直接访问文件系统。
+
+一次运行的配置合并顺序是：
+
+```text
+源码内agent.json
+  ↓
+.chat/config.json默认选择
+  ↓
+本次HTTP请求选择
+```
+
+请求只覆盖同名Agent，其余Agent继续使用`.chat`默认选择。
+
+## 7. 公共基础设施边界
 
 以下公共代码不复制进每个Workflow目录：
 
@@ -105,8 +133,8 @@ Agent配置被分成两个明确模块：
 
 Workflow通过公共接口使用这些能力。只有某个Workflow特有的Stage输入、上下文转换、Prompt和适配代码放在它自己的目录中。
 
-## 7. 下一批实现
+## 8. 下一批实现
 
-1. 在Pi Web中创建和编辑Agent配置文件；当前只选择用户已有文件。
-2. 根据实际使用决定Agent配置选择是否需要跨浏览器刷新持久化。
+1. 在Pi Web中创建和编辑Agent配置文件；当前可以选择文件并把选择持久化到`.chat/config.json`。
+2. 根据真实需求增加新的Workflow，并用普通Node验证非Agent阶段的前端展示和运行证据。
 3. 补齐Skill更新检查、Skill更新和其他Pi Web迁移清单中的接口。

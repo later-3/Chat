@@ -46,7 +46,7 @@ export function parseChatWorkflowHttpInput(
   const prompt = value.prompt ?? defaults.prompt;
   const sessionId = value.sessionId ?? defaults.sessionId;
   const workflow = value.workflow ?? defaults.workflow;
-  const rawAgentConfigs = value.agentConfigs ?? defaults.agentConfigs;
+  const rawAgentConfigs = value.agentConfigs;
   if (typeof cwd !== "string" || cwd.trim() === "") {
     throw new Error("cwd必须是非空字符串");
   }
@@ -62,12 +62,14 @@ export function parseChatWorkflowHttpInput(
   if (typeof workflow !== "string" || getChatWorkflowDefinition(workflow) === undefined) {
     throw new Error(`workflow必须是${CHAT_WORKFLOW_IDS.join("或")}`);
   }
-  let agentConfigs: Record<string, AgentConfigSelection> | undefined;
+  let agentConfigs: Record<string, AgentConfigSelection> | undefined = defaults.agentConfigs === undefined
+    ? undefined
+    : { ...defaults.agentConfigs };
   if (rawAgentConfigs !== undefined) {
     if (!isRecord(rawAgentConfigs)) throw new Error("agentConfigs必须是对象");
     const definition = getChatWorkflowDefinition(workflow);
     const agentIds = new Set(definition?.agents.map((agent) => agent.id) ?? []);
-    agentConfigs = {};
+    agentConfigs ??= {};
     for (const [agentId, selection] of Object.entries(rawAgentConfigs)) {
       if (!agentIds.has(agentId)) throw new Error(`Workflow ${workflow}不存在Agent: ${agentId}`);
       agentConfigs[agentId] = parseAgentConfigSelection(selection);

@@ -90,9 +90,19 @@ Chat/frontend（纯浏览器）
 | `POST /api/skills/update` | Skill更新 | 待迁移 | 明确升级与失败恢复 |
 | `GET/POST /api/plugins` | Plugin列表、安装、删除、更新和启停 | 已接入 | 直接使用Pi SettingsManager与DefaultPackageManager |
 | `GET/POST /api/extensions` | Extension列表与文件级启停 | 已接入 | 使用Pi Package解析；本地单文件通过`.disabled`切换 |
-| `POST /api/workflows/:workflowId/agents/:agentId/resolve` | 查看Agent最终能力 | 已接入 | 创建不发送Prompt的内存Pi AgentSession，返回最终Prompt、Tool和资源事实 |
+| `POST /api/workflows/:workflowId/agents/:agentId/resolve` | 查看Agent最终能力 | 已接入 | 从Registry调用与执行相同的Workflow `prepareAgentSession`，再创建不发送Prompt的内存Pi AgentSession，返回最终Prompt、Tool和资源事实 |
 
-### 4.5 其他现有前端功能
+### 4.5 长期记忆
+
+| 接口 | 前端用途 | 状态 | 后续实现方向 |
+|---|---|---|---|
+| `GET/POST /api/memories` | 列出、添加长期记忆 | 已接入 | Chat SQLite是事实源，Mem0只做本地语义索引 |
+| `GET/PATCH/DELETE /api/memories/:memoryId` | 查看、更新、删除记忆 | 已接入 | Chat统一校验并同步事实源和索引 |
+| `POST /api/memories/search` | 语义搜索 | 已接入 | 使用本地embedding，支持全局和项目范围 |
+| `GET /api/memories/health` | 管理页状态 | 已接入 | 返回事实源数量和索引同步状态 |
+| `POST /api/memories/rebuild` | 完整重建索引 | 已接入 | 从Chat事实源重建Mem0，不依赖原索引 |
+
+### 4.6 其他现有前端功能
 
 | 接口 | 前端用途 | 状态 | 后续实现方向 |
 |---|---|---|---|
@@ -120,7 +130,7 @@ Chat/frontend（纯浏览器）
 - Pi Tool Call字段在进入浏览器前完成转换。
 - 文件路径拒绝目录前缀伪装、`..`穿越和符号链接逃逸。
 - 前后端对图片、音频、PDF和DOCX类型的判断一致。
-- Workflow输入区分新Session与已有Session，并只接受`minimal-pi-coding-agent`或`planning-execution`两个注册值。
+- Workflow输入区分新Session与已有Session，并且只接受Workflow Registry中的注册值；当前包括`minimal-pi-coding-agent`、`planning-execution`和`memory`。
 - Workflow过程通过可恢复读取的NDJSON事件流传给浏览器，Planner输出不会在Executor开始后被替换。
 - 完整历史保留Pi实际持久化的Thinking与工具数据，并展示每个Agent Stage收到的真实输入来源。
 - 构建后的单进程同时提供前端、Session API和文件API。

@@ -43,6 +43,11 @@ export default defineEventHandler(async (event) => {
     return await inspectWorkflowAgent({
       cwd,
       defaultAgent: agent,
+      workflowId: workflow.id,
+      agentId: agent.id,
+      ...(workflow.prepareAgentSession === undefined
+        ? {}
+        : { prepareAgentSession: workflow.prepareAgentSession }),
       ...(selection === undefined ? {} : { selection }),
     });
   } catch (error) {

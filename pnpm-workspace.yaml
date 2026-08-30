@@ -1,2 +1,19 @@
 packages:
   - frontend
+
+# Mem0 3.1.7 marks test-only types and optional NLP accelerators as required
+# peers even though its runtime handles them being absent. Keep this local
+# index-only integration lean while preserving normal peer handling elsewhere.
+packageExtensions:
+  mem0ai@3.1.7:
+    peerDependenciesMeta:
+      "@cloudflare/workers-types":
+        optional: true
+      "@types/jest":
+        optional: true
+      "@types/pg":
+        optional: true
+      compromise:
+        optional: true
+      natural:
+        optional: true

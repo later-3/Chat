@@ -7,6 +7,7 @@ import {
   type WorkflowAgentDefinition,
 } from "./agent-definition.js";
 import { resolveWorkflowAgentDefinition } from "./agent-config-loader.js";
+import type { PrepareChatWorkflowAgentSession } from "./registry.js";
 
 const MAX_VISIBLE_RESOURCE_BYTES = 1_000_000;
 
@@ -14,6 +15,9 @@ interface AgentInspectionOptions {
   readonly cwd: string;
   readonly defaultAgent: WorkflowAgentDefinition;
   readonly selection?: AgentConfigSelection;
+  readonly workflowId?: string;
+  readonly agentId?: string;
+  readonly prepareAgentSession?: PrepareChatWorkflowAgentSession;
 }
 
 async function readVisibleResource(path: string): Promise<{ content?: string; error?: string }> {
@@ -51,6 +55,16 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
     ...(options.selection === undefined ? {} : { selection: options.selection }),
   });
   const sessionManager = SessionManager.inMemory(options.cwd);
+  const workflowId = options.workflowId ?? "agent-inspection";
+  const agentId = options.agentId ?? options.defaultAgent.id;
+  const sessionExtensions = await options.prepareAgentSession?.({
+    purpose: "inspection",
+    cwd: options.cwd,
+    workflowId,
+    agentId,
+    sessionId: sessionManager.getSessionId(),
+    workflowInvocationId: `inspection:${workflowId}:${agentId}`,
+  });
   const created = await createWorkflowAgentSession({
     chatSession: {
       cwd: options.cwd,
@@ -60,6 +74,7 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
     },
     sessionManager,
     agent,
+    ...(sessionExtensions ?? {}),
   });
 
   try {
@@ -142,7 +157,11 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
       },
       tools: session.getAllTools().map((tool) => ({
         name: tool.name,
+        label: session.getToolDefinition(tool.name)?.label ?? tool.name,
         description: tool.description,
+        parameters: tool.parameters,
+        promptGuidelines: tool.promptGuidelines ?? [],
+        sourceInfo: tool.sourceInfo,
         active: activeTools.has(tool.name),
       })),
       skills,

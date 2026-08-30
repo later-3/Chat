@@ -27,19 +27,28 @@
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "link:./pi/packages/agent",
+    "@earendil-works/pi-ai": "link:./pi/packages/ai",
     "@earendil-works/pi-coding-agent": "link:./pi/packages/coding-agent",
     "@opentelemetry/api": "1.9.0",
+    "better-sqlite3": "12.6.2",
+    "fastembed": "2.1.0",
     "mammoth": "^1.12.0",
+    "mem0ai": "3.1.7",
     "nitro": "3.0.260610-beta",
+    "pg": "8.11.3",
     "rollup": "4.63.0",
     "workflow": "4.8.5"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "link:./pi/packages/ai",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.0.0",
     "typescript": "5.9.3"
   },
   "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "onnxruntime-node"
+    ],
     "overrides": {
       "nanoid": "5.1.16",
       "undici": "7.29.0"

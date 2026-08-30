@@ -8,7 +8,7 @@ import { subscribeAgentSessionLog } from "../agent-session-log.js";
 import { stripLegacyPlanningHandoffs } from "../planning-execution/context.js";
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 import { appendChatWorkflowStage } from "../workflow-stage.js";
-import { PI_CODING_AGENT } from "./agents/pi-coding-agent.js";
+import { PI_CODING_AGENT } from "./agents/pi-coding-agent/index.js";
 
 export async function runPiCodingAgentPromptStep(
   input: ChatWorkflowInput,

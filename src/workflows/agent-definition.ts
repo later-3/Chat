@@ -3,6 +3,7 @@ import type {
   AgentContextTransform,
   AgentSession,
   SessionManager,
+  ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import {
   createAgentSession,
@@ -27,6 +28,15 @@ export interface CreateWorkflowAgentSessionOptions {
   readonly chatSession: ChatSession;
   readonly sessionManager: SessionManager;
   readonly agent: WorkflowAgentDefinition;
+  readonly additionalSkillPaths?: readonly string[];
+  readonly customTools?: readonly ToolDefinition[];
+  readonly transformContext?: AgentContextTransform;
+}
+
+/** Workflow-owned additions applied identically during execution and inspection. */
+export interface WorkflowAgentSessionExtensions {
+  readonly additionalSkillPaths?: readonly string[];
+  readonly customTools?: readonly ToolDefinition[];
   readonly transformContext?: AgentContextTransform;
 }
 
@@ -78,8 +88,11 @@ export async function createWorkflowAgentSession(
             ...agent.resources.extensionPaths,
             ...agent.resources.pluginSources,
           ],
-          additionalSkillPaths: [...agent.resources.skillPaths],
         }),
+    additionalSkillPaths: [
+      ...(agent.resources.mode === "inherit" ? [] : agent.resources.skillPaths),
+      ...(options.additionalSkillPaths ?? []),
+    ],
     ...(replacementSystemPrompt === undefined
       ? {}
       : { systemPromptOverride: () => replacementSystemPrompt }),
@@ -111,6 +124,7 @@ export async function createWorkflowAgentSession(
     sessionManager: options.sessionManager,
     settingsManager,
     resourceLoader,
+    ...(options.customTools === undefined ? {} : { customTools: [...options.customTools] }),
     ...(modelRuntime === undefined ? {} : { modelRuntime }),
     ...(model === undefined ? {} : { model }),
     ...(agent.thinkingLevel === undefined ? {} : { thinkingLevel: agent.thinkingLevel }),

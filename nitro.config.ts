@@ -10,6 +10,9 @@ import { defineConfig } from "nitro";
 export default defineConfig({
   serverDir: "src",
   modules: ["workflow/nitro"],
+  // Keep native SQLite and ONNX assets external to the server bundle while
+  // tracing the exact runtime files into `.output`.
+  traceDeps: ["mem0ai", "pg", "better-sqlite3", "fastembed*", "onnxruntime-node*"],
   // index.html必须经过Web认证中间件；其余版本化前端资源保持公开，
   // 登录页和PWA安装无需先下载完整应用包。
   publicAssets: [{
@@ -19,5 +22,10 @@ export default defineConfig({
     // Nitro把不以`*`开头的ignore解释为相对项目根目录的路径；这里必须使用glob。
     ignore: ["**/index.html", "**/*.test.mjs"],
   }],
-  serverAssets: [{ baseName: "frontend", dir: "frontend/dist", pattern: "index.html" }],
+  serverAssets: [
+    { baseName: "frontend", dir: "frontend/dist", pattern: "index.html" },
+    // Workflow-owned Markdown remains the source of truth while built output
+    // can materialize private Skills into Chat's runtime data directory.
+    { baseName: "workflow-resources", dir: "src/workflows", pattern: "**/*.md" },
+  ],
 });

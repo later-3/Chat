@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -15,9 +16,60 @@ let runtimeRoot;
 let workspace;
 let sessionId;
 let server;
+let embeddingServer;
 let baseUrl;
 let serverOutput = "";
 let authenticatedCookiePromise;
+const embeddingDimension = 64;
+
+function textEmbedding(text) {
+  const vector = Array.from({ length: embeddingDimension }, () => 0);
+  const symbols = Array.from(text.toLowerCase());
+  for (let index = 0; index < symbols.length; index += 1) {
+    const current = symbols[index]?.codePointAt(0) ?? 0;
+    const next = symbols[index + 1]?.codePointAt(0) ?? 0;
+    vector[(current * 31 + next * 17 + index) % vector.length] += 1;
+  }
+  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
+  return vector.map((value) => value / magnitude);
+}
+
+async function readJson(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+async function startEmbeddingServer() {
+  const localServer = http.createServer(async (request, response) => {
+    if (request.method !== "POST" || request.url !== "/v1/embeddings") {
+      response.writeHead(404).end();
+      return;
+    }
+    const body = await readJson(request);
+    const inputs = Array.isArray(body.input) ? body.input : [body.input];
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({
+      object: "list",
+      model: body.model,
+      data: inputs.map((input, index) => ({
+        object: "embedding",
+        index,
+        embedding: textEmbedding(String(input)),
+      })),
+      usage: { prompt_tokens: 0, total_tokens: 0 },
+    }));
+  });
+  await new Promise((resolve, reject) => {
+    localServer.once("error", reject);
+    localServer.listen(0, "127.0.0.1", resolve);
+  });
+  const address = localServer.address();
+  assert.equal(typeof address, "object");
+  assert.ok(address);
+  embeddingServer = localServer;
+  return `http://127.0.0.1:${address.port}/v1`;
+}
 
 function reservePort() {
   return new Promise((resolve, reject) => {
@@ -94,6 +146,7 @@ before(async () => {
   });
   sessionId = manager.getSessionId();
 
+  const embeddingBaseUrl = await startEmbeddingServer();
   const port = await reservePort();
   baseUrl = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, [serverEntry], {
@@ -108,6 +161,12 @@ before(async () => {
       CHAT_WEB_AUTH_USERNAME: "later",
       CHAT_WEB_AUTH_PASSWORD: "123456",
       CHAT_WEB_AUTH_SESSION_SECRET: "built-server-test-session-secret-at-least-32-characters",
+      CHAT_MEMORY_EMBEDDER_PROVIDER: "openai",
+      CHAT_MEMORY_EMBEDDER_BASE_URL: embeddingBaseUrl,
+      CHAT_MEMORY_EMBEDDER_API_KEY: "built-server-test",
+      CHAT_MEMORY_EMBEDDING_MODEL: "deterministic-test-embedding",
+      CHAT_MEMORY_EMBEDDING_DIMENSION: String(embeddingDimension),
+      MEM0_TELEMETRY: "false",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -145,6 +204,9 @@ after(async () => {
     ]);
     if (server.exitCode === null) server.kill("SIGKILL");
   }
+  if (embeddingServer?.listening) {
+    await new Promise((resolve) => embeddingServer.close(resolve));
+  }
   if (runtimeRoot) fs.rmSync(runtimeRoot, { recursive: true, force: true });
 });
 
@@ -178,9 +240,98 @@ test("health is public while Chat product APIs require login", async () => {
   assert.equal(unauthorized.headers.get("x-chat-auth-required"), "1");
   assert.deepEqual(await unauthorized.json(), { error: "Authentication required" });
 
+  const unauthorizedMemory = await fetch(`${baseUrl}/api/memories`);
+  assert.equal(unauthorizedMemory.status, 401);
+
   const loginPage = await fetch(`${baseUrl}/login`);
   assert.equal(loginPage.status, 200);
   assert.match(await loginPage.text(), /登录到 Chat/);
+});
+
+test("memory management API persists, searches, updates, rebuilds, and deletes", async () => {
+  const createResponse = await authenticatedFetch("/api/memories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: "Later 选择 MEMORY_HTTP_ALPHA 作为 Chat 的长期记忆方案。",
+      kind: "decision",
+      metadata: { source: "built-server-test" },
+      source: { sessionId, entryIds: ["fixture-entry"] },
+    }),
+  });
+  const createBody = await createResponse.json();
+  assert.equal(createResponse.status, 201, JSON.stringify(createBody));
+  const created = createBody.memory;
+  assert.equal(created.indexStatus, "indexed");
+  assert.ok(created.mem0Id);
+
+  const listResponse = await authenticatedFetch("/api/memories?kind=decision");
+  assert.equal(listResponse.status, 200);
+  const list = await listResponse.json();
+  assert.equal(list.total, 1);
+  assert.equal(list.items[0].id, created.id);
+
+  const detailResponse = await authenticatedFetch(`/api/memories/${created.id}`);
+  assert.equal(detailResponse.status, 200);
+  assert.equal((await detailResponse.json()).memory.text, created.text);
+
+  const searchResponse = await authenticatedFetch("/api/memories/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: "MEMORY_HTTP_ALPHA", topK: 1 }),
+  });
+  assert.equal(searchResponse.status, 200);
+  assert.equal((await searchResponse.json()).results[0].memory.id, created.id);
+
+  const updatedText = "Later 选择 MEMORY_HTTP_BETA 作为 Chat 的长期记忆方案。";
+  const updateResponse = await authenticatedFetch(`/api/memories/${created.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: updatedText }),
+  });
+  assert.equal(updateResponse.status, 200);
+  const updated = (await updateResponse.json()).memory;
+  assert.equal(updated.text, updatedText);
+  assert.equal(updated.version, 2);
+  assert.equal(updated.indexStatus, "indexed");
+
+  const rebuildResponse = await authenticatedFetch("/api/memories/rebuild", { method: "POST" });
+  assert.equal(rebuildResponse.status, 200);
+  assert.deepEqual(await rebuildResponse.json(), {
+    total: 1,
+    indexed: 1,
+    failed: 0,
+    failures: [],
+  });
+
+  const rebuiltSearchResponse = await authenticatedFetch("/api/memories/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: "MEMORY_HTTP_BETA", topK: 1 }),
+  });
+  assert.equal(rebuiltSearchResponse.status, 200);
+  assert.equal((await rebuiltSearchResponse.json()).results[0].memory.id, created.id);
+
+  const healthResponse = await authenticatedFetch("/api/memories/health");
+  assert.equal(healthResponse.status, 200);
+  assert.deepEqual(await healthResponse.json(), {
+    records: 1,
+    indexed: 1,
+    pending: 0,
+    failed: 0,
+    pendingDeletions: 0,
+  });
+
+  const deleteResponse = await authenticatedFetch(`/api/memories/${created.id}`, { method: "DELETE" });
+  assert.equal(deleteResponse.status, 200);
+  assert.deepEqual(await deleteResponse.json(), {
+    id: created.id,
+    deleted: true,
+    indexCleanup: "completed",
+  });
+  assert.equal((await (await authenticatedFetch("/api/memories")).json()).total, 0);
+  assert.equal(fs.existsSync(path.join(runtimeRoot, ".chat", "memory", "catalog.db")), true);
+  assert.equal(fs.existsSync(path.join(runtimeRoot, ".chat", "memory", "vector-store.db")), true);
 });
 
 test("the default Later account creates a signed HttpOnly session", async () => {
@@ -219,6 +370,25 @@ test("session list and detail come from the isolated Chat session directory", as
   assert.equal(detail.context.messages.length, detail.context.entryIds.length);
 });
 
+test("the frontend and backend share one validated .chat root configuration", async () => {
+  const initialResponse = await authenticatedFetch("/api/chat-config");
+  assert.equal(initialResponse.status, 200);
+  assert.equal((await initialResponse.json()).defaultWorkflowId, "minimal-pi-coding-agent");
+
+  const updateResponse = await authenticatedFetch("/api/chat-config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      schemaVersion: 1,
+      defaultWorkflowId: "memory",
+      workflows: { memory: { agents: { "memory-agent": {} } } },
+    }),
+  });
+  assert.equal(updateResponse.status, 200);
+  assert.equal((await updateResponse.json()).defaultWorkflowId, "memory");
+  assert.equal(fs.existsSync(path.join(runtimeRoot, ".chat", "config.json")), true);
+});
+
 test("Workflow containers and their Agents come from the backend registry", async () => {
   const response = await authenticatedFetch("/api/workflows");
   assert.equal(response.status, 200);
@@ -226,15 +396,57 @@ test("Workflow containers and their Agents come from the backend registry", asyn
   assert.deepEqual(body.workflows.map((workflow) => workflow.id), [
     "minimal-pi-coding-agent",
     "planning-execution",
+    "memory",
   ]);
   assert.deepEqual(body.workflows.map((workflow) => workflow.agents.map((agent) => agent.id)), [
     ["pi-coding-agent"],
     ["planner", "pi-coding-agent"],
+    ["memory-agent"],
   ]);
-  assert.deepEqual(body.workflows.map((workflow) => workflow.stages.map((stage) => stage.agentId)), [
+  assert.deepEqual(body.workflows.map((workflow) => workflow.nodes.map((node) => node.agentId)), [
     ["pi-coding-agent"],
     ["planner", "pi-coding-agent"],
+    ["memory-agent"],
   ]);
+  assert.equal(body.workflows[2].agents[0].configPath, "./agents/memory-agent/agent.json");
+});
+
+test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async () => {
+  const response = await authenticatedFetch(
+    "/api/workflows/memory/agents/memory-agent/resolve",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: workspace }),
+    },
+  );
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.deepEqual(
+    body.tools.filter((tool) => tool.active).map((tool) => tool.name),
+    [
+      "memory_search",
+      "memory_list",
+      "memory_get",
+      "memory_add",
+      "memory_update",
+      "memory_delete",
+    ],
+  );
+  assert.deepEqual(body.skills.map((skill) => skill.name), ["memory"]);
+  assert.equal(body.tools.find((tool) => tool.name === "memory_search").sourceInfo.source, "sdk");
+
+  const catalogResponse = await authenticatedFetch(
+    `/api/workflows/memory/agents/memory-agent/catalog?cwd=${encodeURIComponent(workspace)}`,
+  );
+  const catalog = await catalogResponse.json();
+  assert.equal(catalogResponse.status, 200, JSON.stringify(catalog));
+  assert.equal(catalog.skills.some((skill) => skill.name === "memory"), true);
+  assert.equal(
+    catalog.extensions.some((extension) => extension.resolvedPath.endsWith("built-extension.ts")),
+    true,
+    JSON.stringify(catalog.extensions),
+  );
 });
 
 test("Pi resources are served by Chat from the managed Agent directory", async () => {

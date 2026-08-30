@@ -1,31 +1,24 @@
 import {
   minimalPiCodingAgentWorkflowDefinition,
 } from "./minimal-pi-coding-agent/index.js";
+import { memoryWorkflowDefinition } from "./memory/index.js";
 import {
   planningExecutionWorkflowDefinition,
 } from "./planning-execution/index.js";
-import type { WorkflowAgentDefinition } from "./agent-definition.js";
-import type { ChatWorkflowInput, ChatWorkflowResult } from "./types.js";
+import { browserSafeWorkflowDefinition } from "./framework.js";
+import type { ChatWorkflowDefinition } from "./framework.js";
 
-export interface ChatWorkflowStageDefinition {
-  readonly id: string;
-  readonly name: string;
-  readonly description: string;
-  readonly agentId: string;
-}
-
-export interface ChatWorkflowDefinition<Id extends string = string> {
-  readonly id: Id;
-  readonly name: string;
-  readonly description: string;
-  readonly stages: readonly ChatWorkflowStageDefinition[];
-  readonly agents: readonly WorkflowAgentDefinition[];
-  readonly run: (input: ChatWorkflowInput) => Promise<ChatWorkflowResult>;
-}
+export type {
+  ChatWorkflowAgentSessionContext,
+  ChatWorkflowDefinition,
+  ChatWorkflowNodeDefinition,
+  PrepareChatWorkflowAgentSession,
+} from "./framework.js";
 
 export const CHAT_WORKFLOW_DEFINITIONS = [
   minimalPiCodingAgentWorkflowDefinition,
   planningExecutionWorkflowDefinition,
+  memoryWorkflowDefinition,
 ] as const;
 
 export type ChatWorkflowId = (typeof CHAT_WORKFLOW_DEFINITIONS)[number]["id"];
@@ -42,5 +35,5 @@ export function getChatWorkflowDefinition(id: string): ChatWorkflowDefinition | 
 
 /** Returns only browser-safe Workflow metadata, never executable functions. */
 export function listChatWorkflowDefinitions() {
-  return CHAT_WORKFLOW_DEFINITIONS.map(({ run: _run, ...definition }) => definition);
+  return CHAT_WORKFLOW_DEFINITIONS.map(browserSafeWorkflowDefinition);
 }

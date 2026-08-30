@@ -23,7 +23,7 @@ export interface AgentSessionLogSubscription {
 /** Logs Pi AgentSession lifecycle events without logging message or tool data. */
 export function subscribeAgentSessionLog(
   session: AgentSession,
-  component: "pi" | "planner",
+  component: "pi" | "planner" | "memory",
   stage: ChatRunStage,
 ): AgentSessionLogSubscription {
   let turn = 0;

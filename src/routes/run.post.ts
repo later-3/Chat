@@ -1,9 +1,9 @@
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import {
-  DEFAULT_CHAT_WORKFLOW_ID,
   parseChatWorkflowHttpInput,
   type ChatWorkflowHttpInput,
 } from "../run-request.js";
+import { getStoredAgentConfigs, readChatRootConfig } from "../chat-config.js";
 import { MINIMAL_PI_CODING_AGENT_PROMPT } from "../workflows/minimal-pi-coding-agent/index.js";
 import { localTimestamp } from "../runtime-log.js";
 import { startChatWorkflow } from "../workflows/start-chat-workflow.js";
@@ -25,10 +25,17 @@ export default defineEventHandler(async (event) => {
   let input: ChatWorkflowHttpInput;
   try {
     const body = await readBody<unknown>(event);
+    const config = await readChatRootConfig();
+    const requestedWorkflow = typeof body === "object" && body !== null && "workflow" in body
+      && typeof body.workflow === "string"
+      ? body.workflow
+      : config.defaultWorkflowId;
+    const storedAgentConfigs = getStoredAgentConfigs(config, requestedWorkflow);
     input = parseChatWorkflowHttpInput(body, {
       cwd: process.cwd(),
       prompt: MINIMAL_PI_CODING_AGENT_PROMPT,
-      workflow: DEFAULT_CHAT_WORKFLOW_ID,
+      workflow: config.defaultWorkflowId,
+      ...(storedAgentConfigs === undefined ? {} : { agentConfigs: storedAgentConfigs }),
     });
   } catch (error) {
     throw createError({

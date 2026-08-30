@@ -2,6 +2,7 @@ node_modules/
 .nitro/
 .output/
 frontend/dist/
+local_cache/
 .chat/*
 !.chat/agent/
 .chat/agent/*

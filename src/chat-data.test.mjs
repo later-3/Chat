@@ -13,10 +13,12 @@ test("Chat uses one .chat root for managed runtime data", async (t) => {
   assert.deepEqual(paths, {
     root: path.join(projectRoot, ".chat"),
     agentDir: path.join(projectRoot, ".chat", "agent"),
+    memoryDir: path.join(projectRoot, ".chat", "memory"),
     sessionDir: path.join(projectRoot, ".chat", "sessions"),
     workflowDataDir: path.join(projectRoot, ".chat", "workflow-data"),
   });
   assert.equal(fs.statSync(paths.agentDir).isDirectory(), true);
+  assert.equal(fs.statSync(paths.memoryDir).isDirectory(), true);
   assert.equal(fs.statSync(paths.sessionDir).isDirectory(), true);
   assert.equal(fs.statSync(paths.workflowDataDir).isDirectory(), true);
   assert.deepEqual(getChatDataPaths(projectRoot), paths);

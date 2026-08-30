@@ -8,10 +8,10 @@
 
 | 类型 | 文件数 | 代码行 |
 |---|---:|---:|
-| Chat后端开发代码（`src/`，不含测试） | 70 | 4,854 |
-| Chat后端与脚本测试 | 21 | 2,217 |
-| Pi Web派生前端开发代码 | 106 | 35,307 |
-| 前端合同与PWA测试 | 10 | 480 |
+| Chat后端开发代码（`src/`，不含测试） | 持续变化 | 约7,205 |
+| Chat后端与脚本测试 | 持续变化 | 约3,092 |
+| Pi Web派生前端开发代码 | 持续变化 | 约33,157 |
+| Workflow框架支持的Node类型 | 2 | Agent Node、Task Node |
 
 不包含两个子模块、构建产物和依赖。前端和Pi分别由`frontend/`与`pi/`子模块固定提交。
 
@@ -28,12 +28,16 @@ Chat Nitro进程
   ├── /api/sessions：Pi Session读取投影
   ├── /api/files：受限文件读取
   ├── /api/workflows/.../agents/.../resolve：Agent实际装配结果
+  ├── /api/workflows/.../agents/.../catalog：Agent可选择资源目录
+  ├── /api/chat-config：.chat根配置读写
+  ├── /api/memories：长期记忆管理
   └── /api/skills、/api/extensions、/api/plugins：Pi资源管理
           │
           ▼
 Vercel Workflow Runtime
   ├── minimal-pi-coding-agent
-  └── planning-execution
+  ├── planning-execution
+  └── memory
           │
           ▼
 Chat Workflow Step
@@ -58,11 +62,14 @@ pi/：Pi Coding Agent
 ```text
 useAgentSession.handleSend()
   ↓
+GET /api/chat-config
+  → 默认Workflow和Agent选择
+  ↓
 POST /runs { cwd, prompt, sessionId?, workflow, agentConfigs? }
   ↓
 startChatWorkflow()
   ↓
-start(minimalPiCodingAgentWorkflow | planningExecutionWorkflow)
+start(minimalPiCodingAgentWorkflow | planningExecutionWorkflow | memoryWorkflow)
   ↓
 立即返回runId
 ```
@@ -83,14 +90,17 @@ GET /runs/:runId
 
 ## 4. Workflow目录与选择机制
 
-当前后端注册两个Workflow：
+当前后端注册3个Workflow：
 
 ```text
 minimal-pi-coding-agent
 planning-execution
+memory
 ```
 
-每个Workflow目录拥有自己的`index.ts`注册入口、`workflow.ts`编排定义、`step.ts`或`steps.ts`运行实现、`agents/`配置和专用上下文代码。编排文件不导入Node或Pi运行代码；Step才打开文件、Session和Pi SDK。`registry.ts`是后端唯一注册事实源：HTTP请求用它校验Workflow ID，`startChatWorkflow()`用它取得运行函数，`GET /api/workflows`用它返回Workflow、Stage和Agent定义。
+每个Workflow目录拥有`workflow.json`、`index.ts`注册入口、`workflow.ts`编排定义、`step.ts`或`steps.ts`运行实现、独立Agent目录和专用上下文代码。`defineChatWorkflow()`校验两种声明式Node、Agent配置路径和引用关系。编排文件不导入Node或Pi运行代码；Step才打开文件、Session和Pi SDK。
+
+`registry.ts`是后端唯一注册事实源：HTTP请求用它校验Workflow ID，`startChatWorkflow()`用它取得运行函数，`GET /api/workflows`用它返回Workflow、Node和Agent定义。静态配置使用“Node”；运行期事件和Session观察记录继续使用“Stage”，Stage ID对应执行中的Node ID。
 
 Pi Web前端从`GET /api/workflows`读取选择项，不再维护支持的Workflow白名单。前端提交时只校验Workflow ID是非空字符串，后端注册表执行最终校验。
 
@@ -197,7 +207,18 @@ Pi当前Provider上下文使用`user / assistant / toolResult`角色，没有多
 
 这是Chat业务语义，建立在Pi原生CustomEntry和Context Transform扩展点上，没有修改Pi标准Session消息Schema。
 
-## 8. Workflow事件与完整历史
+## 8. Memory Workflow
+
+Memory Workflow使用一个`memory-agent`：
+
+1. Agent JSON只启用6个`memory_*` Tool。
+2. Tool用Pi `defineTool()`定义，并通过Pi `customTools`注入当前`MemoryService`、cwd、Session ID和Workflow Invocation ID。
+3. Memory Skill源码位于Agent目录的`skills/memory/SKILL.md`；生产构建通过Nitro Server Asset物化到`.chat`运行目录。
+4. `resolve`和执行共用同一装配函数；检查模式使用不可执行占位服务，不创建Memory数据库或索引。
+
+Memory管理HTTP API和Memory Agent Tool都调用同一个`MemoryService`，前端管理页不绕过Chat目录数据库直接操作Mem0。
+
+## 9. Workflow事件与完整历史
 
 ### 8.1 实时事件
 
@@ -223,32 +244,32 @@ Chat使用Pi原生`CustomEntry`保存三类不进入模型上下文的数据：
 
 `session-read-model.ts`负责把Pi标准消息和Chat观察数据投影成前端历史；`session-export.ts`生成按Workflow、Stage和Agent整理的完整历史。
 
-## 9. 当前能力配置在哪里
+## 10. 当前能力配置在哪里
 
 当前每个Workflow已经拥有自己的Agent JSON配置，并通过公共解析和装配代码转换为Pi运行对象：
 
 | Agent Stage | 当前能力来源 |
 |---|---|
-| Direct的Pi Coding Agent | Workflow目录内`agents/pi-coding-agent.json` + Chat `.chat/agent` Settings/模型/资源 |
-| Planner | Workflow目录内`agents/planner.json`定义替换System Prompt和无工具策略 |
-| Planning Executor | Workflow目录内`agents/pi-coding-agent.json`定义Chat自定义指令；`context.ts`实现不可序列化的Context Transform |
+| Direct的Pi Coding Agent | Workflow目录内`agents/pi-coding-agent/agent.json` + Chat `.chat/agent` Settings/模型/资源 |
+| Planner | Workflow目录内`agents/planner/agent.json`定义替换System Prompt和无工具策略 |
+| Planning Executor | Workflow目录内`agents/pi-coding-agent/agent.json`定义Chat自定义指令；`context.ts`实现不可序列化的Context Transform |
+| Memory Agent | `agents/memory-agent/agent.json` + 私有Skill + Pi Custom Tool运行时装配 |
 
-`agent-definition.ts`当前只实现身份、基础System Prompt、Chat自定义指令区域和工具策略；它严格解析JSON，并集中创建SettingsManager、ResourceLoader和AgentSession。`GET /api/workflows`已经可以查询当前Workflow、Stage和Agent定义。
+`agent-definition.ts`实现身份、基础System Prompt、Chat自定义指令区域、模型、Thinking、工具和资源策略；它集中创建SettingsManager、ResourceLoader和AgentSession。`GET /api/workflows`查询声明，`catalog`查询可选择资源，`resolve`查询本轮实际装配结果。
 
-模型、Thinking、Skill、Extension和提示词文件选择尚未进入配置解析与运行路径；当前JSON是随Workflow代码构建的默认配置，还没有运行时修改和写回接口。
+`.chat/config.json`保存默认Workflow和每个Agent的默认选择。前端使用同一个Chat API读写；请求可覆盖本轮选择。配置文件内容目前仍由外部编辑器创建，前端只管理路径和资源选择。
 
-## 10. 当前边界问题
+## 11. 当前边界问题
 
 这部分只指出源码事实，不在这里直接给最终重构方案。
 
-1. Agent默认配置已有严格解析，但还没有运行时配置存储、更新API和生效快照。
-2. 模型、Thinking和具体工具选择尚未接入Workflow Agent配置。
-3. Skill、Extension和Package页面仍在前端，但Chat缺少对应完整API和每Agent选择语义。
-4. 当前不同Agent仍继承Pi默认资源发现，Planner也会加载Extension代码；这不是限制策略，只是选择功能尚未实现。
-5. Context Transform仍由Workflow代码注册；后续配置只能引用稳定实现ID，不能序列化函数。
-6. 运行中Steering、Follow-up、Extension交互式UI和Session Fork依赖持续运行控制面，当前一次一Run的接口尚未支持。
+1. Agent配置文件内容尚不能在前端创建和编辑。
+2. 普通Task Node已有Schema和框架校验，但3个现有Workflow都只有Agent Node；等真实需求出现后再增加实例。
+3. Context Transform和宿主依赖Tool仍由Workflow代码注册；配置只能引用稳定名称，不能序列化函数。
+4. Catalog表示已安装/可选择资源，Resolve表示当前Agent实际生效能力；前端仍可进一步强化这两个状态的视觉区分。
+5. 运行中Steering、Follow-up、Extension交互式UI和Session Fork依赖持续运行控制面，当前一次一Run的接口尚未支持。
 
-## 11. 源码证据索引
+## 12. 源码证据索引
 
 | 结论 | 源码 |
 |---|---|
@@ -257,10 +278,13 @@ Chat使用Pi原生`CustomEntry`保存三类不进入模型上下文的数据：
 | Chat Session所有权 | `src/chat-session.ts` |
 | 直接执行 | `src/workflows/minimal-pi-coding-agent/` |
 | Planner与Executor | `src/workflows/planning-execution/` |
-| Agent配置与装配 | `src/workflows/agent-definition.ts`、各Workflow目录的`agents/*.json` |
+| Workflow框架与Manifest | `src/workflows/framework.ts`、各Workflow的`workflow.json` |
+| Agent配置与装配 | `src/workflows/agent-definition.ts`、各Workflow的`agents/<id>/agent.json` |
+| `.chat`根配置 | `src/chat-config.ts`、`src/routes/api/chat-config.*.ts` |
+| Memory | `src/memory/`、`src/workflows/memory/`、`src/routes/api/memories/` |
 | Workflow观察数据 | `src/workflows/workflow-stage.ts` |
 | 实时事件 | `src/workflows/agent-session-log.ts`、`chat-run-events.ts` |
 | Session前端投影 | `src/session-read-model.ts` |
 | 完整历史 | `src/session-export.ts` |
 
-下一步用本文现状与两份上游分析形成Chat需求，不从当前代码形状直接推出目标Schema。
+新增Workflow时以[Chat Workflow开发框架](./chat-workflow-framework.md)为规范入口，并用本文核对当前实现事实。

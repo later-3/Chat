@@ -17,8 +17,8 @@ import {
   buildPlanningPrompt,
   MAX_PLANNING_RESULT_CHARS,
   PLANNER_AGENT,
-} from "./agents/planner.js";
-import { PLANNING_EXECUTION_AGENT } from "./agents/pi-coding-agent.js";
+} from "./agents/planner/index.js";
+import { PLANNING_EXECUTION_AGENT } from "./agents/pi-coding-agent/index.js";
 import {
   injectPlanningExecutionContext,
   stripLegacyPlanningHandoffs,
