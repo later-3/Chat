@@ -12,6 +12,9 @@ export interface ChatHomePaths {
   readonly projectsDir: string;
   readonly projectRegistryPath: string;
   readonly runtimeDir: string;
+  readonly workflowDataDir: string;
+  readonly cacheDir: string;
+  readonly fastEmbedCacheDir: string;
   readonly logsDir: string;
   readonly configPath: string;
 }
@@ -25,6 +28,8 @@ export function resolveChatHome(configured = process.env[CHAT_HOME_ENV]): string
 export function getChatHomePaths(root = resolveChatHome()): ChatHomePaths {
   const resolvedRoot = resolve(root);
   const projectsDir = resolve(resolvedRoot, "projects");
+  const runtimeDir = resolve(resolvedRoot, "runtime");
+  const cacheDir = resolve(resolvedRoot, "cache");
   return {
     root: resolvedRoot,
     agentDir: resolve(resolvedRoot, "agent"),
@@ -32,7 +37,10 @@ export function getChatHomePaths(root = resolveChatHome()): ChatHomePaths {
     personalPromptResourceDir: resolve(resolvedRoot, "prompt-resources"),
     projectsDir,
     projectRegistryPath: resolve(projectsDir, "registry.json"),
-    runtimeDir: resolve(resolvedRoot, "runtime"),
+    runtimeDir,
+    workflowDataDir: resolve(runtimeDir, "workflow-data"),
+    cacheDir,
+    fastEmbedCacheDir: resolve(cacheDir, "fastembed"),
     logsDir: resolve(resolvedRoot, "logs"),
     configPath: resolve(resolvedRoot, "config.json"),
   };
@@ -52,6 +60,8 @@ export function ensureChatHome(root = resolveChatHome()): Promise<ChatHomePaths>
       mkdir(paths.personalPromptResourceDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.projectsDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.runtimeDir, { recursive: true, mode: 0o700 }),
+      mkdir(paths.workflowDataDir, { recursive: true, mode: 0o700 }),
+      mkdir(paths.fastEmbedCacheDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.logsDir, { recursive: true, mode: 0o700 }),
     ]);
     return paths;

@@ -30,6 +30,7 @@ test("Project Manifest, Registry and data paths use stable projectId", async (t)
   assert.equal(opened.projectRoot, fs.realpathSync(project));
   assert.equal(opened.sessionDir, path.join(chatHome, "projects", "content-lab", "sessions"));
   assert.equal(opened.memoryDir, path.join(chatHome, "projects", "content-lab", "memory"));
+  assert.equal("workflowDataDir" in opened, false);
   assert.equal(opened.projectConfigPath, path.join(fs.realpathSync(project), ".chat", "config.json"));
   assert.equal((await listProjects(chatHome))[0]?.available, true);
 

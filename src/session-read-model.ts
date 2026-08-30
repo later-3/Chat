@@ -7,9 +7,7 @@ import {
   type SessionEntry,
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
-import { ensureChatDataLayout } from "./chat-data.js";
-import { getChatSessionDir } from "./chat-session.js";
-import { resolveProjectContext } from "./projects/registry.js";
+import { openProject, resolveProjectContext } from "./projects/registry.js";
 import {
   collectChatWorkflowMessages,
   collectChatWorkflowStageMarkers,
@@ -20,8 +18,6 @@ import {
   collectLatestChatWorkflowConfigurations,
 } from "./workflows/workflow-configuration.js";
 import { collectChatPromptResourceProposals } from "./workflows/prompt-resource-proposal.js";
-
-export { getChatSessionDir } from "./chat-session.js";
 
 export interface ChatSessionListItem {
   path: string;
@@ -69,14 +65,15 @@ function toListItems(infos: SessionInfo[], projectId?: string): ChatSessionListI
   });
 }
 
-/** Lists one registered Project; the no-argument form remains only for legacy migration. */
+/** Lists one registered Project; cwd is resolved through its Project Manifest when omitted. */
 export async function listChatSessions(projectId?: string, chatHome?: string): Promise<ChatSessionListItem[]> {
-  if (projectId !== undefined) {
-    const project = await resolveProjectContext(projectId, chatHome);
-    return toListItems(await SessionManager.listAll(project.sessionDir), project.projectId);
-  }
-  const { sessionDir } = await ensureChatDataLayout();
-  return toListItems(await SessionManager.listAll(sessionDir));
+  const project = projectId === undefined
+    ? await openProject({
+        path: process.cwd(),
+        ...(chatHome === undefined ? {} : { chatHome }),
+      })
+    : await resolveProjectContext(projectId, chatHome);
+  return toListItems(await SessionManager.listAll(project.sessionDir), project.projectId);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -247,8 +244,12 @@ export function projectSessionContext(
 }
 
 /** Resolves a browser-provided ID only against Chat's managed Session directory. */
-export async function requireChatSession(sessionId: string, projectId?: string): Promise<ChatSessionListItem> {
-  const session = (await listChatSessions(projectId)).find((item) => item.id === sessionId);
+export async function requireChatSession(
+  sessionId: string,
+  projectId?: string,
+  chatHome?: string,
+): Promise<ChatSessionListItem> {
+  const session = (await listChatSessions(projectId, chatHome)).find((item) => item.id === sessionId);
   if (session === undefined) throw new Error(`找不到Session: ${sessionId}`);
   return session;
 }
@@ -258,9 +259,10 @@ export async function readChatSession(
   leafId?: string | null,
   options: SessionProjectionOptions = {},
   projectId?: string,
+  chatHome?: string,
 ) {
-  const info = await requireChatSession(sessionId, projectId);
-  const manager = SessionManager.open(info.path, projectId === undefined ? getChatSessionDir() : dirname(info.path));
+  const info = await requireChatSession(sessionId, projectId, chatHome);
+  const manager = SessionManager.open(info.path, dirname(info.path));
   const entries = manager.getEntries();
   if (leafId && manager.getEntry(leafId) === undefined) {
     throw new Error(`找不到Session节点: ${leafId}`);

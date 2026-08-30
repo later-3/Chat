@@ -25,6 +25,10 @@
     <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
     <key>NODE_ENV</key>
     <string>production</string>
+    <key>CHAT_HOME</key>
+    <string>__HOME__/.chat</string>
+    <key>WORKFLOW_LOCAL_DATA_DIR</key>
+    <string>__HOME__/.chat/runtime/workflow-data</string>
   </dict>
 
   <key>RunAtLoad</key>

@@ -213,9 +213,13 @@ export async function migrateLegacyProjectLayout(options: {
     ? await copyFileIfAbsent(resolve(legacyRoot, "config.json"), home.configPath)
     : false;
   await copyDirectoryIfPresent(legacySessions, project.sessionDir);
-  const copiedWorkflowData = await copyDirectoryIfPresent(
+  const copiedRootWorkflowData = await copyDirectoryIfPresent(
+    resolve(project.projectRoot, ".workflow-data"),
+    home.workflowDataDir,
+  );
+  const copiedChatWorkflowData = await copyDirectoryIfPresent(
     resolve(legacyRoot, "workflow-data"),
-    project.workflowDataDir,
+    home.workflowDataDir,
   );
   const memory = await importLegacyMemory({
     legacyDbPath: resolve(legacyRoot, "memory", "catalog.db"),
@@ -231,7 +235,7 @@ export async function migrateLegacyProjectLayout(options: {
     copiedAgent,
     copiedConfig,
     copiedSessions: Math.max(0, await countFiles(project.sessionDir) - sessionCountBefore),
-    copiedWorkflowData,
+    copiedWorkflowData: copiedRootWorkflowData || copiedChatWorkflowData,
     importedMemories: memory.imported,
     skippedMemories: memory.skipped,
   };

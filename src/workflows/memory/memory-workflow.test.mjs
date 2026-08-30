@@ -8,6 +8,7 @@ import {
   registerFauxProvider,
 } from "@earendil-works/pi-ai/compat";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { openProject } from "../../projects/registry.ts";
 import { inspectWorkflowAgent } from "../agent-inspection.ts";
 import { collectChatWorkflowStageMarkers } from "../workflow-stage.ts";
 import { memoryWorkflowDefinition } from "./index.ts";
@@ -66,6 +67,13 @@ test("Memory Workflow uses Pi Skill expansion and only custom Memory tools", { c
   const workspace = path.join(base, "workspace");
   fs.mkdirSync(workspace);
   writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
+  const project = await openProject({
+    path: workspace,
+    chatHome: process.env.CHAT_HOME,
+    createIfMissing: true,
+    id: "memory-workflow",
+    name: "Memory Workflow",
+  });
 
   const calls = [];
   faux.setResponses([(context) => {
@@ -78,6 +86,8 @@ test("Memory Workflow uses Pi Skill expansion and only custom Memory tools", { c
   }]);
 
   const result = await runMemoryAgentStep({
+    projectId: project.projectId,
+    chatHome: process.env.CHAT_HOME,
     cwd: workspace,
     prompt: "查找我的架构偏好",
     workflowInvocationId: "memory-invocation-1",
@@ -94,7 +104,7 @@ test("Memory Workflow uses Pi Skill expansion and only custom Memory tools", { c
 
   const skillPath = path.join(base, ".chat", "runtime", "skills", "memory", "SKILL.md");
   assert.equal(fs.existsSync(skillPath), true);
-  const manager = SessionManager.open(result.sessionFile, path.join(base, ".chat", "sessions"));
+  const manager = SessionManager.open(result.sessionFile, project.sessionDir);
   assert.deepEqual(collectChatWorkflowStageMarkers(manager.getEntries()).map((stage) => ({
     workflowId: stage.workflowId,
     stageId: stage.stageId,

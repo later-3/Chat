@@ -67,7 +67,7 @@ SQLite 或 Mem0。页面支持语义搜索、精确列表、添加、编辑、�
 
 默认使用 Mem0 的 FastEmbed 适配器和 `fast-bge-small-zh-v1.5`，不需要 API Key。
 模型只在第一次写入或语义查询时加载；单纯列出和查看 Chat 记录不会加载模型。
-Mem0 匿名遥测在加载 SDK 前被关闭。
+模型缓存统一位于`~/.chat/cache/fastembed`，不会写入当前Project。Mem0匿名遥测在加载SDK前被关闭。
 
 可用环境变量：
 
@@ -101,7 +101,7 @@ Memory Agent 的执行面严格限制为 6 个 Chat 自有工具：
 - `memory_delete`：携带读取到的版本号永久删除。
 
 Agent 不暴露 Bash、Read、Write 或 Edit。运行时由 Chat 把私有 Memory Skill 放到
-`.chat/memory/runtime/skills/memory/SKILL.md`，交给 Pi 的 ResourceLoader 加载，并用
+`~/.chat/runtime/skills/memory/SKILL.md`，交给 Pi 的 ResourceLoader 加载，并用
 `/skill:memory` 显式展开。Skill 规定：普通聊天不能自动写入；模糊更新和删除先搜索并消歧；
 新增前检查明显重复；不存密钥、临时日志或未经确认的推测。
 

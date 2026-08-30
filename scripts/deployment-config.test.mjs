@@ -14,6 +14,7 @@ test("macOS production and relay templates point at the built Chat service", () 
 
   assert.match(production, /\.output\/server\/index\.mjs/);
   assert.match(production, /--env-file=__ENV_FILE__/);
+  assert.match(production, /__HOME__\/\.chat\/runtime\/workflow-data/);
   assert.doesNotMatch(production, /scripts\/dev\/start\.mjs/);
 
   assert.match(directTunnel, /com\.later\.chat\.cloudflare-direct/);
@@ -45,6 +46,8 @@ test("server and Cloudflare examples expose only the intended Chat origin", () =
   assert.match(nginx, /server 127\.0\.0\.1:33051/);
   assert.match(environment, /CHAT_WEB_AUTH_USERNAME=later/);
   assert.match(environment, /CHAT_WEB_AUTH_PASSWORD=123456/);
+  assert.match(environment, /CHAT_HOME=\/home\/chat\/\.chat/);
+  assert.match(environment, /WORKFLOW_LOCAL_DATA_DIR=\/home\/chat\/\.chat\/runtime\/workflow-data/);
   assert.match(deployment, /--branch codex\/pi-web-frontend-in-chat/);
   assert.match(deployment, /不能跨平台复制/);
   assert.match(deployment, /\.chat\/agent\/models\.json/);

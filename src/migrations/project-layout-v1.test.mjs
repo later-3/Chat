@@ -19,6 +19,7 @@ test("legacy Chat data migrates once into Chat Home and independent Memory store
   const chatHome = resolve(root, "home");
   await mkdir(resolve(projectRoot, ".chat", "agent"), { recursive: true });
   await mkdir(resolve(projectRoot, ".chat", "sessions"), { recursive: true });
+  await mkdir(resolve(projectRoot, ".workflow-data", "runs"), { recursive: true });
   await json(resolve(projectRoot, ".chat", "project.json"), {
     schemaVersion: 1,
     id: "chat",
@@ -32,6 +33,7 @@ test("legacy Chat data migrates once into Chat Home and independent Memory store
   });
   await writeFile(resolve(projectRoot, ".chat", "agent", "settings.json"), "{}\n");
   await writeFile(resolve(projectRoot, ".chat", "sessions", "session.jsonl"), "{}\n");
+  await writeFile(resolve(projectRoot, ".workflow-data", "runs", "run.json"), "{}\n");
 
   const legacyMemoryDir = resolve(projectRoot, ".chat", "memory");
   await mkdir(legacyMemoryDir, { recursive: true });
@@ -57,9 +59,11 @@ test("legacy Chat data migrates once into Chat Home and independent Memory store
 
   const first = await migrateLegacyProjectLayout({ projectRoot, chatHome });
   assert.equal(first?.copiedSessions, 1);
+  assert.equal(first?.copiedWorkflowData, true);
   assert.equal(first?.importedMemories, 2);
   assert.equal(await readFile(resolve(chatHome, "agent", "settings.json"), "utf8"), "{}\n");
   assert.equal(await readFile(resolve(chatHome, "projects", "chat", "sessions", "session.jsonl"), "utf8"), "{}\n");
+  assert.equal(await readFile(resolve(chatHome, "runtime", "workflow-data", "runs", "run.json"), "utf8"), "{}\n");
 
   const personal = new MemoryRepository(resolve(chatHome, "memory", "personal", "catalog.db"));
   const project = new MemoryRepository(resolve(chatHome, "projects", "chat", "memory", "catalog.db"));

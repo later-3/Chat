@@ -80,16 +80,23 @@ Chat Home默认是`~/.chat`，测试、迁移和部署可以通过`CHAT_HOME`显
   │   └── prompts/
   ├── memory/
   │   └── personal/                    # Personal Memory事实源和Mem0索引
-  └── projects/
+  ├── prompt-resources/                # Personal规则与经验
+  ├── projects/
       ├── registry.json                 # 本机Project登记
       ├── chat/
       │   ├── sessions/
       │   ├── memory/
-      │   └── workflow-data/
+      │   └── prompt-resources/
       └── ziji-content-lab/
           ├── sessions/
           ├── memory/
-          └── workflow-data/
+          └── prompt-resources/
+  ├── runtime/
+  │   ├── workflow-data/               # 进程级Workflow Run、Step和Event
+  │   └── skills/                      # 构建资源物化结果
+  ├── cache/
+  │   └── fastembed/                   # 可重新下载的Embedding模型
+  └── logs/
 ```
 
 `~/.chat`只属于当前用户和Chat运行时，不进入任何业务项目Git仓库。
@@ -350,7 +357,7 @@ interface ChatProjectContext {
   readonly projectDataDir: string;
   readonly sessionDir: string;
   readonly memoryDir: string;
-  readonly workflowDataDir: string;
+  readonly promptResourceDir: string;
 }
 ```
 
@@ -399,7 +406,7 @@ Content Lab的项目根是：
 
 1. 引入`resolveChatHome()`、Project Manifest/Registry Schema和`ChatProjectContext`，先增加测试。
 2. 创建`chat`与`ziji-content-lab` Manifest并登记Project路径。
-3. 复制当前Chat项目`.chat/agent`到`~/.chat/agent`；旧Memory Catalog按记录Target导入新Store，不复制旧向量索引。
+3. 复制当前Chat项目`.chat/agent`到`~/.chat/agent`；旧Memory Catalog按记录Target导入新Store，不复制旧向量索引；旧`.workflow-data`归入`~/.chat/runtime/workflow-data`。
 4. 把当前Chat Session复制到`~/.chat/projects/chat/sessions`并验证Session ID、cwd、消息数和恢复结果。
 5. 把旧版Global Memory迁移到Personal Store，把cwd Project Memory映射到对应Project Store；新索引从各自Catalog修复或重建。
 6. 后端Run、Session、Resource、File和Memory入口统一改用`ChatProjectContext`。

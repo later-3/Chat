@@ -4,7 +4,6 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { getChatDataPaths } from "../chat-data.ts";
 import { Mem0MemoryIndex } from "./mem0-index.ts";
 import { MemoryRepository } from "./repository.ts";
 import { MemoryService } from "./service.ts";
@@ -61,11 +60,11 @@ async function startEmbeddingServer(t) {
 }
 
 async function createHarness(projectRoot, embeddingBaseUrl) {
-  const paths = getChatDataPaths(projectRoot);
-  fs.mkdirSync(paths.memoryDir, { recursive: true });
-  const repository = new MemoryRepository(path.join(paths.memoryDir, "catalog.db"));
+  const memoryDir = path.join(projectRoot, "memory");
+  fs.mkdirSync(memoryDir, { recursive: true });
+  const repository = new MemoryRepository(path.join(memoryDir, "catalog.db"));
   const index = await Mem0MemoryIndex.create({
-    vectorDbPath: path.join(paths.memoryDir, "vector-store.db"),
+    vectorDbPath: path.join(memoryDir, "vector-store.db"),
     dimension: EMBEDDING_DIMENSION,
     embedder: {
       provider: "openai",

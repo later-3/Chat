@@ -76,7 +76,12 @@ interface ResourceAddress {
 │       ├── memory/
 │       │   ├── catalog.db
 │       │   └── vector-store.db
-│       └── workflow-data/
+│       └── prompt-resources/
+├── runtime/
+│   ├── workflow-data/
+│   └── skills/
+├── cache/
+│   └── fastembed/
 └── logs/
 
 <project-root>/.chat/

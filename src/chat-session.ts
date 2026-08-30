@@ -1,10 +1,10 @@
 import { resolve } from "node:path";
+import { realpath } from "node:fs/promises";
 import {
   type SessionEntry,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import { ensureChatDataLayout, getChatDataPaths } from "./chat-data.js";
-import { resolveProjectContext } from "./projects/registry.js";
+import { openProject, resolveProjectContext } from "./projects/registry.js";
 import type { ChatProjectContext } from "./projects/types.js";
 import { LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE } from "./workflows/planning-execution/context.js";
 import { collectChatWorkflowStageMarkers } from "./workflows/workflow-stage.js";
@@ -23,14 +23,6 @@ export interface ChatSession {
   readonly sessionDir: string;
   readonly manager: SessionManager;
   readonly projectContext?: ChatProjectContext;
-}
-
-export function getChatAgentDir(): string {
-  return getChatDataPaths().agentDir;
-}
-
-export function getChatSessionDir(): string {
-  return getChatDataPaths().sessionDir;
 }
 
 /** Keeps obsolete Chat-internal handoffs out of restore and compaction context. */
@@ -70,27 +62,24 @@ function configureChatSessionManager(manager: SessionManager): SessionManager {
  * provide a filesystem path.
  */
 export async function openChatSession(input: ChatSessionInput): Promise<ChatSession> {
-  let projectContext: ChatProjectContext | undefined;
-  let cwd: string;
-  let agentDir: string;
-  let sessionDir: string;
-  if (input.projectId !== undefined) {
-    projectContext = await resolveProjectContext(input.projectId, input.chatHome);
-    cwd = projectContext.cwd;
-    agentDir = projectContext.agentDir;
-    sessionDir = projectContext.sessionDir;
-    if (input.cwd !== undefined && resolve(input.cwd) !== cwd) {
-      throw new Error(`Project ${input.projectId}与工作目录不一致`);
-    }
-  } else {
-    if (input.cwd === undefined) throw new Error("打开Session必须提供projectId或cwd");
-    cwd = resolve(input.cwd);
-    ({ agentDir, sessionDir } = await ensureChatDataLayout());
+  if (input.projectId === undefined && input.cwd === undefined) {
+    throw new Error("打开Session必须提供projectId或cwd");
+  }
+  const projectContext = input.projectId === undefined
+    ? await openProject({
+        path: input.cwd as string,
+        ...(input.chatHome === undefined ? {} : { chatHome: input.chatHome }),
+      })
+    : await resolveProjectContext(input.projectId, input.chatHome);
+  const { cwd, agentDir, sessionDir } = projectContext;
+  if (input.cwd !== undefined && await realpath(resolve(input.cwd)) !== cwd) {
+    throw new Error(`Project ${projectContext.projectId}与工作目录不一致`);
   }
 
   if (input.sessionId === undefined) {
     return {
-      ...(projectContext === undefined ? {} : { projectId: projectContext.projectId, projectContext }),
+      projectId: projectContext.projectId,
+      projectContext,
       cwd,
       agentDir,
       sessionDir,
@@ -106,7 +95,8 @@ export async function openChatSession(input: ChatSessionInput): Promise<ChatSess
   }
 
   return {
-    ...(projectContext === undefined ? {} : { projectId: projectContext.projectId, projectContext }),
+    projectId: projectContext.projectId,
+    projectContext,
     cwd,
     agentDir,
     sessionDir,

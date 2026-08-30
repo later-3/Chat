@@ -1,0 +1,86 @@
+diff --git a/dist/oss/index.js b/dist/oss/index.js
+index 56157f4..d153451 100644
+--- a/dist/oss/index.js
++++ b/dist/oss/index.js
+@@ -115,6 +115,7 @@ var MemoryConfigSchema = import_zod.z.object({
+       model: import_zod.z.union([import_zod.z.string(), import_zod.z.any()]).optional(),
+       baseURL: import_zod.z.string().optional(),
+       embeddingDims: import_zod.z.number().optional(),
++      cacheDir: import_zod.z.string().optional(),
+       url: import_zod.z.string().optional(),
+       vertexCredentialsJson: import_zod.z.string().optional(),
+       googleServiceAccountJson: import_zod.z.union([import_zod.z.string(), import_zod.z.record(import_zod.z.string(), import_zod.z.any())]).optional(),
+@@ -5432,6 +5432,9 @@ var FastEmbedEmbedder = class {
+     } else {
+       this.modelName = DEFAULT_MODEL8;
+     }
++    this.cacheDir = typeof config.cacheDir === "string" && config.cacheDir.length > 0
++      ? config.cacheDir
++      : "local_cache";
+   }
+   getEmbeddingModel() {
+     if (!this.embeddingModel) {
+@@ -5453,7 +5456,7 @@ var FastEmbedEmbedder = class {
+       "FastEmbed embedder",
+       () => import("fastembed")
+     );
+-    return sdk.FlagEmbedding.init({ model: this.modelName });
++    return sdk.FlagEmbedding.init({ model: this.modelName, cacheDir: this.cacheDir });
+   }
+   normalizeInput(text) {
+     return text.replace(/\n/g, " ");
+diff --git a/dist/oss/index.d.mts b/dist/oss/index.d.mts
+index c35f651..52bd20c 100644
+--- a/dist/oss/index.d.mts
++++ b/dist/oss/index.d.mts
+@@ -33,6 +33,7 @@ interface EmbeddingConfig {
+     baseURL?: string;
+     url?: string;
+     embeddingDims?: number;
++    cacheDir?: string;
+     modelProperties?: Record<string, any>;
+     huggingfaceBaseUrl?: string;
+     awsRegion?: string;
+diff --git a/dist/oss/index.d.ts b/dist/oss/index.d.ts
+index c35f651..52bd20c 100644
+--- a/dist/oss/index.d.ts
++++ b/dist/oss/index.d.ts
+@@ -33,6 +33,7 @@ interface EmbeddingConfig {
+     baseURL?: string;
+     url?: string;
+     embeddingDims?: number;
++    cacheDir?: string;
+     modelProperties?: Record<string, any>;
+     huggingfaceBaseUrl?: string;
+     awsRegion?: string;
+diff --git a/dist/oss/index.mjs b/dist/oss/index.mjs
+index 6a77cb2..c84d99c 100644
+--- a/dist/oss/index.mjs
++++ b/dist/oss/index.mjs
+@@ -21,6 +21,7 @@ var MemoryConfigSchema = z.object({
+       model: z.union([z.string(), z.any()]).optional(),
+       baseURL: z.string().optional(),
+       embeddingDims: z.number().optional(),
++      cacheDir: z.string().optional(),
+       url: z.string().optional(),
+       vertexCredentialsJson: z.string().optional(),
+       googleServiceAccountJson: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
+@@ -5340,6 +5340,9 @@ var FastEmbedEmbedder = class {
+     } else {
+       this.modelName = DEFAULT_MODEL8;
+     }
++    this.cacheDir = typeof config.cacheDir === "string" && config.cacheDir.length > 0
++      ? config.cacheDir
++      : "local_cache";
+   }
+   getEmbeddingModel() {
+     if (!this.embeddingModel) {
+@@ -5361,7 +5364,7 @@ var FastEmbedEmbedder = class {
+       "FastEmbed embedder",
+       () => import("fastembed")
+     );
+-    return sdk.FlagEmbedding.init({ model: this.modelName });
++    return sdk.FlagEmbedding.init({ model: this.modelName, cacheDir: this.cacheDir });
+   }
+   normalizeInput(text) {
+     return text.replace(/\n/g, " ");

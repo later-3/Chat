@@ -30,7 +30,7 @@ Chat/frontend（纯浏览器）
 | 取消运行 | 原Adapter转调Chat | `DELETE /runs/:runId` | 已接入 | 浏览器取消请求时同步取消Chat Workflow Run |
 | 查询运行 | 原Adapter轮询Chat | `GET /runs/:runId` | 已接入 | Chat返回Workflow状态和最终结果 |
 | 展示Agent执行过程 | 原Agent RPC事件 | `GET /runs/:runId/events` | 已接入，由Chat替代 | Chat按Stage流式返回Thinking、文本、Tool Call和Tool Result事件 |
-| Session列表 | `GET /api/sessions` | `GET /api/sessions` | 已接入 | Chat只扫描`Chat/.chat/sessions` |
+| Session列表 | `GET /api/sessions` | `GET /api/sessions?projectId=<id>` | 已接入 | Chat只扫描目标Project的`~/.chat/projects/<projectId>/sessions` |
 | Session详情 | `GET /api/sessions/:id` | 同路径 | 已接入，只读 | Chat按Session ID读取Pi Session |
 | Session上下文 | `GET /api/sessions/:id/context` | 同路径 | 已接入，只读 | Chat投影消息、节点ID、模型和Thinking Level |
 | 默认目录 | `GET /api/home` | 同路径 | 部分接入 | 当前返回Chat进程工作目录 |
@@ -83,7 +83,7 @@ Chat/frontend（纯浏览器）
 
 | 接口 | 前端用途 | 状态 | 后续实现方向 |
 |---|---|---|---|
-| `GET/PATCH /api/skills` | Skill列表与模型调用开关 | 已接入 | 使用Chat的`.chat/agent`和Pi ResourceLoader；只修改已解析Skill的frontmatter |
+| `GET/PATCH /api/skills` | Skill列表与模型调用开关 | 已接入 | 使用`~/.chat/agent`和Pi ResourceLoader；只修改已解析Skill的frontmatter |
 | `POST /api/skills/search` | Skill搜索 | 已接入 | 后端访问skills.sh，失败时使用参数化npx调用 |
 | `POST /api/skills/install` | Skill安装 | 已接入 | 后端校验cwd并执行参数化npx调用 |
 | `POST /api/skills/check` | Skill更新检查 | 待迁移 | 后端检查版本 |
@@ -124,7 +124,7 @@ Chat/frontend（纯浏览器）
 
 当前测试直接参考Pi Web原有的`session-reader`、`file-access`、`file-types`、`chat-workflow-contract`和构建路由用例，保留了以下关键边界：
 
-- Chat只扫描自己的`.chat/sessions`，不读取其他Session目录。
+- Chat只扫描目标Project在Chat Home中的Session目录，不读取项目仓库或其他Project的Session目录。
 - Pi压缩、分支与消息节点ID保持对齐。
 - 历史Thinking和Tool Result图片按请求延迟投影。
 - Pi Tool Call字段在进入浏览器前完成转换。

@@ -54,7 +54,8 @@
       "undici": "7.29.0"
     },
     "patchedDependencies": {
-      "@workflow/builders@4.1.10": "patches/@workflow__builders@4.1.10.patch"
+      "@workflow/builders@4.1.10": "patches/@workflow__builders@4.1.10.patch",
+      "mem0ai@3.1.7": "patches/mem0ai@3.1.7.patch"
     }
   }
 }

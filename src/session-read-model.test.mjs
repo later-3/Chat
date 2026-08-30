@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { openProject } from "./projects/registry.ts";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   listChatSessions,
@@ -193,7 +194,7 @@ test("only base64 tool-result images are omitted from the initial payload", () =
   assert.match(context.messages[1].content[2].text, /1 tool result image omitted.*image\/png.*~4 bytes/);
 });
 
-test("session listing scans only Chat .chat/sessions", { concurrency: false }, async (t) => {
+test("session listing scans only the current Project session directory", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-list-"));
   t.after(() => {
@@ -201,13 +202,19 @@ test("session listing scans only Chat .chat/sessions", { concurrency: false }, a
     fs.rmSync(base, { recursive: true, force: true });
   });
   const workspace = path.join(base, "workspace");
-  const chatSessionDir = path.join(base, ".chat", "sessions");
   const unrelatedDir = path.join(base, "unrelated-sessions");
   fs.mkdirSync(workspace, { recursive: true });
-  fs.mkdirSync(chatSessionDir, { recursive: true });
   fs.mkdirSync(unrelatedDir, { recursive: true });
+  const chatHome = path.join(base, "home");
+  const project = await openProject({
+    path: base,
+    chatHome,
+    createIfMissing: true,
+    id: "session-list",
+    name: "Session List",
+  });
 
-  const included = SessionManager.create(workspace, chatSessionDir);
+  const included = SessionManager.create(workspace, project.sessionDir);
   included.appendMessage({ role: "user", content: "included", timestamp: Date.now() });
   included.appendMessage({
     role: "assistant",
@@ -227,7 +234,7 @@ test("session listing scans only Chat .chat/sessions", { concurrency: false }, a
   });
 
   process.chdir(base);
-  const sessions = await listChatSessions();
+  const sessions = await listChatSessions(undefined, chatHome);
   assert.deepEqual(sessions.map((session) => session.id), [included.getSessionId()]);
   assert.equal(sessions[0].sessionSource, "chat");
   assert.equal(sessions[0].readOnly, false);
@@ -241,9 +248,16 @@ test("session reads restore Workflow Agent configuration and pending Prompt prop
     fs.rmSync(base, { recursive: true, force: true });
   });
   const workspace = path.join(base, "workspace");
-  const sessionDir = path.join(base, ".chat", "sessions");
   fs.mkdirSync(workspace, { recursive: true });
-  const manager = SessionManager.create(workspace, sessionDir);
+  const chatHome = path.join(base, "home");
+  const project = await openProject({
+    path: base,
+    chatHome,
+    createIfMissing: true,
+    id: "workflow-config",
+    name: "Workflow Config",
+  });
+  const manager = SessionManager.create(workspace, project.sessionDir);
   manager.appendMessage({ role: "user", content: "configure rules", timestamp: Date.now() });
   setChatWorkflowAgentPromptResources(manager, {
     workflowId: "minimal-pi-coding-agent",
@@ -267,7 +281,13 @@ test("session reads restore Workflow Agent configuration and pending Prompt prop
   });
 
   process.chdir(base);
-  const session = await readChatSession(manager.getSessionId());
+  const session = await readChatSession(
+    manager.getSessionId(),
+    undefined,
+    {},
+    project.projectId,
+    chatHome,
+  );
   assert.deepEqual(session.workflowConfigurations, {
     "minimal-pi-coding-agent": {
       "pi-coding-agent": {

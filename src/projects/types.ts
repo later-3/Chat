@@ -41,7 +41,6 @@ export interface ChatProjectContext {
   readonly sessionDir: string;
   readonly memoryDir: string;
   readonly promptResourceDir: string;
-  readonly workflowDataDir: string;
 }
 
 export interface ChatExecutionContext extends ChatProjectContext {

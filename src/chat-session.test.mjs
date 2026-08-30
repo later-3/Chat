@@ -4,6 +4,19 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { isChatAgentContextEntry, openChatSession } from "./chat-session.ts";
+import { openProject } from "./projects/registry.ts";
+
+async function initializeProject(base, workspace, projectId = "workspace") {
+  const chatHome = path.join(base, "home");
+  await openProject({
+    path: workspace,
+    chatHome,
+    createIfMissing: true,
+    id: projectId,
+    name: projectId,
+  });
+  return chatHome;
+}
 
 test("Chat Session is created once and reopened by ID", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
@@ -15,8 +28,9 @@ test("Chat Session is created once and reopened by ID", { concurrency: false }, 
   process.chdir(base);
   const workspace = path.join(base, "workspace");
   fs.mkdirSync(workspace);
+  const chatHome = await initializeProject(base, workspace);
 
-  const created = await openChatSession({ cwd: workspace });
+  const created = await openChatSession({ cwd: workspace, chatHome });
   created.manager.appendMessage({ role: "user", content: "first", timestamp: Date.now() });
   created.manager.appendMessage({
     role: "assistant",
@@ -28,12 +42,13 @@ test("Chat Session is created once and reopened by ID", { concurrency: false }, 
 
   const reopened = await openChatSession({
     cwd: workspace,
+    chatHome,
     sessionId: created.manager.getSessionId(),
   });
   assert.equal(reopened.manager.getSessionId(), created.manager.getSessionId());
   assert.equal(reopened.manager.getSessionFile(), created.manager.getSessionFile());
   assert.equal(reopened.manager.buildSessionContext().messages.length, 2);
-  assert.deepEqual(fs.readdirSync(path.join(base, ".chat", "sessions")), [
+  assert.deepEqual(fs.readdirSync(path.join(chatHome, "projects", "workspace", "sessions")), [
     path.basename(created.manager.getSessionFile()),
   ]);
 });
@@ -50,8 +65,9 @@ test("Chat Session rejects the same ID for another working directory", { concurr
   const secondWorkspace = path.join(base, "second");
   fs.mkdirSync(firstWorkspace);
   fs.mkdirSync(secondWorkspace);
+  const chatHome = await initializeProject(base, firstWorkspace, "first");
 
-  const created = await openChatSession({ cwd: firstWorkspace });
+  const created = await openChatSession({ projectId: "first", cwd: firstWorkspace, chatHome });
   created.manager.appendMessage({ role: "user", content: "first", timestamp: Date.now() });
   created.manager.appendMessage({
     role: "assistant",
@@ -62,8 +78,8 @@ test("Chat Session rejects the same ID for another working directory", { concurr
   });
 
   await assert.rejects(
-    openChatSession({ cwd: secondWorkspace, sessionId: created.manager.getSessionId() }),
-    /不属于工作目录/,
+    openChatSession({ projectId: "first", cwd: secondWorkspace, chatHome, sessionId: created.manager.getSessionId() }),
+    /工作目录不一致/,
   );
 });
 
@@ -77,8 +93,9 @@ test("legacy planning handoffs stay in storage but not Chat Agent context", { co
   process.chdir(base);
   const workspace = path.join(base, "workspace");
   fs.mkdirSync(workspace);
+  const chatHome = await initializeProject(base, workspace);
 
-  const created = await openChatSession({ cwd: workspace });
+  const created = await openChatSession({ cwd: workspace, chatHome });
   created.manager.appendCustomEntry("chat.workflow_stage", {
     schemaVersion: 1,
     invocationId: "legacy-invocation",
@@ -117,6 +134,7 @@ test("legacy planning handoffs stay in storage but not Chat Agent context", { co
 
   const reopened = await openChatSession({
     cwd: workspace,
+    chatHome,
     sessionId: created.manager.getSessionId(),
   });
   assert.equal(reopened.manager.getBranch().some(

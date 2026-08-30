@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { basename } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { ensureChatDataLayout } from "../chat-data.js";
+import { ensureChatHome } from "../chat-home.js";
 import { resolveProjectContext } from "../projects/registry.js";
 import {
   createWorkflowAgentSession,
@@ -56,7 +56,7 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
   const projectContext = options.projectId === undefined
     ? undefined
     : await resolveProjectContext(options.projectId, options.chatHome);
-  const dataPaths = projectContext ?? await ensureChatDataLayout();
+  const home = projectContext === undefined ? await ensureChatHome(options.chatHome) : undefined;
   const cwd = projectContext?.cwd ?? options.cwd;
   const agent = await resolveWorkflowAgentDefinition({
     defaultAgent: options.defaultAgent,
@@ -82,8 +82,8 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
     chatSession: {
       ...(projectContext === undefined ? {} : { projectId: projectContext.projectId, projectContext }),
       cwd,
-      agentDir: dataPaths.agentDir,
-      sessionDir: dataPaths.sessionDir,
+      agentDir: projectContext?.agentDir ?? home!.agentDir,
+      sessionDir: projectContext?.sessionDir ?? home!.runtimeDir,
       manager: sessionManager,
     },
     sessionManager,

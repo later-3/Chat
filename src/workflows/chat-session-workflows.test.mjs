@@ -84,7 +84,15 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
   process.chdir(base);
   const workspace = path.join(base, "workspace");
   fs.mkdirSync(workspace);
-  writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
+  const chatHome = path.join(base, "chat-home");
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    createIfMissing: true,
+    id: "session-workflows",
+    name: "Session Workflows",
+  });
+  writeFauxConfiguration(path.join(chatHome, "agent"), faux);
 
   const calls = [];
   faux.setResponses([
@@ -107,17 +115,23 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
   ]);
 
   const first = await runPiCodingAgentPromptStep({
+    projectId: project.projectId,
+    chatHome,
     cwd: workspace,
     prompt: "first request",
     workflowInvocationId: "direct-invocation-1",
   });
   const planning = await runPlanningStep({
+    projectId: project.projectId,
+    chatHome,
     cwd: workspace,
     sessionId: first.sessionId,
     prompt: "planned request",
     workflowInvocationId: "planning-invocation-1",
   });
   const execution = await runPlanningExecutionStep({
+    projectId: project.projectId,
+    chatHome,
     cwd: workspace,
     sessionId: planning.sessionId,
     workflowInvocationId: "planning-invocation-1",
@@ -126,6 +140,8 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     agent: planning.executionAgent,
   });
   const last = await runPiCodingAgentPromptStep({
+    projectId: project.projectId,
+    chatHome,
     cwd: workspace,
     sessionId: execution.sessionId,
     prompt: "final request",
@@ -137,9 +153,9 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
   assert.equal(last.sessionId, first.sessionId);
   assert.equal(execution.sessionFile, first.sessionFile);
   assert.equal(last.sessionFile, first.sessionFile);
-  assert.equal(fs.readdirSync(path.join(base, ".chat", "sessions")).length, 1);
+  assert.equal(fs.readdirSync(project.sessionDir).length, 1);
 
-  const manager = SessionManager.open(first.sessionFile, path.join(base, ".chat", "sessions"));
+  const manager = SessionManager.open(first.sessionFile, project.sessionDir);
   const workflowStages = manager.getEntries()
     .filter((entry) => entry.type === "custom" && entry.customType === "chat.workflow_stage")
     .map((entry) => entry.data);
@@ -251,7 +267,15 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
   process.chdir(base);
   const workspace = path.join(base, "workspace");
   fs.mkdirSync(workspace);
-  writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
+  const chatHome = path.join(base, "chat-home");
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    createIfMissing: true,
+    id: "first-planning",
+    name: "First Planning",
+  });
+  writeFauxConfiguration(path.join(chatHome, "agent"), faux);
 
   const calls = [];
   faux.setResponses([
@@ -266,14 +290,18 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
   ]);
 
   const planning = await runPlanningStep({
+    projectId: project.projectId,
+    chatHome,
     cwd: workspace,
     prompt: "first planned request",
     workflowInvocationId: "first-planning-invocation",
   });
-  const sessionDir = path.join(base, ".chat", "sessions");
+  const sessionDir = project.sessionDir;
   assert.equal(fs.readdirSync(sessionDir).length, 1);
 
   const execution = await runPlanningExecutionStep({
+    projectId: project.projectId,
+    chatHome,
     cwd: workspace,
     sessionId: planning.sessionId,
     workflowInvocationId: "first-planning-invocation",
@@ -316,6 +344,13 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
   const workspace = path.join(base, "workspace");
   fs.mkdirSync(workspace);
   writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
+  const project = await openProject({
+    path: workspace,
+    chatHome: process.env.CHAT_HOME,
+    createIfMissing: true,
+    id: "agent-config",
+    name: "Agent Config",
+  });
   const model = faux.getModel();
   const skillDir = path.join(workspace, "skills", "configured-review");
   fs.mkdirSync(skillDir, { recursive: true });
@@ -366,6 +401,8 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
     return fauxAssistantMessage("configured response");
   }]);
   const result = await runPiCodingAgentPromptStep({
+    projectId: project.projectId,
+    chatHome: process.env.CHAT_HOME,
     cwd: workspace,
     prompt: "configured request",
     workflowInvocationId: "configured-invocation",
@@ -387,7 +424,7 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
   assert.match(calls[0].systemPrompt, /Do not add unrelated responsibilities/);
   assert.match(calls[0].systemPrompt, /Configured review/);
   assert.deepEqual(calls[0].toolNames, ["read"]);
-  const manager = SessionManager.open(result.sessionFile, path.join(base, ".chat", "sessions"));
+  const manager = SessionManager.open(result.sessionFile, project.sessionDir);
   const snapshot = collectChatWorkflowTurnConfigurations(manager.getEntries())[0];
   assert.equal(snapshot.agentConfigs["pi-coding-agent"].promptResources[0].revision, rule.revision);
 });
@@ -402,6 +439,7 @@ test("Agent inspection uses the same resolved Prompt, resources and tools as exe
     fs.rmSync(base, { recursive: true, force: true });
   });
   process.chdir(base);
+  const chatHome = path.join(base, "chat-home");
   const workspace = path.join(base, "workspace");
   const skillDir = path.join(workspace, "skills", "review");
   fs.mkdirSync(skillDir, { recursive: true });
@@ -412,9 +450,10 @@ test("Agent inspection uses the same resolved Prompt, resources and tools as exe
     "---",
     "Review the changed code carefully.",
   ].join("\n"));
-  writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
+  writeFauxConfiguration(path.join(chatHome, "agent"), faux);
 
   const inspection = await inspectWorkflowAgent({
+    chatHome,
     cwd: workspace,
     defaultAgent: PI_CODING_AGENT,
     selection: {
@@ -514,8 +553,16 @@ test("Pi auto-compaction remains part of the same Chat Session", { concurrency: 
   });
   process.chdir(base);
   const workspace = path.join(base, "workspace");
-  const agentDir = path.join(base, ".chat", "agent");
+  const chatHome = path.join(base, "chat-home");
+  const agentDir = path.join(chatHome, "agent");
   fs.mkdirSync(workspace);
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    createIfMissing: true,
+    id: "compaction",
+    name: "Compaction",
+  });
   writeFauxConfiguration(agentDir, faux, {
     compaction: { enabled: true, reserveTokens: 9_000, keepRecentTokens: 10 },
   });
@@ -538,18 +585,22 @@ test("Pi auto-compaction remains part of the same Chat Session", { concurrency: 
   ]);
 
   const first = await runPiCodingAgentPromptStep({
+    projectId: project.projectId,
+    chatHome,
     cwd: workspace,
     prompt: "long request ".repeat(40),
     workflowInvocationId: "compaction-invocation-1",
   });
   assert.equal(first.text, firstResponse);
 
-  const managerAfterFirst = SessionManager.open(first.sessionFile, path.join(base, ".chat", "sessions"));
+  const managerAfterFirst = SessionManager.open(first.sessionFile, project.sessionDir);
   assert.equal(managerAfterFirst.getEntries().filter((entry) => entry.type === "compaction").length, 1);
   assert.equal(managerAfterFirst.buildSessionContext().messages[0]?.role, "compactionSummary");
 
   writeFauxConfiguration(agentDir, faux, { compaction: { enabled: false } });
   const second = await runPiCodingAgentPromptStep({
+    projectId: project.projectId,
+    chatHome,
     cwd: workspace,
     sessionId: first.sessionId,
     prompt: "continue",

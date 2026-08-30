@@ -15,7 +15,10 @@ function positiveInteger(value: string | undefined, name: string): number | unde
   return parsed;
 }
 
-function mem0IndexOptions(memoryDir: string): Mem0MemoryIndexOptions {
+export function resolveMem0IndexOptions(
+  memoryDir: string,
+  fastEmbedCacheDir: string,
+): Mem0MemoryIndexOptions {
   const vectorDbPath = resolve(memoryDir, "vector-store.db");
   const provider = process.env.CHAT_MEMORY_EMBEDDER_PROVIDER?.trim() || "fastembed";
   const dimension = positiveInteger(
@@ -31,6 +34,7 @@ function mem0IndexOptions(memoryDir: string): Mem0MemoryIndexOptions {
         provider,
         config: {
           model: process.env.CHAT_MEMORY_EMBEDDING_MODEL ?? "fast-bge-small-zh-v1.5",
+          cacheDir: fastEmbedCacheDir,
         },
       },
     };
@@ -63,12 +67,13 @@ export async function createMemoryServiceForTarget(
   target: MemoryTarget,
   chatHome = resolveChatHome(),
 ): Promise<MemoryService> {
+  const home = await ensureChatHome(chatHome);
   const memoryDir = target.type === "personal"
-    ? (await ensureChatHome(chatHome)).personalMemoryDir
+    ? home.personalMemoryDir
     : (await resolveProjectContext(target.projectId, chatHome)).memoryDir;
   const repository = new MemoryRepository(resolve(memoryDir, "catalog.db"));
   return new MemoryService(repository, async () => {
     const { Mem0MemoryIndex } = await import("./mem0-index.js");
-    return Mem0MemoryIndex.create(mem0IndexOptions(memoryDir));
+    return Mem0MemoryIndex.create(resolveMem0IndexOptions(memoryDir, home.fastEmbedCacheDir));
   }, target);
 }

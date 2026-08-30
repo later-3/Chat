@@ -11,20 +11,24 @@ Chat新增需求必须先遵守[Agent第一性原理与架构约束](./docs/arch
 ```text
 Chat/frontend（Pi Web纯浏览器前端子模块）
   → Chat Nitro HTTP API
-    ├── Session读取 → Chat/.chat/sessions
+    ├── Project与Session → ~/.chat/projects/<projectId>/sessions
     └── Vercel Workflow
           ├── Direct Workflow → Pi Coding Agent
-          └── Planning + Execution
+          ├── Planning + Execution
                 ├── Planner：无工具的Pi AgentSession，使用当前Chat Session的内存副本
                 └── Executor：Pi Coding Agent，继续当前Chat Session
-          ├── 配置与全局资源 → Chat/.chat/agent
-          └── Session → Chat/.chat/sessions
+          ├── Memory与Rule Management Workflow
+          ├── 配置与全局资源 → ~/.chat/agent
+          ├── Workflow运行数据 → ~/.chat/runtime/workflow-data
+          └── Session → ~/.chat/projects/<projectId>/sessions
 ```
 
-前端可选择两个Workflow：
+前端可选择四个Workflow：
 
 - `minimal-pi-coding-agent`（直接执行）：一个Step直接运行Pi Coding Agent。
 - `planning-execution`（规划执行）：Planner Agent先生成计划，Executor再按计划运行Pi Coding Agent。Planner使用从当前Chat Session复制出的内存Session，不创建第二个持久Session文件；Planner输出、Executor输入来源和两个Stage的Agent身份都记录在同一个Chat Session中。Executor收到用户原话和Planner输出，但持久对话仍保留用户原始消息。
+- `memory`：通过普通Workflow Agent和原生Pi Tool管理个人或指定Project Memory。
+- `rule-management`：通过普通Workflow Agent管理规则与经验Prompt资源及采用建议。
 
 Pi Web不再作为独立服务运行。它原来的Next.js后端、`app/api`、Agent RPC服务和Session文件读取代码都不属于运行架构。前端不能导入Pi SDK，也不能直接读取文件系统。
 
@@ -68,10 +72,10 @@ link:./pi/packages/coding-agent
 
 ## Session语义
 
-Chat只从以下目录管理Pi Session：
+Chat按稳定`projectId`从以下目录管理Pi Session：
 
 ```text
-Chat/.chat/sessions
+~/.chat/projects/<projectId>/sessions
 ```
 
 Session文件头中的`cwd`表示Agent实际操作的工作目录。浏览器只传`sessionId`：
@@ -80,7 +84,7 @@ Session文件头中的`cwd`表示Agent实际操作的工作目录。浏览器只
 - 有`sessionId`：Chat验证Session ID和`cwd`后打开已有Session。
 - 浏览器不能指定Session文件或Session目录。
 
-Chat不会扫描用户主目录下的`~/.pi`。
+Chat不会扫描用户主目录下的`~/.pi`，也不会在项目仓库内保存Session。
 
 ## 本地开发
 
@@ -193,12 +197,15 @@ http://127.0.0.1:43112/
 
 服务器部署和`https://chat.ai4child.asia`域名配置见[部署指南](./docs/deployment.md)。
 
-## 需要持久化但不能提交的目录
+## Chat Home运行数据
 
 ```text
-Chat/.chat/agent/          Pi模型、设置、认证与全局资源
-Chat/.chat/sessions/       Pi Coding Agent Session
-Chat/.chat/workflow-data/  Workflow Run、Step和Event
+~/.chat/agent/                         Pi模型、设置、认证与全局资源
+~/.chat/memory/personal/               个人Memory事实源与索引
+~/.chat/projects/<projectId>/sessions/ 各Project的Pi Session
+~/.chat/projects/<projectId>/memory/   各Project独立Memory事实源与索引
+~/.chat/runtime/workflow-data/         进程级Workflow Run、Step和Event
+~/.chat/cache/fastembed/               可重新下载的本地Embedding模型缓存
 ```
 
-部署到其他环境时，使用`--recurse-submodules`克隆Chat，准备两个私有子模块的Git读取凭证，安装依赖、构建Pi、准备`.chat/agent`私有配置并执行`pnpm verify`。必须在目标操作系统和CPU架构上构建，不能把其他机器的`.output`直接复制过去。Pi Web不再作为独立后端或独立服务启动；完整的可移植部署步骤、私有配置清单和验收命令见[部署指南](./docs/deployment.md)。
+这些目录都不属于Chat源码仓库。部署到其他环境时，使用`--recurse-submodules`克隆Chat，准备两个私有子模块的Git读取凭证，安装依赖、构建Pi、准备`~/.chat/agent`私有配置并执行`pnpm verify`。必须在目标操作系统和CPU架构上构建，不能把其他机器的`.output`直接复制过去。Pi Web不再作为独立后端或独立服务启动；完整的可移植部署步骤、私有配置清单和验收命令见[部署指南](./docs/deployment.md)。
