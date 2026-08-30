@@ -5,9 +5,6 @@ frontend/dist/
 local_cache/
 .chat/*
 !.chat/project.json
-!.chat/agent/
-.chat/agent/*
-!.chat/agent/settings.json
 .swc/
 # Legacy runtime data is only read by the one-way .chat migration.
 .pi/
