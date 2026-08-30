@@ -8,6 +8,7 @@ export interface ChatHomePaths {
   readonly root: string;
   readonly agentDir: string;
   readonly personalMemoryDir: string;
+  readonly personalPromptResourceDir: string;
   readonly projectsDir: string;
   readonly projectRegistryPath: string;
   readonly runtimeDir: string;
@@ -28,6 +29,7 @@ export function getChatHomePaths(root = resolveChatHome()): ChatHomePaths {
     root: resolvedRoot,
     agentDir: resolve(resolvedRoot, "agent"),
     personalMemoryDir: resolve(resolvedRoot, "memory", "personal"),
+    personalPromptResourceDir: resolve(resolvedRoot, "prompt-resources"),
     projectsDir,
     projectRegistryPath: resolve(projectsDir, "registry.json"),
     runtimeDir: resolve(resolvedRoot, "runtime"),
@@ -47,6 +49,7 @@ export function ensureChatHome(root = resolveChatHome()): Promise<ChatHomePaths>
       mkdir(paths.root, { recursive: true, mode: 0o700 }),
       mkdir(paths.agentDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.personalMemoryDir, { recursive: true, mode: 0o700 }),
+      mkdir(paths.personalPromptResourceDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.projectsDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.runtimeDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.logsDir, { recursive: true, mode: 0o700 }),

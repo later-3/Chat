@@ -3,8 +3,7 @@ import { openChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
   createWorkflowAgentSession,
-  resolveWorkflowAgentDefinition,
-  type AgentConfigSelection,
+  type ResolvedWorkflowAgentDefinition,
 } from "../agent-definition.js";
 import { subscribeAgentSessionLog } from "../agent-session-log.js";
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
@@ -13,6 +12,7 @@ import {
   appendChatWorkflowMessage,
   appendChatWorkflowStage,
 } from "../workflow-stage.js";
+import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
 import {
   buildPlanningPrompt,
   MAX_PLANNING_RESULT_CHARS,
@@ -27,6 +27,7 @@ import {
 interface PlanningStepResult {
   readonly sessionId: string;
   readonly plan: string;
+  readonly executionAgent: ResolvedWorkflowAgentDefinition;
 }
 
 export interface PlanningExecutionStepInput {
@@ -37,7 +38,7 @@ export interface PlanningExecutionStepInput {
   readonly workflowInvocationId: string;
   readonly prompt: string;
   readonly plan: string;
-  readonly agentConfig?: AgentConfigSelection;
+  readonly agent: ResolvedWorkflowAgentDefinition;
 }
 
 export async function runPlanningStep(
@@ -47,6 +48,15 @@ export async function runPlanningStep(
 
   const stepStartedAt = Date.now();
   const chatSession = await openChatSession(input);
+  const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
+    invocationId: input.workflowInvocationId,
+    workflowId: "planning-execution",
+    agents: [PLANNER_AGENT, PLANNING_EXECUTION_AGENT],
+    cwd: chatSession.cwd,
+    ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
+    ...(input.defaultAgentConfigs === undefined ? {} : { defaults: input.defaultAgentConfigs }),
+    ...(input.agentConfigs === undefined ? {} : { adjustments: input.agentConfigs }),
+  });
   appendChatWorkflowStage(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: "planning-execution",
@@ -64,13 +74,11 @@ export async function runPlanningStep(
 
   console.log(`${localTimestamp()} [planner] step starting cwd=${chatSession.cwd}`);
   console.log(`${localTimestamp()} [planner] creating AgentSession`);
-  const agent = await resolveWorkflowAgentDefinition({
-    defaultAgent: PLANNER_AGENT,
-    cwd: chatSession.cwd,
-    ...(input.agentConfigs?.[PLANNER_AGENT.id] === undefined
-      ? {}
-      : { selection: input.agentConfigs[PLANNER_AGENT.id] }),
-  });
+  const agent = prepared.agents[PLANNER_AGENT.id];
+  const executionAgent = prepared.agents[PLANNING_EXECUTION_AGENT.id];
+  if (agent === undefined || executionAgent === undefined) {
+    throw new Error("本轮配置缺少Planning Workflow Agent");
+  }
   const { session, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,
     sessionManager: plannerSessionManager,
@@ -112,7 +120,7 @@ export async function runPlanningStep(
       `${localTimestamp()} [planner] completed chars=${plan.length} elapsedMs=${Date.now() - stepStartedAt}`,
     );
     completed = true;
-    return { sessionId: chatSession.manager.getSessionId(), plan };
+    return { sessionId: chatSession.manager.getSessionId(), plan, executionAgent };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(
@@ -154,15 +162,10 @@ export async function runPlanningExecutionStep(
   console.log(`${localTimestamp()} [pi] planning execution step starting cwd=${chatSession.cwd}`);
   console.log(`${localTimestamp()} [pi] creating AgentSession`);
 
-  const agent = await resolveWorkflowAgentDefinition({
-    defaultAgent: PLANNING_EXECUTION_AGENT,
-    cwd: chatSession.cwd,
-    ...(input.agentConfig === undefined ? {} : { selection: input.agentConfig }),
-  });
   const { session, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,
     sessionManager: chatSession.manager,
-    agent,
+    agent: input.agent,
     transformContext: (messages) => injectPlanningExecutionContext(
       messages,
       input.prompt,

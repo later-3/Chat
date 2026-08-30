@@ -8,11 +8,14 @@ import {
   listChatSessions,
   normalizeMessageForFrontend,
   projectSessionContext,
+  readChatSession,
 } from "./session-read-model.ts";
 import {
   appendChatWorkflowMessage,
   appendChatWorkflowStage,
 } from "./workflows/workflow-stage.ts";
+import { setChatWorkflowAgentPromptResources } from "./workflows/workflow-configuration.ts";
+import { appendChatPromptResourceProposal } from "./workflows/prompt-resource-proposal.ts";
 
 function userEntry(id, parentId, content) {
   return {
@@ -228,4 +231,50 @@ test("session listing scans only Chat .chat/sessions", { concurrency: false }, a
   assert.deepEqual(sessions.map((session) => session.id), [included.getSessionId()]);
   assert.equal(sessions[0].sessionSource, "chat");
   assert.equal(sessions[0].readOnly, false);
+});
+
+test("session reads restore Workflow Agent configuration and pending Prompt proposals", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-workflow-config-"));
+  t.after(() => {
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  const workspace = path.join(base, "workspace");
+  const sessionDir = path.join(base, ".chat", "sessions");
+  fs.mkdirSync(workspace, { recursive: true });
+  const manager = SessionManager.create(workspace, sessionDir);
+  manager.appendMessage({ role: "user", content: "configure rules", timestamp: Date.now() });
+  setChatWorkflowAgentPromptResources(manager, {
+    workflowId: "minimal-pi-coding-agent",
+    agentId: "pi-coding-agent",
+    promptResources: [{ id: "resource-1", target: { type: "personal" }, selectedBy: "user" }],
+    actorAgentId: "rule-curator-agent",
+  });
+  const proposalId = appendChatPromptResourceProposal(manager, {
+    invocationId: "invocation-1",
+    sourceWorkflowId: "rule-management",
+    sourceAgentId: "rule-curator-agent",
+    targetWorkflowId: "planning-execution",
+    targetAgentId: "planner",
+    promptResources: [{
+      id: "resource-2",
+      target: { type: "project", projectId: "project-1" },
+      selectedBy: "agent",
+      reason: "planning rule",
+    }],
+    summary: "Use a planning rule.",
+  });
+
+  process.chdir(base);
+  const session = await readChatSession(manager.getSessionId());
+  assert.deepEqual(session.workflowConfigurations, {
+    "minimal-pi-coding-agent": {
+      "pi-coding-agent": {
+        promptResources: [{ id: "resource-1", target: { type: "personal" }, selectedBy: "user" }],
+      },
+    },
+  });
+  assert.equal(session.promptResourceProposals[0].id, proposalId);
+  assert.equal(session.promptResourceProposals[0].resolution, undefined);
 });

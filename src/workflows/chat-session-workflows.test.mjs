@@ -5,9 +5,13 @@ import path from "node:path";
 import test from "node:test";
 import {
   fauxAssistantMessage,
+  fauxText,
+  fauxToolCall,
   registerFauxProvider,
 } from "@earendil-works/pi-ai/compat";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { getPromptResourceStore } from "../prompt-resources/store.ts";
+import { openProject } from "../projects/registry.ts";
 import { runPiCodingAgentPromptStep } from "./minimal-pi-coding-agent/step.ts";
 import { PI_CODING_AGENT } from "./minimal-pi-coding-agent/agents/pi-coding-agent/index.ts";
 import { inspectWorkflowAgent } from "./agent-inspection.ts";
@@ -15,10 +19,12 @@ import {
   runPlanningExecutionStep,
   runPlanningStep,
 } from "./planning-execution/steps.ts";
+import { runRuleManagementStep } from "./rule-management/step.ts";
 import {
   collectChatWorkflowAgentInputs,
   collectChatWorkflowMessages,
 } from "./workflow-stage.ts";
+import { collectChatWorkflowTurnConfigurations } from "./workflow-configuration.ts";
 
 function messageText(message) {
   if (typeof message.content === "string") return message.content;
@@ -117,6 +123,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     workflowInvocationId: "planning-invocation-1",
     prompt: "planned request",
     plan: planning.plan,
+    agent: planning.executionAgent,
   });
   const last = await runPiCodingAgentPromptStep({
     cwd: workspace,
@@ -272,6 +279,7 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
     workflowInvocationId: "first-planning-invocation",
     prompt: "first planned request",
     plan: planning.plan,
+    agent: planning.executionAgent,
   });
   const manager = SessionManager.open(execution.sessionFile, sessionDir);
 
@@ -293,14 +301,18 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
 
 test("Direct Workflow applies the selected Pi Coding Agent configuration", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
+  const previousChatHome = process.env.CHAT_HOME;
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-agent-config-workflow-"));
   const faux = registerFauxProvider({ api: "chat-agent-config-faux", provider: "chat-agent-config-faux" });
   t.after(() => {
     faux.unregister();
     process.chdir(previousCwd);
+    if (previousChatHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousChatHome;
     fs.rmSync(base, { recursive: true, force: true });
   });
   process.chdir(base);
+  process.env.CHAT_HOME = path.join(base, ".chat");
   const workspace = path.join(base, "workspace");
   fs.mkdirSync(workspace);
   writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
@@ -328,6 +340,25 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
       pluginSources: [],
     },
   }));
+  const promptResourceStore = await getPromptResourceStore({ type: "personal" }, process.env.CHAT_HOME);
+  const ruleDraft = await promptResourceStore.createDraft({
+    kind: "rule",
+    title: "Configured architecture rule",
+    purpose: "Keep the configured module boundary explicit.",
+    content: "Do not add unrelated responsibilities to the configured module.",
+    tags: ["architecture"],
+    sources: [{
+      type: "session",
+      projectId: "source-project",
+      sessionId: "source-session",
+      workflowInvocationId: "source-invocation",
+      entryIds: ["source-entry"],
+      context: "The module previously accumulated unrelated behavior.",
+      capturedAt: "2026-08-30T06:00:00.000Z",
+    }],
+    author: { type: "user" },
+  });
+  const rule = await promptResourceStore.commitDraft(ruleDraft.id);
 
   const calls = [];
   faux.setResponses([(context) => {
@@ -339,7 +370,10 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
     prompt: "configured request",
     workflowInvocationId: "configured-invocation",
     agentConfigs: {
-      "pi-coding-agent": { primary: configPath },
+      "pi-coding-agent": {
+        primary: configPath,
+        promptResources: [{ id: rule.id, target: { type: "personal" }, selectedBy: "user" }],
+      },
     },
   });
 
@@ -349,8 +383,13 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
   assert.match(calls[0].systemPrompt, /Configured system prompt/);
   assert.match(calls[0].systemPrompt, /<chat_agent_custom_instructions>/);
   assert.match(calls[0].systemPrompt, /Configured additional rule/);
+  assert.match(calls[0].systemPrompt, /<chat_prompt_resource/);
+  assert.match(calls[0].systemPrompt, /Do not add unrelated responsibilities/);
   assert.match(calls[0].systemPrompt, /Configured review/);
   assert.deepEqual(calls[0].toolNames, ["read"]);
+  const manager = SessionManager.open(result.sessionFile, path.join(base, ".chat", "sessions"));
+  const snapshot = collectChatWorkflowTurnConfigurations(manager.getEntries())[0];
+  assert.equal(snapshot.agentConfigs["pi-coding-agent"].promptResources[0].revision, rule.revision);
 });
 
 test("Agent inspection uses the same resolved Prompt, resources and tools as execution", { concurrency: false }, async (t) => {
@@ -397,6 +436,67 @@ test("Agent inspection uses the same resolved Prompt, resources and tools as exe
   assert.match(inspection.prompt.final, /Review code/);
   assert.ok(inspection.tools.some((tool) => tool.name === "read" && tool.active));
   assert.deepEqual(inspection.extensions, []);
+});
+
+test("Rule Management Workflow loads its Skill and executes Chat-owned tools in the same Session", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-rule-management-workflow-"));
+  const faux = registerFauxProvider({ api: "chat-rule-management-faux", provider: "chat-rule-management-faux" });
+  t.after(() => {
+    faux.unregister();
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  process.chdir(base);
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace);
+  const chatHome = path.join(base, ".chat");
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    createIfMissing: true,
+    id: "rule-management-project",
+    name: "Rule Management Project",
+  });
+  writeFauxConfiguration(path.join(chatHome, "agent"), faux);
+
+  const calls = [];
+  faux.setResponses([
+    (context) => {
+      recordCall(calls, context);
+      return fauxAssistantMessage([
+        fauxText("I will search the resource library."),
+        fauxToolCall("prompt_resource_search", { query: "architecture" }, { id: "search-1" }),
+      ], { stopReason: "toolUse" });
+    },
+    (context) => {
+      recordCall(calls, context);
+      return fauxAssistantMessage("No matching resources were found.");
+    },
+  ]);
+  const result = await runRuleManagementStep({
+    projectId: "rule-management-project",
+    chatHome,
+    cwd: project.cwd,
+    prompt: "帮我查一下架构规则",
+    workflowInvocationId: "rule-management-invocation",
+  });
+
+  assert.equal(result.text, "No matching resources were found.");
+  assert.match(calls[0].systemPrompt, /rule-library/);
+  assert.ok(calls[0].toolNames.includes("prompt_resource_search"));
+  assert.equal(calls[0].toolNames.includes("read"), false);
+  assert.equal(
+    fs.existsSync(path.join(chatHome, "runtime", "skills", "rule-library", "SKILL.md")),
+    true,
+  );
+  const manager = SessionManager.open(
+    result.sessionFile,
+    path.join(chatHome, "projects", "rule-management-project", "sessions"),
+  );
+  assert.ok(manager.getEntries().some((entry) => (
+    entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "prompt_resource_search"
+  )));
 });
 
 test("Pi auto-compaction remains part of the same Chat Session", { concurrency: false }, async (t) => {

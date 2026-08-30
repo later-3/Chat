@@ -24,6 +24,7 @@ export interface ChatWorkflowHttpInput {
   readonly prompt: string;
   readonly sessionId?: string;
   readonly workflow: ChatWorkflowId;
+  readonly defaultAgentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
   readonly agentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
 }
 
@@ -68,14 +69,12 @@ export function parseChatWorkflowHttpInput(
   if (typeof workflow !== "string" || getChatWorkflowDefinition(workflow) === undefined) {
     throw new Error(`workflow必须是${CHAT_WORKFLOW_IDS.join("或")}`);
   }
-  let agentConfigs: Record<string, AgentConfigSelection> | undefined = defaults.agentConfigs === undefined
-    ? undefined
-    : { ...defaults.agentConfigs };
+  let agentConfigs: Record<string, AgentConfigSelection> | undefined;
   if (rawAgentConfigs !== undefined) {
     if (!isRecord(rawAgentConfigs)) throw new Error("agentConfigs必须是对象");
     const definition = getChatWorkflowDefinition(workflow);
     const agentIds = new Set(definition?.agents.map((agent) => agent.id) ?? []);
-    agentConfigs ??= {};
+    agentConfigs = {};
     for (const [agentId, selection] of Object.entries(rawAgentConfigs)) {
       if (!agentIds.has(agentId)) throw new Error(`Workflow ${workflow}不存在Agent: ${agentId}`);
       agentConfigs[agentId] = parseAgentConfigSelection(selection);
@@ -89,6 +88,7 @@ export function parseChatWorkflowHttpInput(
     prompt,
     workflow: workflow as ChatWorkflowId,
     ...(sessionId === undefined ? {} : { sessionId }),
+    ...(defaults.defaultAgentConfigs === undefined ? {} : { defaultAgentConfigs: defaults.defaultAgentConfigs }),
     ...(agentConfigs === undefined ? {} : { agentConfigs }),
   };
 }

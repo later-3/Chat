@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   parseWorkflowAgentDefinition,
 } from "./agent-config.ts";
+import { allowFileRoot } from "../files/access.ts";
 import { resolveWorkflowAgentDefinition } from "./agent-config-loader.ts";
 
 const defaultAgent = parseWorkflowAgentDefinition({
@@ -135,6 +136,49 @@ test("rejects identity changes in appended configuration", async (t) => {
   );
 });
 
+test("Agent files and local resources cannot escape Chat's authorized roots", async (t) => {
+  const root = fixture(t);
+  const project = path.join(root, "project");
+  const outside = path.join(root, "outside");
+  fs.mkdirSync(project);
+  fs.mkdirSync(outside);
+  const externalConfig = path.join(outside, "agent.json");
+  const externalExtension = path.join(outside, "extension.ts");
+  fs.writeFileSync(externalConfig, JSON.stringify({
+    schemaVersion: 1,
+    id: "test-agent",
+    name: "External Agent",
+    description: "Outside the Project",
+  }));
+  fs.writeFileSync(externalExtension, "export default () => ({});\n");
+
+  await assert.rejects(resolveWorkflowAgentDefinition({
+    defaultAgent,
+    cwd: project,
+    selection: { primary: externalConfig },
+  }), /路径不在Chat授权目录内/);
+  await assert.rejects(resolveWorkflowAgentDefinition({
+    defaultAgent,
+    cwd: project,
+    selection: {
+      resources: {
+        mode: "explicit",
+        skillPaths: [],
+        extensionPaths: [externalExtension],
+        pluginSources: [],
+      },
+    },
+  }), /路径不在Chat授权目录内/);
+
+  allowFileRoot(outside);
+  const resolved = await resolveWorkflowAgentDefinition({
+    defaultAgent,
+    cwd: project,
+    selection: { primary: externalConfig },
+  });
+  assert.equal(resolved.name, "External Agent");
+});
+
 test("the current Agent resource selection overrides configuration files", async (t) => {
   const dir = fixture(t);
   const resolved = await resolveWorkflowAgentDefinition({
@@ -149,10 +193,11 @@ test("the current Agent resource selection overrides configuration files", async
       },
     },
   });
+  const canonicalDir = fs.realpathSync(dir);
   assert.deepEqual(resolved.resources, {
     mode: "explicit",
-    skillPaths: [path.join(dir, "skills/one")],
-    extensionPaths: [path.join(dir, "extensions/one.ts")],
+    skillPaths: [path.join(canonicalDir, "skills/one")],
+    extensionPaths: [path.join(canonicalDir, "extensions/one.ts")],
     pluginSources: ["git:https://example.com/plugin.git"],
   });
 });

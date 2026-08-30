@@ -2,6 +2,7 @@ import type {
   WorkflowAgentDefinition,
   WorkflowAgentSessionExtensions,
 } from "./agent-definition.js";
+import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { ChatWorkflowInput, ChatWorkflowResult } from "./types.js";
 
 export interface ChatWorkflowAgentNodeDefinition {
@@ -44,8 +45,10 @@ export interface ChatWorkflowAgentSessionContext {
   readonly cwd: string;
   readonly workflowId: string;
   readonly agentId: string;
+  readonly sessionManager: SessionManager;
   readonly sessionId: string;
   readonly workflowInvocationId: string;
+  readonly userPrompt: string;
 }
 
 export type PrepareChatWorkflowAgentSession = (

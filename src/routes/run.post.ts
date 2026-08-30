@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
       cwd: project.cwd,
       prompt: MINIMAL_PI_CODING_AGENT_PROMPT,
       workflow: config.defaultWorkflowId,
-      ...(storedAgentConfigs === undefined ? {} : { agentConfigs: storedAgentConfigs }),
+      ...(storedAgentConfigs === undefined ? {} : { defaultAgentConfigs: storedAgentConfigs }),
     });
   } catch (error) {
     throw createError({

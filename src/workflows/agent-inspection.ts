@@ -61,6 +61,7 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
   const agent = await resolveWorkflowAgentDefinition({
     defaultAgent: options.defaultAgent,
     cwd,
+    ...(projectContext === undefined ? {} : { chatHome: projectContext.chatHome }),
     ...(options.selection === undefined ? {} : { selection: options.selection }),
   });
   const sessionManager = SessionManager.inMemory(cwd);
@@ -72,8 +73,10 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
     cwd,
     workflowId,
     agentId,
+    sessionManager,
     sessionId: sessionManager.getSessionId(),
     workflowInvocationId: `inspection:${workflowId}:${agentId}`,
+    userPrompt: "",
   });
   const created = await createWorkflowAgentSession({
     chatSession: {
@@ -215,6 +218,9 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
       extensions,
       plugins: [...pluginResources.values()],
       prompts,
+      promptResources: agent.customInstructions.flatMap((instruction) => (
+        instruction.promptResource === undefined ? [] : [instruction.promptResource]
+      )),
       diagnostics: [
         ...skillResult.diagnostics.map((diagnostic) => ({ resource: "skill", ...diagnostic })),
         ...extensionResult.errors.map((diagnostic) => ({

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "rule-management",
+  "name": "规则与经验",
+  "description": "通过持续对话沉淀、检索规则与经验，并为其他Workflow Agent建议适用资源。",
+  "nodes": [
+    {
+      "kind": "agent",
+      "id": "manage",
+      "name": "管理规则与经验",
+      "description": "Rule Curator Agent使用Prompt资源工具处理草稿、检索与Agent规则建议。",
+      "agentId": "rule-curator-agent"
+    }
+  ],
+  "agents": [
+    {
+      "id": "rule-curator-agent",
+      "config": "./agents/rule-curator-agent/agent.json"
+    }
+  ]
+}

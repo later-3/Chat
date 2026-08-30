@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
       cwd: project.cwd,
       prompt: "",
       workflow: config.defaultWorkflowId,
-      ...(storedAgentConfigs === undefined ? {} : { agentConfigs: storedAgentConfigs }),
+      ...(storedAgentConfigs === undefined ? {} : { defaultAgentConfigs: storedAgentConfigs }),
     });
   } catch (error) {
     throw createError({

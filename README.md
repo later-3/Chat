@@ -4,7 +4,7 @@ Chat允许用户在同一个连续Session中逐轮选择Workflow。浏览器中�
 
 Chat以Workflow作为一级管理对象。每个Workflow目录归拢自己的Workflow定义、Stage、Agent定义、专用Prompt、上下文适配和测试；HTTP、Session、Workflow Runtime及Pi Agent运行能力由公共代码提供。
 
-Pi、Pi Web与Chat的源码分析、需求推导和详细设计按顺序维护在[架构、需求与详细设计文档](./docs/architecture/README.md)中。当前README只描述已经实现并验证的运行方式，不替代上游架构分析。
+Chat新增需求必须先遵守[Agent第一性原理与架构约束](./docs/architecture/chat-agent-first-principles.md)，再进入具体需求和详细设计。Pi、Pi Web与Chat的源码分析、需求推导和详细设计按顺序维护在[架构、需求与详细设计文档](./docs/architecture/README.md)中。当前README只描述已经实现并验证的运行方式，不替代上游架构分析。
 
 ## 架构
 

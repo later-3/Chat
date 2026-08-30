@@ -6,30 +6,35 @@
 
 Chat不实现第二套Agent Runtime。Workflow负责业务编排，Agent节点继续使用Pi `AgentSession`，Tool继续使用Pi `ToolDefinition`和Extension/SDK注册接口。
 
-本文的单根`.chat/config.json`描述当前已实现框架。用户级`~/.chat`、Project本地`.chat`、Project Registry和Session分区的目标结构见[Chat Project架构设计](./chat-project-framework.md)；迁移完成后，Workflow配置合并会增加用户级与Project级两层，但Workflow、Agent、Node和Pi装配合同不变。
+Project、分层配置、Session分区和资源Target的现状见[Chat Project架构设计](./chat-project-framework.md)与[Chat Context与Resource Target模型](./chat-context-resource-model.md)。Workflow、Agent、Node和Pi装配合同不因资源归属变化而改变。
 
-## 2. 三层事实源
+## 2. 配置与运行事实源
 
 ```text
 源码内Workflow与Agent配置
   workflow.json / agent.json / Prompt / Skill / Extension
         ↓ Chat统一解析和校验
-.chat/config.json
-  用户选择的默认Workflow和每个Agent的配置覆盖
-        ↓ 合并为本轮声明
+~/.chat/config.json + <project-root>/.chat/config.json
+  Personal默认与受信任Project覆盖
+        ↓
+当前Session中该Workflow的最新配置 + 本轮明确调整
+        ↓ 解析文件并固定Prompt资源revision
+本轮全部Agent的冻结定义
+        ↓
 Pi ResourceLoader + AgentSession
   实际加载和启用的Tool、Skill、Extension、Prompt与模型
         ↓ 浏览器安全投影
 前端展示和编辑
 ```
 
-三层职责不能互换：
+这些职责不能互换：
 
 1. 源码配置描述Chat内置Workflow的结构和默认能力。
-2. `.chat/config.json`只保存运行期默认值和用户覆盖，不保存函数或复制内置定义。
-3. Pi `AgentSession`是本轮实际生效能力的最终事实源。
+2. Personal与Project配置只保存默认值和声明式覆盖，不保存函数或复制内置定义。
+3. Session按Workflow保存最新配置，并为每轮保存固定revision的配置快照；同名Agent不跨Workflow共享状态。
+4. Pi `AgentSession`是本轮实际生效能力的最终事实源。
 
-浏览器不直接读取服务端目录或自行解析配置文件。前端和后端“使用同一份配置”是指前端通过Chat API读取、修改后端管理的同一份`.chat/config.json`，而不是维护一份前端副本或实现第二个解析器。
+浏览器不直接读取服务端目录或自行解析配置文件。前端通过Chat API读取Backend配置和Session事实；`localStorage`只允许暂存尚未发送的编辑，并且不能覆盖Backend返回的已提交状态。
 
 ## 3. 统一目录
 
@@ -93,7 +98,7 @@ type ChatWorkflowNodeDefinition =
 
 Agent节点必须引用同一Workflow已经声明的Agent ID。框架负责：
 
-1. 读取和合并Agent默认配置、`.chat`默认覆盖与本次请求覆盖。
+1. 读取和合并Agent默认配置、Personal/Project默认、Session最新配置与本轮调整。
 2. 解析相对于`agent.json`的Prompt、Skill和Extension路径。
 3. 创建Pi `ResourceLoader`和`AgentSession`。
 4. 应用Workflow私有且由代码提供的Context Transform或运行时Tool。
@@ -187,9 +192,9 @@ export const memoryWorkflowDefinition = defineChatWorkflow({
 
 配置只表达可声明数据。Tool实现、Extension Factory、Context Transform和领域服务实例必须由代码提供；配置通过稳定名称或路径引用它们。
 
-## 7. 当前`.chat/config.json`
+## 7. 配置与Prompt资源
 
-Chat首次准备数据目录时创建根配置：
+Chat首次准备Chat Home时创建Personal根配置；受信任Project可以在源码目录保存Project覆盖：
 
 ```json
 {
@@ -211,11 +216,21 @@ Chat首次准备数据目录时创建根配置：
 规则：
 
 1. 未出现的Workflow或Agent继承源码默认配置。
-2. `.chat`中的选择是后续运行默认值；本次HTTP请求可以提供临时覆盖。
-3. 合并顺序是“源码默认 → `.chat`默认覆盖 → 本次请求覆盖”。
-4. 一次Run启动后冻结合并结果；文件更新从下一次Run开始生效。
-5. 写入采用完整Schema校验和原子替换，不允许前端修改未知字段。
-6. 删除一个覆盖项等于恢复源码默认，不删除源码配置。
+2. 合并后的Personal/Project配置是Workflow初始默认，不直接替代Session状态。
+3. 运行顺序是“Workflow默认 → 当前Session中该Workflow的最新配置 → 本轮调整 → 冻结全部Agent定义”。
+4. 一次Run启动后，所有Stage复用同一份已解析定义；配置文件和Prompt资源更新从下一次Run开始生效。
+5. 默认配置写入采用完整Schema校验和原子替换，不允许前端修改未知字段。
+6. 空的本轮Agent调整表示把该Agent恢复到Workflow默认；不会清除同一Workflow其他Agent的配置。
+7. 未发送编辑只能保存在按`projectId + sessionId`隔离的浏览器草稿中；运行完成时只清除该次实际提交且期间未再次变化的内容。
+
+规则与经验属于Agent自定义Prompt资源，按Target存储：
+
+```text
+~/.chat/prompt-resources                         # Personal
+~/.chat/projects/<projectId>/prompt-resources   # 一个Project一个库
+```
+
+Agent选择使用`Target + resourceId`寻址。本轮快照固定具体revision；Draft与已确认资源分离，修改和归档追加revision而不覆盖历史。项目源码中的`<project-root>/.chat/prompts`是可移植的Pi Prompt文件，不是这套带Session来源和Draft生命周期的管理库。
 
 ## 8. Tool定义与加载
 
@@ -228,7 +243,7 @@ Tool有两种合法来源：
 
 两种来源最终都进入同一个Pi AgentSession Tool Registry。前端从`session.getAllTools()`读取名称、参数Schema和`sourceInfo`，并结合`getActiveToolNames()`展示“已发现/已启用”，不得根据目录名猜测Tool。
 
-Memory Tool需要`MemoryService`和Workflow调用上下文，因此继续使用Pi `customTools`是合法且更直接的依赖注入；它的源码仍归档到Memory Agent目录，Skill则使用真实`SKILL.md`文件。
+Memory Tool需要`MemoryService`和Workflow调用上下文，因此继续使用Pi `customTools`是合法且更直接的依赖注入；Rule Curator Tool同样需要Prompt资源Store、当前Session和Invocation上下文。两者的源码归档在各自Agent目录，Skill使用真实`SKILL.md`文件，执行与Resolve共用相同的`prepareAgentSession`装配函数。
 
 ## 9. 后端与前端接口
 
@@ -238,14 +253,18 @@ PUT  /api/chat-config
 GET  /api/workflows
 GET  /api/workflows/:workflowId/agents/:agentId/catalog
 POST /api/workflows/:workflowId/agents/:agentId/resolve
+GET  /api/prompt-resources
+GET  /api/prompt-resources/drafts
+GET  /api/prompt-resources/:resourceId/history
 ```
 
 职责：
 
-1. `chat-config`读取或更新同一份`.chat/config.json`。
+1. `chat-config`按`projectId`返回Personal与可信Project配置的Backend合并投影；写入明确指定作用域。
 2. `workflows`返回Workflow、Node、Agent和源码配置来源的浏览器安全投影。
 3. `catalog`返回当前可发现资源，不伪造一次Agent配置来获取目录。
 4. `resolve`使用与执行完全相同的装配路径，返回最终Prompt、Tool、Skill、Extension、模型和诊断。
+5. Prompt资源HTTP接口只负责列表、搜索、草稿查看和历史读取；创建、修改、归档、Draft提交、Proposal应用与拒绝由Rule Management Workflow持续对话完成，不能增加绕过对象ID确认的写接口。
 
 前端使用通用Workflow/Agent页面渲染这些数据。新增同类型资源不修改前端；只有框架新增资源类型或交互语义时才修改前端合同。
 
@@ -260,3 +279,4 @@ POST /api/workflows/:workflowId/agents/:agentId/resolve
 7. 为Manifest校验、Agent解析、节点引用和实际AgentSession能力增加测试。
 8. 验证`GET /api/workflows`、Catalog和Resolve无需前端专用代码即可显示。
 9. 运行后端测试、前端测试、类型检查、构建和Built Server测试。
+10. 验证Session配置隔离、本轮冻结、解析失败不落盘，以及刷新不覆盖未发送编辑。

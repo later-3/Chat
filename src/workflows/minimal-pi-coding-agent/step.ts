@@ -2,12 +2,12 @@ import { openChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
   createWorkflowAgentSession,
-  resolveWorkflowAgentDefinition,
 } from "../agent-definition.js";
 import { subscribeAgentSessionLog } from "../agent-session-log.js";
 import { stripLegacyPlanningHandoffs } from "../planning-execution/context.js";
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 import { appendChatWorkflowStage } from "../workflow-stage.js";
+import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
 import { PI_CODING_AGENT } from "./agents/pi-coding-agent/index.js";
 
 export async function runPiCodingAgentPromptStep(
@@ -17,6 +17,15 @@ export async function runPiCodingAgentPromptStep(
 
   const stepStartedAt = Date.now();
   const chatSession = await openChatSession(input);
+  const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
+    invocationId: input.workflowInvocationId,
+    workflowId: "minimal-pi-coding-agent",
+    agents: [PI_CODING_AGENT],
+    cwd: chatSession.cwd,
+    ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
+    ...(input.defaultAgentConfigs === undefined ? {} : { defaults: input.defaultAgentConfigs }),
+    ...(input.agentConfigs === undefined ? {} : { adjustments: input.agentConfigs }),
+  });
   appendChatWorkflowStage(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: "minimal-pi-coding-agent",
@@ -26,13 +35,8 @@ export async function runPiCodingAgentPromptStep(
   console.log(`${localTimestamp()} [pi] step starting cwd=${chatSession.cwd}`);
   console.log(`${localTimestamp()} [pi] creating AgentSession`);
 
-  const agent = await resolveWorkflowAgentDefinition({
-    defaultAgent: PI_CODING_AGENT,
-    cwd: chatSession.cwd,
-    ...(input.agentConfigs?.[PI_CODING_AGENT.id] === undefined
-      ? {}
-      : { selection: input.agentConfigs[PI_CODING_AGENT.id] }),
-  });
+  const agent = prepared.agents[PI_CODING_AGENT.id];
+  if (agent === undefined) throw new Error(`本轮配置缺少Agent: ${PI_CODING_AGENT.id}`);
   const { session, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,
     sessionManager: chatSession.manager,

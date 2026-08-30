@@ -15,6 +15,11 @@ import {
   collectChatWorkflowStageMarkers,
   type ChatWorkflowMessageMarker,
 } from "./workflows/workflow-stage.js";
+import {
+  collectChatWorkflowTurnConfigurations,
+  collectLatestChatWorkflowConfigurations,
+} from "./workflows/workflow-configuration.js";
+import { collectChatPromptResourceProposals } from "./workflows/prompt-resource-proposal.js";
 
 export { getChatSessionDir } from "./chat-session.js";
 
@@ -277,5 +282,8 @@ export async function readChatSession(
       thinkingLevel: context.thinkingLevel,
       model: context.model,
     },
+    workflowConfigurations: collectLatestChatWorkflowConfigurations(entries),
+    workflowTurnConfigurations: collectChatWorkflowTurnConfigurations(entries),
+    promptResourceProposals: collectChatPromptResourceProposals(entries),
   };
 }

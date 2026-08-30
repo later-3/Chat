@@ -40,6 +40,7 @@ export interface ChatProjectContext {
   readonly projectDataDir: string;
   readonly sessionDir: string;
   readonly memoryDir: string;
+  readonly promptResourceDir: string;
   readonly workflowDataDir: string;
 }
 

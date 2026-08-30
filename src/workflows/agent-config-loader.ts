@@ -1,5 +1,13 @@
 import { readFile, realpath, stat } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { getAllowedFileRoots, isFilePathAllowed } from "../files/access.js";
+import { getPromptResourceStore } from "../prompt-resources/store.js";
+import {
+  promptResourceTargetKey,
+  type PromptResourceRevision,
+  type PromptResourceTarget,
+} from "../prompt-resources/types.js";
 import {
   MAX_AGENT_CONFIG_FILES,
   parseRawAgentConfig,
@@ -16,9 +24,69 @@ import {
 } from "./agent-config.js";
 
 const MAX_CONFIG_BYTES = 1_000_000;
+const REMOTE_PLUGIN_PREFIXES = ["npm:", "git:", "github:", "http:", "https:", "ssh:"];
 
-async function readTextFile(path: string): Promise<{ path: string; content: string }> {
-  const canonicalPath = await realpath(path);
+function promptResourceInstruction(
+  target: PromptResourceTarget,
+  resource: PromptResourceRevision,
+): AgentInstruction {
+  return {
+    text: [
+      `<chat_prompt_resource target="${promptResourceTargetKey(target)}" id="${resource.id}" revision="${resource.revision}" kind="${resource.kind}">`,
+      `<title>${resource.title}</title>`,
+      `<purpose>${resource.purpose}</purpose>`,
+      resource.content,
+      "</chat_prompt_resource>",
+    ].join("\n"),
+    promptResource: {
+      id: resource.id,
+      target,
+      revision: resource.revision,
+      kind: resource.kind,
+      title: resource.title,
+    },
+  };
+}
+
+async function canonicalizePath(path: string): Promise<string> {
+  let current = resolve(path);
+  const missingSegments: string[] = [];
+  while (true) {
+    try {
+      return resolve(await realpath(current), ...missingSegments);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const parent = dirname(current);
+      if (parent === current) throw error;
+      missingSegments.unshift(basename(current));
+      current = parent;
+    }
+  }
+}
+
+async function resolveAuthorizedPath(path: string, allowedRoots: Set<string>): Promise<string> {
+  const canonicalPath = await canonicalizePath(path);
+  if (!isFilePathAllowed(canonicalPath, allowedRoots)) {
+    throw new Error(`路径不在Chat授权目录内: ${canonicalPath}`);
+  }
+  return canonicalPath;
+}
+
+async function resolveAllowedRoots(options: {
+  readonly cwd: string;
+  readonly chatHome?: string;
+}): Promise<Set<string>> {
+  const roots = new Set(await getAllowedFileRoots(options.chatHome));
+  roots.add(resolve(options.cwd));
+  if (options.chatHome !== undefined) roots.add(resolve(options.chatHome, "agent"));
+  return new Set(await Promise.all([...roots].map(canonicalizePath)));
+}
+
+async function readTextFile(
+  path: string,
+  allowedRoots: Set<string>,
+): Promise<{ path: string; content: string }> {
+  const canonicalPath = await resolveAuthorizedPath(path, allowedRoots);
   const file = await stat(canonicalPath);
   if (!file.isFile()) throw new Error(`路径不是文件: ${canonicalPath}`);
   if (file.size > MAX_CONFIG_BYTES) throw new Error(`文件不能超过${MAX_CONFIG_BYTES}字节: ${canonicalPath}`);
@@ -32,10 +100,11 @@ function resolveReferencedPath(path: string, configPath: string): string {
 async function resolveSystemPrompt(
   value: RawSystemPrompt,
   configPath: string,
+  allowedRoots: Set<string>,
 ): Promise<WorkflowAgentSystemPrompt> {
   if (value.mode === "pi-default") return value;
   if (value.text !== undefined) return { mode: "replace", text: value.text };
-  const file = await readTextFile(resolveReferencedPath(value.file as string, configPath));
+  const file = await readTextFile(resolveReferencedPath(value.file as string, configPath), allowedRoots);
   if (file.content.trim() === "") throw new Error(`System Prompt文件不能为空: ${file.path}`);
   return { mode: "replace", text: file.content, sourcePath: file.path };
 }
@@ -43,6 +112,7 @@ async function resolveSystemPrompt(
 async function resolveInstructions(
   values: readonly RawInstruction[],
   configPath: string,
+  allowedRoots: Set<string>,
 ): Promise<AgentInstruction[]> {
   const instructions: AgentInstruction[] = [];
   const seenFiles = new Set<string>();
@@ -50,7 +120,7 @@ async function resolveInstructions(
     if (typeof value === "string") instructions.push({ text: value });
     else if ("text" in value) instructions.push({ text: value.text });
     else {
-      const file = await readTextFile(resolveReferencedPath(value.file, configPath));
+      const file = await readTextFile(resolveReferencedPath(value.file, configPath), allowedRoots);
       if (seenFiles.has(file.path)) continue;
       seenFiles.add(file.path);
       if (file.content.trim() === "") throw new Error(`提示词文件不能为空: ${file.path}`);
@@ -60,8 +130,8 @@ async function resolveInstructions(
   return instructions;
 }
 
-async function readAgentConfig(path: string, complete: boolean) {
-  const file = await readTextFile(path);
+async function readAgentConfig(path: string, complete: boolean, allowedRoots: Set<string>) {
+  const file = await readTextFile(path, allowedRoots);
   let value: unknown;
   try {
     value = JSON.parse(file.content);
@@ -71,32 +141,52 @@ async function readAgentConfig(path: string, complete: boolean) {
   return { path: file.path, config: parseRawAgentConfig(value, complete) };
 }
 
-function resolveResourcePaths(resources: WorkflowAgentResources, fromPath: string): WorkflowAgentResources {
+async function resolveResourcePaths(
+  resources: WorkflowAgentResources,
+  fromPath: string,
+  allowedRoots: Set<string>,
+): Promise<WorkflowAgentResources> {
   if (resources.mode === "inherit") return resources;
   const baseDir = dirname(fromPath);
   const resolveLocalPath = (path: string): string => isAbsolute(path) ? path : resolve(baseDir, path);
-  const resolvePluginSource = (source: string): string => (
-    source.startsWith("./") || source.startsWith("../") ? resolve(baseDir, source) : source
-  );
+  const resolvePluginSource = async (source: string): Promise<string> => {
+    if (REMOTE_PLUGIN_PREFIXES.some((prefix) => source.startsWith(prefix))) return source;
+    const localPath = source.startsWith("file://") ? fileURLToPath(source) : resolveLocalPath(source);
+    return resolveAuthorizedPath(localPath, allowedRoots);
+  };
   return {
     mode: "explicit",
-    skillPaths: resources.skillPaths.map(resolveLocalPath),
-    extensionPaths: resources.extensionPaths.map(resolveLocalPath),
-    pluginSources: resources.pluginSources.map(resolvePluginSource),
+    skillPaths: await Promise.all(resources.skillPaths.map((path) => (
+      resolveAuthorizedPath(resolveLocalPath(path), allowedRoots)
+    ))),
+    extensionPaths: await Promise.all(resources.extensionPaths.map((path) => (
+      resolveAuthorizedPath(resolveLocalPath(path), allowedRoots)
+    ))),
+    pluginSources: await Promise.all(resources.pluginSources.map(resolvePluginSource)),
   };
 }
 
-async function materializeConfig(raw: RawAgentConfig, configPath: string): Promise<Partial<WorkflowAgentDefinition>> {
+async function materializeConfig(
+  raw: RawAgentConfig,
+  configPath: string,
+  allowedRoots: Set<string>,
+): Promise<Partial<WorkflowAgentDefinition>> {
   return {
     ...(raw.id === undefined ? {} : { id: raw.id }),
     ...(raw.name === undefined ? {} : { name: raw.name }),
     ...(raw.description === undefined ? {} : { description: raw.description }),
     ...(raw.model === undefined ? {} : { model: raw.model }),
     ...(raw.thinkingLevel === undefined ? {} : { thinkingLevel: raw.thinkingLevel }),
-    ...(raw.systemPrompt === undefined ? {} : { systemPrompt: await resolveSystemPrompt(raw.systemPrompt, configPath) }),
-    ...(raw.customInstructions === undefined ? {} : { customInstructions: await resolveInstructions(raw.customInstructions, configPath) }),
+    ...(raw.systemPrompt === undefined ? {} : {
+      systemPrompt: await resolveSystemPrompt(raw.systemPrompt, configPath, allowedRoots),
+    }),
+    ...(raw.customInstructions === undefined ? {} : {
+      customInstructions: await resolveInstructions(raw.customInstructions, configPath, allowedRoots),
+    }),
     ...(raw.tools === undefined ? {} : { tools: raw.tools }),
-    ...(raw.resources === undefined ? {} : { resources: resolveResourcePaths(raw.resources, configPath) }),
+    ...(raw.resources === undefined ? {} : {
+      resources: await resolveResourcePaths(raw.resources, configPath, allowedRoots),
+    }),
   };
 }
 
@@ -123,6 +213,7 @@ export async function resolveWorkflowAgentDefinition(options: {
   readonly defaultAgent: WorkflowAgentDefinition;
   readonly selection?: AgentConfigSelection;
   readonly cwd: string;
+  readonly chatHome?: string;
 }): Promise<ResolvedWorkflowAgentDefinition> {
   const appendPaths = options.selection?.append ?? [];
   const promptPaths = options.selection?.promptFiles ?? [];
@@ -130,11 +221,13 @@ export async function resolveWorkflowAgentDefinition(options: {
     throw new Error(`单个Agent最多加载${MAX_AGENT_CONFIG_FILES}个配置和提示词文件`);
   }
 
+  const allowedRoots = await resolveAllowedRoots(options);
+
   let current = options.defaultAgent;
   const sources: AgentConfigSource[] = [{ kind: "workflow-default" }];
   if (options.selection?.primary !== undefined) {
-    const primary = await readAgentConfig(resolve(options.cwd, options.selection.primary), true);
-    const materialized = await materializeConfig(primary.config, primary.path);
+    const primary = await readAgentConfig(resolve(options.cwd, options.selection.primary), true, allowedRoots);
+    const materialized = await materializeConfig(primary.config, primary.path, allowedRoots);
     if (materialized.id !== options.defaultAgent.id) {
       throw new Error(`Agent配置id必须是${options.defaultAgent.id}: ${primary.path}`);
     }
@@ -154,11 +247,11 @@ export async function resolveWorkflowAgentDefinition(options: {
   }
 
   for (const path of appendPaths) {
-    const addition = await readAgentConfig(resolve(options.cwd, path), false);
+    const addition = await readAgentConfig(resolve(options.cwd, path), false, allowedRoots);
     if (addition.config.id !== undefined || addition.config.name !== undefined || addition.config.description !== undefined) {
       throw new Error(`追加Agent配置不能修改id、name或description: ${addition.path}`);
     }
-    current = mergeAgentConfig(current, await materializeConfig(addition.config, addition.path));
+    current = mergeAgentConfig(current, await materializeConfig(addition.config, addition.path, allowedRoots));
     sources.push({ kind: "append", path: addition.path });
   }
 
@@ -167,7 +260,7 @@ export async function resolveWorkflowAgentDefinition(options: {
     current.customInstructions.flatMap((instruction) => instruction.sourcePath === undefined ? [] : [instruction.sourcePath]),
   );
   for (const path of promptPaths) {
-    const prompt = await readTextFile(resolve(options.cwd, path));
+    const prompt = await readTextFile(resolve(options.cwd, path), allowedRoots);
     if (seenPromptPaths.has(prompt.path)) continue;
     seenPromptPaths.add(prompt.path);
     if (prompt.content.trim() === "") throw new Error(`提示词文件不能为空: ${prompt.path}`);
@@ -175,12 +268,41 @@ export async function resolveWorkflowAgentDefinition(options: {
     sources.push({ kind: "prompt", path: prompt.path });
   }
 
+  const promptResourceInstructions: AgentInstruction[] = [];
+  for (const selected of options.selection?.promptResources ?? []) {
+    const promptResourceStore = await getPromptResourceStore(selected.target, options.chatHome);
+    const resource = selected.revision === undefined
+      ? await promptResourceStore.get(selected.id)
+      : await promptResourceStore.getRevision(selected.id, selected.revision);
+    if (resource === undefined) {
+      throw new Error(`找不到Prompt资源${selected.revision === undefined ? "" : `版本 ${selected.revision}`}: ${selected.id}`);
+    }
+    if (resource.status !== "active") throw new Error(`Prompt资源已归档: ${selected.id}`);
+    promptResourceInstructions.push(promptResourceInstruction(selected.target, resource));
+    sources.push({
+      kind: "prompt-resource",
+      resourceId: resource.id,
+      resourceTarget: selected.target,
+      revision: resource.revision,
+    });
+  }
+
   return {
     ...current,
-    customInstructions: [...current.customInstructions, ...promptInstructions],
+    customInstructions: [
+      ...current.customInstructions,
+      ...promptInstructions,
+      ...promptResourceInstructions,
+    ],
     ...(options.selection?.resources === undefined
       ? {}
-      : { resources: resolveResourcePaths(options.selection.resources, resolve(options.cwd, ".agent-selection.json")) }),
+      : {
+          resources: await resolveResourcePaths(
+            options.selection.resources,
+            resolve(options.cwd, ".agent-selection.json"),
+            allowedRoots,
+          ),
+        }),
     sources,
   };
 }

@@ -5,6 +5,7 @@ import { memoryWorkflowDefinition } from "./memory/index.js";
 import {
   planningExecutionWorkflowDefinition,
 } from "./planning-execution/index.js";
+import { ruleManagementWorkflowDefinition } from "./rule-management/index.js";
 import { browserSafeWorkflowDefinition } from "./framework.js";
 import type { ChatWorkflowDefinition } from "./framework.js";
 
@@ -19,6 +20,7 @@ export const CHAT_WORKFLOW_DEFINITIONS = [
   minimalPiCodingAgentWorkflowDefinition,
   planningExecutionWorkflowDefinition,
   memoryWorkflowDefinition,
+  ruleManagementWorkflowDefinition,
 ] as const;
 
 export type ChatWorkflowId = (typeof CHAT_WORKFLOW_DEFINITIONS)[number]["id"];

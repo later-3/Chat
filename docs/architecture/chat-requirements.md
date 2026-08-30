@@ -2,7 +2,7 @@
 
 ## 1. 输入与范围
 
-本文以三份事实为输入：
+本文受[Chat Agent第一性原理与架构约束](./chat-agent-first-principles.md)约束，并以三份源码事实为输入：
 
 1. [Pi Agent设计与源码分析](./pi-agent-design.md)：Pi原生能力、接口和持久化边界。
 2. [Pi Web架构与源码分析](./pi-web-design.md)：原网页产品如何消费Pi能力。
@@ -36,6 +36,8 @@ Project目标结构另见[Chat Project架构设计](./chat-project-framework.md)
 20. Project使用稳定`projectId`，绝对路径只属于本机Registry；项目移动不能改变Session和Memory归属。
 21. Project和Workflow是正交管理入口：Project决定工作目录、项目配置和资源作用域，Workflow决定本轮执行结构。
 22. 打开Project不等于信任Project。项目级配置、Skill和Extension必须遵守参考Pi Project Trust定义的显式信任边界。
+23. 每个Workflow拥有自己的Agent默认配置；Session按Workflow保存最新配置。一次对话没有调整时沿用该Workflow的上次配置，有调整时冻结本轮快照并把结果保存为该Workflow的新配置。
+24. 同名或同实现的Agent出现在不同Workflow中时不自动共享配置；需要复用的是公共实现和Agent装配机制，不是隐含运行状态。
 
 ## 3. 运行逻辑
 
@@ -46,7 +48,9 @@ Project目标结构另见[Chat Project架构设计](./chat-project-framework.md)
   ↓
 Chat确定本轮Workflow
   ↓
-读取本轮使用的Agent配置
+读取当前Session中该Workflow的最新配置；不存在时读取Workflow默认配置
+  ↓
+应用本轮调整并冻结配置快照
   ↓
 打开或创建同一个Chat Session
   ↓
@@ -61,7 +65,7 @@ Pi Session保存需要延续到下一轮的对话事实
 下一条用户消息重新读取最新配置并重复以上过程
 ```
 
-因此“可配置”不要求热修改一个正在运行的Agent对象。每个Workflow中的Agent都有一个持久默认配置；修改默认配置后，后续交互持续使用新值。用户也可以在某次交互中选择另一份配置文件，这一整轮Workflow使用被选择的配置。一个已经启动的Workflow应使用启动时读取到的同一份配置结果，避免Planner执行完后修改配置导致Executor突然使用另一套能力。
+因此“可配置”不要求热修改一个正在运行的Agent对象。每个Workflow中的Agent都有初始默认配置；Session保存该Workflow最近一次对话使用的配置。用户在某次对话中选择另一份配置文件或调整资源后，本轮使用冻结结果，完成后它成为该Workflow在当前Session中的最新配置；下一次没有调整就继续沿用。一个已经启动的Workflow始终使用启动时冻结的配置快照，避免Planner执行完后修改配置导致Executor突然使用另一套能力。
 
 Chat需要维护以下五类明确对象。Project是工作空间入口，Workflow是本轮执行入口，两者不存在包含关系：
 
@@ -95,7 +99,9 @@ Workflow（一级执行管理对象）
 
 Chat Session（独立连续上下文）
   ├── 属于一个Project
-  └── 每轮可选择不同Workflow执行
+  ├── 每轮可选择不同Workflow执行
+  ├── 保存每个Workflow的最新配置
+  └── 保存每次对话的配置和执行快照
 ```
 
 ## 4. 核心用户场景
@@ -282,7 +288,7 @@ Chat需要控制：
 
 例如Package安装属于平台资源；某Agent启用哪些Skill属于Agent能力；用户Prompt和上游Stage输出属于本次Workflow输入；模型切换是否写进Session属于对话状态。
 
-Chat中的Agent配置是本轮运行事实源。默认配置可以引用Chat管理的默认模型；选择另一份配置文件时，本轮直接使用新文件中的模型、Thinking和资源设置。Pi Session中的模型记录不再与Agent配置竞争优先级，它只保留Pi原生Session兼容信息和历史证据。
+Chat本轮冻结的Workflow Agent配置是运行事实源。配置按`Workflow默认配置 → Session中该Workflow最新配置 → 本轮调整`解析；选择另一份配置文件时，本轮直接使用新文件中的模型、Thinking和资源设置，并在完成后成为该Workflow的新Session配置。Pi Session中的模型记录不再与Agent配置竞争产品优先级，它只保留Pi原生Session兼容信息和历史证据。
 
 ### 7.2 配置只能表达可声明数据
 
@@ -329,25 +335,23 @@ Chat中的Agent配置是本轮运行事实源。默认配置可以引用Chat管�
 6. 生产仍保持一个Chat服务；Pi和前端子模块由父仓库gitlink固定版本。
 7. VS Code能从Chat入口调试Workflow，并通过Source Map进入Chat使用的Pi源码。
 
-## 10. 当前缺口与优先顺序
+## 10. 当前缺口与已完成能力
 
 | 优先级 | 缺口 | 原因 |
 |---:|---|---|
-| 1 | 尚无用户级Chat Home、Project Manifest/Registry和ProjectContext | 当前路径、Session、配置和Memory仍以Chat进程cwd为隐式根 |
-| 2 | Session尚未按稳定Project分区 | 当前统一目录无法支持可靠项目切换和路径迁移 |
-| 3 | Pi Web项目列表仍由Session反推 | 没有Session的新Project无法成为独立管理对象 |
-| 4 | Project配置、资源和Memory尚未接入稳定projectId | 当前项目能力和Memory隔离仍与cwd路径耦合 |
-| 5 | Agent配置文件只能选择，尚不能在前端创建和编辑 | 当前默认选择已持久化，但文件内容编辑仍需外部工具 |
-| 6 | 普通Node已有Schema和校验，但尚无内置Workflow实例 | 需要在真实需求出现时验证展示和观察数据，不为示例增加空业务 |
-| 7 | 运行中交互和Session分支未迁移 | 需要先决定持续运行控制面，不应塞进一次Run返回值 |
-
-已经完成的架构基线包括：统一Workflow Registry、`defineChatWorkflow()`、两种Node、每Agent目录、当前单根`.chat/config.json`、Tool/Skill/Extension Catalog、实际AgentSession Resolve，以及3个现有Workflow的迁移。Project架构是下一阶段目标，不能在代码完成前写成当前事实。
+| 已完成 | Backend持久化Session Workflow最新配置和本轮快照 | 刷新、手工选择和Agent辅助调整使用同一事实源 |
+| 已完成 | Chat Home、Project Manifest/Registry和ProjectContext | Project路径、配置、Session、Memory和Prompt资源由稳定`projectId`解析 |
+| 已完成 | 个人与项目Prompt资源及规则管理Workflow | 已覆盖Target、来源、标签、草稿、绑定确认、版本、归档、检索和Agent选择 |
+| 1 | Agent配置文件只能选择，尚不能在前端创建和编辑 | 当前默认选择已持久化，但文件内容编辑仍需外部工具 |
+| 2 | 普通Node已有Schema和校验，但尚无内置Workflow实例 | 需要在真实需求出现时验证展示和观察数据，不为示例增加空业务 |
+| 3 | 资源管理接口尚未全部迁移 | Skill更新检查及部分原Pi Web操作仍待接入 |
+| 4 | 运行中交互和Session分支未迁移 | 需要先决定持续运行控制面，不应塞进一次Run返回值 |
 
 ## 11. 已确认的配置场景
 
 ### 11.1 默认配置与本轮选择
 
-每个Workflow Agent有一份默认配置。修改默认配置后，后续交互一直使用新配置。本轮在Pi Web中选择另一份配置文件时，只改变这次交互选择的配置来源，不修改默认配置。
+每个Workflow Agent有一份初始默认配置。第一次使用该Workflow时从默认配置开始；之后优先读取当前Session中该Workflow的最新配置。本轮在Pi Web中选择另一份配置文件时，不修改Workflow默认文件，但会形成新的本轮快照，并在完成后成为该Workflow在当前Session中的最新选择，直到用户再次调整。
 
 Session继续提供上下文；模型、Thinking、System Prompt和资源集合由本轮选中的Agent配置决定。不存在Agent配置与Session模型状态之间的产品级优先级竞争。
 
@@ -398,7 +402,7 @@ workflows/<workflow-id>/
 |---|---|---|
 | Agent基础提示词 | `SYSTEM.md`或`systemPromptOverride` | 替换Pi默认Coding Agent提示词；Planner等不同身份适用 |
 | Agent自定义提示词区域 | Chat基于`appendSystemPromptOverride`组成 | 每次使用该Agent时进入System Prompt |
-| 本轮勾选的提示词规则 | 加入本轮Agent自定义区域 | 只在当前用户交互中生效 |
+| 当前Session配置和本轮勾选的提示词规则 | 加入本轮Agent自定义区域 | 进入本轮快照；后续没有调整时继续沿用 |
 | 项目规范 | `AGENTS.md` | 由当前cwd自动提供 |
 | Pi Prompt Template | `/name`展开 | 形成User Message，不用于编码规范System Prompt |
 
@@ -407,11 +411,11 @@ Chat把Agent自定义提示词区域作为“Workflow内Agent配置”的一部�
 ```text
 Agent长期规则
 + Workflow内这个Agent需要的规则
-+ 用户本轮选择的编码规范
++ 当前Session沿用或用户本轮调整的编码规范
 + 后续其他自定义提示词资源
 ```
 
-“编码规范”只是其中一类。Pi Web按组和文件展示可选提示词；用户为本轮Pi Coding Agent勾选规则后，Chat读取对应文件并加入这个Agent的本轮有效配置。
+“编码规范”只是其中一类。Pi Web按组和文件展示可选提示词；Chat把当前Session沿用的选择和用户本轮调整合并后，读取对应文件并加入这个Agent的本轮有效配置。
 
 按Pi当前源码，最终顺序是：
 
@@ -421,7 +425,7 @@ Pi默认或Agent基础System Prompt
 Chat管理的Agent自定义提示词区域
   ├── Agent默认规则
   ├── Workflow中该Agent的规则
-  └── 用户本轮勾选的规则
+  └── Session最新选择与本轮调整后的规则
   ↓
 AGENTS.md项目上下文
   ↓

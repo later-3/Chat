@@ -2,10 +2,10 @@ import { openChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
   createWorkflowAgentSession,
-  resolveWorkflowAgentDefinition,
 } from "../agent-definition.js";
 import { subscribeAgentSessionLog } from "../agent-session-log.js";
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
+import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
 import { appendChatWorkflowStage } from "../workflow-stage.js";
 import { MEMORY_AGENT } from "./agents/memory-agent/index.js";
 import { prepareMemoryAgentSession } from "./agents/memory-agent/runtime.js";
@@ -17,6 +17,15 @@ export async function runMemoryAgentStep(
 
   const stepStartedAt = Date.now();
   const chatSession = await openChatSession(input);
+  const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
+    invocationId: input.workflowInvocationId,
+    workflowId: "memory",
+    agents: [MEMORY_AGENT],
+    cwd: chatSession.cwd,
+    ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
+    ...(input.defaultAgentConfigs === undefined ? {} : { defaults: input.defaultAgentConfigs }),
+    ...(input.agentConfigs === undefined ? {} : { adjustments: input.agentConfigs }),
+  });
   appendChatWorkflowStage(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: "memory",
@@ -26,13 +35,8 @@ export async function runMemoryAgentStep(
   console.log(`${localTimestamp()} [memory] step starting cwd=${chatSession.cwd}`);
   console.log(`${localTimestamp()} [memory] creating AgentSession`);
 
-  const agent = await resolveWorkflowAgentDefinition({
-    defaultAgent: MEMORY_AGENT,
-    cwd: chatSession.cwd,
-    ...(input.agentConfigs?.[MEMORY_AGENT.id] === undefined
-      ? {}
-      : { selection: input.agentConfigs[MEMORY_AGENT.id] }),
-  });
+  const agent = prepared.agents[MEMORY_AGENT.id];
+  if (agent === undefined) throw new Error(`本轮配置缺少Agent: ${MEMORY_AGENT.id}`);
   const sessionExtensions = await prepareMemoryAgentSession({
     purpose: "execution",
     ...(chatSession.projectId === undefined ? {} : { projectId: chatSession.projectId }),
@@ -40,8 +44,10 @@ export async function runMemoryAgentStep(
     cwd: chatSession.cwd,
     workflowId: "memory",
     agentId: MEMORY_AGENT.id,
+    sessionManager: chatSession.manager,
     sessionId: chatSession.manager.getSessionId(),
     workflowInvocationId: input.workflowInvocationId,
+    userPrompt: input.prompt,
   });
   const { session, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,

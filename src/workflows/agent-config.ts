@@ -1,6 +1,12 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import {
+  parsePromptResourceTarget,
+  promptResourceTargetKey,
+  type PromptResourceTarget,
+} from "../prompt-resources/types.js";
 
 export const MAX_AGENT_CONFIG_FILES = 32;
+export const MAX_AGENT_PROMPT_RESOURCES = 64;
 const THINKING_LEVELS = new Set<ThinkingLevel>([
   "off", "minimal", "low", "medium", "high", "xhigh", "max",
 ]);
@@ -31,6 +37,22 @@ export type WorkflowAgentResources =
 export interface AgentInstruction {
   readonly text: string;
   readonly sourcePath?: string;
+  readonly promptResource?: {
+    readonly id: string;
+    readonly target: PromptResourceTarget;
+    readonly revision: number;
+    readonly kind: "rule" | "experience";
+    readonly title: string;
+  };
+}
+
+export interface AgentPromptResourceSelection {
+  readonly id: string;
+  readonly target: PromptResourceTarget;
+  readonly selectedBy: "user" | "agent";
+  readonly reason?: string;
+  /** Filled by Chat when it freezes a Workflow turn; browser input is resolved to the current revision. */
+  readonly revision?: number;
 }
 
 export interface WorkflowAgentDefinition {
@@ -50,12 +72,16 @@ export interface AgentConfigSelection {
   readonly primary?: string;
   readonly append?: readonly string[];
   readonly promptFiles?: readonly string[];
+  readonly promptResources?: readonly AgentPromptResourceSelection[];
   readonly resources?: WorkflowAgentResources;
 }
 
 export interface AgentConfigSource {
-  readonly kind: "workflow-default" | "primary" | "append" | "prompt";
+  readonly kind: "workflow-default" | "primary" | "append" | "prompt" | "prompt-resource";
   readonly path?: string;
+  readonly resourceId?: string;
+  readonly resourceTarget?: PromptResourceTarget;
+  readonly revision?: number;
 }
 
 export interface ResolvedWorkflowAgentDefinition extends WorkflowAgentDefinition {
@@ -93,6 +119,44 @@ function readNonEmptyString(value: unknown, field: string): string {
 function readStringList(value: unknown, field: string): string[] {
   if (!Array.isArray(value)) throw new Error(`${field}必须是字符串数组`);
   return [...new Set(value.map((item, index) => readNonEmptyString(item, `${field}[${index}]`)))];
+}
+
+function parsePromptResourceSelections(value: unknown): AgentPromptResourceSelection[] {
+  if (!Array.isArray(value)) throw new Error("promptResources必须是数组");
+  if (value.length > MAX_AGENT_PROMPT_RESOURCES) {
+    throw new Error(`单个Agent最多选择${MAX_AGENT_PROMPT_RESOURCES}个Prompt资源`);
+  }
+  const selections: AgentPromptResourceSelection[] = [];
+  const seen = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    if (!isRecord(item)) throw new Error(`promptResources[${index}]必须是对象`);
+    assertKnownFields(item, ["id", "target", "selectedBy", "reason", "revision"]);
+    const id = readNonEmptyString(item.id, `promptResources[${index}].id`);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) throw new Error(`promptResources[${index}].id格式无效`);
+    const target = parsePromptResourceTarget(item.target);
+    if (item.selectedBy !== "user" && item.selectedBy !== "agent") {
+      throw new Error(`promptResources[${index}].selectedBy必须是user或agent`);
+    }
+    const reason = item.reason === undefined
+      ? undefined
+      : readNonEmptyString(item.reason, `promptResources[${index}].reason`);
+    if (reason !== undefined && reason.length > 2_000) throw new Error(`promptResources[${index}].reason不能超过2000个字符`);
+    const revision = item.revision;
+    if (revision !== undefined && (!Number.isSafeInteger(revision) || (revision as number) < 1)) {
+      throw new Error(`promptResources[${index}].revision必须是正整数`);
+    }
+    const key = `${promptResourceTargetKey(target)}:${id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    selections.push({
+      id,
+      target,
+      selectedBy: item.selectedBy,
+      ...(reason === undefined ? {} : { reason }),
+      ...(revision === undefined ? {} : { revision: revision as number }),
+    });
+  }
+  return selections;
 }
 
 function assertKnownFields(value: Record<string, unknown>, fields: readonly string[]): void {
@@ -206,10 +270,13 @@ export function parseRawAgentConfig(value: unknown, complete: boolean): RawAgent
 
 export function parseAgentConfigSelection(value: unknown): AgentConfigSelection {
   if (!isRecord(value)) throw new Error("Agent配置选择必须是对象");
-  assertKnownFields(value, ["primary", "append", "promptFiles", "resources"]);
+  assertKnownFields(value, ["primary", "append", "promptFiles", "promptResources", "resources"]);
   const primary = value.primary === undefined ? undefined : readNonEmptyString(value.primary, "primary");
   const append = value.append === undefined ? undefined : readStringList(value.append, "append");
   const promptFiles = value.promptFiles === undefined ? undefined : readStringList(value.promptFiles, "promptFiles");
+  const promptResources = value.promptResources === undefined
+    ? undefined
+    : parsePromptResourceSelections(value.promptResources);
   const resources = value.resources === undefined ? undefined : parseResources(value.resources);
   const count = (primary === undefined ? 0 : 1) + (append?.length ?? 0) + (promptFiles?.length ?? 0);
   if (count > MAX_AGENT_CONFIG_FILES) throw new Error(`单个Agent最多加载${MAX_AGENT_CONFIG_FILES}个配置和提示词文件`);
@@ -217,6 +284,7 @@ export function parseAgentConfigSelection(value: unknown): AgentConfigSelection 
     ...(primary === undefined ? {} : { primary }),
     ...(append === undefined ? {} : { append }),
     ...(promptFiles === undefined ? {} : { promptFiles }),
+    ...(promptResources === undefined ? {} : { promptResources }),
     ...(resources === undefined ? {} : { resources }),
   };
 }

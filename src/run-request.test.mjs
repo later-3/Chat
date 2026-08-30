@@ -32,6 +32,10 @@ test("the request selects a registered workflow", () => {
     parseChatWorkflowHttpInput({ workflow: "memory" }, defaults).workflow,
     "memory",
   );
+  assert.equal(
+    parseChatWorkflowHttpInput({ workflow: "rule-management" }, defaults).workflow,
+    "rule-management",
+  );
   assert.throws(
     () => parseChatWorkflowHttpInput({ workflow: "unknown" }, defaults),
     /workflow必须是/,
@@ -91,7 +95,7 @@ test("Agent configuration files are scoped to Agents in the selected Workflow", 
   );
 });
 
-test("request Agent selections override only matching .chat defaults", () => {
+test("request Agent selections remain turn adjustments instead of merging server defaults", () => {
   const configuredDefaults = {
     ...defaults,
     workflow: "planning-execution",
@@ -105,10 +109,11 @@ test("request Agent selections override only matching .chat defaults", () => {
       agentConfigs: { planner: { promptFiles: ["/request/planner.md"] } },
     }, configuredDefaults),
     {
-      ...configuredDefaults,
+      cwd: configuredDefaults.cwd,
+      prompt: configuredDefaults.prompt,
+      workflow: configuredDefaults.workflow,
       agentConfigs: {
         planner: { promptFiles: ["/request/planner.md"] },
-        "pi-coding-agent": { append: ["/defaults/coding.json"] },
       },
     },
   );

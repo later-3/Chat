@@ -1,10 +1,12 @@
 # Chat架构、需求与详细设计
 
-这组文档按“上游设计事实 → Chat需求 → Chat详细设计 → 实现与验证”的顺序持续维护。它不是一次性方案文档；每次实现改变了事实，都必须同步更新对应章节和证据。
+这组文档按“架构约束 → 上游设计事实 → Chat需求 → Chat详细设计 → 实现与验证”的顺序持续维护。它不是一次性方案文档；每次实现改变了事实，都必须同步更新对应章节和证据。
 
 ## 分析顺序
 
 ```text
+Chat Agent第一性原理与架构约束
+  ↓
 Pi Agent设计与能力
   ↓
 Pi Web架构与能力消费方式
@@ -18,7 +20,7 @@ Chat详细设计
 代码、测试与部署结果反向校正文档
 ```
 
-不能从Chat想要的配置结构反推Pi，也不能把Pi Web现有界面直接当成后端能力。每个Chat设计结论都要能够追溯到以下至少一种证据：
+不能从Chat想要的配置结构反推Pi，也不能把Pi Web现有界面直接当成后端能力。新需求必须先通过[Chat Agent第一性原理与架构约束](./chat-agent-first-principles.md)中的归类方法和评审清单，再进入具体设计。每个Chat设计结论都要能够追溯到以下至少一种证据：
 
 1. Pi或Pi Web公开接口和类型。
 2. Pi或Pi Web实际调用链源码。
@@ -29,6 +31,7 @@ Chat详细设计
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
+| [Chat Agent第一性原理与架构约束](./chat-agent-first-principles.md) | Agent本质、稳定架构、配置生命周期、新需求归类和架构冲击判定 | 约束性基准 |
 | [Pi Agent设计与源码分析](./pi-agent-design.md) | Pi分层、核心对象、运行链、能力机制、接口和数据结构 | 第一版完成 |
 | [Pi Web架构与源码分析](./pi-web-design.md) | 原前端、原后端、Agent RPC、事件和资源管理接口 | 第一版完成 |
 | [Chat当前架构](./chat-current-architecture.md) | 前端、HTTP API、Workflow、Pi AgentSession和Session持久化 | 第一版完成 |
@@ -44,8 +47,8 @@ Chat详细设计
 
 | 项目 | 路径 | Commit | 当前用途 |
 |---|---|---|---|
-| Chat | `Chat/` | `57ad450d74f6bcd8b6d4538cbbec69d2c01546c6`之后的未提交开发状态 | 产品后端、Workflow和集成 |
+| Chat | `Chat/` | `a492ae63f360fc39a8e9ab4a322d95bdb8a8c683`及之后的未提交开发状态 | 产品后端、Workflow和集成 |
 | Pi | `Chat/pi/` | `1e44171651f99e3c9066f805529db58bf93a5136` | Agent与Coding Agent源码 |
-| Pi Web派生前端 | `Chat/frontend/` | `f48774eb187ebfda4130c0f279b20b8bceb98475`之后的未提交开发状态 | Chat浏览器前端 |
+| Pi Web派生前端 | `Chat/frontend/` | `96c4063fc591c36dc376d704b942a4f18079ebc0`及之后的未提交开发状态 | Chat浏览器前端 |
 
 文档引用源码时以具体路径和符号为准。更新子模块后，要先判断上游设计是否变化，再更新这里的结论。

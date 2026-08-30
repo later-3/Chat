@@ -20,6 +20,7 @@ export {
   parseWorkflowAgentDefinition,
   parseAgentConfigSelection,
   type AgentConfigSelection,
+  type AgentPromptResourceSelection,
   type ResolvedWorkflowAgentDefinition,
   type WorkflowAgentDefinition,
   type WorkflowAgentResources,

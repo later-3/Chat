@@ -7,6 +7,7 @@ export interface ChatWorkflowInput {
   readonly prompt: string;
   readonly sessionId?: string;
   readonly workflowInvocationId: string;
+  readonly defaultAgentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
   readonly agentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
 }
 

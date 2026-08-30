@@ -21,6 +21,7 @@ let embeddingServer;
 let baseUrl;
 let serverOutput = "";
 let authenticatedCookiePromise;
+let promptResourceId;
 const embeddingDimension = 64;
 const projectId = "built-project";
 
@@ -156,6 +157,34 @@ before(async () => {
     timestamp: Date.now(),
   });
   sessionId = manager.getSessionId();
+
+  promptResourceId = "built-production-rule";
+  const promptResourceDir = path.join(chatHome, "projects", projectId, "prompt-resources", "resources");
+  fs.mkdirSync(promptResourceDir, { recursive: true });
+  const createdAt = new Date().toISOString();
+  fs.writeFileSync(path.join(promptResourceDir, `${promptResourceId}.json`), JSON.stringify({
+    schemaVersion: 1,
+    id: promptResourceId,
+    revisions: [{
+      schemaVersion: 1,
+      id: promptResourceId,
+      revision: 1,
+      kind: "rule",
+      title: "Production API rule",
+      purpose: "Verify the built Prompt resource routes",
+      content: "Keep production API behavior covered by a built-server test.",
+      tags: ["production-test"],
+      status: "active",
+      sources: [{
+        type: "manual",
+        entryIds: [],
+        context: "Created by the built-server test.",
+        capturedAt: createdAt,
+      }],
+      author: { type: "user" },
+      createdAt,
+    }],
+  }, null, 2));
 
   const embeddingBaseUrl = await startEmbeddingServer();
   const port = await reservePort();
@@ -420,18 +449,22 @@ test("Workflow containers and their Agents come from the backend registry", asyn
     "minimal-pi-coding-agent",
     "planning-execution",
     "memory",
+    "rule-management",
   ]);
   assert.deepEqual(body.workflows.map((workflow) => workflow.agents.map((agent) => agent.id)), [
     ["pi-coding-agent"],
     ["planner", "pi-coding-agent"],
     ["memory-agent"],
+    ["rule-curator-agent"],
   ]);
   assert.deepEqual(body.workflows.map((workflow) => workflow.nodes.map((node) => node.agentId)), [
     ["pi-coding-agent"],
     ["planner", "pi-coding-agent"],
     ["memory-agent"],
+    ["rule-curator-agent"],
   ]);
   assert.equal(body.workflows[2].agents[0].configPath, "./agents/memory-agent/agent.json");
+  assert.equal(body.workflows[3].agents[0].configPath, "./agents/rule-curator-agent/agent.json");
 });
 
 test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async () => {
@@ -472,6 +505,35 @@ test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async
   );
 });
 
+test("Rule Curator inspection uses the unified Agent path with its Skill and Tools", async () => {
+  const response = await authenticatedFetch(
+    "/api/workflows/rule-management/agents/rule-curator-agent/resolve",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, cwd: workspace }),
+    },
+  );
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.deepEqual(
+    body.tools.filter((tool) => tool.active).map((tool) => tool.name),
+    [
+      "prompt_resource_search",
+      "prompt_resource_get",
+      "prompt_resource_list_drafts",
+      "prompt_resource_create_draft",
+      "prompt_resource_update_draft",
+      "prompt_resource_commit_draft",
+      "prompt_resource_propose_for_agent",
+      "prompt_resource_apply_proposal",
+      "prompt_resource_dismiss_proposal",
+    ],
+  );
+  assert.deepEqual(body.skills.map((skill) => skill.name), ["chat-architecture", "rule-library"]);
+  assert.equal(body.tools.find((tool) => tool.name === "prompt_resource_search").sourceInfo.source, "sdk");
+});
+
 test("Pi resources are served by Chat from the managed Agent directory", async () => {
   const skillsResponse = await authenticatedFetch(`/api/skills?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
   assert.equal(skillsResponse.status, 200);
@@ -493,6 +555,33 @@ test("Pi resources are served by Chat from the managed Agent directory", async (
   const pluginsResponse = await authenticatedFetch(`/api/plugins?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
   assert.equal(pluginsResponse.status, 200);
   assert.deepEqual((await pluginsResponse.json()).packages, []);
+});
+
+test("Prompt resource production API is read-only and target-aware", async () => {
+  const draftResponse = await authenticatedFetch(`/api/prompt-resources/drafts?projectId=${projectId}`);
+  assert.equal(draftResponse.status, 200);
+  assert.deepEqual((await draftResponse.json()).drafts, []);
+
+  const mutationResponse = await authenticatedFetch(`/api/prompt-resources/drafts?projectId=${projectId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "rule" }),
+  });
+  assert.ok([404, 405].includes(mutationResponse.status));
+
+  const listResponse = await authenticatedFetch(
+    `/api/prompt-resources?projectId=${projectId}&target=project&targetProjectId=${projectId}&q=production-test&status=all`,
+  );
+  assert.equal(listResponse.status, 200);
+  const listed = (await listResponse.json()).resources;
+  assert.deepEqual(listed.map((item) => item.id), [promptResourceId]);
+  assert.deepEqual(listed[0].target, { type: "project", projectId });
+
+  const historyResponse = await authenticatedFetch(
+    `/api/prompt-resources/${encodeURIComponent(promptResourceId)}/history?projectId=${projectId}&target=project&targetProjectId=${projectId}`,
+  );
+  assert.equal(historyResponse.status, 200);
+  assert.deepEqual((await historyResponse.json()).revisions.map((item) => item.revision), [1]);
 });
 
 test("full history exports the managed Chat Session as standalone HTML", async () => {
