@@ -7,7 +7,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { ensureChatHome } from "../chat-home.js";
 import { appendChatAuditEvent } from "../audit-log.js";
-import { getProjectTrust } from "../projects/trust.js";
 import { describeResourceVersion, qualifiedResourceAddress } from "./version.js";
 
 function scanDirs(cwd: string, agentDir: string) {
@@ -26,8 +25,7 @@ function nameFromPath(filePath: string): string {
 
 export async function listPiExtensions(cwd: string, projectId?: string) {
   const { agentDir } = await ensureChatHome();
-  const projectTrusted = projectId === undefined ? true : (await getProjectTrust(projectId)).trusted;
-  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
+  const settingsManager = SettingsManager.create(cwd, agentDir);
   const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
   const extensions: Array<{
     path: string;

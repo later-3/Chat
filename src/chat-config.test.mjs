@@ -11,7 +11,6 @@ import {
   writeProjectChatConfig,
 } from "./chat-config.ts";
 import { openProject } from "./projects/registry.ts";
-import { setProjectTrust } from "./projects/trust.ts";
 
 test(".chat/config.json is created, validated, persisted, and read as one runtime source", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
@@ -56,7 +55,7 @@ test(".chat/config.json is created, validated, persisted, and read as one runtim
   );
 });
 
-test("Project config is isolated and only applied after Pi Project Trust", async (t) => {
+test("Project config is isolated and applied directly for the explicitly opened Project", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-project-config-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const chatHome = path.join(root, "home");
@@ -74,15 +73,7 @@ test("Project config is isolated and only applied after Pi Project Trust", async
     workflows: {},
   }, chatHome);
 
-  await assert.rejects(
-    writeProjectChatConfig("project-config", { schemaVersion: 1, defaultWorkflowId: "memory" }, chatHome),
-    /尚未信任/,
-  );
-  assert.equal((await resolveChatConfig("project-config", chatHome)).effective.defaultWorkflowId, "minimal-pi-coding-agent");
-
-  await setProjectTrust("project-config", true, chatHome);
   await writeProjectChatConfig("project-config", { schemaVersion: 1, defaultWorkflowId: "memory" }, chatHome);
   const resolved = await resolveChatConfig("project-config", chatHome);
-  assert.equal(resolved.projectTrusted, true);
   assert.equal(resolved.effective.defaultWorkflowId, "memory");
 });

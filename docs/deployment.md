@@ -1,5 +1,8 @@
 # Chat 部署
 
+直接执行Workflow中的Agent可以显式加载项目Skill
+`.chat/skills/chat-deployment/SKILL.md`执行本仓库部署。Skill只编排本文已有的构建、服务重启和验收入口，不取代本文，也不授予未经用户明确要求的生产变更权限。
+
 ## 运行结构
 
 Chat产品本体只运行一个进程。当前`chat.ai4child.asia`有两个Cloudflare连接器，

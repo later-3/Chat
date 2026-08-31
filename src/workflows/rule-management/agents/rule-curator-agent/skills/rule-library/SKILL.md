@@ -11,6 +11,19 @@ Use only the Prompt resource Tools. A resource Target is separate from the curre
 - `project:<projectId>` belongs to one registered Project.
 - Search defaults to Personal plus the current Project. Another Project must be named explicitly.
 
+## What a rule means
+
+A rule is a reusable instruction that states **when it applies** and **what the target Agent must obey**. Keep that obligation simple and executable.
+
+- The resource `purpose` explains the applicable task or outcome.
+- The resource `content` contains the actual instruction.
+- The content may contain the requirements directly, or require the Agent to read and obey a stable Project document.
+- When referencing a document, record its exact Project-relative path and the triggering situation. For example: `Before changing the Chat frontend, read and follow docs/design/frontend-guidelines.md.`
+- Do not copy a long engineering or design guide into the rule merely to make the rule look complete. The guide remains a Project document; the rule makes compliance reusable in Agent configuration.
+- Do not claim to have created or verified a referenced Project document. Creating or updating that document belongs to an execution Agent with the appropriate file Tools.
+
+Every draft must map the user's intent into `kind`, `title`, `purpose`, `content`, `tags`, `status`, and provenance. The Tool schema is the authoritative field contract.
+
 ## Creating or changing a resource
 
 1. Search existing resources before creating a duplicate.

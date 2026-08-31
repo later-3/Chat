@@ -8,7 +8,7 @@
 2. [Pi Web架构与源码分析](./pi-web-design.md)：原网页产品如何消费Pi能力。
 3. [Chat当前架构与源码分析](./chat-current-architecture.md)：当前Workflow、Session和浏览器调用链。
 
-Project目标结构另见[Chat Project架构设计](./chat-project-framework.md)。该设计直接参考Pi的用户级/项目级配置、资源、Session分区和Project Trust，再加入Chat的稳定Project身份、Workflow和Memory场景。
+Project目标结构另见[Chat Project架构设计](./chat-project-framework.md)。该设计参考Pi的用户级/项目级配置、资源和Session分区，再加入Chat的稳定Project身份、Workflow和Memory场景。
 
 本文定义Chat需要解决什么，不提前规定最终配置文件字段。
 
@@ -35,9 +35,8 @@ Project目标结构另见[Chat Project架构设计](./chat-project-framework.md)
 19. Chat默认使用`~/.chat`保存用户级配置、Credential、Memory、Project Registry和按Project分区的Session；每个Project使用自己的`.chat`目录保存Project Manifest、配置和项目资源。
 20. Project使用稳定`projectId`，绝对路径只属于本机Registry；项目移动不能改变Session和Memory归属。
 21. Project和Workflow是正交管理入口：Project决定工作目录、项目配置和资源作用域，Workflow决定本轮执行结构。
-22. 打开Project不等于信任Project。项目级配置、Skill和Extension必须遵守参考Pi Project Trust定义的显式信任边界。
-23. 每个Workflow拥有自己的Agent默认配置；Session按Workflow保存最新配置。一次对话没有调整时沿用该Workflow的上次配置，有调整时冻结本轮快照并把结果保存为该Workflow的新配置。
-24. 同名或同实现的Agent出现在不同Workflow中时不自动共享配置；需要复用的是公共实现和Agent装配机制，不是隐含运行状态。
+22. 每个Workflow拥有自己的Agent默认配置；Session按Workflow保存最新配置。一次对话没有调整时沿用该Workflow的上次配置，有调整时冻结本轮快照并把结果保存为该Workflow的新配置。
+23. 同名或同实现的Agent出现在不同Workflow中时不自动共享配置；需要复用的是公共实现和Agent装配机制，不是隐含运行状态。
 
 ## 3. 运行逻辑
 
@@ -221,9 +220,9 @@ Chat需要控制：
 2. Workflow拥有默认Agent定义；用户可以为其中单个Agent选择外部主配置、追加配置和Prompt文件。
 3. 资源列表、安装状态和解析结果通过Pi的ResourceLoader、SettingsManager和PackageManager获取，不复制一套资源扫描器。
 4. 每次交互读取Agent配置，并用Pi公开接口创建本轮ResourceLoader和AgentSession。
-5. Project`.chat`资源经过路径校验和Project Trust后交给Pi公开加载接口；Tool最终仍由Pi Extension或SDK注册。
+5. Project`.chat`资源经过路径校验后交给Pi公开加载接口；Tool最终仍由Pi Extension或SDK注册。
 6. cwd中的Pi原生`.pi`和`.agents/skills`资源可以继续由Pi发现，Chat前端必须展示真实来源，不将其伪装成Chat Project资源。
-7. Agent配置以`inherit`或`explicit`决定本轮继承全部可信资源，还是只使用选中的Skill、Extension和Plugin。
+7. Agent配置以`inherit`或`explicit`决定本轮继承全部可见资源，还是只使用选中的Skill、Extension和Plugin。
 
 因此Chat做的是“Project管理 + Workflow管理 + Workflow内Agent配置 + 资源维护 + Session上下文”。Project不取代Workflow，Workflow也不负责发现或持久化Project。
 
@@ -231,7 +230,7 @@ Chat需要控制：
 
 | 层级 | 内容 | 归属 |
 |---|---|---|
-| Project公共基础设施 | Project Manifest、Registry、ProjectContext、Session分区和信任 | Chat平台 |
+| Project公共基础设施 | Project Manifest、Registry、ProjectContext和Session分区 | Chat平台 |
 | Workflow相关代码 | Stage输入输出结构、配置解析、Prompt与资源声明、Agent装配、阶段适配和Workflow测试 | 对应Workflow目录 |
 | 平台公共基础设施 | HTTP服务、认证、Session持久化、Workflow Runtime接入、事件协议、Pi运行时和公共资源发现 | Chat/Pi平台 |
 
@@ -243,7 +242,7 @@ Chat需要控制：
 
 - Project Manifest、Project Registry和统一`ChatProjectContext`。
 - 用户级`~/.chat`与Project本地`.chat`配置的读取、合并、校验和安全投影。
-- Project切换、Project Trust和按Project划分的Session目录。
+- Project切换和按Project划分的Session目录。
 - Workflow注册、描述、Stage顺序和Stage输入关系。
 - Workflow内的Agent定义和Stage引用。
 - Workflow内Agent的自定义提示词区域、能力声明、解析、校验和Pi对象装配。
@@ -328,7 +327,7 @@ Chat本轮冻结的Workflow Agent配置是运行事实源。配置按`Workflow�
 ## 9. 安全和部署要求
 
 1. Extension是可执行代码，Chat通过Pi原生加载机制使用它，不额外定义“受限Agent”或默认禁用规则。
-2. Project出现于Registry不代表受信任；参考Pi Project Trust，在信任前不得应用项目能力配置或执行Project Extension。
+2. Project资源必须限制在当前Registry身份与授权路径内，并由Agent资源配置决定是否启用。
 3. Credential只保存在Chat后端受控的`~/.chat/agent`中，不出现在配置响应、日志或Session观察数据。
 4. Session ID只能解析到对应Project的Chat Session目录；cwd必须与Registry登记和Session头匹配。
 5. Package安装、更新和删除属于资源维护；某个Agent是否使用其中资源属于Agent配置，两者不能混成一个开关。

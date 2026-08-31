@@ -2,7 +2,7 @@
 
 ## 1. 目的与状态
 
-本文定义并记录Chat采用的用户级目录、Project发现、Project配置、Session分区、项目资源、信任和Memory隔离规则。它直接参考Pi现有实现，再加入Chat的Workflow、Pi Web、多工作区和长期记忆场景。所有Context、Target、Owner、Resource Address和跨Project规则以[Chat Context与Resource统一模型](./chat-context-resource-model.md)为基础。
+本文定义并记录Chat采用的用户级目录、Project发现、Project配置、Session分区、项目资源和Memory隔离规则。它直接参考Pi现有实现，再加入Chat的Workflow、Pi Web、多工作区和长期记忆场景。所有Context、Target、Owner、Resource Address和跨Project规则以[Chat Context与Resource统一模型](./chat-context-resource-model.md)为基础。
 
 核心目录、Registry、Context、分层配置、Session分区、Project资源加载、Memory独立Store、前端项目发现和可恢复迁移已经实现。尚未提供的可选管理接口会在对应章节明确说明，实际源码状态见[Chat当前架构](./chat-current-architecture.md)。
 
@@ -14,11 +14,10 @@ Pi当前实现提供以下事实：
 |---|---|---|
 | 用户级配置 | `~/.pi/agent/settings.json` | 用户级状态不依赖某个源码仓库 |
 | 项目级配置 | `<cwd>/.pi/settings.json`覆盖全局配置 | 每个Project拥有自己的声明目录并覆盖全局默认 |
-| 用户级资源 | `~/.pi/agent/{skills,extensions,prompts,themes}` | 全局资源对所有可信Project可见 |
+| 用户级资源 | `~/.pi/agent/{skills,extensions,prompts,themes}` | 全局资源对所有Project可见 |
 | 项目级资源 | `<cwd>/.pi/{skills,extensions,prompts,themes}` | 项目资源只对当前Project可见 |
 | Session | `~/.pi/agent/sessions/<encoded-cwd>/` | Session属于用户运行数据，不写入项目仓库 |
 | Session格式 | Pi `SessionManager`维护JSONL、分支、压缩和恢复 | Chat不修改Pi Session消息和树结构 |
-| Project Trust | 规范化路径写入`~/.chat/agent/trust.json`；项目可执行资源在信任后加载 | 打开Project和信任Project是两个独立动作 |
 | Tool | Extension通过`registerTool()`注册，SDK通过`customTools`注入 | Chat不定义第二套可执行Tool类型 |
 
 Pi的Session目录按cwd编码，适合CLI直接进入一个目录的场景。Chat还需要处理项目简介、路径迁移、嵌套项目和浏览器项目切换，因此不能继续把绝对路径当作长期Project身份。
@@ -28,8 +27,7 @@ Pi的Session目录按cwd编码，适合CLI直接进入一个目录的场景。Ch
 1. [`SessionManager`与`getDefaultSessionDirPath()`](../../pi/packages/coding-agent/src/core/session-manager.ts)：Session默认进入用户级`agentDir/sessions/<encoded-cwd>`。
 2. [`SettingsManager`](../../pi/packages/coding-agent/src/core/settings-manager.ts)：用户级Settings与`cwd/.pi/settings.json`按作用域加载和合并。
 3. [`DefaultResourceLoader`](../../pi/packages/coding-agent/src/core/resource-loader.ts)：发现用户级、Project级和额外路径资源，最终交给Pi AgentSession。
-4. [`trust-manager.ts`](../../pi/packages/coding-agent/src/core/trust-manager.ts)与[Security文档](../../pi/packages/coding-agent/docs/security.md)：按规范化目录保存Project Trust，未信任时跳过项目可执行资源。
-5. [Pi Sessions文档](../../pi/packages/coding-agent/docs/sessions.md)、[Settings文档](../../pi/packages/coding-agent/docs/settings.md)、[Skills文档](../../pi/packages/coding-agent/docs/skills.md)和[Extensions文档](../../pi/packages/coding-agent/docs/extensions.md)：用户级/项目级目录和资源合同。
+4. [Pi Sessions文档](../../pi/packages/coding-agent/docs/sessions.md)、[Settings文档](../../pi/packages/coding-agent/docs/settings.md)、[Skills文档](../../pi/packages/coding-agent/docs/skills.md)和[Extensions文档](../../pi/packages/coding-agent/docs/extensions.md)：用户级/项目级目录和资源合同。
 
 ## 3. 核心模型
 
@@ -74,7 +72,6 @@ Chat Home默认是`~/.chat`，测试、迁移和部署可以通过`CHAT_HOME`显
   │   ├── models.json
   │   ├── models-store.json
   │   ├── settings.json
-  │   ├── trust.json
   │   ├── skills/
   │   ├── extensions/
   │   └── prompts/
@@ -205,11 +202,11 @@ Manifest和Registry没有重复事实：
 | `A`已是Project，再打开`A/B/C` | `A/B/C`成为新Project，不归属`A` | `openProject()` | `the directory selected by the user is the exact Project root...` |
 | 同时打开两个同名`app`目录 | 生成不同`projectId`，两者均保留 | `createProjectId()` | `first open initializes the selected directory...` |
 | 重新打开或移动已有Project | 读取Manifest中原`projectId`，Session和Memory归属不变 | `openProject()` / Registry | `the same registered project survives a local path move` |
-| `A`已信任，`A/B/C`是独立Project | `A/B/C`不继承`A`的Trust | `getProjectTrust()` | `nested Projects keep exact independent trust decisions` |
+| `A`和`A/B/C`都是Project | 两者只加载各自根目录的配置和资源 | `resolveProjectContext()` | `the directory selected by the user is the exact Project root...` |
 | Project根外有`AGENTS.md` | 不读取；只读用户级和当前Project根文件 | `loadChatAgentContextFiles()` | `Chat loads only global and the exact opened Project context` |
 | 从其他Project使用文件浏览 | 只允许Registry中已打开且可用的Project，不无条件放行Chat进程cwd | `getAllowedFileRoots()` | `file access comes from registered Projects...` |
 | 前端选择一个目录 | 调用`POST /api/projects/open`并完整校验返回结构 | `openChatProject()` | `opening a directory sends that exact path...` |
-| 打开Chat源码目录 | 走与其他Project相同的Manifest、Registry、Session和Trust路径 | 通用Project API | `the browser has no Chat-specific Project fallback...` |
+| 打开Chat源码目录 | 走与其他Project相同的Manifest、Registry、Session和资源路径 | 通用Project API | `the browser has no Chat-specific Project fallback...` |
 
 ## 6. 配置分层
 
@@ -263,7 +260,7 @@ Workflow Agent私有：src/workflows/<workflow>/agents/<agent>/...
 
 Agent的资源策略继续使用现有语义：
 
-1. `inherit`：继承可信用户级资源、当前Project资源和Pi默认资源。
+1. `inherit`：继承用户级资源、当前Project资源和Pi默认资源。
 2. `explicit`：只加载Agent配置明确声明的资源和Workflow运行时注入能力。
 3. Workflow私有资源不能因为复用方便复制到用户级或Project级目录。
 
@@ -276,26 +273,7 @@ Chat可以发现固定的`.chat/skills`、`.chat/extensions`和`.chat/prompts`�
 3. 依赖Chat领域服务的Tool继续通过Pi SDK `customTools`注入。
 4. 前端从真实`ResourceLoader`和`AgentSession`读取`sourceInfo`、全部Tool和活动Tool，不根据目录猜测。
 
-第一阶段可以把可信Project目录作为Pi `additionalSkillPaths`、`additionalExtensionPaths`和Prompt路径传入。若后续需要完整复用Pi的Project Settings与PackageManager语义，应优先在Pi SDK增加通用的`projectConfigDir`装配能力，不能在Chat复制一套Pi Settings或Package安装器。
-
-### 7.3 Project Trust
-
-Project已打开不等于Project可执行。参考Pi，以下内容存在时必须经过Project Trust：
-
-```text
-.chat/config.json
-.chat/extensions/
-.chat/skills/
-.chat/prompts/
-```
-
-规则：
-
-1. 信任决定按规范化Project根路径保存到`~/.chat/agent/trust.json`。
-2. Chat只接受当前Project根路径上的精确决定；目录嵌套的其他Project不继承父目录Trust。
-3. 未信任时仍可读取安全的Project Manifest和Project根目录的`AGENTS.md`，但不能加载Project Extension或会改变Agent能力的配置。
-4. Extension与项目Tool以当前Chat进程的用户权限执行；Project Trust不是沙箱。
-5. Pi Web必须在首次需要加载受保护资源前明确展示信任选择，不能把“出现在项目列表”当成自动信任。
+Chat把当前Project目录作为Pi `additionalSkillPaths`、`additionalExtensionPaths`和Prompt路径传入。若后续需要完整复用Pi的Project Settings与PackageManager语义，应优先在Pi SDK增加通用的`projectConfigDir`装配能力，不能在Chat复制一套Pi Settings或Package安装器。
 
 ## 8. Session分区
 
@@ -343,7 +321,6 @@ Project基础接口：
 GET   /api/projects
 POST  /api/projects/open
 GET   /api/projects/:projectId
-POST  /api/projects/:projectId/trust
 GET   /api/chat-config?projectId=<id>
 PUT   /api/chat-config?scope=project&projectId=<id>
 GET   /api/sessions?projectId=<id>
@@ -433,7 +410,7 @@ Content Lab的项目根是：
 2. 新Project即使没有Session，也能在重启后自动出现在Pi Web项目列表。
 3. Chat与Content Lab拥有独立Project配置、资源、Session和Project Memory。
 4. 个人Skill、Tool和Memory按规则对两个Project可见。
-5. 未信任Project不会执行`.chat/extensions`或应用受保护配置。
+5. 当前Project的`.chat`配置和资源可以直接发现，实际启用范围由Agent资源配置决定。
 6. Project路径迁移后，原Session与Memory仍由稳定`projectId`关联。
 7. Content Lab不会因为上层Git根目录是`ziji`而与其他子项目混为一个Project。
 8. 前端不硬编码Project ID；新增Project不修改前端。
@@ -447,4 +424,3 @@ Content Lab的项目根是：
 3. 不用绝对路径作为长期Project ID。
 4. 不从Session列表反推Project Registry。
 5. 不为Project复制Pi Agent Runtime、Tool类型、Skill格式或PackageManager。
-6. 不把Project Trust描述成进程沙箱。

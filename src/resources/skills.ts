@@ -5,18 +5,16 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { ensureChatHome } from "../chat-home.js";
 import { appendChatAuditEvent } from "../audit-log.js";
-import { getProjectTrust } from "../projects/trust.js";
 import { resolveProjectContext } from "../projects/registry.js";
 import { describeResourceVersion, qualifiedResourceAddress } from "./version.js";
 
 export async function listPiSkills(cwd: string, projectId?: string) {
   const { agentDir } = await ensureChatHome();
   const project = projectId === undefined ? undefined : await resolveProjectContext(projectId);
-  const trusted = project === undefined ? true : (await getProjectTrust(project.projectId)).trusted;
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
-    ...(trusted && project !== undefined
+    ...(project !== undefined
       ? { additionalSkillPaths: [`${project.projectConfigDir}/skills`] }
       : {}),
   });
@@ -39,7 +37,6 @@ export async function listPiSkills(cwd: string, projectId?: string) {
       version: await describeResourceVersion(skill.filePath),
     }))),
     diagnostics,
-    projectResourcesLoaded: trusted,
   };
 }
 

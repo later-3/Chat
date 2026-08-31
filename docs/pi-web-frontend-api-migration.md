@@ -37,7 +37,6 @@ Chat/frontend（纯浏览器）
 | 打开Project | `POST /api/projects/open` | Chat新增 | 已接入 | 用户所选目录就是Project根，后端登记或初始化 |
 | 本机设备 | `GET /api/devices` | 同路径 | 部分接入 | 当前只有本机Chat实例 |
 | 模型展示 | `GET /api/models` | 同路径 | 部分接入 | 当前模型以Workflow实际返回值为准 |
-| 项目信任 | `GET/POST /api/project-trust` | 同路径 | 部分接入 | Chat拥有授权判断，不允许前端伪造 |
 
 ## 4. 必须支持的后续接口
 

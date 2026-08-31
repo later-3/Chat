@@ -15,7 +15,7 @@ Project、分层配置、Session分区和资源Target的现状见[Chat Project�
   workflow.json / agent.json / Prompt / Skill / Extension
         ↓ Chat统一解析和校验
 ~/.chat/config.json + <project-root>/.chat/config.json
-  Personal默认与受信任Project覆盖
+  Personal默认与Project覆盖
         ↓
 当前Session中该Workflow的最新配置 + 本轮明确调整
         ↓ 解析文件并固定Prompt资源revision
@@ -194,7 +194,7 @@ export const memoryWorkflowDefinition = defineChatWorkflow({
 
 ## 7. 配置与Prompt资源
 
-Chat首次准备Chat Home时创建Personal根配置；受信任Project可以在源码目录保存Project覆盖：
+Chat首次准备Chat Home时创建Personal根配置；Project可以在源码目录保存Project覆盖：
 
 ```json
 {

@@ -11,7 +11,6 @@ export default defineEventHandler(async (event) => {
     layers: {
       personal: resolved.personal,
       project: resolved.project,
-      projectTrusted: resolved.projectTrusted,
     },
   };
 });

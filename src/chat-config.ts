@@ -3,7 +3,6 @@ import { readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { ensureChatHome, resolveChatHome } from "./chat-home.js";
 import { appendChatAuditEvent } from "./audit-log.js";
 import { resolveProjectContext } from "./projects/registry.js";
-import { getProjectTrust } from "./projects/trust.js";
 import {
   parseAgentConfigSelection,
   type AgentConfigSelection,
@@ -170,9 +169,6 @@ export async function writeProjectChatConfig(
   chatHome = resolveChatHome(),
 ): Promise<ChatConfigOverride> {
   const project = await resolveProjectContext(projectId, chatHome);
-  if (!(await getProjectTrust(projectId, chatHome)).trusted) {
-    throw new Error(`Project尚未信任，不能修改配置: ${projectId}`);
-  }
   const config = parseChatConfigOverride(value);
   await writeValidatedConfig(project.projectConfigPath, config);
   await appendChatAuditEvent({
@@ -189,15 +185,12 @@ export async function resolveChatConfig(
 ): Promise<{
   personal: ChatRootConfig;
   project: ChatConfigOverride;
-  projectTrusted: boolean;
   effective: ChatRootConfig;
 }> {
-  const [personal, declaredProject, trust] = await Promise.all([
+  const [personal, project] = await Promise.all([
     readChatRootConfig(chatHome),
     readProjectOverride(projectId, chatHome),
-    getProjectTrust(projectId, chatHome),
   ]);
-  const project = trust.trusted ? declaredProject : { schemaVersion: 1 as const };
   const workflows: Record<string, ChatStoredWorkflowConfig> = { ...personal.workflows };
   for (const [workflowId, override] of Object.entries(project.workflows ?? {})) {
     workflows[workflowId] = {
@@ -209,8 +202,7 @@ export async function resolveChatConfig(
   }
   return {
     personal,
-    project: declaredProject,
-    projectTrusted: trust.trusted,
+    project,
     effective: {
       schemaVersion: 1,
       defaultWorkflowId: project.defaultWorkflowId ?? personal.defaultWorkflowId,

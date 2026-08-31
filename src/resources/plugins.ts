@@ -10,7 +10,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { ensureChatHome } from "../chat-home.js";
 import { appendChatAuditEvent } from "../audit-log.js";
-import { getProjectTrust } from "../projects/trust.js";
 
 type PluginScope = "global" | "project";
 type ResourceKind = "extension" | "skill" | "prompt" | "theme";
@@ -76,8 +75,7 @@ function collectPackageResources(resources: readonly ResolvedResource[], kind: R
 
 export async function listPiPlugins(cwd: string, projectId?: string) {
   const { agentDir } = await ensureChatHome();
-  const projectTrusted = projectId === undefined ? true : (await getProjectTrust(projectId)).trusted;
-  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
+  const settingsManager = SettingsManager.create(cwd, agentDir);
   const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
   const diagnostics: Array<{ type: "warning" | "error"; message: string; source?: string }> = [];
   const resourcesByPackage = new Map<string, Array<{ kind: ResourceKind; name: string; path: string; relativePath: string }>>();
@@ -138,7 +136,7 @@ export async function listPiPlugins(cwd: string, projectId?: string) {
             : "installed" as const,
     };
   });
-  return { packages, totals, diagnostics, projectResourcesLoaded: true };
+  return { packages, totals, diagnostics };
 }
 
 function setDisabled(settingsManager: SettingsManager, source: string, scope: PluginScope, disabled: boolean): void {
@@ -163,7 +161,7 @@ export async function changePiPlugin(options: {
   scope: PluginScope;
 }) {
   const { agentDir } = await ensureChatHome();
-  const settingsManager = SettingsManager.create(options.cwd, agentDir, { projectTrusted: true });
+  const settingsManager = SettingsManager.create(options.cwd, agentDir);
   const packageManager = new DefaultPackageManager({ cwd: options.cwd, agentDir, settingsManager });
   const local = options.scope === "project";
   if (options.action === "install") await packageManager.installAndPersist(options.source, { local });

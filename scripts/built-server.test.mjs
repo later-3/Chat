@@ -568,6 +568,11 @@ test("Rule Curator inspection uses the unified Agent path with its Skill and Too
     ],
   );
   assert.deepEqual(body.skills.map((skill) => skill.name), ["chat-architecture", "rule-library"]);
+  assert.match(
+    body.skills.find((skill) => skill.name === "rule-library").content,
+    /when it applies.*what the target Agent must obey/s,
+  );
+  assert.match(body.skills.find((skill) => skill.name === "rule-library").content, /stable Project document/);
   assert.equal(body.tools.find((tool) => tool.name === "prompt_resource_search").sourceInfo.source, "sdk");
 });
 

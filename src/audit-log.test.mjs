@@ -10,7 +10,7 @@ test("audit log appends versioned JSONL management facts", async (t) => {
   t.after(() => rm(chatHome, { recursive: true, force: true }));
   await Promise.all([
     appendChatAuditEvent({ action: "memory.create", target: { type: "personal" } }, chatHome),
-    appendChatAuditEvent({ action: "project.trust", target: { type: "project", projectId: "chat" } }, chatHome),
+    appendChatAuditEvent({ action: "config.update", target: { type: "project", projectId: "chat" } }, chatHome),
   ]);
   const events = (await readFile(resolve(chatHome, "logs", "audit.jsonl"), "utf8"))
     .trim().split("\n").map((line) => JSON.parse(line));

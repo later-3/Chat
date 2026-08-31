@@ -120,12 +120,12 @@ Chat限定地址只用于管理、冲突检测和日志。传给Pi时仍是原�
 ```text
 Pi内置能力
   + 个人资源
-  + 当前可信Project资源
+  + 当前Project资源
   + Workflow Agent私有资源
   + 本次Session/Run显式激活资源
 ```
 
-其他Project资源可在Catalog中查询；显式激活后通过Pi的`additionalSkillPaths`、Extension Loader或`customTools`进入本次AgentSession。Extension是代码执行，必须校验目标Project Trust和Tool名称冲突。
+其他Project资源可在Catalog中查询；显式激活后通过Pi的`additionalSkillPaths`、Extension Loader或`customTools`进入本次AgentSession。Extension是代码执行，必须校验资源路径和Tool名称冲突。
 
 ## 7. 各领域允许的Target
 
@@ -200,11 +200,11 @@ Session/本次Run临时覆盖
 | Project Manifest、Registry、Context | `src/projects/` |
 | Personal + Project配置 | `src/chat-config.ts` |
 | Project Session分区 | `src/chat-session.ts`、`src/session-read-model.ts` |
-| Pi Project Trust与资源装配 | `src/projects/trust.ts`、`src/workflows/agent-definition.ts` |
+| Pi资源装配 | `src/workflows/agent-definition.ts` |
 | Resource Address与文件版本 | `src/resources/version.ts` |
 | Personal + 每Project Memory Store | `src/memory/manager.ts`、`src/memory/runtime.ts` |
 | 可恢复旧数据迁移 | `src/migrations/project-layout-v1.ts` |
 | 管理审计日志 | `src/audit-log.ts`，运行文件为`~/.chat/logs/audit.jsonl` |
 | Agent操作投影 | `src/skills/chat-architecture/SKILL.md` |
 
-Pi Web只通过上述后端事实工作：项目选择来自`GET /api/projects`，Memory页选择Personal或任意登记Project，Workflow、Session、Agent Resolve、配置、Trust和资源请求携带同一个`projectId`。
+Pi Web只通过上述后端事实工作：项目选择来自`GET /api/projects`，Memory页选择Personal或任意登记Project，Workflow、Session、Agent Resolve、配置和资源请求携带同一个`projectId`。

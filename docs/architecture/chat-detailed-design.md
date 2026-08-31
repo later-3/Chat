@@ -140,6 +140,8 @@ Memory Skill以Agent目录中的真实`SKILL.md`作为源码事实源。开发�
 
 Rule Management Workflow拥有一个`rule-curator-agent`和一个Agent Node。Agent通过统一`prepareAgentSession`装配自己的Skill和Prompt资源Custom Tools；Tool仍是Pi原生`ToolDefinition`，没有第二套Agent或Tool运行时。
 
+规则只表达“什么场景下，目标Agent必须遵守什么”。`content`既可以直接保存完整约束，也可以要求目标Agent读取并遵守Project内一个稳定路径的设计或工程文档；后者不需要把长文档复制进规则库。设计文档由具备文件Tool的执行Agent维护，Rule Curator只负责将遵守要求保存为Prompt资源并应用到指定Workflow Agent。
+
 资源创建、修改、归档、提交草稿、应用建议和拒绝建议均通过持续对话完成。所有确认短语绑定具体Draft或Proposal ID；浏览器读取资源、草稿、历史和Session中的待确认建议，但不直接执行变更。
 
 ## 7. 配置与资源存储

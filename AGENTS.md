@@ -19,7 +19,7 @@ Frontend → Backend → Workflow → Agent装配 → Pi Agent / Pi Coding Agent
 - 每个Project在源码根目录使用`.chat/project.json`和`.chat/config.json`声明身份与配置；Session、Memory和Prompt资源按稳定`projectId`保存到`~/.chat/projects/<projectId>`。
 - Agent上下文只能来自`~/.chat/agent`和用户明确打开的Project根目录中的Pi Context文件（`AGENTS.override.md`、`AGENTS.md`或`CLAUDE.md`变体）。父目录和子目录Context都不得自动继承。
 - Project源码不移动到Chat仓库。不同Project的配置、Session、Memory和资源默认隔离，跨Project访问必须显式指定目标。
-- Project Trust控制Extension和其他可执行资源的加载，但不是文件系统或进程沙箱。
+- 用户主动打开的Project直接提供自己的配置和资源；Agent的资源策略、路径授权和Project隔离决定实际加载范围。
 
 ## Pi集成规则
 
