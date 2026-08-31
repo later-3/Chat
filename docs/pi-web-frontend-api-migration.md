@@ -33,8 +33,8 @@ Chat/frontend（纯浏览器）
 | Session列表 | `GET /api/sessions` | `GET /api/sessions?projectId=<id>` | 已接入 | Chat只扫描目标Project的`~/.chat/projects/<projectId>/sessions` |
 | Session详情 | `GET /api/sessions/:id` | 同路径 | 已接入，只读 | Chat按Session ID读取Pi Session |
 | Session上下文 | `GET /api/sessions/:id/context` | 同路径 | 已接入，只读 | Chat投影消息、节点ID、模型和Thinking Level |
-| 默认目录 | `GET /api/home` | 同路径 | 部分接入 | 当前返回Chat进程工作目录 |
-| 工作目录校验 | `POST /api/cwd/validate` | 同路径 | 部分接入 | Chat校验目录存在且为目录 |
+| 用户家目录 | `GET /api/home` | 同路径 | 已接入 | 只用于路径显示和目录选择，不代表默认Project |
+| 打开Project | `POST /api/projects/open` | Chat新增 | 已接入 | 用户所选目录就是Project根，后端登记或初始化 |
 | 本机设备 | `GET /api/devices` | 同路径 | 部分接入 | 当前只有本机Chat实例 |
 | 模型展示 | `GET /api/models` | 同路径 | 部分接入 | 当前模型以Workflow实际返回值为准 |
 | 项目信任 | `GET/POST /api/project-trust` | 同路径 | 部分接入 | Chat拥有授权判断，不允许前端伪造 |

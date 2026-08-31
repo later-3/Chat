@@ -16,7 +16,7 @@ test("Project Manifest, Registry and data paths use stable projectId", async (t)
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const chatHome = path.join(root, "home");
   const project = path.join(root, "repos", "content-lab");
-  fs.mkdirSync(path.join(project, "nested"), { recursive: true });
+  fs.mkdirSync(project, { recursive: true });
 
   await createProjectManifest({
     root: project,
@@ -24,7 +24,7 @@ test("Project Manifest, Registry and data paths use stable projectId", async (t)
     name: "Content Lab",
     description: "内容项目",
   });
-  const opened = await openProject({ path: path.join(project, "nested"), chatHome });
+  const opened = await openProject({ path: project, chatHome });
 
   assert.equal(opened.projectId, "content-lab");
   assert.equal(opened.projectRoot, fs.realpathSync(project));
@@ -45,24 +45,52 @@ test("Project Manifest, Registry and data paths use stable projectId", async (t)
   assert.equal((await resolveProjectContext("content-lab", chatHome)).projectRoot, opened.projectRoot);
 });
 
-test("opening an uninitialized directory requires an explicit create decision", async (t) => {
+test("the directory selected by the user is the exact Project root even below another Project", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-project-create-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const project = path.join(root, "new-project");
-  fs.mkdirSync(project, { recursive: true });
+  const chatHome = path.join(root, "home");
+  const parent = path.join(root, "parent");
+  const child = path.join(parent, "nested", "child");
+  fs.mkdirSync(child, { recursive: true });
 
-  await assert.rejects(
-    openProject({ path: project, chatHome: path.join(root, "home") }),
-    /尚未初始化/,
-  );
-  const opened = await openProject({
-    path: project,
-    chatHome: path.join(root, "home"),
-    createIfMissing: true,
-    id: "new-project",
-    name: "New Project",
-  });
-  assert.equal(opened.projectId, "new-project");
+  const openedParent = await openProject({ path: parent, chatHome, id: "parent", name: "Parent" });
+  const openedChild = await openProject({ path: child, chatHome });
+
+  assert.equal(openedParent.projectRoot, fs.realpathSync(parent));
+  assert.equal(openedChild.projectRoot, fs.realpathSync(child));
+  assert.notEqual(openedChild.projectId, openedParent.projectId);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(child, ".chat", "project.json"), "utf8")).id, openedChild.projectId);
+  assert.deepEqual((await listProjects(chatHome)).map((project) => project.path).sort(), [
+    fs.realpathSync(child),
+    fs.realpathSync(parent),
+  ].sort());
+});
+
+test("first open initializes the selected directory with a unique stable Project id", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-project-unique-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const chatHome = path.join(root, "home");
+  const first = path.join(root, "one", "app");
+  const second = path.join(root, "two", "app");
+  const concurrent = path.join(root, "concurrent", "app");
+  fs.mkdirSync(first, { recursive: true });
+  fs.mkdirSync(second, { recursive: true });
+  fs.mkdirSync(concurrent, { recursive: true });
+
+  const openedFirst = await openProject({ path: first, chatHome });
+  const openedSecond = await openProject({ path: second, chatHome });
+  const reopenedFirst = await openProject({ path: first, chatHome });
+  const [concurrentFirst, concurrentSecond] = await Promise.all([
+    openProject({ path: concurrent, chatHome }),
+    openProject({ path: concurrent, chatHome }),
+  ]);
+
+  assert.match(openedFirst.projectId, /^app-[a-f0-9]{8}$/);
+  assert.match(openedSecond.projectId, /^app-[a-f0-9]{8}$/);
+  assert.notEqual(openedFirst.projectId, openedSecond.projectId);
+  assert.equal(reopenedFirst.projectId, openedFirst.projectId);
+  assert.equal(concurrentFirst.projectId, concurrentSecond.projectId);
+  assert.equal((await listProjects(chatHome)).length, 3);
 });
 
 test("the same registered project survives a local path move", async (t) => {
@@ -75,7 +103,6 @@ test("the same registered project survives a local path move", async (t) => {
   await openProject({
     path: first,
     chatHome,
-    createIfMissing: true,
     id: "moving-project",
     name: "Moving Project",
   });

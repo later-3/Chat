@@ -170,12 +170,12 @@ Workflow开发者应能复用Pi原生装配点定义一个Agent Stage需要的�
 
 用户在Pi Web中选择`ziji-content-lab`目录后，Chat需要：
 
-1. 从最近的`.chat/project.json`确定稳定Project身份；不存在Manifest时只在用户明确确认后创建。
+1. 用户明确选择的目录就是Project根；只读取或创建该目录的`.chat/project.json`，不向父目录或子目录发现Project。
 2. 把规范化绝对路径登记到Project Registry，而不是把路径本身当作Project ID。
 3. 即使Project还没有Session，也能在重启后的项目切换器中显示。
 4. 切换Project时同时切换cwd、Session列表、Project配置、项目资源、文件访问和Project Memory范围。
 5. 保持项目源码位于原目录；Chat只管理配置、索引和运行数据。
-6. 对位于更大Git仓库中的嵌套项目使用最近Manifest规则，不能强制把Git根目录当作Chat Project根目录。
+6. `A`和`A/B/C`可以分别是独立Project；目录嵌套、Git根目录和父目录Manifest都不改变用户本次选择的Project根。
 
 ## 5. Chat全局、Project配置和Pi资源是什么关系
 
@@ -403,7 +403,7 @@ workflows/<workflow-id>/
 | Agent基础提示词 | `SYSTEM.md`或`systemPromptOverride` | 替换Pi默认Coding Agent提示词；Planner等不同身份适用 |
 | Agent自定义提示词区域 | Chat基于`appendSystemPromptOverride`组成 | 每次使用该Agent时进入System Prompt |
 | 当前Session配置和本轮勾选的提示词规则 | 加入本轮Agent自定义区域 | 进入本轮快照；后续没有调整时继续沿用 |
-| 项目规范 | `AGENTS.md` | 由当前cwd自动提供 |
+| 项目规范 | `AGENTS.md` | Chat显式提供用户级文件和当前Project根目录文件，父目录和子目录都不自动继承 |
 | Pi Prompt Template | `/name`展开 | 形成User Message，不用于编码规范System Prompt |
 
 Chat把Agent自定义提示词区域作为“Workflow内Agent配置”的一部分。该区域可以由多个文件组成，例如：

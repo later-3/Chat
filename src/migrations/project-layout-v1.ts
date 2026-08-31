@@ -5,7 +5,7 @@ import Database from "better-sqlite3";
 import { ensureChatHome, resolveChatHome } from "../chat-home.js";
 import { MemoryStoreManager } from "../memory/manager.js";
 import type { MemoryKind, MemoryRecord, MemoryStatus, MemoryTarget } from "../memory/types.js";
-import { listProjects, openProject } from "../projects/registry.js";
+import { listProjects, openExistingProject } from "../projects/registry.js";
 
 export const PROJECT_LAYOUT_MIGRATION_VERSION = 1;
 
@@ -188,9 +188,10 @@ export async function migrateLegacyProjectLayout(options: {
   const chatHome = resolveChatHome(options.chatHome);
   let project;
   try {
-    project = await openProject({ path: sourceRoot, chatHome });
+    project = await openExistingProject({ path: sourceRoot, chatHome });
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("目录尚未初始化为Chat Project:")) return null;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT"
+      || (error instanceof Error && error.message.startsWith("找不到Project Manifest:"))) return null;
     throw error;
   }
 
@@ -205,13 +206,8 @@ export async function migrateLegacyProjectLayout(options: {
   const legacyRoot = resolve(project.projectRoot, ".chat");
   const legacySessions = resolve(legacyRoot, "sessions");
   const sessionCountBefore = await countFiles(project.sessionDir);
-  const isChatSystemProject = project.projectId === (process.env.CHAT_SYSTEM_PROJECT_ID?.trim() || "chat");
-  const copiedAgent = isChatSystemProject
-    ? await copyDirectoryIfPresent(resolve(legacyRoot, "agent"), home.agentDir)
-    : false;
-  const copiedConfig = isChatSystemProject
-    ? await copyFileIfAbsent(resolve(legacyRoot, "config.json"), home.configPath)
-    : false;
+  const copiedAgent = await copyDirectoryIfPresent(resolve(legacyRoot, "agent"), home.agentDir);
+  const copiedConfig = await copyFileIfAbsent(resolve(legacyRoot, "config.json"), home.configPath);
   await copyDirectoryIfPresent(legacySessions, project.sessionDir);
   const copiedRootWorkflowData = await copyDirectoryIfPresent(
     resolve(project.projectRoot, ".workflow-data"),

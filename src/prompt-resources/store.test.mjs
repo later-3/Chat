@@ -242,7 +242,6 @@ test("Personal and Project Prompt libraries stay isolated unless Targets are exp
     await openProject({
       path: projectRoot,
       chatHome,
-      createIfMissing: true,
       id: projectId,
       name: projectId,
     });

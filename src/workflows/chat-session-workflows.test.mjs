@@ -88,7 +88,6 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
   const project = await openProject({
     path: workspace,
     chatHome,
-    createIfMissing: true,
     id: "session-workflows",
     name: "Session Workflows",
   });
@@ -271,7 +270,6 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
   const project = await openProject({
     path: workspace,
     chatHome,
-    createIfMissing: true,
     id: "first-planning",
     name: "First Planning",
   });
@@ -347,7 +345,6 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
   const project = await openProject({
     path: workspace,
     chatHome: process.env.CHAT_HOME,
-    createIfMissing: true,
     id: "agent-config",
     name: "Agent Config",
   });
@@ -443,6 +440,10 @@ test("Agent inspection uses the same resolved Prompt, resources and tools as exe
   const workspace = path.join(base, "workspace");
   const skillDir = path.join(workspace, "skills", "review");
   fs.mkdirSync(skillDir, { recursive: true });
+  fs.writeFileSync(path.join(base, "AGENTS.md"), "Parent instructions must stay outside the Project.");
+  fs.writeFileSync(path.join(workspace, "AGENTS.md"), "Project-only instructions.");
+  fs.mkdirSync(path.join(chatHome, "agent"), { recursive: true });
+  fs.writeFileSync(path.join(chatHome, "agent", "AGENTS.md"), "Global Chat instructions.");
   fs.writeFileSync(path.join(skillDir, "SKILL.md"), [
     "---",
     "name: review",
@@ -473,6 +474,13 @@ test("Agent inspection uses the same resolved Prompt, resources and tools as exe
   assert.ok(inspection.skills.some((skill) => skill.name === "chat-architecture"));
   assert.match(reviewSkill.content, /Review the changed code carefully/);
   assert.match(inspection.prompt.final, /Review code/);
+  assert.match(inspection.prompt.final, /Global Chat instructions/);
+  assert.match(inspection.prompt.final, /Project-only instructions/);
+  assert.doesNotMatch(inspection.prompt.final, /Parent instructions/);
+  assert.deepEqual(inspection.prompt.contextFiles.map((file) => file.path), [
+    path.join(fs.realpathSync(chatHome), "agent", "AGENTS.md"),
+    path.join(fs.realpathSync(workspace), "AGENTS.md"),
+  ]);
   assert.ok(inspection.tools.some((tool) => tool.name === "read" && tool.active));
   assert.deepEqual(inspection.extensions, []);
 });
@@ -493,7 +501,6 @@ test("Rule Management Workflow loads its Skill and executes Chat-owned tools in 
   const project = await openProject({
     path: workspace,
     chatHome,
-    createIfMissing: true,
     id: "rule-management-project",
     name: "Rule Management Project",
   });
@@ -559,7 +566,6 @@ test("Pi auto-compaction remains part of the same Chat Session", { concurrency: 
   const project = await openProject({
     path: workspace,
     chatHome,
-    createIfMissing: true,
     id: "compaction",
     name: "Compaction",
   });

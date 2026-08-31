@@ -18,7 +18,7 @@ Pi当前实现提供以下事实：
 | 项目级资源 | `<cwd>/.pi/{skills,extensions,prompts,themes}` | 项目资源只对当前Project可见 |
 | Session | `~/.pi/agent/sessions/<encoded-cwd>/` | Session属于用户运行数据，不写入项目仓库 |
 | Session格式 | Pi `SessionManager`维护JSONL、分支、压缩和恢复 | Chat不修改Pi Session消息和树结构 |
-| Project Trust | 规范化路径写入`~/.pi/agent/trust.json`；项目可执行资源在信任后加载 | 打开Project和信任Project是两个独立动作 |
+| Project Trust | 规范化路径写入`~/.chat/agent/trust.json`；项目可执行资源在信任后加载 | 打开Project和信任Project是两个独立动作 |
 | Tool | Extension通过`registerTool()`注册，SDK通过`customTools`注入 | Chat不定义第二套可执行Tool类型 |
 
 Pi的Session目录按cwd编码，适合CLI直接进入一个目录的场景。Chat还需要处理项目简介、路径迁移、嵌套项目和浏览器项目切换，因此不能继续把绝对路径当作长期Project身份。
@@ -146,11 +146,11 @@ Content Lab同样是普通Project：
 
 规则：
 
-1. `id`使用小写字母、数字和连字符，创建后保持稳定。
+1. `id`使用小写字母、数字和连字符；默认由目录名加短唯一ID生成，创建后保持稳定。
 2. 项目移动或重新克隆时不修改`id`。
 3. Manifest不包含Session目录、Memory目录或Credential路径。
-4. 从某个子目录打开项目时，后端向上查找最近的`.chat/project.json`；最近的Manifest获胜。
-5. 因为使用最近祖先规则，`ziji-content-lab`可以在`ziji`单体仓库中保持独立Project身份。
+4. 用户选择哪个目录，哪个目录就是Project根；后端不向上查找父目录Manifest，也不向下扫描子Project。
+5. `A`与`A/B/C`可以各自拥有`.chat/project.json`，两者是并列、隔离的Project，不建立继承关系。
 
 ### 5.2 本机Registry
 
@@ -186,9 +186,9 @@ Manifest和Registry没有重复事实：
 ```text
 用户选择目录
   ↓
-后端规范化路径并向上查找最近Project Manifest
-  ├── 找到：校验Manifest并登记/刷新Project路径
-  └── 未找到：在用户明确确认后，以所选目录创建Project Manifest
+后端用realpath规范化该目录，它就是Project根
+  ├── 本目录已有Manifest：校验并登记/刷新Project路径
+  └── 本目录没有Manifest：直接在本目录初始化Project Manifest
   ↓
 返回projectId + cwd
   ↓
@@ -196,6 +196,20 @@ Manifest和Registry没有重复事实：
 ```
 
 项目切换器必须来自`GET /api/projects`，不能继续从Session列表反推。没有Session的Project也必须可见；路径暂时不可用的Project保留登记并显示不可用状态。
+
+### 5.4 决策场景与验证映射
+
+| 讨论场景 | 必须行为 | 代码入口 | 测试证据 |
+|---|---|---|---|
+| 首次打开目录`X` | `X`成为根并创建`X/.chat/project.json` | `openProject()` | `first open initializes the selected directory...` |
+| `A`已是Project，再打开`A/B/C` | `A/B/C`成为新Project，不归属`A` | `openProject()` | `the directory selected by the user is the exact Project root...` |
+| 同时打开两个同名`app`目录 | 生成不同`projectId`，两者均保留 | `createProjectId()` | `first open initializes the selected directory...` |
+| 重新打开或移动已有Project | 读取Manifest中原`projectId`，Session和Memory归属不变 | `openProject()` / Registry | `the same registered project survives a local path move` |
+| `A`已信任，`A/B/C`是独立Project | `A/B/C`不继承`A`的Trust | `getProjectTrust()` | `nested Projects keep exact independent trust decisions` |
+| Project根外有`AGENTS.md` | 不读取；只读用户级和当前Project根文件 | `loadChatAgentContextFiles()` | `Chat loads only global and the exact opened Project context` |
+| 从其他Project使用文件浏览 | 只允许Registry中已打开且可用的Project，不无条件放行Chat进程cwd | `getAllowedFileRoots()` | `file access comes from registered Projects...` |
+| 前端选择一个目录 | 调用`POST /api/projects/open`并完整校验返回结构 | `openChatProject()` | `opening a directory sends that exact path...` |
+| 打开Chat源码目录 | 走与其他Project相同的Manifest、Registry、Session和Trust路径 | 通用Project API | `the browser has no Chat-specific Project fallback...` |
 
 ## 6. 配置分层
 
@@ -266,7 +280,7 @@ Chat可以发现固定的`.chat/skills`、`.chat/extensions`和`.chat/prompts`�
 
 ### 7.3 Project Trust
 
-Project可发现不等于Project可执行。参考Pi，以下内容存在时必须经过Project Trust：
+Project已打开不等于Project可执行。参考Pi，以下内容存在时必须经过Project Trust：
 
 ```text
 .chat/config.json
@@ -278,8 +292,8 @@ Project可发现不等于Project可执行。参考Pi，以下内容存在时必�
 规则：
 
 1. 信任决定按规范化Project根路径保存到`~/.chat/agent/trust.json`。
-2. 最近祖先路径上的决定优先，语义与Pi一致。
-3. 未信任时仍可读取安全的Project Manifest和`AGENTS.md`，但不能加载Project Extension或会改变Agent能力的配置。
+2. Chat只接受当前Project根路径上的精确决定；目录嵌套的其他Project不继承父目录Trust。
+3. 未信任时仍可读取安全的Project Manifest和Project根目录的`AGENTS.md`，但不能加载Project Extension或会改变Agent能力的配置。
 4. Extension与项目Tool以当前Chat进程的用户权限执行；Project Trust不是沙箱。
 5. Pi Web必须在首次需要加载受保护资源前明确展示信任选择，不能把“出现在项目列表”当成自动信任。
 
@@ -369,7 +383,7 @@ Session、Workflow、Agent Resolve、资源Catalog、文件访问和Memory Tool�
 
 1. 启动时读取`GET /api/projects`，展示已登记Project，不依赖Session存在。
 2. 选择Project后恢复该Project最后使用的Session；没有Session时展示空白新会话。
-3. 选择目录走`POST /api/projects/open`，由后端完成Manifest发现、登记和安全校验。
+3. 选择目录走`POST /api/projects/open`，由后端把该精确目录登记或初始化为Project并做安全校验。
 4. Workflow和Agent配置页面同时显示用户级默认、Project覆盖和本轮临时选择的来源。
 5. Skill、Extension和Tool显示`user / project / workflow / runtime`来源及“已发现/已启用/本轮活动”状态。
 6. 切换Project时，文件浏览器、Session列表、Workflow Resolve、Memory筛选和运行请求一起切换到新的`ProjectContext`。
@@ -384,7 +398,7 @@ Content Lab的项目根是：
 /Users/xulater/Code/ziji/ziji-content-lab
 ```
 
-它虽然位于`/Users/xulater/Code/ziji` Git仓库内部，但通过最近Project Manifest规则保持独立身份：
+用户明确打开该目录时，它自身就是Project根；外层`ziji` Git仓库不参与身份判定：
 
 ```text
 /Users/xulater/Code/ziji/ziji-content-lab/.chat/project.json
@@ -395,7 +409,7 @@ Content Lab的项目根是：
 
 1. 在Pi Web打开该目录时，Chat登记或恢复`ziji-content-lab` Project。
 2. Agent实际cwd仍是外部项目目录，源码不移动到Chat仓库。
-3. 项目`AGENTS.md`继续按Pi项目上下文规则加载。
+3. 项目`AGENTS.md`继续进入Pi标准项目上下文区域，但Chat只读取`ziji-content-lab/AGENTS.md`，不继承外层`ziji`仓库或其他父目录文件。
 4. Content Lab的Project Skill、Extension、Prompt和Workflow/Agent覆盖不影响Chat Project。
 5. Session保存到`~/.chat/projects/ziji-content-lab/sessions`。
 6. Memory Agent默认看到Personal与`ziji-content-lab`记忆，也可以按用户明确目标访问其他已登记Project。

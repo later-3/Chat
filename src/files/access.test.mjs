@@ -3,7 +3,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { openProject } from "../projects/registry.ts";
+import { getAllowedFileRoots, normalizeSlashes } from "./access.ts";
 import { isExistingFilePathAllowed, isFilePathAllowed } from "./path-security.ts";
+
+test("file access comes from registered Projects rather than the Chat process directory", async (t) => {
+  const chatHome = fs.mkdtempSync(path.join(os.tmpdir(), "chat-file-roots-"));
+  t.after(() => fs.rmSync(chatHome, { recursive: true, force: true }));
+  const projectRoot = path.join(chatHome, "workspace");
+  fs.mkdirSync(projectRoot);
+
+  assert.equal((await getAllowedFileRoots(chatHome)).has(normalizeSlashes(process.cwd())), false);
+  await openProject({ path: projectRoot, chatHome });
+  assert.equal((await getAllowedFileRoots(chatHome)).has(normalizeSlashes(fs.realpathSync(projectRoot))), true);
+});
 
 test("file roots allow descendants but reject sibling prefixes and traversal", () => {
   const roots = new Set(["/workspace/repo"]);

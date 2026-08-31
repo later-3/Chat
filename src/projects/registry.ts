@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, join, parse, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { ensureChatHome, getChatHomePaths, resolveChatHome } from "../chat-home.js";
 import {
   parseProjectManifest,
@@ -82,24 +82,18 @@ export async function readProjectManifest(root: string): Promise<ChatProjectMani
   }
 }
 
-export async function findProjectManifest(startPath: string): Promise<{ root: string; manifest: ChatProjectManifest } | null> {
-  let current = await projectRoot(startPath);
-  const filesystemRoot = parse(current).root;
-  while (true) {
-    try {
-      return { root: current, manifest: await readProjectManifest(current) };
-    } catch (error) {
-      if (!(error instanceof Error) || !error.message.startsWith("找不到Project Manifest:")) throw error;
-    }
-    if (current === filesystemRoot) return null;
-    current = dirname(current);
-  }
+function isMissingManifest(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("找不到Project Manifest:");
 }
 
-function slug(value: string): string {
+function slug(value: string): string | undefined {
   const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  if (!PROJECT_ID_PATTERN.test(normalized)) throw new Error(`无法从目录名生成Project id: ${value}`);
-  return normalized;
+  return PROJECT_ID_PATTERN.test(normalized) ? normalized : undefined;
+}
+
+function createProjectId(root: string): string {
+  const prefix = slug(basename(root)) ?? "project";
+  return `${prefix}-${randomUUID().replaceAll("-", "").slice(0, 8)}`;
 }
 
 export async function createProjectManifest(options: {
@@ -109,7 +103,7 @@ export async function createProjectManifest(options: {
   readonly description?: string;
 }): Promise<ChatProjectManifest> {
   const root = await projectRoot(options.root);
-  const id = options.id?.trim() || slug(basename(root));
+  const id = options.id?.trim() || createProjectId(root);
   const manifest = parseProjectManifest({
     schemaVersion: 1,
     id,
@@ -122,7 +116,7 @@ export async function createProjectManifest(options: {
     if (existing.id !== manifest.id) throw new Error(`目录已经属于Project ${existing.id}`);
     return existing;
   } catch (error) {
-    if (!(error instanceof Error) || !error.message.startsWith("找不到Project Manifest:")) throw error;
+    if (!isMissingManifest(error)) throw error;
   }
   await atomicWriteJson(path, manifest);
   return manifest;
@@ -159,29 +153,64 @@ async function upsertRegistry(
   return result as ChatProjectRegistryEntry;
 }
 
-export async function openProject(options: {
+interface ProjectPathOptions {
   readonly path: string;
-  readonly createIfMissing?: boolean;
+  readonly chatHome?: string;
+}
+
+export interface OpenProjectOptions extends ProjectPathOptions {
   readonly id?: string;
   readonly name?: string;
   readonly description?: string;
-  readonly chatHome?: string;
-}): Promise<ChatProjectContext> {
+}
+
+async function registerProject(
+  root: string,
+  manifest: ChatProjectManifest,
+  chatHome: string,
+): Promise<ChatProjectContext> {
+  await upsertRegistry(root, manifest, chatHome);
+  return resolveProjectContext(manifest.id, chatHome);
+}
+
+/** Opens only the selected directory; it never searches parent or child directories. */
+export async function openExistingProject(options: ProjectPathOptions): Promise<ChatProjectContext> {
   const chatHome = resolve(options.chatHome ?? resolveChatHome());
-  const start = await projectRoot(options.path);
-  let located = await findProjectManifest(start);
-  if (located === null) {
-    if (options.createIfMissing !== true) throw new Error(`目录尚未初始化为Chat Project: ${start}`);
-    const manifest = await createProjectManifest({
-      root: start,
-      ...(options.id === undefined ? {} : { id: options.id }),
-      ...(options.name === undefined ? {} : { name: options.name }),
-      ...(options.description === undefined ? {} : { description: options.description }),
-    });
-    located = { root: start, manifest };
+  const root = await projectRoot(options.path);
+  return registerProject(root, await readProjectManifest(root), chatHome);
+}
+
+const projectOpens = new Map<string, Promise<ChatProjectContext>>();
+
+/** The directory explicitly opened by the user is the Project root. */
+export async function openProject(options: OpenProjectOptions): Promise<ChatProjectContext> {
+  const chatHome = resolve(options.chatHome ?? resolveChatHome());
+  const root = await projectRoot(options.path);
+  const key = `${chatHome}\0${root}`;
+  const active = projectOpens.get(key);
+  if (active !== undefined) return active;
+
+  const opened = (async () => {
+    let manifest: ChatProjectManifest;
+    try {
+      manifest = await readProjectManifest(root);
+    } catch (error) {
+      if (!isMissingManifest(error)) throw error;
+      manifest = await createProjectManifest({
+        root,
+        ...(options.id === undefined ? {} : { id: options.id }),
+        ...(options.name === undefined ? {} : { name: options.name }),
+        ...(options.description === undefined ? {} : { description: options.description }),
+      });
+    }
+    return registerProject(root, manifest, chatHome);
+  })();
+  projectOpens.set(key, opened);
+  try {
+    return await opened;
+  } finally {
+    if (projectOpens.get(key) === opened) projectOpens.delete(key);
   }
-  await upsertRegistry(located.root, located.manifest, chatHome);
-  return resolveProjectContext(located.manifest.id, chatHome);
 }
 
 async function available(entry: ChatProjectRegistryEntry): Promise<boolean> {

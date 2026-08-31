@@ -14,6 +14,7 @@ import {
 import type { ChatSession } from "../chat-session.js";
 import { getProjectTrust } from "../projects/trust.js";
 import { ensureChatArchitectureSkill } from "../skills/runtime.js";
+import { loadChatAgentContextFiles } from "./agent-context-files.js";
 import type { WorkflowAgentDefinition } from "./agent-config.js";
 
 export {
@@ -87,10 +88,16 @@ export async function createWorkflowAgentSession(
   const replacementSystemPrompt = agent.systemPrompt.mode === "replace"
     ? agent.systemPrompt.text
     : undefined;
+  const contextFiles = await loadChatAgentContextFiles({
+    agentDir: chatSession.agentDir,
+    projectRoot: chatSession.projectContext?.projectRoot ?? chatSession.cwd,
+  });
   const resourceLoader = new DefaultResourceLoader({
     cwd: chatSession.cwd,
     agentDir: chatSession.agentDir,
     settingsManager,
+    noContextFiles: true,
+    agentsFilesOverride: () => ({ agentsFiles: contextFiles }),
     ...(agent.resources.mode === "inherit"
       ? {}
       : {

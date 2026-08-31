@@ -209,7 +209,6 @@ test("session listing scans only the current Project session directory", { concu
   const project = await openProject({
     path: base,
     chatHome,
-    createIfMissing: true,
     id: "session-list",
     name: "Session List",
   });
@@ -253,7 +252,6 @@ test("session reads restore Workflow Agent configuration and pending Prompt prop
   const project = await openProject({
     path: base,
     chatHome,
-    createIfMissing: true,
     id: "workflow-config",
     name: "Workflow Config",
   });

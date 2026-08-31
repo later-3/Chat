@@ -9,7 +9,8 @@ export async function getProjectTrust(projectId: string, chatHome = resolveChatH
     ensureChatHome(chatHome),
   ]);
   const store = new ProjectTrustStore(home.agentDir);
-  const entry = store.getEntry(project.projectRoot);
+  const nearest = store.getEntry(project.projectRoot);
+  const entry = nearest?.path === project.projectRoot ? nearest : null;
   return {
     projectId,
     trusted: entry?.decision === true,

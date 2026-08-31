@@ -483,7 +483,7 @@ Pi中容易被统称为“Prompt”的内容实际有四种：
 |---|---|---|---|
 | 基础System Prompt | 默认Coding Prompt、`SYSTEM.md`、`systemPromptOverride` | 替换整个基础System Prompt | 定义Agent身份和根本职责 |
 | 追加System Prompt | `APPEND_SYSTEM.md`、`appendSystemPrompt`、`appendSystemPromptOverride` | System Prompt内部，紧接基础Prompt | 编码规范、输出规则、某个Agent长期规则和本轮附加规则 |
-| 项目上下文 | `AGENTS.md`、`CLAUDE.md`、`agentsFilesOverride` | System Prompt的`project_context`区域 | 当前cwd的项目规范和命令 |
+| 项目上下文 | `AGENTS.md`、`CLAUDE.md`、`agentsFilesOverride` | System Prompt的`project_context`区域 | Chat全局与当前Project根目录的规范和命令 |
 | Prompt Template | `prompts/*.md`、`/name` | 展开为User Message | 用户输入模板，不是System Prompt规则 |
 
 Skill是第五种资源：Skill名称和描述进入System Prompt，完整`SKILL.md`由模型按需读取。它不保证整份规则在每次调用中出现，因此不适合作为必须始终生效的编码规范。
@@ -501,6 +501,8 @@ AGENTS.md等项目上下文
   ↓
 Current working directory
 ```
+
+Pi CLI默认从cwd一直向文件系统根目录发现Context文件。Chat不能把机器上偶然存在的父目录当成产品全局配置，因此在统一Agent装配层设置`noContextFiles: true`，再通过`agentsFilesOverride`显式提供`~/.chat/agent`与用户明确打开的Project根文件。这样保留Pi的`project_context`格式和AgentSession行为，同时落实Chat的Personal + Project作用域。
 
 Pi默认只自动发现一个`SYSTEM.md`：受信项目的`.pi/SYSTEM.md`优先，否则使用`agentDir/SYSTEM.md`。`APPEND_SYSTEM.md`也是项目优先于全局。SDK可以通过`appendSystemPromptOverride(base)`保留Pi已发现的默认追加内容，再追加多个调用方提供的规则。
 

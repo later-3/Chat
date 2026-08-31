@@ -31,7 +31,6 @@ async function setupProject(root, id) {
   await openProject({
     path: projectRoot,
     chatHome,
-    createIfMissing: true,
     id,
     name: id,
   });

@@ -39,7 +39,6 @@ test("Personal and every Project use independent catalogs while explicit cross-P
     await openProject({
       path: projectRoot,
       chatHome,
-      createIfMissing: true,
       id: projectId,
       name: projectId,
     });

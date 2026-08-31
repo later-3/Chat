@@ -65,7 +65,6 @@ test("Project config is isolated and only applied after Pi Project Trust", async
   await openProject({
     path: projectRoot,
     chatHome,
-    createIfMissing: true,
     id: "project-config",
     name: "Project Config",
   });

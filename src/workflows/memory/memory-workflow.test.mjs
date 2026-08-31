@@ -70,7 +70,6 @@ test("Memory Workflow uses Pi Skill expansion and only custom Memory tools", { c
   const project = await openProject({
     path: workspace,
     chatHome: process.env.CHAT_HOME,
-    createIfMissing: true,
     id: "memory-workflow",
     name: "Memory Workflow",
   });

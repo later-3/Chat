@@ -11,7 +11,6 @@ async function initializeProject(base, workspace, projectId = "workspace") {
   await openProject({
     path: workspace,
     chatHome,
-    createIfMissing: true,
     id: projectId,
     name: projectId,
   });

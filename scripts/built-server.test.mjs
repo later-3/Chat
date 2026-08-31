@@ -408,6 +408,42 @@ test("the default Later account creates a signed HttpOnly session", async () => 
   assert.equal((await devicesResponse.json()).devices[0].url, "https://chat.ai4child.asia");
 });
 
+test("the production Project API treats each explicitly opened nested directory as an independent root", async () => {
+  const parent = path.join(runtimeRoot, "parent-project");
+  const child = path.join(parent, "nested", "child-project");
+  fs.mkdirSync(child, { recursive: true });
+
+  const open = async (directory) => {
+    const response = await authenticatedFetch("/api/projects/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: directory }),
+    });
+    assert.equal(response.status, 200, await response.clone().text());
+    return response.json();
+  };
+  const openedParent = await open(parent);
+  const openedChild = await open(child);
+
+  assert.equal(openedParent.projectRoot, fs.realpathSync(parent));
+  assert.equal(openedChild.projectRoot, fs.realpathSync(child));
+  assert.notEqual(openedParent.projectId, openedChild.projectId);
+  assert.equal(fs.existsSync(path.join(parent, ".chat", "project.json")), true);
+  assert.equal(fs.existsSync(path.join(child, ".chat", "project.json")), true);
+
+  const homeResponse = await authenticatedFetch("/api/home");
+  assert.equal(homeResponse.status, 200);
+  const home = await homeResponse.json();
+  assert.deepEqual(Object.keys(home), ["home"]);
+
+  const forgedIdentity = await authenticatedFetch("/api/projects/open", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: child, id: "chat" }),
+  });
+  assert.equal(forgedIdentity.status, 400);
+});
+
 test("session list and detail come from the isolated Chat session directory", async () => {
   const listResponse = await authenticatedFetch(`/api/sessions?projectId=${projectId}`);
   assert.equal(listResponse.status, 200);

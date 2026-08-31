@@ -146,6 +146,8 @@ Chat只使用Project Registry解析出的目录：
 
 Session还通过Pi CustomEntry保存两类Chat事实：每个Workflow的最新Agent配置，以及每轮执行真正使用的冻结配置。配置作用域是`Session → Workflow → Agent`；同名Agent出现在不同Workflow中不会共享配置。Pi Web刷新Session后从Backend恢复这些配置。
 
+Chat关闭Pi从cwd无限向父目录发现`AGENTS.md`或`CLAUDE.md`的默认行为。统一Agent装配层只显式提供两类Context文件：`~/.chat/agent`中的用户级文件，以及用户当前明确打开的Project根目录中的文件。父目录和子目录Context都不自动读取。文件仍由Pi放入标准`project_context`区域，执行和Agent检查页面使用同一结果。
+
 ## 5.3 Prompt资源
 
 规则与经验按Target保存在Chat Home运行数据中：个人资源位于`~/.chat/prompt-resources`，项目资源位于`~/.chat/projects/<projectId>/prompt-resources`。每个已确认资源使用追加版本链，草稿与已确认资源分目录保存。资源包含目的、Prompt内容、标签、状态和Session来源；归档产生新版本，不删除历史。Rule Curator通过只读Pi Tool读取当前Session活动分支，自行选择相关Pi Entry ID并保存上下文快照，用户不需要接触内部ID；创建工具再次校验这些Entry属于当前活动分支的可引用范围。项目源码目录中的`.chat/prompts`仍是可随仓库移动的Pi Prompt文件，两者不混用。
