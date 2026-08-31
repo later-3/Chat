@@ -148,7 +148,7 @@ Session还通过Pi CustomEntry保存两类Chat事实：每个Workflow的最新Ag
 
 ## 5.3 Prompt资源
 
-规则与经验按Target保存在Chat Home运行数据中：个人资源位于`~/.chat/prompt-resources`，项目资源位于`~/.chat/projects/<projectId>/prompt-resources`。每个已确认资源使用追加版本链，草稿与已确认资源分目录保存。资源包含目的、Prompt内容、标签、状态和Session来源；归档产生新版本，不删除历史。项目源码目录中的`.chat/prompts`仍是可随仓库移动的Pi Prompt文件，两者不混用。
+规则与经验按Target保存在Chat Home运行数据中：个人资源位于`~/.chat/prompt-resources`，项目资源位于`~/.chat/projects/<projectId>/prompt-resources`。每个已确认资源使用追加版本链，草稿与已确认资源分目录保存。资源包含目的、Prompt内容、标签、状态和Session来源；归档产生新版本，不删除历史。Rule Curator通过只读Pi Tool读取当前Session活动分支，自行选择相关Pi Entry ID并保存上下文快照，用户不需要接触内部ID；创建工具再次校验这些Entry属于当前活动分支的可引用范围。项目源码目录中的`.chat/prompts`仍是可随仓库移动的Pi Prompt文件，两者不混用。
 
 Agent配置通过资源ID选择Prompt资源。本轮开始时Chat把资源解析到具体版本并写入Turn配置快照，随后把该版本内容放入Chat自定义System Prompt区域。规则管理Workflow使用普通Pi AgentSession、一个Workflow专用Skill和Chat Custom Tools完成检索、草稿、确认提交与Agent规则建议；用户通过后续对话确认应用或拒绝建议，拒绝不会修改目标Agent配置。
 

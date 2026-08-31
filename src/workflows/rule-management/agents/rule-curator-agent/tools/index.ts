@@ -1,5 +1,5 @@
 import { Type } from "@earendil-works/pi-ai";
-import type { SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { getStoredAgentConfigs, resolveChatConfig } from "../../../../../chat-config.js";
 import {
@@ -21,6 +21,11 @@ import {
   collectChatPromptResourceProposals,
   resolveChatPromptResourceProposal,
 } from "../../../../prompt-resource-proposal.js";
+import {
+  collectChatWorkflowMessages,
+  collectChatWorkflowStageMarkers,
+  type ChatWorkflowStageMarker,
+} from "../../../../workflow-stage.js";
 import {
   collectLatestChatWorkflowConfigurations,
   setChatWorkflowAgentPromptResources,
@@ -49,6 +54,126 @@ const resourceSelectionSchema = Type.Object({
   resourceId: Type.String({ minLength: 1, description: "Prompt资源ID" }),
   reason: Type.String({ minLength: 1, description: "选择该资源的具体原因" }),
 }, { additionalProperties: false });
+
+const SESSION_CONTEXT_DEFAULT_LIMIT = 24;
+const SESSION_CONTEXT_MAX_TEXT_CHARS = 6_000;
+
+interface SessionSourceEntry {
+  readonly entryId: string;
+  readonly timestamp: string;
+  readonly role: string;
+  readonly text: string;
+  readonly textTruncated: boolean;
+  readonly currentRequest: boolean;
+  readonly workflow?: {
+    readonly invocationId: string;
+    readonly workflowId: string;
+    readonly stageId: string;
+    readonly agentId: string;
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function contentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.flatMap((block) => (
+    isRecord(block) && block.type === "text" && typeof block.text === "string" ? [block.text] : []
+  )).join("\n");
+}
+
+function messageText(message: unknown): string {
+  return isRecord(message) ? contentText(message.content) : "";
+}
+
+function entryInvocationId(entry: SessionEntry): string | undefined {
+  if (entry.type !== "custom" || !isRecord(entry.data)) return undefined;
+  return typeof entry.data.invocationId === "string" ? entry.data.invocationId : undefined;
+}
+
+function truncateSourceText(text: string): { text: string; textTruncated: boolean } {
+  if (text.length <= SESSION_CONTEXT_MAX_TEXT_CHARS) return { text, textTruncated: false };
+  return { text: text.slice(0, SESSION_CONTEXT_MAX_TEXT_CHARS), textTruncated: true };
+}
+
+function workflowReference(stage: ChatWorkflowStageMarker | undefined) {
+  return stage === undefined
+    ? undefined
+    : {
+        invocationId: stage.invocationId,
+        workflowId: stage.workflowId,
+        stageId: stage.stageId,
+        agentId: stage.agentId,
+      };
+}
+
+function collectSessionSourceEntries(context: RuleManagementToolContext): SessionSourceEntry[] {
+  const branch = context.sessionManager.getBranch();
+  const boundaryIndex = branch.findIndex((entry) => entryInvocationId(entry) === context.invocationId);
+  const currentInvocationStart = boundaryIndex === -1 ? branch.length : boundaryIndex;
+  let currentUserEntryId: string | undefined;
+  for (let index = currentInvocationStart; index < branch.length; index += 1) {
+    const entry = branch[index];
+    if (entry === undefined) continue;
+    if (entry.type === "message" && entry.message.role === "user") currentUserEntryId = entry.id;
+  }
+
+  const stages = new Map(
+    collectChatWorkflowStageMarkers(branch).map((stage) => [stage.entryId, stage]),
+  );
+  const workflowMessages = new Map(
+    collectChatWorkflowMessages(branch).map((message) => [message.entryId, message]),
+  );
+  const sourceEntries: SessionSourceEntry[] = [];
+  let activeStage: ChatWorkflowStageMarker | undefined;
+
+  for (let index = 0; index < branch.length; index += 1) {
+    const entry = branch[index];
+    if (entry === undefined) continue;
+    const stage = stages.get(entry.id);
+    if (stage !== undefined) activeStage = stage;
+    const isCurrentRequest = entry.id === currentUserEntryId;
+    if (index >= currentInvocationStart && !isCurrentRequest) continue;
+
+    const workflowMessage = workflowMessages.get(entry.id);
+    const rawText = workflowMessage === undefined
+      ? entry.type === "message"
+        ? messageText(entry.message)
+        : entry.type === "custom_message"
+          ? contentText(entry.content)
+          : entry.type === "compaction" || entry.type === "branch_summary"
+            ? entry.summary
+            : ""
+      : messageText(workflowMessage.message);
+    const text = isCurrentRequest ? context.userPrompt : rawText;
+    if (text.trim() === "") continue;
+    const excerpt = truncateSourceText(text);
+    const workflow = workflowMessage === undefined
+      ? workflowReference(activeStage)
+      : workflowReference(workflowMessage);
+    const role = workflowMessage === undefined
+      ? entry.type === "message"
+        ? entry.message.role
+        : entry.type === "compaction"
+          ? "compactionSummary"
+          : entry.type === "branch_summary"
+            ? "branchSummary"
+            : "custom"
+      : "assistant";
+    sourceEntries.push({
+      entryId: entry.id,
+      timestamp: entry.timestamp,
+      role,
+      ...excerpt,
+      currentRequest: isCurrentRequest,
+      ...(workflow === undefined ? {} : { workflow }),
+    });
+  }
+  return sourceEntries;
+}
 
 function normalizeTarget(value: { type: "personal" } | { type: "project"; projectId: string }): PromptResourceTarget {
   return value.type === "personal" ? { type: "personal" } : { type: "project", projectId: value.projectId };
@@ -86,10 +211,13 @@ function requireTarget(workflowId: string, agentId: string) {
   return { workflow, agent };
 }
 
-function validateEntryIds(manager: SessionManager, entryIds: readonly string[]): void {
-  const known = new Set(manager.getEntries().map((entry) => entry.id));
-  const unknown = entryIds.filter((entryId) => !known.has(entryId));
-  if (unknown.length > 0) throw new Error(`来源Entry不属于当前Session: ${unknown.join(", ")}`);
+function validateEntryIds(context: RuleManagementToolContext, entryIds: readonly string[]): void {
+  if (entryIds.length === 0) throw new Error("Rule Agent创建Session来源草稿时必须选择至少一个相关Entry");
+  const available = new Set(collectSessionSourceEntries(context).map((entry) => entry.entryId));
+  const invalid = entryIds.filter((entryId) => !available.has(entryId));
+  if (invalid.length > 0) {
+    throw new Error(`来源Entry不属于当前Session活动分支的可引用上下文: ${invalid.join(", ")}`);
+  }
 }
 
 function selectionKey(selection: { readonly target: PromptResourceTarget; readonly id: string }): string {
@@ -100,6 +228,32 @@ const author = (agentId: string): PromptResourceAuthor => ({ type: "agent", agen
 
 export function createRuleManagementTools(context: RuleManagementToolContext): ToolDefinition[] {
   return [
+    defineTool({
+      name: "session_context_read",
+      label: "读取Session上下文",
+      description: "分页读取当前Session活动分支中的可引用对话及其Pi Entry ID，自动排除本次规则管理操作产生的Assistant与Tool记录。",
+      parameters: Type.Object({
+        beforeEntryId: Type.Optional(Type.String({ minLength: 1 })),
+        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })),
+      }, { additionalProperties: false }),
+      async execute(_callId, params, signal) {
+        assertNotAborted(signal);
+        const entries = collectSessionSourceEntries(context);
+        const end = params.beforeEntryId === undefined
+          ? entries.length
+          : entries.findIndex((entry) => entry.entryId === params.beforeEntryId);
+        if (end === -1) throw new Error(`找不到可引用的Session Entry: ${params.beforeEntryId}`);
+        const limit = params.limit ?? SESSION_CONTEXT_DEFAULT_LIMIT;
+        const start = Math.max(0, end - limit);
+        const page = entries.slice(start, end);
+        return textResult({
+          sessionId: context.sessionManager.getSessionId(),
+          entries: page,
+          hasMore: start > 0,
+          ...(start > 0 && page[0] !== undefined ? { nextBeforeEntryId: page[0].entryId } : {}),
+        });
+      },
+    }),
     defineTool({
       name: "prompt_resource_search",
       label: "搜索规则与经验",
@@ -167,12 +321,12 @@ export function createRuleManagementTools(context: RuleManagementToolContext): T
         content: Type.String(),
         tags: Type.Optional(Type.Array(Type.String())),
         context: Type.String({ description: "概括形成这条规则的当前对话背景" }),
-        entryIds: Type.Optional(Type.Array(Type.String())),
+        entryIds: Type.Array(Type.String(), { minItems: 1, maxItems: 128 }),
         status: Type.Optional(Type.Union([Type.Literal("active"), Type.Literal("archived")])),
       }, { additionalProperties: false }),
       async execute(_callId, params, signal) {
         assertNotAborted(signal);
-        validateEntryIds(context.sessionManager, params.entryIds ?? []);
+        validateEntryIds(context, params.entryIds);
         const target = params.target === undefined ? currentProjectTarget(context) : normalizeTarget(params.target);
         const draft = await (await getPromptResourceStore(target, context.chatHome)).createDraft({
           ...(params.baseResourceId === undefined ? {} : { baseResourceId: params.baseResourceId }),
@@ -187,7 +341,7 @@ export function createRuleManagementTools(context: RuleManagementToolContext): T
             projectId: context.projectId,
             sessionId: context.sessionManager.getSessionId(),
             workflowInvocationId: context.invocationId,
-            entryIds: params.entryIds ?? [],
+            entryIds: params.entryIds,
             context: params.context,
             capturedAt: new Date().toISOString(),
           }],

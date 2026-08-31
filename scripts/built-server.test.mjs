@@ -519,6 +519,7 @@ test("Rule Curator inspection uses the unified Agent path with its Skill and Too
   assert.deepEqual(
     body.tools.filter((tool) => tool.active).map((tool) => tool.name),
     [
+      "session_context_read",
       "prompt_resource_search",
       "prompt_resource_get",
       "prompt_resource_list_drafts",

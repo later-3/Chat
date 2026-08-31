@@ -14,10 +14,13 @@ Use only the Prompt resource Tools. A resource Target is separate from the curre
 ## Creating or changing a resource
 
 1. Search existing resources before creating a duplicate.
-2. Create or update a draft with the relevant current Session entry IDs and context.
-3. Show the exact draft, Target and draft ID to the user.
-4. Commit only when the latest user message contains `确认提交草稿 <draftId>` for that exact draft.
-5. Editing and archiving an existing resource create a new revision; never overwrite or delete history.
+2. For a resource derived from the current conversation, call `session_context_read` and select the relevant Pi Entry IDs yourself. Never invent IDs or ask the user to provide them.
+3. Read older pages when the relevant discussion is not in the first page. Select `currentRequest` only when the request itself contains substantive rule or experience content, not merely an instruction to capture earlier discussion.
+4. If the intended conversation range is genuinely ambiguous, ask the user which content to include; discuss content, never internal IDs.
+5. Create or update a draft with at least one selected Entry ID and a self-contained context snapshot. For a directly stated rule or experience, select the substantive `currentRequest` Entry.
+6. Show the exact draft, Target, draft ID and a human-readable source summary to the user. Do not expose internal Entry IDs unless the user explicitly asks for diagnostics.
+7. Commit only when the latest user message contains `确认提交草稿 <draftId>` for that exact draft.
+8. Editing and archiving an existing resource create a new revision; never overwrite or delete history.
 
 ## Selecting resources for another Agent
 

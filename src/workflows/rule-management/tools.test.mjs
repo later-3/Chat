@@ -11,6 +11,7 @@ import {
   collectLatestChatWorkflowConfigurations,
   setChatWorkflowAgentPromptResources,
 } from "../workflow-configuration.ts";
+import { appendChatWorkflowAgentInput, appendChatWorkflowStage } from "../workflow-stage.ts";
 import { createRuleManagementTools } from "./agents/rule-curator-agent/tools/index.ts";
 
 function resultJson(result) {
@@ -61,11 +62,112 @@ async function createResource(store, title) {
   return store.commitDraft(draft.id);
 }
 
+function assistantMessage(text) {
+  return {
+    role: "assistant",
+    provider: "test",
+    model: "test-model",
+    api: "test",
+    content: [{ type: "text", text }],
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: 2,
+  };
+}
+
+test("Rule Agent reads native Pi Entry IDs and persists only active-branch conversation sources", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-rule-tools-context-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const project = await setupProject(root, "context-project");
+  const manager = SessionManager.inMemory(project.projectRoot);
+  appendChatWorkflowStage(manager, {
+    invocationId: "discussion-1",
+    workflowId: "minimal-pi-coding-agent",
+    stageId: "execute",
+    agentId: "pi-coding-agent",
+  });
+  const userEntryId = manager.appendMessage({
+    role: "user",
+    content: "移动端还要处理底部安全区。",
+    timestamp: 1,
+  });
+  const assistantEntryId = manager.appendMessage(assistantMessage("把安全区作为Chat前端规则。"));
+  manager.branch(userEntryId);
+  const abandonedEntryId = manager.appendMessage(assistantMessage("这条回复位于已放弃的分支。"));
+  manager.branch(assistantEntryId);
+
+  appendChatWorkflowStage(manager, {
+    invocationId: "capture-1",
+    workflowId: "rule-management",
+    stageId: "manage",
+    agentId: "rule-curator-agent",
+  });
+  appendChatWorkflowAgentInput(manager, {
+    invocationId: "capture-1",
+    workflowId: "rule-management",
+    stageId: "manage",
+    agentId: "rule-curator-agent",
+    userPrompt: "把刚才关于移动端安全区的讨论整理成规则。",
+  });
+  const currentUserEntryId = manager.appendMessage({
+    role: "user",
+    content: "/skill:rule-library 把刚才关于移动端安全区的讨论整理成规则。",
+    timestamp: 3,
+  });
+  const currentAssistantEntryId = manager.appendMessage(assistantMessage("正在读取Session上下文。"));
+  const tools = createRuleManagementTools(toolContext(
+    project,
+    manager,
+    "把刚才关于移动端安全区的讨论整理成规则。",
+    "capture-1",
+  ));
+
+  const context = resultJson(await execute(tools, "session_context_read", { limit: 20 }));
+  assert.equal(context.sessionId, manager.getSessionId());
+  assert.deepEqual(context.entries.map((entry) => entry.entryId), [userEntryId, assistantEntryId, currentUserEntryId]);
+  assert.equal(context.entries[0].workflow.invocationId, "discussion-1");
+  assert.equal(context.entries[2].currentRequest, true);
+  assert.equal(context.entries[2].text, "把刚才关于移动端安全区的讨论整理成规则。");
+  assert.equal(context.entries.some((entry) => entry.entryId === currentAssistantEntryId), false);
+
+  const created = resultJson(await execute(tools, "prompt_resource_create_draft", {
+    kind: "rule",
+    title: "Chat移动端安全区",
+    purpose: "避免PWA底部操作被系统区域遮挡",
+    content: "移动端固定操作区必须适配系统安全区。",
+    tags: ["frontend", "mobile"],
+    context: "用户与Agent在当前Session讨论了Chat PWA底部安全区。",
+    entryIds: [userEntryId, assistantEntryId],
+  }));
+  assert.deepEqual(created.draft.sources[0].entryIds, [userEntryId, assistantEntryId]);
+
+  await assert.rejects(execute(tools, "prompt_resource_create_draft", {
+    kind: "rule",
+    title: "Invalid source",
+    purpose: "Reject invalid source entries",
+    content: "Do not persist invalid source entries.",
+    context: "Invalid source test.",
+    entryIds: [abandonedEntryId, currentAssistantEntryId],
+  }), /当前Session活动分支的可引用上下文/);
+});
+
 test("Rule Agent commits only the Draft ID confirmed in the current turn", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-rule-tools-confirm-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const project = await setupProject(root, "confirm-project");
   const manager = SessionManager.inMemory(project.projectRoot);
+  const sourceEntryId = manager.appendMessage({
+    role: "user",
+    content: "Keep module and storage boundaries explicit.",
+    timestamp: 1,
+  });
   const createTools = createRuleManagementTools(toolContext(project, manager, "创建两条规则草稿", "invocation-1"));
   const create = (title) => execute(createTools, "prompt_resource_create_draft", {
     kind: "rule",
@@ -74,7 +176,7 @@ test("Rule Agent commits only the Draft ID confirmed in the current turn", async
     content: "Keep every public interface narrow.",
     tags: ["architecture"],
     context: "The current Session identified an oversized module.",
-    entryIds: [],
+    entryIds: [sourceEntryId],
   }).then(resultJson);
   const first = await create("Keep boundaries explicit");
   const second = await create("Keep storage explicit");
