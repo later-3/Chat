@@ -209,3 +209,15 @@ http://127.0.0.1:43112/
 ```
 
 这些目录都不属于Chat源码仓库。部署到其他环境时，使用`--recurse-submodules`克隆Chat，准备两个私有子模块的Git读取凭证，安装依赖、构建Pi、准备`~/.chat/agent`私有配置并执行`pnpm verify`。必须在目标操作系统和CPU架构上构建，不能把其他机器的`.output`直接复制过去。Pi Web不再作为独立后端或独立服务启动；完整的可移植部署步骤、私有配置清单和验收命令见[部署指南](./docs/deployment.md)。
+
+# 启动脚本
+```bash
+# 默认：占用端口 → 报错退出，并提示可用 --kill
+scripts/dev-start.sh
+
+# 带上 --kill：自动终止占用端口的进程，然后正常拉起前后端
+scripts/dev-start.sh --kill
+
+# 选项可组合
+scripts/dev-start.sh --kill --backend-port 44112 --frontend-port 31145
+```
