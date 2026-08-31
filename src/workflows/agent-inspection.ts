@@ -62,6 +62,15 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
     defaultAgent: options.defaultAgent,
     cwd,
     ...(projectContext === undefined ? {} : { chatHome: projectContext.chatHome }),
+    ...(projectContext !== undefined && options.workflowId !== undefined
+      ? {
+          durableModelConfig: {
+            projectDataDir: projectContext.projectDataDir,
+            workflowId: options.workflowId,
+            agentId: options.agentId ?? options.defaultAgent.id,
+          },
+        }
+      : {}),
     ...(options.selection === undefined ? {} : { selection: options.selection }),
   });
   const sessionManager = SessionManager.inMemory(cwd);

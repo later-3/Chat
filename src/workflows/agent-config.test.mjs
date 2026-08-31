@@ -8,6 +8,11 @@ import {
 } from "./agent-config.ts";
 import { allowFileRoot } from "../files/access.ts";
 import { resolveWorkflowAgentDefinition } from "./agent-config-loader.ts";
+import {
+  clearAgentModelConfig,
+  readAgentModelConfig,
+  writeAgentModelConfig,
+} from "./agent-model-config.ts";
 
 const defaultAgent = parseWorkflowAgentDefinition({
   schemaVersion: 1,
@@ -200,4 +205,101 @@ test("the current Agent resource selection overrides configuration files", async
     extensionPaths: [path.join(canonicalDir, "extensions/one.ts")],
     pluginSources: ["git:https://example.com/plugin.git"],
   });
+});
+
+test("durable Agent model configuration persists and applies over the Workflow default", async (t) => {
+  const projectDataDir = fixture(t);
+  const config = await writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", {
+    schemaVersion: 1,
+    model: { provider: "durable-provider", modelId: "durable-model" },
+    thinkingLevel: "high",
+  });
+  assert.deepEqual(config, {
+    schemaVersion: 1,
+    model: { provider: "durable-provider", modelId: "durable-model" },
+    thinkingLevel: "high",
+  });
+  assert.deepEqual(await readAgentModelConfig(projectDataDir, "workflow-1", "test-agent"), config);
+
+  const resolved = await resolveWorkflowAgentDefinition({
+    defaultAgent,
+    cwd: projectDataDir,
+    durableModelConfig: { projectDataDir, workflowId: "workflow-1", agentId: "test-agent" },
+  });
+  assert.deepEqual(resolved.model, { provider: "durable-provider", modelId: "durable-model" });
+  assert.equal(resolved.thinkingLevel, "high");
+  assert.equal(resolved.sources.at(-1).kind, "durable-config");
+});
+
+test("durable model configuration wins over selected configuration files", async (t) => {
+  const dir = fixture(t);
+  fs.writeFileSync(path.join(dir, "append.json"), JSON.stringify({
+    schemaVersion: 1,
+    model: { provider: "file-provider", modelId: "file-model" },
+  }));
+  const projectDataDir = path.join(dir, "data");
+  fs.mkdirSync(projectDataDir, { recursive: true });
+  await writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", {
+    schemaVersion: 1,
+    model: { provider: "durable-provider", modelId: "durable-model" },
+  });
+
+  const resolved = await resolveWorkflowAgentDefinition({
+    defaultAgent,
+    cwd: dir,
+    selection: { append: ["append.json"] },
+    durableModelConfig: { projectDataDir, workflowId: "workflow-1", agentId: "test-agent" },
+  });
+  assert.deepEqual(resolved.model, { provider: "durable-provider", modelId: "durable-model" });
+  assert.deepEqual(resolved.sources.map((source) => source.kind), [
+    "workflow-default",
+    "append",
+    "durable-config",
+  ]);
+});
+
+test("clearing the durable model configuration restores the Workflow default", async (t) => {
+  const projectDataDir = fixture(t);
+  await writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", {
+    schemaVersion: 1,
+    model: { provider: "durable-provider", modelId: "durable-model" },
+  });
+  assert.equal(await clearAgentModelConfig(projectDataDir, "workflow-1", "test-agent"), true);
+  assert.equal(await clearAgentModelConfig(projectDataDir, "workflow-1", "test-agent"), false);
+  assert.equal(await readAgentModelConfig(projectDataDir, "workflow-1", "test-agent"), undefined);
+
+  const resolved = await resolveWorkflowAgentDefinition({
+    defaultAgent,
+    cwd: projectDataDir,
+    durableModelConfig: { projectDataDir, workflowId: "workflow-1", agentId: "test-agent" },
+  });
+  assert.equal(resolved.model, undefined);
+  assert.deepEqual(resolved.sources, [{ kind: "workflow-default" }]);
+});
+
+test("durable model configuration rejects unknown fields, empty configs, and invalid entity ids", async (t) => {
+  const projectDataDir = fixture(t);
+  await assert.rejects(
+    writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", { schemaVersion: 1, apiKey: "secret" }),
+    /未知字段/,
+  );
+  await assert.rejects(
+    writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", { schemaVersion: 1 }),
+    /至少需要model或thinkingLevel/,
+  );
+  await assert.rejects(
+    writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", {
+      schemaVersion: 1,
+      thinkingLevel: "mega",
+    }),
+    /thinkingLevel无效/,
+  );
+  await assert.rejects(
+    writeAgentModelConfig(projectDataDir, "../escape", "test-agent", {
+      schemaVersion: 1,
+      model: { provider: "p", modelId: "m" },
+    }),
+    /workflowId格式无效/,
+  );
+  assert.equal(await readAgentModelConfig(projectDataDir, "workflow-1", "test-agent"), undefined);
 });

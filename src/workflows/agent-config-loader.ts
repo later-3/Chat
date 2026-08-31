@@ -3,6 +3,7 @@ import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAllowedFileRoots, isFilePathAllowed } from "../files/access.js";
 import { getPromptResourceStore } from "../prompt-resources/store.js";
+import { agentModelConfigPath, readAgentModelConfig } from "./agent-model-config.js";
 import {
   promptResourceTargetKey,
   type PromptResourceRevision,
@@ -214,6 +215,12 @@ export async function resolveWorkflowAgentDefinition(options: {
   readonly selection?: AgentConfigSelection;
   readonly cwd: string;
   readonly chatHome?: string;
+  /** Chat-owned per-Agent model configuration persisted per Project; applied last so the most recent user choice wins. */
+  readonly durableModelConfig?: {
+    readonly projectDataDir: string;
+    readonly workflowId: string;
+    readonly agentId: string;
+  };
 }): Promise<ResolvedWorkflowAgentDefinition> {
   const appendPaths = options.selection?.append ?? [];
   const promptPaths = options.selection?.promptFiles ?? [];
@@ -285,6 +292,29 @@ export async function resolveWorkflowAgentDefinition(options: {
       resourceTarget: selected.target,
       revision: resource.revision,
     });
+  }
+
+  if (options.durableModelConfig !== undefined) {
+    const durable = await readAgentModelConfig(
+      options.durableModelConfig.projectDataDir,
+      options.durableModelConfig.workflowId,
+      options.durableModelConfig.agentId,
+    );
+    if (durable !== undefined) {
+      current = {
+        ...current,
+        ...(durable.model === undefined ? {} : { model: durable.model }),
+        ...(durable.thinkingLevel === undefined ? {} : { thinkingLevel: durable.thinkingLevel }),
+      };
+      sources.push({
+        kind: "durable-config",
+        path: agentModelConfigPath(
+          options.durableModelConfig.projectDataDir,
+          options.durableModelConfig.workflowId,
+          options.durableModelConfig.agentId,
+        ),
+      });
+    }
   }
 
   return {

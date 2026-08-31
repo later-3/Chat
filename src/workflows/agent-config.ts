@@ -77,7 +77,7 @@ export interface AgentConfigSelection {
 }
 
 export interface AgentConfigSource {
-  readonly kind: "workflow-default" | "primary" | "append" | "prompt" | "prompt-resource";
+  readonly kind: "workflow-default" | "durable-config" | "primary" | "append" | "prompt" | "prompt-resource";
   readonly path?: string;
   readonly resourceId?: string;
   readonly resourceTarget?: PromptResourceTarget;
@@ -229,13 +229,19 @@ function parseResources(value: unknown): WorkflowAgentResources {
   };
 }
 
-function parseModel(value: unknown): AgentModelConfig {
+export function parseModel(value: unknown): AgentModelConfig {
   if (!isRecord(value)) throw new Error("model必须是对象");
   assertKnownFields(value, ["provider", "modelId"]);
   return {
     provider: readNonEmptyString(value.provider, "model.provider"),
     modelId: readNonEmptyString(value.modelId, "model.modelId"),
   };
+}
+
+export function parseThinkingLevel(value: unknown): ThinkingLevel {
+  const level = readNonEmptyString(value, "thinkingLevel") as ThinkingLevel;
+  if (!THINKING_LEVELS.has(level)) throw new Error(`thinkingLevel无效: ${level}`);
+  return level;
 }
 
 export function parseRawAgentConfig(value: unknown, complete: boolean): RawAgentConfig {
@@ -252,8 +258,7 @@ export function parseRawAgentConfig(value: unknown, complete: boolean): RawAgent
   }
   const thinkingLevel = value.thinkingLevel === undefined
     ? undefined
-    : readNonEmptyString(value.thinkingLevel, "thinkingLevel") as ThinkingLevel;
-  if (thinkingLevel !== undefined && !THINKING_LEVELS.has(thinkingLevel)) throw new Error(`thinkingLevel无效: ${thinkingLevel}`);
+    : parseThinkingLevel(value.thinkingLevel);
   return {
     schemaVersion: 1,
     ...(id === undefined ? {} : { id }),

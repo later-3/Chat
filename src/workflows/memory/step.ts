@@ -23,6 +23,7 @@ export async function runMemoryAgentStep(
     agents: [MEMORY_AGENT],
     cwd: chatSession.cwd,
     ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
+    ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),
     ...(input.defaultAgentConfigs === undefined ? {} : { defaults: input.defaultAgentConfigs }),
     ...(input.agentConfigs === undefined ? {} : { adjustments: input.agentConfigs }),
   });

@@ -234,13 +234,15 @@ export async function ensureProjectDataLayout(projectId: string, chatHome = reso
   const sessionDir = resolve(projectDataDir, "sessions");
   const memoryDir = resolve(projectDataDir, "memory");
   const promptResourceDir = resolve(projectDataDir, "prompt-resources");
+  const workflowsDir = resolve(projectDataDir, "workflows");
   await Promise.all([
     mkdir(projectDataDir, { recursive: true, mode: 0o700 }),
     mkdir(sessionDir, { recursive: true, mode: 0o700 }),
     mkdir(memoryDir, { recursive: true, mode: 0o700 }),
     mkdir(promptResourceDir, { recursive: true, mode: 0o700 }),
+    mkdir(workflowsDir, { recursive: true, mode: 0o700 }),
   ]);
-  return { projectDataDir, sessionDir, memoryDir, promptResourceDir };
+  return { projectDataDir, sessionDir, memoryDir, promptResourceDir, workflowsDir };
 }
 
 export async function resolveProjectContext(

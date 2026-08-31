@@ -41,6 +41,8 @@ export interface PrepareChatWorkflowTurnConfigurationInput {
   readonly agents: readonly WorkflowAgentDefinition[];
   readonly cwd: string;
   readonly chatHome?: string;
+  /** Project data directory; enables the per-Agent durable model configuration layer. */
+  readonly projectDataDir?: string;
   readonly defaults?: Readonly<Record<string, AgentConfigSelection>>;
   /** Only Agents present in this object are changed. An empty selection restores that Agent's default. */
   readonly adjustments?: Readonly<Record<string, AgentConfigSelection>>;
@@ -327,6 +329,15 @@ export async function prepareChatWorkflowTurnConfiguration(
       defaultAgent,
       cwd: input.cwd,
       ...(input.chatHome === undefined ? {} : { chatHome: input.chatHome }),
+      ...(input.projectDataDir === undefined
+        ? {}
+        : {
+            durableModelConfig: {
+              projectDataDir: input.projectDataDir,
+              workflowId: input.workflowId,
+              agentId: defaultAgent.id,
+            },
+          }),
       ...(selection === undefined ? {} : { selection }),
     });
     return [defaultAgent.id, resolved] as const;

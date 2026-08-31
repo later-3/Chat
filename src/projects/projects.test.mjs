@@ -31,6 +31,7 @@ test("Project Manifest, Registry and data paths use stable projectId", async (t)
   assert.equal(opened.sessionDir, path.join(chatHome, "projects", "content-lab", "sessions"));
   assert.equal(opened.memoryDir, path.join(chatHome, "projects", "content-lab", "memory"));
   assert.equal("workflowDataDir" in opened, false);
+  assert.equal(opened.workflowsDir, path.join(chatHome, "projects", "content-lab", "workflows"));
   assert.equal(opened.projectConfigPath, path.join(fs.realpathSync(project), ".chat", "config.json"));
   assert.equal((await listProjects(chatHome))[0]?.available, true);
 
@@ -111,4 +112,21 @@ test("the same registered project survives a local path move", async (t) => {
   const resolved = await resolveProjectContext("moving-project", chatHome);
   assert.equal(resolved.projectRoot, fs.realpathSync(second));
   assert.equal(resolved.memoryDir, path.join(chatHome, "projects", "moving-project", "memory"));
+});
+
+test("opening a legacy project data directory backfills the workflows directory", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-project-legacy-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const chatHome = path.join(root, "home");
+  const project = path.join(root, "repos", "legacy");
+  fs.mkdirSync(project, { recursive: true });
+  const opened = await openProject({ path: project, chatHome });
+
+  fs.rmSync(path.join(chatHome, "projects", opened.projectId, "workflows"), { recursive: true, force: true });
+  const resolved = await resolveProjectContext(opened.projectId, chatHome);
+  assert.equal(
+    fs.statSync(path.join(chatHome, "projects", opened.projectId, "workflows")).isDirectory(),
+    true,
+  );
+  assert.equal(resolved.workflowsDir, path.join(chatHome, "projects", opened.projectId, "workflows"));
 });

@@ -54,6 +54,7 @@ export async function runPlanningStep(
     agents: [PLANNER_AGENT, PLANNING_EXECUTION_AGENT],
     cwd: chatSession.cwd,
     ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
+    ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),
     ...(input.defaultAgentConfigs === undefined ? {} : { defaults: input.defaultAgentConfigs }),
     ...(input.agentConfigs === undefined ? {} : { adjustments: input.agentConfigs }),
   });
