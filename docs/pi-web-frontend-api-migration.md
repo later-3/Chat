@@ -67,7 +67,7 @@ Chat/frontend（纯浏览器）
 
 | 接口 | 前端用途 | 状态 | 后续实现方向 |
 |---|---|---|---|
-| `GET/PUT /api/models-config` | 模型配置 | 待迁移 | 复用Pi模型配置服务，Chat控制配置目录 |
+| `GET/PUT /api/models-config` | 模型配置 | 已接入 | 只读写Chat Home的`agent/models.json`，由Pi ModelRuntime校验，不读取`~/.pi` |
 | `GET /api/models-config/catalog` | 模型目录 | 待迁移 | 复用Pi模型目录 |
 | `POST /api/models-config/discover` | Provider模型发现 | 待迁移 | 后端执行网络发现，不暴露Credential |
 | `POST /api/models-config/test` | 模型连接测试 | 待迁移 | 后端执行显式Provider测试 |

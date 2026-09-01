@@ -531,6 +531,27 @@ test("the frontend and backend share one validated .chat root configuration", as
   assert.equal(fs.existsSync(path.join(chatHome, "config.json")), true);
 });
 
+test("the model editor reads and writes only Chat Home's models configuration", async () => {
+  const readResponse = await authenticatedFetch("/api/models-config");
+  const initial = await readResponse.json();
+  assert.equal(readResponse.status, 200, JSON.stringify(initial));
+  assert.deepEqual(initial.source, {
+    kind: "chat-home",
+    path: path.join(chatHome, "agent", "models.json"),
+  });
+  assert.equal(initial.config.providers["built-runtime"].models[0].id, "built-runtime-model");
+
+  const writeResponse = await authenticatedFetch("/api/models-config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(initial.config),
+  });
+  const saved = await writeResponse.json();
+  assert.equal(writeResponse.status, 200, JSON.stringify(saved));
+  assert.deepEqual(saved, initial);
+  assert.equal(fs.existsSync(path.join(chatHome, "agent", "models.json")), true);
+});
+
 test("Workflow containers and their Agents come from the backend registry", async () => {
   const response = await authenticatedFetch("/api/workflows");
   assert.equal(response.status, 200);
