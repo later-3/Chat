@@ -141,6 +141,6 @@ test("Memory Agent inspection uses the same custom tools and Skill as execution"
     inspection.tools.filter((tool) => tool.active).map((tool) => tool.name),
     MEMORY_TOOL_NAMES,
   );
-  assert.deepEqual(inspection.skills.map((skill) => skill.name).sort(), ["chat-architecture", "memory"]);
+  assert.deepEqual(inspection.skills.map((skill) => skill.name), ["memory"]);
   assert.match(inspection.skills.find((skill) => skill.name === "memory")?.content, /The Chat catalog is the source of truth/);
 });

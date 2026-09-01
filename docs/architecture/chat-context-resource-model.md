@@ -79,7 +79,7 @@ interface ResourceAddress {
 │       └── prompt-resources/
 ├── runtime/
 │   ├── workflow-data/
-│   └── skills/
+│   └── skills/                  # Workflow私有构建资源，不是第三种Skill Target
 ├── cache/
 │   └── fastembed/
 └── logs/
@@ -178,7 +178,7 @@ Session/本次Run临时覆盖
 
 ## 11. Skill与代码的关系
 
-架构文档是完整事实源；`chat-architecture` Skill是面向Agent的操作投影；Schema和测试是机器可执行合同。Skill说明如何选择Target和调用能力，但不能授予权限。即使Agent未读取Skill，后端也必须通过Context Resolver、Resource Resolver和Policy保证上述不变量。
+架构文档是完整事实源；`.chat/skills/chat-architecture/SKILL.md`是Chat Project面向Agent的架构导航和变更影响工作流。它负责触发架构意识、把任务路由到相关文档并要求沿真实执行链取证，不复制完整架构内容，也不作为第二事实源。它只按普通Project Skill发现，不由Chat运行时全局注入。Schema和测试是机器可执行合同；即使Agent未读取该Skill，后端也必须通过Context Resolver、Resource Resolver和Policy保证上述不变量。
 
 ## 12. 新能力接入检查
 
@@ -205,6 +205,6 @@ Session/本次Run临时覆盖
 | Personal + 每Project Memory Store | `src/memory/manager.ts`、`src/memory/runtime.ts` |
 | 可恢复旧数据迁移 | `src/migrations/project-layout-v1.ts` |
 | 管理审计日志 | `src/audit-log.ts`，运行文件为`~/.chat/logs/audit.jsonl` |
-| Agent操作投影 | `src/skills/chat-architecture/SKILL.md` |
+| Chat架构导航Skill | `.chat/skills/chat-architecture/SKILL.md` |
 
 Pi Web只通过上述后端事实工作：项目选择来自`GET /api/projects`，Memory页选择Personal或任意登记Project，Workflow、Session、Agent Resolve、配置和资源请求携带同一个`projectId`。

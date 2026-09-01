@@ -22,6 +22,7 @@ let baseUrl;
 let serverOutput = "";
 let authenticatedCookiePromise;
 let promptResourceId;
+let projectSkillPath;
 const embeddingDimension = 64;
 const projectId = "built-project";
 
@@ -123,12 +124,13 @@ before(async () => {
   const agentDir = path.join(chatHome, "agent");
   const skillDir = path.join(agentDir, "skills", "built-review");
   const extensionDir = path.join(agentDir, "extensions");
+  const projectSkillDir = path.join(workspace, ".chat", "skills", "chat-architecture");
   fs.mkdirSync(workspace, { recursive: true });
   workspace = fs.realpathSync(workspace);
   fs.mkdirSync(sessionDir, { recursive: true });
   fs.mkdirSync(skillDir, { recursive: true });
   fs.mkdirSync(extensionDir, { recursive: true });
-  fs.mkdirSync(path.join(workspace, ".chat"), { recursive: true });
+  fs.mkdirSync(projectSkillDir, { recursive: true });
   fs.writeFileSync(path.join(workspace, ".chat", "project.json"), JSON.stringify({
     schemaVersion: 1,
     id: projectId,
@@ -138,6 +140,10 @@ before(async () => {
   fs.writeFileSync(path.join(workspace, "fixture.md"), "# Built server fixture\n");
   fs.writeFileSync(path.join(skillDir, "SKILL.md"), [
     "---", "name: built-review", "description: Built server review", "---", "Review built output.",
+  ].join("\n"));
+  projectSkillPath = path.join(projectSkillDir, "SKILL.md");
+  fs.writeFileSync(projectSkillPath, [
+    "---", "name: chat-architecture", "description: Navigate Chat architecture", "---", "Read the architecture index.",
   ].join("\n"));
   fs.writeFileSync(path.join(extensionDir, "built-extension.ts"), "export default function register() {}\n");
 
@@ -525,7 +531,7 @@ test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async
       "memory_delete",
     ],
   );
-  assert.deepEqual(body.skills.map((skill) => skill.name), ["chat-architecture", "memory"]);
+  assert.deepEqual(body.skills.map((skill) => skill.name), ["memory"]);
   assert.equal(body.tools.find((tool) => tool.name === "memory_search").sourceInfo.source, "sdk");
 
   const catalogResponse = await authenticatedFetch(
@@ -533,7 +539,12 @@ test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async
   );
   const catalog = await catalogResponse.json();
   assert.equal(catalogResponse.status, 200, JSON.stringify(catalog));
-  assert.equal(catalog.skills.some((skill) => skill.name === "memory"), true);
+  assert.equal(catalog.skills.some((skill) => skill.name === "chat-architecture"), true);
+  assert.equal(catalog.skills.some((skill) => skill.name === "memory"), false);
+  assert.equal(
+    catalog.skills.find((skill) => skill.name === "chat-architecture").filePath,
+    fs.realpathSync(projectSkillPath),
+  );
   assert.equal(
     catalog.extensions.some((extension) => extension.resolvedPath.endsWith("built-extension.ts")),
     true,
@@ -567,7 +578,7 @@ test("Rule Curator inspection uses the unified Agent path with its Skill and Too
       "prompt_resource_dismiss_proposal",
     ],
   );
-  assert.deepEqual(body.skills.map((skill) => skill.name), ["chat-architecture", "rule-library"]);
+  assert.deepEqual(body.skills.map((skill) => skill.name), ["rule-library"]);
   assert.match(
     body.skills.find((skill) => skill.name === "rule-library").content,
     /when it applies.*what the target Agent must obey/s,

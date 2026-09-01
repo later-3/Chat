@@ -90,13 +90,13 @@ Chat Home默认是`~/.chat`，测试、迁移和部署可以通过`CHAT_HOME`显
           └── prompt-resources/
   ├── runtime/
   │   ├── workflow-data/               # 进程级Workflow Run、Step和Event
-  │   └── skills/                      # 构建资源物化结果
+  │   └── skills/                      # Workflow私有构建资源；不属于Personal或Project Skill目录
   ├── cache/
   │   └── fastembed/                   # 可重新下载的Embedding模型
   └── logs/
 ```
 
-`~/.chat`只属于当前用户和Chat运行时，不进入任何业务项目Git仓库。
+`~/.chat`只属于当前用户和Chat运行时，不进入任何业务项目Git仓库。用户可管理的Skill只归属`~/.chat/agent/skills`或`<project-root>/.chat/skills`；`runtime/skills`若存在，仅是Workflow私有资源的构建暂存位置，不进入Resource Catalog，也不能被保存为用户选择路径。
 
 ### 4.2 Project本地目录
 

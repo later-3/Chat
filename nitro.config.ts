@@ -24,7 +24,6 @@ export default defineConfig({
   }],
   serverAssets: [
     { baseName: "frontend", dir: "frontend/dist", pattern: "index.html" },
-    { baseName: "chat-skills", dir: "src/skills", pattern: "**/*.md" },
     // Workflow-owned Markdown remains the source of truth while built output
     // can materialize private Skills into Chat's runtime data directory.
     { baseName: "workflow-resources", dir: "src/workflows", pattern: "**/*.md" },

@@ -8,7 +8,7 @@ import { inspectWorkflowAgent } from "../../../../../../workflows/agent-inspecti
 import { getChatWorkflowDefinition } from "../../../../../../workflows/registry.js";
 import { resolveProjectContext } from "../../../../../../projects/registry.js";
 
-/** Returns resources discoverable for an Agent without a browser-side fake selection. */
+/** Keeps Workflow-private Skills inspection-only while returning Personal and Project Skill choices. */
 export default defineEventHandler(async (event) => {
   const workflowId = getRouterParam(event, "workflowId");
   const agentId = getRouterParam(event, "agentId");
@@ -59,10 +59,6 @@ export default defineEventHandler(async (event) => {
       listPiPlugins(cwd, project?.projectId),
     ]);
 
-    const skillsByPath = new Map(inspection.skills.map((skill) => [skill.filePath, skill]));
-    for (const skill of availableSkills.skills) {
-      if (!skillsByPath.has(skill.filePath)) skillsByPath.set(skill.filePath, skill);
-    }
     const extensionsByPath = new Map(
       inspection.extensions.map((extension) => [extension.resolvedPath, extension]),
     );
@@ -100,7 +96,7 @@ export default defineEventHandler(async (event) => {
       }));
     return {
       ...inspection,
-      skills: [...skillsByPath.values()],
+      skills: availableSkills.skills,
       extensions: [...extensionsByPath.values()],
       plugins,
       diagnostics: [

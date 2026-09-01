@@ -4,6 +4,8 @@ node_modules/
 frontend/dist/
 .chat/*
 !.chat/project.json
+!.chat/skills/
+!.chat/skills/**
 .swc/
 # Legacy Pi runtime data is only read by the one-way .chat migration.
 .pi/

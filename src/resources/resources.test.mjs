@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { openProject } from "../projects/registry.ts";
 import { listPiExtensions, togglePiExtension } from "./extensions.ts";
 import { changePiPlugin, listPiPlugins } from "./plugins.ts";
 import { listPiSkills, setSkillModelInvocation } from "./skills.ts";
@@ -22,14 +23,19 @@ test("Chat global Skill, Extension and Plugin resources use .chat/agent", { conc
   const cwd = path.join(base, "workspace");
   const agentDir = path.join(base, ".chat", "agent");
   const skillDir = path.join(agentDir, "skills", "review");
+  const projectSkillDir = path.join(cwd, ".chat", "skills", "chat-architecture");
   const extensionPath = path.join(agentDir, "extensions", "guard.ts");
   const pluginDir = path.join(agentDir, "plugins", "test-plugin");
   fs.mkdirSync(cwd, { recursive: true });
   fs.mkdirSync(skillDir, { recursive: true });
+  fs.mkdirSync(projectSkillDir, { recursive: true });
   fs.mkdirSync(path.dirname(extensionPath), { recursive: true });
   fs.mkdirSync(path.join(pluginDir, "skills", "plugin-review"), { recursive: true });
   fs.writeFileSync(path.join(skillDir, "SKILL.md"), [
     "---", "name: review", "description: Review code", "---", "Review carefully.",
+  ].join("\n"));
+  fs.writeFileSync(path.join(projectSkillDir, "SKILL.md"), [
+    "---", "name: chat-architecture", "description: Navigate Chat architecture", "---", "Read the architecture index.",
   ].join("\n"));
   fs.writeFileSync(extensionPath, "export default function register() {}\n");
   fs.writeFileSync(path.join(pluginDir, "skills", "plugin-review", "SKILL.md"), [
@@ -46,6 +52,13 @@ test("Chat global Skill, Extension and Plugin resources use .chat/agent", { conc
 
   const skills = await listPiSkills(cwd);
   assert.ok(skills.skills.some((skill) => skill.name === "review"));
+  assert.equal(skills.skills.some((skill) => skill.name === "chat-architecture"), false);
+  const project = await openProject({ path: cwd, chatHome: process.env.CHAT_HOME, id: "chat" });
+  const projectSkills = await listPiSkills(cwd, project.projectId);
+  assert.equal(
+    projectSkills.skills.find((skill) => skill.name === "chat-architecture")?.filePath,
+    fs.realpathSync(path.join(projectSkillDir, "SKILL.md")),
+  );
   await setSkillModelInvocation(cwd, path.join(skillDir, "SKILL.md"), true);
   assert.equal((await listPiSkills(cwd)).skills.find((skill) => skill.name === "review")?.disableModelInvocation, true);
 

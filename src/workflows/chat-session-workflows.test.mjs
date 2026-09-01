@@ -471,7 +471,7 @@ test("Agent inspection uses the same resolved Prompt, resources and tools as exe
   assert.equal(inspection.agent.effectiveModel.provider, faux.getModel().provider);
   const reviewSkill = inspection.skills.find((skill) => skill.name === "review");
   assert.ok(reviewSkill);
-  assert.ok(inspection.skills.some((skill) => skill.name === "chat-architecture"));
+  assert.deepEqual(inspection.skills.map((skill) => skill.name), ["review"]);
   assert.match(reviewSkill.content, /Review the changed code carefully/);
   assert.match(inspection.prompt.final, /Review code/);
   assert.match(inspection.prompt.final, /Global Chat instructions/);

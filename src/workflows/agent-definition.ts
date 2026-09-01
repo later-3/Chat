@@ -1,4 +1,4 @@
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type {
   AgentContextTransform,
   AgentSession,
@@ -12,7 +12,6 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { ChatSession } from "../chat-session.js";
-import { ensureChatArchitectureSkill } from "../skills/runtime.js";
 import { loadChatAgentContextFiles } from "./agent-context-files.js";
 import type { WorkflowAgentDefinition } from "./agent-config.js";
 
@@ -71,9 +70,6 @@ export async function createWorkflowAgentSession(
   options: CreateWorkflowAgentSessionOptions,
 ): Promise<CreatedWorkflowAgentSession> {
   const { agent, chatSession } = options;
-  const architectureSkillPath = await ensureChatArchitectureSkill(
-    resolve(dirname(chatSession.agentDir), "runtime"),
-  );
   const settingsManager = SettingsManager.create(chatSession.cwd, chatSession.agentDir);
   const projectResourceDir = chatSession.projectContext?.projectConfigDir;
   const customInstructions = buildChatAgentCustomInstructions(agent.customInstructions);
@@ -109,7 +105,6 @@ export async function createWorkflowAgentSession(
         }
       : {}),
     additionalSkillPaths: [
-      architectureSkillPath,
       ...(agent.resources.mode === "inherit" && projectResourceDir !== undefined
         ? [resolve(projectResourceDir, "skills")]
         : []),
