@@ -12,7 +12,7 @@ packageExtensionsChecksum: sha256-JRZ6K/+yCOdjVzECK45xgDRwaO00Ltg622zPGdkWRyM=
 
 patchedDependencies:
   '@workflow/builders@4.1.10':
-    hash: 80f930896a1c1cbac9fc5df49858abb3ffec81283bbf93e4ec2be2f046329137
+    hash: b5279a92a6e761179abcff7dbd3b8974ce4d539435203498839d2a2acb3d6639
     path: patches/@workflow__builders@4.1.10.patch
   mem0ai@3.1.7:
     hash: c7925bb2a85c27ad0bf779056d83aea125151f0f602cf5d662575f1f3bc65806
@@ -8196,7 +8196,7 @@ snapshots:
   '@workflow/astro@4.0.20(@opentelemetry/api@1.9.0)':
     dependencies:
       '@swc/core': 1.15.3
-      '@workflow/builders': 4.1.10(patch_hash=80f930896a1c1cbac9fc5df49858abb3ffec81283bbf93e4ec2be2f046329137)(@opentelemetry/api@1.9.0)
+      '@workflow/builders': 4.1.10(patch_hash=b5279a92a6e761179abcff7dbd3b8974ce4d539435203498839d2a2acb3d6639)(@opentelemetry/api@1.9.0)
       '@workflow/rollup': 4.0.20(@opentelemetry/api@1.9.0)
       '@workflow/swc-plugin': 4.1.2(@swc/core@1.15.3)
       '@workflow/vite': 4.0.20(@opentelemetry/api@1.9.0)
@@ -8208,7 +8208,7 @@ snapshots:
       - supports-color
       - ws
 
-  '@workflow/builders@4.1.10(patch_hash=80f930896a1c1cbac9fc5df49858abb3ffec81283bbf93e4ec2be2f046329137)(@opentelemetry/api@1.9.0)':
+  '@workflow/builders@4.1.10(patch_hash=b5279a92a6e761179abcff7dbd3b8974ce4d539435203498839d2a2acb3d6639)(@opentelemetry/api@1.9.0)':
     dependencies:
       '@swc/core': 1.15.3
       '@workflow/core': 4.8.5(@opentelemetry/api@1.9.0)
@@ -8234,7 +8234,7 @@ snapshots:
       '@oclif/plugin-help': 6.2.37
       '@swc/core': 1.15.3
       '@vercel/cli-auth': 0.0.1
-      '@workflow/builders': 4.1.10(patch_hash=80f930896a1c1cbac9fc5df49858abb3ffec81283bbf93e4ec2be2f046329137)(@opentelemetry/api@1.9.0)
+      '@workflow/builders': 4.1.10(patch_hash=b5279a92a6e761179abcff7dbd3b8974ce4d539435203498839d2a2acb3d6639)(@opentelemetry/api@1.9.0)
       '@workflow/core': 4.8.5(@opentelemetry/api@1.9.0)
       '@workflow/errors': 4.2.1
       '@workflow/swc-plugin': 4.1.2(@swc/core@1.15.3)
@@ -8304,7 +8304,7 @@ snapshots:
       '@nestjs/core': 12.0.1(@nestjs/common@12.0.1(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@swc/cli': 0.8.1(@swc/core@1.15.3)(chokidar@5.0.0)
       '@swc/core': 1.15.3
-      '@workflow/builders': 4.1.10(patch_hash=80f930896a1c1cbac9fc5df49858abb3ffec81283bbf93e4ec2be2f046329137)(@opentelemetry/api@1.9.0)
+      '@workflow/builders': 4.1.10(patch_hash=b5279a92a6e761179abcff7dbd3b8974ce4d539435203498839d2a2acb3d6639)(@opentelemetry/api@1.9.0)
       '@workflow/swc-plugin': 4.1.2(@swc/core@1.15.3)
       pathe: 2.0.3
     transitivePeerDependencies:
@@ -8316,7 +8316,7 @@ snapshots:
   '@workflow/next@4.1.9(@opentelemetry/api@1.9.0)':
     dependencies:
       '@swc/core': 1.15.3
-      '@workflow/builders': 4.1.10(patch_hash=80f930896a1c1cbac9fc5df49858abb3ffec81283bbf93e4ec2be2f046329137)(@opentelemetry/api@1.9.0)
+      '@workflow/builders': 4.1.10(patch_hash=b5279a92a6e761179abcff7dbd3b8974ce4d539435203498839d2a2acb3d6639)(@opentelemetry/api@1.9.0)
       '@workflow/core': 4.8.5(@opentelemetry/api@1.9.0)
       '@workflow/swc-plugin': 4.1.2(@swc/core@1.15.3)
       semver: 7.7.4
@@ -8330,7 +8330,7 @@ snapshots:
   '@workflow/nitro@4.1.11(@opentelemetry/api@1.9.0)':
     dependencies:
       '@swc/core': 1.15.3
-      '@workflow/builders': 4.1.10(patch_hash=80f930896a1c1cbac9fc5df49858abb3ffec81283bbf93e4ec2be2f046329137)(@opentelemetry/api@1.9.0)
+      '@workflow/builders': 4.1.10(patch_hash=b5279a92a6e761179abcff7dbd3b8974ce4d539435203498839d2a2acb3d6639)(@opentelemetry/api@1.9.0)
       '@workflow/core': 4.8.5(@opentelemetry/api@1.9.0)
       '@workflow/rollup': 4.0.20(@opentelemetry/api@1.9.0)
       '@workflow/swc-plugin': 4.1.2(@swc/core@1.15.3)
@@ -8358,7 +8358,7 @@ snapshots:
   '@workflow/rollup@4.0.20(@opentelemetry/api@1.9.0)':
     dependencies:
       '@swc/core': 1.15.3
-      '@workflow/builders': 4.1.10(patch_hash=80f930896a1c1cbac9fc5df49858abb3ffec81283bbf93e4ec2be2f046329137)(@opentelemetry/api@1.9.0)
+      '@workflow/builders': 4.1.10(patch_hash=b5279a92a6e761179abcff7dbd3b8974ce4d539435203498839d2a2acb3d6639)(@opentelemetry/api@1.9.0)
       '@workflow/swc-plugin': 4.1.2(@swc/core@1.15.3)
       exsolve: 1.0.7
     transitivePeerDependencies:
@@ -8373,7 +8373,7 @@ snapshots:
     dependencies:
       '@sveltejs/load-config': 0.2.3
       '@swc/core': 1.15.3
-      '@workflow/builders': 4.1.10(patch_hash=80f930896a1c1cbac9fc5df49858abb3ffec81283bbf93e4ec2be2f046329137)(@opentelemetry/api@1.9.0)
+      '@workflow/builders': 4.1.10(patch_hash=b5279a92a6e761179abcff7dbd3b8974ce4d539435203498839d2a2acb3d6639)(@opentelemetry/api@1.9.0)
       '@workflow/rollup': 4.0.20(@opentelemetry/api@1.9.0)
       '@workflow/swc-plugin': 4.1.2(@swc/core@1.15.3)
       '@workflow/vite': 4.0.20(@opentelemetry/api@1.9.0)
@@ -8400,7 +8400,7 @@ snapshots:
 
   '@workflow/vite@4.0.20(@opentelemetry/api@1.9.0)':
     dependencies:
-      '@workflow/builders': 4.1.10(patch_hash=80f930896a1c1cbac9fc5df49858abb3ffec81283bbf93e4ec2be2f046329137)(@opentelemetry/api@1.9.0)
+      '@workflow/builders': 4.1.10(patch_hash=b5279a92a6e761179abcff7dbd3b8974ce4d539435203498839d2a2acb3d6639)(@opentelemetry/api@1.9.0)
     transitivePeerDependencies:
       - '@opentelemetry/api'
       - '@swc/helpers'

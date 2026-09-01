@@ -6,8 +6,10 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { openProject, resolveProjectContext } from "./projects/registry.js";
 import type { ChatProjectContext } from "./projects/types.js";
+import { migrateSessionNativeMessagesV1 } from "./migrations/session-native-messages-v1.js";
+import { CHAT_WORKFLOW_AGENT_HANDOFF_CUSTOM_TYPE } from "./workflows/session-conversation.js";
 import { LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE } from "./workflows/planning-execution/context.js";
-import { collectChatWorkflowStageMarkers } from "./workflows/workflow-stage.js";
+import { findActivePlanningExecutionRun } from "./workflows/planning-execution/review-state.js";
 
 export interface ChatSessionInput {
   readonly projectId?: string;
@@ -28,31 +30,14 @@ export interface ChatSession {
 /** Keeps obsolete Chat-internal handoffs out of restore and compaction context. */
 export function isChatAgentContextEntry(entry: SessionEntry): boolean {
   return entry.type !== "custom_message"
-    || entry.customType !== LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE;
+    || (
+      entry.customType !== LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE
+      && entry.customType !== CHAT_WORKFLOW_AGENT_HANDOFF_CUSTOM_TYPE
+    );
 }
 
 function configureChatSessionManager(manager: SessionManager): SessionManager {
-  const stageByEntryId = new Map(
-    collectChatWorkflowStageMarkers(manager.getBranch())
-      .map((stage) => [stage.entryId, stage]),
-  );
-  const legacyPlannerMessageIds = new Set<string>();
-  let activeAgentId: string | undefined;
-  for (const entry of manager.getBranch()) {
-    const stage = stageByEntryId.get(entry.id);
-    if (stage !== undefined) {
-      activeAgentId = stage.agentId;
-    } else if (
-      activeAgentId === "planner"
-      && entry.type === "message"
-      && entry.message.role === "assistant"
-    ) {
-      legacyPlannerMessageIds.add(entry.id);
-    }
-  }
-  manager.setContextEntryFilter((entry) => (
-    isChatAgentContextEntry(entry) && !legacyPlannerMessageIds.has(entry.id)
-  ));
+  manager.setContextEntryFilter(isChatAgentContextEntry);
   return manager;
 }
 
@@ -92,6 +77,12 @@ export async function openChatSession(input: ChatSessionInput): Promise<ChatSess
   if (sessionInfo === undefined) throw new Error(`找不到Session: ${input.sessionId}`);
   if (resolve(sessionInfo.cwd) !== cwd) {
     throw new Error(`Session ${input.sessionId}不属于工作目录${cwd}`);
+  }
+  if (await findActivePlanningExecutionRun(projectContext.projectDataDir, input.sessionId) === undefined) {
+    await migrateSessionNativeMessagesV1({
+      sessionFile: sessionInfo.path,
+      projectDataDir: projectContext.projectDataDir,
+    });
   }
 
   return {

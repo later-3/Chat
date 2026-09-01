@@ -143,12 +143,13 @@ function embedChatWorkflowStages(html: string): string {
     `${input.invocationId}\u0000${input.stageId}\u0000${input.agentId}`
   )));
   for (const input of [...chatWorkflowAgentInputs]) {
+    if (input.schemaVersion !== 1) continue;
     if (input.upstream === undefined) continue;
     const stageKey = `${input.invocationId}\u0000${input.upstream.stageId}\u0000${input.upstream.agentId}`;
     if (inputStageKeys.has(stageKey)) continue;
     chatWorkflowAgentInputs.push({
       entryId: `derived-${input.entryId}`,
-      schemaVersion: input.schemaVersion,
+      schemaVersion: 1,
       invocationId: input.invocationId,
       workflowId: input.workflowId,
       stageId: input.upstream.stageId,
@@ -373,7 +374,7 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
         const section = document.createElement("section");
         section.className = "chat-agent-stage";
         section.dataset.stageId = stage.stageId;
-        section.dataset.agentId = stage.agentId;
+        section.dataset.agentId = stage.agentId || "";
 
         const header = document.createElement("div");
         header.className = "chat-agent-stage-header";
@@ -385,7 +386,9 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
         separator.textContent = "·";
         const agentRole = document.createElement("span");
         agentRole.className = "chat-agent-role";
-        agentRole.textContent = chatHistoryLabel(chatAgentLabels, stage.agentId);
+        agentRole.textContent = stage.nodeKind === "human"
+          ? "Human reviewer"
+          : chatHistoryLabel(chatAgentLabels, stage.agentId || stage.nodeKind || "Stage");
         header.append(stageName, separator, agentRole);
 
         const content = document.createElement("div");
@@ -403,8 +406,10 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
         header.textContent = "Input received by " + chatHistoryLabel(chatAgentLabels, input.agentId);
         container.appendChild(header);
 
-        const sources = [{ label: "User request (verbatim)", content: input.userPrompt }];
-        if (input.upstream) {
+        const sources = Array.isArray(input.inputEntryIds)
+          ? [{ label: "Native Session message references", content: input.inputEntryIds.join("\\n") }]
+          : [{ label: "Legacy copied user request", content: input.userPrompt }];
+        if (!Array.isArray(input.inputEntryIds) && input.upstream) {
           sources.push({
             label: chatHistoryLabel(chatAgentLabels, input.upstream.agentId) + " output",
             content: input.upstream.output
@@ -551,7 +556,7 @@ export function patchChatWorkflowHistory(html: string): string {
         let activeWorkflowStages = null;
         let activeStageContent = null;
         let activeAgentId = null;
-        let activeStageHasInput = false;
+        let activeStageHasLegacyInput = false;
         const renderedAgentInputEntryIds = new Set();
 
         for (const entry of path) {
@@ -569,7 +574,7 @@ export function patchChatWorkflowHistory(html: string): string {
             activeAgentId = workflowStage.agentId;
             const stageInputKey = workflowStage.invocationId + "\u0000" + workflowStage.stageId + "\u0000" + workflowStage.agentId;
             const stageInput = chatWorkflowAgentInputByStage.get(stageInputKey);
-            activeStageHasInput = Boolean(stageInput);
+            activeStageHasLegacyInput = Boolean(stageInput && !Array.isArray(stageInput.inputEntryIds));
             if (stageInput) {
               activeStageContent.appendChild(createChatAgentInput(stageInput));
               renderedAgentInputEntryIds.add(stageInput.entryId);
@@ -581,7 +586,7 @@ export function patchChatWorkflowHistory(html: string): string {
             activeWorkflowStages = null;
             activeStageContent = null;
             activeAgentId = null;
-            activeStageHasInput = false;
+            activeStageHasLegacyInput = false;
             continue;
           }
 
@@ -605,7 +610,7 @@ export function patchChatWorkflowHistory(html: string): string {
           }
 
           if (
-            activeStageHasInput
+            activeStageHasLegacyInput
             && entry.type === "message"
             && entry.message
             && entry.message.role === "user"

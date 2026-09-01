@@ -8,6 +8,10 @@ import {
   getPromptResourceStore,
   listPromptResources,
 } from "./store.ts";
+import {
+  BUILT_IN_PERSONAL_PROMPT_RESOURCES,
+  WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID,
+} from "./builtins.ts";
 import { openProject } from "../projects/registry.ts";
 
 function sessionSource(sessionId = "session-1") {
@@ -200,6 +204,58 @@ test("archiving is a reviewed resource revision rather than deletion", async (t)
   assert.equal((await store.list({ status: "archived" }))[0].revision, 2);
 });
 
+test("the built-in Workflow incident is seeded once into the Personal experience library", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-built-in-experience-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const chatHome = path.join(root, "home");
+
+  const firstStore = await getPromptResourceStore({ type: "personal" }, chatHome);
+  const experience = await firstStore.get(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID);
+  assert.equal(experience?.kind, "experience");
+  assert.equal(experience?.status, "active");
+  assert.equal(experience?.revision, 3);
+  assert.match(experience?.content ?? "", /Frontend Run 到 Pi SDK/);
+
+  const secondStore = await getPromptResourceStore({ type: "personal" }, chatHome);
+  assert.equal(
+    (await secondStore.history(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID)).length,
+    3,
+  );
+});
+
+test("a built-in experience upgrades only while its stored revision prefix is unchanged", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-built-in-experience-upgrade-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const chatHome = path.join(root, "home");
+  const builtIn = BUILT_IN_PERSONAL_PROMPT_RESOURCES[0];
+  const personalRoot = path.join(chatHome, "prompt-resources");
+  const store = new PromptResourceStore(personalRoot);
+
+  await store.ensureDocuments([{ ...builtIn, revisions: [builtIn.revisions[0]] }]);
+  const upgradedStore = await getPromptResourceStore({ type: "personal" }, chatHome);
+  assert.equal((await upgradedStore.get(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID))?.revision, 3);
+
+  const customRoot = path.join(root, "custom-prompt-resources");
+  const customStore = new PromptResourceStore(customRoot);
+  await customStore.ensureDocuments([{ ...builtIn, revisions: [builtIn.revisions[0]] }]);
+  const first = await customStore.get(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID);
+  assert.ok(first);
+  const draft = await customStore.createDraft({
+    baseResourceId: first.id,
+    kind: first.kind,
+    title: first.title,
+    purpose: first.purpose,
+    content: "用户已经修订的案例",
+    tags: first.tags,
+    status: first.status,
+    sources: first.sources,
+    author: { type: "user" },
+  });
+  await customStore.commitDraft(draft.id);
+  await customStore.ensureDocuments(BUILT_IN_PERSONAL_PROMPT_RESOURCES);
+  assert.equal((await customStore.get(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID))?.content, "用户已经修订的案例");
+});
+
 test("retrying after a committed revision but failed Draft cleanup is idempotent", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-prompt-commit-recovery-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -265,7 +321,17 @@ test("Personal and Project Prompt libraries stay isolated unless Targets are exp
   }
 
   const currentView = await listPromptResources(targets.slice(0, 2), {}, chatHome);
-  assert.deepEqual(currentView.map((resource) => resource.title).sort(), ["Target 0", "Target 1"]);
+  assert.deepEqual(
+    currentView
+      .filter((resource) => resource.id !== WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID)
+      .map((resource) => resource.title)
+      .sort(),
+    ["Target 0", "Target 1"],
+  );
+  assert.deepEqual(
+    currentView.find((resource) => resource.id === WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID)?.target,
+    { type: "personal" },
+  );
   assert.equal(await (await getPromptResourceStore(targets[1], chatHome)).get(committed[2].id), undefined);
   assert.equal((await listPromptResources([targets[2]], {}, chatHome))[0].title, "Target 2");
 });

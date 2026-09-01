@@ -82,7 +82,7 @@ test("Chat Session rejects the same ID for another working directory", { concurr
   );
 });
 
-test("legacy planning handoffs stay in storage but not Chat Agent context", { concurrency: false }, async (t) => {
+test("legacy handoff is filtered while native Planner and Executor utterances stay in context", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-legacy-handoff-"));
   t.after(() => {
@@ -142,9 +142,17 @@ test("legacy planning handoffs stay in storage but not Chat Agent context", { co
   assert.deepEqual(reopened.manager.buildSessionContext().messages.map((message) => message.role), [
     "user",
     "assistant",
+    "assistant",
   ]);
   assert.deepEqual(reopened.manager.buildSessionContext().messages, [
     { role: "user", content: "real request", timestamp: 1 },
+    {
+      role: "assistant",
+      provider: "test",
+      model: "planner-model",
+      content: [{ type: "text", text: "legacy planner output" }],
+      timestamp: 2,
+    },
     {
       role: "assistant",
       provider: "test",

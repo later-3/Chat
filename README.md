@@ -15,7 +15,7 @@ Chat/frontend（Pi Web纯浏览器前端子模块）
     └── Vercel Workflow
           ├── Direct Workflow → Pi Coding Agent
           ├── Planning + Execution
-                ├── Planner：无工具的Pi AgentSession，使用当前Chat Session的内存副本
+                ├── Planner：无工具的Pi AgentSession，计划原生写入当前Chat Session
                 └── Executor：Pi Coding Agent，继续当前Chat Session
           ├── Memory与Rule Management Workflow
           ├── 配置与全局资源 → ~/.chat/agent
@@ -26,9 +26,11 @@ Chat/frontend（Pi Web纯浏览器前端子模块）
 前端可选择四个Workflow：
 
 - `minimal-pi-coding-agent`（直接执行）：一个Step直接运行Pi Coding Agent。
-- `planning-execution`（规划执行）：Planner Agent先生成计划，Executor再按计划运行Pi Coding Agent。Planner使用从当前Chat Session复制出的内存Session，不创建第二个持久Session文件；Planner输出、Executor输入来源和两个Stage的Agent身份都记录在同一个Chat Session中。Executor收到用户原话和Planner输出，但持久对话仍保留用户原始消息。
+- `planning-execution`（规划执行）：固定为`Planner Agent → 人工审核Task → Pi Coding Agent`。拒绝时，用户审核原文、上一版完整计划和原始请求返回同一个Planner配置继续修订；每一版都重新等待审核，批准后仅把最终计划交给Executor。全程只有一个持久Chat Session，计划、审核决定、Agent输入来源和Stage身份都作为可恢复事实记录其中。
 - `memory`：通过普通Workflow Agent和原生Pi Tool管理个人或指定Project Memory。
 - `rule-management`：通过普通Workflow Agent管理规则与经验Prompt资源及采用建议。
+
+Chat还会把已复盘且具有通用价值的开发问题归档为Personal `experience` Prompt资源。前端从现有规则与经验库自动发现；用户可在Workflow Agent配置中勾选，选中内容按统一装配路径进入Agent自定义System Prompt区域。案例原文与回归要求见[开发经验案例](./docs/development-experiences/README.md)。
 
 Pi Web不再作为独立服务运行。它原来的Next.js后端、`app/api`、Agent RPC服务和Session文件读取代码都不属于运行架构。前端不能导入Pi SDK，也不能直接读取文件系统。
 
@@ -86,6 +88,8 @@ Session文件头中的`cwd`表示Agent实际操作的工作目录。浏览器只
 
 Chat不会扫描用户主目录下的`~/.pi`，也不会在项目仓库内保存Session。
 
+用户、Assistant和Tool Result始终由Pi原生MessageEntry保存；Workflow、Stage、Agent、审核状态和Agent输入引用使用CustomEntry补充。完整约束、正例、反例和历史迁移规则见[Chat Session架构](./docs/architecture/chat-session-architecture.md)。Session列表的回退文本取第一条用户或Agent话语，不展示Pi的`(no messages)`哨兵；显式标题仍是独立能力。
+
 ## 本地开发
 
 要求Node.js `>=22.19.0`和pnpm `10.13.1`，并且当前GitHub身份有权读取两个私有子模块。
@@ -136,7 +140,9 @@ POST /runs
 GET /runs/:runId/events
   → 按顺序流式返回Stage、Thinking、文本与工具执行事件
 GET /runs/:runId
-  → 查询状态和最终结果
+  → 查询状态、待审核计划和最终结果
+POST /runs/:runId/review
+  → 精确绑定计划版本与摘要，批准执行或携带审核原文要求重规划
 DELETE /runs/:runId
   → 用户停止时取消Workflow
 GET /api/sessions
@@ -157,7 +163,7 @@ GET /api/files/[...path]
   → 在Chat授权的工作目录内列出、读取、下载和预览文件
 ```
 
-`POST /run`仍保留为阻塞式人工调试接口，前端不使用它。
+`POST /run`仍保留为阻塞式人工调试接口，前端不使用它；需要人工审核的`planning-execution`只允许通过异步`POST /runs`启动。
 
 ## 构建与运行
 

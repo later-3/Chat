@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  injectPlanningExecutionContext,
+  injectPlanningRevisionContext,
   stripLegacyPlanningHandoffs,
 } from "./context.ts";
 
@@ -20,7 +20,7 @@ test("legacy persisted handoffs are removed before the model sees Session histor
   assert.deepEqual(stripLegacyPlanningHandoffs(messages), [messages[0]]);
 });
 
-test("current user request and plan are inserted for one model call without mutating Session messages", () => {
+test("revision instructions are model-facing while persisted feedback remains the latest native user", () => {
   const messages = [
     { role: "user", content: "earlier request", timestamp: 1 },
     {
@@ -40,20 +40,18 @@ test("current user request and plan are inserted for one model call without muta
       stopReason: "stop",
       timestamp: 2,
     },
-    { role: "user", content: "current request", timestamp: 3 },
+    { role: "user", content: "keep the Hook and add rollback", timestamp: 3 },
   ];
 
-  const transformed = injectPlanningExecutionContext(
-    messages,
-    "current request",
-    "current plan",
-    "invocation-1",
-  );
+  const transformed = injectPlanningRevisionContext(messages, {
+    invocationId: "invocation-1",
+    planRevision: 2,
+    previousPlan: "earlier answer",
+  });
 
   assert.deepEqual(messages.map((message) => message.role), ["user", "assistant", "user"]);
   assert.deepEqual(transformed.map((message) => message.role), ["user", "assistant", "custom", "user"]);
-  assert.match(transformed[2].content, /"userRequest": "current request"/);
-  assert.match(transformed[2].content, /"plannerOutput": "current plan"/);
-  assert.match(transformed[2].content, /current plan/);
+  assert.match(transformed[2].content, /第2版计划/);
+  assert.match(transformed[2].content, /<previous_plan>\nearlier answer/);
   assert.equal(transformed[3], messages[2]);
 });

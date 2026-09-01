@@ -64,6 +64,7 @@ export async function runPiCodingAgentPromptStep(
   const observer = subscribeAgentSessionLog(session, "pi", {
     workflowId: "minimal-pi-coding-agent",
     stageId: "execute",
+    nodeKind: "agent",
     agentId: PI_CODING_AGENT.id,
   });
   try {

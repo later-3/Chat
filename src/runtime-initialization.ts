@@ -1,6 +1,8 @@
 import { resolve } from "node:path";
-import { resolveChatHome } from "./chat-home.js";
+import { ensureChatHome, resolveChatHome } from "./chat-home.js";
 import { migrateLegacyProjectLayout } from "./migrations/project-layout-v1.js";
+import { ensureMemorySkill } from "./workflows/memory/agents/memory-agent/skill.js";
+import { ensureRuleLibrarySkill } from "./workflows/rule-management/agents/rule-curator-agent/skill.js";
 
 const initializations = new Map<string, Promise<void>>();
 
@@ -15,7 +17,13 @@ export function ensureChatRuntimeInitialized(options: {
   const existing = initializations.get(key);
   if (existing !== undefined) return existing;
   const initialized = migrateLegacyProjectLayout({ projectRoot, chatHome })
-    .then(() => undefined)
+    .then(async () => {
+      const paths = await ensureChatHome(chatHome);
+      await Promise.all([
+        ensureMemorySkill(paths.runtimeDir, { refresh: true }),
+        ensureRuleLibrarySkill(paths.runtimeDir, { refresh: true }),
+      ]);
+    })
     .catch((error: unknown) => {
       initializations.delete(key);
       throw error;

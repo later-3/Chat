@@ -88,7 +88,10 @@ GET /runs/:runId/events
   → NDJSON：stage_start + Pi AgentSession事件投影
 
 GET /runs/:runId
-  → 轮询running / completed / failed / cancelled
+  → 轮询running / completed / failed / cancelled，并在waiting_review阶段返回当前计划
+
+POST /runs/:runId/review
+  → approve，或request_revision + 用户审核原文
 ```
 
 完成后，浏览器用返回的Session ID重新请求`GET /api/sessions/:id`，以Pi Session持久数据校正页面历史。
@@ -152,6 +155,8 @@ Chat关闭Pi从cwd无限向父目录发现`AGENTS.md`或`CLAUDE.md`的默认行�
 
 规则与经验按Target保存在Chat Home运行数据中：个人资源位于`~/.chat/prompt-resources`，项目资源位于`~/.chat/projects/<projectId>/prompt-resources`。每个已确认资源使用追加版本链，草稿与已确认资源分目录保存。资源包含目的、Prompt内容、标签、状态和Session来源；归档产生新版本，不删除历史。Rule Curator通过只读Pi Tool读取当前Session活动分支，自行选择相关Pi Entry ID并保存上下文快照，用户不需要接触内部ID；创建工具再次校验这些Entry属于当前活动分支的可引用范围。项目源码目录中的`.chat/prompts`仍是可随仓库移动的Pi Prompt文件，两者不混用。
 
+产品自带的开发经验案例保存在源码常量和`docs/development-experiences/`中，首次访问时以稳定ID归档到Personal经验库；初始化只补充缺失资源，不覆盖用户已经修改或归档的同ID版本。它们与对话产生的经验使用相同API、前端勾选、Session配置和System Prompt装配链路。
+
 规则内容描述适用场景和必须遵守的要求，可以直接包含要求，也可以引用Project内稳定路径的设计或工程文档。Prompt资源实体与版本历史保存在上述Chat Home目录；`<project-root>/.chat/config.json`和Session配置只保存Workflow Agent对资源Target、ID及revision的选择关系，不复制资源实体。
 
 Agent配置通过资源ID选择Prompt资源。本轮开始时Chat把资源解析到具体版本并写入Turn配置快照，随后把该版本内容放入Chat自定义System Prompt区域。规则管理Workflow使用普通Pi AgentSession、一个Workflow专用Skill和Chat Custom Tools完成检索、草稿、确认提交与Agent规则建议；用户通过后续对话确认应用或拒绝建议，拒绝不会修改目标Agent配置。
@@ -185,47 +190,55 @@ Pi把User / Assistant / Tool Result写入同一Session
 
 Planner先打开同一个Chat Session，然后：
 
-1. 写入`workflow=planning-execution / stage=plan / agent=planner`标记和真实输入记录。
-2. 使用`SessionManager.forkInMemory()`复制当前有效历史。这个副本不持久化，向它追加内容不会修改主Session。
-3. 创建自己的SettingsManager和ResourceLoader，用`PLANNING_SYSTEM_PROMPT`替换默认System Prompt。
-4. 用`noTools: "all"`创建AgentSession。
-5. 调用`session.prompt(buildPlanningPrompt(userPrompt))`。
-6. 从Planner最后一条Assistant消息提取计划。
-7. 把完整Planner Assistant消息作为Chat CustomEntry写回主Session，用于完整历史展示，但不进入Pi模型上下文。
+1. 写入`workflow=planning-execution / stage=plan / agent=planner`元数据。
+2. 把原始用户请求作为Pi原生`message.role=user`写入一次。
+3. 写入只包含`inputEntryIds`的Agent输入引用。
+4. 在同一个持久SessionManager上创建Planner AgentSession；Planner使用替换System Prompt和无工具策略。
+5. 从最后一条原生Assistant消息提取计划；该消息本身就是主Session中的计划事实。
 
-Planner能看到创建副本时主Session已有的有效历史。它本轮包装后的规划Prompt和Planner回复只存在于内存副本；主Session保存的是Chat自己的输入证据和Planner消息副本。
+修订时审核原文已经是最新的原生User消息。Planner使用Context Transform在模型调用中补充“修订完整计划”的控制说明和上一版计划，不改变或复制持久化话语角色。
 
 当前Planner仍会创建默认ResourceLoader并加载Extension；`noTools: "all"`只关闭工具，不等于`noExtensions: true`。因为没有`read`工具，已发现Skill不会进入Planner System Prompt，但Extension代码仍可能参与生命周期。这只是当前Planner的具体配置，不代表Chat存在“受限Agent”类型，也不构成后续默认禁止Extension的理由。
 
-### 7.2 Executor Stage
+### 7.2 Review Task与修订循环
+
+Planner每次输出完整计划后，Workflow创建与`workflowInvocationId + planRevision`绑定的耐久Hook，并把计划正文、版本、SHA-256和Session ID同时写入主Session与Project运行状态。Workflow Run保持`running / waiting_review`，不创建新Session，也不把审核Task伪装成Agent。
+
+- 批准：审核接口校验Run、Project、版本和计划摘要后恢复Hook，进入Executor。
+- 要求修改：审核原文写入原生User MessageEntry；决定CustomEntry通过`feedbackEntryId`引用它。原始请求、上一版计划和审核消息进入同一个Planner配置继续修订。
+- 刷新或断线：前端从Session和运行状态恢复同一Run；断开页面连接不会隐式取消，只有停止按钮调用`DELETE /runs/:runId`。
+- 并发：同一Session存在非终态规划Run时拒绝开启新回合；`completed / failed / cancelled`是单向终态，迟到Step不能重新发布审核。
+
+### 7.3 Executor Stage
 
 Executor重新按Session ID打开主Session，然后：
 
 1. 写入`stage=execute / agent=pi-coding-agent`标记。
-2. 写入本Stage的用户原话以及Planner输出来源记录。
+2. 写入只含原始请求、审核反馈和最终计划MessageEntry ID的输入引用。
 3. 创建ResourceLoader，在Pi默认System Prompt后追加执行规则。
-4. 通过`transformContext`在本次Provider请求中插入隐藏Custom Message：
+4. 因批准点击没有新的自然语言话语，通过`sendCustomMessage(..., { triggerTurn: true })`写入隐藏的内部交接并触发执行：
 
 ```text
 workflow_execution_input
   ├── userRequest：用户原话
-  └── plannerOutput：Planner输出
+  └── plannerOutput：最终批准的Planner输出
 ```
 
-5. 调用`session.prompt(userPrompt)`，让Pi正常持久化用户消息、Assistant消息和工具结果。
+5. Pi正常持久化Tool Result和Executor Assistant消息；不会第二次写入原始User消息。
 
-Pi的`convertToLlm()`会把这个`role: "custom"`的本次输入转换为Provider可理解的User Message。因为它来自`transformContext`，不会写入标准Session消息；Chat另外用CustomEntry保存真实输入链供完整历史检查。
+这个`custom_message`会进入模型上下文，前端不把它渲染成用户话语。持久Session仍完整保留Planner计划、审核意见以及Executor输出；不同Agent的模型视图由Stage装配规则决定。
 
-### 7.3 为什么主Session里不直接保存Planner为Assistant
+### 7.4 为什么Planner必须保存为Assistant
 
-Pi当前Provider上下文使用`user / assistant / toolResult`角色，没有多个Assistant身份协议。若把Planner的Assistant消息直接插进主对话，下一轮Pi Coding Agent会把它当成自己的历史回复。
+Planner确实是本轮说话的Agent，所以它的计划就是原生Assistant消息。多个Agent身份不通过篡改角色表达，而通过`chat.workflow_stage`与相邻原生消息关联。
 
-当前实现因此分开两件事：
+当前实现分开三层：
 
-- 模型上下文：Executor只在本次调用中收到结构化Planner输入。
-- 过程观察：主Session的CustomEntry保存Workflow、Stage、Agent、输入和Planner完整消息。
+- 持久化事实：原生User、Assistant和Tool Result。
+- 模型上下文：每个Agent按Stage规则选择和转换同一线性历史。
+- 前端投影：把Stage元数据和相邻原生消息折叠成一个Workflow视觉块。
 
-这是Chat业务语义，建立在Pi原生CustomEntry和Context Transform扩展点上，没有修改Pi标准Session消息Schema。
+完整规范和反例见[Chat Session架构](./chat-session-architecture.md)。
 
 ## 8. Memory Workflow
 
@@ -254,15 +267,16 @@ workflowId + stageId + agentId
 
 ### 8.2 Session观察数据
 
-Chat使用Pi原生`CustomEntry`保存三类不进入模型上下文的数据：
+Chat使用Pi原生`CustomEntry`保存不进入模型上下文的编排数据：
 
 | customType | 内容 | 用途 |
 |---|---|---|
-| `chat.workflow_stage` | Workflow、Stage和Agent身份 | 划分执行阶段 |
-| `chat.workflow_agent_input` | 用户原话和上游Stage输出 | 说明每个Agent实际收到什么 |
-| `chat.workflow_message` | Planner完整Assistant消息 | 展示内部Agent的Thinking和输出 |
+| `chat.workflow_stage` | Workflow、Stage、Node Kind和Agent身份 | 划分执行阶段 |
+| `chat.workflow_agent_input` v2 | 原生消息`inputEntryIds` | 说明每个Agent使用哪些会话事实 |
+| `chat.plan_review*` | 审核版本、决定、摘要和消息引用 | 恢复人工审核状态 |
+| `chat.session_migration` | 迁移ID、备份、源哈希和变更ID | 历史数据幂等迁移 |
 
-`session-read-model.ts`负责把Pi标准消息和Chat观察数据投影成前端历史；`session-export.ts`生成按Workflow、Stage和Agent整理的完整历史。
+`chat.workflow_message`和包含`userPrompt/upstream.output`的Agent Input只为旧Session迁移期读取，新代码不再写入。`session-read-model.ts`把Pi原生消息和Stage元数据投影成前端历史；`session-export.ts`生成按Workflow、Stage和Agent整理的完整历史。
 
 ## 10. 当前能力配置在哪里
 

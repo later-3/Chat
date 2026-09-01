@@ -23,7 +23,8 @@
     "test:backend": "node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types scripts/run-backend-tests.mjs",
     "test:frontend": "pnpm --dir frontend test",
     "test:built": "node --test scripts/built-server.test.mjs",
-    "verify": "pnpm test && pnpm typecheck && pnpm build && pnpm test:built"
+    "test:dev": "node --test scripts/dev-server.test.mjs",
+    "verify": "pnpm test && pnpm typecheck && pnpm build && pnpm test:built && pnpm test:dev"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "link:./pi/packages/agent",

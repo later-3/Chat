@@ -46,6 +46,31 @@ async function readJson(request) {
 
 async function startEmbeddingServer() {
   const localServer = http.createServer(async (request, response) => {
+    if (request.method === "POST" && request.url === "/v1/chat/completions") {
+      await readJson(request);
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.write(`data: ${JSON.stringify({
+        id: "chatcmpl-built-runtime",
+        object: "chat.completion.chunk",
+        created: 0,
+        model: "built-runtime-model",
+        choices: [{
+          index: 0,
+          delta: { role: "assistant", content: "Workflow runtime smoke completed." },
+          finish_reason: null,
+        }],
+      })}\n\n`);
+      response.write(`data: ${JSON.stringify({
+        id: "chatcmpl-built-runtime",
+        object: "chat.completion.chunk",
+        created: 0,
+        model: "built-runtime-model",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      })}\n\n`);
+      response.end("data: [DONE]\n\n");
+      return;
+    }
     if (request.method !== "POST" || request.url !== "/v1/embeddings") {
       response.writeHead(404).end();
       return;
@@ -193,6 +218,29 @@ before(async () => {
   }, null, 2));
 
   const embeddingBaseUrl = await startEmbeddingServer();
+  fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
+    defaultProvider: "built-runtime",
+    defaultModel: "built-runtime-model",
+    defaultThinkingLevel: "off",
+  }));
+  fs.writeFileSync(path.join(agentDir, "models.json"), JSON.stringify({
+    providers: {
+      "built-runtime": {
+        baseUrl: embeddingBaseUrl,
+        api: "openai-completions",
+        apiKey: "built-runtime-key",
+        models: [{
+          id: "built-runtime-model",
+          name: "Built Runtime Model",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128_000,
+          maxTokens: 8_192,
+        }],
+      },
+    },
+  }));
   const port = await reservePort();
   baseUrl = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, [serverEntry], {
@@ -501,12 +549,170 @@ test("Workflow containers and their Agents come from the backend registry", asyn
   ]);
   assert.deepEqual(body.workflows.map((workflow) => workflow.nodes.map((node) => node.agentId)), [
     ["pi-coding-agent"],
-    ["planner", "pi-coding-agent"],
+    ["planner", undefined, "pi-coding-agent"],
     ["memory-agent"],
     ["rule-curator-agent"],
   ]);
   assert.equal(body.workflows[2].agents[0].configPath, "./agents/memory-agent/agent.json");
   assert.equal(body.workflows[3].agents[0].configPath, "./agents/rule-curator-agent/agent.json");
+});
+
+test("the built server executes a real local Workflow Run through transformed modules", async () => {
+  const startResponse = await authenticatedFetch("/runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId,
+      cwd: workspace,
+      prompt: "Run the deterministic Workflow Runtime smoke test.",
+      workflow: "minimal-pi-coding-agent",
+      agentConfigs: {
+        "pi-coding-agent": {
+          resources: {
+            mode: "explicit",
+            skillPaths: [projectSkillPath],
+            extensionPaths: [],
+            pluginSources: [],
+          },
+        },
+      },
+    }),
+  });
+  const started = await startResponse.json();
+  assert.equal(startResponse.status, 202, JSON.stringify(started));
+  assert.equal(typeof started.runId, "string");
+
+  const deadline = Date.now() + 10_000;
+  let status;
+  do {
+    const response = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}`);
+    const body = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(body));
+    status = body;
+    if (status.status === "completed" || status.status === "failed" || status.status === "cancelled") break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  } while (Date.now() < deadline);
+
+  assert.equal(status?.status, "completed", JSON.stringify(status));
+  assert.equal(status.result.text, "Workflow runtime smoke completed.");
+});
+
+test("the built planning Workflow survives review and resumes the same Session", async () => {
+  const blockingResponse = await authenticatedFetch("/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId,
+      cwd: workspace,
+      prompt: "A blocking endpoint cannot review this plan.",
+      workflow: "planning-execution",
+    }),
+  });
+  assert.equal(blockingResponse.status, 400);
+  assert.match(await blockingResponse.text(), /POST \/runs/);
+
+  const startResponse = await authenticatedFetch("/runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId,
+      cwd: workspace,
+      prompt: "Plan, wait for approval, and then run the built smoke test.",
+      workflow: "planning-execution",
+    }),
+  });
+  const started = await startResponse.json();
+  assert.equal(startResponse.status, 202, JSON.stringify(started));
+  assert.equal(typeof started.workflowInvocationId, "string");
+  const query = new URLSearchParams({
+    projectId,
+    workflowInvocationId: started.workflowInvocationId,
+  });
+  const statusPath = `/runs/${encodeURIComponent(started.runId)}?${query.toString()}`;
+
+  const reviewDeadline = Date.now() + 10_000;
+  let reviewStatus;
+  do {
+    const response = await authenticatedFetch(statusPath);
+    reviewStatus = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(reviewStatus));
+    if (reviewStatus.phase === "waiting_review") break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  } while (Date.now() < reviewDeadline);
+  assert.equal(reviewStatus?.phase, "waiting_review", JSON.stringify(reviewStatus));
+  assert.equal(reviewStatus.review.planRevision, 1);
+
+  const waitingSessionResponse = await authenticatedFetch(
+    `/api/sessions/${encodeURIComponent(reviewStatus.review.sessionId)}?projectId=${projectId}`,
+  );
+  const waitingSession = await waitingSessionResponse.json();
+  assert.equal(waitingSessionResponse.status, 200, JSON.stringify(waitingSession));
+  assert.equal(waitingSession.activePlanningExecution.runId, started.runId);
+  assert.equal(waitingSession.activePlanningExecution.review.reviewId, reviewStatus.review.reviewId);
+  assert.deepEqual(waitingSession.context.messages.map((message) => message.role), ["user", "assistant"]);
+
+  const staleApproval = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId,
+      decision: {
+        kind: "approve",
+        reviewId: reviewStatus.review.reviewId,
+        workflowInvocationId: started.workflowInvocationId,
+        planRevision: 99,
+        planSha256: reviewStatus.review.planSha256,
+      },
+    }),
+  });
+  assert.equal(staleApproval.status, 409);
+
+  const approval = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId,
+      decision: {
+        kind: "approve",
+        reviewId: reviewStatus.review.reviewId,
+        workflowInvocationId: started.workflowInvocationId,
+        planRevision: reviewStatus.review.planRevision,
+        planSha256: reviewStatus.review.planSha256,
+      },
+    }),
+  });
+  assert.equal(approval.status, 202, await approval.text());
+
+  const completionDeadline = Date.now() + 10_000;
+  let completed;
+  do {
+    const response = await authenticatedFetch(statusPath);
+    completed = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(completed));
+    if (["completed", "failed", "cancelled"].includes(completed.status)) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  } while (Date.now() < completionDeadline);
+  assert.equal(completed?.status, "completed", JSON.stringify(completed));
+  assert.equal(completed.result.sessionId, reviewStatus.review.sessionId);
+  assert.equal(completed.result.text, "Workflow runtime smoke completed.");
+
+  const replayedApproval = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId,
+      decision: {
+        kind: "approve",
+        reviewId: reviewStatus.review.reviewId,
+        workflowInvocationId: started.workflowInvocationId,
+        planRevision: reviewStatus.review.planRevision,
+        planSha256: reviewStatus.review.planSha256,
+      },
+    }),
+  });
+  const replayedApprovalBody = await replayedApproval.json();
+  assert.equal(replayedApproval.status, 202, JSON.stringify(replayedApprovalBody));
+  assert.equal(replayedApprovalBody.replayed, true);
 });
 
 test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async () => {
@@ -635,6 +841,16 @@ test("Prompt resource production API is read-only and target-aware", async () =>
   );
   assert.equal(historyResponse.status, 200);
   assert.deepEqual((await historyResponse.json()).revisions.map((item) => item.revision), [1]);
+
+  const builtInResponse = await authenticatedFetch(
+    `/api/prompt-resources?projectId=${projectId}&target=personal&kind=experience&q=Pi+SDK&status=all`,
+  );
+  assert.equal(builtInResponse.status, 200);
+  const builtIns = (await builtInResponse.json()).resources;
+  assert.deepEqual(builtIns.map((item) => item.id), ["workflow-runtime-artifact-validation"]);
+  assert.equal(builtIns[0].revision, 3);
+  assert.equal(builtIns[0].kind, "experience");
+  assert.deepEqual(builtIns[0].target, { type: "personal" });
 });
 
 test("full history exports the managed Chat Session as standalone HTML", async () => {

@@ -108,6 +108,12 @@ Agent节点必须引用同一Workflow已经声明的Agent ID。框架负责：
 
 普通节点执行确定性的应用代码，例如转换输入、调用领域服务或组成阶段结果。它没有Agent ID，也不能隐式创建Pi AgentSession。需要模型能力时必须显式改为Agent节点。
 
+人工审核属于普通节点。`planning-execution`使用`plan(agent) → review(task) → execute(agent)`三个节点；审核节点通过Workflow SDK的耐久Hook挂起同一个Run。用户要求修改时，原始需求、上一版完整计划和用户审核原文进入同一Planner Agent的新一轮调用；批准时只有最终计划进入执行Agent。
+
+计划和审核原文以Pi原生MessageEntry保存在同一Session中；审核请求、决定、版本绑定和消息引用以追加CustomEntry保存。`chat.workflow_agent_input`只能保存`inputEntryIds`，不得复制`userPrompt`或上游输出正文。Run控制面只保存`runId`、Invocation、Session和当前阶段的窄绑定。浏览器刷新只能断开并重连事件流，不能隐式取消等待审核的Run；只有显式停止操作可以取消。每个决定必须绑定`reviewId + planRevision + planSha256`，旧版本、重复冲突和跨Run提交必须失败关闭。
+
+所有Workflow还必须通过[Session消息检查清单](./chat-session-architecture.md#9-新workflow检查清单)。
+
 节点定义是可展示元数据；节点执行函数仍属于`workflow.ts`或`steps.ts`，不序列化进JSON。
 
 ## 5. Workflow组合入口
@@ -232,6 +238,8 @@ Chat首次准备Chat Home时创建Personal根配置；Project可以在源码目�
 
 Agent选择使用`Target + resourceId`寻址。本轮快照固定具体revision；Draft与已确认资源分离，修改和归档追加revision而不覆盖历史。项目源码中的`<project-root>/.chat/prompts`是可移植的Pi Prompt文件，不是这套带Session来源和Draft生命周期的管理库。
 
+Chat可随产品交付内置Personal经验。内置经验第一次访问Prompt资源库时以稳定ID归档为普通`experience`资源；已有同ID资源及其用户版本不会被覆盖。前端继续通过统一资源接口自动发现，用户选择后按同一路径进入Agent自定义System Prompt区域，不增加内置案例专用配置分支。
+
 ## 8. Tool定义与加载
 
 只有Pi `ToolDefinition`是可执行Tool定义。Chat不复制`name`、参数Schema或`execute()`形成第二套Tool类型。
@@ -278,5 +286,7 @@ GET  /api/prompt-resources/:resourceId/history
 6. 通过`defineChatWorkflow()`创建定义，并在Registry注册一次。
 7. 为Manifest校验、Agent解析、节点引用和实际AgentSession能力增加测试。
 8. 验证`GET /api/workflows`、Catalog和Resolve无需前端专用代码即可显示。
-9. 运行后端测试、前端测试、类型检查、构建和Built Server测试。
-10. 验证Session配置隔离、本轮冻结、解析失败不落盘，以及刷新不覆盖未发送编辑。
+9. 检查Builder单层转换和`LocalBuilder(dev=true)`完整Step产物；开发产物必须由Node实际装载，不能残留无法直接运行的本地源码依赖。
+10. 运行`pnpm test:dev`，通过Frontend的Run合同验证`Workflow → Agent节点 → Pi SDK → 本地假模型 → completed`，并使用隔离的Build Dir与Chat Home。
+11. 运行后端测试、前端测试、类型检查、生产构建和Built Server真实Workflow Run测试。
+12. 验证Session配置隔离、本轮冻结、解析失败不落盘，以及刷新不覆盖未发送编辑。

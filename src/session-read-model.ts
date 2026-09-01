@@ -8,7 +8,9 @@ import {
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 import { openProject, resolveProjectContext } from "./projects/registry.js";
+import { migrateSessionNativeMessagesV1 } from "./migrations/session-native-messages-v1.js";
 import {
+  collectChatWorkflowAgentInputs,
   collectChatWorkflowMessages,
   collectChatWorkflowStageMarkers,
   type ChatWorkflowMessageMarker,
@@ -18,6 +20,14 @@ import {
   collectLatestChatWorkflowConfigurations,
 } from "./workflows/workflow-configuration.js";
 import { collectChatPromptResourceProposals } from "./workflows/prompt-resource-proposal.js";
+import {
+  CHAT_PLAN_REVIEW_CUSTOM_TYPE,
+  collectPlanReviewDecisions,
+  collectPendingPlanReview,
+  findActivePlanningExecutionRun,
+  getPlanningExecutionRun,
+  isTerminalPlanningExecutionPhase,
+} from "./workflows/planning-execution/review-state.js";
 
 export interface ChatSessionListItem {
   path: string;
@@ -38,9 +48,43 @@ export interface ChatSessionListItem {
   projectId?: string;
 }
 
-function toListItems(infos: SessionInfo[], projectId?: string): ChatSessionListItem[] {
+function messageUtteranceText(message: unknown): string {
+  if (!isRecord(message) || (message.role !== "user" && message.role !== "assistant")) return "";
+  if (typeof message.content === "string") return message.content.trim();
+  if (!Array.isArray(message.content)) return "";
+  return message.content.flatMap((block) => (
+    isRecord(block) && block.type === "text" && typeof block.text === "string" ? [block.text] : []
+  )).join("\n").trim();
+}
+
+/** Pi's list sentinel is first-user-only; Chat needs the first human or Agent utterance. */
+function firstSessionUtterance(info: SessionInfo): string {
+  const entries = SessionManager.open(info.path, dirname(info.path)).getEntries();
+  const legacyInputs = new Map(
+    collectChatWorkflowAgentInputs(entries)
+      .filter((input) => input.schemaVersion === 1)
+      .map((input) => [input.entryId, input.userPrompt]),
+  );
+  const legacyMessages = new Map(
+    collectChatWorkflowMessages(entries).map((message) => [message.entryId, message.message]),
+  );
+  for (const entry of entries) {
+    if (entry.type === "message") {
+      const text = messageUtteranceText(entry.message);
+      if (text !== "") return text;
+    }
+    const legacyUser = legacyInputs.get(entry.id)?.trim();
+    if (legacyUser) return legacyUser;
+    const legacyAssistant = legacyMessages.get(entry.id);
+    const text = messageUtteranceText(legacyAssistant);
+    if (text !== "") return text;
+  }
+  return info.firstMessage === "(no messages)" ? "" : info.firstMessage;
+}
+
+async function toListItems(infos: SessionInfo[], projectId?: string): Promise<ChatSessionListItem[]> {
   const idByPath = new Map(infos.map((info) => [resolve(info.path), info.id]));
-  return infos.map((info) => {
+  return Promise.all(infos.map(async (info) => {
     const parentSessionId = info.parentSessionPath === undefined
       ? undefined
       : idByPath.get(resolve(info.parentSessionPath));
@@ -52,7 +96,7 @@ function toListItems(infos: SessionInfo[], projectId?: string): ChatSessionListI
       created: info.created.toISOString(),
       modified: info.modified.toISOString(),
       messageCount: info.messageCount,
-      firstMessage: info.firstMessage,
+      firstMessage: firstSessionUtterance(info),
       ...(parentSessionId === undefined ? {} : { parentSessionId }),
       projectRoot: info.cwd,
       projectAvailable: true,
@@ -62,7 +106,7 @@ function toListItems(infos: SessionInfo[], projectId?: string): ChatSessionListI
       readOnly: false,
       ...(projectId === undefined ? {} : { projectId }),
     };
-  });
+  }));
 }
 
 /** Lists one registered Project; cwd is resolved through its Project Manifest when omitted. */
@@ -73,7 +117,21 @@ export async function listChatSessions(projectId?: string, chatHome?: string): P
         ...(chatHome === undefined ? {} : { chatHome }),
       })
     : await resolveProjectContext(projectId, chatHome);
-  return toListItems(await SessionManager.listAll(project.sessionDir), project.projectId);
+  let infos = await SessionManager.listAll(project.sessionDir);
+  const results = await Promise.all(infos.map(async (info) => {
+    if (await findActivePlanningExecutionRun(project.projectDataDir, info.id) !== undefined) return false;
+    try {
+      return (await migrateSessionNativeMessagesV1({
+        sessionFile: info.path,
+        projectDataDir: project.projectDataDir,
+      })).migrated;
+    } catch (error) {
+      console.error(`Session ${info.id}迁移失败: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  }));
+  if (results.some(Boolean)) infos = await SessionManager.listAll(project.sessionDir);
+  return toListItems(infos, project.projectId);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -118,6 +176,25 @@ function workflowMessageForFrontend(marker: ChatWorkflowMessageMarker): unknown 
       workflowId: marker.workflowId,
       stageId: marker.stageId,
       agentId: marker.agentId,
+    },
+  };
+}
+
+function nativeMessageForFrontend(
+  message: unknown,
+  stage: ReturnType<typeof collectChatWorkflowStageMarkers>[number] | undefined,
+): unknown {
+  const normalized = normalizeMessageForFrontend(message);
+  if (!isRecord(normalized) || normalized.role !== "assistant" || stage?.agentId === undefined) {
+    return normalized;
+  }
+  return {
+    ...normalized,
+    chatWorkflow: {
+      invocationId: stage.invocationId,
+      workflowId: stage.workflowId,
+      stageId: stage.stageId,
+      agentId: stage.agentId,
     },
   };
 }
@@ -190,6 +267,34 @@ export function projectSessionContext(
   const workflowMessageByEntryId = new Map(
     collectChatWorkflowMessages(contextEntries).map((message) => [message.entryId, message]),
   );
+  const workflowAgentInputByEntryId = new Map(
+    collectChatWorkflowAgentInputs(contextEntries).map((input) => [input.entryId, input]),
+  );
+  const planReviewInvocationByEntryId = new Map<string, string>();
+  for (const entry of contextEntries) {
+    if (entry.type === "custom" && entry.customType === CHAT_PLAN_REVIEW_CUSTOM_TYPE
+      && isRecord(entry.data) && typeof entry.data.workflowInvocationId === "string") {
+      planReviewInvocationByEntryId.set(entry.id, entry.data.workflowInvocationId);
+    }
+  }
+  const reviewDecisionByEntryId = new Map(
+    collectPlanReviewDecisions(contextEntries).map((decision) => [decision.entryId, decision]),
+  );
+  const persistedUserByInvocation = new Map<string, { message: unknown; entryId: string }>();
+  let scannedStage = undefined as ReturnType<typeof collectChatWorkflowStageMarkers>[number] | undefined;
+  for (const entry of contextEntries) {
+    const stage = stageByEntryId.get(entry.id);
+    if (stage !== undefined) {
+      scannedStage = stage;
+      continue;
+    }
+    if (scannedStage?.workflowId !== "planning-execution" || scannedStage.stageId !== "execute") continue;
+    const userMessage = sessionEntryToContextMessages(entry).find((message) => message.role === "user");
+    if (userMessage !== undefined) {
+      persistedUserByInvocation.set(scannedStage.invocationId, { message: userMessage, entryId: entry.id });
+    }
+  }
+  const projectedWorkflowRequests = new Set<string>();
   const pendingWorkflowMessages = new Map<string, ChatWorkflowMessageMarker[]>();
   let activeStage = undefined as ReturnType<typeof collectChatWorkflowStageMarkers>[number] | undefined;
 
@@ -219,8 +324,47 @@ export function projectSessionContext(
       pendingWorkflowMessages.set(workflowMessage.invocationId, pending);
       continue;
     }
+    const workflowAgentInput = workflowAgentInputByEntryId.get(entry.id);
+    if (workflowAgentInput?.schemaVersion === 1
+      && workflowAgentInput.workflowId === "planning-execution"
+      && workflowAgentInput.stageId === "plan"
+      && !projectedWorkflowRequests.has(workflowAgentInput.invocationId)) {
+      const persisted = persistedUserByInvocation.get(workflowAgentInput.invocationId);
+      messages.push(persisted?.message ?? {
+          role: "user",
+          content: workflowAgentInput.userPrompt,
+          timestamp: Date.parse((entry as { timestamp?: string }).timestamp ?? "") || Date.now(),
+        });
+      entryIds.push(persisted?.entryId ?? workflowAgentInput.entryId);
+      projectedWorkflowRequests.add(workflowAgentInput.invocationId);
+    }
+    const reviewInvocationId = planReviewInvocationByEntryId.get(entry.id);
+    if (reviewInvocationId !== undefined) flushWorkflowMessages(reviewInvocationId);
+    const reviewDecision = reviewDecisionByEntryId.get(entry.id);
+    if (reviewDecision?.kind === "request_revision" && reviewDecision.feedbackEntryId === undefined) {
+      messages.push({
+        role: "custom",
+        customType: "chat.plan_review_feedback",
+        content: `计划修改意见：${reviewDecision.feedback}`,
+        display: true,
+        details: {
+          reviewId: reviewDecision.reviewId,
+          planRevision: reviewDecision.planRevision,
+        },
+        timestamp: Date.parse(reviewDecision.decidedAt),
+      });
+      entryIds.push(reviewDecision.entryId);
+    }
     for (const message of sessionEntryToContextMessages(entry)) {
-      messages.push(applyProjectionOptions(normalizeMessageForFrontend(message), options));
+      if (isRecord(message) && message.role === "custom" && message.display === false) continue;
+      if (isRecord(message) && message.role === "user"
+        && activeStage?.workflowId === "planning-execution"
+        && activeStage.stageId === "execute"
+        && projectedWorkflowRequests.has(activeStage.invocationId)) {
+        flushWorkflowMessages(activeStage.invocationId);
+        continue;
+      }
+      messages.push(applyProjectionOptions(nativeMessageForFrontend(message, activeStage), options));
       entryIds.push(entry.id);
       if (
         isRecord(message)
@@ -270,6 +414,31 @@ export async function readChatSession(
 
   const selectedLeafId = leafId === undefined ? manager.getLeafId() : leafId;
   const context = projectSessionContext(entries, selectedLeafId, options);
+  const pendingPlanReview = collectPendingPlanReview(entries);
+  let activePlanningExecution;
+  const latestPlanningInvocationId = collectChatWorkflowStageMarkers(entries)
+    .filter((stage) => stage.workflowId === "planning-execution")
+    .at(-1)?.invocationId
+    ?? collectChatWorkflowTurnConfigurations(entries)
+      .filter((snapshot) => snapshot.workflowId === "planning-execution")
+      .at(-1)?.invocationId;
+  const activeInvocationId = pendingPlanReview?.workflowInvocationId ?? latestPlanningInvocationId;
+  if (activeInvocationId !== undefined && info.projectId !== undefined) {
+    const project = await resolveProjectContext(info.projectId, chatHome);
+    const record = await getPlanningExecutionRun(
+      project.projectDataDir,
+      activeInvocationId,
+    );
+    if (record?.runId !== undefined && record.sessionId === manager.getSessionId()
+      && !isTerminalPlanningExecutionPhase(record.phase)) {
+      activePlanningExecution = {
+        runId: record.runId,
+        workflowInvocationId: record.workflowInvocationId,
+        phase: record.phase,
+        ...(pendingPlanReview === undefined ? {} : { review: pendingPlanReview }),
+      };
+    }
+  }
 
   return {
     session: info,
@@ -287,5 +456,6 @@ export async function readChatSession(
     workflowConfigurations: collectLatestChatWorkflowConfigurations(entries),
     workflowTurnConfigurations: collectChatWorkflowTurnConfigurations(entries),
     promptResourceProposals: collectChatPromptResourceProposals(entries),
+    ...(activePlanningExecution === undefined ? {} : { activePlanningExecution }),
   };
 }

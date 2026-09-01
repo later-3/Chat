@@ -1,4 +1,7 @@
+import { resolve } from "node:path";
 import { defineConfig } from "nitro";
+
+const isolatedBuildDir = process.env.CHAT_NITRO_BUILD_DIR?.trim();
 
 /**
  * `serverDir`告诉Nitro服务端源码放在哪里。设置为`src`后，Nitro默认扫描
@@ -8,6 +11,9 @@ import { defineConfig } from "nitro";
  * 并把Workflow Runtime所需的内部HTTP路由注册到Nitro。
  */
 export default defineConfig({
+  ...(isolatedBuildDir === undefined || isolatedBuildDir === ""
+    ? {}
+    : { buildDir: resolve(isolatedBuildDir) }),
   serverDir: "src",
   modules: ["workflow/nitro"],
   // Keep native SQLite and ONNX assets external to the server bundle while

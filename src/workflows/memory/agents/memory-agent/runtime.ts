@@ -1,8 +1,12 @@
+import { readFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { stripFrontmatter } from "@earendil-works/pi-coding-agent";
 import { ensureChatHome } from "../../../../chat-home.js";
 import { getMemoryStoreManager } from "../../../../memory/manager-runtime.js";
 import type { WorkflowAgentSessionExtensions } from "../../../agent-definition.js";
 import type { ChatWorkflowAgentSessionContext } from "../../../registry.js";
 import { stripLegacyPlanningHandoffs } from "../../../planning-execution/context.js";
+import { injectInstructionBeforeLatestUser } from "../../../session-conversation.js";
 import { MEMORY_AGENT } from "./index.js";
 import { ensureMemorySkill } from "./skill.js";
 import { createMemoryTools } from "./tools/index.js";
@@ -26,6 +30,7 @@ export async function prepareMemoryAgentSession(
   }
   const paths = await ensureChatHome(context.chatHome);
   const skillPath = await ensureMemorySkill(paths.runtimeDir);
+  const skillBody = stripFrontmatter(await readFile(skillPath, "utf8")).trim();
   const projectId = context.projectId ?? context.cwd;
   return {
     additionalSkillPaths: [skillPath],
@@ -38,6 +43,19 @@ export async function prepareMemoryAgentSession(
       workflowInvocationId: context.workflowInvocationId,
       agentId: MEMORY_AGENT.id,
     }),
-    transformContext: stripLegacyPlanningHandoffs,
+    transformContext: (messages) => injectInstructionBeforeLatestUser(
+      stripLegacyPlanningHandoffs(messages),
+      {
+        customType: "chat.memory_skill_context",
+        details: { workflowId: context.workflowId, invocationId: context.workflowInvocationId },
+        content: [
+          `<skill name="memory" location="${skillPath}">`,
+          `References are relative to ${dirname(skillPath)}.`,
+          "",
+          skillBody,
+          "</skill>",
+        ].join("\n"),
+      },
+    ),
   };
 }

@@ -17,7 +17,10 @@ async function readRuleLibrarySkillSource(): Promise<string> {
   return content;
 }
 
-export async function ensureRuleLibrarySkill(runtimeDir: string): Promise<string> {
+export async function ensureRuleLibrarySkill(
+  runtimeDir: string,
+  options: { readonly refresh?: boolean } = {},
+): Promise<string> {
   const skillDir = resolve(runtimeDir, "skills", "rule-library");
   const skillPath = resolve(skillDir, "SKILL.md");
   await mkdir(skillDir, { recursive: true, mode: 0o700 });
@@ -25,6 +28,7 @@ export async function ensureRuleLibrarySkill(runtimeDir: string): Promise<string
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   });
+  if (options.refresh !== true && current !== undefined && current.trim() !== "") return skillPath;
   const source = await readRuleLibrarySkillSource();
   if (current !== source) await writeFile(skillPath, source, { encoding: "utf8", mode: 0o600 });
   return skillPath;

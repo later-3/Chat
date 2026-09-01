@@ -31,7 +31,7 @@ test("Workflow registry is the single backend source for available Workflows", (
     node.kind === "agent" ? node.agentId : null
   ))), [
     ["pi-coding-agent"],
-    ["planner", "pi-coding-agent"],
+    ["planner", null, "pi-coding-agent"],
     ["memory-agent"],
     ["rule-curator-agent"],
   ]);

@@ -24,6 +24,7 @@ import {
 import {
   collectChatWorkflowMessages,
   collectChatWorkflowStageMarkers,
+  type ChatWorkflowMessageMarker,
   type ChatWorkflowStageMarker,
 } from "../../../../workflow-stage.js";
 import {
@@ -99,8 +100,8 @@ function truncateSourceText(text: string): { text: string; textTruncated: boolea
   return { text: text.slice(0, SESSION_CONTEXT_MAX_TEXT_CHARS), textTruncated: true };
 }
 
-function workflowReference(stage: ChatWorkflowStageMarker | undefined) {
-  return stage === undefined
+function workflowReference(stage: ChatWorkflowStageMarker | ChatWorkflowMessageMarker | undefined) {
+  return stage === undefined || stage.agentId === undefined
     ? undefined
     : {
         invocationId: stage.invocationId,

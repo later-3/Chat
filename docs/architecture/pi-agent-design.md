@@ -116,7 +116,7 @@ Agent实际对话消息 ≠ CustomEntry
 CustomEntry = 可持久化但不进入模型上下文的应用数据
 ```
 
-Chat目前使用`CustomEntry`记录Workflow、Stage、Agent身份和内部阶段输出，是Chat的观察与展示逻辑，不是Agent能力配置机制。
+Chat使用`CustomEntry`记录Workflow、Stage、Agent身份、配置快照、控制状态和原生消息引用。内部Agent只要产生了真实话语，仍必须保存为原生`message`；不能把输出正文只放进CustomEntry。完整约束见[Chat Session架构](./chat-session-architecture.md)。
 
 ### 3.5 SettingsManager
 

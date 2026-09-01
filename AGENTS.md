@@ -57,6 +57,9 @@ git -C frontend diff --check
 
 针对性测试应覆盖真实业务场景和边界，不能只断言实现细节。测试通过不代表架构正确，提交前还要核对文档、配置、Frontend契约和生产装配路径是否一致。
 
+- 修改`src/workflows/**`、Workflow SDK、Builder Patch、Agent装配或Workflow可达资源时，必须分别检查Builder单层转换、Nitro开发Step bundle、生产构建和真实Runtime；不能用某个相邻链路通过代替用户实际启动链。除Node装载开发Step产物外，还必须运行`pnpm test:dev`，通过Frontend的Run合同验证Workflow、Agent节点、Pi SDK和本地假模型进入`completed`。
+- 开发故障中可复用的结论应归档到`docs/development-experiences/`并形成`experience` Prompt资源；每个案例至少增加一条自动化回归门禁。
+
 ## Git与部署
 
 - `frontend/`和`pi/`是固定Commit的Submodule；父仓库记录的Commit才是部署事实。

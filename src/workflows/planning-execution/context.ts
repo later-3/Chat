@@ -1,4 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { injectInstructionBeforeLatestUser } from "../session-conversation.js";
 
 export const LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE = "planning-execution-handoff";
 
@@ -19,28 +20,29 @@ export function stripLegacyPlanningHandoffs(messages: AgentMessage[]): AgentMess
   ));
 }
 
-/** Adds this Workflow's structured input to the current model request. */
-export function injectPlanningExecutionContext(
+/** Keeps review feedback as a native user message while giving Planner explicit revision context. */
+export function injectPlanningRevisionContext(
   messages: AgentMessage[],
-  userPrompt: string,
-  plan: string,
-  invocationId: string,
+  input: {
+    readonly invocationId: string;
+    readonly planRevision: number;
+    readonly previousPlan: string;
+  },
 ): AgentMessage[] {
-  const cleanMessages = stripLegacyPlanningHandoffs(messages);
-  const latestUserIndex = cleanMessages.findLastIndex((message) => message.role === "user");
-  const insertionIndex = latestUserIndex === -1 ? cleanMessages.length : latestUserIndex;
-  const plannerContext = {
-    role: "custom" as const,
-    customType: "chat.planning_execution_context",
-    content: buildPlanningExecutionInput(userPrompt, plan),
-    display: false,
-    details: { workflow: "planning-execution", invocationId },
-    timestamp: Date.now(),
-  } satisfies AgentMessage;
-
-  return [
-    ...cleanMessages.slice(0, insertionIndex),
-    plannerContext,
-    ...cleanMessages.slice(insertionIndex),
-  ];
+  return injectInstructionBeforeLatestUser(stripLegacyPlanningHandoffs(messages), {
+    customType: "chat.planning_revision_context",
+    details: {
+      workflow: "planning-execution",
+      invocationId: input.invocationId,
+      planRevision: input.planRevision,
+    },
+    content: [
+      `你正在修订第${String(input.planRevision)}版计划。`,
+      "最新一条原生user消息是审核人对上一版计划的修改意见。",
+      "请逐条响应意见并输出可独立审核的完整计划；不要执行任务，也不要只输出差异。",
+      "<previous_plan>",
+      input.previousPlan,
+      "</previous_plan>",
+    ].join("\n"),
+  });
 }

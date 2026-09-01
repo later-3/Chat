@@ -1,33 +1,89 @@
-import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { openChatSession } from "../../chat-session.js";
+import { openChatSession, type ChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
   createWorkflowAgentSession,
   type ResolvedWorkflowAgentDefinition,
 } from "../agent-definition.js";
 import { subscribeAgentSessionLog } from "../agent-session-log.js";
+import { createChatRunEventPublisher } from "../chat-run-events.js";
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 import {
+  appendChatUserMessage,
+  requireNativeAssistantLeafId,
+  triggerChatWorkflowAgentHandoff,
+} from "../session-conversation.js";
+import {
   appendChatWorkflowAgentInput,
-  appendChatWorkflowMessage,
   appendChatWorkflowStage,
 } from "../workflow-stage.js";
 import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
-import {
-  buildPlanningPrompt,
-  MAX_PLANNING_RESULT_CHARS,
-  PLANNER_AGENT,
-} from "./agents/planner/index.js";
+import { MAX_PLANNING_RESULT_CHARS, PLANNER_AGENT } from "./agents/planner/index.js";
 import { PLANNING_EXECUTION_AGENT } from "./agents/pi-coding-agent/index.js";
+import { buildPlanningExecutionInput, injectPlanningRevisionContext, stripLegacyPlanningHandoffs } from "./context.js";
+import type { PlanReviewDecision } from "./review.js";
 import {
-  injectPlanningExecutionContext,
-  stripLegacyPlanningHandoffs,
-} from "./context.js";
+  appendPlanReview,
+  appendPlanReviewDecision,
+  collectPlanReviewDecisions,
+  hasPlanReview,
+  hasPlanReviewDecision,
+  planSha256,
+  publishPlanReviewState,
+  setPlanningExecutionPhase,
+  type ChatPlanReview,
+} from "./review-state.js";
 
 interface PlanningStepResult {
   readonly sessionId: string;
+  readonly userEntryId: string;
   readonly plan: string;
+  readonly planEntryId: string;
+  readonly plannerAgent: ResolvedWorkflowAgentDefinition;
   readonly executionAgent: ResolvedWorkflowAgentDefinition;
+}
+
+export interface PlanningRevisionStepInput {
+  readonly projectId?: string;
+  readonly chatHome?: string;
+  readonly cwd: string;
+  readonly sessionId: string;
+  readonly workflowInvocationId: string;
+  readonly prompt: string;
+  readonly planRevision: number;
+  readonly previousPlan: string;
+  readonly feedback: string;
+  readonly inputEntryIds: readonly string[];
+  readonly agent: ResolvedWorkflowAgentDefinition;
+}
+
+interface PlanningRevisionStepResult {
+  readonly plan: string;
+  readonly planEntryId: string;
+  readonly userEntryId?: string;
+}
+
+export interface PublishPlanReviewStepInput {
+  readonly projectId?: string;
+  readonly chatHome?: string;
+  readonly cwd: string;
+  readonly sessionId: string;
+  readonly workflowInvocationId: string;
+  readonly planRevision: number;
+  readonly plan: string;
+  readonly planEntryId: string;
+}
+
+export interface RecordPlanReviewDecisionStepInput {
+  readonly projectId?: string;
+  readonly chatHome?: string;
+  readonly cwd: string;
+  readonly sessionId: string;
+  readonly workflowInvocationId: string;
+  readonly decision: PlanReviewDecision;
+}
+
+export interface RecordPlanReviewDecisionStepResult {
+  readonly feedbackEntryId?: string;
 }
 
 export interface PlanningExecutionStepInput {
@@ -38,53 +94,86 @@ export interface PlanningExecutionStepInput {
   readonly workflowInvocationId: string;
   readonly prompt: string;
   readonly plan: string;
+  readonly inputEntryIds: readonly string[];
   readonly agent: ResolvedWorkflowAgentDefinition;
 }
 
-export async function runPlanningStep(
-  input: ChatWorkflowInput,
-): Promise<PlanningStepResult> {
-  "use step";
+function requireProjectContext(chatSession: ChatSession) {
+  if (chatSession.projectContext === undefined) throw new Error("Planning Workflow缺少Project上下文");
+  return chatSession.projectContext;
+}
 
-  const stepStartedAt = Date.now();
-  const chatSession = await openChatSession(input);
-  const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
-    invocationId: input.workflowInvocationId,
-    workflowId: "planning-execution",
-    agents: [PLANNER_AGENT, PLANNING_EXECUTION_AGENT],
-    cwd: chatSession.cwd,
-    ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
-    ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),
-    ...(input.defaultAgentConfigs === undefined ? {} : { defaults: input.defaultAgentConfigs }),
-    ...(input.agentConfigs === undefined ? {} : { adjustments: input.agentConfigs }),
-  });
-  appendChatWorkflowStage(chatSession.manager, {
-    invocationId: input.workflowInvocationId,
-    workflowId: "planning-execution",
-    stageId: "plan",
-    agentId: PLANNER_AGENT.id,
-  });
-  appendChatWorkflowAgentInput(chatSession.manager, {
-    invocationId: input.workflowInvocationId,
-    workflowId: "planning-execution",
-    stageId: "plan",
-    agentId: PLANNER_AGENT.id,
-    userPrompt: input.prompt,
-  });
-  const plannerSessionManager = SessionManager.forkInMemory(chatSession.manager);
-
-  console.log(`${localTimestamp()} [planner] step starting cwd=${chatSession.cwd}`);
-  console.log(`${localTimestamp()} [planner] creating AgentSession`);
-  const agent = prepared.agents[PLANNER_AGENT.id];
-  const executionAgent = prepared.agents[PLANNING_EXECUTION_AGENT.id];
-  if (agent === undefined || executionAgent === undefined) {
-    throw new Error("本轮配置缺少Planning Workflow Agent");
+async function markPlanningExecutionFailed(
+  chatSession: ChatSession,
+  workflowInvocationId: string,
+): Promise<void> {
+  try {
+    const project = requireProjectContext(chatSession);
+    await setPlanningExecutionPhase({
+      projectDataDir: project.projectDataDir,
+      projectId: project.projectId,
+      workflowInvocationId,
+      sessionId: chatSession.manager.getSessionId(),
+      phase: "failed",
+    });
+  } catch (error) {
+    console.error(
+      `${localTimestamp()} [planning-execution] failed to persist terminal state error=${error instanceof Error ? error.message : String(error)}`,
+    );
   }
+}
+
+async function runPlannerIteration(input: {
+  readonly chatSession: ChatSession;
+  readonly workflowInvocationId: string;
+  readonly userMessage?: string;
+  readonly inputEntryIds: readonly string[];
+  readonly planRevision: number;
+  readonly previousPlan?: string;
+  readonly agent: ResolvedWorkflowAgentDefinition;
+}): Promise<PlanningRevisionStepResult> {
+  const stepStartedAt = Date.now();
+  const project = requireProjectContext(input.chatSession);
+  await setPlanningExecutionPhase({
+    projectDataDir: project.projectDataDir,
+    projectId: project.projectId,
+    workflowInvocationId: input.workflowInvocationId,
+    sessionId: input.chatSession.manager.getSessionId(),
+    phase: "planning",
+  });
+  appendChatWorkflowStage(input.chatSession.manager, {
+    invocationId: input.workflowInvocationId,
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: PLANNER_AGENT.id,
+  });
+  const userEntryId = input.userMessage === undefined
+    ? undefined
+    : appendChatUserMessage(input.chatSession.manager, input.userMessage);
+  const inputEntryIds = [
+    ...input.inputEntryIds,
+    ...(userEntryId === undefined ? [] : [userEntryId]),
+  ];
+  appendChatWorkflowAgentInput(input.chatSession.manager, {
+    invocationId: input.workflowInvocationId,
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: PLANNER_AGENT.id,
+    inputEntryIds,
+  });
+
+  console.log(`${localTimestamp()} [planner] revision=${input.planRevision} step starting cwd=${input.chatSession.cwd}`);
   const { session, modelFallbackMessage } = await createWorkflowAgentSession({
-    chatSession,
-    sessionManager: plannerSessionManager,
-    agent,
-    transformContext: stripLegacyPlanningHandoffs,
+    chatSession: input.chatSession,
+    sessionManager: input.chatSession.manager,
+    agent: input.agent,
+    transformContext: input.previousPlan === undefined
+      ? stripLegacyPlanningHandoffs
+      : (messages) => injectPlanningRevisionContext(messages, {
+          invocationId: input.workflowInvocationId,
+          planRevision: input.planRevision,
+          previousPlan: input.previousPlan as string,
+        }),
   });
   if (modelFallbackMessage !== undefined) {
     console.log(`${localTimestamp()} [planner] modelFallback=${modelFallbackMessage}`);
@@ -96,11 +185,12 @@ export async function runPlanningStep(
   const observer = subscribeAgentSessionLog(session, "planner", {
     workflowId: "planning-execution",
     stageId: "plan",
+    nodeKind: "agent",
     agentId: PLANNER_AGENT.id,
   });
   let completed = false;
   try {
-    await session.prompt(buildPlanningPrompt(input.prompt));
+    await session.resumePendingTurn();
     const plan = observer.getLastAssistantText();
     const plannerMessage = observer.getLastAssistantMessage();
     if (plan === "") throw new Error("Planner Agent没有返回计划文本");
@@ -109,29 +199,175 @@ export async function runPlanningStep(
       throw new Error(`规划结果不能超过${MAX_PLANNING_RESULT_CHARS}个字符`);
     }
 
-    appendChatWorkflowMessage(chatSession.manager, {
-      invocationId: input.workflowInvocationId,
-      workflowId: "planning-execution",
-      stageId: "plan",
-      agentId: PLANNER_AGENT.id,
-      message: plannerMessage,
-    });
-    chatSession.manager.flush();
+    const planEntryId = requireNativeAssistantLeafId(input.chatSession.manager);
+    input.chatSession.manager.flush();
     console.log(
-      `${localTimestamp()} [planner] completed chars=${plan.length} elapsedMs=${Date.now() - stepStartedAt}`,
+      `${localTimestamp()} [planner] revision=${input.planRevision} completed chars=${plan.length} elapsedMs=${Date.now() - stepStartedAt}`,
     );
     completed = true;
-    return { sessionId: chatSession.manager.getSessionId(), plan, executionAgent };
+    return { plan, planEntryId, ...(userEntryId === undefined ? {} : { userEntryId }) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(
-      `${localTimestamp()} [planner] failed elapsedMs=${Date.now() - stepStartedAt} error=${message}`,
+      `${localTimestamp()} [planner] revision=${input.planRevision} failed elapsedMs=${Date.now() - stepStartedAt} error=${message}`,
     );
+    await markPlanningExecutionFailed(input.chatSession, input.workflowInvocationId);
     throw error;
   } finally {
     await observer.finish(!completed);
     session.dispose();
-    console.log(`${localTimestamp()} [planner] session disposed`);
+  }
+}
+
+export async function runPlanningStep(input: ChatWorkflowInput): Promise<PlanningStepResult> {
+  "use step";
+
+  const chatSession = await openChatSession(input);
+  try {
+    const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
+      invocationId: input.workflowInvocationId,
+      workflowId: "planning-execution",
+      agents: [PLANNER_AGENT, PLANNING_EXECUTION_AGENT],
+      cwd: chatSession.cwd,
+      ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
+      ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),
+      ...(input.defaultAgentConfigs === undefined ? {} : { defaults: input.defaultAgentConfigs }),
+      ...(input.agentConfigs === undefined ? {} : { adjustments: input.agentConfigs }),
+    });
+    const plannerAgent = prepared.agents[PLANNER_AGENT.id];
+    const executionAgent = prepared.agents[PLANNING_EXECUTION_AGENT.id];
+    if (plannerAgent === undefined || executionAgent === undefined) {
+      throw new Error("本轮配置缺少Planning Workflow Agent");
+    }
+    const result = await runPlannerIteration({
+      chatSession,
+      workflowInvocationId: input.workflowInvocationId,
+      userMessage: input.prompt,
+      inputEntryIds: [],
+      planRevision: 1,
+      agent: plannerAgent,
+    });
+    if (result.userEntryId === undefined) throw new Error("Planning Workflow没有写入原生用户消息");
+    return {
+      sessionId: chatSession.manager.getSessionId(),
+      plan: result.plan,
+      planEntryId: result.planEntryId,
+      userEntryId: result.userEntryId,
+      plannerAgent,
+      executionAgent,
+    };
+  } catch (error) {
+    await markPlanningExecutionFailed(chatSession, input.workflowInvocationId);
+    throw error;
+  }
+}
+
+export async function runPlanningRevisionStep(
+  input: PlanningRevisionStepInput,
+): Promise<PlanningRevisionStepResult> {
+  "use step";
+
+  const chatSession = await openChatSession(input);
+  return runPlannerIteration({
+    chatSession,
+    workflowInvocationId: input.workflowInvocationId,
+    inputEntryIds: input.inputEntryIds,
+    planRevision: input.planRevision,
+    previousPlan: input.previousPlan,
+    agent: input.agent,
+  });
+}
+
+export async function publishPlanReviewStep(
+  input: PublishPlanReviewStepInput,
+): Promise<ChatPlanReview> {
+  "use step";
+
+  const chatSession = await openChatSession(input);
+  try {
+    const project = requireProjectContext(chatSession);
+    const sha256 = planSha256(input.plan);
+    const review: ChatPlanReview = {
+      schemaVersion: 1,
+      workflowId: "planning-execution",
+      stageId: "review",
+      reviewId: `${input.workflowInvocationId}:${String(input.planRevision)}:${sha256.slice(0, 12)}`,
+      workflowInvocationId: input.workflowInvocationId,
+      sessionId: chatSession.manager.getSessionId(),
+      planRevision: input.planRevision,
+      planSha256: sha256,
+      planEntryId: input.planEntryId,
+      plan: input.plan,
+      createdAt: new Date().toISOString(),
+    };
+    if (!hasPlanReview(chatSession.manager.getEntries(), review.reviewId)) {
+      appendChatWorkflowStage(chatSession.manager, {
+        invocationId: input.workflowInvocationId,
+        workflowId: "planning-execution",
+        stageId: "review",
+        nodeKind: "human",
+      });
+      appendPlanReview(chatSession.manager, review);
+      chatSession.manager.flush();
+    }
+    await publishPlanReviewState({
+      projectDataDir: project.projectDataDir,
+      projectId: project.projectId,
+      review,
+    });
+    const publisher = createChatRunEventPublisher({
+      workflowId: "planning-execution",
+      stageId: "review",
+      nodeKind: "task",
+    });
+    publisher.publishPlanReview(review);
+    await publisher.finish(false);
+    return review;
+  } catch (error) {
+    await markPlanningExecutionFailed(chatSession, input.workflowInvocationId);
+    throw error;
+  }
+}
+
+export async function recordPlanReviewDecisionStep(
+  input: RecordPlanReviewDecisionStepInput,
+): Promise<RecordPlanReviewDecisionStepResult> {
+  "use step";
+
+  const chatSession = await openChatSession(input);
+  try {
+    const project = requireProjectContext(chatSession);
+    const existing = collectPlanReviewDecisions(chatSession.manager.getEntries())
+      .findLast((decision) => decision.reviewId === input.decision.reviewId);
+    let feedbackEntryId = existing?.feedbackEntryId;
+    const needsNativeFeedbackUpgrade = existing?.kind === "request_revision"
+      && existing.feedbackEntryId === undefined;
+    if (!hasPlanReviewDecision(chatSession.manager.getEntries(), input.decision.reviewId)
+      || needsNativeFeedbackUpgrade) {
+      feedbackEntryId = input.decision.kind === "request_revision"
+        ? appendChatUserMessage(chatSession.manager, input.decision.feedback)
+        : undefined;
+      appendPlanReviewDecision(chatSession.manager, {
+        schemaVersion: 2,
+        workflowId: "planning-execution",
+        stageId: "review",
+        ...input.decision,
+        ...(feedbackEntryId === undefined ? {} : { feedbackEntryId }),
+        decidedAt: new Date().toISOString(),
+      });
+      chatSession.manager.flush();
+    }
+    await setPlanningExecutionPhase({
+      projectDataDir: project.projectDataDir,
+      projectId: project.projectId,
+      workflowInvocationId: input.workflowInvocationId,
+      sessionId: chatSession.manager.getSessionId(),
+      phase: input.decision.kind === "approve" ? "executing" : "planning",
+    });
+    return feedbackEntryId === undefined ? {} : { feedbackEntryId };
+  } catch (error) {
+    await markPlanningExecutionFailed(chatSession, input.workflowInvocationId);
+    throw error;
   }
 }
 
@@ -153,26 +389,15 @@ export async function runPlanningExecutionStep(
     workflowId: "planning-execution",
     stageId: "execute",
     agentId: PLANNING_EXECUTION_AGENT.id,
-    userPrompt: input.prompt,
-    upstream: {
-      stageId: "plan",
-      agentId: PLANNER_AGENT.id,
-      output: input.plan,
-    },
+    inputEntryIds: input.inputEntryIds,
   });
   console.log(`${localTimestamp()} [pi] planning execution step starting cwd=${chatSession.cwd}`);
-  console.log(`${localTimestamp()} [pi] creating AgentSession`);
 
   const { session, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,
     sessionManager: chatSession.manager,
     agent: input.agent,
-    transformContext: (messages) => injectPlanningExecutionContext(
-      messages,
-      input.prompt,
-      input.plan,
-      input.workflowInvocationId,
-    ),
+    transformContext: stripLegacyPlanningHandoffs,
   });
   const sessionFile = session.sessionFile;
   if (sessionFile === undefined) {
@@ -189,12 +414,28 @@ export async function runPlanningExecutionStep(
   const observer = subscribeAgentSessionLog(session, "pi", {
     workflowId: "planning-execution",
     stageId: "execute",
+    nodeKind: "agent",
     agentId: PLANNING_EXECUTION_AGENT.id,
   });
   try {
-    await session.prompt(input.prompt);
+    await triggerChatWorkflowAgentHandoff(session, {
+      workflowId: "planning-execution",
+      invocationId: input.workflowInvocationId,
+      stageId: "execute",
+      agentId: PLANNING_EXECUTION_AGENT.id,
+      inputEntryIds: input.inputEntryIds,
+      content: buildPlanningExecutionInput(input.prompt, input.plan),
+    });
     const text = observer.getLastAssistantText();
     if (text === "") throw new Error("Pi Coding Agent没有返回Assistant文本");
+    const project = requireProjectContext(chatSession);
+    await setPlanningExecutionPhase({
+      projectDataDir: project.projectDataDir,
+      projectId: project.projectId,
+      workflowInvocationId: input.workflowInvocationId,
+      sessionId: session.sessionId,
+      phase: "completed",
+    });
     console.log(
       `${localTimestamp()} [pi] planning execution completed elapsedMs=${Date.now() - stepStartedAt}`,
     );
@@ -211,6 +452,7 @@ export async function runPlanningExecutionStep(
     console.error(
       `${localTimestamp()} [pi] planning execution failed elapsedMs=${Date.now() - stepStartedAt} error=${message}`,
     );
+    await markPlanningExecutionFailed(chatSession, input.workflowInvocationId);
     throw error;
   } finally {
     await observer.finish(true);
@@ -219,6 +461,9 @@ export async function runPlanningExecutionStep(
   }
 }
 
-// Agent Steps can append messages and change files before reporting a failure.
+// Model calls must not be retried automatically after they may have changed files or incurred cost.
 runPlanningStep.maxRetries = 0;
+runPlanningRevisionStep.maxRetries = 0;
+publishPlanReviewStep.maxRetries = 0;
+recordPlanReviewDecisionStep.maxRetries = 0;
 runPlanningExecutionStep.maxRetries = 0;

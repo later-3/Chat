@@ -32,6 +32,7 @@ Chat详细设计
 | 文档 | 内容 | 状态 |
 |---|---|---|
 | [Chat Agent第一性原理与架构约束](./chat-agent-first-principles.md) | Agent本质、稳定架构、配置生命周期、新需求归类和架构冲击判定 | 约束性基准 |
+| [Chat Session架构](./chat-session-architecture.md) | Pi原生消息、Workflow元数据、上下文投影、第一句话和历史迁移 | 约束性基准 |
 | [Pi Agent设计与源码分析](./pi-agent-design.md) | Pi分层、核心对象、运行链、能力机制、接口和数据结构 | 第一版完成 |
 | [Pi Web架构与源码分析](./pi-web-design.md) | 原前端、原后端、Agent RPC、事件和资源管理接口 | 第一版完成 |
 | [Chat当前架构](./chat-current-architecture.md) | 前端、HTTP API、Workflow、Pi AgentSession和Session持久化 | 第一版完成 |

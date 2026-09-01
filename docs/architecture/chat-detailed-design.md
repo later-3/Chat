@@ -111,7 +111,7 @@ Agent配置被分成两个明确模块：
 | 工具策略 | 使用Pi默认工具、不启用工具或按名称选择/排除 |
 | 资源策略 | `inherit`继承Pi默认发现；`explicit`只加载选中的Skill、Extension和Plugin |
 
-`createWorkflowAgentSession()`把上述声明转换为Pi的`SettingsManager`、`DefaultResourceLoader`和`createAgentSession()`参数。SessionManager仍由Workflow Stage显式传入，因此Planner可以使用内存副本，Executor和直接执行Agent可以使用持久Chat Session。
+`createWorkflowAgentSession()`把上述声明转换为Pi的`SettingsManager`、`DefaultResourceLoader`和`createAgentSession()`参数。所有会说话的Workflow Agent都使用同一个持久Chat Session；Planner计划也作为原生Assistant消息保存。各Agent需要不同模型上下文时使用Stage级Context Transform，不复制或改写持久化话语角色。
 
 `createWorkflowAgentSession()`是执行与检查共用的唯一Pi装配入口。`agent-inspection.ts`创建不发送Prompt的内存AgentSession，并从真实ResourceLoader和AgentSession返回最终Prompt、Model、Thinking、Tools、Skill内容、Extension能力、Plugin资源和诊断；浏览器不自行推导生效结果。
 
@@ -125,10 +125,11 @@ Agent配置被分成两个明确模块：
 
 这个Workflow拥有：
 
-1. `planner`：替换基础System Prompt，不启用工具，使用当前Chat Session的内存副本。
-2. `pi-coding-agent`：保留Pi默认基础Prompt，在Chat自定义指令区域加入本Workflow执行规则。
+1. `planner`：替换基础System Prompt，不启用工具，在当前持久Chat Session中读取原生用户消息并写入原生Assistant计划。
+2. `review`：普通Task Node，通过耐久Hook等待用户批准或返回修改意见，不声明虚假的Agent ID。
+3. `pi-coding-agent`：保留Pi默认基础Prompt，在Chat自定义指令区域加入本Workflow执行规则。
 
-`context.ts`负责把用户原话和Planner输出只注入Executor本次模型请求；过程证据继续使用Pi CustomEntry写入同一Chat Session。
+拒绝后，同一Planner配置接收原始请求、上一版完整计划和原生用户审核消息，生成下一版并再次进入审核。计划和审核原文使用Pi原生MessageEntry；审核控制状态、版本、摘要和Agent输入来源使用CustomEntry，且输入来源只保存`inputEntryIds`。批准后Executor通过隐藏CustomMessage接收最终计划，不重复写入原始用户请求。
 
 ### 6.3 Memory
 

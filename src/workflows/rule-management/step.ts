@@ -4,6 +4,7 @@ import {
   createWorkflowAgentSession,
 } from "../agent-definition.js";
 import { subscribeAgentSessionLog } from "../agent-session-log.js";
+import { appendChatUserMessage } from "../session-conversation.js";
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 import { appendChatWorkflowAgentInput, appendChatWorkflowStage } from "../workflow-stage.js";
 import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
@@ -31,12 +32,13 @@ export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<C
     stageId: "manage",
     agentId: RULE_CURATOR_AGENT.id,
   });
+  const userEntryId = appendChatUserMessage(chatSession.manager, input.prompt);
   appendChatWorkflowAgentInput(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: "rule-management",
     stageId: "manage",
     agentId: RULE_CURATOR_AGENT.id,
-    userPrompt: input.prompt,
+    inputEntryIds: [userEntryId],
   });
 
   const agent = prepared.agents[RULE_CURATOR_AGENT.id];
@@ -74,10 +76,11 @@ export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<C
   const observer = subscribeAgentSessionLog(session, "rule-curator", {
     workflowId: "rule-management",
     stageId: "manage",
+    nodeKind: "agent",
     agentId: RULE_CURATOR_AGENT.id,
   });
   try {
-    await session.prompt(`/skill:rule-library ${input.prompt}`);
+    await session.resumePendingTurn();
     const text = observer.getLastAssistantText();
     if (text === "") throw new Error("Rule Curator Agent没有返回Assistant文本");
     console.log(`${localTimestamp()} [rule-curator] completed elapsedMs=${Date.now() - startedAt}`);

@@ -41,6 +41,9 @@ export default defineEventHandler(async (event) => {
       workflow: config.defaultWorkflowId,
       ...(storedAgentConfigs === undefined ? {} : { defaultAgentConfigs: storedAgentConfigs }),
     });
+    if (input.workflow === "planning-execution") {
+      throw new Error("planning-execution需要人工审核，请使用异步POST /runs接口");
+    }
   } catch (error) {
     throw createError({
       statusCode: 400,

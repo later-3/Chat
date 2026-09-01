@@ -163,7 +163,7 @@ Context不隐含Target。当前Project中的Agent可以按用户明确意图读�
 | 术语 | 含义 | 生命周期 |
 |---|---|---|
 | Chat Session（会话） | 用户看到的完整连续会话，包含多次对话 | 跨多次Workflow Run持久化 |
-| Turn（一次对话） | 一条用户消息及其选择的Workflow执行和回复 | 一次Workflow Run |
+| Turn（一次交互） | 一次线性交互单元，可由用户或Agent先发起，并包含其Workflow执行和回复 | 通常对应一次Workflow Run |
 | Workflow Run | 本次对话的执行实例 | 本轮开始到完成、失败或取消 |
 | AgentSession | 某个Agent Stage本轮使用的Pi运行对象 | Stage执行期间 |
 
@@ -174,6 +174,8 @@ Session是连续状态，不是新的业务中心。它至少保存：
 - 每次对话实际使用的不可变配置快照和执行证据。
 
 AgentSession不是Chat Session。每次对话可以重新创建AgentSession，同时恢复同一个Chat Session的有效历史。
+
+Session持久化必须遵循[Chat Session架构](./chat-session-architecture.md)：用户、Assistant和Tool Result都是Pi原生MessageEntry；Workflow、Stage、Agent和审核控制状态只能作为正交元数据存在。CustomEntry不能替代真实话语。
 
 ## 6. Workflow配置生命周期
 

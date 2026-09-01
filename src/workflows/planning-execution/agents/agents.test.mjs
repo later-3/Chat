@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  buildPlanningPrompt,
-  PLANNER_AGENT,
-} from "./planner/index.ts";
+import { PLANNER_AGENT } from "./planner/index.ts";
 import { PLANNING_EXECUTION_AGENT } from "./pi-coding-agent/index.ts";
 import { buildPlanningExecutionInput } from "../context.ts";
 
@@ -21,16 +18,4 @@ test("execution rules distinguish the user's request from Planner output", () =>
   const input = buildPlanningExecutionInput("original request", "one plan");
   assert.match(input, /"userRequest": "original request"/);
   assert.match(input, /"plannerOutput": "one plan"/);
-});
-
-test("planner request separates the user's prompt from planning instructions", () => {
-  assert.equal(
-    buildPlanningPrompt("change the code"),
-    [
-      "请为下面的用户请求制定计划。只输出计划，不要直接回答用户：",
-      "<user_request>",
-      "change the code",
-      "</user_request>",
-    ].join("\n"),
-  );
 });

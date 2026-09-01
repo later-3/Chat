@@ -7,7 +7,6 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { exportChatSessionHtml } from "./session-export.ts";
 import {
   appendChatWorkflowAgentInput,
-  appendChatWorkflowMessage,
   appendChatWorkflowStage,
 } from "./workflows/workflow-stage.ts";
 
@@ -32,45 +31,47 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
     stageId: "plan",
     agentId: "planner",
   });
-  const workflowMessageId = appendChatWorkflowMessage(manager, {
+  const userMessageId = manager.appendMessage({ role: "user", content: "history fixture", timestamp: Date.now() });
+  const plannerInputId = appendChatWorkflowAgentInput(manager, {
     invocationId: "history-invocation",
     workflowId: "planning-execution",
     stageId: "plan",
     agentId: "planner",
-    message: {
-      role: "assistant",
-      provider: "test",
-      model: "planner-model",
-      api: "test",
-      content: [
-        { type: "thinking", thinking: "planner reasoning" },
-        { type: "text", text: "internal plan" },
-      ],
-      usage: {
-        input: 1,
-        output: 1,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 2,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: "stop",
-      timestamp: Date.now(),
+    inputEntryIds: [userMessageId],
+  });
+  const workflowMessageId = manager.appendMessage({
+    role: "assistant",
+    provider: "test",
+    model: "planner-model",
+    api: "test",
+    content: [
+      { type: "thinking", thinking: "planner reasoning" },
+      { type: "text", text: "internal plan" },
+    ],
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  });
+  const executeMarkerId = appendChatWorkflowStage(manager, {
+    invocationId: "history-invocation",
+    workflowId: "planning-execution",
+    stageId: "execute",
+    agentId: "pi-coding-agent",
   });
   const agentInputId = appendChatWorkflowAgentInput(manager, {
     invocationId: "history-invocation",
     workflowId: "planning-execution",
     stageId: "execute",
     agentId: "pi-coding-agent",
-    userPrompt: "history fixture",
-    upstream: {
-      stageId: "plan",
-      agentId: "planner",
-      output: "internal plan",
-    },
+    inputEntryIds: [userMessageId, workflowMessageId],
   });
-  manager.appendMessage({ role: "user", content: "history fixture", timestamp: Date.now() });
   const executorMessageId = manager.appendMessage({
     role: "assistant",
     provider: "test",
@@ -119,18 +120,16 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
   assert.ok(mainScript);
   assert.doesNotThrow(() => new Function(mainScript));
   const sessionData = exportedSessionData(exported.html);
-  assert.deepEqual(sessionData.chatWorkflowStageEntryIds, [markerId]);
-  assert.deepEqual(sessionData.chatWorkflowStages, [{
-    entryId: markerId,
-    schemaVersion: 1,
-    invocationId: "history-invocation",
-    workflowId: "planning-execution",
-    stageId: "plan",
-    agentId: "planner",
-  }]);
-  assert.equal(sessionData.chatWorkflowMessages.length, 1);
-  assert.equal(sessionData.chatWorkflowMessages[0].entryId, workflowMessageId);
-  assert.deepEqual(sessionData.chatWorkflowMessages[0].message.content, [
+  assert.deepEqual(sessionData.chatWorkflowStageEntryIds, [markerId, executeMarkerId]);
+  assert.deepEqual(sessionData.chatWorkflowStages.map(({ entryId, stageId, agentId, nodeKind, schemaVersion }) => ({
+    entryId, stageId, agentId, nodeKind, schemaVersion,
+  })), [
+    { entryId: markerId, stageId: "plan", agentId: "planner", nodeKind: "agent", schemaVersion: 2 },
+    { entryId: executeMarkerId, stageId: "execute", agentId: "pi-coding-agent", nodeKind: "agent", schemaVersion: 2 },
+  ]);
+  assert.equal(sessionData.chatWorkflowMessages.length, 0);
+  const plannerMessage = sessionData.entries.find((entry) => entry.id === workflowMessageId);
+  assert.deepEqual(plannerMessage.message.content, [
     { type: "thinking", thinking: "planner reasoning" },
     { type: "text", text: "internal plan" },
   ]);
@@ -141,13 +140,13 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
   ]);
   assert.equal(sessionData.chatWorkflowAgentInputs.length, 2);
   const plannerInput = sessionData.chatWorkflowAgentInputs.find((input) => input.agentId === "planner");
-  assert.equal(plannerInput.entryId, `derived-${agentInputId}`);
-  assert.equal(plannerInput.userPrompt, "history fixture");
-  assert.equal(plannerInput.upstream, undefined);
+  assert.equal(plannerInput.entryId, plannerInputId);
+  assert.deepEqual(plannerInput.inputEntryIds, [userMessageId]);
+  assert.equal("userPrompt" in plannerInput, false);
   const executorInput = sessionData.chatWorkflowAgentInputs.find(
     (input) => input.agentId === "pi-coding-agent",
   );
   assert.equal(executorInput.entryId, agentInputId);
-  assert.equal(executorInput.userPrompt, "history fixture");
-  assert.equal(executorInput.upstream.output, "internal plan");
+  assert.deepEqual(executorInput.inputEntryIds, [userMessageId, workflowMessageId]);
+  assert.equal("upstream" in executorInput, false);
 });

@@ -2,6 +2,20 @@ diff --git a/dist/apply-swc-transform.js b/dist/apply-swc-transform.js
 index 6584424313b6944c21eacd5da0cf046b73070e4a..864594a68f7e4adbe6bedc5861e3fac6b7ac2116 100644
 --- a/dist/apply-swc-transform.js
 +++ b/dist/apply-swc-transform.js
+@@ -72,7 +72,8 @@ moduleSpecifierRoot) {
+             target: 'es2022',
+-            experimental: mode
+-                ? {
+-                    plugins: [[swcPluginPath, { mode, moduleSpecifier }]],
+-                }
+-                : undefined,
++            experimental: {
++                keepImportAssertions: true,
++                ...(mode
++                    ? { plugins: [[swcPluginPath, { mode, moduleSpecifier }]] }
++                    : {}),
++            },
+             transform: {
 @@ -83,10 +83,8 @@ moduleSpecifierRoot) {
                  decoratorMetadata: decoratorOptions.decoratorMetadata,
              },
@@ -15,3 +29,23 @@ index 6584424313b6944c21eacd5da0cf046b73070e4a..864594a68f7e4adbe6bedc5861e3fac6
          minify: false,
      });
      const workflowCommentMatch = result.code.match(/\/\*\*__internal_workflows({.*?})\*\//s);
+diff --git a/dist/swc-esbuild-plugin.js b/dist/swc-esbuild-plugin.js
+--- a/dist/swc-esbuild-plugin.js
++++ b/dist/swc-esbuild-plugin.js
+@@ -125,7 +125,16 @@ export function createSwcPlugin(options) {
+                     // Override the package.json "sideEffects": false so esbuild does not
+                     // drop bare imports of these modules.
+                     const hasSideEffects = normalizedSideEffectEntries.has(normalizedResolvedPath);
+                     if (options.entriesToBundle) {
++                        // Dev step bundles are loaded directly from disk, without a later
++                        // framework bundling pass. Keep project-local JSON imported by the
++                        // transitive step graph inside the generated bundle so Node never has
++                        // to load a raw source JSON module (and require import attributes).
++                        if (options.bundleTransitiveLocalStepDependencies &&
++                            normalizedResolvedPath.endsWith('.json') &&
++                            isProjectLocalFile(normalizedResolvedPath, moduleSpecifierRoot)) {
++                            return null;
++                        }
+                         let shouldBundle = false;
+                         for (const entryToBundle of options.entriesToBundle) {
+                             const normalizedEntry = entryToBundle.replace(/\\/g, '/');

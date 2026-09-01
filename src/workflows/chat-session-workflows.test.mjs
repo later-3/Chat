@@ -11,12 +11,14 @@ import {
 } from "@earendil-works/pi-ai/compat";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { getPromptResourceStore } from "../prompt-resources/store.ts";
+import { WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID } from "../prompt-resources/builtins.ts";
 import { openProject } from "../projects/registry.ts";
 import { runPiCodingAgentPromptStep } from "./minimal-pi-coding-agent/step.ts";
 import { PI_CODING_AGENT } from "./minimal-pi-coding-agent/agents/pi-coding-agent/index.ts";
 import { inspectWorkflowAgent } from "./agent-inspection.ts";
 import {
   runPlanningExecutionStep,
+  runPlanningRevisionStep,
   runPlanningStep,
 } from "./planning-execution/steps.ts";
 import { runRuleManagementStep } from "./rule-management/step.ts";
@@ -105,7 +107,11 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     },
     (context) => {
       recordCall(calls, context);
-      return fauxAssistantMessage("executed plan one");
+      return fauxAssistantMessage("plan two");
+    },
+    (context) => {
+      recordCall(calls, context);
+      return fauxAssistantMessage("executed plan two");
     },
     (context) => {
       recordCall(calls, context);
@@ -128,6 +134,26 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     prompt: "planned request",
     workflowInvocationId: "planning-invocation-1",
   });
+  const feedbackManager = SessionManager.open(first.sessionFile, project.sessionDir);
+  const feedbackEntryId = feedbackManager.appendMessage({
+    role: "user",
+    content: "add rollback details",
+    timestamp: Date.now(),
+  });
+  feedbackManager.flush();
+  const revised = await runPlanningRevisionStep({
+    projectId: project.projectId,
+    chatHome,
+    cwd: workspace,
+    sessionId: planning.sessionId,
+    prompt: "planned request",
+    workflowInvocationId: "planning-invocation-1",
+    planRevision: 2,
+    previousPlan: planning.plan,
+    feedback: "add rollback details",
+    inputEntryIds: [planning.userEntryId, planning.planEntryId, feedbackEntryId],
+    agent: planning.plannerAgent,
+  });
   const execution = await runPlanningExecutionStep({
     projectId: project.projectId,
     chatHome,
@@ -135,7 +161,8 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     sessionId: planning.sessionId,
     workflowInvocationId: "planning-invocation-1",
     prompt: "planned request",
-    plan: planning.plan,
+    plan: revised.plan,
+    inputEntryIds: [planning.userEntryId, feedbackEntryId, revised.planEntryId],
     agent: planning.executionAgent,
   });
   const last = await runPiCodingAgentPromptStep({
@@ -160,98 +187,113 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     .map((entry) => entry.data);
   assert.deepEqual(workflowStages, [
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       invocationId: "direct-invocation-1",
       workflowId: "minimal-pi-coding-agent",
       stageId: "execute",
+      nodeKind: "agent",
       agentId: "pi-coding-agent",
     },
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       invocationId: "planning-invocation-1",
       workflowId: "planning-execution",
       stageId: "plan",
+      nodeKind: "agent",
       agentId: "planner",
     },
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      invocationId: "planning-invocation-1",
+      workflowId: "planning-execution",
+      stageId: "plan",
+      nodeKind: "agent",
+      agentId: "planner",
+    },
+    {
+      schemaVersion: 2,
       invocationId: "planning-invocation-1",
       workflowId: "planning-execution",
       stageId: "execute",
+      nodeKind: "agent",
       agentId: "pi-coding-agent",
     },
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       invocationId: "direct-invocation-2",
       workflowId: "minimal-pi-coding-agent",
       stageId: "execute",
+      nodeKind: "agent",
       agentId: "pi-coding-agent",
     },
   ]);
   const workflowMessages = collectChatWorkflowMessages(manager.getEntries());
-  assert.equal(workflowMessages.length, 1);
-  assert.equal(workflowMessages[0].workflowId, "planning-execution");
-  assert.equal(workflowMessages[0].stageId, "plan");
-  assert.equal(workflowMessages[0].agentId, "planner");
-  assert.equal(messageText(workflowMessages[0].message), "plan one");
+  assert.equal(workflowMessages.length, 0);
   const workflowAgentInputs = collectChatWorkflowAgentInputs(manager.getEntries());
-  assert.equal(workflowAgentInputs.length, 2);
+  assert.equal(workflowAgentInputs.length, 3);
   assert.deepEqual(workflowAgentInputs.map(({ entryId: _entryId, ...input }) => input), [
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       invocationId: "planning-invocation-1",
       workflowId: "planning-execution",
       stageId: "plan",
       agentId: "planner",
-      userPrompt: "planned request",
+      inputEntryIds: [planning.userEntryId],
     },
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      invocationId: "planning-invocation-1",
+      workflowId: "planning-execution",
+      stageId: "plan",
+      agentId: "planner",
+      inputEntryIds: [planning.userEntryId, planning.planEntryId, feedbackEntryId],
+    },
+    {
+      schemaVersion: 2,
       invocationId: "planning-invocation-1",
       workflowId: "planning-execution",
       stageId: "execute",
       agentId: "pi-coding-agent",
-      userPrompt: "planned request",
-      upstream: {
-        stageId: "plan",
-        agentId: "planner",
-        output: "plan one",
-      },
+      inputEntryIds: [planning.userEntryId, feedbackEntryId, revised.planEntryId],
     },
   ]);
   const messages = manager.buildSessionContext().messages;
   assert.deepEqual(
     messages.filter((message) => message.role === "user").map(messageText),
-    ["first request", "planned request", "final request"],
+    ["first request", "planned request", "add rollback details", "final request"],
   );
   assert.deepEqual(
     messages.filter((message) => message.role === "assistant").map(messageText),
-    ["direct one", "executed plan one", "direct two"],
+    ["direct one", "plan one", "plan two", "executed plan two", "direct two"],
   );
-  assert.equal(messages.some((message) => message.role === "custom"), false);
+  assert.equal(messages.filter((message) => message.role === "custom").length, 1);
 
-  assert.equal(calls.length, 4);
-  assert.equal(calls.flatMap((call) => call.messages).some((message) => message.role === "custom"), false);
+  assert.equal(calls.length, 5);
   assert.match(calls[1].systemPrompt, /任务规划Agent/);
   assert.equal(calls[1].toolNames.length, 0);
   assert.ok(calls[1].messages.some((message) => message.role === "assistant" && messageText(message) === "direct one"));
-  assert.match(calls[2].systemPrompt, /workflow_execution_input/);
+  assert.match(JSON.stringify(calls[2].messages), /add rollback details/);
+  assert.match(JSON.stringify(calls[2].messages), /plan one/);
+  assert.match(calls[3].systemPrompt, /workflow_execution_input/);
   assert.ok(calls[2].messages.some((message) => (
+    message.role === "user" && messageText(message).includes("add rollback details")
+  )));
+  assert.ok(calls[3].messages.some((message) => (
     message.role === "user"
     && messageText(message).includes('"userRequest": "planned request"')
-    && messageText(message).includes('"plannerOutput": "plan one"')
+    && messageText(message).includes('"plannerOutput": "plan two"')
   )));
-  assert.ok(calls[2].messages.some((message) => message.role === "user" && messageText(message) === "planned request"));
-  assert.ok(calls[3].messages.some((message) => message.role === "assistant" && messageText(message) === "executed plan one"));
+  assert.ok(calls[3].messages.some((message) => message.role === "user" && messageText(message) === "planned request"));
+  assert.ok(calls[4].messages.some((message) => message.role === "assistant" && messageText(message) === "executed plan two"));
   assert.deepEqual(
-    calls[3].messages.filter((message) => message.role === "user").map(messageText),
-    ["first request", "planned request", "final request"],
+    calls[4].messages.filter((message) => message.role === "user").map(messageText),
+    ["first request", "planned request", "add rollback details", "final request"],
   );
   assert.equal(
-    calls[3].messages.some((message) => message.role === "user" && messageText(message).includes("plan one")),
+    calls[4].messages.some((message) => message.role === "user" && messageText(message).includes("plan one")),
     false,
   );
-  assert.equal(calls[3].messages.some((message) => messageText(message).includes("上一条Planner")), false);
+  assert.equal(calls[4].messages.some((message) => messageText(message).includes("上一条Planner")), false);
 });
 
 test("Planning Workflow can create the first durable Chat Session", { concurrency: false }, async (t) => {
@@ -305,6 +347,7 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
     workflowInvocationId: "first-planning-invocation",
     prompt: "first planned request",
     plan: planning.plan,
+    inputEntryIds: [planning.userEntryId, planning.planEntryId],
     agent: planning.executionAgent,
   });
   const manager = SessionManager.open(execution.sessionFile, sessionDir);
@@ -313,6 +356,8 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
     manager.buildSessionContext().messages.map((message) => [message.role, messageText(message)]),
     [
       ["user", "first planned request"],
+      ["assistant", "first plan"],
+      ["custom", "<workflow_execution_input>\n{\n  \"userRequest\": \"first planned request\",\n  \"plannerOutput\": \"first plan\"\n}\n</workflow_execution_input>"],
       ["assistant", "first execution"],
     ],
   );
@@ -391,6 +436,8 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
     author: { type: "user" },
   });
   const rule = await promptResourceStore.commitDraft(ruleDraft.id);
+  const experience = await promptResourceStore.get(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID);
+  assert.ok(experience);
 
   const calls = [];
   faux.setResponses([(context) => {
@@ -406,7 +453,14 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
     agentConfigs: {
       "pi-coding-agent": {
         primary: configPath,
-        promptResources: [{ id: rule.id, target: { type: "personal" }, selectedBy: "user" }],
+        promptResources: [
+          { id: rule.id, target: { type: "personal" }, selectedBy: "user" },
+          {
+            id: WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID,
+            target: { type: "personal" },
+            selectedBy: "user",
+          },
+        ],
       },
     },
   });
@@ -419,11 +473,15 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
   assert.match(calls[0].systemPrompt, /Configured additional rule/);
   assert.match(calls[0].systemPrompt, /<chat_prompt_resource/);
   assert.match(calls[0].systemPrompt, /Do not add unrelated responsibilities/);
+  assert.match(calls[0].systemPrompt, /Frontend Run 到 Pi SDK/);
   assert.match(calls[0].systemPrompt, /Configured review/);
   assert.deepEqual(calls[0].toolNames, ["read"]);
   const manager = SessionManager.open(result.sessionFile, project.sessionDir);
   const snapshot = collectChatWorkflowTurnConfigurations(manager.getEntries())[0];
-  assert.equal(snapshot.agentConfigs["pi-coding-agent"].promptResources[0].revision, rule.revision);
+  assert.deepEqual(
+    snapshot.agentConfigs["pi-coding-agent"].promptResources.map((resource) => resource.revision),
+    [rule.revision, experience.revision],
+  );
 });
 
 test("Agent inspection uses the same resolved Prompt, resources and tools as execution", { concurrency: false }, async (t) => {

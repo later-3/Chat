@@ -12,11 +12,19 @@ import {
   readChatSession,
 } from "./session-read-model.ts";
 import {
-  appendChatWorkflowMessage,
+  appendChatWorkflowAgentInput,
   appendChatWorkflowStage,
 } from "./workflows/workflow-stage.ts";
 import { setChatWorkflowAgentPromptResources } from "./workflows/workflow-configuration.ts";
 import { appendChatPromptResourceProposal } from "./workflows/prompt-resource-proposal.ts";
+import {
+  appendPlanReview,
+  appendPlanReviewDecision,
+  bindPlanningExecutionRun,
+  planSha256,
+  publishPlanReviewState,
+  setPlanningExecutionPhase,
+} from "./workflows/planning-execution/review-state.ts";
 
 function userEntry(id, parentId, content) {
   return {
@@ -117,7 +125,7 @@ test("historical thinking is deferred only when requested", () => {
   assert.equal(projectSessionContext(entries).messages[1].content[0].thinking, "large reasoning");
 });
 
-test("Planner output stays visible after the user request without entering Pi context", () => {
+test("native Planner output stays visible with Workflow provenance", () => {
   const manager = SessionManager.inMemory("/workspace");
   appendChatWorkflowStage(manager, {
     invocationId: "invocation-1",
@@ -125,21 +133,23 @@ test("Planner output stays visible after the user request without entering Pi co
     stageId: "plan",
     agentId: "planner",
   });
-  const plannerEntryId = appendChatWorkflowMessage(manager, {
+  const userEntryId = manager.appendMessage({ role: "user", content: "original request", timestamp: 1 });
+  appendChatWorkflowAgentInput(manager, {
     invocationId: "invocation-1",
     workflowId: "planning-execution",
     stageId: "plan",
     agentId: "planner",
-    message: {
-      role: "assistant",
-      provider: "test",
-      model: "planner-model",
-      content: [
-        { type: "thinking", thinking: "planner reasoning" },
-        { type: "text", text: "planner plan" },
-      ],
-      timestamp: 2,
-    },
+    inputEntryIds: [userEntryId],
+  });
+  const plannerEntryId = manager.appendMessage({
+    role: "assistant",
+    provider: "test",
+    model: "planner-model",
+    content: [
+      { type: "thinking", thinking: "planner reasoning" },
+      { type: "text", text: "planner plan" },
+    ],
+    timestamp: 2,
   });
   appendChatWorkflowStage(manager, {
     invocationId: "invocation-1",
@@ -147,26 +157,159 @@ test("Planner output stays visible after the user request without entering Pi co
     stageId: "execute",
     agentId: "pi-coding-agent",
   });
-  const userEntryId = manager.appendMessage({ role: "user", content: "original request", timestamp: 3 });
+  appendChatWorkflowAgentInput(manager, {
+    invocationId: "invocation-1",
+    workflowId: "planning-execution",
+    stageId: "execute",
+    agentId: "pi-coding-agent",
+    inputEntryIds: [userEntryId, plannerEntryId],
+  });
   const executorEntryId = manager.appendMessage({
     role: "assistant",
     provider: "test",
     model: "executor-model",
     content: [{ type: "text", text: "final answer" }],
-    timestamp: 4,
+    timestamp: 3,
   });
 
   const projected = projectSessionContext(manager.getEntries(), undefined, { deferThinking: true });
   assert.deepEqual(projected.messages.map((message) => message.role), ["user", "assistant", "assistant"]);
   assert.deepEqual(projected.entryIds, [userEntryId, plannerEntryId, executorEntryId]);
   assert.equal(projected.messages[0].content, "original request");
-  assert.equal(projected.messages[1].content[0].thinking, "planner reasoning");
+  assert.deepEqual(projected.messages[1].content[0], { type: "thinking", thinking: "", deferred: true });
   assert.equal(projected.messages[1].chatWorkflow.agentId, "planner");
   assert.equal(projected.messages[2].content[0].text, "final answer");
   assert.deepEqual(
     manager.buildSessionContext().messages.map((message) => message.role),
-    ["user", "assistant"],
+    ["user", "assistant", "assistant"],
   );
+});
+
+test("a planning turn remains a coherent user request and plan while waiting for review", () => {
+  const manager = SessionManager.inMemory("/workspace");
+  appendChatWorkflowStage(manager, {
+    invocationId: "waiting-invocation",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+  });
+  const userEntryId = manager.appendMessage({
+    role: "user",
+    content: "original waiting request",
+    timestamp: 1,
+  });
+  appendChatWorkflowAgentInput(manager, {
+    invocationId: "waiting-invocation",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+    inputEntryIds: [userEntryId],
+  });
+  const planEntryId = manager.appendMessage({
+    role: "assistant",
+    provider: "test",
+    model: "planner-model",
+    content: [{ type: "text", text: "review this plan" }],
+    timestamp: 2,
+  });
+
+  const projected = projectSessionContext(manager.getEntries());
+  assert.deepEqual(projected.messages.map((message) => message.role), ["user", "assistant"]);
+  assert.deepEqual(projected.entryIds, [userEntryId, planEntryId]);
+  assert.equal(projected.messages[0].content, "original waiting request");
+  assert.equal(projected.messages[1].content[0].text, "review this plan");
+  assert.deepEqual(manager.buildSessionContext().messages.map((message) => message.role), ["user", "assistant"]);
+});
+
+test("plan revisions and the user's feedback stay ordered in the same projected conversation", () => {
+  const manager = SessionManager.inMemory("/workspace");
+  appendChatWorkflowStage(manager, {
+    invocationId: "revision-invocation",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+  });
+  const originalUserEntryId = manager.appendMessage({
+    role: "user",
+    content: "keep this one conversation",
+    timestamp: 1,
+  });
+  const appendPlan = (revision, text, inputEntryIds) => {
+    appendChatWorkflowAgentInput(manager, {
+      invocationId: "revision-invocation",
+      workflowId: "planning-execution",
+      stageId: "plan",
+      agentId: "planner",
+      inputEntryIds,
+    });
+    const planEntryId = manager.appendMessage({
+      role: "assistant",
+      provider: "test",
+      model: "planner-model",
+      content: [{ type: "text", text }],
+      timestamp: revision + 1,
+    });
+    const review = {
+      schemaVersion: 1,
+      workflowId: "planning-execution",
+      stageId: "review",
+      reviewId: `revision-invocation:${revision}`,
+      workflowInvocationId: "revision-invocation",
+      sessionId: manager.getSessionId(),
+      planRevision: revision,
+      planSha256: planSha256(text),
+      planEntryId,
+      plan: text,
+      createdAt: `2026-09-01T00:0${revision}:00.000Z`,
+    };
+    appendPlanReview(manager, review);
+    return review;
+  };
+  const first = appendPlan(1, "plan one", [originalUserEntryId]);
+  appendChatWorkflowStage(manager, {
+    invocationId: "revision-invocation",
+    workflowId: "planning-execution",
+    stageId: "review",
+    nodeKind: "human",
+  });
+  const feedbackEntryId = manager.appendMessage({
+    role: "user",
+    content: "keep the Session and add rollback",
+    timestamp: 3,
+  });
+  appendPlanReviewDecision(manager, {
+    schemaVersion: 2,
+    workflowId: "planning-execution",
+    stageId: "review",
+    kind: "request_revision",
+    reviewId: first.reviewId,
+    workflowInvocationId: first.workflowInvocationId,
+    planRevision: first.planRevision,
+    planSha256: first.planSha256,
+    feedback: "keep the Session and add rollback",
+    feedbackEntryId,
+    decidedAt: "2026-09-01T00:01:30.000Z",
+  });
+  appendChatWorkflowStage(manager, {
+    invocationId: "revision-invocation",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+  });
+  const second = appendPlan(2, "plan two", [originalUserEntryId, first.planEntryId, feedbackEntryId]);
+
+  const projected = projectSessionContext(manager.getEntries());
+  assert.deepEqual(projected.messages.map((message) => message.role), [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+  ]);
+  assert.equal(projected.messages[0].content, "keep this one conversation");
+  assert.equal(projected.messages[1].content[0].text, "plan one");
+  assert.equal(projected.messages[2].content, "keep the Session and add rollback");
+  assert.equal(projected.messages[3].content[0].text, "plan two");
+  assert.deepEqual(projected.entryIds, [originalUserEntryId, first.planEntryId, feedbackEntryId, second.planEntryId]);
 });
 
 test("only base64 tool-result images are omitted from the initial payload", () => {
@@ -237,6 +380,142 @@ test("session listing scans only the current Project session directory", { concu
   assert.deepEqual(sessions.map((session) => session.id), [included.getSessionId()]);
   assert.equal(sessions[0].sessionSource, "chat");
   assert.equal(sessions[0].readOnly, false);
+});
+
+test("session listing uses the first human or Agent utterance and never exposes Pi's no-message sentinel", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-first-utterance-"));
+  t.after(() => {
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace, { recursive: true });
+  const chatHome = path.join(base, "home");
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    id: "first-utterance",
+    name: "First Utterance",
+  });
+  const assistantFirst = SessionManager.create(workspace, project.sessionDir);
+  appendChatWorkflowStage(assistantFirst, {
+    invocationId: "agent-starts",
+    workflowId: "future-workflow",
+    stageId: "announce",
+    agentId: "announcer",
+  });
+  assistantFirst.appendMessage({
+    role: "assistant",
+    provider: "test",
+    model: "test-model",
+    content: [{ type: "text", text: "Agent starts this conversation" }],
+    timestamp: Date.now(),
+  });
+  assistantFirst.flush();
+  const metadataOnly = SessionManager.create(workspace, project.sessionDir);
+  appendChatWorkflowStage(metadataOnly, {
+    invocationId: "metadata-only",
+    workflowId: "future-workflow",
+    stageId: "queued",
+    nodeKind: "task",
+  });
+  metadataOnly.flush();
+
+  process.chdir(base);
+  const sessions = await listChatSessions(project.projectId, chatHome);
+  assert.equal(sessions.find((session) => session.id === assistantFirst.getSessionId()).firstMessage,
+    "Agent starts this conversation");
+  assert.equal(sessions.find((session) => session.id === metadataOnly.getSessionId()).firstMessage, "");
+  assert.equal(sessions.some((session) => session.firstMessage === "(no messages)"), false);
+});
+
+test("an active legacy review gets a first-utterance fallback and migrates after the Run is terminal", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-active-legacy-session-"));
+  t.after(() => {
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace, { recursive: true });
+  const chatHome = path.join(base, "home");
+  const project = await openProject({ path: workspace, chatHome, id: "active-legacy", name: "Active Legacy" });
+  const manager = SessionManager.create(workspace, project.sessionDir);
+  manager.appendCustomEntry("chat.workflow_stage", {
+    schemaVersion: 1,
+    invocationId: "active-invocation",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+  });
+  manager.appendCustomEntry("chat.workflow_agent_input", {
+    schemaVersion: 1,
+    invocationId: "active-invocation",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+    userPrompt: "legacy waiting request",
+  });
+  const planEntryId = manager.appendCustomEntry("chat.workflow_message", {
+    schemaVersion: 1,
+    invocationId: "active-invocation",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+    message: {
+      role: "assistant",
+      provider: "test",
+      model: "test-model",
+      content: [{ type: "text", text: "legacy waiting plan" }],
+      timestamp: 2,
+    },
+  });
+  manager.flush();
+  await bindPlanningExecutionRun({
+    projectDataDir: project.projectDataDir,
+    projectId: project.projectId,
+    workflowInvocationId: "active-invocation",
+    runId: "run-active",
+    sessionId: manager.getSessionId(),
+  });
+  await publishPlanReviewState({
+    projectDataDir: project.projectDataDir,
+    projectId: project.projectId,
+    review: {
+      schemaVersion: 1,
+      workflowId: "planning-execution",
+      stageId: "review",
+      reviewId: "active-review",
+      workflowInvocationId: "active-invocation",
+      sessionId: manager.getSessionId(),
+      planRevision: 1,
+      planSha256: planSha256("legacy waiting plan"),
+      planEntryId,
+      plan: "legacy waiting plan",
+      createdAt: new Date().toISOString(),
+    },
+  });
+
+  process.chdir(base);
+  const active = (await listChatSessions(project.projectId, chatHome))
+    .find((session) => session.id === manager.getSessionId());
+  assert.equal(active.firstMessage, "legacy waiting request");
+  assert.equal(active.messageCount, 0);
+  assert.equal(fs.readFileSync(manager.getSessionFile(), "utf8").includes("chat.session_migration"), false);
+
+  await setPlanningExecutionPhase({
+    projectDataDir: project.projectDataDir,
+    projectId: project.projectId,
+    workflowInvocationId: "active-invocation",
+    sessionId: manager.getSessionId(),
+    phase: "completed",
+  });
+  const migrated = (await listChatSessions(project.projectId, chatHome))
+    .find((session) => session.id === manager.getSessionId());
+  assert.equal(migrated.firstMessage, "legacy waiting request");
+  assert.equal(migrated.messageCount, 2);
+  assert.equal(fs.readFileSync(manager.getSessionFile(), "utf8").includes("chat.session_migration"), true);
 });
 
 test("session reads restore Workflow Agent configuration and pending Prompt proposals", { concurrency: false }, async (t) => {

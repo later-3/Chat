@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { join, resolve } from "node:path";
 import { ensureChatHome, resolveChatHome } from "../chat-home.js";
 import { resolveProjectContext } from "../projects/registry.js";
+import { BUILT_IN_PERSONAL_PROMPT_RESOURCES } from "./builtins.js";
 import {
   PROMPT_RESOURCE_SCHEMA_VERSION,
   parsePromptResourceDocument,
@@ -131,6 +132,7 @@ function sameCommittedDraft(resource: PromptResourceRevision, draft: PromptResou
 
 export class PromptResourceStore {
   private writeQueue: Promise<void> = Promise.resolve();
+  private readonly seededDocumentSets = new Set<string>();
   private readonly storageRoot: string;
 
   constructor(storageRoot: string) {
@@ -173,6 +175,34 @@ export class PromptResourceStore {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
     }
+  }
+
+  /** Seeds and safely upgrades product-owned resources without overwriting user-managed revisions. */
+  async ensureDocuments(documents: readonly PromptResourceDocument[]): Promise<void> {
+    const parsed = documents.map(parsePromptResourceDocument);
+    const key = parsed.map((document) => (
+      `${document.id}:${document.revisions[document.revisions.length - 1]?.revision ?? 0}`
+    )).join("|");
+    if (this.seededDocumentSets.has(key)) return;
+    await this.runExclusive(async () => {
+      const paths = await this.paths();
+      for (const document of parsed) {
+        const existing = await this.readDocument(document.id);
+        if (existing === undefined) {
+          await writeJsonAtomically(join(paths.resources, `${document.id}.json`), document);
+          continue;
+        }
+        const stillProductOwned = existing.revisions.every((revision, index) => (
+          JSON.stringify(revision) === JSON.stringify(document.revisions[index])
+        ));
+        if (!stillProductOwned || existing.revisions.length >= document.revisions.length) continue;
+        await writeJsonAtomically(join(paths.resources, `${document.id}.json`), {
+          ...existing,
+          revisions: document.revisions,
+        });
+      }
+    });
+    this.seededDocumentSets.add(key);
   }
 
   async get(id: string): Promise<PromptResourceRevision | undefined> {
@@ -353,7 +383,9 @@ export async function getPromptResourceStore(
 ): Promise<PromptResourceStore> {
   const parsedTarget = parsePromptResourceTarget(target);
   if (parsedTarget.type === "personal") {
-    return storeForPath((await ensureChatHome(chatHome)).personalPromptResourceDir);
+    const store = storeForPath((await ensureChatHome(chatHome)).personalPromptResourceDir);
+    await store.ensureDocuments(BUILT_IN_PERSONAL_PROMPT_RESOURCES);
+    return store;
   }
   return storeForPath((await resolveProjectContext(parsedTarget.projectId, chatHome)).promptResourceDir);
 }

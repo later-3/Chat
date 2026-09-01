@@ -108,17 +108,17 @@ test("Rule Agent reads native Pi Entry IDs and persists only active-branch conve
     stageId: "manage",
     agentId: "rule-curator-agent",
   });
+  const currentUserEntryId = manager.appendMessage({
+    role: "user",
+    content: "把刚才关于移动端安全区的讨论整理成规则。",
+    timestamp: 3,
+  });
   appendChatWorkflowAgentInput(manager, {
     invocationId: "capture-1",
     workflowId: "rule-management",
     stageId: "manage",
     agentId: "rule-curator-agent",
-    userPrompt: "把刚才关于移动端安全区的讨论整理成规则。",
-  });
-  const currentUserEntryId = manager.appendMessage({
-    role: "user",
-    content: "/skill:rule-library 把刚才关于移动端安全区的讨论整理成规则。",
-    timestamp: 3,
+    inputEntryIds: [currentUserEntryId],
   });
   const currentAssistantEntryId = manager.appendMessage(assistantMessage("正在读取Session上下文。"));
   const tools = createRuleManagementTools(toolContext(

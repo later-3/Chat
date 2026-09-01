@@ -5,11 +5,22 @@ import { localTimestamp } from "../runtime-log.js";
 export interface ChatRunStage {
   readonly workflowId: string;
   readonly stageId: string;
-  readonly agentId: string;
+  readonly nodeKind: "agent" | "task";
+  readonly agentId?: string;
+}
+
+export interface ChatRunPlanReview {
+  readonly reviewId: string;
+  readonly workflowInvocationId: string;
+  readonly sessionId: string;
+  readonly planRevision: number;
+  readonly planSha256: string;
+  readonly plan: string;
 }
 
 export type ChatRunEvent =
   | { readonly type: "stage_start"; readonly stage: ChatRunStage }
+  | { readonly type: "review_required"; readonly stage: ChatRunStage; readonly review: ChatRunPlanReview }
   | {
       readonly type: "agent_event";
       readonly stage: ChatRunStage;
@@ -18,6 +29,7 @@ export type ChatRunEvent =
 
 export interface ChatRunEventPublisher {
   readonly publishAgentEvent: (event: AgentSessionEvent) => void;
+  readonly publishPlanReview: (review: ChatRunPlanReview) => void;
   readonly finish: (closeStream: boolean) => Promise<void>;
 }
 
@@ -129,6 +141,7 @@ export function createChatRunEventPublisher(stage: ChatRunStage): ChatRunEventPu
     // Unit tests call Step functions directly, outside a Workflow runtime.
     return {
       publishAgentEvent: () => {},
+      publishPlanReview: () => {},
       finish: async () => {},
     };
   }
@@ -156,6 +169,7 @@ export function createChatRunEventPublisher(stage: ChatRunStage): ChatRunEventPu
       const projected = projectAgentSessionEvent(event);
       if (projected !== null) publish({ type: "agent_event", stage, event: projected });
     },
+    publishPlanReview: (review) => publish({ type: "review_required", stage, review }),
     finish: async (closeStream) => {
       await pending;
       if (closeStream && !failed) {

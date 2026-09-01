@@ -3,7 +3,6 @@ import test from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   appendChatWorkflowAgentInput,
-  appendChatWorkflowMessage,
   appendChatWorkflowStage,
   collectChatWorkflowAgentInputs,
   collectChatWorkflowMessages,
@@ -19,11 +18,7 @@ function assistantMessage(text) {
     api: "test",
     content: [{ type: "text", text }],
     usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
+      input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
     stopReason: "stop",
@@ -31,125 +26,108 @@ function assistantMessage(text) {
   };
 }
 
-test("Workflow Stage uses Pi CustomEntry without entering the Agent context", () => {
+test("Workflow Stage stores agent/human provenance without entering Pi context", () => {
   const manager = SessionManager.inMemory("/workspace");
-  const markerId = appendChatWorkflowStage(manager, {
+  const agentMarkerId = appendChatWorkflowStage(manager, {
     invocationId: "invocation-1",
-    workflowId: "future-workflow",
-    stageId: "review",
-    agentId: "critic-agent",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
   });
-  manager.appendMessage({ role: "user", content: "review this", timestamp: 1 });
-
-  assert.deepEqual(manager.buildSessionContext().messages, [
-    { role: "user", content: "review this", timestamp: 1 },
+  const humanMarkerId = appendChatWorkflowStage(manager, {
+    invocationId: "invocation-1",
+    workflowId: "planning-execution",
+    stageId: "review",
+    nodeKind: "human",
+  });
+  assert.deepEqual(manager.buildSessionContext().messages, []);
+  assert.deepEqual(collectChatWorkflowStageMarkers(manager.getEntries()), [
+    {
+      entryId: agentMarkerId,
+      schemaVersion: 2,
+      invocationId: "invocation-1",
+      workflowId: "planning-execution",
+      stageId: "plan",
+      nodeKind: "agent",
+      agentId: "planner",
+    },
+    {
+      entryId: humanMarkerId,
+      schemaVersion: 2,
+      invocationId: "invocation-1",
+      workflowId: "planning-execution",
+      stageId: "review",
+      nodeKind: "human",
+    },
   ]);
-  assert.deepEqual(collectChatWorkflowStageMarkers(manager.getEntries()), [{
-    entryId: markerId,
-    schemaVersion: 1,
-    invocationId: "invocation-1",
-    workflowId: "future-workflow",
-    stageId: "review",
-    agentId: "critic-agent",
-  }]);
 });
 
-test("Workflow Message persists internal output without entering Agent context", () => {
+test("Workflow Agent Input v2 stores only native MessageEntry references", () => {
   const manager = SessionManager.inMemory("/workspace");
-  const message = assistantMessage("planner output");
-  const entryId = appendChatWorkflowMessage(manager, {
+  const userEntryId = manager.appendMessage({ role: "user", content: "original request", timestamp: 1 });
+  const entryId = appendChatWorkflowAgentInput(manager, {
     invocationId: "invocation-1",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+    inputEntryIds: [userEntryId],
+  });
+  assert.deepEqual(collectChatWorkflowAgentInputs(manager.getEntries()), [{
+    entryId,
+    schemaVersion: 2,
+    invocationId: "invocation-1",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+    inputEntryIds: [userEntryId],
+  }]);
+  assert.equal(JSON.stringify(manager.getEntry(entryId)).includes("original request"), false);
+  assert.deepEqual(manager.buildSessionContext().messages, [
+    { role: "user", content: "original request", timestamp: 1 },
+  ]);
+});
+
+test("legacy value-copying entries remain readable only for migration compatibility", () => {
+  const manager = SessionManager.inMemory("/workspace");
+  const inputId = manager.appendCustomEntry("chat.workflow_agent_input", {
+    schemaVersion: 1,
+    invocationId: "legacy",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+    userPrompt: "legacy request",
+  });
+  const message = assistantMessage("legacy plan");
+  const messageId = manager.appendCustomEntry("chat.workflow_message", {
+    schemaVersion: 1,
+    invocationId: "legacy",
     workflowId: "planning-execution",
     stageId: "plan",
     agentId: "planner",
     message,
   });
-
-  assert.deepEqual(manager.buildSessionContext().messages, []);
+  assert.equal(collectChatWorkflowAgentInputs(manager.getEntries())[0].entryId, inputId);
   assert.deepEqual(collectChatWorkflowMessages(manager.getEntries()), [{
-    entryId,
+    entryId: messageId,
     schemaVersion: 1,
-    invocationId: "invocation-1",
+    invocationId: "legacy",
     workflowId: "planning-execution",
     stageId: "plan",
     agentId: "planner",
     message,
   }]);
-});
-
-test("Workflow Agent Input persists its user and upstream sources without entering later Agent context", () => {
-  const manager = SessionManager.inMemory("/workspace");
-  const entryId = appendChatWorkflowAgentInput(manager, {
-    invocationId: "invocation-1",
-    workflowId: "planning-execution",
-    stageId: "execute",
-    agentId: "pi-coding-agent",
-    userPrompt: "original request",
-    upstream: {
-      stageId: "plan",
-      agentId: "planner",
-      output: "planner output",
-    },
-  });
-
   assert.deepEqual(manager.buildSessionContext().messages, []);
-  assert.deepEqual(collectChatWorkflowAgentInputs(manager.getEntries()), [{
-    entryId,
-    schemaVersion: 1,
-    invocationId: "invocation-1",
-    workflowId: "planning-execution",
-    stageId: "execute",
-    agentId: "pi-coding-agent",
-    userPrompt: "original request",
-    upstream: {
-      stageId: "plan",
-      agentId: "planner",
-      output: "planner output",
-    },
-  }]);
 });
 
-test("Workflow Agent Input also supports a first Stage with no upstream source", () => {
-  const manager = SessionManager.inMemory("/workspace");
-  const entryId = appendChatWorkflowAgentInput(manager, {
-    invocationId: "invocation-1",
-    workflowId: "planning-execution",
-    stageId: "plan",
-    agentId: "planner",
-    userPrompt: "original request",
-  });
-
-  assert.deepEqual(manager.buildSessionContext().messages, []);
-  assert.deepEqual(collectChatWorkflowAgentInputs(manager.getEntries()), [{
-    entryId,
-    schemaVersion: 1,
-    invocationId: "invocation-1",
-    workflowId: "planning-execution",
-    stageId: "plan",
-    agentId: "planner",
-    userPrompt: "original request",
-  }]);
-});
-
-test("unsupported or incomplete Workflow Stage schemas remain ordinary Pi entries", () => {
+test("future or incomplete Workflow Stage schemas stay ordinary Pi entries", () => {
   const entries = [
     {
-      type: "custom",
-      id: "future",
-      customType: "chat.workflow_stage",
-      data: {
-        schemaVersion: 2,
-        invocationId: "invocation-2",
-        workflowId: "future-workflow",
-        stageId: "execute",
-        agentId: "future-agent",
-      },
+      type: "custom", id: "future", customType: "chat.workflow_stage",
+      data: { schemaVersion: 3, invocationId: "i", workflowId: "w", stageId: "s", nodeKind: "agent", agentId: "a" },
     },
     {
-      type: "custom",
-      id: "incomplete",
-      customType: "chat.workflow_stage",
-      data: { schemaVersion: 1, workflowId: "future-workflow" },
+      type: "custom", id: "incomplete", customType: "chat.workflow_stage",
+      data: { schemaVersion: 2, workflowId: "future-workflow" },
     },
   ];
   assert.deepEqual(collectChatWorkflowStageMarkers(entries), []);

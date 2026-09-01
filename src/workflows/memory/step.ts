@@ -4,9 +4,10 @@ import {
   createWorkflowAgentSession,
 } from "../agent-definition.js";
 import { subscribeAgentSessionLog } from "../agent-session-log.js";
+import { appendChatUserMessage } from "../session-conversation.js";
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
-import { appendChatWorkflowStage } from "../workflow-stage.js";
+import { appendChatWorkflowAgentInput, appendChatWorkflowStage } from "../workflow-stage.js";
 import { MEMORY_AGENT } from "./agents/memory-agent/index.js";
 import { prepareMemoryAgentSession } from "./agents/memory-agent/runtime.js";
 
@@ -32,6 +33,14 @@ export async function runMemoryAgentStep(
     workflowId: "memory",
     stageId: "manage",
     agentId: MEMORY_AGENT.id,
+  });
+  const userEntryId = appendChatUserMessage(chatSession.manager, input.prompt);
+  appendChatWorkflowAgentInput(chatSession.manager, {
+    invocationId: input.workflowInvocationId,
+    workflowId: "memory",
+    stageId: "manage",
+    agentId: MEMORY_AGENT.id,
+    inputEntryIds: [userEntryId],
   });
   console.log(`${localTimestamp()} [memory] step starting cwd=${chatSession.cwd}`);
   console.log(`${localTimestamp()} [memory] creating AgentSession`);
@@ -71,10 +80,11 @@ export async function runMemoryAgentStep(
   const observer = subscribeAgentSessionLog(session, "memory", {
     workflowId: "memory",
     stageId: "manage",
+    nodeKind: "agent",
     agentId: MEMORY_AGENT.id,
   });
   try {
-    await session.prompt(`/skill:memory ${input.prompt}`);
+    await session.resumePendingTurn();
     const text = observer.getLastAssistantText();
     if (text === "") throw new Error("Memory Agent没有返回Assistant文本");
     console.log(
