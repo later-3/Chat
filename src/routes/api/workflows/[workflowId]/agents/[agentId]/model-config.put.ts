@@ -2,7 +2,11 @@ import { join } from "node:path";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { resolveProjectContext } from "../../../../../../projects/registry.js";
-import { writeAgentModelConfig } from "../../../../../../workflows/agent-model-config.js";
+import { updateAgentDurableConfig } from "../../../../../../workflows/agent-model-config.js";
+import {
+  parseThinkingLevel,
+  type AgentModelConfig,
+} from "../../../../../../workflows/agent-config.js";
 import { getChatWorkflowDefinition } from "../../../../../../workflows/registry.js";
 
 function errorResponse(error: unknown): never {
@@ -35,13 +39,16 @@ export default defineEventHandler(async (event) => {
     const rawThinkingLevel = "thinkingLevel" in body && typeof body.thinkingLevel === "string"
       ? body.thinkingLevel
       : undefined;
+    const thinkingLevel = rawThinkingLevel === undefined ? undefined : parseThinkingLevel(rawThinkingLevel);
     if (rawModel === undefined && rawThinkingLevel === undefined) {
       throw new Error("至少需要model或thinkingLevel");
     }
+    let modelConfig: AgentModelConfig | undefined;
     if (rawModel !== undefined && ("provider" in rawModel || "modelId" in rawModel)) {
       const provider = "provider" in rawModel && typeof rawModel.provider === "string" ? rawModel.provider : undefined;
       const modelId = "modelId" in rawModel && typeof rawModel.modelId === "string" ? rawModel.modelId : undefined;
       if (provider === undefined || modelId === undefined) throw new Error("model必须包含provider和modelId");
+      modelConfig = { provider, modelId };
       const runtime = await ModelRuntime.create({
         authPath: join(project.agentDir, "auth.json"),
         modelsPath: join(project.agentDir, "models.json"),
@@ -51,10 +58,9 @@ export default defineEventHandler(async (event) => {
       if (!runtime.hasConfiguredAuth(model.provider)) throw new Error(`Provider没有认证: ${model.provider}`);
     }
 
-    const config = await writeAgentModelConfig(project.projectDataDir, workflow.id, agent.id, {
-      schemaVersion: 1,
-      ...(rawModel === undefined ? {} : { model: rawModel }),
-      ...(rawThinkingLevel === undefined ? {} : { thinkingLevel: rawThinkingLevel }),
+    const config = await updateAgentDurableConfig(project.projectDataDir, workflow.id, agent.id, {
+      ...(modelConfig === undefined ? {} : { model: modelConfig }),
+      ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
     });
     return config;
   } catch (error) {

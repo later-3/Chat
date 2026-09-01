@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "memory-search",
+  "name": "memory_search",
+  "label": "Search memory",
+  "description": "Search durable Personal or Project memories for stable user background, preferences, historical decisions, and project facts that may affect the current task. Use returned records as evidence before asking the user to repeat known information or finalizing a context-dependent plan. Results can be empty or stale: never invent a match, and prefer newer facts from the current Session when they conflict.",
+  "implementationVersion": 2,
+  "risk": "read-only",
+  "permissions": ["memory:read"]
+}

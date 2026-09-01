@@ -51,6 +51,7 @@ export default defineEventHandler(async (event) => {
       defaultAgent: agent,
       workflowId: workflow.id,
       agentId: agent.id,
+      stageId: workflow.nodes.find((node) => node.kind === "agent" && node.agentId === agent.id)?.id ?? agent.id,
       ...(workflow.prepareAgentSession === undefined
         ? {}
         : { prepareAgentSession: workflow.prepareAgentSession }),

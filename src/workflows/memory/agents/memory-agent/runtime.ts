@@ -9,7 +9,7 @@ import { stripLegacyPlanningHandoffs } from "../../../planning-execution/context
 import { injectInstructionBeforeLatestUser } from "../../../session-conversation.js";
 import { MEMORY_AGENT } from "./index.js";
 import { ensureMemorySkill } from "./skill.js";
-import { createMemoryTools } from "./tools/index.js";
+import { createMemoryManagementTools } from "./tools/index.js";
 
 const inspectionMemoryManager = {
   search(): never { throw new Error("Memory Tool不能在Agent检查期间执行"); },
@@ -34,13 +34,15 @@ export async function prepareMemoryAgentSession(
   const projectId = context.projectId ?? context.cwd;
   return {
     additionalSkillPaths: [skillPath],
-    customTools: createMemoryTools({
+    customTools: createMemoryManagementTools({
       manager: context.purpose === "execution"
         ? getMemoryStoreManager(paths.root)
         : inspectionMemoryManager,
       projectId,
       sessionId: context.sessionId,
+      workflowId: context.workflowId,
       workflowInvocationId: context.workflowInvocationId,
+      stageId: "manage",
       agentId: MEMORY_AGENT.id,
     }),
     transformContext: (messages) => injectInstructionBeforeLatestUser(

@@ -13,6 +13,15 @@ Frontend → Backend → Workflow → Agent装配 → Pi Agent / Pi Coding Agent
 - 规则与经验是Agent自定义Prompt资源；Memory是独立持久化能力。不要把它们实现成与Agent平行的新执行系统。
 - Pi SessionManager、ResourceLoader和AgentSession是底层事实源。Chat只增加产品配置、Project作用域、Workflow组织和前后端管理。
 
+## Rule系统
+
+- `AGENTS.md`只声明Chat的元规则和Rule机制；面向具体任务或Agent的可复用约束应保存为`rule` Prompt资源，事故结论保存为`experience` Prompt资源，不把完整规则重复复制进`AGENTS.md`或多个System Prompt。
+- Rule定义“必须遵守什么”，Skill定义“这类任务如何完成”，Tool提供可执行动作，Memory提供历史事实；它们可以共同装配给Agent，但不能相互冒充或替代。
+- 当前由用户或Workflow配置Agent所需Rule；Agent可以生成有来源、有理由、待用户确认的选择建议。未来开放自主选择时仍必须使用同一Prompt资源引用，并遵守Personal/Project作用域、资源状态、记录链和授权边界。
+- Agent只接收本次任务实际选中的Rule和固定revision。每轮Workflow在执行前冻结选择，并记录`target`、`id`、`revision`、`selectedBy`和`reason`到Session；同一轮的检查页面与执行必须解析到相同内容。
+- Rule通过`resolveWorkflowAgentDefinition()`进入Agent自定义Prompt，再由`createWorkflowAgentSession()`装配到Pi AgentSession；不得另建Rule运行时、在Workflow节点手工拼接，或要求Frontend维护第二份资源清单。
+- 新增具体规则时，应进入Personal或Project Prompt资源库，具备明确purpose、适用范围、可执行内容和版本；是否设为某个Agent的默认能力必须单独评审，不能因为规则存在就全局注入。
+
 ## Project与数据边界
 
 - 用户级事实位于`~/.chat`，测试和部署只能通过`CHAT_HOME`覆盖，业务代码不能用`process.cwd()`推断Chat Home。

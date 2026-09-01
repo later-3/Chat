@@ -108,9 +108,9 @@ Agent节点必须引用同一Workflow已经声明的Agent ID。框架负责：
 
 普通节点执行确定性的应用代码，例如转换输入、调用领域服务或组成阶段结果。它没有Agent ID，也不能隐式创建Pi AgentSession。需要模型能力时必须显式改为Agent节点。
 
-人工审核属于普通节点。`planning-execution`使用`plan(agent) → review(task) → execute(agent)`三个节点；审核节点通过Workflow SDK的耐久Hook挂起同一个Run。用户要求修改时，原始需求、上一版完整计划和用户审核原文进入同一Planner Agent的新一轮调用；批准时只有最终计划进入执行Agent。
+人工审核属于普通节点。`planning-execution`使用`plan(agent) → review(task) → execute(agent)`三个节点；审核节点通过Workflow SDK的耐久Hook挂起同一个Run。Planner输出携带`needs_clarification | ready_for_review`就绪状态：前者只能补充信息并回到Planner，后者才允许批准进入Executor。用户补充信息或要求修改时，原始需求、上一版完整文档和用户原文进入同一Planner Agent的新一轮调用；按钮批准被规范化为原生User Message，最终计划和该审核消息一起通过版本化执行任务书进入执行Agent。
 
-计划和审核原文以Pi原生MessageEntry保存在同一Session中；审核请求、决定、版本绑定和消息引用以追加CustomEntry保存。`chat.workflow_agent_input`只能保存`inputEntryIds`，不得复制`userPrompt`或上游输出正文。Run控制面只保存`runId`、Invocation、Session和当前阶段的窄绑定。浏览器刷新只能断开并重连事件流，不能隐式取消等待审核的Run；只有显式停止操作可以取消。每个决定必须绑定`reviewId + planRevision + planSha256`，旧版本、重复冲突和跨Run提交必须失败关闭。
+计划和审核话语以Pi原生MessageEntry保存在同一Session中；`chat.workflow_stage`保存审核节点身份，审核请求、决定、版本绑定和消息引用以追加CustomEntry保存。每个决定必须引用它对应的原生消息。`chat.workflow_agent_input`只能保存`inputEntryIds`，不得复制`userPrompt`或上游输出正文。Run控制面只保存`runId`、Invocation、Session和当前阶段的窄绑定。浏览器刷新只能断开并重连事件流，不能隐式取消等待审核的Run；只有显式停止操作可以取消。每个决定必须绑定`reviewId + planRevision + planSha256`，旧版本、重复冲突和跨Run提交必须失败关闭。
 
 所有Workflow还必须通过[Session消息检查清单](./chat-session-architecture.md#9-新workflow检查清单)。
 
@@ -184,8 +184,9 @@ export const memoryWorkflowDefinition = defineChatWorkflow({
   "customInstructions": [],
   "tools": {
     "mode": "explicit",
-    "names": ["memory_search", "memory_list"],
-    "exclude": []
+    "names": ["memory_list"],
+    "exclude": [],
+    "addresses": ["system:tool/memory_search"]
   },
   "resources": {
     "mode": "explicit",
@@ -249,9 +250,11 @@ Tool有两种合法来源：
 1. **Extension Tool**：Agent配置声明`extensionPaths`，Pi加载Extension并通过`registerTool()`注册。适合能从Pi `ExtensionContext`获得全部依赖的Tool。
 2. **SDK Custom Tool**：Workflow运行时使用Pi `customTools`注入。适合需要Chat领域服务、Workflow Invocation ID等宿主依赖的Tool。
 
+Chat系统内置Tool是第二种来源的公共管理形式：实现与严格Manifest归档在`src/tools/builtins/<tool-id>`，`ToolCatalog`负责发现和限定地址，`ToolResolver`在AgentSession创建时绑定Project、Session、Workflow、Invocation、Stage和Agent上下文。Project Tool继续使用Pi Extension的`registerTool()`，不增加第二套可执行Tool格式。
+
 两种来源最终都进入同一个Pi AgentSession Tool Registry。前端从`session.getAllTools()`读取名称、参数Schema和`sourceInfo`，并结合`getActiveToolNames()`展示“已发现/已启用”，不得根据目录名猜测Tool。
 
-Memory Tool需要`MemoryService`和Workflow调用上下文，因此继续使用Pi `customTools`是合法且更直接的依赖注入；Rule Curator Tool同样需要Prompt资源Store、当前Session和Invocation上下文。两者的源码归档在各自Agent目录，Skill使用真实`SKILL.md`文件，执行与Resolve共用相同的`prepareAgentSession`装配函数。
+`memory_search`和`memory_record`由Chat系统Tool Registry提供，可被其他Agent显式配置；Memory list/get/update/delete与Rule Curator Tool仍是Workflow私有能力。执行与Resolve共用公共AgentSession装配和各Workflow必要的私有`prepareAgentSession`扩展。
 
 ## 9. 后端与前端接口
 
@@ -261,6 +264,9 @@ PUT  /api/chat-config
 GET  /api/workflows
 GET  /api/workflows/:workflowId/agents/:agentId/catalog
 POST /api/workflows/:workflowId/agents/:agentId/resolve
+GET  /api/tools
+PUT  /api/workflows/:workflowId/agents/:agentId/tool-config
+DELETE /api/workflows/:workflowId/agents/:agentId/tool-config
 GET  /api/prompt-resources
 GET  /api/prompt-resources/drafts
 GET  /api/prompt-resources/:resourceId/history
@@ -272,7 +278,8 @@ GET  /api/prompt-resources/:resourceId/history
 2. `workflows`返回Workflow、Node、Agent和源码配置来源的浏览器安全投影。
 3. `catalog`返回当前可发现资源，不伪造一次Agent配置来获取目录。
 4. `resolve`使用与执行完全相同的装配路径，返回最终Prompt、Tool、Skill、Extension、模型和诊断。
-5. Prompt资源HTTP接口只负责列表、搜索、草稿查看和历史读取；创建、修改、归档、Draft提交、Proposal应用与拒绝由Rule Management Workflow持续对话完成，不能增加绕过对象ID确认的写接口。
+5. `tools`返回当前Project可见Tool及Workflow Agent反向使用关系；`tool-config`只修改当前Project的Agent持久Tool策略。
+6. Prompt资源HTTP接口只负责列表、搜索、草稿查看和历史读取；创建、修改、归档、Draft提交、Proposal应用与拒绝由Rule Management Workflow持续对话完成，不能增加绕过对象ID确认的写接口。
 
 前端使用通用Workflow/Agent页面渲染这些数据。新增同类型资源不修改前端；只有框架新增资源类型或交互语义时才修改前端合同。
 

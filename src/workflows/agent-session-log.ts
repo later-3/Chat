@@ -1,6 +1,8 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { localTimestamp } from "../runtime-log.js";
+import type { ChatSessionToolResource } from "../tools/framework.js";
+import { appendChatToolExecution } from "../tools/execution-record.js";
 import {
   createChatRunEventPublisher,
   type ChatRunStage,
@@ -25,10 +27,18 @@ export function subscribeAgentSessionLog(
   session: AgentSession,
   component: "pi" | "planner" | "memory" | "rule-curator",
   stage: ChatRunStage,
+  trace?: {
+    readonly sessionManager: SessionManager;
+    readonly projectId?: string;
+    readonly workflowInvocationId: string;
+    readonly toolResources: readonly ChatSessionToolResource[];
+  },
 ): AgentSessionLogSubscription {
   let turn = 0;
   let lastAssistantText = "";
   let lastAssistantMessage: Extract<AgentMessage, { role: "assistant" }> | undefined;
+  const toolStartedAt = new Map<string, string>();
+  const toolResourcesByName = new Map((trace?.toolResources ?? []).map((tool) => [tool.name, tool]));
   const publisher = createChatRunEventPublisher(stage);
   const unsubscribe = session.subscribe((event) => {
     publisher.publishAgentEvent(event);
@@ -42,8 +52,28 @@ export function subscribeAgentSessionLog(
       turn += 1;
       console.log(`${localTimestamp()} [${component}] turn ${turn} started`);
     } else if (event.type === "tool_execution_start") {
+      toolStartedAt.set(event.toolCallId, new Date().toISOString());
       console.log(`${localTimestamp()} [${component}] tool started name=${event.toolName}`);
     } else if (event.type === "tool_execution_end") {
+      if (trace !== undefined) {
+        const completedAt = new Date().toISOString();
+        const toolResource = toolResourcesByName.get(event.toolName);
+        appendChatToolExecution(trace.sessionManager, {
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          toolAddress: toolResource?.address ?? `runtime:tool/${encodeURIComponent(event.toolName)}`,
+          ...(toolResource?.version === undefined ? {} : { toolVersion: toolResource.version }),
+          ...(trace.projectId === undefined ? {} : { projectId: trace.projectId }),
+          workflowId: stage.workflowId,
+          workflowInvocationId: trace.workflowInvocationId,
+          stageId: stage.stageId,
+          ...(stage.agentId === undefined ? {} : { agentId: stage.agentId }),
+          startedAt: toolStartedAt.get(event.toolCallId) ?? completedAt,
+          completedAt,
+          status: event.isError ? "error" : "completed",
+        });
+        toolStartedAt.delete(event.toolCallId);
+      }
       console.log(
         `${localTimestamp()} [${component}] tool finished name=${event.toolName} status=${event.isError ? "error" : "ok"}`,
       );

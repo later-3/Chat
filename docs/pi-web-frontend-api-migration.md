@@ -26,7 +26,7 @@ Chat/frontend（纯浏览器）
 
 | 前端能力 | Pi Web原接口 | Chat接口 | 当前实现 | 最终责任 |
 |---|---|---|---|---|
-| 发送普通文本Prompt | `POST /api/chat-workflow` | `POST /runs` | 已接入，由Chat替代 | 浏览器提交Workflow及每个Agent的配置选择，Chat启动对应Workflow并由浏览器轮询Run状态 |
+| 发送普通文本Prompt | `POST /api/chat-workflow` | `POST /runs` | 已接入，由Chat替代 | 浏览器提交Workflow及每个Agent的配置选择；首轮由Chat预创建持久Pi Session，响应立即返回Session与Run引用，浏览器随即更新URL并轮询Run状态 |
 | 取消运行 | 原Adapter转调Chat | `DELETE /runs/:runId` | 已接入 | 浏览器取消请求时同步取消Chat Workflow Run |
 | 查询运行 | 原Adapter轮询Chat | `GET /runs/:runId` | 已接入 | Chat返回Workflow状态和最终结果 |
 | 展示Agent执行过程 | 原Agent RPC事件 | `GET /runs/:runId/events` | 已接入，由Chat替代 | Chat按Stage流式返回Thinking、文本、Tool Call和Tool Result事件 |

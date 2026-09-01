@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "memory-record",
+  "name": "memory_record",
+  "label": "Record memory",
+  "description": "Record one new durable memory in the current Project or explicitly selected Personal/Project targets.",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": ["memory:write"]
+}

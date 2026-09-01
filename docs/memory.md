@@ -86,17 +86,18 @@ Memory 作为现有 Workflow Registry 中的一个普通工作流注册，只有
 由 `memory-agent` 执行。它复用 Chat 现有的 Agent 定义解析、Pi `AgentSession`、
 `DefaultResourceLoader`、Session 持久化和 Stage 事件日志，不建立第二套 Agent Runtime。
 
-Workflow 定义通过通用的 `prepareAgentSession` 合同注册 Memory 私有能力。实际执行和
-`POST /api/workflows/:workflowId/agents/:agentId/resolve` 检查接口都会调用同一个
-`prepareMemoryAgentSession()`，所以前端现有 Agent 能力面板可以自动看到最终 Tool 和 Skill，
-不需要硬编码 Memory。`GET /api/workflows` 只投影浏览器安全的元数据，不暴露这个可执行装配器。
+`memory_search`和`memory_record`是Chat系统内置Tool，由系统Tool Registry按限定地址发现，
+再通过Pi SDK `customTools`装配到任何显式选择它们的AgentSession。Memory Workflow自己的
+`prepareMemoryAgentSession()`只追加Memory Skill和精确管理Tool。实际执行和
+`POST /api/workflows/:workflowId/agents/:agentId/resolve`使用同一个公共Tool Resolver，
+前端不硬编码Memory Tool。
 
-Memory Agent 的执行面严格限制为 6 个 Chat 自有工具：
+Memory Agent 的执行面严格限制为6个Chat自有工具，其中前两个是公共系统能力：
 
 - `memory_search`：语义搜索当前项目可见的全局和项目记忆。
 - `memory_list`：不加载 embedding，精确列出记录。
 - `memory_get`：按 Chat memory ID 查看完整记录。
-- `memory_add`：写入 Chat 事实源并同步 Mem0 索引。
+- `memory_record`：写入 Chat 事实源并同步 Mem0 索引。
 - `memory_update`：携带读取到的版本号更新，避免覆盖并发修改。
 - `memory_delete`：携带读取到的版本号永久删除。
 
@@ -112,5 +113,5 @@ Agent 不暴露 Bash、Read、Write 或 Edit。运行时由 Chat 把私有 Memor
 
 1. Chat SQLite 是唯一事实源，管理页和 Agent 都通过同一个 `MemoryService` 读写。
 2. Mem0 只负责语义索引；重启后从本地数据库恢复，也可以从 Chat SQLite 全量重建。
-3. 是否调用 Memory Workflow 由用户主动决定，不在普通对话链路中隐式检索或写入。
+3. 系统Memory Tool只有被Workflow默认或Project Agent配置显式选择后才会加载；开放可配置不等于所有普通对话自动检索或写入。
 4. 以后若增加自动总结，只增加新的触发策略或 Workflow Stage，不改变当前 CRUD 合同。

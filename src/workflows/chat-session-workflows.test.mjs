@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,9 +11,14 @@ import {
   registerFauxProvider,
 } from "@earendil-works/pi-ai/compat";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { getMemoryStoreManager } from "../memory/manager-runtime.ts";
 import { getPromptResourceStore } from "../prompt-resources/store.ts";
-import { WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID } from "../prompt-resources/builtins.ts";
+import {
+  AGENT_CAPABILITY_DESIGN_RULE_ID,
+  WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID,
+} from "../prompt-resources/builtins.ts";
 import { openProject } from "../projects/registry.ts";
+import { collectChatToolExecutions } from "../tools/execution-record.ts";
 import { runPiCodingAgentPromptStep } from "./minimal-pi-coding-agent/step.ts";
 import { PI_CODING_AGENT } from "./minimal-pi-coding-agent/agents/pi-coding-agent/index.ts";
 import { inspectWorkflowAgent } from "./agent-inspection.ts";
@@ -74,6 +80,57 @@ function recordCall(calls, context) {
   });
 }
 
+const TEST_EMBEDDING_DIMENSION = 64;
+
+function deterministicEmbedding(text) {
+  const vector = Array.from({ length: TEST_EMBEDDING_DIMENSION }, () => 0);
+  const symbols = Array.from(text.toLowerCase());
+  for (let index = 0; index < symbols.length; index += 1) {
+    const current = symbols[index]?.codePointAt(0) ?? 0;
+    const next = symbols[index + 1]?.codePointAt(0) ?? 0;
+    vector[(current * 31 + next * 17 + index) % vector.length] += 1;
+  }
+  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
+  return vector.map((value) => value / magnitude);
+}
+
+async function readRequestJson(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+async function startTestEmbeddingServer(t) {
+  const server = http.createServer(async (request, response) => {
+    if (request.method !== "POST" || request.url !== "/v1/embeddings") {
+      response.writeHead(404).end();
+      return;
+    }
+    const body = await readRequestJson(request);
+    const inputs = Array.isArray(body.input) ? body.input : [body.input];
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({
+      object: "list",
+      model: body.model,
+      data: inputs.map((input, index) => ({
+        object: "embedding",
+        index,
+        embedding: deterministicEmbedding(String(input)),
+      })),
+      usage: { prompt_tokens: 0, total_tokens: 0 },
+    }));
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  assert.ok(address);
+  return `http://127.0.0.1:${address.port}/v1`;
+}
+
 test("Workflow selection appends every Agent phase to one Chat Session", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-workflows-"));
@@ -103,11 +160,11 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     },
     (context) => {
       recordCall(calls, context);
-      return fauxAssistantMessage("plan one");
+      return fauxAssistantMessage('<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->\nplan one');
     },
     (context) => {
       recordCall(calls, context);
-      return fauxAssistantMessage("plan two");
+      return fauxAssistantMessage('<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->\nplan two');
     },
     (context) => {
       recordCall(calls, context);
@@ -162,6 +219,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     workflowInvocationId: "planning-invocation-1",
     prompt: "planned request",
     plan: revised.plan,
+    planRevision: 2,
     inputEntryIds: [planning.userEntryId, feedbackEntryId, revised.planEntryId],
     agent: planning.executionAgent,
   });
@@ -264,24 +322,31 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
   );
   assert.deepEqual(
     messages.filter((message) => message.role === "assistant").map(messageText),
-    ["direct one", "plan one", "plan two", "executed plan two", "direct two"],
+    [
+      "direct one",
+      '<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->\nplan one',
+      '<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->\nplan two',
+      "executed plan two",
+      "direct two",
+    ],
   );
   assert.equal(messages.filter((message) => message.role === "custom").length, 1);
 
   assert.equal(calls.length, 5);
-  assert.match(calls[1].systemPrompt, /任务规划Agent/);
-  assert.equal(calls[1].toolNames.length, 0);
+  assert.match(calls[1].systemPrompt, /Planner Agent/);
+  assert.deepEqual(calls[1].toolNames, ["read", "memory_search"]);
   assert.ok(calls[1].messages.some((message) => message.role === "assistant" && messageText(message) === "direct one"));
   assert.match(JSON.stringify(calls[2].messages), /add rollback details/);
   assert.match(JSON.stringify(calls[2].messages), /plan one/);
-  assert.match(calls[3].systemPrompt, /workflow_execution_input/);
+  assert.match(calls[3].systemPrompt, /workflow_execution_task_brief/);
   assert.ok(calls[2].messages.some((message) => (
     message.role === "user" && messageText(message).includes("add rollback details")
   )));
   assert.ok(calls[3].messages.some((message) => (
     message.role === "user"
     && messageText(message).includes('"userRequest": "planned request"')
-    && messageText(message).includes('"plannerOutput": "plan two"')
+    && messageText(message).includes('"approvedPlan": "plan two"')
+    && messageText(message).includes('"approvedPlanRevision": 2')
   )));
   assert.ok(calls[3].messages.some((message) => message.role === "user" && messageText(message) === "planned request"));
   assert.ok(calls[4].messages.some((message) => message.role === "assistant" && messageText(message) === "executed plan two"));
@@ -321,7 +386,7 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
   faux.setResponses([
     (context) => {
       recordCall(calls, context);
-      return fauxAssistantMessage("first plan");
+      return fauxAssistantMessage('<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->\nfirst plan');
     },
     (context) => {
       recordCall(calls, context);
@@ -347,6 +412,7 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
     workflowInvocationId: "first-planning-invocation",
     prompt: "first planned request",
     plan: planning.plan,
+    planRevision: 1,
     inputEntryIds: [planning.userEntryId, planning.planEntryId],
     agent: planning.executionAgent,
   });
@@ -356,8 +422,8 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
     manager.buildSessionContext().messages.map((message) => [message.role, messageText(message)]),
     [
       ["user", "first planned request"],
-      ["assistant", "first plan"],
-      ["custom", "<workflow_execution_input>\n{\n  \"userRequest\": \"first planned request\",\n  \"plannerOutput\": \"first plan\"\n}\n</workflow_execution_input>"],
+      ["assistant", '<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->\nfirst plan'],
+      ["custom", "<workflow_execution_task_brief>\n{\n  \"schemaVersion\": 1,\n  \"kind\": \"planning_execution_task_brief\",\n  \"task\": {\n    \"userRequest\": \"first planned request\",\n    \"approvedPlanRevision\": 1,\n    \"approvedPlan\": \"first plan\"\n  },\n  \"executionContract\": {\n    \"objective\": \"完成用户真实请求，并交付已批准计划定义的本轮结果。\",\n    \"startRule\": \"计划已完成前置澄清；先执行可推进的工作，不重复向用户收集任务书中已有信息。\",\n    \"discoveryRule\": \"可通过工具验证或调查的事实由Executor主动完成。\",\n    \"authorityRule\": \"只在任务书授权边界内行动；另行授权点必须在动作前停止。\",\n    \"completionReport\": [\n      \"已完成交付物\",\n      \"关键结果\",\n      \"验证证据\",\n      \"剩余风险或阻塞\"\n    ]\n  }\n}\n</workflow_execution_task_brief>"],
       ["assistant", "first execution"],
     ],
   );
@@ -365,9 +431,120 @@ test("Planning Workflow can create the first durable Chat Session", { concurrenc
     (message) => (
       message.role === "user"
       && messageText(message).includes('"userRequest": "first planned request"')
-      && messageText(message).includes('"plannerOutput": "first plan"')
+      && messageText(message).includes('"approvedPlan": "first plan"')
     ),
   ));
+});
+
+test("Planner executes memory_search through Pi before producing a context-dependent plan", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-planner-memory-search-"));
+  const faux = registerFauxProvider({ api: "chat-planner-memory-faux", provider: "chat-planner-memory-faux" });
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace);
+  const chatHome = path.join(base, "chat-home");
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    id: "planner-memory",
+    name: "Planner Memory",
+  });
+  const previousMemoryEnvironment = {
+    provider: process.env.CHAT_MEMORY_EMBEDDER_PROVIDER,
+    baseUrl: process.env.CHAT_MEMORY_EMBEDDER_BASE_URL,
+    apiKey: process.env.CHAT_MEMORY_EMBEDDER_API_KEY,
+    model: process.env.CHAT_MEMORY_EMBEDDING_MODEL,
+    dimension: process.env.CHAT_MEMORY_EMBEDDING_DIMENSION,
+  };
+  process.env.CHAT_MEMORY_EMBEDDER_PROVIDER = "openai";
+  process.env.CHAT_MEMORY_EMBEDDER_BASE_URL = await startTestEmbeddingServer(t);
+  process.env.CHAT_MEMORY_EMBEDDER_API_KEY = "planner-memory-test";
+  process.env.CHAT_MEMORY_EMBEDDING_MODEL = "deterministic-test-embedding";
+  process.env.CHAT_MEMORY_EMBEDDING_DIMENSION = String(TEST_EMBEDDING_DIMENSION);
+  const memoryManager = getMemoryStoreManager(chatHome);
+  t.after(async () => {
+    await memoryManager.close();
+    for (const [name, value] of Object.entries({
+      CHAT_MEMORY_EMBEDDER_PROVIDER: previousMemoryEnvironment.provider,
+      CHAT_MEMORY_EMBEDDER_BASE_URL: previousMemoryEnvironment.baseUrl,
+      CHAT_MEMORY_EMBEDDER_API_KEY: previousMemoryEnvironment.apiKey,
+      CHAT_MEMORY_EMBEDDING_MODEL: previousMemoryEnvironment.model,
+      CHAT_MEMORY_EMBEDDING_DIMENSION: previousMemoryEnvironment.dimension,
+    })) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    faux.unregister();
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  process.chdir(base);
+  writeFauxConfiguration(path.join(chatHome, "agent"), faux);
+
+  const writes = await memoryManager.createMany([{ type: "personal" }], {
+    text: "用户生活在成都。",
+    kind: "fact",
+    source: { projectId: project.projectId, sessionId: "memory-source-session" },
+  });
+  assert.equal(writes[0].error, undefined);
+  assert.match(writes[0].memory?.text ?? "", /成都/);
+
+  const calls = [];
+  faux.setResponses([
+    (context) => {
+      recordCall(calls, context);
+      return fauxAssistantMessage([
+        fauxText("I need the user's stable location before planning."),
+        fauxToolCall("memory_search", { query: "用户所在地 成都 周边徒步" }, { id: "planner-memory-search-1" }),
+      ], { stopReason: "toolUse" });
+    },
+    (context) => {
+      recordCall(calls, context);
+      assert.match(JSON.stringify(context.messages), /用户生活在成都/);
+      return fauxAssistantMessage(
+        '<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->\n# 执行计划\n以成都为出发地调查周边花期和路线。',
+      );
+    },
+  ]);
+
+  const planning = await runPlanningStep({
+    projectId: project.projectId,
+    chatHome,
+    cwd: workspace,
+    prompt: "帮我规划周边看花和轻徒步",
+    workflowInvocationId: "planner-memory-invocation",
+  });
+
+  assert.match(planning.plan, /成都/);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].toolNames, ["read", "memory_search"]);
+  const sessionFile = fs.readdirSync(project.sessionDir)
+    .filter((name) => name.endsWith(".jsonl"))
+    .map((name) => path.join(project.sessionDir, name))[0];
+  assert.ok(sessionFile);
+  const sessionManager = SessionManager.open(sessionFile, project.sessionDir);
+  assert.ok(sessionManager.getEntries().some((entry) => (
+    entry.type === "message"
+    && entry.message.role === "toolResult"
+    && entry.message.toolName === "memory_search"
+    && messageText(entry.message).includes("用户生活在成都")
+  )));
+  assert.deepEqual(
+    collectChatToolExecutions(sessionManager.getEntries()).map((execution) => ({
+      toolName: execution.toolName,
+      toolAddress: execution.toolAddress,
+      toolVersion: execution.toolVersion,
+      status: execution.status,
+      agentId: execution.agentId,
+    })),
+    [{
+      toolName: "memory_search",
+      toolAddress: "system:tool/memory_search",
+      toolVersion: "system:memory-search@2",
+      status: "completed",
+      agentId: "planner",
+    }],
+  );
 });
 
 test("Direct Workflow applies the selected Pi Coding Agent configuration", { concurrency: false }, async (t) => {
@@ -438,6 +615,8 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
   const rule = await promptResourceStore.commitDraft(ruleDraft.id);
   const experience = await promptResourceStore.get(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID);
   assert.ok(experience);
+  const agentDesignRule = await promptResourceStore.get(AGENT_CAPABILITY_DESIGN_RULE_ID);
+  assert.ok(agentDesignRule);
 
   const calls = [];
   faux.setResponses([(context) => {
@@ -460,6 +639,11 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
             target: { type: "personal" },
             selectedBy: "user",
           },
+          {
+            id: AGENT_CAPABILITY_DESIGN_RULE_ID,
+            target: { type: "personal" },
+            selectedBy: "user",
+          },
         ],
       },
     },
@@ -474,13 +658,14 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
   assert.match(calls[0].systemPrompt, /<chat_prompt_resource/);
   assert.match(calls[0].systemPrompt, /Do not add unrelated responsibilities/);
   assert.match(calls[0].systemPrompt, /Frontend Run 到 Pi SDK/);
+  assert.match(calls[0].systemPrompt, /能力完备性与Pi装配一致性/);
   assert.match(calls[0].systemPrompt, /Configured review/);
   assert.deepEqual(calls[0].toolNames, ["read"]);
   const manager = SessionManager.open(result.sessionFile, project.sessionDir);
   const snapshot = collectChatWorkflowTurnConfigurations(manager.getEntries())[0];
   assert.deepEqual(
     snapshot.agentConfigs["pi-coding-agent"].promptResources.map((resource) => resource.revision),
-    [rule.revision, experience.revision],
+    [rule.revision, experience.revision, agentDesignRule.revision],
   );
 });
 

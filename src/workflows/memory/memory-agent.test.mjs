@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MEMORY_AGENT } from "./agents/memory-agent/index.ts";
-import { MEMORY_TOOL_NAMES, createMemoryTools } from "./agents/memory-agent/tools/index.ts";
+import {
+  MEMORY_MANAGEMENT_TOOL_NAMES,
+  createMemoryManagementTools,
+} from "./agents/memory-agent/tools/index.ts";
+import { createMemorySearchTool } from "../../tools/builtins/memory-search/index.ts";
+import { createMemoryRecordTool } from "../../tools/builtins/memory-record/index.ts";
+
+const MEMORY_TOOL_NAMES = [...MEMORY_MANAGEMENT_TOOL_NAMES, "memory_search", "memory_record"];
 
 function record(overrides = {}) {
   return {
@@ -33,14 +40,15 @@ function toolByName(tools, name) {
   return tool;
 }
 
-test("Memory Agent is restricted to the six Chat-owned Memory tools", () => {
+test("Memory Agent combines public search/record with private management tools", () => {
   assert.equal(MEMORY_AGENT.id, "memory-agent");
   assert.equal(MEMORY_AGENT.systemPrompt.mode, "replace");
   assert.match(MEMORY_AGENT.systemPrompt.text, /Memory Skill/);
   assert.deepEqual(MEMORY_AGENT.tools, {
     mode: "explicit",
-    names: MEMORY_TOOL_NAMES,
+    names: MEMORY_MANAGEMENT_TOOL_NAMES,
     exclude: [],
+    addresses: ["system:tool/memory_search", "system:tool/memory_record"],
   });
   assert.deepEqual(MEMORY_AGENT.resources, {
     mode: "explicit",
@@ -78,16 +86,29 @@ test("Memory tools preserve provenance and support Personal, current and cross-P
     update: async (_address, input) => record({ ...projectMemory, ...input, version: 2 }),
     delete: async ({ memoryId }) => ({ id: memoryId, deleted: true, indexCleanup: "completed" }),
   };
-  const tools = createMemoryTools({
+  const context = {
     manager,
+    purpose: "execution",
     projectId: "chat",
+    chatHome: "/tmp/chat-home",
+    cwd: "/tmp/project",
+    sessionManager: {},
     sessionId: "session-1",
+    workflowId: "memory",
     workflowInvocationId: "invocation-1",
+    stageId: "manage",
     agentId: "memory-agent",
-  });
+    toolAddress: "system:tool/memory_test",
+    toolVersion: "system:memory-test@1",
+  };
+  const tools = [
+    ...createMemoryManagementTools(context),
+    createMemorySearchTool({ ...context, toolAddress: "system:tool/memory_search" }),
+    createMemoryRecordTool({ ...context, toolAddress: "system:tool/memory_record" }),
+  ];
   assert.deepEqual(tools.map((tool) => tool.name), MEMORY_TOOL_NAMES);
 
-  await toolByName(tools, "memory_add").execute("call-add", {
+  await toolByName(tools, "memory_record").execute("call-add", {
     text: "Chat使用Mem0。",
     kind: "decision",
     targets: [{ type: "project", projectId: "content-lab" }, { type: "personal" }],
@@ -102,8 +123,13 @@ test("Memory tools preserve provenance and support Personal, current and cross-P
     source: {
       projectId: "chat",
       sessionId: "session-1",
+      workflowId: "memory",
       workflowInvocationId: "invocation-1",
+      stageId: "manage",
       agentId: "memory-agent",
+      toolCallId: "call-add",
+      toolAddress: "system:tool/memory_record",
+      toolVersion: "system:memory-test@1",
     },
   }]);
 
@@ -115,6 +141,17 @@ test("Memory tools preserve provenance and support Personal, current and cross-P
     { type: "personal" },
     { type: "project", projectId: "chat" },
   ]);
+  assert.deepEqual(calls[1][1].source, {
+    projectId: "chat",
+    sessionId: "session-1",
+    workflowId: "memory",
+    workflowInvocationId: "invocation-1",
+    stageId: "manage",
+    agentId: "memory-agent",
+    toolCallId: "call-search",
+    toolAddress: "system:tool/memory_search",
+    toolVersion: "system:memory-test@1",
+  });
   assert.deepEqual(searchResult.details.map((item) => item.id), ["memory-project", "memory-personal"]);
 
   await toolByName(tools, "memory_list").execute("call-list", {});
@@ -128,11 +165,13 @@ test("Memory update and delete require the version returned by a previous read",
     update: async () => record({ version: 4 }),
     delete: async ({ memoryId }) => ({ id: memoryId, deleted: true, indexCleanup: "completed" }),
   };
-  const tools = createMemoryTools({
+  const tools = createMemoryManagementTools({
     manager,
     projectId: "chat",
     sessionId: "session-1",
+    workflowId: "memory",
     workflowInvocationId: "invocation-1",
+    stageId: "manage",
     agentId: "memory-agent",
   });
 

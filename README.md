@@ -26,7 +26,7 @@ Chat/frontend（Pi Web纯浏览器前端子模块）
 前端可选择四个Workflow：
 
 - `minimal-pi-coding-agent`（直接执行）：一个Step直接运行Pi Coding Agent。
-- `planning-execution`（规划执行）：固定为`Planner Agent → 人工审核Task → Pi Coding Agent`。拒绝时，用户审核原文、上一版完整计划和原始请求返回同一个Planner配置继续修订；每一版都重新等待审核，批准后仅把最终计划交给Executor。全程只有一个持久Chat Session，计划、审核决定、Agent输入来源和Stage身份都作为可恢复事实记录其中。
+- `planning-execution`（规划执行）：固定为`Planner Agent → 人工审核Task → Pi Coding Agent`。Planner先完整理解背景、目标、交付物、范围、约束、授权边界和验收标准；存在用户专属阻塞决策时只允许补充信息并继续规划，计划就绪后才允许批准。补充或拒绝时，用户原文、上一版完整文档和原始请求返回同一个Planner配置；批准后Executor接收带批准版本、最终计划和执行契约的任务书。全程只有一个持久Chat Session，计划、审核决定、Agent输入来源和Stage身份都作为可恢复事实记录其中。
 - `memory`：通过普通Workflow Agent和原生Pi Tool管理个人或指定Project Memory。
 - `rule-management`：通过普通Workflow Agent管理规则与经验Prompt资源及采用建议。
 
@@ -136,7 +136,7 @@ pnpm dev:frontend
 
 ```text
 POST /runs
-  → 校验workflow字段并返回Workflow Run ID
+  → 校验请求；首轮先持久化Pi Session，再返回sessionId与Workflow Run ID
 GET /runs/:runId/events
   → 按顺序流式返回Stage、Thinking、文本与工具执行事件
 GET /runs/:runId

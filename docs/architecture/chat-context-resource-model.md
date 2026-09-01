@@ -110,7 +110,8 @@ Resource Catalog使用限定地址，例如：
 personal:skill/review
 project/chat:skill/review
 project/ziji-content-lab:extension/content-tools
-workflow/memory/memory-agent:tool/memory_search
+system:tool/memory_search
+workflow/memory/memory-agent:tool/memory_delete
 ```
 
 Chat限定地址只用于管理、冲突检测和日志。传给Pi时仍是原生文件和Tool名称。
@@ -119,13 +120,14 @@ Chat限定地址只用于管理、冲突检测和日志。传给Pi时仍是原�
 
 ```text
 Pi内置能力
+  + Chat系统内置Tool
   + 个人资源
   + 当前Project资源
   + Workflow Agent私有资源
   + 本次Session/Run显式激活资源
 ```
 
-其他Project资源可在Catalog中查询；显式激活后通过Pi的`additionalSkillPaths`、Extension Loader或`customTools`进入本次AgentSession。Extension是代码执行，必须校验资源路径和Tool名称冲突。
+其他Project资源可在Catalog中查询；显式激活后通过Pi的`additionalSkillPaths`、Extension Loader或`customTools`进入本次AgentSession。Chat系统Tool由源码Manifest进入统一Catalog，Agent以限定地址选择，Resolver绑定执行上下文后生成Pi `ToolDefinition`。Extension是代码执行，必须校验资源路径和Tool名称冲突。
 
 ## 7. 各领域允许的Target
 

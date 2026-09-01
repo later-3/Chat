@@ -1,57 +1,35 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { MemoryStoreManager } from "../../../../../memory/manager.js";
+import type { MemoryKind, MemoryRecord, MemorySource } from "../../../../../memory/types.js";
 import {
-  MEMORY_KINDS,
-  type MemoryKind,
-  type MemoryRecord,
-  type MemoryTarget,
-} from "../../../../../memory/types.js";
+  memoryKindSchema,
+  memoryResultText,
+  memorySummary,
+  memoryTargetSchema,
+  normalizeMemoryTarget,
+  throwIfMemoryToolAborted,
+} from "../../../../../tools/builtins/memory/shared.js";
 
-export const MEMORY_TOOL_NAMES = [
-  "memory_search",
+export const MEMORY_MANAGEMENT_TOOL_NAMES = [
   "memory_list",
   "memory_get",
-  "memory_add",
   "memory_update",
   "memory_delete",
 ] as const;
 
-export interface MemoryToolContext {
-  readonly manager: Pick<MemoryStoreManager, "search" | "list" | "get" | "createMany" | "update" | "delete">;
+export interface MemoryManagementToolContext {
+  readonly manager: Pick<MemoryStoreManager, "list" | "get" | "update" | "delete">;
   readonly projectId: string;
   readonly sessionId: string;
+  readonly workflowId: string;
   readonly workflowInvocationId: string;
+  readonly stageId: string;
   readonly agentId: string;
 }
 
-const kindSchema = Type.Union(MEMORY_KINDS.map((kind) => Type.Literal(kind)));
-const targetSchema = Type.Union([
-  Type.Object({ type: Type.Literal("personal") }, { additionalProperties: false }),
-  Type.Object({
-    type: Type.Literal("project"),
-    projectId: Type.String({ minLength: 1 }),
-  }, { additionalProperties: false }),
-]);
-
-function defaultProjectTarget(context: MemoryToolContext): MemoryTarget {
-  return { type: "project", projectId: context.projectId };
-}
-
-function visibleTargets(context: MemoryToolContext): readonly MemoryTarget[] {
-  return [{ type: "personal" }, defaultProjectTarget(context)];
-}
-
-function normalizeTarget(value: { type: "personal" } | { type: "project"; projectId: string }): MemoryTarget {
-  return value.type === "personal"
-    ? { type: "personal" }
-    : { type: "project", projectId: value.projectId };
-}
-
-function targetForRecord(record: MemoryRecord): MemoryTarget {
-  return record.scope === "personal"
-    ? { type: "personal" }
-    : { type: "project", projectId: record.projectId as string };
+function defaultProjectTarget(context: MemoryManagementToolContext) {
+  return { type: "project" as const, projectId: context.projectId };
 }
 
 function assertVersion(record: MemoryRecord, expectedVersion: number): void {
@@ -62,72 +40,39 @@ function assertVersion(record: MemoryRecord, expectedVersion: number): void {
   }
 }
 
-function memorySummary(record: MemoryRecord): Record<string, unknown> {
+function operationSource(
+  context: MemoryManagementToolContext,
+  toolCallId: string,
+  toolName: string,
+): MemorySource {
   return {
-    id: record.id,
-    target: targetForRecord(record),
-    groupId: record.groupId,
-    text: record.text,
-    kind: record.kind,
-    scope: record.scope,
-    projectId: record.projectId,
-    sourceProjectId: record.sourceProjectId,
-    sourceSessionId: record.sourceSessionId,
-    status: record.status,
-    version: record.version,
-    indexStatus: record.indexStatus,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
+    projectId: context.projectId,
+    sessionId: context.sessionId,
+    workflowId: context.workflowId,
+    workflowInvocationId: context.workflowInvocationId,
+    stageId: context.stageId,
+    agentId: context.agentId,
+    toolCallId,
+    toolAddress: `workflow/${context.workflowId}/${context.agentId}:tool/${toolName}`,
+    toolVersion: "workflow:memory-management@1",
   };
 }
 
-function resultText(value: unknown): string {
-  return JSON.stringify(value, null, 2);
-}
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw signal.reason ?? new Error("Memory operation aborted");
-}
-
-/** Pi custom tools expose explicit Targets while Chat resolves paths and Project access. */
-export function createMemoryTools(context: MemoryToolContext): ToolDefinition[] {
-  const search = defineTool({
-    name: "memory_search",
-    label: "Search memory",
-    description: "Search Personal, current-Project, or explicitly selected registered Project memories.",
-    parameters: Type.Object({
-      query: Type.String({ minLength: 1, description: "Natural-language search query" }),
-      targets: Type.Optional(Type.Array(targetSchema, { minItems: 1, maxItems: 20 })),
-      kind: Type.Optional(kindSchema),
-      topK: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })),
-    }),
-    async execute(_toolCallId, params, signal) {
-      throwIfAborted(signal);
-      const targets = params.targets?.map(normalizeTarget) ?? visibleTargets(context);
-      const hits = await context.manager.search({
-        query: params.query,
-        targets,
-        ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
-        ...(params.topK === undefined ? {} : { topK: params.topK }),
-      });
-      const details = hits.map((hit) => ({ ...memorySummary(hit.memory), score: hit.score }));
-      return { content: [{ type: "text", text: resultText(details) }], details };
-    },
-  });
-
+/** Workflow-private mutation management tools; public search/record tools come from Chat's system registry. */
+export function createMemoryManagementTools(context: MemoryManagementToolContext): ToolDefinition[] {
   const list = defineTool({
     name: "memory_list",
     label: "List memories",
     description: "List one exact Memory namespace without semantic search.",
     parameters: Type.Object({
-      target: Type.Optional(targetSchema),
-      kind: Type.Optional(kindSchema),
+      target: Type.Optional(memoryTargetSchema),
+      kind: Type.Optional(memoryKindSchema),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
     }),
     async execute(_toolCallId, params, signal) {
-      throwIfAborted(signal);
-      const target = params.target === undefined ? defaultProjectTarget(context) : normalizeTarget(params.target);
+      throwIfMemoryToolAborted(signal);
+      const target = params.target === undefined ? defaultProjectTarget(context) : normalizeMemoryTarget(params.target);
       const page = await context.manager.list(target, {
         status: "active",
         ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
@@ -135,7 +80,7 @@ export function createMemoryTools(context: MemoryToolContext): ToolDefinition[] 
         ...(params.offset === undefined ? {} : { offset: params.offset }),
       });
       const details = { target, ...page, items: page.items.map(memorySummary) };
-      return { content: [{ type: "text", text: resultText(details) }], details };
+      return { content: [{ type: "text", text: memoryResultText(details) }], details };
     },
   });
 
@@ -143,45 +88,12 @@ export function createMemoryTools(context: MemoryToolContext): ToolDefinition[] 
     name: "memory_get",
     label: "Get memory",
     description: "Get one exact memory by Target and Chat memory ID.",
-    parameters: Type.Object({ target: targetSchema, memoryId: Type.String({ minLength: 1 }) }),
+    parameters: Type.Object({ target: memoryTargetSchema, memoryId: Type.String({ minLength: 1 }) }),
     async execute(_toolCallId, params, signal) {
-      throwIfAborted(signal);
-      const memory = await context.manager.get({ target: normalizeTarget(params.target), memoryId: params.memoryId });
+      throwIfMemoryToolAborted(signal);
+      const memory = await context.manager.get({ target: normalizeMemoryTarget(params.target), memoryId: params.memoryId });
       const details = memorySummary(memory);
-      return { content: [{ type: "text", text: resultText(details) }], details };
-    },
-  });
-
-  const add = defineTool({
-    name: "memory_add",
-    label: "Add memory",
-    description: "Add one durable memory to one or more explicit Personal or Project Targets.",
-    executionMode: "sequential",
-    parameters: Type.Object({
-      text: Type.String({ minLength: 1, maxLength: 50_000 }),
-      kind: Type.Optional(kindSchema),
-      targets: Type.Optional(Type.Array(targetSchema, { minItems: 1, maxItems: 20 })),
-    }),
-    async execute(_toolCallId, params, signal) {
-      throwIfAborted(signal);
-      const targets = params.targets?.map(normalizeTarget) ?? [defaultProjectTarget(context)];
-      const details = await context.manager.createMany(targets, {
-        text: params.text,
-        ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
-        metadata: { managedBy: "memory-agent" },
-        source: {
-          projectId: context.projectId,
-          sessionId: context.sessionId,
-          workflowInvocationId: context.workflowInvocationId,
-          agentId: context.agentId,
-        },
-      });
-      const result = details.map((item) => ({
-        target: item.target,
-        ...(item.memory === undefined ? {} : { memory: memorySummary(item.memory) }),
-        ...(item.error === undefined ? {} : { error: item.error }),
-      }));
-      return { content: [{ type: "text", text: resultText(result) }], details: result };
+      return { content: [{ type: "text", text: memoryResultText(details) }], details };
     },
   });
 
@@ -191,23 +103,27 @@ export function createMemoryTools(context: MemoryToolContext): ToolDefinition[] 
     description: "Update an exact memory in its owning namespace after retrieving its version.",
     executionMode: "sequential",
     parameters: Type.Object({
-      target: targetSchema,
+      target: memoryTargetSchema,
       memoryId: Type.String({ minLength: 1 }),
       expectedVersion: Type.Integer({ minimum: 1 }),
       text: Type.Optional(Type.String({ minLength: 1, maxLength: 50_000 })),
-      kind: Type.Optional(kindSchema),
+      kind: Type.Optional(memoryKindSchema),
     }),
-    async execute(_toolCallId, params, signal) {
-      throwIfAborted(signal);
-      const target = normalizeTarget(params.target);
+    async execute(toolCallId, params, signal) {
+      throwIfMemoryToolAborted(signal);
+      const target = normalizeMemoryTarget(params.target);
       const current = await context.manager.get({ target, memoryId: params.memoryId });
       assertVersion(current, params.expectedVersion);
-      const memory = await context.manager.update({ target, memoryId: params.memoryId }, {
-        ...(params.text === undefined ? {} : { text: params.text }),
-        ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
-      });
+      const memory = await context.manager.update(
+        { target, memoryId: params.memoryId },
+        {
+          ...(params.text === undefined ? {} : { text: params.text }),
+          ...(params.kind === undefined ? {} : { kind: params.kind as MemoryKind }),
+        },
+        operationSource(context, toolCallId, "memory_update"),
+      );
       const details = memorySummary(memory);
-      return { content: [{ type: "text", text: resultText(details) }], details };
+      return { content: [{ type: "text", text: memoryResultText(details) }], details };
     },
   });
 
@@ -217,19 +133,22 @@ export function createMemoryTools(context: MemoryToolContext): ToolDefinition[] 
     description: "Delete one exact memory from its owning namespace after retrieving its version.",
     executionMode: "sequential",
     parameters: Type.Object({
-      target: targetSchema,
+      target: memoryTargetSchema,
       memoryId: Type.String({ minLength: 1 }),
       expectedVersion: Type.Integer({ minimum: 1 }),
     }),
-    async execute(_toolCallId, params, signal) {
-      throwIfAborted(signal);
-      const target = normalizeTarget(params.target);
+    async execute(toolCallId, params, signal) {
+      throwIfMemoryToolAborted(signal);
+      const target = normalizeMemoryTarget(params.target);
       const current = await context.manager.get({ target, memoryId: params.memoryId });
       assertVersion(current, params.expectedVersion);
-      const details = await context.manager.delete({ target, memoryId: params.memoryId });
-      return { content: [{ type: "text", text: resultText(details) }], details };
+      const details = await context.manager.delete(
+        { target, memoryId: params.memoryId },
+        operationSource(context, toolCallId, "memory_delete"),
+      );
+      return { content: [{ type: "text", text: memoryResultText(details) }], details };
     },
   });
 
-  return [search, list, get, add, update, remove];
+  return [list, get, update, remove];
 }

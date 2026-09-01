@@ -4,11 +4,15 @@ import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-age
 export const CHAT_WORKFLOW_AGENT_HANDOFF_CUSTOM_TYPE = "chat.workflow_agent_handoff";
 
 /** Writes a human utterance exactly once through Pi's native message contract. */
-export function appendChatUserMessage(sessionManager: SessionManager, text: string): string {
+export function appendChatUserMessage(
+  sessionManager: SessionManager,
+  text: string,
+  timestamp = Date.now(),
+): string {
   return sessionManager.appendMessage({
     role: "user",
     content: [{ type: "text", text }],
-    timestamp: Date.now(),
+    timestamp,
   });
 }
 

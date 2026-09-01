@@ -7,7 +7,7 @@ import { getStoredAgentConfigs, resolveChatConfig } from "../chat-config.js";
 import { resolveRequestProject } from "../projects/request.js";
 import { localTimestamp } from "../runtime-log.js";
 import { startChatWorkflow } from "../workflows/start-chat-workflow.js";
-import { openChatSession } from "../chat-session.js";
+import { openChatSession, reserveChatSession } from "../chat-session.js";
 import {
   collectPendingPlanReview,
   findActivePlanningExecutionRun,
@@ -67,7 +67,8 @@ async function assertSessionHasNoActivePlanningRun(input: ChatWorkflowHttpInput)
  * Chat浏览器前端使用这个接口异步启动用户选择的Workflow。
  *
  * 与用于人工调试的阻塞式`POST /run`不同，这里只等待Workflow成功创建，
- * 随即返回Run ID；调用方通过`GET /runs/:runId`读取状态和最终结果。
+ * 首轮先持久化Pi Session，随后返回Session与Run引用；调用方通过
+ * `GET /runs/:runId`读取状态和最终结果。
  */
 export default defineEventHandler(async (event) => {
   let input: ChatWorkflowHttpInput;
@@ -95,8 +96,14 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  const isNewSession = input.sessionId === undefined;
+  if (isNewSession) {
+    const reserved = await reserveChatSession(input);
+    input = { ...input, sessionId: reserved.manager.getSessionId() };
+  }
+  const sessionId = input.sessionId as string;
   const start = () => startChatWorkflow(input);
-  const { run: workflowRun, workflow, workflowInvocationId } = input.sessionId === undefined
+  const { run: workflowRun, workflow, workflowInvocationId } = isNewSession
     ? await start()
     : await withSessionStartLock(`${input.projectId ?? ""}:${input.sessionId}`, async () => {
         await assertSessionHasNoActivePlanningRun(input);
@@ -109,6 +116,8 @@ export default defineEventHandler(async (event) => {
   return {
     runId: workflowRun.runId,
     workflowInvocationId,
+    sessionId,
+    isNewSession,
     workflow,
     status: "running" as const,
   };

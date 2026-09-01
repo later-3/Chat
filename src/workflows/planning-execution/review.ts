@@ -2,6 +2,8 @@ import { defineHook } from "workflow";
 
 export const MAX_PLAN_REVIEW_FEEDBACK_CHARS = 20_000;
 
+export type PlanReviewReadiness = "ready_for_review" | "needs_clarification";
+
 export interface PlanReviewReference {
   readonly reviewId: string;
   readonly workflowInvocationId: string;
@@ -64,7 +66,7 @@ export function parsePlanReviewDecision(value: unknown): PlanReviewDecision {
 
 export function assertPlanReviewDecisionMatches(
   decision: PlanReviewDecision,
-  expected: PlanReviewReference,
+  expected: PlanReviewReference & { readonly readiness?: PlanReviewReadiness },
 ): void {
   if (
     decision.reviewId !== expected.reviewId
@@ -73,5 +75,8 @@ export function assertPlanReviewDecisionMatches(
     || decision.planSha256 !== expected.planSha256
   ) {
     throw new Error("审核决定与当前计划版本不匹配");
+  }
+  if (decision.kind === "approve" && expected.readiness === "needs_clarification") {
+    throw new Error("当前任务仍有阻塞信息，不能批准执行");
   }
 }

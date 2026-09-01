@@ -7,6 +7,7 @@ import { listPiSkills } from "../../../../../../resources/skills.js";
 import { inspectWorkflowAgent } from "../../../../../../workflows/agent-inspection.js";
 import { getChatWorkflowDefinition } from "../../../../../../workflows/registry.js";
 import { resolveProjectContext } from "../../../../../../projects/registry.js";
+import { listChatSystemTools } from "../../../../../../tools/registry.js";
 
 /** Keeps Workflow-private Skills inspection-only while returning Personal and Project Skill choices. */
 export default defineEventHandler(async (event) => {
@@ -39,17 +40,19 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
+    const systemToolAddresses = listChatSystemTools().map((tool) => tool.address);
     const [inspection, availableSkills, availableExtensions, availablePlugins] = await Promise.all([
       inspectWorkflowAgent({
         ...(project === undefined ? {} : { projectId: project.projectId, chatHome: project.chatHome }),
         cwd,
         defaultAgent: {
           ...agent,
-          tools: { mode: "pi-default" },
+          tools: { mode: "pi-default", addresses: systemToolAddresses },
           resources: { mode: "inherit" },
         },
         workflowId: workflow.id,
         agentId: agent.id,
+        stageId: workflow.nodes.find((node) => node.kind === "agent" && node.agentId === agent.id)?.id ?? agent.id,
         ...(workflow.prepareAgentSession === undefined
           ? {}
           : { prepareAgentSession: workflow.prepareAgentSession }),

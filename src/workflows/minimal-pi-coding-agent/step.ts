@@ -38,10 +38,17 @@ export async function runPiCodingAgentPromptStep(
 
   const agent = prepared.agents[PI_CODING_AGENT.id];
   if (agent === undefined) throw new Error(`本轮配置缺少Agent: ${PI_CODING_AGENT.id}`);
-  const { session, modelFallbackMessage } = await createWorkflowAgentSession({
+  const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,
     sessionManager: chatSession.manager,
     agent,
+    toolContext: {
+      purpose: "execution",
+      workflowId: "minimal-pi-coding-agent",
+      workflowInvocationId: input.workflowInvocationId,
+      stageId: "execute",
+      agentId: PI_CODING_AGENT.id,
+    },
     transformContext: stripLegacyPlanningHandoffs,
   });
   const sessionFile = session.sessionFile;
@@ -66,6 +73,11 @@ export async function runPiCodingAgentPromptStep(
     stageId: "execute",
     nodeKind: "agent",
     agentId: PI_CODING_AGENT.id,
+  }, {
+    sessionManager: chatSession.manager,
+    ...(chatSession.projectId === undefined ? {} : { projectId: chatSession.projectId }),
+    workflowInvocationId: input.workflowInvocationId,
+    toolResources,
   });
   try {
     console.log(`${localTimestamp()} [pi] prompt submitted chars=${input.prompt.length}`);

@@ -47,7 +47,12 @@ async function readJson(request) {
 async function startEmbeddingServer() {
   const localServer = http.createServer(async (request, response) => {
     if (request.method === "POST" && request.url === "/v1/chat/completions") {
-      await readJson(request);
+      const modelRequest = await readJson(request);
+      const requestText = JSON.stringify(modelRequest);
+      const responseText = !requestText.includes("workflow_execution_task_brief")
+        && requestText.includes("chat-planner-output")
+        ? '<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->\n# Execution plan\nRun the deterministic smoke test.'
+        : "Workflow runtime smoke completed.";
       response.writeHead(200, { "Content-Type": "text/event-stream" });
       response.write(`data: ${JSON.stringify({
         id: "chatcmpl-built-runtime",
@@ -56,7 +61,7 @@ async function startEmbeddingServer() {
         model: "built-runtime-model",
         choices: [{
           index: 0,
-          delta: { role: "assistant", content: "Workflow runtime smoke completed." },
+          delta: { role: "assistant", content: responseText },
           finish_reason: null,
         }],
       })}\n\n`);
@@ -150,12 +155,14 @@ before(async () => {
   const skillDir = path.join(agentDir, "skills", "built-review");
   const extensionDir = path.join(agentDir, "extensions");
   const projectSkillDir = path.join(workspace, ".chat", "skills", "chat-architecture");
+  const projectExtensionDir = path.join(workspace, ".chat", "extensions");
   fs.mkdirSync(workspace, { recursive: true });
   workspace = fs.realpathSync(workspace);
   fs.mkdirSync(sessionDir, { recursive: true });
   fs.mkdirSync(skillDir, { recursive: true });
   fs.mkdirSync(extensionDir, { recursive: true });
   fs.mkdirSync(projectSkillDir, { recursive: true });
+  fs.mkdirSync(projectExtensionDir, { recursive: true });
   fs.writeFileSync(path.join(workspace, ".chat", "project.json"), JSON.stringify({
     schemaVersion: 1,
     id: projectId,
@@ -171,6 +178,17 @@ before(async () => {
     "---", "name: chat-architecture", "description: Navigate Chat architecture", "---", "Read the architecture index.",
   ].join("\n"));
   fs.writeFileSync(path.join(extensionDir, "built-extension.ts"), "export default function register() {}\n");
+  fs.writeFileSync(path.join(projectExtensionDir, "built-project-tool.ts"), [
+    "export default function register(pi) {",
+    "  pi.registerTool({",
+    "    name: 'built_project_lookup',",
+    "    label: 'Built project lookup',",
+    "    description: 'Production Project Tool fixture.',",
+    "    parameters: { type: 'object', properties: {}, additionalProperties: false },",
+    "    async execute() { return { content: [{ type: 'text', text: 'ok' }], details: {} }; },",
+    "  });",
+    "}",
+  ].join("\n"));
 
   const manager = SessionManager.create(workspace, sessionDir);
   appendChatWorkflowStage(manager, {
@@ -578,6 +596,76 @@ test("Workflow containers and their Agents come from the backend registry", asyn
   assert.equal(body.workflows[3].agents[0].configPath, "./agents/rule-curator-agent/agent.json");
 });
 
+test("Tool catalog and Project Agent Tool policy use the production Pi assembly path", async () => {
+  const catalogResponse = await authenticatedFetch(`/api/tools?projectId=${projectId}`);
+  const catalog = await catalogResponse.json();
+  assert.equal(catalogResponse.status, 200, JSON.stringify(catalog));
+  assert.deepEqual(
+    catalog.tools.filter((tool) => tool.sourceInfo.scope === "system").map((tool) => tool.address),
+    ["system:tool/memory_search", "system:tool/memory_record"],
+  );
+  const projectTool = catalog.tools.find((tool) => tool.name === "built_project_lookup");
+  assert.ok(projectTool, JSON.stringify(catalog));
+  assert.equal(projectTool.sourceInfo.scope, "project");
+  assert.equal(projectTool.address, `project/${projectId}:tool/built_project_lookup`);
+  assert.equal(typeof projectTool.version.contentHash, "string");
+  const plannerSearch = catalog.tools.find((tool) => tool.address === "system:tool/memory_search");
+  assert.equal(plannerSearch.consumers.some((consumer) => (
+    consumer.workflowId === "planning-execution"
+      && consumer.agentId === "planner"
+      && consumer.source === "workflow-default"
+      && consumer.enabled
+  )), true);
+
+  const saveResponse = await authenticatedFetch(
+    "/api/workflows/planning-execution/agents/planner/tool-config",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId,
+        tools: {
+          mode: "explicit",
+          names: ["built_project_lookup"],
+          exclude: [],
+          addresses: ["system:tool/memory_search"],
+        },
+      }),
+    },
+  );
+  const saved = await saveResponse.json();
+  assert.equal(saveResponse.status, 200, JSON.stringify(saved));
+  assert.deepEqual(saved.tools, {
+    mode: "explicit",
+    names: ["built_project_lookup"],
+    exclude: [],
+    addresses: ["system:tool/memory_search"],
+  });
+
+  const inspectionResponse = await authenticatedFetch(
+    "/api/workflows/planning-execution/agents/planner/resolve",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, cwd: workspace }),
+    },
+  );
+  const inspection = await inspectionResponse.json();
+  assert.equal(inspectionResponse.status, 200, JSON.stringify(inspection));
+  assert.deepEqual(
+    inspection.tools.filter((tool) => tool.active).map((tool) => tool.name).sort(),
+    ["built_project_lookup", "memory_search"],
+  );
+  assert.equal(inspection.agent.durableConfig.tools.mode, "explicit");
+
+  const clearResponse = await authenticatedFetch(
+    `/api/workflows/planning-execution/agents/planner/tool-config?projectId=${projectId}`,
+    { method: "DELETE" },
+  );
+  assert.equal(clearResponse.status, 200);
+  assert.deepEqual(await clearResponse.json(), { schemaVersion: 1, removed: true });
+});
+
 test("the built server executes a real local Workflow Run through transformed modules", async () => {
   const startResponse = await authenticatedFetch("/runs", {
     method: "POST",
@@ -602,6 +690,12 @@ test("the built server executes a real local Workflow Run through transformed mo
   const started = await startResponse.json();
   assert.equal(startResponse.status, 202, JSON.stringify(started));
   assert.equal(typeof started.runId, "string");
+  assert.equal(typeof started.sessionId, "string");
+  assert.equal(started.isNewSession, true);
+  const acceptedSessionsResponse = await authenticatedFetch(`/api/sessions?projectId=${projectId}`);
+  const acceptedSessions = await acceptedSessionsResponse.json();
+  assert.equal(acceptedSessionsResponse.status, 200, JSON.stringify(acceptedSessions));
+  assert.ok(acceptedSessions.sessions.some((session) => session.id === started.sessionId));
 
   const deadline = Date.now() + 10_000;
   let status;
@@ -615,6 +709,7 @@ test("the built server executes a real local Workflow Run through transformed mo
   } while (Date.now() < deadline);
 
   assert.equal(status?.status, "completed", JSON.stringify(status));
+  assert.equal(status.result.sessionId, started.sessionId);
   assert.equal(status.result.text, "Workflow runtime smoke completed.");
 });
 
@@ -645,6 +740,8 @@ test("the built planning Workflow survives review and resumes the same Session",
   const started = await startResponse.json();
   assert.equal(startResponse.status, 202, JSON.stringify(started));
   assert.equal(typeof started.workflowInvocationId, "string");
+  assert.equal(typeof started.sessionId, "string");
+  assert.equal(started.isNewSession, true);
   const query = new URLSearchParams({
     projectId,
     workflowInvocationId: started.workflowInvocationId,
@@ -661,7 +758,10 @@ test("the built planning Workflow survives review and resumes the same Session",
     await new Promise((resolve) => setTimeout(resolve, 100));
   } while (Date.now() < reviewDeadline);
   assert.equal(reviewStatus?.phase, "waiting_review", JSON.stringify(reviewStatus));
+  assert.equal(reviewStatus.review.sessionId, started.sessionId);
   assert.equal(reviewStatus.review.planRevision, 1);
+  assert.equal(reviewStatus.review.readiness, "ready_for_review");
+  assert.deepEqual(reviewStatus.review.blockingQuestions, []);
 
   const waitingSessionResponse = await authenticatedFetch(
     `/api/sessions/${encodeURIComponent(reviewStatus.review.sessionId)}?projectId=${projectId}`,
@@ -717,6 +817,19 @@ test("the built planning Workflow survives review and resumes the same Session",
   assert.equal(completed.result.sessionId, reviewStatus.review.sessionId);
   assert.equal(completed.result.text, "Workflow runtime smoke completed.");
 
+  const completedSessionResponse = await authenticatedFetch(
+    `/api/sessions/${encodeURIComponent(reviewStatus.review.sessionId)}?projectId=${projectId}`,
+  );
+  const completedSession = await completedSessionResponse.json();
+  assert.equal(completedSessionResponse.status, 200, JSON.stringify(completedSession));
+  assert.deepEqual(
+    completedSession.context.messages.map((message) => message.role),
+    ["user", "assistant", "user", "assistant"],
+  );
+  assert.deepEqual(completedSession.context.messages[2].content, [
+    { type: "text", text: "已通过执行计划 v1，开始执行。" },
+  ]);
+
   const replayedApproval = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -748,18 +861,21 @@ test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async
   const body = await response.json();
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.deepEqual(
-    body.tools.filter((tool) => tool.active).map((tool) => tool.name),
+    body.tools.filter((tool) => tool.active).map((tool) => tool.name).sort(),
     [
-      "memory_search",
-      "memory_list",
-      "memory_get",
-      "memory_add",
-      "memory_update",
       "memory_delete",
-    ],
+      "memory_get",
+      "memory_list",
+      "memory_record",
+      "memory_search",
+      "memory_update",
+    ].sort(),
   );
   assert.deepEqual(body.skills.map((skill) => skill.name), ["memory"]);
-  assert.equal(body.tools.find((tool) => tool.name === "memory_search").sourceInfo.source, "sdk");
+  const memorySearch = body.tools.find((tool) => tool.name === "memory_search");
+  assert.equal(memorySearch.sourceInfo.source, "chat-system");
+  assert.equal(memorySearch.address, "system:tool/memory_search");
+  assert.equal(memorySearch.risk, "read-only");
 
   const catalogResponse = await authenticatedFetch(
     `/api/workflows/memory/agents/memory-agent/catalog?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`,
@@ -872,6 +988,16 @@ test("Prompt resource production API is read-only and target-aware", async () =>
   assert.equal(builtIns[0].revision, 3);
   assert.equal(builtIns[0].kind, "experience");
   assert.deepEqual(builtIns[0].target, { type: "personal" });
+
+  const builtInRuleResponse = await authenticatedFetch(
+    `/api/prompt-resources?projectId=${projectId}&target=personal&kind=rule&q=Agent%E8%83%BD%E5%8A%9B%E5%AE%8C%E5%A4%87%E6%80%A7&status=all`,
+  );
+  assert.equal(builtInRuleResponse.status, 200);
+  const builtInRules = (await builtInRuleResponse.json()).resources;
+  assert.deepEqual(builtInRules.map((item) => item.id), ["agent-capability-design-contract"]);
+  assert.equal(builtInRules[0].revision, 1);
+  assert.equal(builtInRules[0].kind, "rule");
+  assert.deepEqual(builtInRules[0].target, { type: "personal" });
 });
 
 test("full history exports the managed Chat Session as standalone HTML", async () => {

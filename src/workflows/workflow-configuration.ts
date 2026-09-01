@@ -63,6 +63,7 @@ function isEmptySelection(selection: AgentConfigSelection): boolean {
     && selection.append === undefined
     && selection.promptFiles === undefined
     && selection.promptResources === undefined
+    && selection.tools === undefined
     && selection.resources === undefined;
 }
 

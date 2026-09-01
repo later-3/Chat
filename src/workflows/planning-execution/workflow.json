@@ -2,26 +2,26 @@
   "schemaVersion": 1,
   "id": "planning-execution",
   "name": "规划执行",
-  "description": "Planner制定计划并等待用户审核；修改意见返回Planner，批准后由Pi Coding Agent执行。",
+  "description": "Planner先补齐任务理解；阻塞信息在审核Task中澄清，完整计划批准后由Pi Coding Agent按任务书执行。",
   "nodes": [
     {
       "kind": "agent",
       "id": "plan",
       "name": "规划",
-      "description": "Planner根据Session历史和用户请求生成计划。",
+      "description": "Planner根据Session历史和用户请求形成完整任务理解，并生成澄清稿或可执行计划。",
       "agentId": "planner"
     },
     {
       "kind": "task",
       "id": "review",
       "name": "审核",
-      "description": "等待用户批准计划，或携带修改意见返回规划节点。"
+      "description": "等待用户补充阻塞信息、要求修改或批准已就绪计划。"
     },
     {
       "kind": "agent",
       "id": "execute",
       "name": "执行",
-      "description": "Pi Coding Agent结合用户请求和计划完成任务。",
+      "description": "Pi Coding Agent根据用户请求和已批准的版本化任务书完成任务。",
       "agentId": "pi-coding-agent"
     }
   ],

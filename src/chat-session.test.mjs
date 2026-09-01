@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { isChatAgentContextEntry, openChatSession } from "./chat-session.ts";
+import { isChatAgentContextEntry, openChatSession, reserveChatSession } from "./chat-session.ts";
 import { openProject } from "./projects/registry.ts";
 
 async function initializeProject(base, workspace, projectId = "workspace") {
@@ -16,6 +16,28 @@ async function initializeProject(base, workspace, projectId = "workspace") {
   });
   return chatHome;
 }
+
+test("a reserved Chat Session is durable and discoverable before its first Workflow entry", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-reserve-"));
+  t.after(() => {
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  process.chdir(base);
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace);
+  const chatHome = await initializeProject(base, workspace);
+
+  const reserved = await reserveChatSession({ projectId: "workspace", cwd: workspace, chatHome });
+  const sessionId = reserved.manager.getSessionId();
+  assert.equal(reserved.manager.isPersisted(), true);
+  assert.equal(fs.existsSync(reserved.manager.getSessionFile()), true);
+
+  const reopened = await openChatSession({ projectId: "workspace", cwd: workspace, chatHome, sessionId });
+  assert.equal(reopened.manager.getSessionId(), sessionId);
+  assert.deepEqual(reopened.manager.getEntries(), []);
+});
 
 test("Chat Session is created once and reopened by ID", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();

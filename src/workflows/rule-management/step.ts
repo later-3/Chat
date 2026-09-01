@@ -55,11 +55,18 @@ export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<C
     workflowInvocationId: input.workflowInvocationId,
     userPrompt: input.prompt,
   });
-  const { session, modelFallbackMessage } = await createWorkflowAgentSession({
+  const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,
     sessionManager: chatSession.manager,
     agent,
     ...sessionExtensions,
+    toolContext: {
+      purpose: "execution",
+      workflowId: "rule-management",
+      workflowInvocationId: input.workflowInvocationId,
+      stageId: "manage",
+      agentId: RULE_CURATOR_AGENT.id,
+    },
   });
   const sessionFile = session.sessionFile;
   if (sessionFile === undefined) {
@@ -78,6 +85,11 @@ export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<C
     stageId: "manage",
     nodeKind: "agent",
     agentId: RULE_CURATOR_AGENT.id,
+  }, {
+    sessionManager: chatSession.manager,
+    ...(chatSession.projectId === undefined ? {} : { projectId: chatSession.projectId }),
+    workflowInvocationId: input.workflowInvocationId,
+    toolResources,
   });
   try {
     await session.resumePendingTurn();

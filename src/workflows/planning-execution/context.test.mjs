@@ -52,6 +52,8 @@ test("revision instructions are model-facing while persisted feedback remains th
   assert.deepEqual(messages.map((message) => message.role), ["user", "assistant", "user"]);
   assert.deepEqual(transformed.map((message) => message.role), ["user", "assistant", "custom", "user"]);
   assert.match(transformed[2].content, /第2版计划/);
+  assert.match(transformed[2].content, /重新完成任务理解和就绪判定/);
+  assert.match(transformed[2].content, /任务澄清稿或执行计划/);
   assert.match(transformed[2].content, /<previous_plan>\nearlier answer/);
   assert.equal(transformed[3], messages[2]);
 });

@@ -11,6 +11,7 @@ import {
 import { resolveWorkflowAgentDefinition } from "./agent-config-loader.js";
 import type { PrepareChatWorkflowAgentSession } from "./registry.js";
 import { describeResourceVersion, qualifiedResourceAddress } from "../resources/version.js";
+import { readAgentDurableConfig } from "./agent-model-config.js";
 
 const MAX_VISIBLE_RESOURCE_BYTES = 1_000_000;
 
@@ -22,6 +23,7 @@ interface AgentInspectionOptions {
   readonly selection?: AgentConfigSelection;
   readonly workflowId?: string;
   readonly agentId?: string;
+  readonly stageId?: string;
   readonly prepareAgentSession?: PrepareChatWorkflowAgentSession;
 }
 
@@ -73,6 +75,13 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
       : {}),
     ...(options.selection === undefined ? {} : { selection: options.selection }),
   });
+  const durableConfig = projectContext === undefined || options.workflowId === undefined
+    ? undefined
+    : await readAgentDurableConfig(
+        projectContext.projectDataDir,
+        options.workflowId,
+        options.agentId ?? options.defaultAgent.id,
+      );
   const sessionManager = SessionManager.inMemory(cwd);
   const workflowId = options.workflowId ?? "agent-inspection";
   const agentId = options.agentId ?? options.defaultAgent.id;
@@ -98,6 +107,13 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
     sessionManager,
     agent,
     ...(sessionExtensions ?? {}),
+    toolContext: {
+      purpose: "inspection",
+      workflowId,
+      workflowInvocationId: `inspection:${workflowId}:${agentId}`,
+      stageId: options.stageId ?? agentId,
+      agentId,
+    },
   });
 
   try {
@@ -184,6 +200,7 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
     for (const prompt of prompts) addPluginResource(prompt.sourceInfo, "prompts", prompt.filePath);
 
     const activeTools = new Set(session.getActiveToolNames());
+    const chatToolsByName = new Map(created.chatTools.map((tool) => [tool.manifest.name, tool]));
     return {
       agent: {
         ...agent,
@@ -191,6 +208,7 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
           ? null
           : { provider: session.model.provider, modelId: session.model.id },
         effectiveThinkingLevel: session.thinkingLevel,
+        durableConfig: durableConfig ?? null,
       },
       prompt: {
         final: session.systemPrompt,
@@ -205,24 +223,42 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
         })),
         contextFiles: resourceLoader.getAgentsFiles().agentsFiles,
       },
-      tools: await Promise.all(session.getAllTools().map(async (tool) => ({
-        name: tool.name,
-        label: session.getToolDefinition(tool.name)?.label ?? tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-        promptGuidelines: tool.promptGuidelines ?? [],
-        sourceInfo: tool.sourceInfo,
-        address: qualifiedResourceAddress({
-          kind: "tool",
-          id: tool.name,
-          scope: tool.sourceInfo.scope,
-          ...(projectContext === undefined ? {} : { projectId: projectContext.projectId }),
-          workflowId,
-          agentId,
-        }),
-        version: await describeResourceVersion(tool.sourceInfo.path),
-        active: activeTools.has(tool.name),
-      }))),
+      tools: await Promise.all(session.getAllTools().map(async (tool) => {
+        const chatTool = chatToolsByName.get(tool.name);
+        const sourceInfo = chatTool === undefined
+          ? tool.sourceInfo
+          : {
+              path: `<chat-system:${chatTool.manifest.id}>`,
+              source: "chat-system",
+              scope: "system",
+              origin: "builtin",
+            };
+        return {
+          name: tool.name,
+          label: session.getToolDefinition(tool.name)?.label ?? tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+          promptGuidelines: tool.promptGuidelines ?? [],
+          sourceInfo,
+          address: chatTool?.address ?? qualifiedResourceAddress({
+            kind: "tool",
+            id: tool.name,
+            scope: tool.sourceInfo.scope,
+            ...(projectContext === undefined ? {} : { projectId: projectContext.projectId }),
+            workflowId,
+            agentId,
+          }),
+          version: chatTool === undefined ? await describeResourceVersion(tool.sourceInfo.path) : null,
+          ...(chatTool === undefined
+            ? {}
+            : {
+                toolVersion: chatTool.version,
+                risk: chatTool.manifest.risk,
+                permissions: chatTool.manifest.permissions,
+              }),
+          active: activeTools.has(tool.name),
+        };
+      })),
       skills,
       extensions,
       plugins: [...pluginResources.values()],

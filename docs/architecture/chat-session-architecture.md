@@ -45,7 +45,7 @@ Workflow/Agent身份与消息角色正交：同样是`assistant`，可以由Plan
 | `chat.workflow_stage` | Invocation、Workflow、Stage、Node Kind、Agent ID | Agent回复正文 |
 | `chat.workflow_agent_input` v2 | `inputEntryIds`，引用原生会话消息 | `userPrompt`、上游输出正文 |
 | `chat.plan_review` | 审核ID、版本、摘要、`planEntryId`和控制状态 | 作为计划文本的唯一副本 |
-| `chat.plan_review_decision` v2 | 决定、版本绑定、`feedbackEntryId` | 作为审核原话的唯一副本 |
+| `chat.plan_review_decision` v3 | 决定、版本绑定、`messageEntryId`；修订决定兼容保留`feedbackEntryId` | 作为审核原话的唯一副本 |
 | `chat.session_migration` | 迁移ID、源哈希、备份位置和变更ID | 会话内容 |
 
 人工审核是`nodeKind=human`，没有虚假的Agent ID。没有人也没有Agent的确定性节点可使用`task`或`tool`元数据；只有它真的产生话语时，才追加对应的原生消息。
@@ -64,22 +64,27 @@ message/assistant 第一版计划                          id=p1
 custom          workflow_stage(review, nodeKind=human)
 custom          plan_review(planEntryId=p1)
 message/user    审核修改意见                          id=f1
-custom          plan_review_decision(feedbackEntryId=f1)
+custom          plan_review_decision(messageEntryId=f1, feedbackEntryId=f1)
 
 custom          workflow_stage(plan, agent=planner)
 custom          workflow_agent_input([u1, p1, f1])
 message/assistant 第二版完整计划                       id=p2
 custom          plan_review(planEntryId=p2)
-custom          plan_review_decision(approve)
+message/user    已通过执行计划 v2，开始执行。          id=a1
+custom          plan_review_decision(approve, messageEntryId=a1)
 
 custom          workflow_stage(execute, agent=pi-coding-agent)
-custom          workflow_agent_input([u1, f1, p2])
+custom          workflow_agent_input([u1, f1, p2, a1])
 custom_message  隐藏的内部执行交接
 message/toolResult ...
 message/assistant 最终回复
 ```
 
-批准按钮是控制决定，不强行生成一条“用户说批准了”的假消息。因为批准后没有新的自然语言话语，Executor使用隐藏`custom_message`接收最终计划并触发一轮Agent执行。
+按钮不是自然语言输入框，但点击仍然是用户在会话中的真实表达。Backend必须把它规范化为准确、可见、可审计的原生User Message，而不是只留下不可见控制事实。`chat.workflow_stage`先说明审核节点，`chat.plan_review_decision`再把这条话语绑定到具体审核版本；Executor使用隐藏`custom_message`接收完整任务书并触发一轮Agent执行，但它不取代审核消息。
+
+历史Session若只有审核Decision CustomEntry而没有原生消息，读取时可以生成兼容事件，但主会话必须使用专用“人工审核”样式，不能向用户暴露`chat.plan_review_decision`等内部类型名；完整历史必须在Review Stage中同时展示可读审核话语和结构化决定，并在左侧导航中按`user: <审核话语>`投影，保证Default、User和搜索视图与主会话一致。该投影只存在于导出读模型，不得反写源Session。
+
+如果将来审核者是Agent，三层模型保持不变：Stage记录具体Agent身份，Agent话语使用原生Assistant Message，结构化Decision继续引用该消息；不能一律伪装成User角色。
 
 ## 6. Agent先发起
 
@@ -110,7 +115,7 @@ custom chat.workflow_message { message: <Planner AssistantMessage> }
 其他反例：
 
 1. 等到Executor开始时才第一次写入原始用户请求，或再次写入同一请求。
-2. 把审核原文只存在`plan_review_decision.feedback`中。
+2. 把审核原文只存在`plan_review_decision.feedback`中，或按钮批准只写CustomEntry而没有原生MessageEntry。
 3. 为适配Agent B而把Agent A的持久化`assistant`改成`user`。
 4. 前端长期从CustomEntry伪造user/assistant；这只允许作为未迁移活动Session的兼容路径。
 5. 每个Agent、Stage或Workflow创建自己的Chat Session。

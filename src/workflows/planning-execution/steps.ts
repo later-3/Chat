@@ -19,7 +19,8 @@ import {
 import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
 import { MAX_PLANNING_RESULT_CHARS, PLANNER_AGENT } from "./agents/planner/index.js";
 import { PLANNING_EXECUTION_AGENT } from "./agents/pi-coding-agent/index.js";
-import { buildPlanningExecutionInput, injectPlanningRevisionContext, stripLegacyPlanningHandoffs } from "./context.js";
+import { buildPlanningExecutionTaskBrief, injectPlanningRevisionContext, stripLegacyPlanningHandoffs } from "./context.js";
+import { parsePlannerOutput } from "./planner-output.js";
 import type { PlanReviewDecision } from "./review.js";
 import {
   appendPlanReview,
@@ -27,6 +28,7 @@ import {
   collectPlanReviewDecisions,
   hasPlanReview,
   hasPlanReviewDecision,
+  planReviewDecisionMessage,
   planSha256,
   publishPlanReviewState,
   setPlanningExecutionPhase,
@@ -38,6 +40,8 @@ interface PlanningStepResult {
   readonly userEntryId: string;
   readonly plan: string;
   readonly planEntryId: string;
+  readonly readiness: ChatPlanReview["readiness"];
+  readonly blockingQuestions: readonly string[];
   readonly plannerAgent: ResolvedWorkflowAgentDefinition;
   readonly executionAgent: ResolvedWorkflowAgentDefinition;
 }
@@ -59,6 +63,8 @@ export interface PlanningRevisionStepInput {
 interface PlanningRevisionStepResult {
   readonly plan: string;
   readonly planEntryId: string;
+  readonly readiness: ChatPlanReview["readiness"];
+  readonly blockingQuestions: readonly string[];
   readonly userEntryId?: string;
 }
 
@@ -71,6 +77,8 @@ export interface PublishPlanReviewStepInput {
   readonly planRevision: number;
   readonly plan: string;
   readonly planEntryId: string;
+  readonly readiness: ChatPlanReview["readiness"];
+  readonly blockingQuestions: readonly string[];
 }
 
 export interface RecordPlanReviewDecisionStepInput {
@@ -83,6 +91,7 @@ export interface RecordPlanReviewDecisionStepInput {
 }
 
 export interface RecordPlanReviewDecisionStepResult {
+  readonly messageEntryId: string;
   readonly feedbackEntryId?: string;
 }
 
@@ -94,6 +103,7 @@ export interface PlanningExecutionStepInput {
   readonly workflowInvocationId: string;
   readonly prompt: string;
   readonly plan: string;
+  readonly planRevision: number;
   readonly inputEntryIds: readonly string[];
   readonly agent: ResolvedWorkflowAgentDefinition;
 }
@@ -163,10 +173,17 @@ async function runPlannerIteration(input: {
   });
 
   console.log(`${localTimestamp()} [planner] revision=${input.planRevision} step starting cwd=${input.chatSession.cwd}`);
-  const { session, modelFallbackMessage } = await createWorkflowAgentSession({
+  const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession: input.chatSession,
     sessionManager: input.chatSession.manager,
     agent: input.agent,
+    toolContext: {
+      purpose: "execution",
+      workflowId: "planning-execution",
+      workflowInvocationId: input.workflowInvocationId,
+      stageId: "plan",
+      agentId: PLANNER_AGENT.id,
+    },
     transformContext: input.previousPlan === undefined
       ? stripLegacyPlanningHandoffs
       : (messages) => injectPlanningRevisionContext(messages, {
@@ -187,25 +204,37 @@ async function runPlannerIteration(input: {
     stageId: "plan",
     nodeKind: "agent",
     agentId: PLANNER_AGENT.id,
+  }, {
+    sessionManager: input.chatSession.manager,
+    projectId: project.projectId,
+    workflowInvocationId: input.workflowInvocationId,
+    toolResources,
   });
   let completed = false;
   try {
     await session.resumePendingTurn();
-    const plan = observer.getLastAssistantText();
+    const plannerOutput = observer.getLastAssistantText();
     const plannerMessage = observer.getLastAssistantMessage();
-    if (plan === "") throw new Error("Planner Agent没有返回计划文本");
+    if (plannerOutput === "") throw new Error("Planner Agent没有返回计划文本");
     if (plannerMessage === undefined) throw new Error("Planner Agent没有返回Assistant消息");
-    if (plan.length > MAX_PLANNING_RESULT_CHARS) {
+    if (plannerOutput.length > MAX_PLANNING_RESULT_CHARS) {
       throw new Error(`规划结果不能超过${MAX_PLANNING_RESULT_CHARS}个字符`);
     }
+    const parsed = parsePlannerOutput(plannerOutput);
 
     const planEntryId = requireNativeAssistantLeafId(input.chatSession.manager);
     input.chatSession.manager.flush();
     console.log(
-      `${localTimestamp()} [planner] revision=${input.planRevision} completed chars=${plan.length} elapsedMs=${Date.now() - stepStartedAt}`,
+      `${localTimestamp()} [planner] revision=${input.planRevision} readiness=${parsed.readiness} chars=${parsed.document.length} elapsedMs=${Date.now() - stepStartedAt}`,
     );
     completed = true;
-    return { plan, planEntryId, ...(userEntryId === undefined ? {} : { userEntryId }) };
+    return {
+      plan: parsed.document,
+      planEntryId,
+      readiness: parsed.readiness,
+      blockingQuestions: parsed.blockingQuestions,
+      ...(userEntryId === undefined ? {} : { userEntryId }),
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(
@@ -252,6 +281,8 @@ export async function runPlanningStep(input: ChatWorkflowInput): Promise<Plannin
       sessionId: chatSession.manager.getSessionId(),
       plan: result.plan,
       planEntryId: result.planEntryId,
+      readiness: result.readiness,
+      blockingQuestions: result.blockingQuestions,
       userEntryId: result.userEntryId,
       plannerAgent,
       executionAgent,
@@ -298,6 +329,8 @@ export async function publishPlanReviewStep(
       planSha256: sha256,
       planEntryId: input.planEntryId,
       plan: input.plan,
+      readiness: input.readiness,
+      blockingQuestions: [...input.blockingQuestions],
       createdAt: new Date().toISOString(),
     };
     if (!hasPlanReview(chatSession.manager.getEntries(), review.reviewId)) {
@@ -339,24 +372,30 @@ export async function recordPlanReviewDecisionStep(
     const project = requireProjectContext(chatSession);
     const existing = collectPlanReviewDecisions(chatSession.manager.getEntries())
       .findLast((decision) => decision.reviewId === input.decision.reviewId);
+    let messageEntryId = existing?.messageEntryId ?? existing?.feedbackEntryId;
     let feedbackEntryId = existing?.feedbackEntryId;
-    const needsNativeFeedbackUpgrade = existing?.kind === "request_revision"
-      && existing.feedbackEntryId === undefined;
+    const needsNativeMessageUpgrade = existing !== undefined && messageEntryId === undefined;
     if (!hasPlanReviewDecision(chatSession.manager.getEntries(), input.decision.reviewId)
-      || needsNativeFeedbackUpgrade) {
-      feedbackEntryId = input.decision.kind === "request_revision"
-        ? appendChatUserMessage(chatSession.manager, input.decision.feedback)
-        : undefined;
+      || needsNativeMessageUpgrade) {
+      const decidedAt = existing?.decidedAt ?? new Date().toISOString();
+      messageEntryId ??= appendChatUserMessage(
+        chatSession.manager,
+        planReviewDecisionMessage(input.decision),
+        Date.parse(decidedAt),
+      );
+      feedbackEntryId = input.decision.kind === "request_revision" ? messageEntryId : undefined;
       appendPlanReviewDecision(chatSession.manager, {
-        schemaVersion: 2,
+        schemaVersion: 3,
         workflowId: "planning-execution",
         stageId: "review",
         ...input.decision,
+        messageEntryId,
         ...(feedbackEntryId === undefined ? {} : { feedbackEntryId }),
-        decidedAt: new Date().toISOString(),
+        decidedAt,
       });
       chatSession.manager.flush();
     }
+    if (messageEntryId === undefined) throw new Error("审核决定没有写入原生用户消息");
     await setPlanningExecutionPhase({
       projectDataDir: project.projectDataDir,
       projectId: project.projectId,
@@ -364,7 +403,10 @@ export async function recordPlanReviewDecisionStep(
       sessionId: chatSession.manager.getSessionId(),
       phase: input.decision.kind === "approve" ? "executing" : "planning",
     });
-    return feedbackEntryId === undefined ? {} : { feedbackEntryId };
+    return {
+      messageEntryId,
+      ...(feedbackEntryId === undefined ? {} : { feedbackEntryId }),
+    };
   } catch (error) {
     await markPlanningExecutionFailed(chatSession, input.workflowInvocationId);
     throw error;
@@ -393,10 +435,17 @@ export async function runPlanningExecutionStep(
   });
   console.log(`${localTimestamp()} [pi] planning execution step starting cwd=${chatSession.cwd}`);
 
-  const { session, modelFallbackMessage } = await createWorkflowAgentSession({
+  const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,
     sessionManager: chatSession.manager,
     agent: input.agent,
+    toolContext: {
+      purpose: "execution",
+      workflowId: "planning-execution",
+      workflowInvocationId: input.workflowInvocationId,
+      stageId: "execute",
+      agentId: PLANNING_EXECUTION_AGENT.id,
+    },
     transformContext: stripLegacyPlanningHandoffs,
   });
   const sessionFile = session.sessionFile;
@@ -416,6 +465,11 @@ export async function runPlanningExecutionStep(
     stageId: "execute",
     nodeKind: "agent",
     agentId: PLANNING_EXECUTION_AGENT.id,
+  }, {
+    sessionManager: chatSession.manager,
+    projectId: requireProjectContext(chatSession).projectId,
+    workflowInvocationId: input.workflowInvocationId,
+    toolResources,
   });
   try {
     await triggerChatWorkflowAgentHandoff(session, {
@@ -424,7 +478,11 @@ export async function runPlanningExecutionStep(
       stageId: "execute",
       agentId: PLANNING_EXECUTION_AGENT.id,
       inputEntryIds: input.inputEntryIds,
-      content: buildPlanningExecutionInput(input.prompt, input.plan),
+      content: buildPlanningExecutionTaskBrief({
+        userRequest: input.prompt,
+        approvedPlan: input.plan,
+        approvedPlanRevision: input.planRevision,
+      }),
     });
     const text = observer.getLastAssistantText();
     if (text === "") throw new Error("Pi Coding Agent没有返回Assistant文本");

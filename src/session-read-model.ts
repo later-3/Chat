@@ -19,6 +19,7 @@ import {
   collectChatWorkflowTurnConfigurations,
   collectLatestChatWorkflowConfigurations,
 } from "./workflows/workflow-configuration.js";
+import { collectChatToolExecutions } from "./tools/execution-record.js";
 import { collectChatPromptResourceProposals } from "./workflows/prompt-resource-proposal.js";
 import {
   CHAT_PLAN_REVIEW_CUSTOM_TYPE,
@@ -27,6 +28,7 @@ import {
   findActivePlanningExecutionRun,
   getPlanningExecutionRun,
   isTerminalPlanningExecutionPhase,
+  planReviewDecisionMessage,
 } from "./workflows/planning-execution/review-state.js";
 
 export interface ChatSessionListItem {
@@ -341,13 +343,17 @@ export function projectSessionContext(
     const reviewInvocationId = planReviewInvocationByEntryId.get(entry.id);
     if (reviewInvocationId !== undefined) flushWorkflowMessages(reviewInvocationId);
     const reviewDecision = reviewDecisionByEntryId.get(entry.id);
-    if (reviewDecision?.kind === "request_revision" && reviewDecision.feedbackEntryId === undefined) {
+    const reviewMessageEntryId = reviewDecision?.messageEntryId ?? reviewDecision?.feedbackEntryId;
+    if (reviewDecision !== undefined && reviewMessageEntryId === undefined) {
       messages.push({
         role: "custom",
-        customType: "chat.plan_review_feedback",
-        content: `计划修改意见：${reviewDecision.feedback}`,
+        customType: "chat.plan_review_decision",
+        content: reviewDecision.kind === "approve"
+          ? planReviewDecisionMessage(reviewDecision)
+          : `计划修改意见：${reviewDecision.feedback}`,
         display: true,
         details: {
+          kind: reviewDecision.kind,
           reviewId: reviewDecision.reviewId,
           planRevision: reviewDecision.planRevision,
         },
@@ -455,6 +461,7 @@ export async function readChatSession(
     },
     workflowConfigurations: collectLatestChatWorkflowConfigurations(entries),
     workflowTurnConfigurations: collectChatWorkflowTurnConfigurations(entries),
+    toolExecutions: collectChatToolExecutions(entries),
     promptResourceProposals: collectChatPromptResourceProposals(entries),
     ...(activePlanningExecution === undefined ? {} : { activePlanningExecution }),
   };

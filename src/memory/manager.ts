@@ -14,6 +14,7 @@ import type {
   MemoryRebuildResult,
   MemoryRecord,
   MemorySearchHit,
+  MemorySource,
   MemoryTarget,
   MemoryTargetWriteResult,
   SearchMemoryStoresInput,
@@ -118,21 +119,27 @@ export class MemoryStoreManager {
     );
   }
 
-  async update(address: MemoryAddress, input: Omit<UpdateMemoryInput, "scope" | "projectId">): Promise<MemoryRecord> {
+  async update(
+    address: MemoryAddress,
+    input: Omit<UpdateMemoryInput, "scope" | "projectId">,
+    source?: MemorySource,
+  ): Promise<MemoryRecord> {
     const memory = await (await this.store(address.target)).update(address.memoryId, input);
     await appendChatAuditEvent({
       action: "memory.update",
       target: { ...address.target, memoryId: address.memoryId },
+      ...(source === undefined ? {} : { source: { ...source } }),
       details: { version: memory.version, fields: Object.keys(input).sort() },
     }, this.chatHome);
     return memory;
   }
 
-  async delete(address: MemoryAddress): Promise<DeleteMemoryResult> {
+  async delete(address: MemoryAddress, source?: MemorySource): Promise<DeleteMemoryResult> {
     const result = await (await this.store(address.target)).delete(address.memoryId);
     await appendChatAuditEvent({
       action: "memory.delete",
       target: { ...address.target, memoryId: address.memoryId },
+      ...(source === undefined ? {} : { source: { ...source } }),
       details: { indexCleanup: result.indexCleanup },
     }, this.chatHome);
     return result;
@@ -177,6 +184,7 @@ export class MemoryStoreManager {
     await appendChatAuditEvent({
       action: "memory.search",
       target: { targets },
+      ...(input.source === undefined ? {} : { source: { ...input.source } }),
       details: { queryCharacters: input.query.length, resultCount: results.length },
     }, this.chatHome);
     return results;

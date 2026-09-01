@@ -256,7 +256,7 @@ SettingsManager中的packages
 
 ```text
 Pi Web派生React界面
-  ├── POST /runs                    启动Chat Workflow
+  ├── POST /runs                    首轮创建持久Session并启动Chat Workflow
   ├── GET /runs/:id/events          读取Workflow Stage和Agent事件
   ├── GET /runs/:id                 读取状态与最终结果
   ├── DELETE /runs/:id              取消Run

@@ -14,7 +14,9 @@ import { collectChatWorkflowStageMarkers } from "../workflow-stage.ts";
 import { memoryWorkflowDefinition } from "./index.ts";
 import { MEMORY_AGENT } from "./agents/memory-agent/index.ts";
 import { runMemoryAgentStep } from "./step.ts";
-import { MEMORY_TOOL_NAMES } from "./agents/memory-agent/tools/index.ts";
+import { MEMORY_MANAGEMENT_TOOL_NAMES } from "./agents/memory-agent/tools/index.ts";
+
+const MEMORY_TOOL_NAMES = [...MEMORY_MANAGEMENT_TOOL_NAMES, "memory_search", "memory_record"];
 
 function writeFauxConfiguration(agentDir, faux) {
   const model = faux.getModel();
@@ -50,7 +52,7 @@ function messageText(message) {
   return message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n");
 }
 
-test("Memory Workflow uses Pi Skill expansion and only custom Memory tools", { concurrency: false }, async (t) => {
+test("Memory Workflow combines its Pi Skill, system Memory tools, and private management tools", { concurrency: false }, async (t) => {
   const previousCwd = process.cwd();
   const previousChatHome = process.env.CHAT_HOME;
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-memory-workflow-"));
@@ -129,8 +131,17 @@ test("Memory Agent inspection uses the same custom tools and Skill as execution"
   fs.mkdirSync(workspace);
   writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
 
+  const project = await openProject({
+    path: workspace,
+    chatHome: process.env.CHAT_HOME,
+    id: "memory-inspection",
+    name: "Memory Inspection",
+  });
+
   const inspection = await inspectWorkflowAgent({
-    cwd: workspace,
+    projectId: project.projectId,
+    chatHome: process.env.CHAT_HOME,
+    cwd: project.cwd,
     workflowId: memoryWorkflowDefinition.id,
     agentId: MEMORY_AGENT.id,
     defaultAgent: MEMORY_AGENT,

@@ -305,6 +305,7 @@ export async function resolveWorkflowAgentDefinition(options: {
         ...current,
         ...(durable.model === undefined ? {} : { model: durable.model }),
         ...(durable.thinkingLevel === undefined ? {} : { thinkingLevel: durable.thinkingLevel }),
+        ...(durable.tools === undefined ? {} : { tools: durable.tools }),
       };
       sources.push({
         kind: "durable-config",
@@ -319,6 +320,7 @@ export async function resolveWorkflowAgentDefinition(options: {
 
   return {
     ...current,
+    ...(options.selection?.tools === undefined ? {} : { tools: options.selection.tools }),
     customInstructions: [
       ...current.customInstructions,
       ...promptInstructions,

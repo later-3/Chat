@@ -25,9 +25,14 @@ export interface MemorySource {
   readonly projectId?: string;
   readonly sessionId?: string;
   readonly entryIds?: readonly string[];
+  readonly workflowId?: string;
   readonly workflowInvocationId?: string;
+  readonly stageId?: string;
   readonly agentId?: string;
   readonly turnId?: string;
+  readonly toolCallId?: string;
+  readonly toolAddress?: string;
+  readonly toolVersion?: string;
 }
 
 export interface MemoryRecord {
@@ -106,6 +111,7 @@ export interface SearchMemoryStoresInput {
   readonly kind?: MemoryKind;
   readonly topK?: number;
   readonly threshold?: number;
+  readonly source?: MemorySource;
 }
 
 export interface MemoryTargetWriteResult {

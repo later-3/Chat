@@ -59,11 +59,18 @@ export async function runMemoryAgentStep(
     workflowInvocationId: input.workflowInvocationId,
     userPrompt: input.prompt,
   });
-  const { session, modelFallbackMessage } = await createWorkflowAgentSession({
+  const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,
     sessionManager: chatSession.manager,
     agent,
     ...sessionExtensions,
+    toolContext: {
+      purpose: "execution",
+      workflowId: "memory",
+      workflowInvocationId: input.workflowInvocationId,
+      stageId: "manage",
+      agentId: MEMORY_AGENT.id,
+    },
   });
   const sessionFile = session.sessionFile;
   if (sessionFile === undefined) {
@@ -82,6 +89,11 @@ export async function runMemoryAgentStep(
     stageId: "manage",
     nodeKind: "agent",
     agentId: MEMORY_AGENT.id,
+  }, {
+    sessionManager: chatSession.manager,
+    ...(chatSession.projectId === undefined ? {} : { projectId: chatSession.projectId }),
+    workflowInvocationId: input.workflowInvocationId,
+    toolResources,
   });
   try {
     await session.resumePendingTurn();

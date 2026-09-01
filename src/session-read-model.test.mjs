@@ -312,6 +312,110 @@ test("plan revisions and the user's feedback stay ordered in the same projected 
   assert.deepEqual(projected.entryIds, [originalUserEntryId, first.planEntryId, feedbackEntryId, second.planEntryId]);
 });
 
+test("an approval is a native human message between the reviewed plan and Executor output", () => {
+  const manager = SessionManager.inMemory("/workspace");
+  appendChatWorkflowStage(manager, {
+    invocationId: "approval-invocation",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+  });
+  const userEntryId = manager.appendMessage({ role: "user", content: "plan this", timestamp: 1 });
+  const planEntryId = manager.appendMessage({
+    role: "assistant",
+    provider: "test",
+    model: "planner",
+    content: [{ type: "text", text: "approved plan" }],
+    timestamp: 2,
+  });
+  appendChatWorkflowStage(manager, {
+    invocationId: "approval-invocation",
+    workflowId: "planning-execution",
+    stageId: "review",
+    nodeKind: "human",
+  });
+  const approvalEntryId = manager.appendMessage({
+    role: "user",
+    content: "已通过执行计划 v1，开始执行。",
+    timestamp: 3,
+  });
+  appendPlanReviewDecision(manager, {
+    schemaVersion: 3,
+    workflowId: "planning-execution",
+    stageId: "review",
+    kind: "approve",
+    reviewId: "approval-invocation:1",
+    workflowInvocationId: "approval-invocation",
+    planRevision: 1,
+    planSha256: planSha256("approved plan"),
+    messageEntryId: approvalEntryId,
+    decidedAt: "2026-09-01T00:03:00.000Z",
+  });
+  appendChatWorkflowStage(manager, {
+    invocationId: "approval-invocation",
+    workflowId: "planning-execution",
+    stageId: "execute",
+    agentId: "pi-coding-agent",
+  });
+  const resultEntryId = manager.appendMessage({
+    role: "assistant",
+    provider: "test",
+    model: "executor",
+    content: [{ type: "text", text: "completed result" }],
+    timestamp: 4,
+  });
+
+  const projected = projectSessionContext(manager.getEntries());
+  assert.deepEqual(projected.messages.map((message) => message.role), [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+  ]);
+  assert.equal(projected.messages[2].content, "已通过执行计划 v1，开始执行。");
+  assert.deepEqual(projected.entryIds, [userEntryId, planEntryId, approvalEntryId, resultEntryId]);
+});
+
+test("a legacy approval without a native message remains visible as a compatibility event", () => {
+  const manager = SessionManager.inMemory("/workspace");
+  appendChatWorkflowStage(manager, {
+    invocationId: "legacy-approval",
+    workflowId: "planning-execution",
+    stageId: "plan",
+    agentId: "planner",
+  });
+  manager.appendMessage({ role: "user", content: "legacy request", timestamp: 1 });
+  manager.appendMessage({
+    role: "assistant",
+    provider: "test",
+    model: "planner",
+    content: [{ type: "text", text: "legacy plan" }],
+    timestamp: 2,
+  });
+  appendChatWorkflowStage(manager, {
+    invocationId: "legacy-approval",
+    workflowId: "planning-execution",
+    stageId: "review",
+    nodeKind: "human",
+  });
+  appendPlanReviewDecision(manager, {
+    schemaVersion: 2,
+    workflowId: "planning-execution",
+    stageId: "review",
+    kind: "approve",
+    reviewId: "legacy-approval:1",
+    workflowInvocationId: "legacy-approval",
+    planRevision: 1,
+    planSha256: planSha256("legacy plan"),
+    decidedAt: "2026-09-01T00:03:00.000Z",
+  });
+
+  const projected = projectSessionContext(manager.getEntries());
+  assert.deepEqual(projected.messages.map((message) => message.role), ["user", "assistant", "custom"]);
+  assert.equal(projected.messages[2].customType, "chat.plan_review_decision");
+  assert.equal(projected.messages[2].content, "已通过执行计划 v1，开始执行。");
+});
+
 test("only base64 tool-result images are omitted from the initial payload", () => {
   const entries = [
     userEntry("u1", null, [{ type: "image", source: { type: "base64", media_type: "image/png", data: "QUJDRA==" } }]),

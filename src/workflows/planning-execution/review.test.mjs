@@ -35,6 +35,8 @@ function review(overrides = {}) {
     planSha256: planSha256(plan),
     planEntryId: "plan-entry-1",
     plan,
+    readiness: "ready_for_review",
+    blockingQuestions: [],
     createdAt: "2026-09-01T00:00:00.000Z",
     ...overrides,
   };
@@ -59,25 +61,54 @@ test("a revision decision requires exact feedback and exact plan binding", () =>
   );
 });
 
+test("a clarification review cannot be approved before blocking information is supplied", () => {
+  const clarification = review({
+    readiness: "needs_clarification",
+    blockingQuestions: ["What budget should the Executor use?"],
+  });
+  const approval = parsePlanReviewDecision({
+    kind: "approve",
+    reviewId: clarification.reviewId,
+    workflowInvocationId: clarification.workflowInvocationId,
+    planRevision: clarification.planRevision,
+    planSha256: clarification.planSha256,
+  });
+  assert.throws(
+    () => assertPlanReviewDecisionMatches(approval, clarification),
+    /阻塞信息.*不能批准执行/,
+  );
+  const supplied = parsePlanReviewDecision({
+    ...approval,
+    kind: "request_revision",
+    feedback: "The budget is 300 CNY.",
+  });
+  assert.doesNotThrow(() => assertPlanReviewDecisionMatches(supplied, clarification));
+});
+
 test("review requests and decisions remain append-only facts in one Pi Session", () => {
   const manager = SessionManager.inMemory("/workspace");
   const pending = review();
   appendPlanReview(manager, pending);
   assert.deepEqual(collectPendingPlanReview(manager.getEntries()), pending);
+  const messageEntryId = manager.appendMessage({
+    role: "user",
+    content: "已通过执行计划 v1，开始执行。",
+    timestamp: 1,
+  });
   appendPlanReviewDecision(manager, {
-    schemaVersion: 1,
+    schemaVersion: 3,
     workflowId: "planning-execution",
     stageId: "review",
-    kind: "request_revision",
+    kind: "approve",
     reviewId: pending.reviewId,
     workflowInvocationId: pending.workflowInvocationId,
     planRevision: pending.planRevision,
     planSha256: pending.planSha256,
-    feedback: "keep the same session",
+    messageEntryId,
     decidedAt: "2026-09-01T00:01:00.000Z",
   });
   assert.equal(collectPendingPlanReview(manager.getEntries()), undefined);
-  assert.equal(manager.buildSessionContext().messages.length, 0);
+  assert.equal(manager.buildSessionContext().messages.length, 1);
 });
 
 test("recording revision feedback writes one native user message and references it idempotently", { concurrency: false }, async (t) => {
@@ -120,6 +151,8 @@ test("recording revision feedback writes one native user message and references 
   };
   const first = await recordPlanReviewDecisionStep(input);
   const second = await recordPlanReviewDecisionStep(input);
+  assert.equal(first.messageEntryId, first.feedbackEntryId);
+  assert.equal(second.messageEntryId, first.messageEntryId);
   assert.equal(second.feedbackEntryId, first.feedbackEntryId);
   const reopened = SessionManager.open(manager.getSessionFile(), project.sessionDir);
   const feedbackMessages = reopened.getEntries().filter((entry) => entry.type === "message"
@@ -127,8 +160,66 @@ test("recording revision feedback writes one native user message and references 
   assert.equal(feedbackMessages.length, 1);
   const persistedDecision = reopened.getEntries().findLast((entry) => entry.type === "custom"
     && entry.customType === "chat.plan_review_decision");
-  assert.equal(persistedDecision.data.schemaVersion, 2);
+  assert.equal(persistedDecision.data.schemaVersion, 3);
+  assert.equal(persistedDecision.data.messageEntryId, feedbackMessages[0].id);
   assert.equal(persistedDecision.data.feedbackEntryId, feedbackMessages[0].id);
+});
+
+test("recording approval writes one native user message and references it idempotently", { concurrency: false }, async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-native-review-approval-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const workspace = path.join(root, "workspace");
+  fs.mkdirSync(workspace, { recursive: true });
+  const chatHome = path.join(root, "home");
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    id: "native-review-approval",
+    name: "Native Review Approval",
+  });
+  const manager = SessionManager.create(project.cwd, project.sessionDir);
+  manager.appendMessage({ role: "user", content: "original request", timestamp: 1 });
+  manager.appendMessage({
+    role: "assistant",
+    provider: "test",
+    model: "planner",
+    content: [{ type: "text", text: "first plan" }],
+    timestamp: 2,
+  });
+  manager.flush();
+  const decision = {
+    kind: "approve",
+    reviewId: "native-review:1",
+    workflowInvocationId: "native-review",
+    planRevision: 1,
+    planSha256: planSha256("first plan"),
+  };
+  const input = {
+    projectId: project.projectId,
+    chatHome,
+    cwd: workspace,
+    sessionId: manager.getSessionId(),
+    workflowInvocationId: "native-review",
+    decision,
+  };
+
+  const first = await recordPlanReviewDecisionStep(input);
+  const second = await recordPlanReviewDecisionStep(input);
+  assert.equal(second.messageEntryId, first.messageEntryId);
+  assert.equal(first.feedbackEntryId, undefined);
+
+  const reopened = SessionManager.open(manager.getSessionFile(), project.sessionDir);
+  const approvalMessages = reopened.getEntries().filter((entry) => entry.type === "message"
+    && entry.message.role === "user"
+    && entry.message.content[0]?.text === "已通过执行计划 v1，开始执行。");
+  assert.equal(approvalMessages.length, 1);
+  assert.equal(approvalMessages[0].id, first.messageEntryId);
+  const decisions = reopened.getEntries().filter((entry) => entry.type === "custom"
+    && entry.customType === "chat.plan_review_decision"
+    && entry.data.reviewId === decision.reviewId);
+  assert.equal(decisions.length, 1);
+  assert.equal(decisions[0].data.schemaVersion, 3);
+  assert.equal(decisions[0].data.messageEntryId, first.messageEntryId);
 });
 
 test("run binding and review publication merge safely regardless of write order", async (t) => {

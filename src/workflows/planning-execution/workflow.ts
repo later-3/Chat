@@ -29,6 +29,8 @@ export async function planningExecutionWorkflow(
   let planRevision = 1;
   let plan = initial.plan;
   let planEntryId = initial.planEntryId;
+  let readiness = initial.readiness;
+  let blockingQuestions = initial.blockingQuestions;
   const feedbackEntryIds: string[] = [];
 
   for (;;) {
@@ -51,6 +53,8 @@ export async function planningExecutionWorkflow(
       planRevision,
       plan,
       planEntryId,
+      readiness,
+      blockingQuestions,
     });
     const decision = await decisionHook;
     assertPlanReviewDecisionMatches(decision, review);
@@ -65,7 +69,13 @@ export async function planningExecutionWorkflow(
         ...common,
         sessionId: initial.sessionId,
         plan,
-        inputEntryIds: [initial.userEntryId, ...feedbackEntryIds, planEntryId],
+        planRevision,
+        inputEntryIds: [
+          initial.userEntryId,
+          ...feedbackEntryIds,
+          planEntryId,
+          recordedDecision.messageEntryId,
+        ],
         agent: initial.executionAgent,
       });
     }
@@ -87,5 +97,7 @@ export async function planningExecutionWorkflow(
     });
     plan = revised.plan;
     planEntryId = revised.planEntryId;
+    readiness = revised.readiness;
+    blockingQuestions = revised.blockingQuestions;
   }
 }

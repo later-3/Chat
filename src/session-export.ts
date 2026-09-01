@@ -12,6 +12,11 @@ import {
   collectChatWorkflowStageEntryIds,
   collectChatWorkflowStageMarkers,
 } from "./workflows/workflow-stage.js";
+import { collectChatToolExecutions } from "./tools/execution-record.js";
+import {
+  collectPlanReviewDecisions,
+  planReviewDecisionMessage,
+} from "./workflows/planning-execution/review-state.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -139,6 +144,32 @@ function embedChatWorkflowStages(html: string): string {
     throw new Error("Pi Session HTML包含无效session-data");
   }
   const chatWorkflowAgentInputs = collectChatWorkflowAgentInputs(decoded.entries);
+  const chatPlanReviewDecisions = collectPlanReviewDecisions(decoded.entries);
+  const legacyReviewDecisionByEntryId = new Map(
+    chatPlanReviewDecisions
+      .filter((decision) => decision.messageEntryId === undefined && decision.feedbackEntryId === undefined)
+      .map((decision) => [decision.entryId, decision]),
+  );
+  // Pi's tree hides CustomEntry values in its default and User filters. For
+  // legacy Sessions only, project the decision entry as a User Message inside
+  // the standalone export so its navigation matches Chat's conversation view.
+  // The source Session remains unchanged and the structured decision remains
+  // available through chatPlanReviewDecisions for the Review Stage renderer.
+  const projectedEntries = decoded.entries.map((entry) => {
+    if (!isRecord(entry) || typeof entry.id !== "string") return entry;
+    const decision = legacyReviewDecisionByEntryId.get(entry.id);
+    if (decision === undefined) return entry;
+    const decidedAt = Date.parse(decision.decidedAt);
+    return {
+      ...entry,
+      type: "message",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: planReviewDecisionMessage(decision) }],
+        timestamp: Number.isFinite(decidedAt) ? decidedAt : 0,
+      },
+    };
+  });
   const inputStageKeys = new Set(chatWorkflowAgentInputs.map((input) => (
     `${input.invocationId}\u0000${input.stageId}\u0000${input.agentId}`
   )));
@@ -160,10 +191,13 @@ function embedChatWorkflowStages(html: string): string {
   }
   const enriched = {
     ...decoded,
+    entries: projectedEntries,
     chatWorkflowAgentInputs,
     chatWorkflowMessages: collectChatWorkflowMessages(decoded.entries),
     chatWorkflowStageEntryIds: collectChatWorkflowStageEntryIds(decoded.entries),
     chatWorkflowStages: collectChatWorkflowStageMarkers(decoded.entries),
+    chatToolExecutions: collectChatToolExecutions(decoded.entries),
+    chatPlanReviewDecisions,
   };
   const encoded = Buffer.from(JSON.stringify(enriched), "utf8").toString("base64");
   return html.replace(pattern, `$1${encoded}$3`);
@@ -236,6 +270,9 @@ const CHAT_WORKFLOW_HISTORY_CSS = `
       gap: var(--line-height);
       padding: var(--line-height);
     }
+    .chat-agent-stage[data-stage-id="review"] .chat-agent-stage-header {
+      background: color-mix(in srgb, var(--accent) 9%, var(--container-bg));
+    }
     .chat-agent-input {
       border: 1px solid var(--border);
       border-radius: 5px;
@@ -307,6 +344,44 @@ const CHAT_WORKFLOW_HISTORY_CSS = `
       color: var(--dim);
       font-size: 9px;
     }
+    .chat-review-decision {
+      display: grid;
+      gap: 6px;
+      padding: 10px 12px;
+      border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--accent) 7%, var(--container-bg));
+    }
+    .chat-review-decision .chat-session-configuration-value {
+      font-size: 12px;
+    }
+    .chat-tool-execution {
+      display: grid;
+      gap: 6px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--container-bg);
+    }
+    .chat-tool-execution-header {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .chat-tool-execution-name {
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .chat-tool-execution-status {
+      color: var(--muted);
+      font-size: 10px;
+    }
+    .chat-tool-execution-address,
+    .chat-tool-execution-context {
+      color: var(--dim);
+      overflow-wrap: anywhere;
+      font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
   </style>`;
 
 const CHAT_WORKFLOW_HISTORY_RUNTIME = `
@@ -332,11 +407,19 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
       const chatWorkflowStageEntryIds = new Set(
         Array.isArray(data.chatWorkflowStageEntryIds) ? data.chatWorkflowStageEntryIds : []
       );
+      const chatToolExecutionByEntryId = new Map(
+        (Array.isArray(data.chatToolExecutions) ? data.chatToolExecutions : [])
+          .map((execution) => [execution.entryId, execution])
+      );
+      const chatPlanReviewDecisionByEntryId = new Map(
+        (Array.isArray(data.chatPlanReviewDecisions) ? data.chatPlanReviewDecisions : [])
+          .map((decision) => [decision.entryId, decision])
+      );
       const chatWorkflowLabels = {
         "minimal-pi-coding-agent": "Minimal Pi Coding Agent Workflow",
         "planning-execution": "Planning Execution Workflow"
       };
-      const chatStageLabels = { plan: "Plan", execute: "Execute" };
+      const chatStageLabels = { plan: "Plan", review: "Review", execute: "Execute" };
       const chatAgentLabels = {
         planner: "Planner Agent",
         "pi-coding-agent": "Pi Coding Agent"
@@ -437,6 +520,53 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
         title.className = "chat-history-region-label";
         title.textContent = label;
         region.append(title, node);
+        return region;
+      }
+
+      function createChatToolExecution(execution) {
+        const container = document.createElement("div");
+        container.className = "chat-tool-execution";
+        const header = document.createElement("div");
+        header.className = "chat-tool-execution-header";
+        const name = document.createElement("span");
+        name.className = "chat-tool-execution-name";
+        name.textContent = execution.toolName;
+        const status = document.createElement("span");
+        status.className = "chat-tool-execution-status";
+        status.textContent = execution.status + " · " + execution.startedAt + " → " + execution.completedAt;
+        const address = document.createElement("div");
+        address.className = "chat-tool-execution-address";
+        address.textContent = execution.toolAddress + (execution.toolVersion ? " · " + execution.toolVersion : "");
+        const context = document.createElement("div");
+        context.className = "chat-tool-execution-context";
+        context.textContent = execution.workflowId + "/" + execution.stageId
+          + (execution.agentId ? " · " + execution.agentId : "")
+          + " · call " + execution.toolCallId;
+        header.append(name, status);
+        container.append(header, address, context);
+        return createChatHistoryRegion("Tool execution record", container);
+      }
+
+      function createChatPlanReviewDecision(decision) {
+        const container = document.createElement("div");
+        container.className = "chat-review-decision";
+        const row = document.createElement("div");
+        row.className = "chat-session-configuration-row";
+        const name = document.createElement("span");
+        name.className = "chat-session-configuration-name";
+        name.textContent = decision.kind === "approve" ? "Approved" : "Changes requested";
+        const value = document.createElement("span");
+        value.className = "chat-session-configuration-value";
+        value.textContent = decision.kind === "approve"
+          ? "已通过执行计划 v" + decision.planRevision + "，开始执行。"
+          : decision.feedback;
+        const time = document.createElement("span");
+        time.className = "chat-session-configuration-time";
+        time.textContent = formatTimestamp(decision.decidedAt);
+        row.append(name, value, time);
+        container.appendChild(row);
+        const region = createChatHistoryRegion("Human review decision", container);
+        region.id = "entry-" + decision.entryId;
         return region;
       }
 
@@ -596,6 +726,18 @@ export function patchChatWorkflowHistory(html: string): string {
               (activeStageContent || fragment).appendChild(createChatAgentInput(workflowAgentInput));
               renderedAgentInputEntryIds.add(workflowAgentInput.entryId);
             }
+            continue;
+          }
+
+          const toolExecution = chatToolExecutionByEntryId.get(entry.id);
+          if (toolExecution) {
+            (activeStageContent || fragment).appendChild(createChatToolExecution(toolExecution));
+            continue;
+          }
+
+          const reviewDecision = chatPlanReviewDecisionByEntryId.get(entry.id);
+          if (reviewDecision) {
+            (activeStageContent || fragment).appendChild(createChatPlanReviewDecision(reviewDecision));
             continue;
           }
 

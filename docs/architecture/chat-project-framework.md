@@ -270,7 +270,7 @@ Chat可以发现固定的`.chat/skills`、`.chat/extensions`和`.chat/prompts`�
 
 1. Skill必须是符合Pi/Agent Skills格式的真实`SKILL.md`。
 2. Extension必须交给Pi Extension Loader，并通过`registerTool()`注册Tool。
-3. 依赖Chat领域服务的Tool继续通过Pi SDK `customTools`注入。
+3. Chat系统内置Tool由公共Catalog/Resolver按限定地址选择，再通过Pi SDK `customTools`注入；Workflow私有领域Tool继续走同一Pi接口。
 4. 前端从真实`ResourceLoader`和`AgentSession`读取`sourceInfo`、全部Tool和活动Tool，不根据目录猜测。
 
 Chat把当前Project目录作为Pi `additionalSkillPaths`、`additionalExtensionPaths`和Prompt路径传入。若后续需要完整复用Pi的Project Settings与PackageManager语义，应优先在Pi SDK增加通用的`projectConfigDir`装配能力，不能在Chat复制一套Pi Settings或Package安装器。

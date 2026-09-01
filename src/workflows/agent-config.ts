@@ -21,9 +21,14 @@ export type WorkflowAgentSystemPrompt =
   | { readonly mode: "replace"; readonly text: string; readonly sourcePath?: string };
 
 export type WorkflowAgentToolPolicy =
-  | { readonly mode: "pi-default" }
+  | { readonly mode: "pi-default"; readonly addresses?: readonly string[] }
   | { readonly mode: "none" }
-  | { readonly mode: "explicit"; readonly names: readonly string[]; readonly exclude: readonly string[] };
+  | {
+      readonly mode: "explicit";
+      readonly names: readonly string[];
+      readonly exclude: readonly string[];
+      readonly addresses?: readonly string[];
+    };
 
 export type WorkflowAgentResources =
   | { readonly mode: "inherit" }
@@ -73,6 +78,7 @@ export interface AgentConfigSelection {
   readonly append?: readonly string[];
   readonly promptFiles?: readonly string[];
   readonly promptResources?: readonly AgentPromptResourceSelection[];
+  readonly tools?: WorkflowAgentToolPolicy;
   readonly resources?: WorkflowAgentResources;
 }
 
@@ -196,18 +202,26 @@ function parseInstructions(value: unknown): RawInstruction[] {
   });
 }
 
-function parseTools(value: unknown): WorkflowAgentToolPolicy {
+export function parseWorkflowAgentToolPolicy(value: unknown): WorkflowAgentToolPolicy {
   if (!isRecord(value)) throw new Error("tools必须是对象");
-  assertKnownFields(value, ["mode", "names", "exclude"]);
-  if (value.mode === "pi-default" || value.mode === "none") {
-    if (value.names !== undefined || value.exclude !== undefined) throw new Error(`${value.mode} tools不能包含names或exclude`);
-    return { mode: value.mode };
+  assertKnownFields(value, ["mode", "names", "exclude", "addresses"]);
+  const addresses = value.addresses === undefined ? undefined : readStringList(value.addresses, "tools.addresses");
+  if (value.mode === "none") {
+    if (value.names !== undefined || value.exclude !== undefined || value.addresses !== undefined) {
+      throw new Error("none tools不能包含Tool选择");
+    }
+    return { mode: "none" };
+  }
+  if (value.mode === "pi-default") {
+    if (value.names !== undefined || value.exclude !== undefined) throw new Error("pi-default tools不能包含names或exclude");
+    return { mode: "pi-default", ...(addresses === undefined ? {} : { addresses }) };
   }
   if (value.mode !== "explicit") throw new Error("tools.mode无效");
   return {
     mode: "explicit",
     names: value.names === undefined ? [] : readStringList(value.names, "tools.names"),
     exclude: value.exclude === undefined ? [] : readStringList(value.exclude, "tools.exclude"),
+    ...(addresses === undefined ? {} : { addresses }),
   };
 }
 
@@ -268,20 +282,21 @@ export function parseRawAgentConfig(value: unknown, complete: boolean): RawAgent
     ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
     ...(value.systemPrompt === undefined ? {} : { systemPrompt: parseSystemPrompt(value.systemPrompt) }),
     ...(value.customInstructions === undefined ? {} : { customInstructions: parseInstructions(value.customInstructions) }),
-    ...(value.tools === undefined ? {} : { tools: parseTools(value.tools) }),
+    ...(value.tools === undefined ? {} : { tools: parseWorkflowAgentToolPolicy(value.tools) }),
     ...(value.resources === undefined ? {} : { resources: parseResources(value.resources) }),
   };
 }
 
 export function parseAgentConfigSelection(value: unknown): AgentConfigSelection {
   if (!isRecord(value)) throw new Error("Agent配置选择必须是对象");
-  assertKnownFields(value, ["primary", "append", "promptFiles", "promptResources", "resources"]);
+  assertKnownFields(value, ["primary", "append", "promptFiles", "promptResources", "tools", "resources"]);
   const primary = value.primary === undefined ? undefined : readNonEmptyString(value.primary, "primary");
   const append = value.append === undefined ? undefined : readStringList(value.append, "append");
   const promptFiles = value.promptFiles === undefined ? undefined : readStringList(value.promptFiles, "promptFiles");
   const promptResources = value.promptResources === undefined
     ? undefined
     : parsePromptResourceSelections(value.promptResources);
+  const tools = value.tools === undefined ? undefined : parseWorkflowAgentToolPolicy(value.tools);
   const resources = value.resources === undefined ? undefined : parseResources(value.resources);
   const count = (primary === undefined ? 0 : 1) + (append?.length ?? 0) + (promptFiles?.length ?? 0);
   if (count > MAX_AGENT_CONFIG_FILES) throw new Error(`单个Agent最多加载${MAX_AGENT_CONFIG_FILES}个配置和提示词文件`);
@@ -290,6 +305,7 @@ export function parseAgentConfigSelection(value: unknown): AgentConfigSelection 
     ...(append === undefined ? {} : { append }),
     ...(promptFiles === undefined ? {} : { promptFiles }),
     ...(promptResources === undefined ? {} : { promptResources }),
+    ...(tools === undefined ? {} : { tools }),
     ...(resources === undefined ? {} : { resources }),
   };
 }

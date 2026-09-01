@@ -27,6 +27,20 @@ export interface ChatSession {
   readonly projectContext?: ChatProjectContext;
 }
 
+/**
+ * Allocates the durable Pi Session ID for a conversation before its first
+ * Workflow starts. This is the HTTP acceptance boundary used by every Chat
+ * client; Workflow steps subsequently reopen the same Session by ID.
+ */
+export async function reserveChatSession(input: ChatSessionInput): Promise<ChatSession> {
+  if (input.sessionId !== undefined) {
+    throw new Error("预创建Session时不能提供sessionId");
+  }
+  const session = await openChatSession(input);
+  session.manager.flush();
+  return session;
+}
+
 /** Keeps obsolete Chat-internal handoffs out of restore and compaction context. */
 export function isChatAgentContextEntry(entry: SessionEntry): boolean {
   return entry.type !== "custom_message"

@@ -69,11 +69,25 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       }
       const modelRequest = await readJson(request);
       modelRequests.push(modelRequest);
-      const responseText = modelRequests.length === 1
-        ? "PLAN_V1"
-        : modelRequests.length === 2
-          ? "PLAN_V2"
-          : "DEV_E2E_OK";
+      const systemText = modelRequest.messages
+        .filter((message) => message.role === "system")
+        .map((message) => JSON.stringify(message.content))
+        .join("\n");
+      const latestMessageText = JSON.stringify(modelRequest.messages.at(-1)?.content ?? "");
+      let responseText;
+      if (systemText.includes("你是Planning Execution Workflow中的Planner Agent")) {
+        if (latestMessageText.includes("Add an explicit rollback step before execution.")) {
+          responseText = '<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->\nPLAN_V2';
+        } else if (latestMessageText.includes("Create a plan that will be cancelled during review.")) {
+          responseText = '<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->\nCANCEL_PLAN';
+        } else {
+          responseText = '<!-- chat-planner-output {"schemaVersion":1,"readiness":"needs_clarification","blockingQuestions":["Should the execution include an explicit rollback step?"]} -->\nPLAN_V1';
+        }
+      } else {
+        responseText = latestMessageText.includes("workflow_execution_task_brief")
+          ? "DEV_E2E_OK"
+          : "DEV_CONTINUED_OK";
+      }
       response.writeHead(200, { "Content-Type": "text/event-stream" });
       response.write(`data: ${JSON.stringify({
         id: "chatcmpl-dev-e2e",
@@ -194,6 +208,12 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     });
     const started = await start.json();
     assert.equal(start.status, 202, JSON.stringify(started));
+    assert.equal(typeof started.sessionId, "string");
+    assert.equal(started.isNewSession, true);
+    const acceptedSessionsResponse = await authenticatedFetch("/api/sessions?projectId=dev-e2e-project");
+    const acceptedSessions = await acceptedSessionsResponse.json();
+    assert.equal(acceptedSessionsResponse.status, 200, JSON.stringify(acceptedSessions));
+    assert.ok(acceptedSessions.sessions.some((session) => session.id === started.sessionId));
 
     const statusPath = () => {
       const query = new URLSearchParams({
@@ -237,7 +257,10 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     };
 
     const firstReview = await waitForReview(1);
+    assert.equal(firstReview.sessionId, started.sessionId);
     assert.equal(firstReview.plan, "PLAN_V1");
+    assert.equal(firstReview.readiness, "needs_clarification");
+    assert.deepEqual(firstReview.blockingQuestions, ["Should the execution include an explicit rollback step?"]);
     const overlappingRun = await authenticatedFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -252,12 +275,30 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(overlappingRun.status, 400);
     assert.match(await overlappingRun.text(), /等待计划v1审核/);
     assert.equal(modelRequests.length, 1);
+    const blockedApproval = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: "dev-e2e-project",
+        decision: {
+          kind: "approve",
+          reviewId: firstReview.reviewId,
+          workflowInvocationId: firstReview.workflowInvocationId,
+          planRevision: firstReview.planRevision,
+          planSha256: firstReview.planSha256,
+        },
+      }),
+    });
+    assert.equal(blockedApproval.status, 409);
+    assert.match(await blockedApproval.text(), /不能批准执行/);
     await submitReview(firstReview, {
       kind: "request_revision",
       feedback: "Add an explicit rollback step before execution.",
     });
     const secondReview = await waitForReview(2);
     assert.equal(secondReview.plan, "PLAN_V2");
+    assert.equal(secondReview.readiness, "ready_for_review");
+    assert.deepEqual(secondReview.blockingQuestions, []);
     await submitReview(secondReview, { kind: "approve" });
 
     const runDeadline = Date.now() + 15_000;
@@ -276,6 +317,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.match(JSON.stringify(modelRequests[1]), /Add an explicit rollback step before execution\./);
     assert.match(JSON.stringify(modelRequests[1]), /PLAN_V1/);
     assert.match(JSON.stringify(modelRequests[2]), /PLAN_V2/);
+    assert.match(JSON.stringify(modelRequests[2]), /已通过执行计划 v2，开始执行。/);
     // Executor receives the same linear Session, so the rejected plan remains
     // historical Agent speech. Its final internal handoff must select PLAN_V2.
     assert.match(JSON.stringify(modelRequests[2]), /PLAN_V1/);
@@ -306,6 +348,8 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     });
     const cancelStarted = await cancelStartResponse.json();
     assert.equal(cancelStartResponse.status, 202, JSON.stringify(cancelStarted));
+    assert.equal(cancelStarted.sessionId, status.result.sessionId);
+    assert.equal(cancelStarted.isNewSession, false);
     const planningOverlap = await authenticatedFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -361,6 +405,8 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     });
     const continuedStarted = await continuedResponse.json();
     assert.equal(continuedResponse.status, 202, JSON.stringify(continuedStarted));
+    assert.equal(continuedStarted.sessionId, status.result.sessionId);
+    assert.equal(continuedStarted.isNewSession, false);
     const continueDeadline = Date.now() + 10_000;
     let continued;
     while (Date.now() < continueDeadline) {

@@ -1,6 +1,28 @@
 import type { PromptResourceDocument } from "./types.js";
 
 export const WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID = "workflow-runtime-artifact-validation";
+export const PLANNER_READINESS_CONTRACT_EXPERIENCE_ID = "planner-readiness-contract";
+export const AGENT_CAPABILITY_DESIGN_RULE_ID = "agent-capability-design-contract";
+
+const AGENT_CAPABILITY_DESIGN_RULE_V1 = [
+  "Agent设计规则：能力完备性与Pi装配一致性",
+  "",
+  "适用场景：设计、修改或审核Chat中的Workflow Agent，包括其System Prompt、自定义Prompt、Model、Thinking Level、Skill、Tool、Extension、Plugin、Session上下文、输入输出合同和Workflow边界。",
+  "",
+  "必须遵守：",
+  "1. 先定义Agent的任务结果：写清使命、输入、预期输出、职责范围、非目标、授权边界和可验证的完成条件；不能只写角色名称或宽泛行为口号。",
+  "2. 列出完成使命所需的信息及其事实源：当前Session、Memory、Project Context、Rule、Experience、Skill、Tool、用户补充或Executor调查。只有用户能决定且会改变结果的信息才向用户提问。",
+  "3. 为每项职责核对可达能力：Agent实际装配的Model、Thinking Level、Tool、Skill和上下文必须足以完成该职责；需要Tool Calling、结构化输出或较长上下文时要用真实模型行为验证。禁止System Prompt要求使用未注册、未激活、不可读取或当前模型无法调用的能力。",
+  "4. System Prompt负责身份、目标、基本决策逻辑、边界和输出协议；Rule承载可复用约束；Skill承载任务方法；Tool描述动作、适用时机、输入、输出和限制；Memory只提供历史事实。不要靠重复提示词掩盖能力缺口。",
+  "5. 语义判断留给Agent，确定性的状态机、授权门禁、输入校验、重试、持久化和阶段交接留给Workflow与Backend；不得以强制Tool调用代替合理的Agent决策，也不得只靠提示词承担安全或协议门禁。",
+  "6. Agent应使用完成当前任务所需的最小权限。读取、调查、修改、对外动作和不可逆动作要分别授权；计划获批不自动扩大Executor的动作权限。",
+  "7. 输入输出合同必须与上下游一致：明确缺少信息时的状态、正常交付结构、证据与来源、失败表达、人工审核点以及下一Agent收到的版本化任务书。",
+  "8. 所有能力必须走Chat统一装配链：配置与资源由Backend解析，检查与执行都使用resolveWorkflowAgentDefinition()和createWorkflowAgentSession()，最终由Pi ResourceLoader、AgentSession和SessionManager加载及记录。不得为单个Agent建立旁路运行时或前端事实源。",
+  "9. 设计完成后至少用代表性场景验证：已有上下文、需要Memory、需要Skill或只读Project检查、需要Executor调查、确有阻塞问题、Tool无结果或失败。每个场景都要检查Agent是否掌握足够信息、是否越权、是否如实描述已用能力、是否交付可验收结果。",
+  "10. 评审时同时检查提示词和真实装配结果；‘配置中写了’、‘资源能被发现’或‘相邻测试通过’都不能证明模型在实际Session中看得到并能使用。关键合同必须有自动化回归门禁。",
+  "",
+  "评审输出必须指出：使命是否完整、信息是否可得、能力是否可达、边界是否正确、上下游合同是否闭合、真实Runtime如何验证，以及仍缺失的配置或测试。",
+].join("\n");
 
 const WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_V1 = [
   "开发经验案例：Workflow Builder 丢失 JSON import attribute",
@@ -53,12 +75,53 @@ const WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_V3 = [
   "本案例的机器门禁：pnpm verify固定运行test:dev；测试使用独立Nitro buildDir、Chat Home、Project和本地假模型，不访问正式模型、不污染用户数据，也不与正在运行的开发服务共享构建产物。",
 ].join("\n");
 
+const PLANNER_READINESS_CONTRACT_EXPERIENCE_V1 = [
+  "开发经验案例：Planner必须区分任务澄清与可执行计划",
+  "",
+  "适用场景：修改Planning Execution Workflow、Planner Prompt、审核合同、Executor交接或任何带人工审核的多Agent串行流程时。",
+  "",
+  "已发生现象：Planner把口味、预算、冲煮方式等尚未确认的关键需求写成Executor第一步，同时把计划提交为可批准。批准后Executor只能猜测或再次询问；询问产生回复后当前Run结束，下一条用户消息会启动新Run，无法恢复原Executor Stage。",
+  "",
+  "正确姿势：",
+  "1. Planner先覆盖背景、目标、交付物、范围、约束、依赖、授权边界和验收标准。",
+  "2. 区分用户已确认事实、Executor可调查事实、非阻塞假设和只有用户能决定的阻塞信息。",
+  "3. 阻塞信息必须输出needs_clarification并在Review Task闭环；不得下放给Executor，也不得展示批准入口。",
+  "4. 只有ready_for_review进入Executor；Backend必须拒绝对澄清稿提交的批准，不能只依赖前端隐藏按钮。",
+  "5. Executor接收版本化任务书，其中包含用户真实请求、批准版本、批准计划、调查职责、授权边界和完成报告要求。",
+  "6. 购买、发布、删除、付款等动作要区分计划审核与最终动作授权；计划通过不自动扩大授权。",
+  "",
+  "本案例的机器门禁：严格解析Planner就绪元数据；前后端共同校验阻塞问题；真实pnpm test:dev先拒绝澄清稿批准，再补充信息、生成可执行计划并完成Executor回合。",
+].join("\n");
+
 /**
- * Product-owned experiences are seeded into the Personal Prompt resource store.
+ * Product-owned rules and experiences are seeded into the Personal Prompt resource store.
  * After seeding they use the same versioned storage, discovery and Agent selection
  * path as user-created rules and experiences.
  */
 export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
+  {
+    schemaVersion: 1,
+    id: AGENT_CAPABILITY_DESIGN_RULE_ID,
+    revisions: [{
+      schemaVersion: 1,
+      id: AGENT_CAPABILITY_DESIGN_RULE_ID,
+      revision: 1,
+      kind: "rule",
+      title: "Agent能力完备性与Pi装配一致性",
+      purpose: "确保Agent的使命、信息、能力、权限、上下游合同和真实Pi装配共同构成可运行、可验证的完整设计。",
+      content: AGENT_CAPABILITY_DESIGN_RULE_V1,
+      tags: ["agent-design", "architecture", "capability", "prompt", "skill", "tool", "pi-agent", "workflow", "quality"],
+      status: "active",
+      sources: [{
+        type: "manual",
+        entryIds: [],
+        context: "源自2026-09-01对Planner、Memory Tool、Skill发现和Planning Execution Workflow装配链的系统复盘。",
+        capturedAt: "2026-09-01T10:00:00.000Z",
+      }],
+      author: { type: "user" },
+      createdAt: "2026-09-01T10:00:00.000Z",
+    }],
+  },
   {
     schemaVersion: 1,
     id: WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID,
@@ -116,6 +179,29 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       }],
       author: { type: "user" },
       createdAt: "2026-08-31T23:44:00.000Z",
+    }],
+  },
+  {
+    schemaVersion: 1,
+    id: PLANNER_READINESS_CONTRACT_EXPERIENCE_ID,
+    revisions: [{
+      schemaVersion: 1,
+      id: PLANNER_READINESS_CONTRACT_EXPERIENCE_ID,
+      revision: 1,
+      kind: "experience",
+      title: "Planner必须区分任务澄清与可执行计划",
+      purpose: "避免把尚未解决的用户决策下放给Executor，并防止不完整计划被批准执行。",
+      content: PLANNER_READINESS_CONTRACT_EXPERIENCE_V1,
+      tags: ["development", "incident", "workflow", "planning", "human-review", "agent-contract"],
+      status: "active",
+      sources: [{
+        type: "manual",
+        entryIds: [],
+        context: "归档于 docs/development-experiences/planner-readiness-contract.md；源自2026-09-01购买咖啡豆规划Session复盘。",
+        capturedAt: "2026-09-01T07:30:00.000Z",
+      }],
+      author: { type: "user" },
+      createdAt: "2026-09-01T07:30:00.000Z",
     }],
   },
 ] as const satisfies readonly PromptResourceDocument[];

@@ -16,6 +16,8 @@ export interface ChatRunPlanReview {
   readonly planRevision: number;
   readonly planSha256: string;
   readonly plan: string;
+  readonly readiness: "ready_for_review" | "needs_clarification";
+  readonly blockingQuestions: readonly string[];
 }
 
 export type ChatRunEvent =

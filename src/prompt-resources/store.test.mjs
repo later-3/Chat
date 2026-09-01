@@ -9,7 +9,9 @@ import {
   listPromptResources,
 } from "./store.ts";
 import {
+  AGENT_CAPABILITY_DESIGN_RULE_ID,
   BUILT_IN_PERSONAL_PROMPT_RESOURCES,
+  PLANNER_READINESS_CONTRACT_EXPERIENCE_ID,
   WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID,
 } from "./builtins.ts";
 import { openProject } from "../projects/registry.ts";
@@ -204,7 +206,7 @@ test("archiving is a reviewed resource revision rather than deletion", async (t)
   assert.equal((await store.list({ status: "archived" }))[0].revision, 2);
 });
 
-test("the built-in Workflow incident is seeded once into the Personal experience library", async (t) => {
+test("built-in rules and experiences are seeded once into the Personal Prompt library", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-built-in-experience-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const chatHome = path.join(root, "home");
@@ -221,13 +223,25 @@ test("the built-in Workflow incident is seeded once into the Personal experience
     (await secondStore.history(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID)).length,
     3,
   );
+  const plannerExperience = await secondStore.get(PLANNER_READINESS_CONTRACT_EXPERIENCE_ID);
+  assert.equal(plannerExperience?.kind, "experience");
+  assert.equal(plannerExperience?.revision, 1);
+  assert.match(plannerExperience?.content ?? "", /needs_clarification/);
+  const agentDesignRule = await secondStore.get(AGENT_CAPABILITY_DESIGN_RULE_ID);
+  assert.equal(agentDesignRule?.kind, "rule");
+  assert.equal(agentDesignRule?.revision, 1);
+  assert.match(agentDesignRule?.content ?? "", /System Prompt负责身份、目标、基本决策逻辑/);
+  assert.match(agentDesignRule?.content ?? "", /createWorkflowAgentSession\(\)/);
 });
 
 test("a built-in experience upgrades only while its stored revision prefix is unchanged", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-built-in-experience-upgrade-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const chatHome = path.join(root, "home");
-  const builtIn = BUILT_IN_PERSONAL_PROMPT_RESOURCES[0];
+  const builtIn = BUILT_IN_PERSONAL_PROMPT_RESOURCES.find(
+    (resource) => resource.id === WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID,
+  );
+  assert.ok(builtIn);
   const personalRoot = path.join(chatHome, "prompt-resources");
   const store = new PromptResourceStore(personalRoot);
 
@@ -323,7 +337,11 @@ test("Personal and Project Prompt libraries stay isolated unless Targets are exp
   const currentView = await listPromptResources(targets.slice(0, 2), {}, chatHome);
   assert.deepEqual(
     currentView
-      .filter((resource) => resource.id !== WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID)
+      .filter((resource) => ![
+        AGENT_CAPABILITY_DESIGN_RULE_ID,
+        WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID,
+        PLANNER_READINESS_CONTRACT_EXPERIENCE_ID,
+      ].includes(resource.id))
       .map((resource) => resource.title)
       .sort(),
     ["Target 0", "Target 1"],

@@ -11,14 +11,16 @@
   "tools": {
     "mode": "explicit",
     "names": [
-      "memory_search",
       "memory_list",
       "memory_get",
-      "memory_add",
       "memory_update",
       "memory_delete"
     ],
-    "exclude": []
+    "exclude": [],
+    "addresses": [
+      "system:tool/memory_search",
+      "system:tool/memory_record"
+    ]
   },
   "resources": {
     "mode": "explicit",

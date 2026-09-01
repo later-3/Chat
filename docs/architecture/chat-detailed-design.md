@@ -125,15 +125,15 @@ Agent配置被分成两个明确模块：
 
 这个Workflow拥有：
 
-1. `planner`：替换基础System Prompt，不启用工具，在当前持久Chat Session中读取原生用户消息并写入原生Assistant计划。
-2. `review`：普通Task Node，通过耐久Hook等待用户批准或返回修改意见，不声明虚假的Agent ID。
-3. `pi-coding-agent`：保留Pi默认基础Prompt，在Chat自定义指令区域加入本Workflow执行规则。
+1. `planner`：替换基础System Prompt，默认只启用系统内置只读`memory_search`，在当前持久Chat Session中读取原生用户消息；先形成完整任务理解，再通过版本化输出契约声明`needs_clarification`或`ready_for_review`并写入原生Assistant消息。
+2. `review`：普通Task Node，通过耐久Hook等待用户补充阻塞信息、要求修改或批准执行，不声明虚假的Agent ID；等待澄清时前后端都禁止批准。
+3. `pi-coding-agent`：保留Pi默认基础Prompt，在Chat自定义指令区域加入本Workflow执行规则，并接收包含用户原话、批准版本、批准计划及执行契约的版本化任务书。
 
-拒绝后，同一Planner配置接收原始请求、上一版完整计划和原生用户审核消息，生成下一版并再次进入审核。计划和审核原文使用Pi原生MessageEntry；审核控制状态、版本、摘要和Agent输入来源使用CustomEntry，且输入来源只保存`inputEntryIds`。批准后Executor通过隐藏CustomMessage接收最终计划，不重复写入原始用户请求。
+补充信息或拒绝后，同一Planner配置接收原始请求、上一版完整文档和原生用户消息，生成下一版并再次进入审核。Planner不得把开始执行前的需求澄清下放给Executor；能由工具调查的事实进入执行步骤，只有用户能决定的阻塞信息先在Review Task闭环。计划和审核话语使用Pi原生MessageEntry；按钮批准规范化为原生User Message。审核节点身份、就绪状态、阻塞问题、版本、摘要、决定和Agent输入来源使用CustomEntry，决定引用对应消息，输入来源只保存`inputEntryIds`。批准后Executor通过隐藏CustomMessage接收最终任务书，不重复写入原始用户请求，也不以隐藏交接取代审核消息。
 
 ### 6.3 Memory
 
-Memory Workflow拥有一个`memory-agent`和一个Agent Node。Agent默认只启用6个Chat Memory Tool；Tool继续使用Pi `ToolDefinition`和`customTools`接口，`MemoryService`、Session ID和Workflow Invocation ID由该Agent的运行时装配函数注入。
+Memory Workflow拥有一个`memory-agent`和一个Agent Node。`memory_search`与`memory_record`属于Chat系统内置Tool，可由任意Workflow Agent按限定地址加载；Memory Agent另外拥有list/get/update/delete四个管理Tool。所有Tool仍使用Pi `ToolDefinition`和`customTools`接口，`MemoryService`、Session、Workflow Invocation、Stage、Agent和Tool Call来源由Chat公共Tool Resolver注入。
 
 Memory Skill以Agent目录中的真实`SKILL.md`作为源码事实源。开发运行时直接读取源码文件；生产构建把Markdown作为Nitro Server Asset打包，再物化到`~/.chat/runtime/skills/memory`供Pi按原生Skill路径读取。执行和检查共用同一装配函数。
 
