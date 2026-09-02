@@ -9,6 +9,7 @@ frontend/dist/
 .swc/
 # Legacy Pi runtime data is only read by the one-way .chat migration.
 .pi/
+.workflow-data/
 .env
 .env.*
 *.log
