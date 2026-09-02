@@ -151,6 +151,9 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
         CHAT_NITRO_BUILD_DIR: buildDir,
         WORKFLOW_TARGET_WORLD: "local",
         WORKFLOW_LOCAL_DATA_DIR: path.join(chatHome, "runtime", "workflow-data"),
+        // Nitro dev进程同时监听内部watcher端口；Queue自动探测可能选中错误端口导致消息悬挂，
+        // 必须显式指向本测试保留的HTTP端口。
+        WORKFLOW_LOCAL_BASE_URL: baseUrl,
         CHAT_WEB_AUTH_ENABLED: "1",
         CHAT_WEB_AUTH_USERNAME: "later",
         CHAT_WEB_AUTH_PASSWORD: "123456",
