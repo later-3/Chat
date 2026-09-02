@@ -41,6 +41,7 @@ Chat详细设计
 | [Chat Workflow开发框架](./chat-workflow-framework.md) | 新增Workflow时必须遵守的目录、配置、节点、Tool和前后端合同 | 规范基线 |
 | [Chat Context与Resource统一模型](./chat-context-resource-model.md) | Context、Target、Owner、跨Project资源、加载、版本和日志的统一协议 | 规范基线 |
 | [Chat Project架构设计](./chat-project-framework.md) | 参考Pi的用户级/项目级分层，定义Project、Workspace、Session、资源、信任和Memory隔离 | 核心能力已实现 |
+| [Chat Frontend UI/UX规范](../../frontend/docs/ui-ux-guidelines.md) | Pi Web派生前端的Web/PWA、视觉、交互、自适应、无障碍和渐进治理规则 | 规范基线 |
 
 现有[Pi Web前端API迁移清单](../pi-web-frontend-api-migration.md)继续作为接口迁移证据，但不能替代Pi Web架构分析。
 
