@@ -31,11 +31,18 @@ export interface ChatSession {
  * Workflow starts. This is the HTTP acceptance boundary used by every Chat
  * client; Workflow steps subsequently reopen the same Session by ID.
  */
-export async function reserveChatSession(input: ChatSessionInput): Promise<ChatSession> {
+export async function reserveChatSession(
+  input: ChatSessionInput,
+  initialDisplayName?: string,
+): Promise<ChatSession> {
   if (input.sessionId !== undefined) {
     throw new Error("预创建Session时不能提供sessionId");
   }
   const session = await openChatSession(input);
+  const normalizedDisplayName = initialDisplayName?.replace(/\s+/g, " ").trim();
+  if (normalizedDisplayName !== undefined && normalizedDisplayName !== "") {
+    session.manager.appendSessionInfo(Array.from(normalizedDisplayName).slice(0, 50).join(""));
+  }
   session.manager.flush();
   return session;
 }

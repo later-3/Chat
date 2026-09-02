@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { isChatAgentContextEntry, openChatSession, reserveChatSession } from "./chat-session.ts";
 import { openProject } from "./projects/registry.ts";
+import { listChatSessions } from "./session-read-model.ts";
 
 async function initializeProject(base, workspace, projectId = "workspace") {
   const chatHome = path.join(base, "home");
@@ -37,6 +38,34 @@ test("a reserved Chat Session is durable and discoverable before its first Workf
   const reopened = await openChatSession({ projectId: "workspace", cwd: workspace, chatHome, sessionId });
   assert.equal(reopened.manager.getSessionId(), sessionId);
   assert.deepEqual(reopened.manager.getEntries(), []);
+});
+
+test("a reserved Chat Session persists a prompt-derived display name before Workflow startup", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-reserve-title-"));
+  t.after(() => {
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  process.chdir(base);
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace);
+  const chatHome = await initializeProject(base, workspace);
+
+  const prompt = `  ${"部署状态".repeat(20)}\n请检查  `;
+  const reserved = await reserveChatSession(
+    { projectId: "workspace", cwd: workspace, chatHome },
+    prompt,
+  );
+  const sessionId = reserved.manager.getSessionId();
+  const reopened = await openChatSession({ projectId: "workspace", cwd: workspace, chatHome, sessionId });
+  const summary = (await listChatSessions("workspace", chatHome)).find((session) => session.id === sessionId);
+
+  assert.equal(Array.from(reopened.manager.getSessionName()).length, 50);
+  assert.equal(reopened.manager.getSessionName().startsWith("部署状态"), true);
+  assert.equal(reopened.manager.getEntries().some((entry) => entry.type === "message"), false);
+  assert.equal(summary?.name, reopened.manager.getSessionName());
+  assert.equal(summary?.firstMessage, "");
 });
 
 test("Chat Session is created once and reopened by ID", { concurrency: false }, async (t) => {
