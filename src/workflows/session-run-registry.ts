@@ -95,16 +95,35 @@ export async function findActiveChatSessionRun(
   projectDataDir: string,
   sessionId: string,
 ): Promise<(ChatSessionRunBinding & { readonly status: string }) | undefined> {
+  return (await listNonTerminalChatSessionRuns(projectDataDir, sessionId))[0];
+}
+
+/** Lists every durable binding of one Session whose Runtime status is non-terminal. */
+export async function listNonTerminalChatSessionRuns(
+  projectDataDir: string,
+  sessionId: string,
+): Promise<Array<ChatSessionRunBinding & { readonly status: string }>> {
   const candidates = (await listBindings(projectDataDir))
     .filter((binding) => binding.sessionId === sessionId)
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+  const active: Array<ChatSessionRunBinding & { readonly status: string }> = [];
   for (const binding of candidates) {
     try {
       const status = String(await getRun(binding.runId).status);
-      if (!isTerminalRunStatus(status)) return { ...binding, status };
+      if (!isTerminalRunStatus(status)) active.push({ ...binding, status });
     } catch {
       // Missing Runtime state is not evidence of an active writer.
     }
   }
-  return undefined;
+  return active;
+}
+
+/** Cancels one Run through the Runtime's public API; unknown runs are tolerated. */
+export async function cancelChatSessionRun(runId: string): Promise<boolean> {
+  try {
+    await getRun(runId).cancel();
+    return true;
+  } catch {
+    return false;
+  }
 }

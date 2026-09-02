@@ -19,11 +19,22 @@ import {
 } from "../session-operation-lock.js";
 import { SessionLifecycleError } from "../session-errors.js";
 import { toSessionLifecycleHttpError } from "../session-removal-http.js";
+import { getSessionExecution } from "../workflows/execution-registry.js";
+import { reconcileStaleChatSessionRuns } from "../session-activity.js";
 
 async function assertSessionHasNoActivePlanningRun(input: ChatWorkflowHttpInput): Promise<void> {
   if (input.sessionId === undefined) return;
   const chatSession = await openChatSession(input);
   if (chatSession.projectContext === undefined) return;
+  const executing = getSessionExecution(input.sessionId);
+  if (executing !== undefined) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Session正在运行Workflow ${executing.workflowId}，暂时不能发起新的Workflow`,
+    });
+  }
+  // 先对账崩溃残留，再判定活跃：僵尸记录不应永远堵死同一 Session 的新 Run。
+  await reconcileStaleChatSessionRuns(chatSession.projectContext, input.sessionId);
   const active = await findActivePlanningExecutionRun(
     chatSession.projectContext.projectDataDir,
     input.sessionId,
@@ -85,7 +96,10 @@ export default defineEventHandler(async (event) => {
 
   const isNewSession = input.sessionId === undefined;
   if (isNewSession) {
-    const reserved = await reserveChatSession(input);
+    // Persist the prompt-derived display name at the HTTP acceptance boundary.
+    // A Workflow Step can fail before it appends the native user message; the
+    // Session must still retain a useful title across a browser refresh.
+    const reserved = await reserveChatSession(input, input.prompt);
     input = { ...input, sessionId: reserved.manager.getSessionId() };
   }
   const sessionId = input.sessionId as string;
