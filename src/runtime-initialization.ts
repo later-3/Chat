@@ -3,6 +3,7 @@ import { ensureChatHome, resolveChatHome } from "./chat-home.js";
 import { migrateLegacyProjectLayout } from "./migrations/project-layout-v1.js";
 import { ensureMemorySkill } from "./workflows/memory/agents/memory-agent/skill.js";
 import { ensureRuleLibrarySkill } from "./workflows/rule-management/agents/rule-curator-agent/skill.js";
+import { purgeExpiredRemovedSessionsAcrossProjects } from "./session-removal.js";
 
 const initializations = new Map<string, Promise<void>>();
 
@@ -22,6 +23,7 @@ export function ensureChatRuntimeInitialized(options: {
       await Promise.all([
         ensureMemorySkill(paths.runtimeDir, { refresh: true }),
         ensureRuleLibrarySkill(paths.runtimeDir, { refresh: true }),
+        purgeExpiredRemovedSessionsAcrossProjects(paths.root),
       ]);
     })
     .catch((error: unknown) => {

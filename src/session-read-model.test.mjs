@@ -20,10 +20,7 @@ import { appendChatPromptResourceProposal } from "./workflows/prompt-resource-pr
 import {
   appendPlanReview,
   appendPlanReviewDecision,
-  bindPlanningExecutionRun,
   planSha256,
-  publishPlanReviewState,
-  setPlanningExecutionPhase,
 } from "./workflows/planning-execution/review-state.ts";
 
 function userEntry(id, parentId, content) {
@@ -532,94 +529,6 @@ test("session listing uses the first human or Agent utterance and never exposes 
     "Agent starts this conversation");
   assert.equal(sessions.find((session) => session.id === metadataOnly.getSessionId()).firstMessage, "");
   assert.equal(sessions.some((session) => session.firstMessage === "(no messages)"), false);
-});
-
-test("an active legacy review gets a first-utterance fallback and migrates after the Run is terminal", { concurrency: false }, async (t) => {
-  const previousCwd = process.cwd();
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-active-legacy-session-"));
-  t.after(() => {
-    process.chdir(previousCwd);
-    fs.rmSync(base, { recursive: true, force: true });
-  });
-  const workspace = path.join(base, "workspace");
-  fs.mkdirSync(workspace, { recursive: true });
-  const chatHome = path.join(base, "home");
-  const project = await openProject({ path: workspace, chatHome, id: "active-legacy", name: "Active Legacy" });
-  const manager = SessionManager.create(workspace, project.sessionDir);
-  manager.appendCustomEntry("chat.workflow_stage", {
-    schemaVersion: 1,
-    invocationId: "active-invocation",
-    workflowId: "planning-execution",
-    stageId: "plan",
-    agentId: "planner",
-  });
-  manager.appendCustomEntry("chat.workflow_agent_input", {
-    schemaVersion: 1,
-    invocationId: "active-invocation",
-    workflowId: "planning-execution",
-    stageId: "plan",
-    agentId: "planner",
-    userPrompt: "legacy waiting request",
-  });
-  const planEntryId = manager.appendCustomEntry("chat.workflow_message", {
-    schemaVersion: 1,
-    invocationId: "active-invocation",
-    workflowId: "planning-execution",
-    stageId: "plan",
-    agentId: "planner",
-    message: {
-      role: "assistant",
-      provider: "test",
-      model: "test-model",
-      content: [{ type: "text", text: "legacy waiting plan" }],
-      timestamp: 2,
-    },
-  });
-  manager.flush();
-  await bindPlanningExecutionRun({
-    projectDataDir: project.projectDataDir,
-    projectId: project.projectId,
-    workflowInvocationId: "active-invocation",
-    runId: "run-active",
-    sessionId: manager.getSessionId(),
-  });
-  await publishPlanReviewState({
-    projectDataDir: project.projectDataDir,
-    projectId: project.projectId,
-    review: {
-      schemaVersion: 1,
-      workflowId: "planning-execution",
-      stageId: "review",
-      reviewId: "active-review",
-      workflowInvocationId: "active-invocation",
-      sessionId: manager.getSessionId(),
-      planRevision: 1,
-      planSha256: planSha256("legacy waiting plan"),
-      planEntryId,
-      plan: "legacy waiting plan",
-      createdAt: new Date().toISOString(),
-    },
-  });
-
-  process.chdir(base);
-  const active = (await listChatSessions(project.projectId, chatHome))
-    .find((session) => session.id === manager.getSessionId());
-  assert.equal(active.firstMessage, "legacy waiting request");
-  assert.equal(active.messageCount, 0);
-  assert.equal(fs.readFileSync(manager.getSessionFile(), "utf8").includes("chat.session_migration"), false);
-
-  await setPlanningExecutionPhase({
-    projectDataDir: project.projectDataDir,
-    projectId: project.projectId,
-    workflowInvocationId: "active-invocation",
-    sessionId: manager.getSessionId(),
-    phase: "completed",
-  });
-  const migrated = (await listChatSessions(project.projectId, chatHome))
-    .find((session) => session.id === manager.getSessionId());
-  assert.equal(migrated.firstMessage, "legacy waiting request");
-  assert.equal(migrated.messageCount, 2);
-  assert.equal(fs.readFileSync(manager.getSessionFile(), "utf8").includes("chat.session_migration"), true);
 });
 
 test("session reads restore Workflow Agent configuration and pending Prompt proposals", { concurrency: false }, async (t) => {

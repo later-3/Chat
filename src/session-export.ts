@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import { getPackageDir } from "@earendil-works/pi-coding-agent";
 import {
   collectChatWorkflowAgentInputs,
-  collectChatWorkflowMessages,
   collectChatWorkflowStageEntryIds,
   collectChatWorkflowStageMarkers,
 } from "./workflows/workflow-stage.js";
@@ -170,30 +169,10 @@ function embedChatWorkflowStages(html: string): string {
       },
     };
   });
-  const inputStageKeys = new Set(chatWorkflowAgentInputs.map((input) => (
-    `${input.invocationId}\u0000${input.stageId}\u0000${input.agentId}`
-  )));
-  for (const input of [...chatWorkflowAgentInputs]) {
-    if (input.schemaVersion !== 1) continue;
-    if (input.upstream === undefined) continue;
-    const stageKey = `${input.invocationId}\u0000${input.upstream.stageId}\u0000${input.upstream.agentId}`;
-    if (inputStageKeys.has(stageKey)) continue;
-    chatWorkflowAgentInputs.push({
-      entryId: `derived-${input.entryId}`,
-      schemaVersion: 1,
-      invocationId: input.invocationId,
-      workflowId: input.workflowId,
-      stageId: input.upstream.stageId,
-      agentId: input.upstream.agentId,
-      userPrompt: input.userPrompt,
-    });
-    inputStageKeys.add(stageKey);
-  }
   const enriched = {
     ...decoded,
     entries: projectedEntries,
     chatWorkflowAgentInputs,
-    chatWorkflowMessages: collectChatWorkflowMessages(decoded.entries),
     chatWorkflowStageEntryIds: collectChatWorkflowStageEntryIds(decoded.entries),
     chatWorkflowStages: collectChatWorkflowStageMarkers(decoded.entries),
     chatToolExecutions: collectChatToolExecutions(decoded.entries),
@@ -396,10 +375,6 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
             agentInput
           ])
       );
-      const chatWorkflowMessageByEntryId = new Map(
-        (Array.isArray(data.chatWorkflowMessages) ? data.chatWorkflowMessages : [])
-          .map((workflowMessage) => [workflowMessage.entryId, workflowMessage])
-      );
       const chatWorkflowStageByEntryId = new Map(
         (Array.isArray(data.chatWorkflowStages) ? data.chatWorkflowStages : [])
           .map((stage) => [stage.entryId, stage])
@@ -489,15 +464,9 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
         header.textContent = "Input received by " + chatHistoryLabel(chatAgentLabels, input.agentId);
         container.appendChild(header);
 
-        const sources = Array.isArray(input.inputEntryIds)
-          ? [{ label: "Native Session message references", content: input.inputEntryIds.join("\\n") }]
-          : [{ label: "Legacy copied user request", content: input.userPrompt }];
-        if (!Array.isArray(input.inputEntryIds) && input.upstream) {
-          sources.push({
-            label: chatHistoryLabel(chatAgentLabels, input.upstream.agentId) + " output",
-            content: input.upstream.output
-          });
-        }
+        const sources = [
+          { label: "Native Session message references", content: input.inputEntryIds.join("\\n") }
+        ];
         for (const source of sources) {
           const section = document.createElement("div");
           section.className = "chat-agent-input-source";
@@ -686,7 +655,6 @@ export function patchChatWorkflowHistory(html: string): string {
         let activeWorkflowStages = null;
         let activeStageContent = null;
         let activeAgentId = null;
-        let activeStageHasLegacyInput = false;
         const renderedAgentInputEntryIds = new Set();
 
         for (const entry of path) {
@@ -704,7 +672,6 @@ export function patchChatWorkflowHistory(html: string): string {
             activeAgentId = workflowStage.agentId;
             const stageInputKey = workflowStage.invocationId + "\u0000" + workflowStage.stageId + "\u0000" + workflowStage.agentId;
             const stageInput = chatWorkflowAgentInputByStage.get(stageInputKey);
-            activeStageHasLegacyInput = Boolean(stageInput && !Array.isArray(stageInput.inputEntryIds));
             if (stageInput) {
               activeStageContent.appendChild(createChatAgentInput(stageInput));
               renderedAgentInputEntryIds.add(stageInput.entryId);
@@ -716,7 +683,6 @@ export function patchChatWorkflowHistory(html: string): string {
             activeWorkflowStages = null;
             activeStageContent = null;
             activeAgentId = null;
-            activeStageHasLegacyInput = false;
             continue;
           }
 
@@ -741,24 +707,6 @@ export function patchChatWorkflowHistory(html: string): string {
             continue;
           }
 
-          const workflowMessage = chatWorkflowMessageByEntryId.get(entry.id);
-          if (workflowMessage) {
-            appendChatAgentEntry(activeStageContent || fragment, {
-              ...entry,
-              type: "message",
-              message: workflowMessage.message
-            }, activeAgentId);
-            continue;
-          }
-
-          if (
-            activeStageHasLegacyInput
-            && entry.type === "message"
-            && entry.message
-            && entry.message.role === "user"
-          ) {
-            continue;
-          }
           appendChatAgentEntry(activeStageContent || fragment, entry, activeAgentId);
         }`,
   );

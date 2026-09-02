@@ -2,6 +2,8 @@ import { createError, defineEventHandler, getRouterParam, readBody, setResponseS
 import { getRun } from "workflow/api";
 import { resolveProjectContext } from "../../../projects/registry.js";
 import { openChatSession } from "../../../chat-session.js";
+import { SessionLifecycleError } from "../../../session-errors.js";
+import { toSessionLifecycleHttpError } from "../../../session-removal-http.js";
 import {
   assertPlanReviewDecisionMatches,
   parsePlanReviewDecision,
@@ -75,6 +77,7 @@ export default defineEventHandler(async (event) => {
     setResponseStatus(event, 202);
     return { runId, status: "accepted" as const, decision: decision.kind };
   } catch (error) {
+    if (error instanceof SessionLifecycleError) throw toSessionLifecycleHttpError(error);
     throw createError({
       statusCode: 409,
       statusMessage: error instanceof Error ? error.message : String(error),

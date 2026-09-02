@@ -136,7 +136,6 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
   assert.match(exported.html, /id="chat-workflow-history-styles"/);
   assert.match(exported.html, /createChatWorkflowGroup/);
   assert.match(exported.html, /createChatAgentStage/);
-  assert.match(exported.html, /chatWorkflowMessageByEntryId/);
   assert.match(exported.html, /chatWorkflowAgentInputByEntryId/);
   assert.match(exported.html, /createChatAgentInput/);
   assert.match(exported.html, /agentLabel \+ " thinking"/);
@@ -174,7 +173,6 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
     { entryId: reviewMarkerId, stageId: "review", agentId: undefined, nodeKind: "human", schemaVersion: 2 },
     { entryId: executeMarkerId, stageId: "execute", agentId: "pi-coding-agent", nodeKind: "agent", schemaVersion: 2 },
   ]);
-  assert.equal(sessionData.chatWorkflowMessages.length, 0);
   assert.deepEqual(sessionData.chatPlanReviewDecisions, [{
     entryId: reviewDecisionEntryId,
     schemaVersion: 3,

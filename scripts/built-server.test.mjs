@@ -528,6 +528,76 @@ test("session list and detail come from the isolated Chat session directory", as
   const detail = await detailResponse.json();
   assert.deepEqual(detail.context.messages.map((message) => message.role), ["user", "assistant"]);
   assert.equal(detail.context.messages.length, detail.context.entryIds.length);
+
+  const renameResponse = await authenticatedFetch(`/api/sessions/${encodeURIComponent(sessionId)}?projectId=${projectId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Built Session" }),
+  });
+  assert.equal(renameResponse.status, 200, await renameResponse.clone().text());
+  assert.deepEqual(await renameResponse.json(), { sessionId, name: "Built Session" });
+});
+
+test("Session removal API moves, lists, restores, configures, and permanently deletes one Pi Session", async () => {
+  const sessionDir = path.join(chatHome, "projects", projectId, "sessions");
+  const manager = SessionManager.create(workspace, sessionDir);
+  manager.appendMessage({ role: "user", content: "removal API fixture", timestamp: Date.now() });
+  manager.flush();
+  const removableSessionId = manager.getSessionId();
+  const originalFile = manager.getSessionFile();
+
+  const removeResponse = await authenticatedFetch(
+    `/api/sessions/${encodeURIComponent(removableSessionId)}/remove?projectId=${projectId}`,
+    { method: "POST" },
+  );
+  assert.equal(removeResponse.status, 200, await removeResponse.clone().text());
+  const removed = await removeResponse.json();
+  assert.equal(removed.state, "removed");
+  assert.equal(removed.session.id, removableSessionId);
+  assert.equal(fs.existsSync(originalFile), false);
+  assert.equal(fs.existsSync(path.join(sessionDir, "removed", path.basename(originalFile))), true);
+
+  const removedDetail = await authenticatedFetch(
+    `/api/sessions/${encodeURIComponent(removableSessionId)}?projectId=${projectId}`,
+  );
+  assert.equal(removedDetail.status, 410, await removedDetail.clone().text());
+
+  const activeAfterRemove = await (await authenticatedFetch(`/api/sessions?projectId=${projectId}`)).json();
+  assert.equal(activeAfterRemove.sessions.some((session) => session.id === removableSessionId), false);
+  const removedList = await (await authenticatedFetch(`/api/sessions/removed?projectId=${projectId}`)).json();
+  assert.equal(removedList.sessions.some((session) => session.id === removableSessionId), true);
+  assert.equal(removedList.retentionDays, 30);
+
+  const settingsResponse = await authenticatedFetch(`/api/sessions/removed/settings?projectId=${projectId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ removedRetentionDays: 14 }),
+  });
+  assert.equal(settingsResponse.status, 200, await settingsResponse.clone().text());
+  assert.deepEqual(await settingsResponse.json(), { removedRetentionDays: 14 });
+
+  const restoreResponse = await authenticatedFetch(
+    `/api/sessions/removed/${encodeURIComponent(removableSessionId)}/restore?projectId=${projectId}`,
+    { method: "POST" },
+  );
+  assert.equal(restoreResponse.status, 200, await restoreResponse.clone().text());
+  assert.equal(fs.existsSync(originalFile), true);
+
+  assert.equal((await authenticatedFetch(
+    `/api/sessions/${encodeURIComponent(removableSessionId)}/remove?projectId=${projectId}`,
+    { method: "POST" },
+  )).status, 200);
+  const purgeResponse = await authenticatedFetch(
+    `/api/sessions/removed/${encodeURIComponent(removableSessionId)}?projectId=${projectId}`,
+    { method: "DELETE" },
+  );
+  assert.equal(purgeResponse.status, 200, await purgeResponse.clone().text());
+  assert.equal((await purgeResponse.json()).state, "purged");
+  assert.equal(fs.existsSync(path.join(sessionDir, "removed", path.basename(originalFile))), false);
+  const purgedDetail = await authenticatedFetch(
+    `/api/sessions/${encodeURIComponent(removableSessionId)}?projectId=${projectId}`,
+  );
+  assert.equal(purgedDetail.status, 410, await purgedDetail.clone().text());
 });
 
 test("the frontend and backend share one validated .chat root configuration", async () => {

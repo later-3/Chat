@@ -6,10 +6,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { openProject, resolveProjectContext } from "./projects/registry.js";
 import type { ChatProjectContext } from "./projects/types.js";
-import { migrateSessionNativeMessagesV1 } from "./migrations/session-native-messages-v1.js";
+import { requireActiveChatSessionFile } from "./session-state.js";
 import { CHAT_WORKFLOW_AGENT_HANDOFF_CUSTOM_TYPE } from "./workflows/session-conversation.js";
 import { LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE } from "./workflows/planning-execution/context.js";
-import { findActivePlanningExecutionRun } from "./workflows/planning-execution/review-state.js";
 
 export interface ChatSessionInput {
   readonly projectId?: string;
@@ -86,17 +85,9 @@ export async function openChatSession(input: ChatSessionInput): Promise<ChatSess
     };
   }
 
-  const sessionInfo = (await SessionManager.listAll(sessionDir))
-    .find((candidate) => candidate.id === input.sessionId);
-  if (sessionInfo === undefined) throw new Error(`找不到Session: ${input.sessionId}`);
+  const sessionInfo = await requireActiveChatSessionFile(projectContext, input.sessionId);
   if (resolve(sessionInfo.cwd) !== cwd) {
     throw new Error(`Session ${input.sessionId}不属于工作目录${cwd}`);
-  }
-  if (await findActivePlanningExecutionRun(projectContext.projectDataDir, input.sessionId) === undefined) {
-    await migrateSessionNativeMessagesV1({
-      sessionFile: sessionInfo.path,
-      projectDataDir: projectContext.projectDataDir,
-    });
   }
 
   return {

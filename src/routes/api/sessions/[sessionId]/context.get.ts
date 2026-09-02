@@ -1,5 +1,7 @@
 import { createError, defineEventHandler, getQuery, getRouterParam, setResponseHeader } from "nitro/h3";
 import { readChatSession } from "../../../../session-read-model.js";
+import { SessionLifecycleError } from "../../../../session-errors.js";
+import { toSessionLifecycleHttpError } from "../../../../session-removal-http.js";
 
 export default defineEventHandler(async (event) => {
   const sessionId = getRouterParam(event, "sessionId");
@@ -15,6 +17,7 @@ export default defineEventHandler(async (event) => {
     }, projectId);
     return { context: session.context };
   } catch (error) {
+    if (error instanceof SessionLifecycleError) throw toSessionLifecycleHttpError(error);
     throw createError({
       statusCode: 404,
       statusMessage: error instanceof Error ? error.message : String(error),

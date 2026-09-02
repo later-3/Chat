@@ -41,6 +41,7 @@ test(".chat/config.json is created, validated, persisted, and read as one runtim
     },
   });
   assert.equal(saved.defaultWorkflowId, "memory");
+  assert.equal(saved.sessions.removedRetentionDays, 30);
   assert.deepEqual((await readChatRootConfig()).workflows.memory.agents["memory-agent"], {
     promptFiles: ["/rules/memory.md"],
   });
@@ -76,4 +77,10 @@ test("Project config is isolated and applied directly for the explicitly opened 
   await writeProjectChatConfig("project-config", { schemaVersion: 1, defaultWorkflowId: "memory" }, chatHome);
   const resolved = await resolveChatConfig("project-config", chatHome);
   assert.equal(resolved.effective.defaultWorkflowId, "memory");
+
+  await writeProjectChatConfig("project-config", {
+    schemaVersion: 1,
+    sessions: { removedRetentionDays: 14 },
+  }, chatHome);
+  assert.equal((await resolveChatConfig("project-config", chatHome)).effective.sessions.removedRetentionDays, 14);
 });

@@ -15,6 +15,15 @@ import {
 
 export const CHAT_CONFIG_SCHEMA_VERSION = 1;
 export const CHAT_CONFIG_FILE_NAME = "config.json";
+export const DEFAULT_REMOVED_SESSION_RETENTION_DAYS = 30;
+
+export interface ChatSessionConfig {
+  readonly removedRetentionDays: number;
+}
+
+export interface ChatSessionConfigOverride {
+  readonly removedRetentionDays?: number;
+}
 
 export interface ChatStoredWorkflowConfig {
   readonly agents: Readonly<Record<string, AgentConfigSelection>>;
@@ -24,12 +33,14 @@ export interface ChatRootConfig {
   readonly schemaVersion: 1;
   readonly defaultWorkflowId: ChatWorkflowId;
   readonly workflows: Readonly<Record<string, ChatStoredWorkflowConfig>>;
+  readonly sessions: ChatSessionConfig;
 }
 
 export interface ChatConfigOverride {
   readonly schemaVersion: 1;
   readonly defaultWorkflowId?: ChatWorkflowId;
   readonly workflows?: Readonly<Record<string, ChatStoredWorkflowConfig>>;
+  readonly sessions?: ChatSessionConfigOverride;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,12 +53,35 @@ function assertKnownFields(value: Record<string, unknown>, fields: readonly stri
   if (unknown.length > 0) throw new Error(`${subject}包含未知字段: ${unknown.join(", ")}`);
 }
 
+function parseRemovedRetentionDays(value: unknown): number {
+  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 3650) {
+    throw new Error("Session移除区保留天数必须是1到3650之间的整数");
+  }
+  return value as number;
+}
+
+function parseSessionConfig(value: unknown): ChatSessionConfig {
+  if (value === undefined) return { removedRetentionDays: DEFAULT_REMOVED_SESSION_RETENTION_DAYS };
+  if (!isRecord(value)) throw new Error("Chat配置sessions必须是对象");
+  assertKnownFields(value, ["removedRetentionDays"], "Chat配置sessions");
+  return { removedRetentionDays: parseRemovedRetentionDays(value.removedRetentionDays) };
+}
+
+function parseSessionConfigOverride(value: unknown): ChatSessionConfigOverride | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error("Chat Project配置sessions必须是对象");
+  assertKnownFields(value, ["removedRetentionDays"], "Chat Project配置sessions");
+  return value.removedRetentionDays === undefined
+    ? {}
+    : { removedRetentionDays: parseRemovedRetentionDays(value.removedRetentionDays) };
+}
+
 /** Validates the single runtime configuration shared by Chat APIs and UI. */
 export function parseChatRootConfig(value: unknown): ChatRootConfig {
   if (!isRecord(value) || value.schemaVersion !== CHAT_CONFIG_SCHEMA_VERSION) {
     throw new Error(`Chat配置必须使用schemaVersion ${CHAT_CONFIG_SCHEMA_VERSION}`);
   }
-  assertKnownFields(value, ["schemaVersion", "defaultWorkflowId", "workflows"], "Chat配置");
+  assertKnownFields(value, ["schemaVersion", "defaultWorkflowId", "workflows", "sessions"], "Chat配置");
   if (typeof value.defaultWorkflowId !== "string" || getChatWorkflowDefinition(value.defaultWorkflowId) === undefined) {
     throw new Error("Chat配置defaultWorkflowId无效");
   }
@@ -75,6 +109,7 @@ export function parseChatRootConfig(value: unknown): ChatRootConfig {
     schemaVersion: CHAT_CONFIG_SCHEMA_VERSION,
     defaultWorkflowId: value.defaultWorkflowId as ChatWorkflowId,
     workflows,
+    sessions: parseSessionConfig(value.sessions),
   };
 }
 
@@ -82,16 +117,19 @@ export function parseChatConfigOverride(value: unknown): ChatConfigOverride {
   if (!isRecord(value) || value.schemaVersion !== CHAT_CONFIG_SCHEMA_VERSION) {
     throw new Error(`Chat Project配置必须使用schemaVersion ${CHAT_CONFIG_SCHEMA_VERSION}`);
   }
-  assertKnownFields(value, ["schemaVersion", "defaultWorkflowId", "workflows"], "Chat Project配置");
+  assertKnownFields(value, ["schemaVersion", "defaultWorkflowId", "workflows", "sessions"], "Chat Project配置");
   const base = parseChatRootConfig({
     schemaVersion: 1,
     defaultWorkflowId: value.defaultWorkflowId ?? DEFAULT_CHAT_WORKFLOW_ID,
     workflows: value.workflows ?? {},
+    sessions: value.sessions ?? { removedRetentionDays: DEFAULT_REMOVED_SESSION_RETENTION_DAYS },
   });
+  const sessions = parseSessionConfigOverride(value.sessions);
   return {
     schemaVersion: 1,
     ...(value.defaultWorkflowId === undefined ? {} : { defaultWorkflowId: base.defaultWorkflowId }),
     ...(value.workflows === undefined ? {} : { workflows: base.workflows }),
+    ...(sessions === undefined ? {} : { sessions }),
   };
 }
 
@@ -100,6 +138,7 @@ export function defaultChatRootConfig(): ChatRootConfig {
     schemaVersion: CHAT_CONFIG_SCHEMA_VERSION,
     defaultWorkflowId: DEFAULT_CHAT_WORKFLOW_ID,
     workflows: {},
+    sessions: { removedRetentionDays: DEFAULT_REMOVED_SESSION_RETENTION_DAYS },
   };
 }
 
@@ -179,6 +218,21 @@ export async function writeProjectChatConfig(
   return config;
 }
 
+export async function updateProjectSessionRetentionDays(
+  projectId: string,
+  removedRetentionDays: unknown,
+  chatHome = resolveChatHome(),
+): Promise<ChatConfigOverride> {
+  const current = await readProjectOverride(projectId, chatHome);
+  return writeProjectChatConfig(projectId, {
+    ...current,
+    sessions: {
+      ...current.sessions,
+      removedRetentionDays: parseRemovedRetentionDays(removedRetentionDays),
+    },
+  }, chatHome);
+}
+
 export async function resolveChatConfig(
   projectId: string,
   chatHome = resolveChatHome(),
@@ -207,6 +261,10 @@ export async function resolveChatConfig(
       schemaVersion: 1,
       defaultWorkflowId: project.defaultWorkflowId ?? personal.defaultWorkflowId,
       workflows,
+      sessions: {
+        removedRetentionDays: project.sessions?.removedRetentionDays
+          ?? personal.sessions.removedRetentionDays,
+      },
     },
   };
 }

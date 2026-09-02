@@ -8,6 +8,12 @@ import { MINIMAL_PI_CODING_AGENT_PROMPT } from "../workflows/minimal-pi-coding-a
 import { resolveRequestProject } from "../projects/request.js";
 import { localTimestamp } from "../runtime-log.js";
 import { startChatWorkflow } from "../workflows/start-chat-workflow.js";
+import {
+  chatSessionOperationKey,
+  withChatSessionOperationLock,
+} from "../session-operation-lock.js";
+import { SessionLifecycleError } from "../session-errors.js";
+import { toSessionLifecycleHttpError } from "../session-removal-http.js";
 
 /**
  * Nitro从`src/routes`扫描HTTP路由文件。当前文件名决定了请求方法和路径：
@@ -58,7 +64,20 @@ export default defineEventHandler(async (event) => {
    * 无请求体时，`input`使用固定Prompt和Nitro进程的启动目录；显式请求体
    * 可以传入其他Prompt和工作目录。
    */
-  const { run: workflowRun, workflow, workflowInvocationId } = await startChatWorkflow(input);
+  const start = () => startChatWorkflow(input);
+  let started: Awaited<ReturnType<typeof startChatWorkflow>>;
+  try {
+    started = input.projectId !== undefined && input.sessionId !== undefined
+      ? await withChatSessionOperationLock(
+          chatSessionOperationKey(input.projectId, input.sessionId),
+          start,
+        )
+      : await start();
+  } catch (error) {
+    if (error instanceof SessionLifecycleError) throw toSessionLifecycleHttpError(error);
+    throw error;
+  }
+  const { run: workflowRun, workflow, workflowInvocationId } = started;
   console.log(
     `${localTimestamp()} [workflow] started workflow=${workflow} invocationId=${workflowInvocationId} runId=${workflowRun.runId} elapsedMs=${Date.now() - requestStartedAt}`,
   );

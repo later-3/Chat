@@ -13,25 +13,12 @@ import {
   findActivePlanningExecutionRun,
   getPlanningExecutionRun,
 } from "../workflows/planning-execution/review-state.js";
-
-const sessionStartTails = new Map<string, Promise<void>>();
-
-async function withSessionStartLock<T>(key: string, operation: () => Promise<T>): Promise<T> {
-  const previous = sessionStartTails.get(key) ?? Promise.resolve();
-  let release = () => {};
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const tail = previous.catch(() => undefined).then(() => current);
-  sessionStartTails.set(key, tail);
-  await previous.catch(() => undefined);
-  try {
-    return await operation();
-  } finally {
-    release();
-    if (sessionStartTails.get(key) === tail) sessionStartTails.delete(key);
-  }
-}
+import {
+  chatSessionOperationKey,
+  withChatSessionOperationLock,
+} from "../session-operation-lock.js";
+import { SessionLifecycleError } from "../session-errors.js";
+import { toSessionLifecycleHttpError } from "../session-removal-http.js";
 
 async function assertSessionHasNoActivePlanningRun(input: ChatWorkflowHttpInput): Promise<void> {
   if (input.sessionId === undefined) return;
@@ -103,12 +90,22 @@ export default defineEventHandler(async (event) => {
   }
   const sessionId = input.sessionId as string;
   const start = () => startChatWorkflow(input);
-  const { run: workflowRun, workflow, workflowInvocationId } = isNewSession
-    ? await start()
-    : await withSessionStartLock(`${input.projectId ?? ""}:${input.sessionId}`, async () => {
-        await assertSessionHasNoActivePlanningRun(input);
-        return start();
-      });
+  let started: Awaited<ReturnType<typeof startChatWorkflow>>;
+  try {
+    started = isNewSession
+      ? await start()
+      : await withChatSessionOperationLock(
+          chatSessionOperationKey(input.projectId ?? "", sessionId),
+          async () => {
+            await assertSessionHasNoActivePlanningRun(input);
+            return start();
+          },
+        );
+  } catch (error) {
+    if (error instanceof SessionLifecycleError) throw toSessionLifecycleHttpError(error);
+    throw error;
+  }
+  const { run: workflowRun, workflow, workflowInvocationId } = started;
   console.log(
     `${localTimestamp()} [workflow] accepted workflow=${workflow} invocationId=${workflowInvocationId} runId=${workflowRun.runId}`,
   );

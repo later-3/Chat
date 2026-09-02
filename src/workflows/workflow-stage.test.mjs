@@ -5,26 +5,9 @@ import {
   appendChatWorkflowAgentInput,
   appendChatWorkflowStage,
   collectChatWorkflowAgentInputs,
-  collectChatWorkflowMessages,
   collectChatWorkflowStageEntryIds,
   collectChatWorkflowStageMarkers,
 } from "./workflow-stage.ts";
-
-function assistantMessage(text) {
-  return {
-    role: "assistant",
-    provider: "test",
-    model: "test-model",
-    api: "test",
-    content: [{ type: "text", text }],
-    usage: {
-      input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
-    timestamp: 2,
-  };
-}
 
 test("Workflow Stage stores agent/human provenance without entering Pi context", () => {
   const manager = SessionManager.inMemory("/workspace");
@@ -85,38 +68,6 @@ test("Workflow Agent Input v2 stores only native MessageEntry references", () =>
   assert.deepEqual(manager.buildSessionContext().messages, [
     { role: "user", content: "original request", timestamp: 1 },
   ]);
-});
-
-test("legacy value-copying entries remain readable only for migration compatibility", () => {
-  const manager = SessionManager.inMemory("/workspace");
-  const inputId = manager.appendCustomEntry("chat.workflow_agent_input", {
-    schemaVersion: 1,
-    invocationId: "legacy",
-    workflowId: "planning-execution",
-    stageId: "plan",
-    agentId: "planner",
-    userPrompt: "legacy request",
-  });
-  const message = assistantMessage("legacy plan");
-  const messageId = manager.appendCustomEntry("chat.workflow_message", {
-    schemaVersion: 1,
-    invocationId: "legacy",
-    workflowId: "planning-execution",
-    stageId: "plan",
-    agentId: "planner",
-    message,
-  });
-  assert.equal(collectChatWorkflowAgentInputs(manager.getEntries())[0].entryId, inputId);
-  assert.deepEqual(collectChatWorkflowMessages(manager.getEntries()), [{
-    entryId: messageId,
-    schemaVersion: 1,
-    invocationId: "legacy",
-    workflowId: "planning-execution",
-    stageId: "plan",
-    agentId: "planner",
-    message,
-  }]);
-  assert.deepEqual(manager.buildSessionContext().messages, []);
 });
 
 test("future or incomplete Workflow Stage schemas stay ordinary Pi entries", () => {

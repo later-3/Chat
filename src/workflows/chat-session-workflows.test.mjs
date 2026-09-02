@@ -28,10 +28,7 @@ import {
   runPlanningStep,
 } from "./planning-execution/steps.ts";
 import { runRuleManagementStep } from "./rule-management/step.ts";
-import {
-  collectChatWorkflowAgentInputs,
-  collectChatWorkflowMessages,
-} from "./workflow-stage.ts";
+import { collectChatWorkflowAgentInputs } from "./workflow-stage.ts";
 import { collectChatWorkflowTurnConfigurations } from "./workflow-configuration.ts";
 
 function messageText(message) {
@@ -285,8 +282,6 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
       agentId: "pi-coding-agent",
     },
   ]);
-  const workflowMessages = collectChatWorkflowMessages(manager.getEntries());
-  assert.equal(workflowMessages.length, 0);
   const workflowAgentInputs = collectChatWorkflowAgentInputs(manager.getEntries());
   assert.equal(workflowAgentInputs.length, 3);
   assert.deepEqual(workflowAgentInputs.map(({ entryId: _entryId, ...input }) => input), [

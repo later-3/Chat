@@ -281,9 +281,10 @@ Chat使用Pi原生`CustomEntry`保存不进入模型上下文的编排数据：
 | `chat.workflow_stage` | Workflow、Stage、Node Kind和Agent身份 | 划分执行阶段 |
 | `chat.workflow_agent_input` v2 | 原生消息`inputEntryIds` | 说明每个Agent使用哪些会话事实 |
 | `chat.plan_review*` | 审核版本、决定、摘要和消息引用 | 恢复人工审核状态 |
-| `chat.session_migration` | 迁移ID、备份、源哈希和变更ID | 历史数据幂等迁移 |
 
-`chat.workflow_message`和包含`userPrompt/upstream.output`的Agent Input只为旧Session迁移期读取，新代码不再写入。`session-read-model.ts`把Pi原生消息和Stage元数据投影成前端历史；`session-export.ts`生成按Workflow、Stage和Agent整理的完整历史。
+`session-read-model.ts`把Pi原生消息和Stage元数据投影成前端历史；`session-export.ts`生成按Workflow、Stage和Agent整理的完整历史。
+
+Session正常JSONL位于`~/.chat/projects/<projectId>/sessions/`，移除区位于其子目录`removed/`。`session-files.ts`集中复用Pi的active Session枚举，`chat-session.ts`和`session-read-model.ts`分别保留执行与读取职责；`removed-session-index.ts`负责原子索引与中断恢复，`session-removal.ts`通过文件`rename`实现移除、恢复、保留期清理及永久删除。普通读取与Workflow执行只接受active Session。
 
 ## 10. 当前能力配置在哪里
 
@@ -299,7 +300,7 @@ Chat使用Pi原生`CustomEntry`保存不进入模型上下文的编排数据：
 
 `agent-config.ts`和`agent-config-loader.ts`严格解析并有序合并Workflow默认配置、Project持久配置、Session配置、本轮调整、主配置、追加配置、Prompt文件与已固定版本的Prompt资源。`agent-definition.ts`实现身份、基础System Prompt、Chat自定义指令区域、模型、Thinking、工具和资源策略；它通过公共Tool Resolver把限定地址转换为Pi `ToolDefinition`，再集中创建SettingsManager、ResourceLoader和AgentSession。`GET /api/tools`查询Project可见Tool与反向使用关系，`catalog`查询Agent可选择资源，`resolve`查询本轮实际装配结果。
 
-`~/.chat/config.json`保存个人默认，`<project-root>/.chat/config.json`保存Project覆盖。Session使用Pi CustomEntry保存每个Workflow的最新配置和每轮冻结快照。本轮请求只提交实际调整；后端按`Workflow默认 → Session最新 → 本轮调整`解析，先把所有Agent和Prompt资源冻结为可执行定义，再追加Session配置事实。同一Workflow的所有Stage复用该冻结结果。
+`~/.chat/config.json`保存个人默认，`<project-root>/.chat/config.json`保存Project覆盖，包括Session移除区保留天数。Session使用Pi CustomEntry保存每个Workflow的最新配置和每轮冻结快照。本轮请求只提交实际调整；后端按`Workflow默认 → Session最新 → 本轮调整`解析，先把所有Agent和Prompt资源冻结为可执行定义，再追加Session配置事实。同一Workflow的所有Stage复用该冻结结果。
 
 `GET /api/workflows`可以查询Workflow、Stage和Agent定义；可执行的`run`和`prepareAgentSession`不会投影给浏览器。Agent执行和检查都先从Registry取得Workflow定义，再调用同一个`prepareAgentSession`装配Workflow私有Tool、Skill和Context Transform，随后进入公共`createWorkflowAgentSession`。因此前端无需了解某个Workflow的Tool实现，也能通过通用检查接口看到最终Prompt、Model、Thinking、Tools和资源诊断。
 

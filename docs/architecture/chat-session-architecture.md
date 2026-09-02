@@ -46,7 +46,6 @@ Workflow/Agent身份与消息角色正交：同样是`assistant`，可以由Plan
 | `chat.workflow_agent_input` v2 | `inputEntryIds`，引用原生会话消息 | `userPrompt`、上游输出正文 |
 | `chat.plan_review` | 审核ID、版本、摘要、`planEntryId`和控制状态 | 作为计划文本的唯一副本 |
 | `chat.plan_review_decision` v3 | 决定、版本绑定、`messageEntryId`；修订决定兼容保留`feedbackEntryId` | 作为审核原话的唯一副本 |
-| `chat.session_migration` | 迁移ID、源哈希、备份位置和变更ID | 会话内容 |
 
 人工审核是`nodeKind=human`，没有虚假的Agent ID。没有人也没有Agent的确定性节点可使用`task`或`tool`元数据；只有它真的产生话语时，才追加对应的原生消息。
 
@@ -108,7 +107,7 @@ custom chat.workflow_agent_input { userPrompt: "用户原话" }
 ```
 
 ```text
-custom chat.workflow_message { message: <Planner AssistantMessage> }
+custom chat.workflow_output { message: <Planner AssistantMessage> }
 # 没有对应的原生assistant消息
 ```
 
@@ -121,16 +120,34 @@ custom chat.workflow_message { message: <Planner AssistantMessage> }
 5. 每个Agent、Stage或Workflow创建自己的Chat Session。
 6. 把人工审核伪装成`agentId=human`。
 
-## 8. 历史迁移
+## 8. Session文件与生命周期
 
-`session-native-messages-v1`负责把旧的值复制格式改成上述原生消息格式：
+Pi `SessionManager`继续拥有Session JSONL格式、创建、打开、列表和上下文构建。Chat只增加Project作用域和产品生命周期：
 
-1. 迁移前把原始JSONL保存到`<projectDataDir>/migrations/session-native-messages-v1/backups/`。
-2. 迁移在临时文件完成后原子替换源文件；失败时源文件保持不变。
-3. 原有Planner消息ID保持不变，审核中的`planEntryId`仍然有效；插入用户消息时显式修正`parentId`。
-4. Session末尾追加`chat.session_migration`，记录源SHA-256、备份位置和变更ID；再次执行是no-op。
-5. 已符合规范的Session不改写也不创建备份。
-6. 非终态Planning Run不在列表或打开路径中并发迁移，待Run终态后再迁移；迁移期读取投影只能作为兼容层。
+```text
+~/.chat/projects/<projectId>/sessions/
+├── <active-session>.jsonl
+└── removed/
+    ├── index.json
+    └── <removed-session>.jsonl
+```
+
+Pi只枚举`sessions/`第一层的`.jsonl`，不会递归进入`removed/`。因此移除动作移动原始JSONL，不向Session内部追加状态，也不改变Pi默认加载流程。
+
+源码职责保持窄而明确：
+
+1. `session-files.ts`只提供active目录、removed目录和`sessionId → SessionInfo`文件事实，实际枚举仍调用Pi。
+2. `chat-session.ts`负责Workflow执行时创建或打开Agent使用的SessionManager，并安装Chat上下文过滤器。
+3. `session-read-model.ts`负责把Pi Session和Workflow观察元数据投影成浏览器合同。
+4. `removed-session-index.ts`只负责移除区索引的校验、原子写入和中断恢复；`session-removal.ts`只负责移除、恢复、永久删除和保留期，不解析或重写JSONL内容。
+
+执行入口和读取入口不能合并；它们只共享底层文件查找。Workflow启动与生命周期修改使用同一个Project Session操作锁，避免启动和移动并发发生。每次Workflow Run额外保存`runId + workflowInvocationId + projectId + sessionId`绑定，状态仍从Workflow Runtime读取，不建立第二套运行时。
+
+`removed/index.json`保存移除时间、`purgeAt`、列表快照、最小永久删除标记和一条未完成操作。索引通过临时文件加`rename`原子替换；JSONL移动前先持久化未完成操作，进程重启或下次读取时按源文件和目标文件的实际存在状态继续完成。保留天数使用现有个人配置与Project覆盖机制，移除时固定成该Session的`purgeAt`。
+
+Planning Run、Workflow Run、Memory、Prompt Resource和审计事实只保留Session引用，不随Session移动或永久删除。只有需要读取Session内容的调用才检查生命周期；非终态Workflow会阻止移除。永久删除只删除移除区JSONL，并保留不含会话内容的最小tombstone，从而区分“已永久删除”和“从未存在”。
+
+Subworkflow是Workflow调用，不是Session。未来Subworkflow创建的结果Session和用户显式创建的子Session都使用同一`subsession`关系；Workflow调用关系与Session父子关系必须分别使用稳定ID建模，不能复用当前Pi Coding Agent基于文件路径的`parentSession`作为Chat生命周期关系。当前移除功能不把Pi Fork关系解释为Subsession，也不自动级联移动其他Session。
 
 ## 9. 新Workflow检查清单
 

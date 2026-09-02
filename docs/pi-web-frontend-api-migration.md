@@ -44,8 +44,8 @@ Chat/frontend（纯浏览器）
 
 | 接口 | 前端用途 | 状态 | 后续实现方向 |
 |---|---|---|---|
-| `PATCH /api/sessions/:id` | Session重命名 | 待迁移 | Chat按Session ID调用Pi Session元数据能力 |
-| `DELETE /api/sessions/:id` | 删除Session | 待迁移 | Chat校验目标与并发状态后删除 |
+| `PATCH /api/sessions/:id?projectId=<id>` | Session重命名 | 已接入 | Chat按Session ID调用Pi Session元数据能力；运行中的Session不可修改 |
+| `POST /api/sessions/:id/remove?projectId=<id>`、`GET /api/sessions/removed?projectId=<id>`、`POST /api/sessions/removed/:id/restore?projectId=<id>`、`DELETE /api/sessions/removed/:id?projectId=<id>` | Session移除、查看、恢复与永久删除 | 已接入 | 原JSONL移入`sessions/removed/`；移除区索引负责恢复、保留期和永久删除 |
 | `GET /api/sessions/:id/entries/:entryId/thinking` | 延迟加载Thinking | 待迁移 | Chat只返回指定Session节点的展示内容 |
 | `GET /api/sessions/:id/export` | 导出Session | 已接入 | Chat基于Pi导出完整历史，并按Workflow、Stage和Agent整理输入、Thinking、工具调用与输出和最终回复 |
 | `GET /api/sessions/:id/state` | 页面状态恢复 | 待迁移 | 评估保留Pi格式或改为Chat前端偏好 |

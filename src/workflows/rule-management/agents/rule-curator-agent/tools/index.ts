@@ -22,9 +22,7 @@ import {
   resolveChatPromptResourceProposal,
 } from "../../../../prompt-resource-proposal.js";
 import {
-  collectChatWorkflowMessages,
   collectChatWorkflowStageMarkers,
-  type ChatWorkflowMessageMarker,
   type ChatWorkflowStageMarker,
 } from "../../../../workflow-stage.js";
 import {
@@ -100,7 +98,7 @@ function truncateSourceText(text: string): { text: string; textTruncated: boolea
   return { text: text.slice(0, SESSION_CONTEXT_MAX_TEXT_CHARS), textTruncated: true };
 }
 
-function workflowReference(stage: ChatWorkflowStageMarker | ChatWorkflowMessageMarker | undefined) {
+function workflowReference(stage: ChatWorkflowStageMarker | undefined) {
   return stage === undefined || stage.agentId === undefined
     ? undefined
     : {
@@ -125,9 +123,6 @@ function collectSessionSourceEntries(context: RuleManagementToolContext): Sessio
   const stages = new Map(
     collectChatWorkflowStageMarkers(branch).map((stage) => [stage.entryId, stage]),
   );
-  const workflowMessages = new Map(
-    collectChatWorkflowMessages(branch).map((message) => [message.entryId, message]),
-  );
   const sourceEntries: SessionSourceEntry[] = [];
   let activeStage: ChatWorkflowStageMarker | undefined;
 
@@ -139,31 +134,24 @@ function collectSessionSourceEntries(context: RuleManagementToolContext): Sessio
     const isCurrentRequest = entry.id === currentUserEntryId;
     if (index >= currentInvocationStart && !isCurrentRequest) continue;
 
-    const workflowMessage = workflowMessages.get(entry.id);
-    const rawText = workflowMessage === undefined
-      ? entry.type === "message"
-        ? messageText(entry.message)
-        : entry.type === "custom_message"
-          ? contentText(entry.content)
-          : entry.type === "compaction" || entry.type === "branch_summary"
-            ? entry.summary
-            : ""
-      : messageText(workflowMessage.message);
+    const rawText = entry.type === "message"
+      ? messageText(entry.message)
+      : entry.type === "custom_message"
+        ? contentText(entry.content)
+        : entry.type === "compaction" || entry.type === "branch_summary"
+          ? entry.summary
+          : "";
     const text = isCurrentRequest ? context.userPrompt : rawText;
     if (text.trim() === "") continue;
     const excerpt = truncateSourceText(text);
-    const workflow = workflowMessage === undefined
-      ? workflowReference(activeStage)
-      : workflowReference(workflowMessage);
-    const role = workflowMessage === undefined
-      ? entry.type === "message"
-        ? entry.message.role
-        : entry.type === "compaction"
-          ? "compactionSummary"
-          : entry.type === "branch_summary"
-            ? "branchSummary"
-            : "custom"
-      : "assistant";
+    const workflow = workflowReference(activeStage);
+    const role = entry.type === "message"
+      ? entry.message.role
+      : entry.type === "compaction"
+        ? "compactionSummary"
+        : entry.type === "branch_summary"
+          ? "branchSummary"
+          : "custom";
     sourceEntries.push({
       entryId: entry.id,
       timestamp: entry.timestamp,
