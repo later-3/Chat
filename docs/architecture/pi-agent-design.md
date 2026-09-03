@@ -7,8 +7,8 @@
 分析基线：
 
 ```text
-Chat/pi commit 1e44171651f99e3c9066f805529db58bf93a5136
-Pi package version 0.84.2
+Chat/pi commit 8e0cf9096a996f14304b328ed8e447464d6ace32
+Pi package version 0.84.4
 ```
 
 Chat当前走的是成熟的`createAgentSession()`路径：
