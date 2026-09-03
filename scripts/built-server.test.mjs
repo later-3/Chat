@@ -538,6 +538,75 @@ test("session list and detail come from the isolated Chat session directory", as
   assert.deepEqual(await renameResponse.json(), { sessionId, name: "Built Session" });
 });
 
+test("historical tool-result images are deferred and served from the same Project Session", async () => {
+  const sessionDir = path.join(chatHome, "projects", projectId, "sessions");
+  const manager = SessionManager.create(workspace, sessionDir);
+  manager.appendMessage({ role: "user", content: "capture the built fixture", timestamp: Date.now() });
+  manager.appendMessage({
+    role: "assistant",
+    api: "test",
+    provider: "test",
+    model: "test-model",
+    content: [{ type: "toolCall", id: "built-image-call", name: "screenshot", arguments: {} }],
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "toolUse",
+    timestamp: Date.now(),
+  });
+  manager.appendMessage({
+    role: "toolResult",
+    toolCallId: "built-image-call",
+    toolName: "screenshot",
+    content: [
+      { type: "text", text: "captured" },
+      { type: "image", data: "QUJDRA==", mimeType: "image/png" },
+    ],
+    isError: false,
+    timestamp: Date.now(),
+  });
+  manager.flush();
+
+  const detailResponse = await authenticatedFetch(
+    `/api/sessions/${encodeURIComponent(manager.getSessionId())}?projectId=${projectId}&deferMedia=1`,
+  );
+  assert.equal(detailResponse.status, 200, await detailResponse.clone().text());
+  const detail = await detailResponse.json();
+  const toolResult = detail.context.messages.find((message) => message.role === "toolResult");
+  const image = toolResult?.content.find((block) => block.type === "image");
+  assert.match(image?.source?.url ?? "", /tool-result-image\?blockIndex=1&projectId=built-project$/);
+
+  const imageResponse = await authenticatedFetch(image.source.url);
+  assert.equal(imageResponse.status, 200, await imageResponse.clone().text());
+  assert.equal(imageResponse.headers.get("content-type"), "image/png");
+  assert.equal(imageResponse.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual([...new Uint8Array(await imageResponse.arrayBuffer())], [65, 66, 67, 68]);
+});
+
+test("the bounded file index supports client preload and server-ranked search", async () => {
+  const indexResponse = await authenticatedFetch(`/api/file-index?cwd=${encodeURIComponent(workspace)}`);
+  assert.equal(indexResponse.status, 200, await indexResponse.clone().text());
+  const index = await indexResponse.json();
+  assert.equal(index.files.includes("fixture.md"), true);
+  assert.equal(index.truncated, false);
+
+  const searchResponse = await authenticatedFetch(
+    `/api/file-index?cwd=${encodeURIComponent(workspace)}&q=fixture`,
+  );
+  assert.equal(searchResponse.status, 200, await searchResponse.clone().text());
+  assert.equal((await searchResponse.json()).matches[0].path, "fixture.md");
+
+  const outsideResponse = await authenticatedFetch(
+    `/api/file-index?cwd=${encodeURIComponent(runtimeRoot)}&q=fixture`,
+  );
+  assert.equal(outsideResponse.status, 403);
+});
+
 test("Session removal API moves, lists, restores, configures, and permanently deletes one Pi Session", async () => {
   const sessionDir = path.join(chatHome, "projects", projectId, "sessions");
   const manager = SessionManager.create(workspace, sessionDir);

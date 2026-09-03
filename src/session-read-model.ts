@@ -20,6 +20,12 @@ import {
 import { collectChatToolExecutions } from "./tools/execution-record.js";
 import { collectChatPromptResourceProposals } from "./workflows/prompt-resource-proposal.js";
 import {
+  decodeBoundedToolResultImage,
+  MAX_TOOL_RESULT_IMAGE_BYTES,
+  readBase64ToolResultImage,
+  TOOL_RESULT_IMAGE_MIMES,
+} from "./session-tool-result-images.js";
+import {
   collectPlanReviewDecisions,
   collectPendingPlanReview,
   findActivePlanningExecutionRun,
@@ -132,6 +138,10 @@ export function normalizeMessageForFrontend(message: unknown): unknown {
 export interface SessionProjectionOptions {
   readonly deferThinking?: boolean;
   readonly deferToolResultImages?: boolean;
+  /** Used only to build same-session lazy URLs for deferred tool-result images. */
+  readonly sessionId?: string;
+  /** Preserves the Project boundary when a browser later requests a deferred image. */
+  readonly projectId?: string;
 }
 
 function nativeMessageForFrontend(
@@ -153,23 +163,18 @@ function nativeMessageForFrontend(
   };
 }
 
-function base64ImageInfo(block: unknown): { bytes: number; mime?: string } | null {
-  if (!isRecord(block) || block.type !== "image") return null;
-  let data: string | undefined;
-  let mime: string | undefined;
-  if (typeof block.data === "string") {
-    data = block.data;
-    mime = typeof block.mimeType === "string" ? block.mimeType : undefined;
-  } else if (isRecord(block.source) && block.source.type === "base64" && typeof block.source.data === "string") {
-    data = block.source.data;
-    mime = typeof block.source.media_type === "string" ? block.source.media_type : undefined;
-  }
-  if (!data) return null;
-  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
-  return { bytes: Math.max(0, Math.floor(data.length * 3 / 4) - padding), ...(mime ? { mime } : {}) };
+function deferredToolResultImageUrl(
+  sessionId: string,
+  entryId: string,
+  blockIndex: number,
+  projectId?: string,
+): string {
+  const query = new URLSearchParams({ blockIndex: String(blockIndex) });
+  if (projectId !== undefined) query.set("projectId", projectId);
+  return `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/tool-result-image?${query.toString()}`;
 }
 
-function applyProjectionOptions(message: unknown, options: SessionProjectionOptions): unknown {
+function applyProjectionOptions(message: unknown, entryId: string, options: SessionProjectionOptions): unknown {
   if (!isRecord(message) || !Array.isArray(message.content)) return message;
   if (options.deferThinking && message.role === "assistant") {
     return {
@@ -186,15 +191,35 @@ function applyProjectionOptions(message: unknown, options: SessionProjectionOpti
   let omitted = 0;
   let bytes = 0;
   const mimes = new Set<string>();
-  const content = message.content.filter((block) => {
-    const image = base64ImageInfo(block);
-    if (!image) return true;
+  const content = message.content.flatMap((block, blockIndex) => {
+    const image = readBase64ToolResultImage(block);
+    if (!image) return [block];
+    if (
+      options.sessionId !== undefined &&
+      TOOL_RESULT_IMAGE_MIMES.has(image.mime) &&
+      image.bytes > 0 &&
+      image.bytes <= MAX_TOOL_RESULT_IMAGE_BYTES
+    ) {
+      return [{
+        type: "image",
+        source: {
+          type: "url",
+          media_type: image.mime,
+          url: deferredToolResultImageUrl(
+            options.sessionId,
+            entryId,
+            blockIndex,
+            options.projectId,
+          ),
+        },
+      }];
+    }
     omitted += 1;
     bytes += image.bytes;
-    if (image.mime) mimes.add(image.mime);
-    return false;
+    mimes.add(image.mime);
+    return [];
   });
-  if (omitted === 0) return message;
+  if (omitted === 0) return { ...message, content };
   const mimeText = mimes.size > 0 ? `: ${[...mimes].join(", ")}` : "";
   return {
     ...message,
@@ -250,7 +275,7 @@ export function projectSessionContext(
     }
     for (const message of sessionEntryToContextMessages(entry)) {
       if (isRecord(message) && message.role === "custom" && message.display === false) continue;
-      messages.push(applyProjectionOptions(nativeMessageForFrontend(message, activeStage), options));
+      messages.push(applyProjectionOptions(nativeMessageForFrontend(message, activeStage), entry.id, options));
       entryIds.push(entry.id);
     }
   }
@@ -279,6 +304,47 @@ export async function requireChatSession(
   }
 }
 
+export type ChatToolResultImageRead =
+  | { readonly status: "ok"; readonly bytes: Uint8Array; readonly mime: string }
+  | { readonly status: "not-found" }
+  | { readonly status: "unsupported" }
+  | { readonly status: "invalid-or-oversized" };
+
+/** Reads one image only from a concrete tool-result entry in an active Chat Session. */
+export async function readChatToolResultImage(
+  sessionId: string,
+  entryId: string,
+  blockIndex: number,
+  projectId?: string,
+  chatHome?: string,
+): Promise<ChatToolResultImageRead> {
+  const info = await requireChatSession(sessionId, projectId, chatHome);
+  let manager: SessionManager;
+  try {
+    manager = SessionManager.open(info.path, dirname(info.path));
+    if (manager.getSessionId() !== sessionId) {
+      throw new Error(`Session文件在读取时不可用: ${sessionId}`);
+    }
+  } catch (error) {
+    return rethrowWithCurrentSessionState(info.projectId as string, chatHome, sessionId, error);
+  }
+
+  const entry = manager.getEntry(entryId);
+  if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) {
+    return { status: "not-found" };
+  }
+  const message = entry.message;
+  if (message.role !== "toolResult" || !Array.isArray(message.content)) {
+    return { status: "not-found" };
+  }
+  const image = readBase64ToolResultImage(message.content[blockIndex]);
+  if (image === null) return { status: "not-found" };
+  if (!TOOL_RESULT_IMAGE_MIMES.has(image.mime)) return { status: "unsupported" };
+  const bytes = decodeBoundedToolResultImage(image.data);
+  if (bytes === null) return { status: "invalid-or-oversized" };
+  return { status: "ok", bytes, mime: image.mime };
+}
+
 export async function readChatSession(
   sessionId: string,
   leafId?: string | null,
@@ -303,7 +369,11 @@ export async function readChatSession(
   }
 
   const selectedLeafId = leafId === undefined ? manager.getLeafId() : leafId;
-  const context = projectSessionContext(entries, selectedLeafId, options);
+  const context = projectSessionContext(entries, selectedLeafId, {
+    ...options,
+    sessionId: manager.getSessionId(),
+    ...(info.projectId === undefined ? {} : { projectId: info.projectId }),
+  });
   const pendingPlanReview = collectPendingPlanReview(entries);
   let activePlanningExecution;
   const latestPlanningInvocationId = collectChatWorkflowStageMarkers(entries)

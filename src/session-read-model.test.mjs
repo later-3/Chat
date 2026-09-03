@@ -10,6 +10,7 @@ import {
   normalizeMessageForFrontend,
   projectSessionContext,
   readChatSession,
+  readChatToolResultImage,
 } from "./session-read-model.ts";
 import {
   appendChatWorkflowAgentInput,
@@ -436,6 +437,107 @@ test("only base64 tool-result images are omitted from the initial payload", () =
   assert.equal(context.messages[0].content.length, 1);
   assert.equal(context.messages[1].content[1].source.type, "url");
   assert.match(context.messages[1].content[2].text, /1 tool result image omitted.*image\/png.*~4 bytes/);
+});
+
+test("supported tool-result images become Project-scoped lazy URLs", () => {
+  const entries = [
+    userEntry("u1", null, "start"),
+    {
+      type: "message",
+      id: "tool result/1",
+      parentId: "u1",
+      timestamp: "2026-01-01T00:00:01.000Z",
+      message: {
+        role: "toolResult",
+        toolCallId: "call1",
+        content: [
+          { type: "text", text: "result" },
+          { type: "image", data: "QUJDRA==", mimeType: "image/png" },
+        ],
+      },
+    },
+  ];
+  const context = projectSessionContext(entries, undefined, {
+    deferToolResultImages: true,
+    sessionId: "session/1",
+    projectId: "project 1",
+  });
+
+  assert.deepEqual(context.messages[1].content[1], {
+    type: "image",
+    source: {
+      type: "url",
+      media_type: "image/png",
+      url: "/api/sessions/session%2F1/entries/tool%20result%2F1/tool-result-image?blockIndex=1&projectId=project+1",
+    },
+  });
+  assert.equal(context.messages[1].content.length, 2);
+});
+
+test("tool-result image reads stay inside the active Project Session", { concurrency: false }, async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-tool-result-image-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace, { recursive: true });
+  const chatHome = path.join(base, "home");
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    id: "tool-result-image",
+    name: "Tool Result Image",
+  });
+  const manager = SessionManager.create(workspace, project.sessionDir);
+  manager.appendMessage({ role: "user", content: "capture a screenshot", timestamp: Date.now() });
+  manager.appendMessage({
+    role: "assistant",
+    api: "test",
+    provider: "test",
+    model: "test-model",
+    content: [{ type: "toolCall", id: "call1", name: "screenshot", arguments: {} }],
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "toolUse",
+    timestamp: Date.now(),
+  });
+  const entryId = manager.appendMessage({
+    role: "toolResult",
+    toolCallId: "call1",
+    toolName: "screenshot",
+    content: [
+      { type: "text", text: "captured" },
+      { type: "image", data: "QUJDRA==", mimeType: "image/png" },
+      { type: "image", data: "PHN2Zz48L3N2Zz4=", mimeType: "image/svg+xml" },
+    ],
+    isError: false,
+    timestamp: Date.now(),
+  });
+
+  const image = await readChatToolResultImage(
+    manager.getSessionId(),
+    entryId,
+    1,
+    project.projectId,
+    chatHome,
+  );
+  assert.equal(image.status, "ok");
+  if (image.status === "ok") {
+    assert.equal(image.mime, "image/png");
+    assert.deepEqual([...image.bytes], [65, 66, 67, 68]);
+  }
+  assert.deepEqual(
+    await readChatToolResultImage(manager.getSessionId(), entryId, 2, project.projectId, chatHome),
+    { status: "unsupported" },
+  );
+  await assert.rejects(
+    readChatToolResultImage(manager.getSessionId(), entryId, 1, "another-project", chatHome),
+    /Project尚未登记/,
+  );
 });
 
 test("session listing scans only the current Project session directory", { concurrency: false }, async (t) => {
