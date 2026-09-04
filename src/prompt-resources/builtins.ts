@@ -92,6 +92,22 @@ const WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_V4 = [
   "本案例的机器门禁：LocalBuilder开发bundle可构建并由Node加载；三个Workflow私有Skill预先准备；Built Server验证Coordinator的Skill/Tool装配；pnpm test:dev让Coordinator同轮发出5个workflow_call并完成5个独立子Workflow。",
 ].join("\n");
 
+const WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_V5 = [
+  "开发经验案例：部署运行时版本必须参与源码兼容验证",
+  "",
+  "适用场景：修改由Node.js直接装载的TypeScript/JavaScript源码、Workflow编排、CI运行时、Linux部署基线或使用较新的语言语法时。",
+  "",
+  "已发生现象：macOS开发机使用Node.js 24.8.0，完整pnpm verify通过；GitHub CI与Linux部署固定Node.js 22.19.0，在装载两个人工审核Workflow的using decisionHook声明时抛出SyntaxError，导致11个Backend测试无法启动。此前Pi准备失败又长期遮蔽了这层错误。",
+  "",
+  "正确姿势：",
+  "1. CI、自动部署和文档共享同一Node.js固定版本；本地较新版本通过不能替代生产基线验证。",
+  "2. 涉及新语法时，必须检查代码是经构建转换还是由固定Node.js直接装载；类型检查和较新Node运行成功都不是语法兼容证明。",
+  "3. Workflow Hook使用公开幂等dispose()和普通try/finally覆盖完整审核轮次，确保冲突、等待、修订、批准返回和异常路径都释放资源。",
+  "4. CI分阶段显示Submodule、依赖准备和应用验证，避免前置故障长期遮蔽后续运行时问题。",
+  "",
+  "本案例的机器门禁：源码测试禁止两个审核Workflow重新引入声明级using/await using，并要求finally调用decisionHook.dispose()；Node.js 22.19.0 CI运行完整pnpm verify。",
+].join("\n");
+
 const PLANNER_READINESS_CONTRACT_EXPERIENCE_V1 = [
   "开发经验案例：Planner必须区分任务澄清与可执行计划",
   "",
@@ -214,6 +230,24 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       }],
       author: { type: "user" },
       createdAt: "2026-09-03T07:30:00.000Z",
+    }, {
+      schemaVersion: 1,
+      id: WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID,
+      revision: 5,
+      kind: "experience",
+      title: "Workflow 构建产物必须经过真实 Runtime 验证",
+      purpose: "确保较新的本地Node.js不会掩盖CI与Linux部署固定版本无法解析或执行的Workflow源码。",
+      content: WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_V5,
+      tags: ["development", "incident", "workflow", "runtime", "build-toolchain", "deployment", "ci", "nodejs", "runtime-compatibility"],
+      status: "active",
+      sources: [{
+        type: "manual",
+        entryIds: [],
+        context: "归档于 docs/development-experiences/deployment-runtime-version-parity.md；源自2026-09-04公开Submodule部署CI复盘。",
+        capturedAt: "2026-09-04T11:40:00.000Z",
+      }],
+      author: { type: "user" },
+      createdAt: "2026-09-04T11:40:00.000Z",
     }],
   },
   {

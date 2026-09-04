@@ -652,7 +652,7 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
   assert.match(calls[0].systemPrompt, /Configured additional rule/);
   assert.match(calls[0].systemPrompt, /<chat_prompt_resource/);
   assert.match(calls[0].systemPrompt, /Do not add unrelated responsibilities/);
-  assert.match(calls[0].systemPrompt, /Step复用与Registry依赖/);
+  assert.match(calls[0].systemPrompt, /Node\.js 22\.19\.0/);
   assert.match(calls[0].systemPrompt, /能力完备性与Pi装配一致性/);
   assert.match(calls[0].systemPrompt, /Configured review/);
   assert.deepEqual(calls[0].toolNames, ["read"]);

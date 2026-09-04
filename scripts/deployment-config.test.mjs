@@ -113,6 +113,17 @@ test("GitHub CI verifies the pinned public Submodules through the release gate",
   assert.match(documentation, /不缓存`node_modules`/);
 });
 
+test("Workflow sources stay parseable by the Node.js version pinned for deployment", () => {
+  for (const relativePath of [
+    "src/workflows/planning-execution/workflow.ts",
+    "src/workflows/planner-orchestrator/workflow.ts",
+  ]) {
+    const source = read(relativePath);
+    assert.doesNotMatch(source, /\b(?:await\s+)?using\s+[A-Za-z_$][\w$]*\s*=/);
+    assert.match(source, /finally\s*\{\s*decisionHook\.dispose\(\);\s*\}/);
+  }
+});
+
 test("chatctl validates production authentication without echoing credentials", (t) => {
   const tempDirectory = mkdtempSync(join(tmpdir(), "chat-deployment-config-"));
   t.after(() => rmSync(tempDirectory, { recursive: true, force: true }));

@@ -43,7 +43,7 @@ export async function plannerOrchestratorWorkflow(
     const feedbackEntryIds: string[] = [];
 
     for (;;) {
-      using decisionHook = planReviewDecisionHook.create({
+      const decisionHook = planReviewDecisionHook.create({
         token: planReviewHookToken(input.workflowInvocationId, planRevision),
         metadata: {
           workflowId: WORKFLOW_ID,
@@ -51,59 +51,63 @@ export async function plannerOrchestratorWorkflow(
           planRevision,
         },
       });
-      const conflict = await decisionHook.getConflict();
-      if (conflict !== null) throw new Error(`计划审核Hook已被Workflow Run ${conflict.runId}占用`);
+      try {
+        const conflict = await decisionHook.getConflict();
+        if (conflict !== null) throw new Error(`计划审核Hook已被Workflow Run ${conflict.runId}占用`);
 
-      const review = await publishOrchestrationPlanReviewStep({
-        ...common,
-        sessionId: initial.sessionId,
-        planRevision,
-        plan,
-        planEntryId,
-        readiness,
-        blockingQuestions,
-      });
-      const decision = await decisionHook;
-      assertPlanReviewDecisionMatches(decision, review);
-      const recordedDecision = await recordOrchestrationPlanReviewDecisionStep({
-        ...common,
-        sessionId: initial.sessionId,
-        decision,
-      });
-
-      if (decision.kind === "approve") {
-        return await runWorkflowDelegationStep({
+        const review = await publishOrchestrationPlanReviewStep({
           ...common,
           sessionId: initial.sessionId,
-          plan,
           planRevision,
-          inputEntryIds: [
-            initial.userEntryId,
-            ...feedbackEntryIds,
-            planEntryId,
-            recordedDecision.messageEntryId,
-          ],
-          agent: coordinatorAgent,
+          plan,
+          planEntryId,
+          readiness,
+          blockingQuestions,
         });
+        const decision = await decisionHook;
+        assertPlanReviewDecisionMatches(decision, review);
+        const recordedDecision = await recordOrchestrationPlanReviewDecisionStep({
+          ...common,
+          sessionId: initial.sessionId,
+          decision,
+        });
+
+        if (decision.kind === "approve") {
+          return await runWorkflowDelegationStep({
+            ...common,
+            sessionId: initial.sessionId,
+            plan,
+            planRevision,
+            inputEntryIds: [
+              initial.userEntryId,
+              ...feedbackEntryIds,
+              planEntryId,
+              recordedDecision.messageEntryId,
+            ],
+            agent: coordinatorAgent,
+          });
+        }
+        if (recordedDecision.feedbackEntryId === undefined) {
+          throw new Error("计划修改意见没有写入原生用户消息");
+        }
+        feedbackEntryIds.push(recordedDecision.feedbackEntryId);
+        planRevision += 1;
+        const revised = await runOrchestrationPlanningRevisionStep({
+          ...common,
+          sessionId: initial.sessionId,
+          planRevision,
+          previousPlan: plan,
+          feedback: decision.feedback,
+          inputEntryIds: [initial.userEntryId, planEntryId, recordedDecision.feedbackEntryId],
+          agent: initial.plannerAgent,
+        });
+        plan = revised.plan;
+        planEntryId = revised.planEntryId;
+        readiness = revised.readiness;
+        blockingQuestions = revised.blockingQuestions;
+      } finally {
+        decisionHook.dispose();
       }
-      if (recordedDecision.feedbackEntryId === undefined) {
-        throw new Error("计划修改意见没有写入原生用户消息");
-      }
-      feedbackEntryIds.push(recordedDecision.feedbackEntryId);
-      planRevision += 1;
-      const revised = await runOrchestrationPlanningRevisionStep({
-        ...common,
-        sessionId: initial.sessionId,
-        planRevision,
-        previousPlan: plan,
-        feedback: decision.feedback,
-        inputEntryIds: [initial.userEntryId, planEntryId, recordedDecision.feedbackEntryId],
-        agent: initial.plannerAgent,
-      });
-      plan = revised.plan;
-      planEntryId = revised.planEntryId;
-      readiness = revised.readiness;
-      blockingQuestions = revised.blockingQuestions;
     }
   } finally {
     if (input.sessionId !== undefined) endSessionExecution(input.sessionId, input.workflowInvocationId);

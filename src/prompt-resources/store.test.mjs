@@ -215,13 +215,13 @@ test("built-in rules and experiences are seeded once into the Personal Prompt li
   const experience = await firstStore.get(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID);
   assert.equal(experience?.kind, "experience");
   assert.equal(experience?.status, "active");
-  assert.equal(experience?.revision, 4);
-  assert.match(experience?.content ?? "", /Step复用与Registry依赖/);
+  assert.equal(experience?.revision, 5);
+  assert.match(experience?.content ?? "", /Node\.js 22\.19\.0/);
 
   const secondStore = await getPromptResourceStore({ type: "personal" }, chatHome);
   assert.equal(
     (await secondStore.history(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID)).length,
-    4,
+    5,
   );
   const plannerExperience = await secondStore.get(PLANNER_READINESS_CONTRACT_EXPERIENCE_ID);
   assert.equal(plannerExperience?.kind, "experience");
@@ -247,7 +247,7 @@ test("a built-in experience upgrades only while its stored revision prefix is un
 
   await store.ensureDocuments([{ ...builtIn, revisions: [builtIn.revisions[0]] }]);
   const upgradedStore = await getPromptResourceStore({ type: "personal" }, chatHome);
-  assert.equal((await upgradedStore.get(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID))?.revision, 4);
+  assert.equal((await upgradedStore.get(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID))?.revision, 5);
 
   const customRoot = path.join(root, "custom-prompt-resources");
   const customStore = new PromptResourceStore(customRoot);

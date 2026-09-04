@@ -1203,12 +1203,12 @@ test("Prompt resource production API is read-only and target-aware", async () =>
   assert.deepEqual((await historyResponse.json()).revisions.map((item) => item.revision), [1]);
 
   const builtInResponse = await authenticatedFetch(
-    `/api/prompt-resources?projectId=${projectId}&target=personal&kind=experience&q=Pi+SDK&status=all`,
+    `/api/prompt-resources?projectId=${projectId}&target=personal&kind=experience&q=22.19.0&status=all`,
   );
   assert.equal(builtInResponse.status, 200);
   const builtIns = (await builtInResponse.json()).resources;
   assert.deepEqual(builtIns.map((item) => item.id), ["workflow-runtime-artifact-validation"]);
-  assert.equal(builtIns[0].revision, 4);
+  assert.equal(builtIns[0].revision, 5);
   assert.equal(builtIns[0].kind, "experience");
   assert.deepEqual(builtIns[0].target, { type: "personal" });
 
