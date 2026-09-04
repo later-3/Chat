@@ -71,8 +71,9 @@ test("server and Cloudflare examples expose only the intended Chat origin", () =
   assert.match(chatctl, /env -i/);
   assert.match(chatctl, /\{\"ok\":true,\"service\":\"chat\"\}/);
   assert.match(chatctl, /chmod -R u=rwX,g=rX,o=/);
-  assert.match(packageJson.scripts["pi:prepare"], /pi:hydrate-model-data/);
-  assert.match(packageJson.scripts["pi:hydrate-model-data"], /hydrate:model-data/);
+  assert.match(packageJson.scripts["pi:prepare"], /pi:restore-model-data/);
+  assert.doesNotMatch(packageJson.scripts["pi:prepare"], /hydrate:model-data/);
+  assert.match(packageJson.scripts["pi:restore-model-data"], /restore:model-data/);
   assert.equal(deviceDirectoryExample.version, 1);
   assert.deepEqual(Object.keys(deviceDirectoryExample.devices[0]).sort(), ["id", "name", "url"]);
   assert.match(deployment, /\$CHAT_HOME\/devices\.json/);

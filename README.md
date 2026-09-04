@@ -117,7 +117,7 @@ pnpm pi:prepare
 pnpm install --frozen-lockfile
 ```
 
-`pnpm pi:prepare`先以Pi自己的锁文件安装依赖，再从Pi配置的公开模型目录生成本地Provider数据，最后离线构建`pi/packages/*/dist`。首次准备需要访问模型目录；生成的数据位于Pi忽略的`packages/ai/src/providers/data/`，不提交Git。Chat运行时从构建产物加载代码，source map会把VS Code断点映射回`pi/packages/*/src`。
+`pnpm pi:prepare`先以Pi自己的锁文件安装依赖，再通过Pi提供的单一入口下载并校验固定Release模型快照，最后离线构建`pi/packages/*/dist`。模型数据位于Pi忽略的`packages/ai/src/providers/data/`，不提交Git；URL、版本和SHA256只由当前Pi Commit管理，Chat与部署脚本不复制这些常量。Chat运行时从构建产物加载代码，source map会把VS Code断点映射回`pi/packages/*/src`。
 
 在VS Code中打开Chat目录，按`F5`选择：
 
@@ -222,7 +222,7 @@ http://127.0.0.1:43112/
 ~/.chat/cache/fastembed/               可重新下载的本地Embedding模型缓存
 ```
 
-这些目录都不属于Chat源码仓库。新的Linux/systemd环境需要`root`/`sudo`以及访问GitHub、Node、npm Registry、原生包CDN和Pi模型目录的网络，但不需要GitHub账号或Submodule凭证。脚本会自动创建`chat`用户，准备固定Node/pnpm、公开Submodule、版本化构建、systemd服务和回滚点，只暂停等待用户填写Web密码、Provider凭证与默认模型；多设备目录是可选的`$CHAT_HOME/devices.json`。`WORKFLOW_LOCAL_DATA_DIR`必须位于`CHAT_HOME`内部。更新、诊断和回滚分别使用`chatctl update`、`chatctl doctor`和`chatctl rollback`。必须在目标操作系统和CPU架构上构建，不能复制其他机器的`.output`；完整步骤见[部署指南](./docs/deployment.md)。
+这些目录都不属于Chat源码仓库。新的Linux/systemd环境需要`root`/`sudo`以及访问GitHub、Node、npm Registry和依赖原生包CDN的网络，但不需要GitHub账号或Submodule凭证。脚本会自动创建`chat`用户，准备固定Node/pnpm、公开Submodule、经过SHA256校验的Pi模型快照、版本化构建、systemd服务和回滚点，只暂停等待用户填写Web密码、Provider凭证与默认模型；多设备目录是可选的`$CHAT_HOME/devices.json`。`WORKFLOW_LOCAL_DATA_DIR`必须位于`CHAT_HOME`内部。更新、诊断和回滚分别使用`chatctl update`、`chatctl doctor`和`chatctl rollback`。必须在目标操作系统和CPU架构上构建，不能复制其他机器的`.output`；完整步骤见[部署指南](./docs/deployment.md)。
 
 # 启动脚本
 ```bash

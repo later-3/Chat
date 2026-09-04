@@ -37,4 +37,4 @@ CI固定使用Ubuntu 24.04、Node.js 22.19.0和pnpm 10.13.1。缓存只包含pnp
 
 - CI不部署、不读取正式Provider密钥，也不运行付费或外部写测试。
 - 已删除的`maintenance` Workflow不恢复；依赖审计或模型目录漂移检查应在出现明确需求后单独设计。
-- `pnpm pi:prepare`目前仍会联网生成Pi模型目录。这与真实安装链一致，但受外部模型目录可用性影响；后续应优先在Pi仓库提供带Digest的可复用模型数据准备入口，再由Chat调用，避免父仓复制Pi内部版本常量。
+- `pnpm pi:prepare`通过Pi仓库的`restore:model-data`入口恢复固定模型快照；实时模型目录刷新只属于Pi维护和发布流程，不能成为Chat CI或部署的随机输入。

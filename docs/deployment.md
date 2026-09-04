@@ -30,9 +30,9 @@ Linux自动部署入口是[deploy/chatctl](../deploy/chatctl)，支持同时满�
 1. 使用`systemd`管理服务。
 2. CPU架构为`x86_64`或`aarch64`。
 3. 发行版使用`apt-get`、`dnf`或`yum`之一；其他包管理器会明确拒绝，不会猜测安装命令。
-4. 能访问GitHub公开仓库、`nodejs.org`、配置的npm Registry、依赖原生二进制包使用的下载/CDN地址，以及Pi构建所需的公开模型目录。
+4. 能访问GitHub公开仓库与Release附件、`nodejs.org`、配置的npm Registry，以及依赖原生二进制包使用的下载/CDN地址。
 
-脚本通过系统包管理器安装`ca-certificates`、`curl`、`git`、OpenSSH客户端、`xz`、C/C++编译工具、`make`、`python3`和`pkg-config`；从`nodejs.org`下载固定的Node.js `22.19.0`并用官方`SHASUMS256.txt`校验，然后通过Corepack固定使用pnpm `10.13.1`。它不会使用系统中碰巧存在的其他Node或pnpm版本。
+脚本通过系统包管理器安装`ca-certificates`、`curl`、`git`、OpenSSH客户端、`xz`、C/C++编译工具、`make`、`python3`和`pkg-config`；从`nodejs.org`下载固定的Node.js `22.19.0`并用官方`SHASUMS256.txt`校验，然后通过Corepack固定使用pnpm `10.13.1`。Pi模型目录也从Pi Commit指定的固定Release快照恢复并校验SHA256，不以实时模型目录作为部署输入。脚本不会使用系统中碰巧存在的其他Node或pnpm版本。
 
 安装仍有一类输入必须由用户提供：
 
