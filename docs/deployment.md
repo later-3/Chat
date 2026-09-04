@@ -176,7 +176,7 @@ Cloudflare → 127.0.0.1:33052 Nginx → 127.0.0.1:33051 Relay → Mac:43110
 curl --fail https://chat.ai4child.asia/api/health
 ```
 
-健康接口应返回`{"ok":true,"service":"chat"}`。随后用浏览器完成以下验收：登录、创建Session、分别运行两个Workflow、观察Thinking/工具过程、刷新后继续同一Session，以及打开“完整历史”确认`Workflow → Stage · Agent → 输入/模型思考/工具调用与输出/Agent输出`结构。
+健康接口应返回`{"ok":true,"service":"chat"}`。随后用浏览器完成以下验收：登录、创建Session、运行直接执行和规划执行，并让Planner Orchestrator在计划批准后调用多个子Workflow；观察Thinking/工具过程、父子Session、刷新恢复和“完整历史”中的`Workflow → Stage · Agent → 输入/模型思考/工具调用与输出/Agent输出`结构。
 
 浏览器打开该域名后应进入Chat登录页；登录后可以安装为PWA。Android Chrome使用“安装应用”，iOS Safari使用“添加到主屏幕”。
 

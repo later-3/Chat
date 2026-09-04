@@ -15,6 +15,7 @@ import {
   appendChatWorkflowAgentInput,
   appendChatWorkflowStage,
 } from "./workflows/workflow-stage.ts";
+import { appendChatWorkflowDelegationOrigin } from "./workflows/workflow-call-state.ts";
 import { setChatWorkflowAgentPromptResources } from "./workflows/workflow-configuration.ts";
 import { appendChatPromptResourceProposal } from "./workflows/prompt-resource-proposal.ts";
 import {
@@ -32,6 +33,53 @@ function userEntry(id, parentId, content) {
     message: { role: "user", content },
   };
 }
+
+test("a delegated task stays a native User message with projected Workflow Agent authorship", () => {
+  const manager = SessionManager.inMemory("/workspace");
+  appendChatWorkflowDelegationOrigin(manager, {
+    schemaVersion: 1,
+    callId: "call-1",
+    source: {
+      sessionId: "parent-session",
+      workflowId: "planner-orchestrator",
+      workflowInvocationId: "parent-invocation",
+      stageId: "delegate",
+      agentId: "coordinator",
+    },
+    target: {
+      sessionId: manager.getSessionId(),
+      workflowId: "memory",
+      workflowInvocationId: "child-invocation",
+    },
+  });
+  appendChatWorkflowStage(manager, {
+    invocationId: "child-invocation",
+    workflowId: "memory",
+    stageId: "manage",
+    agentId: "memory-agent",
+  });
+  const userEntryId = manager.appendMessage({
+    role: "user",
+    content: "read the relevant memory",
+    timestamp: 1,
+  });
+
+  const projected = projectSessionContext(manager.getEntries());
+  assert.equal(projected.messages[0].role, "user");
+  assert.equal(projected.messages[0].content, "read the relevant memory");
+  assert.deepEqual(projected.messages[0].chatWorkflow, {
+    invocationId: "parent-invocation",
+    workflowId: "planner-orchestrator",
+    stageId: "delegate",
+    agentId: "coordinator",
+  });
+  assert.deepEqual(projected.entryIds, [userEntryId]);
+  assert.deepEqual(manager.buildSessionContext().messages, [{
+    role: "user",
+    content: "read the relevant memory",
+    timestamp: 1,
+  }]);
+});
 
 function assistantEntry(id, parentId, content) {
   return {

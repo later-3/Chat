@@ -26,6 +26,9 @@ export async function runPiCodingAgentPromptStep(
     ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),
     ...(input.defaultAgentConfigs === undefined ? {} : { defaults: input.defaultAgentConfigs }),
     ...(input.agentConfigs === undefined ? {} : { adjustments: input.agentConfigs }),
+    ...(input.delegatedByAgentId === undefined
+      ? {}
+      : { actor: "agent" as const, actorAgentId: input.delegatedByAgentId }),
   });
   appendChatWorkflowStage(chatSession.manager, {
     invocationId: input.workflowInvocationId,

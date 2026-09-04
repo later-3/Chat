@@ -27,7 +27,7 @@ Node 在 Workflow/Step 模块装载阶段抛出 `ERR_IMPORT_ATTRIBUTE_MISSING`�
 
 修复 JSON 后，真实 `nitro dev` Run 又暴露了下一层问题：日志已经出现`[pi] step starting`和`creating AgentSession`，但`createWorkflowAgentSession()`读取被错误建模成全局运行时资源的`chat-architecture/SKILL.md`失败。开发 Step bundle 中的`nitro/storage`是stub，Pi AgentSession和模型仍未真正启动。
 
-这里包含两个不同问题：`chat-architecture`本来就是Chat Project的`.chat/skills`资源，不应打包、物化或全局注入；真正由Workflow实现拥有的`memory`和`rule-library`私有Skill，才由Backend控制面在接受Workflow前准备到运行目录，Workflow Step不依赖Nitro宿主资源API。
+这里包含两个不同问题：`chat-architecture`本来就是Chat Project的`.chat/skills`资源，不应打包、物化或全局注入；真正由Workflow实现拥有的`memory`、`rule-library`和后来新增的`workflow-delegation`私有Skill，才由Backend控制面在接受Workflow前准备到运行目录，Workflow Step不依赖Nitro宿主资源API。
 
 ## 为什么原验证没有发现
 
@@ -49,7 +49,7 @@ Node 在 Workflow/Step 模块装载阶段抛出 `ERR_IMPORT_ATTRIBUTE_MISSING`�
 - 后端测试调用 Nitro `LocalBuilder(dev=true)` 构建真实开发 Step bundle，断言 5 份 Agent JSON 已内联，并让 Node 实际加载生成的 `steps.mjs`。
 - Built Server 测试启动生产 `.output`，提交使用本地假模型的真实 Workflow Run 并等待 `completed`。
 - `pnpm test:dev`使用隔离Nitro buildDir、Chat Home、Project和本地假模型启动真实`nitro dev`，通过`POST /runs`验证`Frontend合同 → Workflow → Agent节点 → Pi SDK → 模型 → completed`。
-- Backend初始化测试断言2个Workflow私有Skill在Workflow执行前已经准备好，并断言`chat-architecture`不会出现在运行目录。
+- Backend初始化测试断言3个Workflow私有Skill在Workflow执行前已经准备好，并断言`chat-architecture`不会出现在运行目录。
 - Prompt 资源测试断言本案例作为 Personal `experience` 自动归档且只初始化一次。
 - 内置案例升级只在磁盘历史仍与产品版本前缀完全一致时追加；用户修改或归档过的资源不会被覆盖。
 - Agent 执行测试选择本案例，断言内容进入 `<chat_agent_custom_instructions>`。

@@ -111,11 +111,11 @@ Agent配置被分成两个明确模块：
 | 工具策略 | 使用Pi默认工具、不启用工具或按名称选择/排除 |
 | 资源策略 | `inherit`继承Pi默认发现；`explicit`只加载选中的Skill、Extension和Plugin |
 
-`createWorkflowAgentSession()`把上述声明转换为Pi的`SettingsManager`、`DefaultResourceLoader`和`createAgentSession()`参数。所有会说话的Workflow Agent都使用同一个持久Chat Session；Planner计划也作为原生Assistant消息保存。各Agent需要不同模型上下文时使用Stage级Context Transform，不复制或改写持久化话语角色。
+`createWorkflowAgentSession()`把上述声明转换为Pi的`SettingsManager`、`DefaultResourceLoader`和`createAgentSession()`参数。同一父Workflow中的说话Agent使用同一个持久Chat Session；Planner计划也作为原生Assistant消息保存。只有显式`workflow_call`会为完整子Workflow创建独立Subsession，避免并行写同一Pi JSONL。各Agent需要不同模型上下文时使用Stage级Context Transform，不复制或改写持久化话语角色。
 
 `createWorkflowAgentSession()`是执行与检查共用的唯一Pi装配入口。`agent-inspection.ts`创建不发送Prompt的内存AgentSession，并从真实ResourceLoader和AgentSession返回最终Prompt、Model、Thinking、Tools、Skill内容、Extension能力、Plugin资源和诊断；浏览器不自行推导生效结果。
 
-## 6. 四个Workflow
+## 6. 五个Workflow
 
 ### 6.1 直接执行
 
@@ -131,13 +131,23 @@ Agent配置被分成两个明确模块：
 
 补充信息或拒绝后，同一Planner配置接收原始请求、上一版完整文档和原生用户消息，生成下一版并再次进入审核。Planner不得把开始执行前的需求澄清下放给Executor；能由工具调查的事实进入执行步骤，只有用户能决定的阻塞信息先在Review Task闭环。计划和审核话语使用Pi原生MessageEntry；按钮批准规范化为原生User Message。审核节点身份、就绪状态、阻塞问题、版本、摘要、决定和Agent输入来源使用CustomEntry，决定引用对应消息，输入来源只保存`inputEntryIds`。批准后Executor通过隐藏CustomMessage接收最终任务书，不重复写入原始用户请求，也不以隐藏交接取代审核消息。
 
-### 6.3 Memory
+### 6.3 Planner Orchestrator
+
+这个Workflow复用Planner与耐久审核合同，但批准后进入`coordinator` Agent节点。Coordinator装配私有`workflow-delegation` Skill和Chat系统`workflow_call` Tool，不拥有Shell或文件工具。Tool通过统一系统Tool Registry按Agent配置解析，只允许调用Manifest显式声明`agentCallable: true`的目标，并拒绝超过4层的递归；`planReview`只决定目标是否会在自己的Session等待人，不影响可调用资格。同一个Workflow定义可以启动新的子Session与子Run，这是直接执行Workflow继续拆分为同类执行子任务的基础能力。
+
+父Agent先用`action=describe`读取目标Workflow中每个Child Agent实际可选的Tool和Skill；随后`action=start`必须为每个Child Agent提交明确选择。Backend只接受能力名称，再通过目标Workflow的真实检查与装配入口解析为Tool地址和资源路径，冻结为本轮`agentConfigs`，不读取目标在当前Project中保存的默认选择作为隐式授权。Tool Call通过中央Registry和`startChatWorkflow()`启动完整目标Workflow；目标Workflow仍提供Node、Agent身份、Prompt和Stage结构，任务上下文及本次可用Tool/Skill由父Agent的Tool参数决定。
+
+每个子调用拥有独立Session、Run和Invocation。创建Child Session时复用Pi `SessionManager.newSession({ parentSession })`记录原生父子关系，但不使用复制历史的Fork API，因此Child模型上下文不会自动包含父对话。父Session的原生Tool Call保存任务书和能力选择，`chat.workflow_call`保存调用终态；Child Session的原生User消息保存任务书，`chat.workflow_turn_configuration`保存解析后的冻结能力，`chat.session_relation`保存稳定的Chat调用ID和层级，`chat.workflow_delegation_origin`保存父Workflow Agent作者身份。委派任务对Child Pi Agent仍是标准`role=user`输入；Chat只在读模型和完整历史中附加“委派任务 · 来源Workflow/Agent”展示，不改写MessageEntry或模型上下文。等待窗口到期只返回可恢复的`running`句柄；同一父Agent随后可按`callId`反复`wait`或主动`cancel`，且不会重复创建子调用。每个父Session最多8个活跃调用，但终态后可继续启动，因而限制资源峰值而不限制Agent Loop总轮数。
+
+Session读模型从上述关系生成`workflowCallStatistics + workflowCallTree`。父会话使用Pi原生Tool Call/Result展示调用，不增加悬浮或常驻看护条；现有Session侧栏按`parentSessionId`递归展示Child Session。审核型子Workflow等待人时，Session列表从耐久审核记录投影轻量警示色、旋转动效和祖先嵌套数量；用户进入该Child Session后使用普通审核卡片确认。Backend控制接口继续复用Tool取消函数做归属校验和Runtime取消，不建立独立的前端调度控制面。父Session完整历史保留调用关系，子Agent的完整执行历史仍归属独立Child Session。
+
+### 6.4 Memory
 
 Memory Workflow拥有一个`memory-agent`和一个Agent Node。`memory_search`与`memory_record`属于Chat系统内置Tool，可由任意Workflow Agent按限定地址加载；Memory Agent另外拥有list/get/update/delete四个管理Tool。所有Tool仍使用Pi `ToolDefinition`和`customTools`接口，`MemoryService`、Session、Workflow Invocation、Stage、Agent和Tool Call来源由Chat公共Tool Resolver注入。
 
 Memory Skill以Agent目录中的真实`SKILL.md`作为源码事实源。开发运行时直接读取源码文件；生产构建把Markdown作为Nitro Server Asset打包，再物化到`~/.chat/runtime/skills/memory`供Pi按原生Skill路径读取。执行和检查共用同一装配函数。
 
-### 6.4 Rule Management
+### 6.5 Rule Management
 
 Rule Management Workflow拥有一个`rule-curator-agent`和一个Agent Node。Agent通过统一`prepareAgentSession`装配自己的Skill和Prompt资源Custom Tools；Tool仍是Pi原生`ToolDefinition`，没有第二套Agent或Tool运行时。
 
@@ -187,4 +197,4 @@ Workflow通过公共接口使用这些能力。只有某个Workflow特有的Stag
 5. Pi Web规则库、Agent规则选择、Agent建议来源和Session刷新恢复。
 6. Chat Home、Project Manifest/Registry、ProjectContext和按Project分区的Session与Prompt资源。
 
-下一批工作仍包括：在Pi Web中直接创建和编辑Agent配置文件、根据真实需求增加普通Task Node实例，以及补齐其他Pi Web迁移清单中的资源维护接口。
+下一批工作仍包括：在Pi Web中直接创建和编辑Agent配置文件、根据真实需求增加其他普通Task Node实例，以及补齐其他Pi Web迁移清单中的资源维护接口。

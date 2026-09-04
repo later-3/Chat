@@ -27,6 +27,9 @@ export async function runMemoryAgentStep(
     ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),
     ...(input.defaultAgentConfigs === undefined ? {} : { defaults: input.defaultAgentConfigs }),
     ...(input.agentConfigs === undefined ? {} : { adjustments: input.agentConfigs }),
+    ...(input.delegatedByAgentId === undefined
+      ? {}
+      : { actor: "agent" as const, actorAgentId: input.delegatedByAgentId }),
   });
   appendChatWorkflowStage(chatSession.manager, {
     invocationId: input.workflowInvocationId,
@@ -58,6 +61,12 @@ export async function runMemoryAgentStep(
     sessionId: chatSession.manager.getSessionId(),
     workflowInvocationId: input.workflowInvocationId,
     userPrompt: input.prompt,
+    ...(input.delegatedByAgentId === undefined
+      ? {}
+      : {
+          capabilitySource: "workflow_call" as const,
+          capabilitySelection: prepared.agentConfigs[MEMORY_AGENT.id] ?? {},
+        }),
   });
   const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,

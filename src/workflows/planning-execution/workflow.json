@@ -3,6 +3,8 @@
   "id": "planning-execution",
   "name": "规划执行",
   "description": "Planner先补齐任务理解；阻塞信息在审核Task中澄清，完整计划批准后由Pi Coding Agent按任务书执行。",
+  "agentCallable": true,
+  "planReview": true,
   "nodes": [
     {
       "kind": "agent",

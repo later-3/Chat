@@ -34,6 +34,7 @@ export async function reconcileStaleChatSessionRuns(
     await setPlanningExecutionPhase({
       projectDataDir: project.projectDataDir,
       projectId: project.projectId,
+      workflowId: planning.workflowId,
       workflowInvocationId: planning.workflowInvocationId,
       sessionId,
       phase: "failed",

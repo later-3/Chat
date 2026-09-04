@@ -75,6 +75,23 @@ const WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_V3 = [
   "本案例的机器门禁：pnpm verify固定运行test:dev；测试使用独立Nitro buildDir、Chat Home、Project和本地假模型，不访问正式模型、不污染用户数据，也不与正在运行的开发服务共享构建产物。",
 ].join("\n");
 
+const WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_V4 = [
+  "开发经验案例：Workflow Step复用与Registry依赖必须保持运行时边界",
+  "",
+  "适用场景：复用Workflow Step实现、新增prepareAgentSession或Pi Custom Tool、修改中央Workflow Registry、增加Workflow私有Skill或引入子Workflow调用时。",
+  "",
+  "已发生现象：通用规划helper作为普通export留在steps.ts后，Workflow Builder为了保留普通导出，把Pi、Mem0和Node依赖带进Workflow沙箱并产生257个构建错误。拆分后，Registry可达Tool对Registry与Chat Config的反向静态依赖又导致Nitro开发Worker报init_chat_config/init_registry is not a function。Worker启动后，未预先物化的workflow-delegation Skill在开发Step中因nitro/storage stub读取失败。",
+  "",
+  "正确姿势：",
+  "1. Workflow编排只导入Hook、纯Workflow逻辑和use step代理；被编排导入的Step模块不同时导出普通Node运行时代码。",
+  "2. 通用Step实现放入独立Node Runtime模块，由薄Step入口调用；文件系统、Pi SDK、Chat Config和执行服务不能进入Workflow沙箱图。",
+  "3. Registry可达的Agent Runtime与Tool不能反向静态导入Registry或Chat Config；目标校验和持久默认由执行Step解析后以窄接口注入。",
+  "4. Workflow私有Skill由Backend初始化在Step运行前物化；执行与Resolve仍共用同一prepareAgentSession装配。",
+  "5. 子Workflow必须用真实Pi Tool Calling验证：人工批准前0个子Session，批准后精确创建计划数量的独立Session，并校验每个Run与Invocation ID。",
+  "",
+  "本案例的机器门禁：LocalBuilder开发bundle可构建并由Node加载；三个Workflow私有Skill预先准备；Built Server验证Coordinator的Skill/Tool装配；pnpm test:dev让Coordinator同轮发出5个workflow_call并完成5个独立子Workflow。",
+].join("\n");
+
 const PLANNER_READINESS_CONTRACT_EXPERIENCE_V1 = [
   "开发经验案例：Planner必须区分任务澄清与可执行计划",
   "",
@@ -179,6 +196,24 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       }],
       author: { type: "user" },
       createdAt: "2026-08-31T23:44:00.000Z",
+    }, {
+      schemaVersion: 1,
+      id: WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID,
+      revision: 4,
+      kind: "experience",
+      title: "Workflow 构建产物必须经过真实 Runtime 验证",
+      purpose: "确保Workflow/Step、Registry、Agent Tool和私有Skill保持正确运行时边界，并用真实子Workflow拓扑验证。",
+      content: WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_V4,
+      tags: ["development", "incident", "workflow", "runtime", "build-toolchain", "dependency-boundary", "subworkflow"],
+      status: "active",
+      sources: [{
+        type: "manual",
+        entryIds: [],
+        context: "归档于 docs/development-experiences/workflow-step-runtime-boundary.md；源自2026-09-03 Workflow调用Workflow实现中的Builder、Registry初始化和私有Skill故障复盘。",
+        capturedAt: "2026-09-03T07:30:00.000Z",
+      }],
+      author: { type: "user" },
+      createdAt: "2026-09-03T07:30:00.000Z",
     }],
   },
   {

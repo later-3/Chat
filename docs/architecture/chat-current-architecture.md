@@ -39,6 +39,7 @@ Chat Nitro进程
 Vercel Workflow Runtime
   ├── minimal-pi-coding-agent
   ├── planning-execution
+  ├── planner-orchestrator
   ├── memory
   └── rule-management
           │
@@ -78,7 +79,7 @@ POST /runs { projectId, cwd, prompt, sessionId?, workflow, agentConfigs? }
   ↓
 startChatWorkflow()
   ↓
-start(minimalPiCodingAgentWorkflow | planningExecutionWorkflow | memoryWorkflow)
+start(minimalPiCodingAgentWorkflow | planningExecutionWorkflow | plannerOrchestratorWorkflow | memoryWorkflow)
   ↓
 立即返回runId、workflowInvocationId、sessionId、isNewSession
 ```
@@ -102,11 +103,12 @@ Run被接受后，浏览器立即使用返回的Session ID更新地址栏、当�
 
 ## 4. Workflow目录与选择机制
 
-当前后端注册4个Workflow：
+当前后端注册5个Workflow：
 
 ```text
 minimal-pi-coding-agent
 planning-execution
+planner-orchestrator
 memory
 rule-management
 ```
@@ -247,6 +249,26 @@ Planner确实是本轮说话的Agent，所以它的计划就是原生Assistant�
 
 完整规范和反例见[Chat Session架构](./chat-session-architecture.md)。
 
+## 7.5 规划协调与子Workflow
+
+`planner-orchestrator`复用同一套Planner就绪状态和耐久审核Hook，但批准后的执行拓扑不同：它启动一个普通Pi Coordinator AgentSession，由私有`workflow-delegation` Skill约束拆包、并行、授权和汇总方法，再通过按Agent配置装配的Chat系统`workflow_call` Tool启动完整子Workflow。
+
+每次调用先校验目标Workflow显式声明`agentCallable: true`，并拒绝超过4层的递归；人工审核型目标同样可调用，只是在自己的Child Session中等待确认。相同Workflow定义可以再次作为子Workflow启动，因为它使用新的Session、Run和Workflow Invocation，而不是在父运行实例中递归写入。父Agent先通过`describe`读取目标每个Agent可选的Tool/Skill，再在`start`中明确提交任务书和能力选择；Backend用目标Workflow的真实检查入口把名称解析为现有`AgentConfigSelection`并冻结，不把目标Project中的默认配置当成隐式授权。目标Workflow仍从中央Registry解析，并通过`startChatWorkflow()`启动。
+
+并行工作包不会共享父Pi JSONL。每个`workflow_call`预留独立Chat Subsession，并通过Pi `parentSession`建立不复制历史的原生父子谱系；父Session记录原生Tool Call/Result和`chat.workflow_call`关系状态，子Session记录原生任务/结果、冻结能力配置和`chat.session_relation`。因此5个并行任务拥有5组独立`sessionId + runId + workflowInvocationId`，同时可从父Tool参数、Child配置快照和两侧原生消息完整恢复协调过程。
+
+`workflow_call`的模型可见定义来自轻量Workflow声明目录，而不是手写目标清单。装配时只过滤未开放Agent调用的目标，并把可用Workflow的ID、名称、描述与Agent ID加入Tool描述、Prompt Snippet和参数Schema；当前Workflow自身和审核型Workflow都不会被额外排除。`describe`通过目标真实Agent检查入口列出可选Tool/Skill；执行Registry继续做相同资格校验，因此发现信息与实际权限使用同一组Backend事实。
+
+父会话只显示Pi原生`workflow_call` Tool Call/Result。Child Session通过Pi父子谱系和Chat关系进入左侧递归Session树；审核型Child到达`waiting_review`时，Session读模型从耐久记录投影待确认提示，折叠祖先聚合嵌套数量。用户打开Child Session后使用与根会话一致的审核交互，批准后同一子Run与父Tool继续推进。
+
+`workflow_call`同时提供`describe | start | wait | cancel`操作。`start`默认等待30秒，超时返回`running`句柄但不终止子Run；父Agent可凭同一个`callId`多次`wait`，或显式`cancel`。控制操作只解析当前父Session持久化的调用关系，子Run状态与结果仍从Workflow Runtime读取；因此等待超时、Runtime终态和Session可观测状态不会形成第二套执行事实。
+
+每个Project内的父Session最多同时运行8个子调用。同轮启动使用进程内的短暂预留封住首次异步写入前的竞争窗口，持久活跃数仍从父Session的`starting/running`调用状态计算；两者都不是新的调度运行时。Session详情把同一事实投影为`workflowCallStatistics.direct/tree/capacity`，支持查看当前容量、整棵调用树的终态分布、累计耗时、Subsession数和最大深度。
+
+进程中断恢复遵循Chat的Session模型：本地Runtime不承诺让被`SIGKILL`的父Step原地复活。用户或控制面停止旧父Run后，在同一Chat Session发起继续回合；新Agent可从历史Tool Result取得`callId`并恢复已持久化的子结果或取消未完成子Run。该路径不依赖旧进程内对象，也不会重建子Session。
+
+详细生命周期、失败语义和测试场景见[Chat Workflow调用Workflow设计](./chat-subworkflow-design.md)。
+
 ## 8. Memory Workflow
 
 Memory Workflow使用一个`memory-agent`：
@@ -281,6 +303,9 @@ Chat使用Pi原生`CustomEntry`保存不进入模型上下文的编排数据：
 | `chat.workflow_stage` | Workflow、Stage、Node Kind和Agent身份 | 划分执行阶段 |
 | `chat.workflow_agent_input` v2 | 原生消息`inputEntryIds` | 说明每个Agent使用哪些会话事实 |
 | `chat.plan_review*` | 审核版本、决定、摘要和消息引用 | 恢复人工审核状态 |
+| `chat.workflow_call` | 一次父Agent Tool Call对应的父/子Workflow、Run、Session和终态 | 恢复Workflow调用关系，不复制任务和结果正文 |
+| `chat.session_relation` | `callId`、父/子Session ID和调用深度 | 为Pi原生`parentSession`谱系补充稳定Chat ID与Workflow调用语义 |
+| `chat.workflow_delegation_origin` | `callId`、目标Invocation和父Workflow/Stage/Agent | 标识Child首条原生User任务的Agent作者，不修改Pi消息 |
 
 `session-read-model.ts`把Pi原生消息和Stage元数据投影成前端历史；`session-export.ts`生成按Workflow、Stage和Agent整理的完整历史。
 
@@ -295,6 +320,7 @@ Session正常JSONL位于`~/.chat/projects/<projectId>/sessions/`，移除区位�
 | Direct的Pi Coding Agent | Workflow目录内`agents/pi-coding-agent/agent.json` + `~/.chat/agent` Settings/模型/资源 + 当前可信Project资源 |
 | Planner | Workflow目录内`agents/planner/agent.json`定义替换System Prompt，并默认选择`system:tool/memory_search` |
 | Planning Executor | Workflow目录内`agents/pi-coding-agent/agent.json`定义Chat自定义指令；`context.ts`实现不可序列化的Context Transform |
+| Workflow Coordinator | `agents/coordinator/agent.json` + 私有`workflow-delegation` Skill + 按地址装配的Chat系统Tool `workflow_call`；自身无执行工具 |
 | Memory Agent | `agents/memory-agent/agent.json` + 私有Skill/管理Tool + 公共`memory_search`/`memory_record`系统Tool |
 | Rule Curator Agent | `agents/rule-curator-agent/agent.json` + 私有Skill + Pi Custom Tool运行时装配 |
 
@@ -309,7 +335,7 @@ Session正常JSONL位于`~/.chat/projects/<projectId>/sessions/`，移除区位�
 这部分只指出源码事实，不在这里直接给最终重构方案。
 
 1. Agent配置文件内容尚不能在前端创建和编辑。
-2. 普通Task Node已有Schema和框架校验，但4个现有Workflow都只有Agent Node；等真实需求出现后再增加实例。
+2. Task Node当前用于`planning-execution`和`planner-orchestrator`的人工审核；其他确定性Task仍按实际需求增加，不能伪装成Agent。
 3. Context Transform和宿主依赖Tool仍由Workflow代码注册；配置只能引用稳定名称，不能序列化函数。
 4. Catalog表示已安装/可选择资源，Resolve表示当前Agent实际生效能力；前端仍可进一步强化这两个状态的视觉区分。
 5. 运行中Steering、Follow-up、Extension交互式UI和Session Fork依赖持续运行控制面，当前一次一Run的接口尚未支持。
@@ -325,6 +351,7 @@ Session正常JSONL位于`~/.chat/projects/<projectId>/sessions/`，移除区位�
 | Chat Session所有权 | `src/chat-session.ts` |
 | 直接执行 | `src/workflows/minimal-pi-coding-agent/` |
 | Planner与Executor | `src/workflows/planning-execution/` |
+| Planner、Coordinator与子Workflow调用 | `src/workflows/planner-orchestrator/`、`src/workflows/workflow-call*.ts` |
 | Workflow框架与Manifest | `src/workflows/framework.ts`、各Workflow的`workflow.json` |
 | Agent配置与装配 | `src/workflows/agent-definition.ts`、各Workflow的`agents/<id>/agent.json` |
 | 分层配置 | `src/chat-config.ts`、`src/routes/api/chat-config.*.ts` |

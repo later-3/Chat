@@ -17,18 +17,24 @@ Chat/frontend（Pi Web纯浏览器前端子模块）
           ├── Planning + Execution
                 ├── Planner：无工具的Pi AgentSession，计划原生写入当前Chat Session
                 └── Executor：Pi Coding Agent，继续当前Chat Session
+          ├── Planner Orchestrator
+                ├── Planner + 人工审核：冻结获批计划revision
+                └── Coordinator：通过Pi Skill/Tool调用多个独立子Workflow Session
           ├── Memory与Rule Management Workflow
           ├── 配置与全局资源 → ~/.chat/agent
           ├── Workflow运行数据 → ~/.chat/runtime/workflow-data
           └── Session → ~/.chat/projects/<projectId>/sessions
 ```
 
-前端可选择四个Workflow：
+前端可选择五个Workflow：
 
 - `minimal-pi-coding-agent`（直接执行）：一个Step直接运行Pi Coding Agent。
 - `planning-execution`（规划执行）：固定为`Planner Agent → 人工审核Task → Pi Coding Agent`。Planner先完整理解背景、目标、交付物、范围、约束、授权边界和验收标准；存在用户专属阻塞决策时只允许补充信息并继续规划，计划就绪后才允许批准。补充或拒绝时，用户原文、上一版完整文档和原始请求返回同一个Planner配置；批准后Executor接收带批准版本、最终计划和执行契约的任务书。全程只有一个持久Chat Session，计划、审核决定、Agent输入来源和Stage身份都作为可恢复事实记录其中。
+- `planner-orchestrator`（规划协调）：`Planner Agent → 人工审核Task → Workflow Coordinator`。批准后Coordinator按`workflow-delegation` Skill通过Pi `workflow_call` Tool把独立工作包并行交给多个完整Workflow；调用前先读取目标各Agent可选的Tool/Skill，调用时由父Agent明确选择。每个子调用使用独立Pi Subsession并建立原生父子关系，但不复制父对话；父Session保留Tool Call/Result和调用终态，Child Session保留任务、冻结能力配置与完整执行历史。
 - `memory`：通过普通Workflow Agent和原生Pi Tool管理个人或指定Project Memory。
 - `rule-management`：通过普通Workflow Agent管理规则与经验Prompt资源及采用建议。
+
+`workflow_call`是按Agent配置装配的通用Pi Tool，不限于Coordinator；Workflow只要声明`agentCallable: true`就可作为目标，包括当前Workflow自身和需要人工审核的Workflow。父会话按普通Tool Call展示，Child Session在左侧递归会话树中打开；若Child等待审核，侧栏显示可恢复的待确认提示，用户进入该Session后按普通会话完成确认。
 
 Chat还会把已复盘且具有通用价值的开发问题归档为Personal `experience` Prompt资源。前端从现有规则与经验库自动发现；用户可在Workflow Agent配置中勾选，选中内容按统一装配路径进入Agent自定义System Prompt区域。案例原文与回归要求见[开发经验案例](./docs/development-experiences/README.md)。
 
@@ -47,6 +53,7 @@ Chat/
 ├── src/workflows/
 │   ├── minimal-pi-coding-agent/  直接执行Workflow模块
 │   ├── planning-execution/       规划执行Workflow模块
+│   ├── planner-orchestrator/      规划、审核和子Workflow协调模块
 │   ├── registry.ts               后端Workflow注册事实源
 │   ├── agent-config.ts           Agent配置格式与校验
 │   ├── agent-config-loader.ts    配置文件读取、合并与路径解析

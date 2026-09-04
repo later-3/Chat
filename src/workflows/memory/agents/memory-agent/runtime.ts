@@ -32,8 +32,14 @@ export async function prepareMemoryAgentSession(
   const skillPath = await ensureMemorySkill(paths.runtimeDir);
   const skillBody = stripFrontmatter(await readFile(skillPath, "utf8")).trim();
   const projectId = context.projectId ?? context.cwd;
+  const callerControlsCapabilities = context.capabilitySource === "workflow_call";
+  const selectedResources = context.capabilitySelection?.resources;
+  const memorySkillSelected = !callerControlsCapabilities
+    || selectedResources?.mode === "inherit"
+    || selectedResources?.skillPaths.includes(skillPath) === true;
+  const baseContextTransform = stripLegacyPlanningHandoffs;
   return {
-    additionalSkillPaths: [skillPath],
+    ...(memorySkillSelected ? { additionalSkillPaths: [skillPath] } : {}),
     customTools: createMemoryManagementTools({
       manager: context.purpose === "execution"
         ? getMemoryStoreManager(paths.root)
@@ -45,19 +51,21 @@ export async function prepareMemoryAgentSession(
       stageId: "manage",
       agentId: MEMORY_AGENT.id,
     }),
-    transformContext: (messages) => injectInstructionBeforeLatestUser(
-      stripLegacyPlanningHandoffs(messages),
-      {
-        customType: "chat.memory_skill_context",
-        details: { workflowId: context.workflowId, invocationId: context.workflowInvocationId },
-        content: [
-          `<skill name="memory" location="${skillPath}">`,
-          `References are relative to ${dirname(skillPath)}.`,
-          "",
-          skillBody,
-          "</skill>",
-        ].join("\n"),
-      },
-    ),
+    transformContext: memorySkillSelected
+      ? (messages) => injectInstructionBeforeLatestUser(
+          baseContextTransform(messages),
+          {
+            customType: "chat.memory_skill_context",
+            details: { workflowId: context.workflowId, invocationId: context.workflowInvocationId },
+            content: [
+              `<skill name="memory" location="${skillPath}">`,
+              `References are relative to ${dirname(skillPath)}.`,
+              "",
+              skillBody,
+              "</skill>",
+            ].join("\n"),
+          },
+        )
+      : baseContextTransform,
   };
 }

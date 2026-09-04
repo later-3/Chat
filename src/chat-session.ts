@@ -26,6 +26,11 @@ export interface ChatSession {
   readonly projectContext?: ChatProjectContext;
 }
 
+export interface ReserveChatSessionOptions {
+  /** Establishes Pi-native Session lineage without copying any parent entries. */
+  readonly parentSessionManager?: SessionManager;
+}
+
 /**
  * Allocates the durable Pi Session ID for a conversation before its first
  * Workflow starts. This is the HTTP acceptance boundary used by every Chat
@@ -34,11 +39,24 @@ export interface ChatSession {
 export async function reserveChatSession(
   input: ChatSessionInput,
   initialDisplayName?: string,
+  options: ReserveChatSessionOptions = {},
 ): Promise<ChatSession> {
   if (input.sessionId !== undefined) {
     throw new Error("预创建Session时不能提供sessionId");
   }
   const session = await openChatSession(input);
+  if (options.parentSessionManager !== undefined) {
+    const parent = options.parentSessionManager;
+    const parentFile = parent.getSessionFile();
+    if (!parent.isPersisted() || parentFile === undefined) {
+      throw new Error("父Session必须已经持久化才能创建Child Session");
+    }
+    if (resolve(parent.getCwd()) !== session.cwd
+      || resolve(parent.getSessionDir()) !== resolve(session.sessionDir)) {
+      throw new Error("父子Session必须属于同一个Project和工作目录");
+    }
+    session.manager.newSession({ parentSession: parentFile });
+  }
   const normalizedDisplayName = initialDisplayName?.replace(/\s+/g, " ").trim();
   if (normalizedDisplayName !== undefined && normalizedDisplayName !== "") {
     session.manager.appendSessionInfo(Array.from(normalizedDisplayName).slice(0, 50).join(""));

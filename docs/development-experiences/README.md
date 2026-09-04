@@ -13,4 +13,5 @@
 当前案例：
 
 - [Workflow 开发 Step 产物外置 Agent JSON](./workflow-builder-json-import-attribute.md)
+- [Workflow Step复用与Registry依赖必须保持运行时边界](./workflow-step-runtime-boundary.md)
 - [Planner 未区分任务澄清与可执行计划](./planner-readiness-contract.md)

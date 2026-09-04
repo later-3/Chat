@@ -10,7 +10,7 @@ const RUN_RECORD_SCHEMA_VERSION = 1;
 
 export interface ChatPlanReview extends PlanReviewReference {
   readonly schemaVersion: 1;
-  readonly workflowId: "planning-execution";
+  readonly workflowId: string;
   readonly stageId: "review";
   readonly sessionId: string;
   readonly planEntryId: string;
@@ -22,7 +22,7 @@ export interface ChatPlanReview extends PlanReviewReference {
 
 export type ChatPlanReviewDecisionEntry = PlanReviewDecision & {
   readonly schemaVersion: 1 | 2 | 3;
-  readonly workflowId: "planning-execution";
+  readonly workflowId: string;
   readonly stageId: "review";
   /** Native user MessageEntry containing request-revision feedback (schema v2). */
   readonly feedbackEntryId?: string;
@@ -45,7 +45,7 @@ export type PlanningExecutionPhase =
 export interface PlanningExecutionRunRecord {
   readonly schemaVersion: typeof RUN_RECORD_SCHEMA_VERSION;
   readonly projectId: string;
-  readonly workflowId: "planning-execution";
+  readonly workflowId: string;
   readonly workflowInvocationId: string;
   readonly runId?: string;
   readonly sessionId?: string;
@@ -58,18 +58,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function reviewRunDir(projectDataDir: string): string {
-  return resolve(projectDataDir, "workflow-runs", "planning-execution");
+function requireWorkflowId(workflowId: string): string {
+  if (!/^[A-Za-z0-9:_-]+$/.test(workflowId)) throw new Error("Workflow ID无效");
+  return workflowId;
 }
 
-function recordPath(projectDataDir: string, workflowInvocationId: string): string {
+function reviewRunsRoot(projectDataDir: string): string {
+  return resolve(projectDataDir, "workflow-runs");
+}
+
+function reviewRunDir(projectDataDir: string, workflowId: string): string {
+  return resolve(reviewRunsRoot(projectDataDir), requireWorkflowId(workflowId));
+}
+
+function recordPath(projectDataDir: string, workflowId: string, workflowInvocationId: string): string {
   if (!/^[A-Za-z0-9:_-]+$/.test(workflowInvocationId)) throw new Error("Workflow Invocation ID无效");
-  return resolve(reviewRunDir(projectDataDir), `${workflowInvocationId}.json`);
+  return resolve(reviewRunDir(projectDataDir, workflowId), `${workflowInvocationId}.json`);
 }
 
 function parseRunRecord(value: unknown): PlanningExecutionRunRecord {
   if (!isRecord(value) || value.schemaVersion !== RUN_RECORD_SCHEMA_VERSION
-    || value.workflowId !== "planning-execution" || typeof value.projectId !== "string"
+    || typeof value.workflowId !== "string" || value.workflowId.trim() === "" || typeof value.projectId !== "string"
     || typeof value.workflowInvocationId !== "string" || typeof value.phase !== "string"
     || typeof value.updatedAt !== "string") {
     throw new Error("规划执行Run记录无效");
@@ -96,7 +105,7 @@ function parseRunRecord(value: unknown): PlanningExecutionRunRecord {
   return {
     schemaVersion: RUN_RECORD_SCHEMA_VERSION,
     projectId: value.projectId,
-    workflowId: "planning-execution",
+    workflowId: value.workflowId,
     workflowInvocationId: value.workflowInvocationId,
     ...(value.runId === undefined ? {} : { runId: value.runId }),
     ...(value.sessionId === undefined ? {} : { sessionId: value.sessionId }),
@@ -132,10 +141,11 @@ const writes = new Map<string, Promise<PlanningExecutionRunRecord>>();
 
 async function updateRunRecord(
   projectDataDir: string,
+  workflowId: string,
   workflowInvocationId: string,
   update: (current: PlanningExecutionRunRecord | undefined) => PlanningExecutionRunRecord,
 ): Promise<PlanningExecutionRunRecord> {
-  const path = recordPath(projectDataDir, workflowInvocationId);
+  const path = recordPath(projectDataDir, workflowId, workflowInvocationId);
   const previous = writes.get(path) ?? Promise.resolve(undefined);
   const current = previous.catch(() => undefined).then(async () => {
     const next = update(await readRunRecord(path));
@@ -154,15 +164,17 @@ export async function bindPlanningExecutionRun(input: {
   readonly projectDataDir: string;
   readonly projectId: string;
   readonly workflowInvocationId: string;
+  readonly workflowId?: string;
   readonly runId: string;
   readonly sessionId?: string;
 }): Promise<PlanningExecutionRunRecord> {
-  return updateRunRecord(input.projectDataDir, input.workflowInvocationId, (existing) => {
+  const workflowId = input.workflowId ?? "planning-execution";
+  return updateRunRecord(input.projectDataDir, workflowId, input.workflowInvocationId, (existing) => {
     const sessionId = input.sessionId ?? existing?.sessionId;
     return {
       schemaVersion: RUN_RECORD_SCHEMA_VERSION,
       projectId: input.projectId,
-      workflowId: "planning-execution",
+      workflowId,
       workflowInvocationId: input.workflowInvocationId,
       runId: input.runId,
       ...(sessionId === undefined ? {} : { sessionId }),
@@ -177,17 +189,19 @@ export async function setPlanningExecutionPhase(input: {
   readonly projectDataDir: string;
   readonly projectId: string;
   readonly workflowInvocationId: string;
+  readonly workflowId?: string;
   readonly sessionId?: string;
   readonly phase: Exclude<PlanningExecutionPhase, "waiting_review">;
 }): Promise<PlanningExecutionRunRecord> {
-  return updateRunRecord(input.projectDataDir, input.workflowInvocationId, (existing) => {
+  const workflowId = input.workflowId ?? "planning-execution";
+  return updateRunRecord(input.projectDataDir, workflowId, input.workflowInvocationId, (existing) => {
     if (existing !== undefined && isTerminalPlanningExecutionPhase(existing.phase)
       && existing.phase !== input.phase) return existing;
     const sessionId = input.sessionId ?? existing?.sessionId;
     return {
       schemaVersion: RUN_RECORD_SCHEMA_VERSION,
       projectId: input.projectId,
-      workflowId: "planning-execution",
+      workflowId,
       workflowInvocationId: input.workflowInvocationId,
       ...(existing?.runId === undefined ? {} : { runId: existing.runId }),
       ...(sessionId === undefined ? {} : { sessionId }),
@@ -202,12 +216,16 @@ export async function publishPlanReviewState(input: {
   readonly projectId: string;
   readonly review: ChatPlanReview;
 }): Promise<PlanningExecutionRunRecord> {
-  return updateRunRecord(input.projectDataDir, input.review.workflowInvocationId, (existing) => {
+  return updateRunRecord(
+    input.projectDataDir,
+    input.review.workflowId,
+    input.review.workflowInvocationId,
+    (existing) => {
     if (existing !== undefined && isTerminalPlanningExecutionPhase(existing.phase)) return existing;
     return {
       schemaVersion: RUN_RECORD_SCHEMA_VERSION,
       projectId: input.projectId,
-      workflowId: "planning-execution",
+      workflowId: input.review.workflowId,
       workflowInvocationId: input.review.workflowInvocationId,
       ...(existing?.runId === undefined ? {} : { runId: existing.runId }),
       sessionId: input.review.sessionId,
@@ -215,18 +233,61 @@ export async function publishPlanReviewState(input: {
       currentReview: input.review,
       updatedAt: new Date().toISOString(),
     };
-  });
+    },
+  );
 }
 
 export async function getPlanningExecutionRun(
   projectDataDir: string,
   workflowInvocationId: string,
+  workflowId?: string,
 ): Promise<PlanningExecutionRunRecord | undefined> {
-  return readRunRecord(recordPath(projectDataDir, workflowInvocationId));
+  if (workflowId !== undefined) {
+    return readRunRecord(recordPath(projectDataDir, workflowId, workflowInvocationId));
+  }
+  let workflowDirectories;
+  try {
+    workflowDirectories = await readdir(reviewRunsRoot(projectDataDir), { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  for (const directory of workflowDirectories) {
+    if (!directory.isDirectory()) continue;
+    const record = await readRunRecord(recordPath(projectDataDir, directory.name, workflowInvocationId));
+    if (record !== undefined) return record;
+  }
+  return undefined;
 }
 
 export function isTerminalPlanningExecutionPhase(phase: PlanningExecutionPhase): boolean {
   return phase === "completed" || phase === "failed" || phase === "cancelled";
+}
+
+/** Reads every non-terminal reviewed Workflow Run once for Session-list projections. */
+export async function listActivePlanningExecutionRuns(
+  projectDataDir: string,
+): Promise<PlanningExecutionRunRecord[]> {
+  let workflowDirectories;
+  try {
+    workflowDirectories = await readdir(reviewRunsRoot(projectDataDir), { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const records = (await Promise.all(workflowDirectories
+    .filter((directory) => directory.isDirectory())
+    .map(async (directory) => {
+      const directoryPath = reviewRunDir(projectDataDir, directory.name);
+      const names = await readdir(directoryPath);
+      return Promise.all(names
+        .filter((name) => name.endsWith(".json"))
+        .map((name) => readRunRecord(resolve(directoryPath, name))));
+    }))).flat();
+  return records
+    .filter((record): record is PlanningExecutionRunRecord => record !== undefined
+      && !isTerminalPlanningExecutionPhase(record.phase))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 /** Finds the latest non-terminal planning Run bound to one durable Chat Session. */
@@ -234,20 +295,8 @@ export async function findActivePlanningExecutionRun(
   projectDataDir: string,
   sessionId: string,
 ): Promise<PlanningExecutionRunRecord | undefined> {
-  let names: string[];
-  try {
-    names = await readdir(reviewRunDir(projectDataDir));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
-  const records = await Promise.all(names
-    .filter((name) => name.endsWith(".json"))
-    .map((name) => readRunRecord(resolve(reviewRunDir(projectDataDir), name))));
-  return records
-    .filter((record): record is PlanningExecutionRunRecord => record !== undefined
-      && record.sessionId === sessionId && !isTerminalPlanningExecutionPhase(record.phase))
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+  return (await listActivePlanningExecutionRuns(projectDataDir))
+    .find((record) => record.sessionId === sessionId);
 }
 
 export function planSha256(plan: string): string {
@@ -269,7 +318,8 @@ export function appendPlanReviewDecision(
 }
 
 function parsePlanReview(value: unknown): ChatPlanReview | undefined {
-  if (!isRecord(value) || value.schemaVersion !== 1 || value.workflowId !== "planning-execution"
+  if (!isRecord(value) || value.schemaVersion !== 1
+    || typeof value.workflowId !== "string" || value.workflowId.trim() === ""
     || value.stageId !== "review" || typeof value.reviewId !== "string"
     || typeof value.workflowInvocationId !== "string" || !Number.isSafeInteger(value.planRevision)
     || typeof value.planSha256 !== "string" || typeof value.sessionId !== "string"
@@ -286,7 +336,7 @@ function parsePlanReview(value: unknown): ChatPlanReview | undefined {
   if (readiness === "needs_clarification" && blockingQuestions.length === 0) return undefined;
   return {
     schemaVersion: 1,
-    workflowId: "planning-execution",
+    workflowId: value.workflowId,
     stageId: "review",
     reviewId: value.reviewId,
     workflowInvocationId: value.workflowInvocationId,
@@ -303,7 +353,7 @@ function parsePlanReview(value: unknown): ChatPlanReview | undefined {
 
 function decisionReviewId(value: unknown): string | undefined {
   return isRecord(value) && (value.schemaVersion === 1 || value.schemaVersion === 2 || value.schemaVersion === 3)
-    && value.workflowId === "planning-execution"
+    && typeof value.workflowId === "string" && value.workflowId.trim() !== ""
     && value.stageId === "review" && typeof value.reviewId === "string"
     ? value.reviewId
     : undefined;
@@ -311,7 +361,7 @@ function decisionReviewId(value: unknown): string | undefined {
 
 function parsePlanReviewDecisionEntry(value: unknown): ChatPlanReviewDecisionEntry | undefined {
   if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3)
-    || value.workflowId !== "planning-execution"
+    || typeof value.workflowId !== "string" || value.workflowId.trim() === ""
     || value.stageId !== "review" || (value.kind !== "approve" && value.kind !== "request_revision")
     || typeof value.reviewId !== "string" || typeof value.workflowInvocationId !== "string"
     || !Number.isSafeInteger(value.planRevision) || typeof value.planSha256 !== "string"

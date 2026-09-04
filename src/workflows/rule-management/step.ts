@@ -1,4 +1,5 @@
 import { openChatSession } from "../../chat-session.js";
+import { getStoredAgentConfigs, resolveChatConfig } from "../../chat-config.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
   createWorkflowAgentSession,
@@ -8,6 +9,7 @@ import { appendChatUserMessage } from "../session-conversation.js";
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 import { appendChatWorkflowAgentInput, appendChatWorkflowStage } from "../workflow-stage.js";
 import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
+import { getChatWorkflowDefinition } from "../registry.js";
 import { RULE_CURATOR_AGENT } from "./agents/rule-curator-agent/index.js";
 import { prepareRuleCuratorAgentSession } from "./agents/rule-curator-agent/runtime.js";
 
@@ -54,6 +56,17 @@ export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<C
     sessionId: chatSession.manager.getSessionId(),
     workflowInvocationId: input.workflowInvocationId,
     userPrompt: input.prompt,
+  }, {
+    workflowAgentExists: (workflowId, agentId) => getChatWorkflowDefinition(workflowId)
+      ?.agents.some((candidate) => candidate.id === agentId) === true,
+    loadStoredAgentConfigs: async (workflowId) => {
+      if (chatSession.projectContext === undefined) return undefined;
+      const config = (await resolveChatConfig(
+        chatSession.projectContext.projectId,
+        chatSession.projectContext.chatHome,
+      )).effective;
+      return getStoredAgentConfigs(config, workflowId);
+    },
   });
   const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,

@@ -1,11 +1,11 @@
-import manifestJson from "./workflow.json" with { type: "json" };
-import { defineChatWorkflow, parseChatWorkflowManifest } from "../framework.js";
+import { RULE_MANAGEMENT_WORKFLOW_MANIFEST } from "../catalog.js";
+import { defineChatWorkflow } from "../framework.js";
 import { RULE_CURATOR_AGENT } from "./agents/rule-curator-agent/index.js";
 import { prepareRuleCuratorAgentSession } from "./agents/rule-curator-agent/runtime.js";
 import { ruleManagementWorkflow } from "./workflow.js";
 
 export const ruleManagementWorkflowDefinition = defineChatWorkflow({
-  manifest: parseChatWorkflowManifest(manifestJson, "rule-management"),
+  manifest: RULE_MANAGEMENT_WORKFLOW_MANIFEST,
   agents: [RULE_CURATOR_AGENT],
   prepareAgentSession: prepareRuleCuratorAgentSession,
   run: ruleManagementWorkflow,
@@ -14,4 +14,3 @@ export const ruleManagementWorkflowDefinition = defineChatWorkflow({
 export { RULE_CURATOR_AGENT } from "./agents/rule-curator-agent/index.js";
 export { prepareRuleCuratorAgentSession } from "./agents/rule-curator-agent/runtime.js";
 export { ruleManagementWorkflow } from "./workflow.js";
-export { runRuleManagementStep } from "./step.js";

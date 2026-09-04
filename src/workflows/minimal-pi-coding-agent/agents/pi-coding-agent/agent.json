@@ -8,6 +8,7 @@
   },
   "customInstructions": [],
   "tools": {
-    "mode": "pi-default"
+    "mode": "pi-default",
+    "addresses": ["system:tool/workflow_call"]
   }
 }

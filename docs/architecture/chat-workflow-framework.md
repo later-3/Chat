@@ -108,7 +108,7 @@ Agent节点必须引用同一Workflow已经声明的Agent ID。框架负责：
 
 普通节点执行确定性的应用代码，例如转换输入、调用领域服务或组成阶段结果。它没有Agent ID，也不能隐式创建Pi AgentSession。需要模型能力时必须显式改为Agent节点。
 
-人工审核属于普通节点。`planning-execution`使用`plan(agent) → review(task) → execute(agent)`三个节点；审核节点通过Workflow SDK的耐久Hook挂起同一个Run。Planner输出携带`needs_clarification | ready_for_review`就绪状态：前者只能补充信息并回到Planner，后者才允许批准进入Executor。用户补充信息或要求修改时，原始需求、上一版完整文档和用户原文进入同一Planner Agent的新一轮调用；按钮批准被规范化为原生User Message，最终计划和该审核消息一起通过版本化执行任务书进入执行Agent。
+人工审核属于普通节点。Manifest使用`planReview: true`声明该Workflow采用通用计划审核合同。`planning-execution`使用`plan(agent) → review(task) → execute(agent)`，`planner-orchestrator`使用`plan(agent) → review(task) → delegate(agent)`；两者都通过Workflow SDK的耐久Hook挂起同一个Run。Planner输出携带`needs_clarification | ready_for_review`就绪状态：前者只能补充信息并回到Planner，后者才允许批准进入下游Agent。用户补充信息或要求修改时，原始需求、上一版完整文档和用户原文进入同一Planner Agent的新一轮调用；按钮批准被规范化为原生User Message，最终计划和该审核消息进入版本化下游任务书。
 
 计划和审核话语以Pi原生MessageEntry保存在同一Session中；`chat.workflow_stage`保存审核节点身份，审核请求、决定、版本绑定和消息引用以追加CustomEntry保存。每个决定必须引用它对应的原生消息。`chat.workflow_agent_input`只能保存`inputEntryIds`，不得复制`userPrompt`或上游输出正文。Run控制面只保存`runId`、Invocation、Session和当前阶段的窄绑定。浏览器刷新只能断开并重连事件流，不能隐式取消等待审核的Run；只有显式停止操作可以取消。每个决定必须绑定`reviewId + planRevision + planSha256`，旧版本、重复冲突和跨Run提交必须失败关闭。
 
@@ -149,6 +149,8 @@ export const memoryWorkflowDefinition = defineChatWorkflow({
   "id": "memory",
   "name": "长期记忆",
   "description": "由Memory Agent管理长期记忆。",
+  "agentCallable": false,
+  "planReview": false,
   "nodes": [
     {
       "kind": "agent",
@@ -167,7 +169,7 @@ export const memoryWorkflowDefinition = defineChatWorkflow({
 }
 ```
 
-`workflow.json`不包含`run`、Tool `execute()`或Context Transform等函数。
+`workflow.json`不包含`run`、Tool `execute()`或Context Transform等函数。`agentCallable`和`planReview`缺省都为`false`：前者是Agent能否通过`workflow_call`启动该Workflow的唯一显式资格门禁，后者表示该Workflow是否使用通用计划审核控制面。两者正交；审核型Workflow只要显式开放，也可以作为子Workflow并在自己的Session等待用户。
 
 ### 6.2 agent.json
 
@@ -256,6 +258,12 @@ Chat系统内置Tool是第二种来源的公共管理形式：实现与严格Man
 
 `memory_search`和`memory_record`由Chat系统Tool Registry提供，可被其他Agent显式配置；Memory list/get/update/delete与Rule Curator Tool仍是Workflow私有能力。执行与Resolve共用公共AgentSession装配和各Workflow必要的私有`prepareAgentSession`扩展。
 
+### 8.1 Workflow调用能力
+
+Workflow调用按“Skill定义方法、Tool提供动作”实现。`workflow-delegation`是Coordinator使用的Pi Skill，规定获批计划不可变、自包含任务书、依赖分批、独立任务同轮并行、失败保留和汇总证据；`workflow_call`是通过`system:tool/workflow_call`统一解析并按Agent配置装配的Chat系统Tool，使用`describe | start | wait | cancel`四个操作完成一次调用的全生命周期。`describe`返回目标每个Child Agent可选的Tool/Skill准确名称；`start`接收目标Workflow ID、父Agent编写的Prompt、每个Child Agent的明确能力选择和可选等待窗口；`wait/cancel`只接收当前父Session已有的`callId`。
+
+Tool必须从中央Registry取得目标，并校验`agentCallable`、最大深度和每父Session最多8个活跃调用；能力名称必须通过目标Workflow实际检查结果解析，不能直接接受模型提供的路径或地址。随后为目标预留独立Subsession，通过Pi `parentSession`记录不复制上下文的原生谱系，再由`startChatWorkflow()`运行完整Workflow。父Tool参数与Child冻结配置分别保留调用前后事实。等待超时只返回可恢复的`running`句柄，不取消子Run；后续等待和主动取消都通过Workflow Runtime公共Run API完成，并用父Session中的调用关系校验所有权。审核型Child在自己的Session等待人，批准后同一个子Run继续；相同Workflow定义允许创建新的子Session与子Run。Backend中断后通过同一Chat Session的新回合恢复旧`callId`，不假设本地Runtime自动续跑被杀死的Step。不能直接调用目标Agent、复用父Session并发写入、让前端维护可调用白名单，或把Workflow调用实现成第二套Agent Runtime。完整合同见[Chat Workflow调用Workflow设计](./chat-subworkflow-design.md)。
+
 ## 9. 后端与前端接口
 
 ```text
@@ -270,6 +278,8 @@ DELETE /api/workflows/:workflowId/agents/:agentId/tool-config
 GET  /api/prompt-resources
 GET  /api/prompt-resources/drafts
 GET  /api/prompt-resources/:resourceId/history
+GET  /api/sessions/:sessionId/workflow-calls
+DELETE /api/sessions/:parentSessionId/workflow-calls/:callId
 ```
 
 职责：
@@ -280,6 +290,7 @@ GET  /api/prompt-resources/:resourceId/history
 4. `resolve`使用与执行完全相同的装配路径，返回最终Prompt、Tool、Skill、Extension、模型和诊断。
 5. `tools`返回当前Project可见Tool及Workflow Agent反向使用关系；`tool-config`只修改当前Project的Agent持久Tool策略。
 6. Prompt资源HTTP接口只负责列表、搜索、草稿查看和历史读取；创建、修改、归档、Draft提交、Proposal应用与拒绝由Rule Management Workflow持续对话完成，不能增加绕过对象ID确认的写接口。
+7. `workflow-calls`从Pi Session里的调用关系生成轻量调用树和统计；取消接口复用`workflow_call`的Runtime取消实现并校验父Session归属，前端不能直接控制子`runId`。
 
 前端使用通用Workflow/Agent页面渲染这些数据。新增同类型资源不修改前端；只有框架新增资源类型或交互语义时才修改前端合同。
 
@@ -297,3 +308,4 @@ GET  /api/prompt-resources/:resourceId/history
 10. 运行`pnpm test:dev`，通过Frontend的Run合同验证`Workflow → Agent节点 → Pi SDK → 本地假模型 → completed`，并使用隔离的Build Dir与Chat Home。
 11. 运行后端测试、前端测试、类型检查、生产构建和Built Server真实Workflow Run测试。
 12. 验证Session配置隔离、本轮冻结、解析失败不落盘，以及刷新不覆盖未发送编辑。
+13. 若声明`agentCallable: true`，验证子调用使用独立Pi父子Session、不复制父上下文、父Agent明确选择每个Child Agent能力，以及深度与取消门禁；若调用其他Workflow，必须通过Pi Skill + Tool，不直接调用目标Agent或Workflow函数。

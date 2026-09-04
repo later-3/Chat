@@ -1,5 +1,5 @@
-import manifestJson from "./workflow.json" with { type: "json" };
-import { defineChatWorkflow, parseChatWorkflowManifest } from "../framework.js";
+import { MINIMAL_PI_CODING_AGENT_WORKFLOW_MANIFEST } from "../catalog.js";
+import { defineChatWorkflow } from "../framework.js";
 import { PI_CODING_AGENT } from "./agents/pi-coding-agent/index.js";
 import { minimalPiCodingAgentWorkflow } from "./workflow.js";
 
@@ -10,7 +10,7 @@ export const MINIMAL_PI_CODING_AGENT_PROMPT = `
 
 /** Complete definition exposed to Chat's Workflow registry. */
 export const minimalPiCodingAgentWorkflowDefinition = defineChatWorkflow({
-  manifest: parseChatWorkflowManifest(manifestJson, "minimal-pi-coding-agent"),
+  manifest: MINIMAL_PI_CODING_AGENT_WORKFLOW_MANIFEST,
   agents: [PI_CODING_AGENT],
   run: minimalPiCodingAgentWorkflow,
 });

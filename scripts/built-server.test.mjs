@@ -528,6 +528,24 @@ test("session list and detail come from the isolated Chat session directory", as
   const detail = await detailResponse.json();
   assert.deepEqual(detail.context.messages.map((message) => message.role), ["user", "assistant"]);
   assert.equal(detail.context.messages.length, detail.context.entryIds.length);
+  assert.deepEqual(detail.workflowCallTree, []);
+  assert.deepEqual(detail.workflowCallStatistics.capacity, { active: 0, limit: 8 });
+
+  const workflowCallsResponse = await authenticatedFetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/workflow-calls?projectId=${projectId}`,
+  );
+  assert.equal(workflowCallsResponse.status, 200, await workflowCallsResponse.clone().text());
+  assert.match(workflowCallsResponse.headers.get("cache-control") ?? "", /no-store/);
+  const workflowCalls = await workflowCallsResponse.json();
+  assert.deepEqual(workflowCalls.workflowCallTree, []);
+  assert.deepEqual(workflowCalls.workflowCallStatistics, detail.workflowCallStatistics);
+
+  const unknownCallResponse = await authenticatedFetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/workflow-calls/missing-call?projectId=${projectId}`,
+    { method: "DELETE" },
+  );
+  assert.equal(unknownCallResponse.status, 409);
+  assert.match(await unknownCallResponse.text(), /不存在Workflow调用/);
 
   const renameResponse = await authenticatedFetch(`/api/sessions/${encodeURIComponent(sessionId)}?projectId=${projectId}`, {
     method: "PATCH",
@@ -647,23 +665,32 @@ test("Workflow containers and their Agents come from the backend registry", asyn
   assert.deepEqual(body.workflows.map((workflow) => workflow.id), [
     "minimal-pi-coding-agent",
     "planning-execution",
+    "planner-orchestrator",
     "memory",
     "rule-management",
   ]);
   assert.deepEqual(body.workflows.map((workflow) => workflow.agents.map((agent) => agent.id)), [
     ["pi-coding-agent"],
     ["planner", "pi-coding-agent"],
+    ["planner", "coordinator"],
     ["memory-agent"],
     ["rule-curator-agent"],
   ]);
   assert.deepEqual(body.workflows.map((workflow) => workflow.nodes.map((node) => node.agentId)), [
     ["pi-coding-agent"],
     ["planner", undefined, "pi-coding-agent"],
+    ["planner", undefined, "coordinator"],
     ["memory-agent"],
     ["rule-curator-agent"],
   ]);
-  assert.equal(body.workflows[2].agents[0].configPath, "./agents/memory-agent/agent.json");
-  assert.equal(body.workflows[3].agents[0].configPath, "./agents/rule-curator-agent/agent.json");
+  assert.equal(body.workflows[0].agentCallable, true);
+  assert.equal(body.workflows[1].planReview, true);
+  assert.equal(body.workflows[1].agentCallable, true);
+  assert.equal(body.workflows[2].planReview, true);
+  assert.equal(body.workflows[2].agentCallable, true);
+  assert.equal(body.workflows[3].agentCallable, true);
+  assert.equal(body.workflows[3].agents[0].configPath, "./agents/memory-agent/agent.json");
+  assert.equal(body.workflows[4].agents[0].configPath, "./agents/rule-curator-agent/agent.json");
 });
 
 test("Tool catalog and Project Agent Tool policy use the production Pi assembly path", async () => {
@@ -672,7 +699,7 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
   assert.equal(catalogResponse.status, 200, JSON.stringify(catalog));
   assert.deepEqual(
     catalog.tools.filter((tool) => tool.sourceInfo.scope === "system").map((tool) => tool.address),
-    ["system:tool/memory_search", "system:tool/memory_record"],
+    ["system:tool/memory_search", "system:tool/memory_record", "system:tool/workflow_call"],
   );
   const projectTool = catalog.tools.find((tool) => tool.name === "built_project_lookup");
   assert.ok(projectTool, JSON.stringify(catalog));
@@ -1000,6 +1027,46 @@ test("Rule Curator inspection uses the unified Agent path with its Skill and Too
   assert.equal(body.tools.find((tool) => tool.name === "prompt_resource_search").sourceInfo.source, "sdk");
 });
 
+test("Workflow Coordinator inspection exposes only its private delegation Skill and Tool", async () => {
+  const response = await authenticatedFetch(
+    "/api/workflows/planner-orchestrator/agents/coordinator/resolve",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, cwd: workspace }),
+    },
+  );
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.deepEqual(body.tools.filter((tool) => tool.active).map((tool) => tool.name), ["workflow_call"]);
+  assert.deepEqual(body.skills.map((skill) => skill.name), ["workflow-delegation"]);
+  assert.match(
+    body.skills.find((skill) => skill.name === "workflow-delegation").content,
+    /Use `workflow_call` with `action=start` exactly once for each work package/,
+  );
+  assert.equal(body.tools.find((tool) => tool.name === "workflow_call").sourceInfo.source, "chat-system");
+});
+
+test("Direct Agent keeps Pi defaults and receives workflow_call from the system Tool registry", async () => {
+  const response = await authenticatedFetch(
+    "/api/workflows/minimal-pi-coding-agent/agents/pi-coding-agent/resolve",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, cwd: workspace }),
+    },
+  );
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.tools.some((tool) => tool.active && tool.name === "bash"), true);
+  const workflowCall = body.tools.find((tool) => tool.name === "workflow_call");
+  assert.equal(workflowCall.active, true);
+  assert.equal(workflowCall.address, "system:tool/workflow_call");
+  assert.equal(workflowCall.sourceInfo.source, "chat-system");
+  assert.match(body.prompt.final, /`memory` \(长期记忆\)/);
+  assert.match(body.prompt.final, /`minimal-pi-coding-agent` \(直接执行\)/);
+});
+
 test("Pi resources are served by Chat from the managed Agent directory", async () => {
   const skillsResponse = await authenticatedFetch(`/api/skills?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
   assert.equal(skillsResponse.status, 200);
@@ -1055,7 +1122,7 @@ test("Prompt resource production API is read-only and target-aware", async () =>
   assert.equal(builtInResponse.status, 200);
   const builtIns = (await builtInResponse.json()).resources;
   assert.deepEqual(builtIns.map((item) => item.id), ["workflow-runtime-artifact-validation"]);
-  assert.equal(builtIns[0].revision, 3);
+  assert.equal(builtIns[0].revision, 4);
   assert.equal(builtIns[0].kind, "experience");
   assert.deepEqual(builtIns[0].target, { type: "personal" });
 

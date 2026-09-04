@@ -4,8 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { isChatAgentContextEntry, openChatSession, reserveChatSession } from "./chat-session.ts";
-import { openProject } from "./projects/registry.ts";
+import { openProject, resolveProjectContext } from "./projects/registry.ts";
 import { listChatSessions } from "./session-read-model.ts";
+import { appendChatSubsessionRelation } from "./workflows/workflow-call-state.ts";
+import { publishPlanReviewState } from "./workflows/planning-execution/review-state.ts";
 
 async function initializeProject(base, workspace, projectId = "workspace") {
   const chatHome = path.join(base, "home");
@@ -66,6 +68,105 @@ test("a reserved Chat Session persists a prompt-derived display name before Work
   assert.equal(reopened.manager.getEntries().some((entry) => entry.type === "message"), false);
   assert.equal(summary?.name, reopened.manager.getSessionName());
   assert.equal(summary?.firstMessage, "");
+});
+
+test("Chat Session list projects an explicit Subsession relation without Pi parentSessionPath", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-subsession-relation-"));
+  t.after(() => {
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  process.chdir(base);
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace);
+  const chatHome = await initializeProject(base, workspace);
+
+  const parent = await reserveChatSession({ projectId: "workspace", cwd: workspace, chatHome }, "parent");
+  const child = await reserveChatSession({ projectId: "workspace", cwd: workspace, chatHome }, "child");
+  appendChatSubsessionRelation(child.manager, {
+    callId: "call-1",
+    parentSessionId: parent.manager.getSessionId(),
+    childSessionId: child.manager.getSessionId(),
+    depth: 1,
+    createdAt: "2026-09-02T00:00:00.000Z",
+  });
+  child.manager.flush();
+
+  const sessions = await listChatSessions("workspace", chatHome);
+  const childSummary = sessions.find((session) => session.id === child.manager.getSessionId());
+  assert.equal(childSummary?.parentSessionId, parent.manager.getSessionId());
+  assert.equal(childSummary?.parentSessionPath, undefined);
+});
+
+test("a reserved Child Session uses Pi parentSession lineage without copying parent context", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-native-subsession-"));
+  t.after(() => {
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  process.chdir(base);
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace);
+  const chatHome = await initializeProject(base, workspace);
+
+  const parent = await reserveChatSession({ projectId: "workspace", cwd: workspace, chatHome }, "parent");
+  parent.manager.appendMessage({ role: "user", content: "parent-only context", timestamp: Date.now() });
+  parent.manager.flush();
+  const child = await reserveChatSession(
+    { projectId: "workspace", cwd: workspace, chatHome },
+    "child",
+    { parentSessionManager: parent.manager },
+  );
+
+  const header = JSON.parse(fs.readFileSync(child.manager.getSessionFile(), "utf8").split("\n")[0]);
+  assert.equal(header.parentSession, parent.manager.getSessionFile());
+  assert.deepEqual(child.manager.buildSessionContext().messages, []);
+  assert.equal(
+    child.manager.getEntries().some((entry) => JSON.stringify(entry).includes("parent-only context")),
+    false,
+  );
+});
+
+test("Session list projects durable human attention for a reviewed Child Workflow", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-attention-"));
+  t.after(() => {
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  process.chdir(base);
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace);
+  const chatHome = await initializeProject(base, workspace);
+  const project = await resolveProjectContext("workspace", chatHome);
+  const child = await reserveChatSession({ projectId: "workspace", cwd: workspace, chatHome }, "child");
+  await publishPlanReviewState({
+    projectDataDir: project.projectDataDir,
+    projectId: project.projectId,
+    review: {
+      schemaVersion: 1,
+      workflowId: "planning-execution",
+      stageId: "review",
+      reviewId: "child-invocation:1",
+      workflowInvocationId: "child-invocation",
+      sessionId: child.manager.getSessionId(),
+      planRevision: 1,
+      planSha256: "hash",
+      planEntryId: "plan-entry",
+      plan: "child plan",
+      readiness: "needs_clarification",
+      blockingQuestions: ["需要补充什么？"],
+      createdAt: "2026-09-04T00:00:00.000Z",
+    },
+  });
+
+  const summary = (await listChatSessions("workspace", chatHome))
+    .find((session) => session.id === child.manager.getSessionId());
+  assert.equal(summary?.attention?.kind, "clarification");
+  assert.equal(summary?.attention?.workflowId, "planning-execution");
+  assert.equal(typeof summary?.attention?.updatedAt, "string");
 });
 
 test("Chat Session is created once and reopened by ID", { concurrency: false }, async (t) => {

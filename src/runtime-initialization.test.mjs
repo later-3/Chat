@@ -12,7 +12,7 @@ test("Backend initialization prepares only Workflow-private Skills before Workfl
 
   await ensureChatRuntimeInitialized({ projectRoot: root, chatHome });
 
-  for (const skill of ["memory", "rule-library"]) {
+  for (const skill of ["memory", "rule-library", "workflow-delegation"]) {
     const content = fs.readFileSync(
       path.join(chatHome, "runtime", "skills", skill, "SKILL.md"),
       "utf8",

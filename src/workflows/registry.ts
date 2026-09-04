@@ -6,6 +6,7 @@ import {
   planningExecutionWorkflowDefinition,
 } from "./planning-execution/index.js";
 import { ruleManagementWorkflowDefinition } from "./rule-management/index.js";
+import { plannerOrchestratorWorkflowDefinition } from "./planner-orchestrator/index.js";
 import { browserSafeWorkflowDefinition } from "./framework.js";
 import type { ChatWorkflowDefinition } from "./framework.js";
 
@@ -19,6 +20,7 @@ export type {
 export const CHAT_WORKFLOW_DEFINITIONS = [
   minimalPiCodingAgentWorkflowDefinition,
   planningExecutionWorkflowDefinition,
+  plannerOrchestratorWorkflowDefinition,
   memoryWorkflowDefinition,
   ruleManagementWorkflowDefinition,
 ] as const;

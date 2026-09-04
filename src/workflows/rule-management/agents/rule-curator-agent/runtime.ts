@@ -8,10 +8,19 @@ import { stripLegacyPlanningHandoffs } from "../../../planning-execution/context
 import { injectInstructionBeforeLatestUser } from "../../../session-conversation.js";
 import { RULE_CURATOR_AGENT } from "./index.js";
 import { ensureRuleLibrarySkill } from "./skill.js";
-import { createRuleManagementTools } from "./tools/index.js";
+import {
+  createRuleManagementTools,
+  type RuleManagementToolDependencies,
+} from "./tools/index.js";
+
+const INSPECTION_DEPENDENCIES: RuleManagementToolDependencies = {
+  workflowAgentExists: () => false,
+  loadStoredAgentConfigs: async () => undefined,
+};
 
 export async function prepareRuleCuratorAgentSession(
   context: ChatWorkflowAgentSessionContext,
+  dependencies: RuleManagementToolDependencies = INSPECTION_DEPENDENCIES,
 ): Promise<WorkflowAgentSessionExtensions> {
   if (context.workflowId !== "rule-management" || context.agentId !== RULE_CURATOR_AGENT.id) {
     throw new Error(`Rule Management Workflow不能装配Agent: ${context.workflowId}/${context.agentId}`);
@@ -30,7 +39,7 @@ export async function prepareRuleCuratorAgentSession(
       userPrompt: context.userPrompt,
       workflowId: context.workflowId,
       agentId: context.agentId,
-    }),
+    }, dependencies),
     transformContext: (messages) => injectInstructionBeforeLatestUser(
       stripLegacyPlanningHandoffs(messages),
       {

@@ -3,6 +3,7 @@
   "id": "minimal-pi-coding-agent",
   "name": "直接执行",
   "description": "使用一个Pi Coding Agent直接处理当前用户请求。",
+  "agentCallable": true,
   "nodes": [
     {
       "kind": "agent",

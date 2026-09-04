@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "workflow-call",
+  "name": "workflow_call",
+  "label": "Call workflow",
+  "description": "Describe, start, repeatedly wait for, or cancel one Agent-callable Chat Workflow in an isolated child Session with caller-selected Agent capabilities.",
+  "implementationVersion": 4,
+  "risk": "write",
+  "permissions": ["workflow:call"]
+}

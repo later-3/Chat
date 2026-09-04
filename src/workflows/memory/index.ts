@@ -1,12 +1,12 @@
-import manifestJson from "./workflow.json" with { type: "json" };
-import { defineChatWorkflow, parseChatWorkflowManifest } from "../framework.js";
+import { MEMORY_WORKFLOW_MANIFEST } from "../catalog.js";
+import { defineChatWorkflow } from "../framework.js";
 import { MEMORY_AGENT } from "./agents/memory-agent/index.js";
 import { prepareMemoryAgentSession } from "./agents/memory-agent/runtime.js";
 import { memoryWorkflow } from "./workflow.js";
 
 /** Complete definition exposed to Chat's Workflow registry. */
 export const memoryWorkflowDefinition = defineChatWorkflow({
-  manifest: parseChatWorkflowManifest(manifestJson, "memory"),
+  manifest: MEMORY_WORKFLOW_MANIFEST,
   agents: [MEMORY_AGENT],
   prepareAgentSession: prepareMemoryAgentSession,
   run: memoryWorkflow,
