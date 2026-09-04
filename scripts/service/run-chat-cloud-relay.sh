@@ -4,9 +4,9 @@
 
 set -euo pipefail
 
-cloud_target="later-cloud-admin"
-remote_port="33051"
-local_port="43110"
+cloud_target="${CHAT_CLOUD_TARGET:-}"
+remote_port="${CHAT_CLOUD_REMOTE_PORT:-33051}"
+local_port="${CHAT_LOCAL_PORT:-43110}"
 
 usage() {
   echo "Usage: $0 [--cloud-target SSH_ALIAS] [--remote-port PORT] [--local-port PORT]" >&2

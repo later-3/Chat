@@ -84,7 +84,7 @@ Chat Home默认是`~/.chat`，测试、迁移和部署可以通过`CHAT_HOME`显
       │   ├── sessions/
       │   ├── memory/
       │   └── prompt-resources/
-      └── ziji-content-lab/
+      └── example-project/
           ├── sessions/
           ├── memory/
           └── prompt-resources/
@@ -117,13 +117,13 @@ Project本地目录只保存声明和项目能力，不保存Credential、Sessio
 Chat自身也是普通Project：
 
 ```text
-/Users/xulater/Code/Chat/.chat/
+/workspace/chat/.chat/
 ```
 
-Content Lab同样是普通Project：
+另一个业务目录同样是普通Project：
 
 ```text
-/Users/xulater/Code/ziji/ziji-content-lab/.chat/
+/workspace/example-project/.chat/
 ```
 
 ## 5. Project身份与发现
@@ -135,9 +135,9 @@ Content Lab同样是普通Project：
 ```json
 {
   "schemaVersion": 1,
-  "id": "ziji-content-lab",
-  "name": "Ziji Content Lab",
-  "description": "小红书和B站内容起号与持续生产项目"
+  "id": "example-project",
+  "name": "Example Project",
+  "description": "Example project managed by Chat"
 }
 ```
 
@@ -158,10 +158,10 @@ Content Lab同样是普通Project：
   "schemaVersion": 1,
   "projects": [
     {
-      "projectId": "ziji-content-lab",
-      "cachedName": "Ziji Content Lab",
-      "cachedDescription": "小红书和B站内容起号与持续生产项目",
-      "path": "/Users/xulater/Code/ziji/ziji-content-lab",
+      "projectId": "example-project",
+      "cachedName": "Example Project",
+      "cachedDescription": "Example project managed by Chat",
+      "path": "/workspace/example-project",
       "firstOpenedAt": "2026-08-30T10:00:00.000Z",
       "lastOpenedAt": "2026-08-30T10:00:00.000Z"
     }
@@ -300,7 +300,7 @@ Memory私有数据仍只位于Chat Home，但Personal和每个Project使用独�
 ```text
 ~/.chat/memory/personal/{catalog.db,vector-store.db}
 ~/.chat/projects/chat/memory/{catalog.db,vector-store.db}
-~/.chat/projects/ziji-content-lab/memory/{catalog.db,vector-store.db}
+~/.chat/projects/example-project/memory/{catalog.db,vector-store.db}
 ```
 
 规则：
@@ -330,10 +330,10 @@ Run请求增加稳定身份：
 
 ```json
 {
-  "projectId": "ziji-content-lab",
-  "cwd": "/Users/xulater/Code/ziji/ziji-content-lab",
+  "projectId": "example-project",
+  "cwd": "/workspace/example-project",
   "workflow": "minimal-pi-coding-agent",
-  "prompt": "继续维护Content Lab"
+  "prompt": "继续维护示例项目"
 }
 ```
 
@@ -365,38 +365,38 @@ Session、Workflow、Agent Resolve、资源Catalog、文件访问和Memory Tool�
 5. Skill、Extension和Tool显示`user / project / workflow / runtime`来源及“已发现/已启用/本轮活动”状态。
 6. 切换Project时，文件浏览器、Session列表、Workflow Resolve、Memory筛选和运行请求一起切换到新的`ProjectContext`。
 
-前端不能维护Project白名单或针对`ziji-content-lab`增加专用分支。新增符合Manifest规则的Project不修改前端代码。
+前端不能维护Project白名单或针对`example-project`增加专用分支。新增符合Manifest规则的Project不修改前端代码。
 
-## 12. Content Lab对接实例
+## 12. 示例Project对接
 
-Content Lab的项目根是：
+示例项目根是：
 
 ```text
-/Users/xulater/Code/ziji/ziji-content-lab
+/workspace/example-project
 ```
 
-用户明确打开该目录时，它自身就是Project根；外层`ziji` Git仓库不参与身份判定：
+用户明确打开该目录时，它自身就是Project根；外层工作区不参与身份判定：
 
 ```text
-/Users/xulater/Code/ziji/ziji-content-lab/.chat/project.json
-  id = ziji-content-lab
+/workspace/example-project/.chat/project.json
+  id = example-project
 ```
 
 对接完成后的预期行为：
 
-1. 在Pi Web打开该目录时，Chat登记或恢复`ziji-content-lab` Project。
+1. 在Pi Web打开该目录时，Chat登记或恢复`example-project` Project。
 2. Agent实际cwd仍是外部项目目录，源码不移动到Chat仓库。
-3. 项目`AGENTS.md`继续进入Pi标准项目上下文区域，但Chat只读取`ziji-content-lab/AGENTS.md`，不继承外层`ziji`仓库或其他父目录文件。
-4. Content Lab的Project Skill、Extension、Prompt和Workflow/Agent覆盖不影响Chat Project。
-5. Session保存到`~/.chat/projects/ziji-content-lab/sessions`。
-6. Memory Agent默认看到Personal与`ziji-content-lab`记忆，也可以按用户明确目标访问其他已登记Project。
+3. 项目`AGENTS.md`继续进入Pi标准项目上下文区域，但Chat只读取`example-project/AGENTS.md`，不继承父目录文件。
+4. 示例项目的Project Skill、Extension、Prompt和Workflow/Agent覆盖不影响Chat Project。
+5. Session保存到`~/.chat/projects/example-project/sessions`。
+6. Memory Agent默认看到Personal与`example-project`记忆，也可以按用户明确目标访问其他已登记Project。
 
 ## 13. 迁移实现
 
 当前迁移由`migrateLegacyProjectLayout()`执行，写入`~/.chat/migrations/project-layout-v1/<projectId>.json`标记；它可恢复、可重试且不删除旧目录：
 
 1. 引入`resolveChatHome()`、Project Manifest/Registry Schema和`ChatProjectContext`，先增加测试。
-2. 创建`chat`与`ziji-content-lab` Manifest并登记Project路径。
+2. 创建`chat`与`example-project` Manifest并登记Project路径。
 3. 复制当前Chat项目`.chat/agent`到`~/.chat/agent`；旧Memory Catalog按记录Target导入新Store，不复制旧向量索引；旧`.workflow-data`归入`~/.chat/runtime/workflow-data`。
 4. 把当前Chat Session复制到`~/.chat/projects/chat/sessions`并验证Session ID、cwd、消息数和恢复结果。
 5. 把旧版Global Memory迁移到Personal Store，把cwd Project Memory映射到对应Project Store；新索引从各自Catalog修复或重建。
@@ -406,13 +406,13 @@ Content Lab的项目根是：
 
 ## 14. 验收标准
 
-1. `ziji-content-lab`源码保持在原目录，Chat不复制项目源码。
+1. `example-project`源码保持在原目录，Chat不复制项目源码。
 2. 新Project即使没有Session，也能在重启后自动出现在Pi Web项目列表。
-3. Chat与Content Lab拥有独立Project配置、资源、Session和Project Memory。
+3. Chat与示例项目拥有独立Project配置、资源、Session和Project Memory。
 4. 个人Skill、Tool和Memory按规则对两个Project可见。
 5. 当前Project的`.chat`配置和资源可以直接发现，实际启用范围由Agent资源配置决定。
 6. Project路径迁移后，原Session与Memory仍由稳定`projectId`关联。
-7. Content Lab不会因为上层Git根目录是`ziji`而与其他子项目混为一个Project。
+7. 示例项目不会因为上层工作区存在其他项目而被合并到同一个Project。
 8. 前端不硬编码Project ID；新增Project不修改前端。
 9. Pi Session树、分支、压缩、恢复和Tool执行语义保持不变。
 10. 迁移前现有Chat Session与Memory原文均可完整恢复。

@@ -2,12 +2,12 @@
 
 ## 固定关系
 
-Chat使用两个私有Fork作为源码子模块：
+Chat使用两个公开的受管源码仓库作为子模块：
 
-| Chat目录 | 私有Fork | 长期集成分支 | 官方只读上游 |
+| Chat目录 | 公开仓库 | 长期集成分支 | 官方只读上游 |
 |---|---|---|---|
 | `pi/` | `later-3/pi` | `codex/later-custom` | `earendil-works/pi` |
-| `frontend/` | `later-3/pi-web` | `codex/chat-frontend` | `agegr/pi-web` |
+| `frontend/` | `later-3/chat-frontend` | `main` | `agegr/pi-web` |
 
 父仓库提交保存的是子模块的精确commit，而不是一个会自动移动的分支引用。因此同一个Chat提交在开发机和服务器上会得到相同版本。`.gitmodules`中的`branch`用于人工执行上游更新，不改变这个固定规则。
 
@@ -19,11 +19,11 @@ Chat使用两个私有Fork作为源码子模块：
 git -C pi switch codex/later-custom
 git -C pi switch -c codex/<pi-change>
 
-git -C frontend switch codex/chat-frontend
+git -C frontend switch main
 git -C frontend switch -c codex/<frontend-change>
 ```
 
-代码和测试先在子仓库提交并推送，审核后合入对应长期集成分支。最后回到Chat，固定新的子模块提交：
+代码和测试先在子仓库提交并推送，审核后合入对应长期集成分支。`chat-frontend`是从当前安全代码建立的公开根历史，不包含旧私有Pi Web的设备、SSH和隧道记录。最后回到Chat，固定新的子模块提交：
 
 ```bash
 git add -- pi frontend
@@ -55,10 +55,10 @@ git -C frontend cherry-pick <upstream-pi-web-commit>
 
 ## 克隆与部署
 
-新环境必须拥有两个私有Fork的读取权限：
+新环境可以匿名读取父仓库和两个公开子模块：
 
 ```bash
-git clone --recurse-submodules git@github.com:later-3/Chat.git
+git clone --recurse-submodules https://github.com/later-3/Chat.git
 ```
 
 更新现有工作目录时使用父仓库固定版本：
@@ -71,11 +71,11 @@ git submodule update --init --recursive
 
 部署环境不要执行`git submodule update --remote`，因为该命令会绕过父仓库固定的commit。
 
-发布Chat父仓库前必须确认两个gitlink指向的对象已经推送到各自私有Fork：
+发布Chat父仓库前必须确认两个gitlink指向的对象已经推送到各自公开仓库：
 
 ```bash
 git -C pi branch -r --contains HEAD
 git -C frontend branch -r --contains HEAD
 ```
 
-两个命令都应显示对应的`origin/codex/*`分支。否则当前开发机能够构建，但其他环境在`git submodule update`时会找不到子模块Commit。
+两个命令应分别显示Pi的`origin/codex/*`和Frontend的`origin/main`。否则当前开发机能够构建，但其他环境在`git submodule update`时会找不到子模块Commit。

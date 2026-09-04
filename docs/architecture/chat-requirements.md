@@ -167,7 +167,7 @@ Workflow开发者应能复用Pi原生装配点定义一个Agent Stage需要的�
 
 ### 4.6 打开和切换Project
 
-用户在Pi Web中选择`ziji-content-lab`目录后，Chat需要：
+用户在Pi Web中选择`example-project`目录后，Chat需要：
 
 1. 用户明确选择的目录就是Project根；只读取或创建该目录的`.chat/project.json`，不向父目录或子目录发现Project。
 2. 把规范化绝对路径登记到Project Registry，而不是把路径本身当作Project ID。

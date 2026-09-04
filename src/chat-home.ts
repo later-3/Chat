@@ -17,6 +17,7 @@ export interface ChatHomePaths {
   readonly fastEmbedCacheDir: string;
   readonly logsDir: string;
   readonly configPath: string;
+  readonly devicesConfigPath: string;
 }
 
 export function resolveChatHome(configured = process.env[CHAT_HOME_ENV]): string {
@@ -43,6 +44,7 @@ export function getChatHomePaths(root = resolveChatHome()): ChatHomePaths {
     fastEmbedCacheDir: resolve(cacheDir, "fastembed"),
     logsDir: resolve(resolvedRoot, "logs"),
     configPath: resolve(resolvedRoot, "config.json"),
+    devicesConfigPath: resolve(resolvedRoot, "devices.json"),
   };
 }
 

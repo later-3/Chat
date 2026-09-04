@@ -1,0 +1,83 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  CHAT_ALLOW_EXTERNAL_WRITES: "0"
+  CHAT_ALLOW_PAID_TESTS: "0"
+  MEM0_TELEMETRY: "false"
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout the pinned Chat source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Verify pinned Submodule commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(git submodule status --recursive)"
+          printf '%s\n' "$status"
+          if grep -Eq '^[+-U]' <<<"$status"; then
+            echo "::error::A Submodule is missing, conflicted, or does not match the parent gitlink."
+            exit 1
+          fi
+          test "$(git -C pi rev-parse HEAD)" = "$(git rev-parse HEAD:pi)"
+          test "$(git -C frontend rev-parse HEAD)" = "$(git rev-parse HEAD:frontend)"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10.13.1
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Cache Pi npm downloads
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: ~/.npm
+          key: pi-npm-${{ runner.os }}-${{ runner.arch }}-node-22.19.0-${{ hashFiles('pi/package-lock.json') }}
+          restore-keys: |
+            pi-npm-${{ runner.os }}-${{ runner.arch }}-node-22.19.0-
+
+      - name: Prepare the pinned Pi runtime
+        run: pnpm pi:prepare
+
+      - name: Install Chat dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Chat integration and production runtime
+        run: pnpm verify
+
+      - name: Check tracked diffs
+        run: |
+          git diff --check
+          git -C frontend diff --check
+          git diff --exit-code --submodule=short

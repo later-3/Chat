@@ -23,7 +23,7 @@ Loading this Skill does not authorize a production change. Inspecting status and
 
 ## Linux/systemd
 
-1. Before a first install, verify that the `chat` user can read the Chat, Pi, and Pi Web private repositories. Do not inspect or print its private key.
+1. Chat, Pi, and Chat Frontend are public HTTPS repositories. Do not request or configure a GitHub token, SSH key, or Deploy Key for a normal installation; use `git ls-remote` only when diagnosing network access.
 2. Use the command matching the request from the Chat repository root:
    - First install or continue a configuration-paused install: `sudo ./deploy/chatctl install`
    - Update to the requested/default revision: `sudo ./deploy/chatctl update`
@@ -43,7 +43,7 @@ The automated `chatctl` path currently supports Linux/systemd only. For an exist
 4. Inspect status with `launchctl print gui/$(id -u)/com.later.chat.production` and recent errors with `tail -n 100 "$HOME/Library/Logs/chat/chat-production.stderr.log"`.
 5. Require local health to succeed at `http://127.0.0.1:43110/api/health`.
 
-When the documented public Cloudflare endpoint is part of the requested deployment, require five consecutive successful health requests against `https://chat.ai4child.asia/api/health`. The expected payload is `{"ok":true,"service":"chat"}`.
+When the configured public Cloudflare endpoint is part of the requested deployment, read the target from the deployment's `CHAT_PUBLIC_URL` without printing unrelated environment values, then require five consecutive successful `/api/health` requests. The expected payload is `{"ok":true,"service":"chat"}`.
 
 ## Failure boundaries
 

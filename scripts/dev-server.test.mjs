@@ -450,10 +450,10 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
           // 必须显式指向本测试保留的HTTP端口。
           WORKFLOW_LOCAL_BASE_URL: baseUrl,
           CHAT_WEB_AUTH_ENABLED: "1",
-          CHAT_WEB_AUTH_USERNAME: "later",
+          CHAT_WEB_AUTH_USERNAME: "test-user",
           CHAT_WEB_AUTH_PASSWORD: "123456",
           CHAT_WEB_AUTH_SESSION_SECRET: "dev-server-test-session-secret-at-least-32-characters",
-          CHAT_PUBLIC_URL: "https://chat.ai4child.asia",
+          CHAT_PUBLIC_URL: "https://chat.example.test",
           MEM0_TELEMETRY: "false",
         },
         stdio: ["ignore", "pipe", "pipe"],
@@ -478,7 +478,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const login = await fetch(`${baseUrl}/api/auth/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Forwarded-Proto": "https" },
-      body: JSON.stringify({ username: "later", password: "123456", persistent: true }),
+      body: JSON.stringify({ username: "test-user", password: "123456", persistent: true }),
     });
     assert.equal(login.status, 200, await login.text());
     const cookie = login.headers.get("set-cookie")?.split(";", 1)[0];

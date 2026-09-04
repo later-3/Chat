@@ -11,7 +11,7 @@
     <string>/bin/bash</string>
     <string>__CHAT_ROOT__/scripts/service/run-chat-cloud-relay.sh</string>
     <string>--cloud-target</string>
-    <string>later-cloud-admin</string>
+    <string>__CHAT_CLOUD_TARGET__</string>
     <string>--remote-port</string>
     <string>33051</string>
     <string>--local-port</string>

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/later-3/Chat/main/schemas/device-directory.schema.json",
+  "version": 1,
+  "devices": [
+    {
+      "id": "workstation",
+      "name": "Workstation Chat",
+      "url": "https://chat-workstation.example.com"
+    },
+    {
+      "id": "server",
+      "name": "Server Chat",
+      "url": "https://chat-server.example.com"
+    }
+  ]
+}

@@ -126,7 +126,7 @@ async function authenticatedCookie() {
     const response = await fetch(`${baseUrl}/api/auth/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Forwarded-Proto": "https" },
-      body: JSON.stringify({ username: "later", password: "123456", persistent: true }),
+      body: JSON.stringify({ username: "test-user", password: "123456", persistent: true }),
     });
     assert.equal(response.status, 200);
     const setCookie = response.headers.get("set-cookie");
@@ -259,6 +259,13 @@ before(async () => {
       },
     },
   }));
+  fs.writeFileSync(path.join(chatHome, "devices.json"), JSON.stringify({
+    version: 1,
+    devices: [
+      { id: "built-runtime", name: "Built Runtime", url: "https://chat.example.test" },
+      { id: "remote", name: "Remote Chat", url: "https://remote.example.test" },
+    ],
+  }));
   const port = await reservePort();
   baseUrl = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, [serverEntry], {
@@ -270,9 +277,9 @@ before(async () => {
       WORKFLOW_TARGET_WORLD: "local",
       WORKFLOW_LOCAL_DATA_DIR: path.join(chatHome, "runtime", "workflow-data"),
       CHAT_HOME: chatHome,
-      CHAT_PUBLIC_URL: "https://chat.ai4child.asia",
+      CHAT_PUBLIC_URL: "https://chat.example.test",
       CHAT_WEB_AUTH_ENABLED: "1",
-      CHAT_WEB_AUTH_USERNAME: "later",
+      CHAT_WEB_AUTH_USERNAME: "test-user",
       CHAT_WEB_AUTH_PASSWORD: "123456",
       CHAT_WEB_AUTH_SESSION_SECRET: "built-server-test-session-secret-at-least-32-characters",
       CHAT_MEMORY_EMBEDDER_PROVIDER: "openai",
@@ -458,11 +465,11 @@ test("memory management API persists, searches, updates, rebuilds, and deletes",
   assert.equal(fs.existsSync(path.join(chatHome, "memory", "personal", "vector-store.db")), true);
 });
 
-test("the default Later account creates a signed HttpOnly session", async () => {
+test("the configured account creates a signed HttpOnly session", async () => {
   const rejected = await fetch(`${baseUrl}/api/auth/session`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "later", password: "wrong", persistent: true }),
+    body: JSON.stringify({ username: "test-user", password: "wrong", persistent: true }),
   });
   assert.equal(rejected.status, 401);
 
@@ -473,11 +480,21 @@ test("the default Later account creates a signed HttpOnly session", async () => 
   assert.equal(sessionResponse.status, 200);
   const session = await sessionResponse.json();
   assert.equal(session.authenticated, true);
-  assert.equal(session.username, "later");
+  assert.equal(session.username, "test-user");
 
   const devicesResponse = await authenticatedFetch("/api/devices");
   assert.equal(devicesResponse.status, 200);
-  assert.equal((await devicesResponse.json()).devices[0].url, "https://chat.ai4child.asia");
+  assert.deepEqual(await devicesResponse.json(), {
+    version: 1,
+    currentDeviceId: "built-runtime",
+    devices: [
+      { id: "built-runtime", name: "Built Runtime", url: "https://chat.example.test" },
+      { id: "remote", name: "Remote Chat", url: "https://remote.example.test" },
+    ],
+    diagnostics: [],
+    selectionMode: "direct",
+    gatewayUrl: null,
+  });
 });
 
 test("the production Project API treats each explicitly opened nested directory as an independent root", async () => {

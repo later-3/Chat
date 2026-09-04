@@ -44,7 +44,7 @@ Pi Web现有功能全部属于Chat的目标能力。当前接入状态和后续�
 
 ## 源码位置
 
-Chat仓库固定记录两个私有子模块的精确提交：
+Chat仓库固定记录两个公开子模块的精确提交：
 
 ```text
 Chat/
@@ -63,10 +63,10 @@ Chat/
 └── ...
 ```
 
-| 目录 | Later私有仓库 | 长期集成分支 | 职责 |
+| 目录 | 公开仓库 | 长期集成分支 | 职责 |
 |---|---|---|---|
 | `pi/` | <https://github.com/later-3/pi> | `codex/later-custom` | Pi Agent源码与构建产物 |
-| `frontend/` | <https://github.com/later-3/pi-web> | `codex/chat-frontend` | Pi Web派生的纯浏览器前端 |
+| `frontend/` | <https://github.com/later-3/chat-frontend> | `main` | Pi Web派生的纯浏览器前端 |
 
 Chat通过以下依赖使用本地Pi源码构建：
 
@@ -77,7 +77,7 @@ link:./pi/packages/coding-agent
 
 `frontend/`的上游、提取基线和许可证记录在[frontend/UPSTREAM.md](./frontend/UPSTREAM.md)。Chat父仓库中的gitlink决定实际运行的Pi和前端版本；`.gitmodules`中的`branch`只供显式更新使用，不会让部署自动漂移到分支最新提交。
 
-两个私有Fork的开发、提交、回合官方上游修复以及更新Chat固定提交的操作见[子模块维护指南](./docs/managed-submodules.md)。
+两个公开子仓库的开发、提交、回合官方上游修复以及更新Chat固定提交的操作见[子模块维护指南](./docs/managed-submodules.md)。
 
 ## Session语义
 
@@ -99,10 +99,10 @@ Chat不会扫描用户主目录下的`~/.pi`，也不会在项目仓库内保存
 
 ## 本地开发
 
-要求Node.js `>=22.19.0`和pnpm `10.13.1`，并且当前GitHub身份有权读取两个私有子模块。
+要求Node.js `>=22.19.0`和pnpm `10.13.1`。两个子模块均可通过公开HTTPS匿名读取。
 
 ```bash
-git clone --recurse-submodules git@github.com:later-3/Chat.git
+git clone --recurse-submodules https://github.com/later-3/Chat.git
 cd Chat
 corepack enable
 pnpm pi:prepare
@@ -208,11 +208,12 @@ http://127.0.0.1:43112/
 `CHAT_WEB_AUTH_SESSION_SECRET`。只在受信任的本地环境中才可以设置
 `CHAT_WEB_AUTH_ENABLED=0`关闭登录，不存在可直接用于生产的默认密码。
 
-服务器部署和`https://chat.ai4child.asia`域名配置见[部署指南](./docs/deployment.md)。
+服务器部署、公开域名和反向代理配置见[部署指南](./docs/deployment.md)。父仓库与两个公开Submodule的CI职责和阻断式检查见[CI说明](./docs/ci.md)。
 
 ## Chat Home运行数据
 
 ```text
+~/.chat/devices.json                    可选的私有多设备目录
 ~/.chat/agent/                         Pi模型、设置、认证与全局资源
 ~/.chat/memory/personal/               个人Memory事实源与索引
 ~/.chat/projects/<projectId>/sessions/ 各Project的Pi Session
@@ -221,7 +222,7 @@ http://127.0.0.1:43112/
 ~/.chat/cache/fastembed/               可重新下载的本地Embedding模型缓存
 ```
 
-这些目录都不属于Chat源码仓库。新的Linux/systemd环境并非完全零前置：需要`root`/`sudo`、将单个`deploy/chatctl`安全复制到主机的方式，以及访问GitHub、Node、npm Registry、原生包CDN和Pi模型目录的网络。首次执行脚本会自动创建`chat`用户并在私有仓库权限不足时停止；为该用户配置Chat、Pi和Pi Web读取凭证后重跑即可。脚本继续准备固定Node/pnpm、Submodule、版本化构建、systemd服务和回滚点，只再暂停等待用户填写Web密码、Provider凭证与默认模型；`WORKFLOW_LOCAL_DATA_DIR`必须位于`CHAT_HOME`内部。更新、诊断和回滚分别使用`chatctl update`、`chatctl doctor`和`chatctl rollback`。必须在目标操作系统和CPU架构上构建，不能复制其他机器的`.output`；完整步骤见[部署指南](./docs/deployment.md)。
+这些目录都不属于Chat源码仓库。新的Linux/systemd环境需要`root`/`sudo`以及访问GitHub、Node、npm Registry、原生包CDN和Pi模型目录的网络，但不需要GitHub账号或Submodule凭证。脚本会自动创建`chat`用户，准备固定Node/pnpm、公开Submodule、版本化构建、systemd服务和回滚点，只暂停等待用户填写Web密码、Provider凭证与默认模型；多设备目录是可选的`$CHAT_HOME/devices.json`。`WORKFLOW_LOCAL_DATA_DIR`必须位于`CHAT_HOME`内部。更新、诊断和回滚分别使用`chatctl update`、`chatctl doctor`和`chatctl rollback`。必须在目标操作系统和CPU架构上构建，不能复制其他机器的`.output`；完整步骤见[部署指南](./docs/deployment.md)。
 
 # 启动脚本
 ```bash

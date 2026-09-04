@@ -12,13 +12,13 @@ const {
   verifyChatWebAuthToken,
 } = await import("./web-auth.ts");
 
-test("web authentication defaults to the requested Later account", () => {
+test("web authentication defaults to the generic local account", () => {
   const config = getChatWebAuthConfig({});
   assert.equal(config.state, "enabled");
-  assert.equal(DEFAULT_CHAT_WEB_AUTH_USERNAME, "later");
+  assert.equal(DEFAULT_CHAT_WEB_AUTH_USERNAME, "chat");
   assert.equal(DEFAULT_CHAT_WEB_AUTH_PASSWORD, "123456");
-  assert.equal(matchesChatWebCredential(config, "later", "123456"), true);
-  assert.equal(matchesChatWebCredential(config, "later", "wrong"), false);
+  assert.equal(matchesChatWebCredential(config, "chat", "123456"), true);
+  assert.equal(matchesChatWebCredential(config, "chat", "wrong"), false);
   assert.equal(matchesChatWebCredential(config, "other", "123456"), false);
 });
 
@@ -33,7 +33,7 @@ test("signed sessions expire and are invalidated by credential rotation", () => 
   assert.deepEqual(verifyChatWebAuthToken(config, session.token, 1_001), {
     valid: true,
     expiresAt: 1_000 + 30 * 24 * 60 * 60,
-    username: "later",
+    username: "chat",
   });
   assert.deepEqual(verifyChatWebAuthToken(config, session.token, session.expiresAt), {
     valid: false,

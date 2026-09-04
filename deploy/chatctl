@@ -4,7 +4,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
-CHAT_REPO_URL="${CHAT_REPO_URL:-git@github.com:later-3/Chat.git}"
+CHAT_REPO_URL="${CHAT_REPO_URL:-https://github.com/later-3/Chat.git}"
 CHAT_DEPLOY_REF="${CHAT_DEPLOY_REF:-main}"
 CHAT_ROOT="${CHAT_ROOT:-/opt/chat}"
 CHAT_RUNTIME_ROOT="${CHAT_RUNTIME_ROOT:-/var/lib/chat/runtime}"

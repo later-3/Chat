@@ -5,11 +5,10 @@
 
 ## 运行结构
 
-Chat产品本体只运行一个进程。当前`chat.ai4child.asia`有两个Cloudflare连接器，
-两条路径最终都到达Mac上的同一个Chat进程：
+Chat产品本体只运行一个进程。下面是可选的双Cloudflare连接器拓扑；公开域名由每台机器未跟踪的`chat.env`和代理配置决定，两条路径最终都到达同一个Chat进程：
 
 ```text
-https://chat.ai4child.asia
+https://chat.example.com
   → Cloudflare Tunnel
     ├── Mac连接器 → Mac 127.0.0.1:43110
     └── 云服务器连接器 → Cloud 127.0.0.1:33052 Nginx
@@ -31,43 +30,45 @@ Linux自动部署入口是[deploy/chatctl](../deploy/chatctl)，支持同时满�
 1. 使用`systemd`管理服务。
 2. CPU架构为`x86_64`或`aarch64`。
 3. 发行版使用`apt-get`、`dnf`或`yum`之一；其他包管理器会明确拒绝，不会猜测安装命令。
-4. 能访问GitHub私有仓库、`nodejs.org`、配置的npm Registry、依赖原生二进制包使用的下载/CDN地址，以及Pi构建所需的公开模型目录。
+4. 能访问GitHub公开仓库、`nodejs.org`、配置的npm Registry、依赖原生二进制包使用的下载/CDN地址，以及Pi构建所需的公开模型目录。
 
 脚本通过系统包管理器安装`ca-certificates`、`curl`、`git`、OpenSSH客户端、`xz`、C/C++编译工具、`make`、`python3`和`pkg-config`；从`nodejs.org`下载固定的Node.js `22.19.0`并用官方`SHASUMS256.txt`校验，然后通过Corepack固定使用pnpm `10.13.1`。它不会使用系统中碰巧存在的其他Node或pnpm版本。
 
-安装仍有两类输入必须由用户提供：
+安装仍有一类输入必须由用户提供：
 
-- `chat`运行用户读取`later-3/Chat`、`later-3/pi`和`later-3/pi-web`三个私有仓库的Git凭证。
 - Web登录密码，以及至少一种可用的模型Provider凭证和对应的默认Provider/模型。
 
 默认部署`main`。也可以显式选择Tag或Commit；真正生效的Pi和前端版本始终由Chat父仓库记录的两个Submodule Commit决定，脚本不会让子模块自行追踪远端分支。所有构建都在目标机器上完成，因为生产产物包含与操作系统和CPU架构有关的原生依赖，不能从其他机器复制`.output`。
 
 ## 首次安装
 
-自动部署不是“完全零前置”：新机器至少需要可用的`root`或`sudo`权限、把单个`deploy/chatctl`从可信来源传到主机的方式，以及上述网络访问。系统依赖、固定Node/pnpm、运行用户、源码、Submodule、构建和systemd服务均由脚本处理。
+自动部署不是“完全零前置”：新机器至少需要可用的`root`或`sudo`权限和上述网络访问。系统依赖、固定Node/pnpm、运行用户、源码、Submodule、构建和systemd服务均由脚本处理；三个源码仓库均可通过HTTPS匿名读取。
 
-推荐先从已授权的工作站把当前`main`中的单个脚本安全复制到新主机，再执行：
+可以直接下载公开`main`中的单个bootstrap脚本并执行：
 
 ```bash
+curl --fail --location \
+  https://raw.githubusercontent.com/later-3/Chat/main/deploy/chatctl \
+  -o /tmp/chatctl
 sudo install -o root -g root -m 0755 /tmp/chatctl /usr/local/sbin/chatctl-bootstrap
 sudo /usr/local/sbin/chatctl-bootstrap install
 ```
 
-首次运行会自动创建`chat`系统用户，然后尝试以该用户拉取私有仓库。如果新创建的用户尚无Git凭证，脚本会在Git权限检查处安全停止。此时为`chat`用户配置可读取`later-3/Chat`、`later-3/pi`和`later-3/pi-web`三个私有仓库的Deploy Key或GitHub凭证；不要把私钥放进Chat仓库。然后逐一验证访问权限：
+首次运行会自动创建`chat`系统用户，通过公开HTTPS克隆Chat，并自动同步父提交固定的两个Submodule Commit。无需创建GitHub Token、Deploy Key或SSH配置；如需单独排查网络，可以匿名检查三个仓库：
 
 ```bash
-sudo -u chat -H git ls-remote git@github.com:later-3/Chat.git HEAD
-sudo -u chat -H git ls-remote git@github.com:later-3/pi.git HEAD
-sudo -u chat -H git ls-remote git@github.com:later-3/pi-web.git HEAD
+sudo -u chat -H git ls-remote https://github.com/later-3/Chat.git HEAD
+sudo -u chat -H git ls-remote https://github.com/later-3/pi.git HEAD
+sudo -u chat -H git ls-remote https://github.com/later-3/chat-frontend.git HEAD
 ```
 
-验证完成后重新运行同一个bootstrap命令。它会从默认`main`克隆源码并继续安装：
+如果第一次运行停在用户配置阶段，填写配置后重新运行同一个命令即可继续：
 
 ```bash
 sudo /usr/local/sbin/chatctl-bootstrap install
 ```
 
-已有可读取私有仓库的`chat`系统用户和Git环境时，也可以先手工克隆`main`，再运行`sudo ./deploy/chatctl install`。无论使用哪种bootstrap方式，都不需要手工初始化子模块。`chatctl install`会同步并检出父仓库固定的Submodule Commit、准备构建环境、构建候选版本、执行发布验证、渲染systemd服务，并把运行产物保存为版本化Release：
+也可以先通过公开HTTPS手工克隆`main`，再运行`sudo ./deploy/chatctl install`。无论使用哪种bootstrap方式，都不需要手工初始化子模块。`chatctl install`会同步并检出父仓库固定的Submodule Commit、准备构建环境、构建候选版本、执行发布验证、渲染systemd服务，并把运行产物保存为版本化Release：
 
 ```text
 /opt/chat/                                  稳定源码与Agent工作目录
@@ -124,11 +125,27 @@ Pi运行时固定读取`CHAT_HOME/agent`。默认位置及职责如下：
 
 使用内置模型目录时不需要创建`models.json`，但`settings.json`所选Provider与模型必须存在且具有有效认证。`chatctl doctor`会检查配置、目录权限、当前Release、systemd状态和本机健康接口；它不会发起一次可能计费的模型调用。
 
+### 用户配置：多设备目录（可选）
+
+Pi Web保留多设备切换界面，但它是纯浏览器客户端，不读取设备文件。需要在多个Chat实例之间切换时，将[deploy/devices.json.example](../deploy/devices.json.example)复制到每台机器的`$CHAT_HOME/devices.json`，填写所有实例的公开根URL：
+
+```bash
+sudo -u chat -H install -m 0600 \
+  /opt/chat/deploy/devices.json.example \
+  /home/chat/.chat/devices.json
+sudo -u chat -H editor /home/chat/.chat/devices.json
+```
+
+Chat Backend根据`CHAT_PUBLIC_URL`在目录中识别当前实例，只向已登录的浏览器返回`id`、`name`和规范化根URL。账号、SSH地址、内网地址、密钥路径、隧道端口和其他额外字段都会被拒绝，不能经`/api/devices`暴露。配置缺失或损坏时，Chat仍以当前实例启动；当前实现使用直接URL导航，不要求中心网关或共享Session密钥。
+
+Schema位于[schemas/device-directory.schema.json](../schemas/device-directory.schema.json)。`devices.json`是用户运行数据，不属于源码仓库，也不能提交Git。
+
 ### 数据目录
 
 源码、构建产物和用户数据相互分离。升级与回滚只切换`/var/lib/chat/runtime/current`，不会覆盖`CHAT_HOME`：
 
 ```text
+/home/chat/.chat/devices.json            可选的私有多设备目录
 /home/chat/.chat/agent/                 Pi模型、设置、认证与全局资源
 /home/chat/.chat/memory/                Personal Memory
 /home/chat/.chat/projects/              Project配置、Session和Project Memory
@@ -161,26 +178,26 @@ sudo journalctl -u chat -n 100 --no-pager
 
 macOS常驻运行使用[生产LaunchAgent模板](../deploy/macos/com.later.chat.production.plist.in)。先把`deploy/chat.env.example`复制到`~/Library/Application Support/Chat/chat.env`并设置`0600`权限，把其中`CHAT_HOME`和`WORKFLOW_LOCAL_DATA_DIR`改为该用户下的绝对路径，再把模板中的`__ENV_FILE__`替换为配置文件绝对路径；Node通过`--env-file`读取与systemd相同的生产配置。随后替换`__CHAT_ROOT__`、`__NODE__`、`__HOME__`和`__LOG_DIR__`。Mac直连Cloudflare使用[直连Tunnel模板](../deploy/macos/com.later.chat.cloudflare-direct.plist.in)，其私有配置和Tunnel Credential应放在`~/Library/Application Support/Chat/cloudflared/`，不能放在旧Pi Web目录或提交到Git。
 
-如果Cloudflare还有云服务器连接器，再安装[反向Relay模板](../deploy/macos/com.later.chat.cloud-relay.plist.in)，让云端`127.0.0.1:33051`回到Mac的`127.0.0.1:43110`。模板中的路径占位符必须替换为本机绝对路径，生产入口同样是`.output/server/index.mjs`，不是开发服务器或历史`start.mjs`。
+如果Cloudflare还有云服务器连接器，再安装[反向Relay模板](../deploy/macos/com.later.chat.cloud-relay.plist.in)，让云端`127.0.0.1:33051`回到Mac的`127.0.0.1:43110`。将`__CHAT_CLOUD_TARGET__`替换为用户自己`~/.ssh/config`中的Host别名，并替换所有路径占位符；真实别名、主机、账号和IdentityFile不进入仓库。生产入口同样是`.output/server/index.mjs`，不是开发服务器或历史`start.mjs`。
 
 ## Chat域名
 
-现有Chat公网入口统一使用：
+公开入口由`CHAT_PUBLIC_URL`配置，例如：
 
 ```text
-https://chat.ai4child.asia
+https://chat.example.com
 ```
 
-Mac直连Cloudflare示例见[deploy/cloudflared/config.example.yml](../deploy/cloudflared/config.example.yml)。关键映射是：
+Mac直连Cloudflare示例见[deploy/cloudflared/config.example.yml](../deploy/cloudflared/config.example.yml)。所有`example.com`值都必须在部署机的私有副本中替换，关键映射是：
 
 ```yaml
-- hostname: chat.ai4child.asia
+- hostname: chat.example.com
   service: http://127.0.0.1:43110
 ```
 
-同一个Cloudflare Tunnel如果还有云服务器连接器，云端必须同时安装
-[Nginx配置](../deploy/nginx/chat.conf)和
-[云端Cloudflare配置](../deploy/cloudflared/cloud-relay.example.yml)，并保持Mac上的
+同一个Cloudflare Tunnel如果还有云服务器连接器，云端必须从
+[Nginx配置模板](../deploy/nginx/chat.conf)和
+[云端Cloudflare配置模板](../deploy/cloudflared/cloud-relay.example.yml)生成不跟踪的本地配置，并保持Mac上的
 `com.later.chat.cloud-relay`常驻。云端链路的端口关系固定为：
 
 ```text
@@ -189,10 +206,10 @@ Cloudflare → 127.0.0.1:33052 Nginx → 127.0.0.1:33051 Relay → Mac:43110
 
 同一个Tunnel的不同连接器各自读取本机ingress；任何一个连接器缺少Relay都会导致公网请求间歇性503，因此发布验收至少连续检查5次健康接口。
 
-公网验收：
+将示例域名替换为当前环境的`CHAT_PUBLIC_URL`后做公网验收：
 
 ```bash
-curl --fail https://chat.ai4child.asia/api/health
+curl --fail https://chat.example.com/api/health
 ```
 
 健康接口应返回`{"ok":true,"service":"chat"}`。随后用浏览器完成以下验收：登录、创建Session、运行直接执行和规划执行，并让Planner Orchestrator在计划批准后调用多个子Workflow；观察Thinking/工具过程、父子Session、刷新恢复和“完整历史”中的`Workflow → Stage · Agent → 输入/模型思考/工具调用与输出/Agent输出`结构。

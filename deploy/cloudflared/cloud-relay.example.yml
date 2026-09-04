@@ -1,6 +1,6 @@
 # 云服务器上的Cloudflare连接器先进入Nginx；Nginx再通过Mac建立的
 # SSH反向Relay访问Chat。云服务器不保存Chat Session或Provider配置。
 ingress:
-  - hostname: chat.ai4child.asia
+  - hostname: chat.example.com
     service: http://127.0.0.1:33052
   - service: http_status:404

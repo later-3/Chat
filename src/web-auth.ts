@@ -1,7 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 export const CHAT_WEB_AUTH_COOKIE = "chat-session";
-export const DEFAULT_CHAT_WEB_AUTH_USERNAME = "later";
+export const DEFAULT_CHAT_WEB_AUTH_USERNAME = "chat";
 export const DEFAULT_CHAT_WEB_AUTH_PASSWORD = "123456";
 
 const TOKEN_VERSION = "v1";
@@ -39,7 +39,7 @@ function sessionDays(value: string | undefined): number {
 }
 
 /**
- * Chat默认启用网页登录，并按产品约定提供`later / 123456`初始账号。
+ * Chat默认启用网页登录，并提供仅适合本地开发的`chat / 123456`初始账号。
  * 生产环境可以覆盖账号、密码和独立签名密钥；显式设置
  * `CHAT_WEB_AUTH_ENABLED=0`只用于受信任的本地开发环境。
  */

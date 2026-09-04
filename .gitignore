@@ -13,3 +13,11 @@ frontend/dist/
 .env
 .env.*
 *.log
+
+# User-specific deployment files generated from tracked examples/templates.
+deploy/chat.env
+deploy/devices.json
+deploy/cloudflared/config.yml
+deploy/cloudflared/cloud-relay.yml
+deploy/nginx/chat.local.conf
+deploy/macos/*.plist

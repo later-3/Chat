@@ -1,8 +1,8 @@
 [submodule "pi"]
 	path = pi
-	url = git@github.com:later-3/pi.git
+	url = https://github.com/later-3/pi.git
 	branch = codex/later-custom
 [submodule "frontend"]
 	path = frontend
-	url = git@github.com:later-3/pi-web.git
-	branch = codex/chat-frontend
+	url = https://github.com/later-3/chat-frontend.git
+	branch = main

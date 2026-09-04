@@ -109,7 +109,7 @@ Resource Catalog使用限定地址，例如：
 ```text
 personal:skill/review
 project/chat:skill/review
-project/ziji-content-lab:extension/content-tools
+project/example-project:extension/content-tools
 system:tool/memory_search
 workflow/memory/memory-agent:tool/memory_delete
 ```
@@ -150,7 +150,7 @@ Memory使用一个`MemoryStoreManager`管理多个独立Store：
 ```text
 Personal Store
 Project chat Store
-Project ziji-content-lab Store
+Project example-project Store
 ...
 ```
 
