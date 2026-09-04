@@ -5,11 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=chat
-Group=chat
-WorkingDirectory=/opt/chat
-EnvironmentFile=/etc/chat/chat.env
-ExecStart=/usr/bin/node /opt/chat/.output/server/index.mjs
+User=__CHAT_USER__
+Group=__CHAT_GROUP__
+WorkingDirectory=__CHAT_ROOT__
+Environment=NODE_ENV=production
+Environment=HOME=__RUN_HOME__
+Environment=CHAT_HOME=__CHAT_HOME__
+EnvironmentFile=__ENV_FILE__
+ExecStart=__NODE__ __RUNTIME_ROOT__/current/server/index.mjs
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=30

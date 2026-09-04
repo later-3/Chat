@@ -203,10 +203,10 @@ http://127.0.0.1:43112/
 
 该地址同时提供前端静态文件和Chat API，不需要启动Pi Web服务。
 
-网页默认启用登录，初始账号为`later / 123456`。生产环境通过
-`CHAT_WEB_AUTH_USERNAME`、`CHAT_WEB_AUTH_PASSWORD`和
-`CHAT_WEB_AUTH_SESSION_SECRET`覆盖；只在受信任的本地环境中才可以设置
-`CHAT_WEB_AUTH_ENABLED=0`关闭登录。
+网页默认启用登录。生产环境必须通过`CHAT_WEB_AUTH_USERNAME`和
+`CHAT_WEB_AUTH_PASSWORD`设置自己的账号；Linux安装脚本会生成独立的
+`CHAT_WEB_AUTH_SESSION_SECRET`。只在受信任的本地环境中才可以设置
+`CHAT_WEB_AUTH_ENABLED=0`关闭登录，不存在可直接用于生产的默认密码。
 
 服务器部署和`https://chat.ai4child.asia`域名配置见[部署指南](./docs/deployment.md)。
 
@@ -221,7 +221,7 @@ http://127.0.0.1:43112/
 ~/.chat/cache/fastembed/               可重新下载的本地Embedding模型缓存
 ```
 
-这些目录都不属于Chat源码仓库。部署到其他环境时，使用`--recurse-submodules`克隆Chat，准备两个私有子模块的Git读取凭证，安装依赖、构建Pi、准备`~/.chat/agent`私有配置并执行`pnpm verify`。必须在目标操作系统和CPU架构上构建，不能把其他机器的`.output`直接复制过去。Pi Web不再作为独立后端或独立服务启动；完整的可移植部署步骤、私有配置清单和验收命令见[部署指南](./docs/deployment.md)。
+这些目录都不属于Chat源码仓库。新的Linux/systemd环境并非完全零前置：需要`root`/`sudo`、将单个`deploy/chatctl`安全复制到主机的方式，以及访问GitHub、Node、npm Registry、原生包CDN和Pi模型目录的网络。首次执行脚本会自动创建`chat`用户并在私有仓库权限不足时停止；为该用户配置Chat、Pi和Pi Web读取凭证后重跑即可。脚本继续准备固定Node/pnpm、Submodule、版本化构建、systemd服务和回滚点，只再暂停等待用户填写Web密码、Provider凭证与默认模型；`WORKFLOW_LOCAL_DATA_DIR`必须位于`CHAT_HOME`内部。更新、诊断和回滚分别使用`chatctl update`、`chatctl doctor`和`chatctl rollback`。必须在目标操作系统和CPU架构上构建，不能复制其他机器的`.output`；完整步骤见[部署指南](./docs/deployment.md)。
 
 # 启动脚本
 ```bash

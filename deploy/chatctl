@@ -1,0 +1,523 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
+
+CHAT_REPO_URL="${CHAT_REPO_URL:-git@github.com:later-3/Chat.git}"
+CHAT_DEPLOY_REF="${CHAT_DEPLOY_REF:-main}"
+CHAT_ROOT="${CHAT_ROOT:-/opt/chat}"
+CHAT_RUNTIME_ROOT="${CHAT_RUNTIME_ROOT:-/var/lib/chat/runtime}"
+CHAT_RUN_USER="${CHAT_RUN_USER:-chat}"
+CHAT_ENV_FILE="${CHAT_ENV_FILE:-/etc/chat/chat.env}"
+CHAT_SERVICE="${CHAT_SERVICE:-chat}"
+CHAT_KEEP_RELEASES="${CHAT_KEEP_RELEASES:-3}"
+NODE_VERSION="22.19.0"
+PNPM_VERSION="10.13.1"
+
+log() { printf '[chatctl] %s\n' "$*" >&2; }
+fail() { log "ERROR: $*"; exit 1; }
+
+usage() {
+  cat <<'EOF'
+Usage: chatctl <command> [options]
+
+Commands:
+  install          Prepare a new host or idempotently deploy the selected ref
+  update           Deploy the latest selected ref without changing user data
+  doctor           Validate configuration, Agent assembly, service, and health
+  rollback         Switch back to the previously active release
+  validate-config  Validate the production environment file without starting Chat
+
+Options:
+  --ref REF        Branch, tag, or commit (default: main)
+  --repo URL       Chat Git repository
+  --env-file PATH  Production environment file (default: /etc/chat/chat.env)
+EOF
+}
+
+command_name="${1:-}"
+[[ -n "$command_name" ]] || { usage; exit 2; }
+shift
+while (($# > 0)); do
+  case "$1" in
+    --ref) [[ $# -ge 2 ]] || fail "--ref requires a value"; CHAT_DEPLOY_REF="$2"; shift 2 ;;
+    --repo) [[ $# -ge 2 ]] || fail "--repo requires a value"; CHAT_REPO_URL="$2"; shift 2 ;;
+    --env-file) [[ $# -ge 2 ]] || fail "--env-file requires a value"; CHAT_ENV_FILE="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) fail "unknown option: $1" ;;
+  esac
+done
+
+validate_fixed_paths() {
+  local value
+  for value in "$CHAT_ROOT" "$CHAT_RUNTIME_ROOT" "$CHAT_ENV_FILE"; do
+    safe_absolute_path "$value" || fail "deployment paths must be normalized safe absolute paths"
+  done
+  safe_managed_directory "$CHAT_ROOT" || fail "CHAT_ROOT is too broad"
+  safe_managed_directory "$CHAT_RUNTIME_ROOT" || fail "CHAT_RUNTIME_ROOT is too broad"
+  safe_managed_directory "$(dirname "$CHAT_ENV_FILE")" || fail "CHAT_ENV_FILE parent is too broad"
+  [[ "$CHAT_ROOT/" != "$CHAT_RUNTIME_ROOT/"* && "$CHAT_RUNTIME_ROOT/" != "$CHAT_ROOT/"* ]] \
+    || fail "source and runtime roots must not overlap"
+  [[ "$CHAT_RUN_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || fail "invalid Chat service user"
+  [[ "$CHAT_SERVICE" =~ ^[A-Za-z0-9_.@-]+$ ]] || fail "invalid systemd service name"
+  [[ "$CHAT_KEEP_RELEASES" =~ ^[0-9]+$ ]] && ((CHAT_KEEP_RELEASES >= 2 && CHAT_KEEP_RELEASES <= 20)) \
+    || fail "CHAT_KEEP_RELEASES must be between 2 and 20"
+}
+
+safe_absolute_path() {
+  local value="$1"
+  [[ "$value" =~ ^/[A-Za-z0-9_./-]+$ && "$value" != "/" \
+    && "$value" != */ \
+    && "$value" != *"//"* && "$value" != *"/./"* && "$value" != */. \
+    && "$value" != *"/../"* && "$value" != */.. ]]
+}
+
+safe_managed_directory() {
+  case "$1" in
+    /bin|/boot|/dev|/etc|/home|/lib|/lib64|/opt|/proc|/root|/run|/sbin|/srv|/sys|/tmp|/usr|/var) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+path_is_within() {
+  local child="$1" parent="$2"
+  [[ "$child" == "$parent/"* ]]
+}
+
+require_unredirected_path() {
+  local value="$1" resolved
+  resolved="$(realpath -m -- "$value")"
+  [[ "$resolved" == "$value" ]] || fail "managed path contains a symlink or non-normal component: $value"
+}
+
+env_value() {
+  local key="$1" file="$2"
+  awk -v wanted="$key" '
+    /^[[:space:]]*(#|$)/ { next }
+    {
+      line=$0
+      sub(/^[[:space:]]*/, "", line)
+      if (index(line, wanted "=") == 1) value=substr(line, length(wanted) + 2)
+    }
+    END {
+      sub(/^[[:space:]]*/, "", value); sub(/[[:space:]]*$/, "", value)
+      if ((substr(value,1,1) == "\"" && substr(value,length(value),1) == "\"") ||
+          (substr(value,1,1) == "\047" && substr(value,length(value),1) == "\047")) {
+        value=substr(value,2,length(value)-2)
+      }
+      print value
+    }
+  ' "$file"
+}
+
+validate_config() {
+  [[ -f "$CHAT_ENV_FILE" ]] || fail "missing environment file: $CHAT_ENV_FILE"
+  local host port target chat_home workflow_dir auth_enabled username password session_secret
+  host="$(env_value HOST "$CHAT_ENV_FILE")"
+  port="$(env_value PORT "$CHAT_ENV_FILE")"
+  target="$(env_value WORKFLOW_TARGET_WORLD "$CHAT_ENV_FILE")"
+  chat_home="$(env_value CHAT_HOME "$CHAT_ENV_FILE")"
+  workflow_dir="$(env_value WORKFLOW_LOCAL_DATA_DIR "$CHAT_ENV_FILE")"
+  auth_enabled="$(env_value CHAT_WEB_AUTH_ENABLED "$CHAT_ENV_FILE")"
+  username="$(env_value CHAT_WEB_AUTH_USERNAME "$CHAT_ENV_FILE")"
+  password="$(env_value CHAT_WEB_AUTH_PASSWORD "$CHAT_ENV_FILE")"
+  session_secret="$(env_value CHAT_WEB_AUTH_SESSION_SECRET "$CHAT_ENV_FILE")"
+
+  [[ "$host" == "127.0.0.1" ]] || fail "HOST must be 127.0.0.1 for the production service"
+  [[ "$port" =~ ^[0-9]+$ ]] && ((port >= 1024 && port <= 65535)) || fail "PORT must be between 1024 and 65535"
+  [[ "$target" == "local" ]] || fail "WORKFLOW_TARGET_WORLD must be local"
+  safe_absolute_path "$chat_home" && safe_managed_directory "$chat_home" \
+    || fail "CHAT_HOME must be a normalized safe absolute path"
+  safe_absolute_path "$workflow_dir" && path_is_within "$workflow_dir" "$chat_home" \
+    || fail "WORKFLOW_LOCAL_DATA_DIR must be inside CHAT_HOME"
+  [[ "$auth_enabled" =~ ^(1|true|yes|on)$ ]] || fail "production Web authentication must be enabled"
+  [[ -n "$username" ]] || fail "CHAT_WEB_AUTH_USERNAME is required"
+  [[ ${#password} -ge 12 ]] || fail "CHAT_WEB_AUTH_PASSWORD must contain at least 12 characters"
+  [[ "$password" != "123456" && "$password" != *"REQUIRED"* ]] || fail "replace the example Web password"
+  [[ ${#session_secret} -ge 32 ]] || fail "CHAT_WEB_AUTH_SESSION_SECRET must contain at least 32 characters"
+  [[ "$session_secret" != *"GENERATED_BY_CHATCTL"* ]] || fail "replace the example session secret"
+  log "configuration is valid (secret values were not printed)"
+}
+
+require_linux_root() {
+  [[ "$(uname -s)" == "Linux" ]] || fail "this deployment path supports Linux only"
+  ((EUID == 0)) || fail "run this command with sudo"
+  command -v systemctl >/dev/null || fail "systemd is required"
+  validate_fixed_paths
+}
+
+acquire_deployment_lock() {
+  command -v flock >/dev/null || fail "flock is required"
+  exec 9>"/run/lock/$CHAT_SERVICE-deploy.lock"
+  flock --nonblock 9 || fail "another Chat deployment command is running"
+}
+
+install_build_dependencies() {
+  if command -v apt-get >/dev/null; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y ca-certificates curl git openssh-client xz-utils build-essential python3 pkg-config util-linux
+  elif command -v dnf >/dev/null; then
+    dnf install -y ca-certificates curl git openssh-clients xz gcc gcc-c++ make python3 pkgconf-pkg-config util-linux
+  elif command -v yum >/dev/null; then
+    yum install -y ca-certificates curl git openssh-clients xz gcc gcc-c++ make python3 pkgconfig util-linux
+  else
+    fail "supported package manager not found (expected apt-get, dnf, or yum)"
+  fi
+}
+
+ensure_run_user() {
+  if ! id "$CHAT_RUN_USER" >/dev/null 2>&1; then
+    command -v useradd >/dev/null || fail "useradd is required"
+    useradd --system --create-home --home-dir "/home/$CHAT_RUN_USER" --shell /bin/bash "$CHAT_RUN_USER"
+  fi
+  CHAT_RUN_GROUP="$(id -gn "$CHAT_RUN_USER")"
+  CHAT_RUN_HOME="$(getent passwd "$CHAT_RUN_USER" | awk -F: '{print $6}')"
+  [[ "$CHAT_RUN_HOME" == /* && "$CHAT_RUN_HOME" != "/" ]] || fail "Chat service user has an invalid home"
+  require_unredirected_path "$CHAT_ROOT"
+  require_unredirected_path "$CHAT_RUNTIME_ROOT"
+  require_unredirected_path "$(dirname "$CHAT_ENV_FILE")"
+  install -d -o "$CHAT_RUN_USER" -g "$CHAT_RUN_GROUP" -m 0750 "$CHAT_ROOT"
+  install -d -o root -g "$CHAT_RUN_GROUP" -m 0750 "$CHAT_RUNTIME_ROOT"
+  install -d -o root -g "$CHAT_RUN_GROUP" -m 0750 "$CHAT_RUNTIME_ROOT/releases"
+  install -d -o root -g "$CHAT_RUN_GROUP" -m 0750 "$(dirname "$CHAT_ENV_FILE")"
+}
+
+ensure_node_toolchain() {
+  local architecture archive download_url checksums expected temporary extracted install_root toolchain_root
+  case "$(uname -m)" in
+    x86_64) architecture="x64" ;;
+    aarch64|arm64) architecture="arm64" ;;
+    *) fail "Node toolchain supports x86_64 and aarch64 only" ;;
+  esac
+  toolchain_root="$CHAT_RUNTIME_ROOT/toolchains"
+  install_root="$toolchain_root/node-v$NODE_VERSION-linux-$architecture"
+  install -d -o root -g root -m 0755 "$toolchain_root"
+  if [[ ! -x "$install_root/bin/node" ]]; then
+    archive="node-v$NODE_VERSION-linux-$architecture.tar.xz"
+    download_url="https://nodejs.org/dist/v$NODE_VERSION"
+    temporary="$(mktemp -d)"
+    curl --fail --silent --show-error --location "$download_url/$archive" -o "$temporary/$archive"
+    curl --fail --silent --show-error --location "$download_url/SHASUMS256.txt" -o "$temporary/SHASUMS256.txt"
+    expected="$(awk -v archive="$archive" '$2 == archive { print $1 }' "$temporary/SHASUMS256.txt")"
+    [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || fail "official Node checksum was not found"
+    printf '%s  %s\n' "$expected" "$temporary/$archive" | sha256sum --check --status \
+      || fail "Node archive checksum verification failed"
+    tar -xJf "$temporary/$archive" -C "$temporary"
+    extracted="$temporary/node-v$NODE_VERSION-linux-$architecture"
+    [[ -x "$extracted/bin/node" ]] || fail "downloaded Node archive is invalid"
+    mv "$extracted" "$install_root"
+    rm -rf -- "$temporary"
+  fi
+  ln -sfn "$install_root" "$toolchain_root/node"
+  NODE_BIN="$toolchain_root/node/bin/node"
+  COREPACK_BIN="$toolchain_root/node/bin/corepack"
+  PNPM_BIN="$toolchain_root/node/bin/pnpm"
+  [[ "$($NODE_BIN --version)" == "v$NODE_VERSION" ]] || fail "managed Node version is invalid"
+  "$COREPACK_BIN" enable pnpm
+  install -d -o "$CHAT_RUN_USER" -g "$CHAT_RUN_GROUP" -m 0750 "$CHAT_RUN_HOME/.cache/chat-corepack"
+  run_as_chat "$COREPACK_BIN" prepare "pnpm@$PNPM_VERSION" --activate
+  [[ "$(run_as_chat "$PNPM_BIN" --version)" == "$PNPM_VERSION" ]] || fail "managed pnpm version is invalid"
+}
+
+run_as_chat() {
+  runuser -u "$CHAT_RUN_USER" -- env -i \
+    HOME="$CHAT_RUN_HOME" \
+    USER="$CHAT_RUN_USER" \
+    LOGNAME="$CHAT_RUN_USER" \
+    SHELL=/bin/bash \
+    LANG=C \
+    PATH="$CHAT_RUNTIME_ROOT/toolchains/node/bin:/usr/local/bin:/usr/bin:/bin" \
+    COREPACK_HOME="$CHAT_RUN_HOME/.cache/chat-corepack" \
+    "$@"
+}
+
+run_in_source() {
+  runuser -u "$CHAT_RUN_USER" -- env -i \
+    HOME="$CHAT_RUN_HOME" \
+    USER="$CHAT_RUN_USER" \
+    LOGNAME="$CHAT_RUN_USER" \
+    SHELL=/bin/bash \
+    LANG=C \
+    PATH="$CHAT_RUNTIME_ROOT/toolchains/node/bin:/usr/local/bin:/usr/bin:/bin" \
+    COREPACK_HOME="$CHAT_RUN_HOME/.cache/chat-corepack" \
+    bash -c 'cd "$1"; shift; exec "$@"' bash "$CHAT_ROOT" "$@"
+}
+
+checkout_source() {
+  if [[ -d "$CHAT_ROOT/.git" ]]; then
+    [[ -z "$(run_as_chat git -C "$CHAT_ROOT" status --porcelain --untracked-files=no)" ]] \
+      || fail "tracked changes exist in $CHAT_ROOT; preserve them before deployment"
+    run_as_chat git -C "$CHAT_ROOT" remote set-url origin "$CHAT_REPO_URL"
+  else
+    [[ -z "$(find "$CHAT_ROOT" -mindepth 1 -maxdepth 1 -print -quit)" ]] \
+      || fail "$CHAT_ROOT exists and is not an empty Git checkout"
+    run_as_chat git clone --no-checkout "$CHAT_REPO_URL" "$CHAT_ROOT"
+  fi
+  run_as_chat git -C "$CHAT_ROOT" fetch --force --tags origin "$CHAT_DEPLOY_REF"
+  local target_commit
+  target_commit="$(run_as_chat git -C "$CHAT_ROOT" rev-parse 'FETCH_HEAD^{commit}')"
+  run_as_chat git -C "$CHAT_ROOT" checkout --detach "$target_commit"
+  run_as_chat git -C "$CHAT_ROOT" submodule sync --recursive
+  run_as_chat git -C "$CHAT_ROOT" submodule update --init --recursive
+  [[ -f "$CHAT_ROOT/.chat/project.json" ]] || fail "target ref is not a Chat project checkout"
+}
+
+prepare_dependencies() {
+  run_in_source "$PNPM_BIN" pi:prepare
+  run_in_source "$PNPM_BIN" install --frozen-lockfile
+}
+
+generate_user_configuration() {
+  local generated=0 chat_home workflow_dir secret temporary
+  chat_home="$CHAT_RUN_HOME/.chat"
+  workflow_dir="$chat_home/runtime/workflow-data"
+  if [[ -f "$CHAT_ENV_FILE" ]]; then
+    local configured_home configured_workflow
+    configured_home="$(env_value CHAT_HOME "$CHAT_ENV_FILE")"
+    configured_workflow="$(env_value WORKFLOW_LOCAL_DATA_DIR "$CHAT_ENV_FILE")"
+    [[ "$configured_home" =~ ^/[A-Za-z0-9_./-]+$ && "$configured_home" != "/" ]] \
+      && chat_home="$configured_home"
+    [[ "$configured_workflow" =~ ^/[A-Za-z0-9_./-]+$ && "$configured_workflow" != "/" ]] \
+      && workflow_dir="$configured_workflow"
+  fi
+  require_unredirected_path "$chat_home"
+  require_unredirected_path "$workflow_dir"
+  install -d -o "$CHAT_RUN_USER" -g "$CHAT_RUN_GROUP" -m 0700 "$chat_home/agent" "$workflow_dir"
+  if [[ ! -f "$CHAT_ENV_FILE" ]]; then
+    secret="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    temporary="$(mktemp)"
+    sed \
+      -e "s|^CHAT_HOME=.*|CHAT_HOME=$chat_home|" \
+      -e "s|^WORKFLOW_LOCAL_DATA_DIR=.*|WORKFLOW_LOCAL_DATA_DIR=$workflow_dir|" \
+      -e "s|^CHAT_WEB_AUTH_SESSION_SECRET=.*|CHAT_WEB_AUTH_SESSION_SECRET=$secret|" \
+      "$CHAT_ROOT/deploy/chat.env.example" >"$temporary"
+    install -o root -g "$CHAT_RUN_GROUP" -m 0640 "$temporary" "$CHAT_ENV_FILE"
+    rm -f -- "$temporary"
+    generated=1
+  fi
+  if [[ ! -f "$chat_home/agent/settings.json" ]]; then
+    install -o "$CHAT_RUN_USER" -g "$CHAT_RUN_GROUP" -m 0600 \
+      "$CHAT_ROOT/deploy/settings.json.example" "$chat_home/agent/settings.json"
+    generated=1
+  fi
+  if ((generated)); then
+    log "user configuration templates were generated"
+    log "edit $CHAT_ENV_FILE and $chat_home/agent/settings.json, configure Provider credentials, then run install again"
+    exit 2
+  fi
+}
+
+load_configured_paths() {
+  CONFIGURED_CHAT_HOME="$(env_value CHAT_HOME "$CHAT_ENV_FILE")"
+  CONFIGURED_WORKFLOW_DIR="$(env_value WORKFLOW_LOCAL_DATA_DIR "$CHAT_ENV_FILE")"
+  CONFIGURED_PORT="$(env_value PORT "$CHAT_ENV_FILE")"
+}
+
+ensure_configured_directories() {
+  require_unredirected_path "$CONFIGURED_CHAT_HOME"
+  require_unredirected_path "$CONFIGURED_WORKFLOW_DIR"
+  install -d -o "$CHAT_RUN_USER" -g "$CHAT_RUN_GROUP" -m 0700 \
+    "$CONFIGURED_CHAT_HOME" \
+    "$CONFIGURED_CHAT_HOME/agent" \
+    "$CONFIGURED_CHAT_HOME/memory" \
+    "$CONFIGURED_CHAT_HOME/projects" \
+    "$CONFIGURED_CHAT_HOME/cache/fastembed" \
+    "$CONFIGURED_WORKFLOW_DIR"
+  chown root:"$CHAT_RUN_GROUP" "$CHAT_ENV_FILE"
+  chmod 0640 "$CHAT_ENV_FILE"
+}
+
+run_deployment_doctor() {
+  run_as_chat "$NODE_BIN" "--env-file=$CHAT_ENV_FILE" \
+    "$CHAT_ROOT/scripts/deployment-doctor.mjs" --root "$CHAT_ROOT"
+}
+
+build_release() {
+  run_in_source "$PNPM_BIN" verify
+  local commit release_id staging
+  commit="$(run_as_chat git -C "$CHAT_ROOT" rev-parse HEAD)"
+  release_id="$(date -u +%Y%m%dT%H%M%SZ)-${commit:0:12}-$$"
+  staging="$(mktemp -d "$CHAT_RUNTIME_ROOT/releases/.staging.XXXXXX")"
+  cp -a "$CHAT_ROOT/.output/." "$staging/"
+  printf 'chat=%s\nfrontend=%s\npi=%s\n' \
+    "$commit" \
+    "$(run_as_chat git -C "$CHAT_ROOT/frontend" rev-parse HEAD)" \
+    "$(run_as_chat git -C "$CHAT_ROOT/pi" rev-parse HEAD)" \
+    >"$staging/release-commits.txt"
+  NEW_RELEASE="$CHAT_RUNTIME_ROOT/releases/$release_id"
+  mv "$staging" "$NEW_RELEASE"
+  chown -R root:"$CHAT_RUN_GROUP" "$NEW_RELEASE"
+  chmod -R u=rwX,g=rX,o= "$NEW_RELEASE"
+}
+
+sed_replacement() { printf '%s' "$1" | sed 's/[&|]/\\&/g'; }
+
+install_systemd_unit() {
+  local unit_temp
+  unit_temp="$(mktemp)"
+  sed \
+    -e "s|__CHAT_USER__|$(sed_replacement "$CHAT_RUN_USER")|g" \
+    -e "s|__CHAT_GROUP__|$(sed_replacement "$CHAT_RUN_GROUP")|g" \
+    -e "s|__CHAT_ROOT__|$(sed_replacement "$CHAT_ROOT")|g" \
+    -e "s|__RUN_HOME__|$(sed_replacement "$CHAT_RUN_HOME")|g" \
+    -e "s|__CHAT_HOME__|$(sed_replacement "$CONFIGURED_CHAT_HOME")|g" \
+    -e "s|__ENV_FILE__|$(sed_replacement "$CHAT_ENV_FILE")|g" \
+    -e "s|__NODE__|$(sed_replacement "$NODE_BIN")|g" \
+    -e "s|__RUNTIME_ROOT__|$(sed_replacement "$CHAT_RUNTIME_ROOT")|g" \
+    "$CHAT_ROOT/deploy/systemd/chat.service" >"$unit_temp"
+  grep -q '__[A-Z_]*__' "$unit_temp" && fail "systemd template contains an unresolved placeholder"
+  install -o root -g root -m 0644 "$unit_temp" "/etc/systemd/system/$CHAT_SERVICE.service"
+  rm -f -- "$unit_temp"
+  systemctl daemon-reload
+  systemctl enable "$CHAT_SERVICE.service" >/dev/null
+}
+
+atomic_link() {
+  local target="$1" link="$2" temporary="${2}.new.$$"
+  ln -s "$target" "$temporary"
+  mv -Tf "$temporary" "$link"
+}
+
+prune_old_releases() {
+  local current previous="" kept=0 candidate
+  current="$(readlink -f "$CHAT_RUNTIME_ROOT/current")"
+  [[ ! -L "$CHAT_RUNTIME_ROOT/previous" ]] || previous="$(readlink -f "$CHAT_RUNTIME_ROOT/previous")"
+  while IFS= read -r candidate; do
+    [[ "$candidate" == "$CHAT_RUNTIME_ROOT/releases/"* ]] || continue
+    if [[ "$candidate" == "$current" || "$candidate" == "$previous" || $kept -lt $CHAT_KEEP_RELEASES ]]; then
+      kept=$((kept + 1))
+      continue
+    fi
+    rm -rf -- "$candidate"
+  done < <(find "$CHAT_RUNTIME_ROOT/releases" -mindepth 1 -maxdepth 1 -type d \
+    ! -name '.staging.*' -printf '%T@ %p\n' | sort -rn | cut -d' ' -f2-)
+}
+
+wait_for_health() {
+  local attempt response
+  for attempt in $(seq 1 30); do
+    response="$(curl --fail --silent --max-time 2 \
+      "http://127.0.0.1:$CONFIGURED_PORT/api/health" 2>/dev/null || true)"
+    if systemctl is-active --quiet "$CHAT_SERVICE.service" \
+      && [[ "$response" == '{"ok":true,"service":"chat"}' ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+activate_release() {
+  local old_release=""
+  if [[ -L "$CHAT_RUNTIME_ROOT/current" ]]; then
+    old_release="$(readlink -f "$CHAT_RUNTIME_ROOT/current")"
+    [[ "$old_release" == "$CHAT_RUNTIME_ROOT/releases/"* ]] || fail "current release points outside the release directory"
+  fi
+  install_systemd_unit
+  atomic_link "$NEW_RELEASE" "$CHAT_RUNTIME_ROOT/current"
+  local service_started=0
+  if systemctl is-active --quiet "$CHAT_SERVICE.service"; then
+    systemctl restart "$CHAT_SERVICE.service" && service_started=1
+  else
+    systemctl start "$CHAT_SERVICE.service" && service_started=1
+  fi
+  if ((service_started)) && wait_for_health; then
+    [[ -z "$old_release" ]] || atomic_link "$old_release" "$CHAT_RUNTIME_ROOT/previous"
+    prune_old_releases
+    log "release activated: $(basename "$NEW_RELEASE")"
+    return 0
+  fi
+
+  log "new release failed health validation; restoring the previous release"
+  if [[ -n "$old_release" ]]; then
+    atomic_link "$old_release" "$CHAT_RUNTIME_ROOT/current"
+    systemctl restart "$CHAT_SERVICE.service" || true
+    wait_for_health || true
+  else
+    rm -f -- "$CHAT_RUNTIME_ROOT/current"
+    systemctl stop "$CHAT_SERVICE.service" || true
+  fi
+  fail "deployment failed; the new release was not left active"
+}
+
+deploy_selected_ref() {
+  require_linux_root
+  install_build_dependencies
+  acquire_deployment_lock
+  ensure_run_user
+  ensure_node_toolchain
+  checkout_source
+  prepare_dependencies
+  generate_user_configuration
+  validate_config
+  load_configured_paths
+  ensure_configured_directories
+  run_deployment_doctor
+  build_release
+  activate_release
+}
+
+doctor() {
+  require_linux_root
+  acquire_deployment_lock
+  local active_release active_chat source_chat
+  id "$CHAT_RUN_USER" >/dev/null 2>&1 || fail "Chat service user does not exist"
+  CHAT_RUN_GROUP="$(id -gn "$CHAT_RUN_USER")"
+  CHAT_RUN_HOME="$(getent passwd "$CHAT_RUN_USER" | awk -F: '{print $6}')"
+  NODE_BIN="$CHAT_RUNTIME_ROOT/toolchains/node/bin/node"
+  [[ -x "$NODE_BIN" ]] || fail "managed Node toolchain is missing"
+  validate_config
+  load_configured_paths
+  [[ -L "$CHAT_RUNTIME_ROOT/current" ]] || fail "there is no active release"
+  active_release="$(readlink -f "$CHAT_RUNTIME_ROOT/current")"
+  [[ "$active_release" == "$CHAT_RUNTIME_ROOT/releases/"* \
+    && -f "$active_release/server/index.mjs" \
+    && -f "$active_release/release-commits.txt" ]] \
+    || fail "the active release is outside the managed directory or incomplete"
+  active_chat="$(awk -F= '$1 == "chat" { print $2 }' "$active_release/release-commits.txt")"
+  source_chat="$(run_as_chat git -C "$CHAT_ROOT" rev-parse HEAD)"
+  [[ -n "$active_chat" && "$active_chat" == "$source_chat" ]] \
+    || fail "source checkout does not match the active release; redeploy or restore the matching ref"
+  run_deployment_doctor
+  systemctl is-active --quiet "$CHAT_SERVICE.service" || fail "Chat systemd service is not active"
+  wait_for_health || fail "Chat local health check failed"
+  log "doctor passed"
+}
+
+rollback() {
+  require_linux_root
+  acquire_deployment_lock
+  local current previous
+  validate_config
+  load_configured_paths
+  [[ -L "$CHAT_RUNTIME_ROOT/current" && -L "$CHAT_RUNTIME_ROOT/previous" ]] \
+    || fail "both current and previous releases are required for rollback"
+  current="$(readlink -f "$CHAT_RUNTIME_ROOT/current")"
+  previous="$(readlink -f "$CHAT_RUNTIME_ROOT/previous")"
+  [[ "$current" == "$CHAT_RUNTIME_ROOT/releases/"* && "$previous" == "$CHAT_RUNTIME_ROOT/releases/"* ]] \
+    || fail "release symlink points outside the release directory"
+  [[ -f "$current/server/index.mjs" && -f "$previous/server/index.mjs" ]] \
+    || fail "current or previous release is incomplete"
+  atomic_link "$previous" "$CHAT_RUNTIME_ROOT/current"
+  atomic_link "$current" "$CHAT_RUNTIME_ROOT/previous"
+  local restart_succeeded=0
+  systemctl restart "$CHAT_SERVICE.service" && restart_succeeded=1
+  if ((!restart_succeeded)) || ! wait_for_health; then
+    atomic_link "$current" "$CHAT_RUNTIME_ROOT/current"
+    atomic_link "$previous" "$CHAT_RUNTIME_ROOT/previous"
+    systemctl restart "$CHAT_SERVICE.service" || true
+    fail "rollback target failed health validation; restored the original release"
+  fi
+  log "rollback completed: $(basename "$previous")"
+}
+
+case "$command_name" in
+  install|update) deploy_selected_ref ;;
+  doctor) doctor ;;
+  rollback) rollback ;;
+  validate-config) validate_fixed_paths; validate_config ;;
+  help) usage ;;
+  *) usage; fail "unknown command: $command_name" ;;
+esac

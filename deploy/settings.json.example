@@ -1,0 +1,5 @@
+{
+  "defaultProvider": "__REQUIRED_PROVIDER__",
+  "defaultModel": "__REQUIRED_MODEL__",
+  "defaultThinkingLevel": "medium"
+}

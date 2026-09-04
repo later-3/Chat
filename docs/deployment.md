@@ -1,7 +1,7 @@
 # Chat 部署
 
 直接执行Workflow中的Agent可以显式加载项目Skill
-`.chat/skills/chat-deployment/SKILL.md`执行本仓库部署。Skill只编排本文已有的构建、服务重启和验收入口，不取代本文，也不授予未经用户明确要求的生产变更权限。
+`.chat/skills/chat-deployment/SKILL.md`执行本仓库部署。Skill在Linux上统一调用`chatctl`，不取代本文，也不授予未经用户明确要求的生产变更权限。
 
 ## 运行结构
 
@@ -26,117 +26,136 @@ https://chat.ai4child.asia
 
 ## 可移植部署前提
 
-另一台机器从空目录部署需要满足以下条件：
+Linux自动部署入口是[deploy/chatctl](../deploy/chatctl)，支持同时满足以下条件的机器：
 
-1. Node.js `>=22.19.0`、Corepack、Git，以及能够运行`npm ci`所需的基础构建环境。
-2. Git身份能读取`later-3/Chat`、`later-3/pi`和`later-3/pi-web`三个私有仓库。
-3. 构建阶段能访问Pi使用的公开模型目录；`pnpm pi:prepare`需要生成Git中不保存的Provider模型数据。
-4. 目标机器上安全准备Pi模型和Provider认证；这些凭证不在Git中。
-5. 在目标机器上执行构建。`.output`包含与构建机器操作系统和CPU架构有关的原生依赖，不能跨平台复制。
+1. 使用`systemd`管理服务。
+2. CPU架构为`x86_64`或`aarch64`。
+3. 发行版使用`apt-get`、`dnf`或`yum`之一；其他包管理器会明确拒绝，不会猜测安装命令。
+4. 能访问GitHub私有仓库、`nodejs.org`、配置的npm Registry、依赖原生二进制包使用的下载/CDN地址，以及Pi构建所需的公开模型目录。
 
-当前评审版本位于`codex/pi-web-frontend-in-chat`。在该分支合入`main`之前，首次安装命令必须带上`--branch codex/pi-web-frontend-in-chat`；合入后可以省略该参数。无论部署哪个分支或Tag，真正生效的Pi和前端版本都由Chat父仓库记录的两个Submodule Commit决定。
+脚本通过系统包管理器安装`ca-certificates`、`curl`、`git`、OpenSSH客户端、`xz`、C/C++编译工具、`make`、`python3`和`pkg-config`；从`nodejs.org`下载固定的Node.js `22.19.0`并用官方`SHASUMS256.txt`校验，然后通过Corepack固定使用pnpm `10.13.1`。它不会使用系统中碰巧存在的其他Node或pnpm版本。
+
+安装仍有两类输入必须由用户提供：
+
+- `chat`运行用户读取`later-3/Chat`、`later-3/pi`和`later-3/pi-web`三个私有仓库的Git凭证。
+- Web登录密码，以及至少一种可用的模型Provider凭证和对应的默认Provider/模型。
+
+默认部署`main`。也可以显式选择Tag或Commit；真正生效的Pi和前端版本始终由Chat父仓库记录的两个Submodule Commit决定，脚本不会让子模块自行追踪远端分支。所有构建都在目标机器上完成，因为生产产物包含与操作系统和CPU架构有关的原生依赖，不能从其他机器复制`.output`。
 
 ## 首次安装
 
-Chat部署目录包含两个由父仓库固定提交的私有子模块：
+自动部署不是“完全零前置”：新机器至少需要可用的`root`或`sudo`权限、把单个`deploy/chatctl`从可信来源传到主机的方式，以及上述网络访问。系统依赖、固定Node/pnpm、运行用户、源码、Submodule、构建和systemd服务均由脚本处理。
 
-```text
-/opt/chat/
-├── frontend/
-└── pi/
-```
-
-部署机器必须先创建`chat`系统用户，并为该用户配置可读取三个私有仓库的SSH Key或GitHub凭证。systemd模板固定使用`chat`用户，而且当前Coding Agent的默认工作目录就是Chat目录，所以应让`chat`用户拥有仓库并使用该用户完成安装与构建：
+推荐先从已授权的工作站把当前`main`中的单个脚本安全复制到新主机，再执行：
 
 ```bash
-corepack enable
-sudo install -d -o chat -g chat -m 0750 /opt/chat
-sudo -u chat -H git clone \
-  --branch codex/pi-web-frontend-in-chat \
-  --recurse-submodules \
-  git@github.com:later-3/Chat.git /opt/chat
-sudo -u chat -H sh -lc 'cd /opt/chat && pnpm pi:prepare'
-sudo -u chat -H sh -lc 'cd /opt/chat && pnpm install --frozen-lockfile'
-sudo -u chat -H sh -lc 'cd /opt/chat && pnpm verify'
+sudo install -o root -g root -m 0755 /tmp/chatctl /usr/local/sbin/chatctl-bootstrap
+sudo /usr/local/sbin/chatctl-bootstrap install
 ```
 
-`chat`用户的SSH配置必须能读取私有仓库。也可以使用专用Deploy Key；不要把私钥放进Chat仓库。
-
-命令职责如下：
-
-- `pnpm pi:prepare`按Pi自己的锁文件安装依赖，联网生成`pi/packages/ai/src/providers/data/`，再生成`pi/packages/*/dist`。模型数据目录由Pi忽略，不会污染Submodule状态。
-- `pnpm install --frozen-lockfile`按Chat锁文件安装后端与`frontend/`依赖，并把Chat依赖连接到当前`pi/`源码。
-- `pnpm verify`运行后端与前端测试、类型检查、生产构建和隔离生产服务HTTP测试。
-
-更新版本时不要在服务器上让子模块自行追踪远端分支；使用父仓库提交中记录的精确版本：
+首次运行会自动创建`chat`系统用户，然后尝试以该用户拉取私有仓库。如果新创建的用户尚无Git凭证，脚本会在Git权限检查处安全停止。此时为`chat`用户配置可读取`later-3/Chat`、`later-3/pi`和`later-3/pi-web`三个私有仓库的Deploy Key或GitHub凭证；不要把私钥放进Chat仓库。然后逐一验证访问权限：
 
 ```bash
-sudo -u chat -H git -C /opt/chat pull --ff-only
-sudo -u chat -H git -C /opt/chat submodule sync --recursive
-sudo -u chat -H git -C /opt/chat submodule update --init --recursive
-sudo -u chat -H sh -lc 'cd /opt/chat && pnpm pi:prepare'
-sudo -u chat -H sh -lc 'cd /opt/chat && pnpm install --frozen-lockfile'
-sudo -u chat -H sh -lc 'cd /opt/chat && pnpm verify'
+sudo -u chat -H git ls-remote git@github.com:later-3/Chat.git HEAD
+sudo -u chat -H git ls-remote git@github.com:later-3/pi.git HEAD
+sudo -u chat -H git ls-remote git@github.com:later-3/pi-web.git HEAD
 ```
 
-复制[deploy/chat.env.example](../deploy/chat.env.example)为`/etc/chat/chat.env`，权限设为仅运行用户可读。默认登录账号是：
-
-```text
-用户名：later
-密码：123456
-```
-
-这是当前约定的初始账号。公网长期运行时应修改`CHAT_WEB_AUTH_PASSWORD`，并设置至少32字符的随机`CHAT_WEB_AUTH_SESSION_SECRET`。修改密码或签名密钥后，已有登录Cookie会失效。
-
-Pi运行时固定读取`CHAT_HOME/agent`。systemd示例把`CHAT_HOME`设为`/home/chat/.chat`，其中：
-
-- `/home/chat/.chat/agent/settings.json`选择默认Provider、模型和Thinking Level。
-- `/home/chat/.chat/agent/models.json`保存自定义Provider与模型定义，可能包含Credential，不能提交Git。
-- `/home/chat/.chat/agent/auth.json`保存Pi Provider认证，不能提交Git。
-
-如果使用Pi内置模型目录，可以不提供自定义`models.json`，但必须通过Pi支持的认证方式让默认Provider可用。部署前至少确认`settings.json`选择的Provider与模型在该机器上存在且已经认证。不要从终端打印或从Git传递Credential。
-
-需要持久保存且不能提交Git的目录：
-
-```text
-/home/chat/.chat/agent/
-/home/chat/.chat/memory/
-/home/chat/.chat/projects/
-/home/chat/.chat/runtime/workflow-data/
-```
-
-systemd模板使用`chat`用户运行。安装服务前应确保仓库及Agent允许操作的工作目录属于`chat`用户，Chat Home运行时目录可写：
+验证完成后重新运行同一个bootstrap命令。它会从默认`main`克隆源码并继续安装：
 
 ```bash
-sudo chown -R chat:chat /opt/chat
-sudo install -d -o chat -g chat -m 0700 \
-  /home/chat/.chat/agent \
-  /home/chat/.chat/memory \
-  /home/chat/.chat/projects \
-  /home/chat/.chat/runtime/workflow-data \
-  /home/chat/.chat/cache/fastembed
-sudo chown -R chat:chat /home/chat/.chat
+sudo /usr/local/sbin/chatctl-bootstrap install
 ```
 
-当前前端默认使用Chat进程的工作目录；在下面的systemd模板中就是`/opt/chat`。已有Session的`cwd`是绝对路径，把Session迁移到另一台机器时必须同时准备对应工作目录，否则Chat会拒绝以不匹配的`cwd`继续该Session。
+已有可读取私有仓库的`chat`系统用户和Git环境时，也可以先手工克隆`main`，再运行`sudo ./deploy/chatctl install`。无论使用哪种bootstrap方式，都不需要手工初始化子模块。`chatctl install`会同步并检出父仓库固定的Submodule Commit、准备构建环境、构建候选版本、执行发布验证、渲染systemd服务，并把运行产物保存为版本化Release：
+
+```text
+/opt/chat/                                  稳定源码与Agent工作目录
+├── frontend/                              父仓库固定的Pi Web Submodule
+└── pi/                                    父仓库固定的Pi Submodule
+/var/lib/chat/runtime/
+├── releases/<release-id>/                 不可变的已构建版本
+└── current -> releases/<release-id>/      systemd当前运行版本
+```
+
+首次运行会从[deploy/chat.env.example](../deploy/chat.env.example)生成私有环境配置、自动生成独立的Session签名密钥，并从[deploy/settings.json.example](../deploy/settings.json.example)生成Pi设置模板。因为脚本不能替用户决定密码、Provider和模型，它会在生成这些文件后有意停止，而不会带着占位符启动公网服务。
+
+此时完成以下配置：
+
+1. 编辑`/etc/chat/chat.env`，把`CHAT_WEB_AUTH_PASSWORD`设为自己的强密码。保留脚本生成的`CHAT_WEB_AUTH_SESSION_SECRET`，不要复制示例占位符覆盖它。
+2. 在同一文件中设置实际使用的Provider API Key，或者按下一节以`chat`用户完成OAuth登录。
+3. 编辑`/home/chat/.chat/agent/settings.json`，填写真实存在的`defaultProvider`、`defaultModel`和`defaultThinkingLevel`。
+4. 重新执行安装；脚本会校验用户配置，然后继续构建和启动：
+
+```bash
+cd /opt/chat
+sudo ./deploy/chatctl install
+```
+
+重复执行`install`是安全的：已完成的主机不会因同一命令被重复初始化。安装成功后执行：
+
+```bash
+sudo ./deploy/chatctl doctor
+```
+
+### 用户配置：Web登录和Provider
+
+`/etc/chat/chat.env`权限由脚本限制为仅运行用户可读。Web认证默认开启，仓库不提供可直接用于生产的默认密码。修改密码或签名密钥后，已有登录Cookie会失效。若修改默认目录，`WORKFLOW_LOCAL_DATA_DIR`必须是`CHAT_HOME`内部的绝对路径；配置到其他位置会被`chatctl`拒绝。
+
+Provider认证支持两种方式，选择一种即可：
+
+- API Key：在`/etc/chat/chat.env`中取消对应变量的注释，例如`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`、`OPENROUTER_API_KEY`、`DEEPSEEK_API_KEY`或`KIMI_API_KEY`。只配置实际使用的Provider。
+- OAuth或Pi认证文件：以`chat`用户运行Pi交互登录，并把Pi配置目录明确指向Chat Agent目录：
+
+```bash
+sudo -u chat -H env \
+  PI_CODING_AGENT_DIR=/home/chat/.chat/agent \
+  /var/lib/chat/runtime/toolchains/node/bin/node \
+  /opt/chat/pi/packages/coding-agent/dist/cli.js
+```
+
+进入Pi后执行`/login`，完成后退出。远程SSH环境无法接收本机浏览器回调时，按Pi提示粘贴最终跳转URL或授权码。认证结果写入`/home/chat/.chat/agent/auth.json`，不能提交Git，也不要从终端打印其内容。
+
+Pi运行时固定读取`CHAT_HOME/agent`。默认位置及职责如下：
+
+- `/home/chat/.chat/agent/settings.json`：选择默认Provider、模型和Thinking Level；格式参考[deploy/settings.json.example](../deploy/settings.json.example)。
+- `/home/chat/.chat/agent/models.json`：可选的自定义Provider与模型定义，可能包含Credential。
+- `/home/chat/.chat/agent/auth.json`：Pi保存的API Key或OAuth认证。
+
+使用内置模型目录时不需要创建`models.json`，但`settings.json`所选Provider与模型必须存在且具有有效认证。`chatctl doctor`会检查配置、目录权限、当前Release、systemd状态和本机健康接口；它不会发起一次可能计费的模型调用。
+
+### 数据目录
+
+源码、构建产物和用户数据相互分离。升级与回滚只切换`/var/lib/chat/runtime/current`，不会覆盖`CHAT_HOME`：
+
+```text
+/home/chat/.chat/agent/                 Pi模型、设置、认证与全局资源
+/home/chat/.chat/memory/                Personal Memory
+/home/chat/.chat/projects/              Project配置、Session和Project Memory
+/home/chat/.chat/runtime/workflow-data/ Workflow Run、Step和Event
+/home/chat/.chat/cache/fastembed/       可重新下载的Embedding模型缓存
+```
+
+这些目录必须纳入私有备份，不能提交Git。`auth.json`、`models.json`和`chat.env`都可能含有Credential。已有Session的`cwd`是绝对路径；迁移到另一台机器时还要准备相同的Agent工作目录，否则Chat会拒绝以不匹配的`cwd`继续Session。
 
 ## systemd
 
-仓库提供[deploy/systemd/chat.service](../deploy/systemd/chat.service)。安装后执行：
+仓库提供[deploy/systemd/chat.service](../deploy/systemd/chat.service)作为占位符模板，由`chatctl install`渲染和安装，不应直接复制未渲染文件。服务始终以`chat`用户运行，工作目录稳定为`/opt/chat`，实际执行版本化的`/var/lib/chat/runtime/current/server/index.mjs`。这样Session中的工作目录不会随Release变化，而失败更新可以切回上一Release。
+
+日常操作统一使用：
 
 ```bash
-sudo install -D -m 0644 deploy/systemd/chat.service /etc/systemd/system/chat.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now chat
-curl --fail http://127.0.0.1:43110/api/health
+sudo ./deploy/chatctl doctor
+sudo ./deploy/chatctl update
+sudo ./deploy/chatctl rollback
 ```
 
-模板假设Node位于`/usr/bin/node`。如果`command -v node`返回其他路径，安装前应修改`ExecStart`。启动后只需要一个Chat进程；不要再启动Vite、Pi Web后端或第二个Agent服务。
+`update`默认更新`main`，也可选择明确的Tag或Commit。它先在新的Release中构建和验证，成功后才原子切换`current`并重启服务；readiness失败时恢复上一版本。默认保留最近3个Release，可通过`CHAT_KEEP_RELEASES`调整为2到20；`rollback`切回保留的上一Release，不回退或覆盖用户数据。启动后只应存在一个Chat进程；不要另行启动Vite、Pi Web后端或第二个Agent服务。
 
-更新版本时先完成构建和`pnpm verify`，再执行：
+需要直接查看服务状态和日志时使用：
 
 ```bash
-sudo systemctl restart chat
+sudo systemctl status chat --no-pager
 sudo journalctl -u chat -n 100 --no-pager
 ```
 
