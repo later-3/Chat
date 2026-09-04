@@ -26,6 +26,7 @@ export default defineEventHandler(async (event) => {
         await setPlanningExecutionPhase({
           projectDataDir: project.projectDataDir,
           projectId,
+          workflowId: record.workflowId,
           workflowInvocationId,
           ...(record.sessionId === undefined ? {} : { sessionId: record.sessionId }),
           phase: "cancelled",

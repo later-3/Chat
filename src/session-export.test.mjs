@@ -6,6 +6,10 @@ import test from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { exportChatSessionHtml } from "./session-export.ts";
 import { appendChatToolExecution } from "./tools/execution-record.ts";
+import {
+  appendChatWorkflowCall,
+  appendChatWorkflowDelegationOrigin,
+} from "./workflows/workflow-call-state.ts";
 import { appendPlanReviewDecision, planSha256 } from "./workflows/planning-execution/review-state.ts";
 import {
   appendChatWorkflowAgentInput,
@@ -27,6 +31,38 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
   fs.mkdirSync(workspace, { recursive: true });
   fs.mkdirSync(sessionDir, { recursive: true });
   const manager = SessionManager.create(workspace, sessionDir);
+  manager.appendCustomEntry("chat.workflow_turn_configuration", {
+    schemaVersion: 1,
+    invocationId: "history-invocation",
+    workflowId: "planning-execution",
+    agentConfigs: {
+      "pi-coding-agent": {
+        tools: { mode: "none" },
+        resources: {
+          mode: "explicit",
+          skillPaths: [],
+          extensionPaths: [],
+          pluginSources: [],
+        },
+      },
+    },
+  });
+  appendChatWorkflowDelegationOrigin(manager, {
+    schemaVersion: 1,
+    callId: "parent-workflow-call-1",
+    source: {
+      sessionId: "parent-session-1",
+      workflowId: "planner-orchestrator",
+      workflowInvocationId: "parent-invocation-1",
+      stageId: "delegate",
+      agentId: "coordinator",
+    },
+    target: {
+      sessionId: manager.getSessionId(),
+      workflowId: "planning-execution",
+      workflowInvocationId: "history-invocation",
+    },
+  });
   const markerId = appendChatWorkflowStage(manager, {
     invocationId: "history-invocation",
     workflowId: "planning-execution",
@@ -107,6 +143,29 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
     ],
     timestamp: Date.now(),
   });
+  appendChatWorkflowCall(manager, {
+    schemaVersion: 1,
+    callId: "workflow-call-1",
+    toolCallId: "workflow-tool-call-1",
+    parent: {
+      sessionId: manager.getSessionId(),
+      workflowId: "planning-execution",
+      workflowInvocationId: "history-invocation",
+      stageId: "execute",
+      agentId: "pi-coding-agent",
+    },
+    child: {
+      sessionId: "child-session-1",
+      workflowId: "memory",
+      workflowInvocationId: "child-invocation-1",
+      runId: "child-run-1",
+    },
+    status: "completed",
+    startedAt: "2026-09-01T10:01:00.000Z",
+    updatedAt: "2026-09-01T10:01:01.000Z",
+    finishedAt: "2026-09-01T10:01:01.000Z",
+    durationMs: 1_000,
+  });
   const toolExecutionEntryId = appendChatToolExecution(manager, {
     toolCallId: "memory-call-1",
     toolName: "memory_search",
@@ -119,6 +178,20 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
     agentId: "planner",
     startedAt: "2026-09-01T10:00:00.000Z",
     completedAt: "2026-09-01T10:00:01.000Z",
+    status: "completed",
+  });
+  const workflowToolExecutionEntryId = appendChatToolExecution(manager, {
+    toolCallId: "workflow-tool-call-1",
+    toolName: "workflow_call",
+    toolAddress: "system:tool/workflow_call",
+    toolVersion: "system:workflow-call@1",
+    projectId: "chat",
+    workflowId: "planning-execution",
+    workflowInvocationId: "history-invocation",
+    stageId: "execute",
+    agentId: "pi-coding-agent",
+    startedAt: "2026-09-01T10:01:00.000Z",
+    completedAt: "2026-09-01T10:01:01.000Z",
     status: "completed",
   });
   const sessionFile = manager.getSessionFile();
@@ -147,6 +220,13 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
   assert.match(exported.html, /chatToolExecutionByEntryId/);
   assert.match(exported.html, /createChatToolExecution/);
   assert.match(exported.html, /Tool execution record/);
+  assert.match(exported.html, /Child Workflow call/);
+  assert.match(exported.html, /Delegated task · from/);
+  assert.match(exported.html, /chatWorkflowDelegationOriginByTargetInvocationId/);
+  assert.match(exported.html, /child workflow/);
+  assert.match(exported.html, /chatWorkflowTurnConfigurationByInvocationId/);
+  assert.match(exported.html, /createChatWorkflowTurnConfiguration/);
+  assert.match(exported.html, /Workflow turn configuration/);
   assert.match(exported.html, /createChatPlanReviewDecision/);
   assert.match(exported.html, /Human review decision/);
   assert.match(exported.html, /已通过执行计划 v/);
@@ -165,6 +245,22 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
   assert.ok(mainScript);
   assert.doesNotThrow(() => new Function(mainScript));
   const sessionData = exportedSessionData(exported.html);
+  assert.deepEqual(sessionData.chatWorkflowDelegationOrigins, [{
+    schemaVersion: 1,
+    callId: "parent-workflow-call-1",
+    source: {
+      sessionId: "parent-session-1",
+      workflowId: "planner-orchestrator",
+      workflowInvocationId: "parent-invocation-1",
+      stageId: "delegate",
+      agentId: "coordinator",
+    },
+    target: {
+      sessionId: manager.getSessionId(),
+      workflowId: "planning-execution",
+      workflowInvocationId: "history-invocation",
+    },
+  }]);
   assert.deepEqual(sessionData.chatWorkflowStageEntryIds, [markerId, reviewMarkerId, executeMarkerId]);
   assert.deepEqual(sessionData.chatWorkflowStages.map(({ entryId, stageId, agentId, nodeKind, schemaVersion }) => ({
     entryId, stageId, agentId, nodeKind, schemaVersion,
@@ -205,6 +301,60 @@ test("exports a Pi Session as standalone HTML with iterative tree traversal", as
     startedAt: "2026-09-01T10:00:00.000Z",
     completedAt: "2026-09-01T10:00:01.000Z",
     status: "completed",
+  }, {
+    entryId: workflowToolExecutionEntryId,
+    schemaVersion: 1,
+    toolCallId: "workflow-tool-call-1",
+    toolName: "workflow_call",
+    toolAddress: "system:tool/workflow_call",
+    toolVersion: "system:workflow-call@1",
+    projectId: "chat",
+    workflowId: "planning-execution",
+    workflowInvocationId: "history-invocation",
+    stageId: "execute",
+    agentId: "pi-coding-agent",
+    startedAt: "2026-09-01T10:01:00.000Z",
+    completedAt: "2026-09-01T10:01:01.000Z",
+    status: "completed",
+  }]);
+  assert.deepEqual(sessionData.chatWorkflowCalls, [{
+    schemaVersion: 1,
+    callId: "workflow-call-1",
+    toolCallId: "workflow-tool-call-1",
+    parent: {
+      sessionId: manager.getSessionId(),
+      workflowId: "planning-execution",
+      workflowInvocationId: "history-invocation",
+      stageId: "execute",
+      agentId: "pi-coding-agent",
+    },
+    child: {
+      sessionId: "child-session-1",
+      workflowId: "memory",
+      workflowInvocationId: "child-invocation-1",
+      runId: "child-run-1",
+    },
+    status: "completed",
+    startedAt: "2026-09-01T10:01:00.000Z",
+    updatedAt: "2026-09-01T10:01:01.000Z",
+    finishedAt: "2026-09-01T10:01:01.000Z",
+    durationMs: 1_000,
+  }]);
+  assert.deepEqual(sessionData.chatWorkflowTurnConfigurations, [{
+    schemaVersion: 1,
+    invocationId: "history-invocation",
+    workflowId: "planning-execution",
+    agentConfigs: {
+      "pi-coding-agent": {
+        tools: { mode: "none" },
+        resources: {
+          mode: "explicit",
+          skillPaths: [],
+          extensionPaths: [],
+          pluginSources: [],
+        },
+      },
+    },
   }]);
   const plannerMessage = sessionData.entries.find((entry) => entry.id === workflowMessageId);
   assert.deepEqual(plannerMessage.message.content, [

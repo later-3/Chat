@@ -652,7 +652,7 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
   assert.match(calls[0].systemPrompt, /Configured additional rule/);
   assert.match(calls[0].systemPrompt, /<chat_prompt_resource/);
   assert.match(calls[0].systemPrompt, /Do not add unrelated responsibilities/);
-  assert.match(calls[0].systemPrompt, /Frontend Run 到 Pi SDK/);
+  assert.match(calls[0].systemPrompt, /Step复用与Registry依赖/);
   assert.match(calls[0].systemPrompt, /能力完备性与Pi装配一致性/);
   assert.match(calls[0].systemPrompt, /Configured review/);
   assert.deepEqual(calls[0].toolNames, ["read"]);
@@ -690,11 +690,21 @@ test("Agent inspection uses the same resolved Prompt, resources and tools as exe
     "Review the changed code carefully.",
   ].join("\n"));
   writeFauxConfiguration(path.join(chatHome, "agent"), faux);
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    id: "agent-inspection",
+    name: "Agent Inspection",
+  });
 
   const inspection = await inspectWorkflowAgent({
+    projectId: project.projectId,
     chatHome,
     cwd: workspace,
     defaultAgent: PI_CODING_AGENT,
+    workflowId: "minimal-pi-coding-agent",
+    agentId: PI_CODING_AGENT.id,
+    stageId: "execute",
     selection: {
       append: [],
       resources: {
@@ -720,6 +730,7 @@ test("Agent inspection uses the same resolved Prompt, resources and tools as exe
     path.join(fs.realpathSync(workspace), "AGENTS.md"),
   ]);
   assert.ok(inspection.tools.some((tool) => tool.name === "read" && tool.active));
+  assert.ok(inspection.tools.some((tool) => tool.name === "workflow_call" && tool.active));
   assert.deepEqual(inspection.extensions, []);
 });
 

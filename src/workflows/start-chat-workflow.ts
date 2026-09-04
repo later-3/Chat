@@ -8,9 +8,12 @@ import { getChatWorkflowDefinition } from "./registry.js";
 import { recordChatSessionRunBinding } from "./session-run-registry.js";
 
 /** Starts one Workflow invocation and gives all of its Stages one stable ID. */
-export async function startChatWorkflow(input: ChatWorkflowHttpInput) {
+export async function startChatWorkflow(
+  input: ChatWorkflowHttpInput,
+  options: { readonly workflowInvocationId?: string } = {},
+) {
   const { workflow, ...workflowInput } = input;
-  const workflowInvocationId = randomUUID();
+  const workflowInvocationId = options.workflowInvocationId ?? randomUUID();
   const chatWorkflowInput = { ...workflowInput, workflowInvocationId };
   const definition = getChatWorkflowDefinition(workflow);
   if (definition === undefined) throw new Error(`找不到Workflow: ${workflow}`);
@@ -30,10 +33,11 @@ export async function startChatWorkflow(input: ChatWorkflowHttpInput) {
       sessionId: input.sessionId,
     });
   }
-  if (workflow === "planning-execution" && project !== undefined) {
+  if (definition.planReview && project !== undefined) {
     await bindPlanningExecutionRun({
       projectDataDir: project.projectDataDir,
       projectId: project.projectId,
+      workflowId: definition.id,
       workflowInvocationId,
       runId: run.runId,
       ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),

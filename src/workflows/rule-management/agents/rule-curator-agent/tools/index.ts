@@ -1,7 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import type { SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { getStoredAgentConfigs, resolveChatConfig } from "../../../../../chat-config.js";
+import type { AgentConfigSelection } from "../../../../agent-config.js";
 import {
   addressPromptResourceDraft,
   addressPromptResourceRevision,
@@ -15,7 +15,6 @@ import {
   type PromptResourceKind,
   type PromptResourceTarget,
 } from "../../../../../prompt-resources/types.js";
-import { getChatWorkflowDefinition } from "../../../../registry.js";
 import {
   appendChatPromptResourceProposal,
   collectChatPromptResourceProposals,
@@ -38,6 +37,13 @@ export interface RuleManagementToolContext {
   readonly userPrompt: string;
   readonly workflowId: string;
   readonly agentId: string;
+}
+
+export interface RuleManagementToolDependencies {
+  readonly workflowAgentExists: (workflowId: string, agentId: string) => boolean;
+  readonly loadStoredAgentConfigs: (
+    workflowId: string,
+  ) => Promise<Readonly<Record<string, AgentConfigSelection>> | undefined>;
 }
 
 const targetSchema = Type.Union([
@@ -193,11 +199,14 @@ function requireCurrentTurnPhrase(userPrompt: string, supplied: string, expected
   }
 }
 
-function requireTarget(workflowId: string, agentId: string) {
-  const workflow = getChatWorkflowDefinition(workflowId);
-  const agent = workflow?.agents.find((candidate) => candidate.id === agentId);
-  if (workflow === undefined || agent === undefined) throw new Error(`找不到目标Workflow或Agent: ${workflowId}/${agentId}`);
-  return { workflow, agent };
+function requireTarget(
+  dependencies: RuleManagementToolDependencies,
+  workflowId: string,
+  agentId: string,
+): void {
+  if (!dependencies.workflowAgentExists(workflowId, agentId)) {
+    throw new Error(`找不到目标Workflow或Agent: ${workflowId}/${agentId}`);
+  }
 }
 
 function validateEntryIds(context: RuleManagementToolContext, entryIds: readonly string[]): void {
@@ -215,7 +224,10 @@ function selectionKey(selection: { readonly target: PromptResourceTarget; readon
 
 const author = (agentId: string): PromptResourceAuthor => ({ type: "agent", agentId });
 
-export function createRuleManagementTools(context: RuleManagementToolContext): ToolDefinition[] {
+export function createRuleManagementTools(
+  context: RuleManagementToolContext,
+  dependencies: RuleManagementToolDependencies,
+): ToolDefinition[] {
   return [
     defineTool({
       name: "session_context_read",
@@ -400,7 +412,7 @@ export function createRuleManagementTools(context: RuleManagementToolContext): T
       }, { additionalProperties: false }),
       async execute(_callId, params, signal) {
         assertNotAborted(signal);
-        requireTarget(params.targetWorkflowId, params.targetAgentId);
+        requireTarget(dependencies, params.targetWorkflowId, params.targetAgentId);
         for (const selected of params.resources) {
           const target = normalizeTarget(selected.target);
           const resource = await (await getPromptResourceStore(target, context.chatHome)).get(selected.resourceId);
@@ -445,7 +457,7 @@ export function createRuleManagementTools(context: RuleManagementToolContext): T
           .find((candidate) => candidate.id === params.proposalId);
         if (proposal === undefined) throw new Error(`找不到规则建议: ${params.proposalId}`);
         if (proposal.resolution !== undefined) throw new Error(`规则建议已经${proposal.resolution.status}`);
-        requireTarget(proposal.targetWorkflowId, proposal.targetAgentId);
+        requireTarget(dependencies, proposal.targetWorkflowId, proposal.targetAgentId);
         const current = collectLatestChatWorkflowConfigurations(context.sessionManager.getEntries());
         const manual = current[proposal.targetWorkflowId]?.[proposal.targetAgentId]?.promptResources
           ?.filter((resource) => resource.selectedBy === "user") ?? [];
@@ -458,8 +470,7 @@ export function createRuleManagementTools(context: RuleManagementToolContext): T
           }
           if (!manualKeys.has(selectionKey(selected))) agentSelected.push(selected);
         }
-        const config = (await resolveChatConfig(context.projectId, context.chatHome)).effective;
-        const defaults = getStoredAgentConfigs(config, proposal.targetWorkflowId);
+        const defaults = await dependencies.loadStoredAgentConfigs(proposal.targetWorkflowId);
         const configuration = setChatWorkflowAgentPromptResources(context.sessionManager, {
           workflowId: proposal.targetWorkflowId,
           agentId: proposal.targetAgentId,

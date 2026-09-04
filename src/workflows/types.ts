@@ -9,6 +9,8 @@ export interface ChatWorkflowInput {
   readonly workflowInvocationId: string;
   readonly defaultAgentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
   readonly agentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
+  /** Present only for workflow_call; makes this turn's Agent capabilities caller-owned. */
+  readonly delegatedByAgentId?: string;
 }
 
 export interface ChatWorkflowResult {

@@ -39,6 +39,7 @@ Chat详细设计
 | [Chat需求分析](./chat-requirements.md) | Workflow管理结构、Workflow内Agent与相关代码、资源分组、Session和自定义提示词区域 | 第一版完成 |
 | [Chat详细设计](./chat-detailed-design.md) | Workflow目录、内部Agent、装配边界、根配置和注册API | 已按当前实现校正 |
 | [Chat Workflow开发框架](./chat-workflow-framework.md) | 新增Workflow时必须遵守的目录、配置、节点、Tool和前后端合同 | 规范基线 |
+| [Chat Workflow调用Workflow设计](./chat-subworkflow-design.md) | Planner审批后通过Pi Skill/Tool并行调用完整子Workflow，以及父子Session与调用状态合同 | 已实现并有真实Runtime门禁 |
 | [Chat Context与Resource统一模型](./chat-context-resource-model.md) | Context、Target、Owner、跨Project资源、加载、版本和日志的统一协议 | 规范基线 |
 | [Chat Project架构设计](./chat-project-framework.md) | 参考Pi的用户级/项目级分层，定义Project、Workspace、Session、资源、信任和Memory隔离 | 核心能力已实现 |
 | [Chat Frontend UI/UX规范](../../frontend/docs/ui-ux-guidelines.md) | Pi Web派生前端的Web/PWA、视觉、交互、自适应、无障碍和渐进治理规则 | 规范基线 |

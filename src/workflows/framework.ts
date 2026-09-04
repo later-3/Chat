@@ -1,4 +1,5 @@
 import type {
+  AgentConfigSelection,
   WorkflowAgentDefinition,
   WorkflowAgentSessionExtensions,
 } from "./agent-definition.js";
@@ -34,6 +35,8 @@ export interface ChatWorkflowManifest<Id extends string = string> {
   readonly id: Id;
   readonly name: string;
   readonly description: string;
+  readonly agentCallable: boolean;
+  readonly planReview: boolean;
   readonly nodes: readonly ChatWorkflowNodeDefinition[];
   readonly agents: readonly ChatWorkflowAgentReference[];
 }
@@ -49,6 +52,9 @@ export interface ChatWorkflowAgentSessionContext {
   readonly sessionId: string;
   readonly workflowInvocationId: string;
   readonly userPrompt: string;
+  /** Present when workflow_call made this invocation's Tool/Skill choice. */
+  readonly capabilitySource?: "workflow_call";
+  readonly capabilitySelection?: AgentConfigSelection;
 }
 
 export type PrepareChatWorkflowAgentSession = (
@@ -59,6 +65,8 @@ export interface ChatWorkflowDefinition<Id extends string = string> {
   readonly id: Id;
   readonly name: string;
   readonly description: string;
+  readonly agentCallable: boolean;
+  readonly planReview: boolean;
   readonly nodes: readonly ChatWorkflowNodeDefinition[];
   readonly agents: readonly WorkflowAgentDefinition[];
   readonly agentConfigPaths: Readonly<Record<string, string>>;
@@ -92,6 +100,12 @@ function readString(value: unknown, field: string): string {
   return value;
 }
 
+function readOptionalBoolean(value: unknown, field: string): boolean {
+  if (value === undefined) return false;
+  if (typeof value !== "boolean") throw new Error(`${field}必须是布尔值`);
+  return value;
+}
+
 /** Strictly parses the declarative workflow.json boundary. */
 export function parseChatWorkflowManifest<Id extends string>(
   value: unknown,
@@ -100,7 +114,11 @@ export function parseChatWorkflowManifest<Id extends string>(
   if (!isRecord(value) || value.schemaVersion !== 1) {
     throw new Error("Workflow配置必须使用schemaVersion 1");
   }
-  assertKnownFields(value, ["schemaVersion", "id", "name", "description", "nodes", "agents"], "Workflow配置");
+  assertKnownFields(
+    value,
+    ["schemaVersion", "id", "name", "description", "agentCallable", "planReview", "nodes", "agents"],
+    "Workflow配置",
+  );
   const id = readString(value.id, "Workflow id");
   if (id !== expectedId) throw new Error(`Workflow配置id必须是${expectedId}`);
   if (!Array.isArray(value.nodes)) throw new Error(`Workflow ${id} nodes必须是数组`);
@@ -144,6 +162,8 @@ export function parseChatWorkflowManifest<Id extends string>(
     id: expectedId,
     name: readString(value.name, `Workflow ${id} name`),
     description: typeof value.description === "string" ? value.description : "",
+    agentCallable: readOptionalBoolean(value.agentCallable, "agentCallable"),
+    planReview: readOptionalBoolean(value.planReview, "planReview"),
     nodes,
     agents,
   };
@@ -213,6 +233,8 @@ export function defineChatWorkflow<Id extends string>(
     id: manifest.id,
     name: manifest.name,
     description: manifest.description,
+    agentCallable: manifest.agentCallable,
+    planReview: manifest.planReview,
     nodes: manifest.nodes,
     agents: orderedAgents,
     agentConfigPaths,
@@ -229,6 +251,8 @@ export function browserSafeWorkflowDefinition(definition: ChatWorkflowDefinition
     id: definition.id,
     name: definition.name,
     description: definition.description,
+    agentCallable: definition.agentCallable,
+    planReview: definition.planReview,
     nodes: definition.nodes,
     agents: definition.agents.map((agent) => ({
       ...agent,

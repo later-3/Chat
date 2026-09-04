@@ -129,7 +129,7 @@ Chat/frontend（纯浏览器）
 - Pi Tool Call字段在进入浏览器前完成转换。
 - 文件路径拒绝目录前缀伪装、`..`穿越和符号链接逃逸。
 - 前后端对图片、音频、PDF和DOCX类型的判断一致。
-- Workflow输入区分新Session与已有Session，并且只接受Workflow Registry中的注册值；当前包括`minimal-pi-coding-agent`、`planning-execution`和`memory`。
+- Workflow输入区分新Session与已有Session，并且只接受Workflow Registry中的注册值；当前包括`minimal-pi-coding-agent`、`planning-execution`、`planner-orchestrator`、`memory`和`rule-management`。
 - Workflow过程通过可恢复读取的NDJSON事件流传给浏览器，Planner输出不会在Executor开始后被替换。
 - 完整历史保留Pi实际持久化的Thinking与工具数据，并展示每个Agent Stage收到的真实输入来源。
 - 构建后的单进程同时提供前端、Session API和文件API。

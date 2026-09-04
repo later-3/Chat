@@ -257,6 +257,38 @@ test("run binding and review publication merge safely regardless of write order"
   assert.equal(next.currentReview, undefined);
 });
 
+test("review state isolates planner-orchestrator from planning-execution by Workflow ID", async (t) => {
+  const projectDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "chat-plan-workflow-scope-"));
+  t.after(() => fs.rmSync(projectDataDir, { recursive: true, force: true }));
+  const pending = review({
+    workflowId: "planner-orchestrator",
+    workflowInvocationId: "orchestrator-invocation",
+    reviewId: "orchestrator-invocation:1:review",
+    sessionId: "orchestrator-session",
+  });
+  await bindPlanningExecutionRun({
+    projectDataDir,
+    projectId: "project-1",
+    workflowId: pending.workflowId,
+    workflowInvocationId: pending.workflowInvocationId,
+    runId: "orchestrator-run",
+    sessionId: pending.sessionId,
+  });
+  await publishPlanReviewState({ projectDataDir, projectId: "project-1", review: pending });
+
+  const record = await getPlanningExecutionRun(projectDataDir, pending.workflowInvocationId);
+  assert.equal(record?.workflowId, "planner-orchestrator");
+  assert.equal(record?.currentReview?.workflowId, "planner-orchestrator");
+  assert.equal(
+    (await findActivePlanningExecutionRun(projectDataDir, pending.sessionId))?.runId,
+    "orchestrator-run",
+  );
+  assert.equal(
+    await getPlanningExecutionRun(projectDataDir, pending.workflowInvocationId, "planning-execution"),
+    undefined,
+  );
+});
+
 test("a terminal run cannot be revived by a late planning or review write", async (t) => {
   const projectDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "chat-plan-terminal-store-"));
   t.after(() => fs.rmSync(projectDataDir, { recursive: true, force: true }));

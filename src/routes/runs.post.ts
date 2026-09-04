@@ -43,7 +43,10 @@ async function assertSessionHasNoActivePlanningRun(input: ChatWorkflowHttpInput)
     const suffix = active.phase === "waiting_review" && active.currentReview !== undefined
       ? `等待计划v${String(active.currentReview.planRevision)}审核`
       : `处于${active.phase}阶段`;
-    throw createError({ statusCode: 400, statusMessage: `Session已有规划执行Workflow${suffix}` });
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Session已有${active.workflowId} Workflow${suffix}`,
+    });
   }
 
   // Compatibility fallback for a Session created before durable Run bindings existed.

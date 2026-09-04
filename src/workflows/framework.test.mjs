@@ -18,6 +18,8 @@ const manifest = {
   id: "framework-test",
   name: "Framework Test",
   description: "Tests both node kinds",
+  agentCallable: true,
+  planReview: false,
   nodes: [
     { kind: "task", id: "prepare", name: "Prepare", description: "Prepare input" },
     { kind: "agent", id: "execute", name: "Execute", description: "Run agent", agentId: "worker" },
@@ -33,6 +35,22 @@ test("Workflow framework accepts task and Agent nodes and preserves config paths
   });
   assert.deepEqual(definition.nodes.map((node) => node.kind), ["task", "agent"]);
   assert.equal(definition.agentConfigPaths.worker, "./agents/worker/agent.json");
+  assert.equal(definition.agentCallable, true);
+  assert.equal(definition.planReview, false);
+});
+
+test("Workflow framework defaults invocation capabilities closed and validates their types", () => {
+  const parsed = parseChatWorkflowManifest({
+    ...manifest,
+    agentCallable: undefined,
+    planReview: undefined,
+  }, "framework-test");
+  assert.equal(parsed.agentCallable, false);
+  assert.equal(parsed.planReview, false);
+  assert.throws(
+    () => parseChatWorkflowManifest({ ...manifest, agentCallable: "yes" }, "framework-test"),
+    /agentCallable必须是布尔值/,
+  );
 });
 
 test("Workflow framework rejects unknown Agent references and duplicate Nodes", () => {

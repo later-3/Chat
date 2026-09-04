@@ -26,6 +26,8 @@ export interface ChatWorkflowHttpInput {
   readonly workflow: ChatWorkflowId;
   readonly defaultAgentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
   readonly agentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
+  /** Backend-internal provenance; the HTTP parser never accepts it from clients. */
+  readonly delegatedByAgentId?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

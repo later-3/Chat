@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { getStoredAgentConfigs, resolveChatConfig } from "../../chat-config.ts";
 import { getPromptResourceStore } from "../../prompt-resources/store.ts";
 import { openProject } from "../../projects/registry.ts";
 import { collectChatPromptResourceProposals } from "../prompt-resource-proposal.ts";
@@ -12,6 +13,7 @@ import {
   setChatWorkflowAgentPromptResources,
 } from "../workflow-configuration.ts";
 import { appendChatWorkflowAgentInput, appendChatWorkflowStage } from "../workflow-stage.ts";
+import { getChatWorkflowDefinition } from "../registry.ts";
 import { createRuleManagementTools } from "./agents/rule-curator-agent/tools/index.ts";
 
 function resultJson(result) {
@@ -47,6 +49,17 @@ function toolContext(project, manager, userPrompt, invocationId) {
     workflowId: "rule-management",
     agentId: "rule-curator-agent",
   };
+}
+
+function ruleTools(project, manager, userPrompt, invocationId) {
+  return createRuleManagementTools(toolContext(project, manager, userPrompt, invocationId), {
+    workflowAgentExists: (workflowId, agentId) => getChatWorkflowDefinition(workflowId)
+      ?.agents.some((candidate) => candidate.id === agentId) === true,
+    loadStoredAgentConfigs: async (workflowId) => {
+      const config = (await resolveChatConfig(project.projectId, project.chatHome)).effective;
+      return getStoredAgentConfigs(config, workflowId);
+    },
+  });
 }
 
 async function createResource(store, title) {
@@ -121,12 +134,12 @@ test("Rule Agent reads native Pi Entry IDs and persists only active-branch conve
     inputEntryIds: [currentUserEntryId],
   });
   const currentAssistantEntryId = manager.appendMessage(assistantMessage("正在读取Session上下文。"));
-  const tools = createRuleManagementTools(toolContext(
+  const tools = ruleTools(
     project,
     manager,
     "把刚才关于移动端安全区的讨论整理成规则。",
     "capture-1",
-  ));
+  );
 
   const context = resultJson(await execute(tools, "session_context_read", { limit: 20 }));
   assert.equal(context.sessionId, manager.getSessionId());
@@ -167,7 +180,7 @@ test("Rule Agent commits only the Draft ID confirmed in the current turn", async
     content: "Keep module and storage boundaries explicit.",
     timestamp: 1,
   });
-  const createTools = createRuleManagementTools(toolContext(project, manager, "创建两条规则草稿", "invocation-1"));
+  const createTools = ruleTools(project, manager, "创建两条规则草稿", "invocation-1");
   const create = (title) => execute(createTools, "prompt_resource_create_draft", {
     kind: "rule",
     title,
@@ -182,12 +195,12 @@ test("Rule Agent commits only the Draft ID confirmed in the current turn", async
   const store = await getPromptResourceStore({ type: "project", projectId: project.projectId }, project.chatHome);
   assert.equal((await store.listDrafts()).length, 2);
 
-  const firstConfirmationTools = createRuleManagementTools(toolContext(
+  const firstConfirmationTools = ruleTools(
     project,
     manager,
     first.confirmationPhrase,
     "invocation-2",
-  ));
+  );
   await assert.rejects(execute(firstConfirmationTools, "prompt_resource_commit_draft", {
     target: { type: "project", projectId: project.projectId },
     draftId: second.draft.id,
@@ -226,7 +239,7 @@ test("Rule Agent proposal preserves manual choices and replaces prior Agent choi
     actorAgentId: "rule-curator-agent",
   });
 
-  const proposalTools = createRuleManagementTools(toolContext(project, manager, "提出建议", "invocation-2"));
+  const proposalTools = ruleTools(project, manager, "提出建议", "invocation-2");
   const proposed = resultJson(await execute(proposalTools, "prompt_resource_propose_for_agent", {
     targetWorkflowId: "minimal-pi-coding-agent",
     targetAgentId: "pi-coding-agent",
@@ -238,12 +251,12 @@ test("Rule Agent proposal preserves manual choices and replaces prior Agent choi
   assert.equal(collectLatestChatWorkflowConfigurations(manager.getEntries())
     ["minimal-pi-coding-agent"]["pi-coding-agent"].promptResources[1].id, oldAgent.id);
 
-  const applyTools = createRuleManagementTools(toolContext(
+  const applyTools = ruleTools(
     project,
     manager,
     proposed.confirmationPhrase,
     "invocation-3",
-  ));
+  );
   const applied = resultJson(await execute(applyTools, "prompt_resource_apply_proposal", {
     proposalId: proposed.proposalId,
     userConfirmation: proposed.confirmationPhrase,
@@ -266,7 +279,7 @@ test("Rule Agent dismisses a rejected proposal without changing Agent configurat
   const target = { type: "project", projectId: project.projectId };
   const store = await getPromptResourceStore(target, project.chatHome);
   const resource = await createResource(store, "Rejected rule");
-  const proposalTools = createRuleManagementTools(toolContext(project, manager, "提出建议", "invocation-3"));
+  const proposalTools = ruleTools(project, manager, "提出建议", "invocation-3");
   const proposed = resultJson(await execute(proposalTools, "prompt_resource_propose_for_agent", {
     targetWorkflowId: "minimal-pi-coding-agent",
     targetAgentId: "pi-coding-agent",
@@ -274,17 +287,17 @@ test("Rule Agent dismisses a rejected proposal without changing Agent configurat
     summary: "Candidate rule.",
   }));
 
-  const wrongTools = createRuleManagementTools(toolContext(project, manager, "不要这个建议", "invocation-4"));
+  const wrongTools = ruleTools(project, manager, "不要这个建议", "invocation-4");
   await assert.rejects(execute(wrongTools, "prompt_resource_dismiss_proposal", {
     proposalId: proposed.proposalId,
     userRejection: proposed.rejectionPhrase,
   }), /当前用户消息必须包含/);
-  const dismissTools = createRuleManagementTools(toolContext(
+  const dismissTools = ruleTools(
     project,
     manager,
     proposed.rejectionPhrase,
     "invocation-5",
-  ));
+  );
   const dismissed = resultJson(await execute(dismissTools, "prompt_resource_dismiss_proposal", {
     proposalId: proposed.proposalId,
     userRejection: proposed.rejectionPhrase,

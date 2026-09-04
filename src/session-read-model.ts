@@ -14,6 +14,17 @@ import {
   collectChatWorkflowStageMarkers,
 } from "./workflows/workflow-stage.js";
 import {
+  collectChatSubsessionRelation,
+  collectChatWorkflowCalls,
+  collectChatWorkflowDelegationOrigins,
+  resolveChatWorkflowDelegationOrigins,
+  type ChatWorkflowDelegationOrigin,
+} from "./workflows/workflow-call-state.js";
+import {
+  collectChatWorkflowCallProjection,
+  projectChatWorkflowCallTree,
+} from "./workflows/workflow-call-statistics.js";
+import {
   collectChatWorkflowTurnConfigurations,
   collectLatestChatWorkflowConfigurations,
 } from "./workflows/workflow-configuration.js";
@@ -29,10 +40,17 @@ import {
   collectPlanReviewDecisions,
   collectPendingPlanReview,
   findActivePlanningExecutionRun,
-  getPlanningExecutionRun,
   isTerminalPlanningExecutionPhase,
+  listActivePlanningExecutionRuns,
   planReviewDecisionMessage,
+  type PlanningExecutionRunRecord,
 } from "./workflows/planning-execution/review-state.js";
+
+export interface ChatSessionAttention {
+  readonly kind: "review" | "clarification";
+  readonly workflowId: string;
+  readonly updatedAt: string;
+}
 
 export interface ChatSessionListItem {
   path: string;
@@ -44,6 +62,7 @@ export interface ChatSessionListItem {
   messageCount: number;
   firstMessage: string;
   parentSessionId?: string;
+  attention?: ChatSessionAttention;
   projectRoot: string;
   projectAvailable: true;
   projectKey: string;
@@ -53,12 +72,29 @@ export interface ChatSessionListItem {
   projectId?: string;
 }
 
-async function toListItems(infos: SessionInfo[], projectId?: string): Promise<ChatSessionListItem[]> {
+async function toListItems(
+  infos: SessionInfo[],
+  projectId?: string,
+  activePlanningBySessionId: ReadonlyMap<string, PlanningExecutionRunRecord> = new Map(),
+): Promise<ChatSessionListItem[]> {
   const idByPath = new Map(infos.map((info) => [resolve(info.path), info.id]));
   return Promise.all(infos.map(async (info) => {
-    const parentSessionId = info.parentSessionPath === undefined
+    const relation = collectChatSubsessionRelation(
+      SessionManager.open(info.path, dirname(info.path)).getEntries(),
+    );
+    const parentSessionId = relation?.parentSessionId ?? (info.parentSessionPath === undefined
       ? undefined
-      : idByPath.get(resolve(info.parentSessionPath));
+      : idByPath.get(resolve(info.parentSessionPath)));
+    const planning = activePlanningBySessionId.get(info.id);
+    const attention = planning?.phase !== "waiting_review" || planning.currentReview === undefined
+      ? undefined
+      : {
+          kind: planning.currentReview.readiness === "needs_clarification"
+            ? "clarification" as const
+            : "review" as const,
+          workflowId: planning.workflowId,
+          updatedAt: planning.updatedAt,
+        };
     return {
       path: info.path,
       id: info.id,
@@ -69,6 +105,7 @@ async function toListItems(infos: SessionInfo[], projectId?: string): Promise<Ch
       messageCount: info.messageCount,
       firstMessage: firstSessionUtterance(info),
       ...(parentSessionId === undefined ? {} : { parentSessionId }),
+      ...(attention === undefined ? {} : { attention }),
       projectRoot: info.cwd,
       projectAvailable: true,
       projectKey: projectId ?? info.cwd,
@@ -102,8 +139,17 @@ async function rethrowWithCurrentSessionState(
 /** Lists one registered Project; cwd is resolved through its Project Manifest when omitted. */
 export async function listChatSessions(projectId?: string, chatHome?: string): Promise<ChatSessionListItem[]> {
   const project = await resolveSessionProject(projectId, chatHome);
-  const infos = await listActiveSessionFiles(project);
-  return toListItems(infos, project.projectId);
+  const [infos, activePlanning] = await Promise.all([
+    listActiveSessionFiles(project),
+    listActivePlanningExecutionRuns(project.projectDataDir),
+  ]);
+  const activePlanningBySessionId = new Map<string, PlanningExecutionRunRecord>();
+  for (const record of activePlanning) {
+    if (record.sessionId !== undefined && !activePlanningBySessionId.has(record.sessionId)) {
+      activePlanningBySessionId.set(record.sessionId, record);
+    }
+  }
+  return toListItems(infos, project.projectId, activePlanningBySessionId);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -147,11 +193,24 @@ export interface SessionProjectionOptions {
 function nativeMessageForFrontend(
   message: unknown,
   stage: ReturnType<typeof collectChatWorkflowStageMarkers>[number] | undefined,
+  delegationOrigin?: ChatWorkflowDelegationOrigin,
 ): unknown {
   const normalized = normalizeMessageForFrontend(message);
-  if (!isRecord(normalized) || normalized.role !== "assistant" || stage?.agentId === undefined) {
+  if (!isRecord(normalized)) {
     return normalized;
   }
+  if (normalized.role === "user" && delegationOrigin !== undefined) {
+    return {
+      ...normalized,
+      chatWorkflow: {
+        invocationId: delegationOrigin.source.workflowInvocationId,
+        workflowId: delegationOrigin.source.workflowId,
+        stageId: delegationOrigin.source.stageId,
+        agentId: delegationOrigin.source.agentId,
+      },
+    };
+  }
+  if (normalized.role !== "assistant" || stage?.agentId === undefined) return normalized;
   return {
     ...normalized,
     chatWorkflow: {
@@ -235,6 +294,7 @@ export function projectSessionContext(
   entries: SessionEntry[],
   leafId?: string | null,
   options: SessionProjectionOptions = {},
+  delegationOrigins: readonly ChatWorkflowDelegationOrigin[] = collectChatWorkflowDelegationOrigins(entries),
 ) {
   const contextEntries = buildContextEntries(entries, leafId);
   const context = buildSessionContext(entries, leafId);
@@ -246,6 +306,11 @@ export function projectSessionContext(
   const reviewDecisionByEntryId = new Map(
     collectPlanReviewDecisions(contextEntries).map((decision) => [decision.entryId, decision]),
   );
+  const delegationOriginByTargetInvocationId = new Map(
+    delegationOrigins
+      .map((origin) => [origin.target.workflowInvocationId, origin]),
+  );
+  const projectedDelegationInvocations = new Set<string>();
   let activeStage = undefined as ReturnType<typeof collectChatWorkflowStageMarkers>[number] | undefined;
 
   for (const entry of contextEntries) {
@@ -275,7 +340,18 @@ export function projectSessionContext(
     }
     for (const message of sessionEntryToContextMessages(entry)) {
       if (isRecord(message) && message.role === "custom" && message.display === false) continue;
-      messages.push(applyProjectionOptions(nativeMessageForFrontend(message, activeStage), entry.id, options));
+      const delegationOrigin = isRecord(message) && message.role === "user" && activeStage !== undefined
+        && !projectedDelegationInvocations.has(activeStage.invocationId)
+        ? delegationOriginByTargetInvocationId.get(activeStage.invocationId)
+        : undefined;
+      if (delegationOrigin !== undefined && activeStage !== undefined) {
+        projectedDelegationInvocations.add(activeStage.invocationId);
+      }
+      messages.push(applyProjectionOptions(
+        nativeMessageForFrontend(message, activeStage, delegationOrigin),
+        entry.id,
+        options,
+      ));
       entryIds.push(entry.id);
     }
   }
@@ -369,35 +445,46 @@ export async function readChatSession(
   }
 
   const selectedLeafId = leafId === undefined ? manager.getLeafId() : leafId;
-  const context = projectSessionContext(entries, selectedLeafId, {
-    ...options,
-    sessionId: manager.getSessionId(),
-    ...(info.projectId === undefined ? {} : { projectId: info.projectId }),
-  });
+  const context = projectSessionContext(
+    entries,
+    selectedLeafId,
+    {
+      ...options,
+      sessionId: manager.getSessionId(),
+      ...(info.projectId === undefined ? {} : { projectId: info.projectId }),
+    },
+    await resolveChatWorkflowDelegationOrigins(manager),
+  );
   const pendingPlanReview = collectPendingPlanReview(entries);
   let activePlanningExecution;
-  const latestPlanningInvocationId = collectChatWorkflowStageMarkers(entries)
-    .filter((stage) => stage.workflowId === "planning-execution")
-    .at(-1)?.invocationId
-    ?? collectChatWorkflowTurnConfigurations(entries)
-      .filter((snapshot) => snapshot.workflowId === "planning-execution")
-      .at(-1)?.invocationId;
-  const activeInvocationId = pendingPlanReview?.workflowInvocationId ?? latestPlanningInvocationId;
-  if (activeInvocationId !== undefined && info.projectId !== undefined) {
+  let workflowCallProjection;
+  if (info.projectId !== undefined) {
     const project = await resolveProjectContext(info.projectId, chatHome);
-    const record = await getPlanningExecutionRun(
+    workflowCallProjection = await collectChatWorkflowCallProjection({
+      rootSessionId: manager.getSessionId(),
+      rootEntries: entries,
+      sessionDir: project.sessionDir,
+    });
+    const record = await findActivePlanningExecutionRun(
       project.projectDataDir,
-      activeInvocationId,
+      manager.getSessionId(),
     );
-    if (record?.runId !== undefined && record.sessionId === manager.getSessionId()
-      && !isTerminalPlanningExecutionPhase(record.phase)) {
+    if (record?.runId !== undefined && !isTerminalPlanningExecutionPhase(record.phase)) {
       activePlanningExecution = {
         runId: record.runId,
+        workflowId: record.workflowId,
         workflowInvocationId: record.workflowInvocationId,
         phase: record.phase,
-        ...(pendingPlanReview === undefined ? {} : { review: pendingPlanReview }),
+        ...(pendingPlanReview?.workflowInvocationId !== record.workflowInvocationId
+          ? {}
+          : { review: pendingPlanReview }),
       };
     }
+  } else {
+    workflowCallProjection = projectChatWorkflowCallTree(
+      manager.getSessionId(),
+      new Map([[manager.getSessionId(), collectChatWorkflowCalls(entries)]]),
+    );
   }
 
   return {
@@ -415,6 +502,8 @@ export async function readChatSession(
     },
     workflowConfigurations: collectLatestChatWorkflowConfigurations(entries),
     workflowTurnConfigurations: collectChatWorkflowTurnConfigurations(entries),
+    workflowCalls: collectChatWorkflowCalls(entries),
+    ...workflowCallProjection,
     toolExecutions: collectChatToolExecutions(entries),
     promptResourceProposals: collectChatPromptResourceProposals(entries),
     ...(activePlanningExecution === undefined ? {} : { activePlanningExecution }),

@@ -9,10 +9,12 @@
 | Chat Session | 用户看到的一条连续会话 | 跨多轮、跨Workflow持久化 |
 | Turn | 一次线性交互单元，可由人或Agent先说话 | 通常对应一次Workflow Run |
 | Workflow Run | 一次编排执行，包含Stage和审核等待 | 开始到完成、失败或取消 |
+| Workflow Call | 父Agent的一次Pi Tool Call与一个子Workflow Run的稳定绑定 | starting到completed、failed或cancelled |
+| Subsession | 为子Workflow隔离创建的Chat Session | 独立持久化，不随父Session级联移除 |
 | Stage | 当前由哪个人、Agent、Task或Tool处理 | Workflow Run的一部分 |
 | AgentSession | 某个Agent本次运行的Pi对象 | Agent Stage执行期间 |
 
-切换Workflow、Stage或Agent不会创建新的Chat Session。当前产品只支持一条线性对话主链；如果未来增加并行分支，仍必须使用Pi的Session树和明确的分支语义，不能把并行结果塞进不透明CustomEntry冒充对话。
+在一条对话中切换Workflow、Stage或Agent不会创建新的Chat Session。例外是Agent通过`workflow_call`显式委托完整子Workflow：每个并行子调用创建独立Subsession，父Session继续保持线性Pi消息链。Pi `parentSession`表达原生谱系，Chat CustomEntry补充稳定调用ID、运行状态和层级；两者都不复制父对话，也不把并行结果塞进不透明CustomEntry冒充对话。
 
 ## 2. 三层必须分开
 
@@ -35,7 +37,7 @@ Agent上下文层：按当前Agent规则选择、转换模型可见消息
 5. `custom_message`会进入模型上下文，可用于隐藏的Agent间交接或无新用户话语时的内部触发；它不能冒充用户或Agent的真实话语。
 6. `CustomEntry`不进入模型上下文，只保存Workflow、Stage、Agent、配置快照、审核控制状态和原生消息引用。
 
-Workflow/Agent身份与消息角色正交：同样是`assistant`，可以由Planner或Executor产生；同样是`user`，可以是原始请求或审核修改意见。`chat.workflow_stage`负责说明相邻消息属于哪个执行阶段。
+Workflow/Agent身份与消息角色正交：同样是`assistant`，可以由Planner或Executor产生；同样是`user`，可以是人类原始请求、审核修改意见，或父Workflow Agent交给子Agent的任务输入。`chat.workflow_stage`负责说明相邻消息属于哪个执行阶段；`chat.workflow_delegation_origin`负责说明子Session首条任务输入由哪个父Workflow Agent发起，但不改变其Pi `role=user`语义。
 
 ## 4. 标准CustomEntry
 
@@ -46,6 +48,9 @@ Workflow/Agent身份与消息角色正交：同样是`assistant`，可以由Plan
 | `chat.workflow_agent_input` v2 | `inputEntryIds`，引用原生会话消息 | `userPrompt`、上游输出正文 |
 | `chat.plan_review` | 审核ID、版本、摘要、`planEntryId`和控制状态 | 作为计划文本的唯一副本 |
 | `chat.plan_review_decision` v3 | 决定、版本绑定、`messageEntryId`；修订决定兼容保留`feedbackEntryId` | 作为审核原话的唯一副本 |
+| `chat.workflow_call` | `callId/toolCallId`、父/子Workflow与Session ID、Run ID、状态和时间 | 任务正文、结果正文 |
+| `chat.session_relation` | `callId`、父/子Session ID、调用深度和创建时间 | 任务正文、结果正文或Pi `parentSession`文件路径的重复副本 |
+| `chat.workflow_delegation_origin` | `callId`、目标Invocation、父Workflow/Stage/Agent身份 | 任务正文，或改写原生User Message的role/content |
 
 人工审核是`nodeKind=human`，没有虚假的Agent ID。没有人也没有Agent的确定性节点可使用`task`或`tool`元数据；只有它真的产生话语时，才追加对应的原生消息。
 
@@ -147,7 +152,13 @@ Pi只枚举`sessions/`第一层的`.jsonl`，不会递归进入`removed/`。因�
 
 Planning Run、Workflow Run、Memory、Prompt Resource和审计事实只保留Session引用，不随Session移动或永久删除。只有需要读取Session内容的调用才检查生命周期；非终态Workflow会阻止移除。永久删除只删除移除区JSONL，并保留不含会话内容的最小tombstone，从而区分“已永久删除”和“从未存在”。
 
-Subworkflow是Workflow调用，不是Session。未来Subworkflow创建的结果Session和用户显式创建的子Session都使用同一`subsession`关系；Workflow调用关系与Session父子关系必须分别使用稳定ID建模，不能复用当前Pi Coding Agent基于文件路径的`parentSession`作为Chat生命周期关系。当前移除功能不把Pi Fork关系解释为Subsession，也不自动级联移动其他Session。
+Subworkflow是Workflow调用，不是Session本身。创建Child Session时复用Pi Coding Agent的`parentSession`头建立原生结构关系，但使用的是不复制历史的`newSession({ parentSession })`，不是`forkFrom()`或`createBranchedSession()`；所以Child模型只接收父Agent通过Tool参数给出的任务上下文。Chat保留三类互补领域事实：父Session的`chat.workflow_call`记录一次Tool调用及其子Run，子Session的`chat.session_relation`记录稳定`sessionId/callId/depth`，`chat.workflow_delegation_origin`记录任务发起者。Pi文件路径负责原生谱系，CustomEntry负责Workflow语义、运行ID与可观测状态，不能相互替代。Session列表优先从显式关系投影`parentSessionId`，并可从Pi路径关系兼容读取；移除功能不自动级联移动其他Session。
+
+Session详情的`workflowCallStatistics`是上述关系的只读聚合：`direct`只计当前Session发起的调用，`tree`沿独立Subsession递归，`capacity`只反映当前父Session的活跃调用。`workflowCallTree`同时投影每条边的深度、父调用ID和调用状态，供诊断与控制接口复用；聚合使用已访问Session集合防御损坏循环，不把统计结果或调用树写回Session，也不替代Workflow Runtime状态。用户导航仍复用现有Session侧栏的`parentSessionId`树，不另建看护树。
+
+完整历史中，父Session必须保留原生`workflow_call` Tool Call/Result，并把同一`toolCallId`的最新调用状态合并展示，至少给出目标Workflow、Child Session、子Run和调用ID；Tool Call参数是父Agent提供的任务书与Child Agent能力选择的原始事实。Child Session的完整历史独立展示原生User、Agent和Tool消息，`chat.workflow_turn_configuration`记录Backend解析后的本轮Tool/Skill配置，`chat.workflow_delegation_origin`把首条User任务标记为来自具体父Workflow Agent。两边通过Pi `parentSession`、`callId`和`childSessionId`关联即可完整还原，但父历史不内联复制子Session对话。
+
+并行子Workflow禁止共享父SessionManager写同一JSONL。任务正文保存在父原生Tool Call参数和子原生User消息中；结果正文保存在子原生Assistant消息和父原生Tool Result中。关系CustomEntry只保存ID和状态。父Run取消时仍在执行的子Run收到取消；已经完成的子Run和关系证据不回滚。
 
 ## 9. 新Workflow检查清单
 
@@ -158,6 +169,8 @@ Subworkflow是Workflow调用，不是Session。未来Subworkflow创建的结果S
 3. 同一UI输入不会因多个Agent消费而重复写成多条user消息。
 4. Agent间交接由Context Transform或隐藏CustomMessage完成，并保留原始持久化角色。
 5. Stage正确声明`agent / human / task / tool`；只有Agent节点需要`agentId`。
-6. Workflow切换继续使用同一个SessionManager和Session ID。
+6. 普通Workflow切换继续使用同一个SessionManager和Session ID；并行子Workflow必须各自使用独立Subsession，并显式关联父Session。
 7. 等待、恢复、重试、审核驳回和批准路径都有真实Session用例。
 8. 前端刷新后从Backend和Pi Session恢复，不依赖React内存重建事实。
+9. Workflow Call与Subsession关系不复制任务或结果正文，且失败、取消和部分成功都保留可恢复终态。
+10. 前端Session树从读模型恢复父子关系和耐久待确认提示；取消控制必须提交实际父Session和`callId`，并复用Tool调用相同的归属与Runtime取消逻辑。

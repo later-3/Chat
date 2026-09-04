@@ -3,6 +3,7 @@
   "id": "memory",
   "name": "长期记忆",
   "description": "由Memory Agent按用户的明确指令管理长期记忆。",
+  "agentCallable": true,
   "nodes": [
     {
       "kind": "agent",

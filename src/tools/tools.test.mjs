@@ -38,6 +38,12 @@ test("Chat system Tool manifests are stable, qualified, and risk classified", ()
       risk: "write",
       permissions: ["memory:write"],
     },
+    {
+      address: "system:tool/workflow_call",
+      name: "workflow_call",
+      risk: "write",
+      permissions: ["workflow:call"],
+    },
   ]);
   const memorySearch = listChatSystemTools().find((tool) => tool.manifest.name === "memory_search");
   assert.equal(memorySearch?.version, "system:memory-search@2");
@@ -81,6 +87,7 @@ test("Planner resolves the system Memory Tool and Project overrides remain durab
     initial.tools.filter((tool) => tool.active).map((tool) => tool.name),
     ["read", "memory_search"],
   );
+  assert.equal(initial.tools.some((tool) => tool.name === "workflow_call"), false);
   assert.equal(initial.skills.some((skill) => skill.name === "planner-context"), true);
   assert.match(initial.prompt.final, /<available_skills>/);
   assert.match(initial.prompt.final, /Read planning context for architecture tasks/);
@@ -154,4 +161,39 @@ test("Planner resolves the system Memory Tool and Project overrides remain durab
   assert.equal(projectSelected.tools.find((tool) => tool.name === "project_lookup")?.active, true);
   assert.equal(projectSelected.tools.find((tool) => tool.name === "project_lookup")?.sourceInfo.scope, "project");
   assert.equal(projectSelected.tools.find((tool) => tool.name === "memory_search")?.active, true);
+});
+
+test("workflow_call is available to any Agent only when its system Tool address is selected", async (t) => {
+  const { chatHome, workspace } = fixture(t);
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    id: "workflow-call-tool-project",
+    name: "Workflow Call Tool Project",
+  });
+  const configuredAgent = {
+    ...PLANNER_AGENT,
+    tools: {
+      mode: "explicit",
+      names: ["read"],
+      exclude: [],
+      addresses: ["system:tool/workflow_call"],
+    },
+  };
+
+  const inspection = await inspectWorkflowAgent({
+    projectId: project.projectId,
+    chatHome,
+    cwd: project.cwd,
+    defaultAgent: configuredAgent,
+    workflowId: "planning-execution",
+    agentId: configuredAgent.id,
+    stageId: "plan",
+  });
+
+  const workflowCall = inspection.tools.find((tool) => tool.name === "workflow_call");
+  assert.equal(workflowCall?.active, true);
+  assert.equal(workflowCall?.address, "system:tool/workflow_call");
+  assert.equal(workflowCall?.sourceInfo.source, "chat-system");
+  assert.equal(workflowCall?.risk, "write");
 });

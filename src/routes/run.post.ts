@@ -8,6 +8,7 @@ import { MINIMAL_PI_CODING_AGENT_PROMPT } from "../workflows/minimal-pi-coding-a
 import { resolveRequestProject } from "../projects/request.js";
 import { localTimestamp } from "../runtime-log.js";
 import { startChatWorkflow } from "../workflows/start-chat-workflow.js";
+import { getChatWorkflowDefinition } from "../workflows/registry.js";
 import {
   chatSessionOperationKey,
   withChatSessionOperationLock,
@@ -47,8 +48,8 @@ export default defineEventHandler(async (event) => {
       workflow: config.defaultWorkflowId,
       ...(storedAgentConfigs === undefined ? {} : { defaultAgentConfigs: storedAgentConfigs }),
     });
-    if (input.workflow === "planning-execution") {
-      throw new Error("planning-execution需要人工审核，请使用异步POST /runs接口");
+    if (getChatWorkflowDefinition(input.workflow)?.planReview === true) {
+      throw new Error(`${input.workflow}需要人工审核，请使用异步POST /runs接口`);
     }
   } catch (error) {
     throw createError({

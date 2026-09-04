@@ -5,13 +5,19 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { getPackageDir } from "@earendil-works/pi-coding-agent";
+import { getPackageDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   collectChatWorkflowAgentInputs,
   collectChatWorkflowStageEntryIds,
   collectChatWorkflowStageMarkers,
 } from "./workflows/workflow-stage.js";
 import { collectChatToolExecutions } from "./tools/execution-record.js";
+import {
+  collectChatWorkflowCalls,
+  collectChatWorkflowDelegationOrigins,
+  resolveChatWorkflowDelegationOrigins,
+} from "./workflows/workflow-call-state.js";
+import { collectChatWorkflowTurnConfigurations } from "./workflows/workflow-configuration.js";
 import {
   collectPlanReviewDecisions,
   planReviewDecisionMessage,
@@ -131,7 +137,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function embedChatWorkflowStages(html: string): string {
+function embedChatWorkflowStages(
+  html: string,
+  delegationOrigins?: readonly ReturnType<typeof collectChatWorkflowDelegationOrigins>[number][],
+): string {
   const pattern = /(<script id="session-data" type="application\/json">)([\s\S]*?)(<\/script>)/;
   const match = pattern.exec(html);
   if (match === null) throw new Error("Pi Session HTML缺少session-data");
@@ -175,6 +184,9 @@ function embedChatWorkflowStages(html: string): string {
     chatWorkflowAgentInputs,
     chatWorkflowStageEntryIds: collectChatWorkflowStageEntryIds(decoded.entries),
     chatWorkflowStages: collectChatWorkflowStageMarkers(decoded.entries),
+    chatWorkflowCalls: collectChatWorkflowCalls(decoded.entries),
+    chatWorkflowDelegationOrigins: delegationOrigins ?? collectChatWorkflowDelegationOrigins(decoded.entries),
+    chatWorkflowTurnConfigurations: collectChatWorkflowTurnConfigurations(decoded.entries),
     chatToolExecutions: collectChatToolExecutions(decoded.entries),
     chatPlanReviewDecisions,
   };
@@ -386,6 +398,18 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
         (Array.isArray(data.chatToolExecutions) ? data.chatToolExecutions : [])
           .map((execution) => [execution.entryId, execution])
       );
+      const chatWorkflowCallByToolCallId = new Map(
+        (Array.isArray(data.chatWorkflowCalls) ? data.chatWorkflowCalls : [])
+          .map((call) => [call.toolCallId, call])
+      );
+      const chatWorkflowDelegationOriginByTargetInvocationId = new Map(
+        (Array.isArray(data.chatWorkflowDelegationOrigins) ? data.chatWorkflowDelegationOrigins : [])
+          .map((origin) => [origin.target.workflowInvocationId, origin])
+      );
+      const chatWorkflowTurnConfigurationByInvocationId = new Map(
+        (Array.isArray(data.chatWorkflowTurnConfigurations) ? data.chatWorkflowTurnConfigurations : [])
+          .map((configuration) => [configuration.invocationId, configuration])
+      );
       const chatPlanReviewDecisionByEntryId = new Map(
         (Array.isArray(data.chatPlanReviewDecisions) ? data.chatPlanReviewDecisions : [])
           .map((decision) => [decision.entryId, decision])
@@ -482,6 +506,24 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
         return container;
       }
 
+      function createChatWorkflowTurnConfiguration(configuration) {
+        const container = document.createElement("div");
+        container.className = "chat-session-configuration";
+        for (const [agentId, selection] of Object.entries(configuration.agentConfigs || {})) {
+          const row = document.createElement("div");
+          row.className = "chat-session-configuration-row";
+          const name = document.createElement("span");
+          name.className = "chat-session-configuration-name";
+          name.textContent = chatHistoryLabel(chatAgentLabels, agentId) + " capabilities";
+          const value = document.createElement("span");
+          value.className = "chat-session-configuration-value";
+          value.textContent = JSON.stringify(selection);
+          row.append(name, value);
+          container.appendChild(row);
+        }
+        return createChatHistoryRegion("Workflow turn configuration", container);
+      }
+
       function createChatHistoryRegion(label, node) {
         const region = document.createElement("section");
         region.className = "chat-history-region";
@@ -493,6 +535,9 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
       }
 
       function createChatToolExecution(execution) {
+        const workflowCall = execution.toolName === "workflow_call"
+          ? chatWorkflowCallByToolCallId.get(execution.toolCallId)
+          : null;
         const container = document.createElement("div");
         container.className = "chat-tool-execution";
         const header = document.createElement("div");
@@ -513,7 +558,19 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
           + " · call " + execution.toolCallId;
         header.append(name, status);
         container.append(header, address, context);
-        return createChatHistoryRegion("Tool execution record", container);
+        if (workflowCall) {
+          const child = document.createElement("div");
+          child.className = "chat-tool-execution-context";
+          child.textContent = "child workflow " + workflowCall.child.workflowId
+            + " · session " + workflowCall.child.sessionId;
+          const identifiers = document.createElement("div");
+          identifiers.className = "chat-tool-execution-context";
+          identifiers.textContent = "call " + workflowCall.callId
+            + (workflowCall.child.runId ? " · run " + workflowCall.child.runId : "")
+            + " · invocation " + workflowCall.child.workflowInvocationId;
+          container.append(child, identifiers);
+        }
+        return createChatHistoryRegion(workflowCall ? "Child Workflow call" : "Tool execution record", container);
       }
 
       function createChatPlanReviewDecision(decision) {
@@ -585,7 +642,7 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
         configuration.appendChild(row);
       }
 
-      function appendChatAgentEntry(target, entry, agentId) {
+      function appendChatAgentEntry(target, entry, agentId, delegationOrigin) {
         if (entry.type === "model_change" || entry.type === "thinking_level_change") {
           appendChatSessionConfiguration(target, entry, agentId);
           return;
@@ -618,15 +675,22 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
         const label = entry.type === "message" && entry.message && entry.message.role === "toolResult"
           ? "Tool output"
           : entry.type === "message" && entry.message && entry.message.role === "user"
-            ? "Input"
+            ? (delegationOrigin
+              ? "Delegated task · from "
+                + chatHistoryLabel(chatWorkflowLabels, delegationOrigin.source.workflowId)
+                + " · " + chatHistoryLabel(chatAgentLabels, delegationOrigin.source.agentId)
+              : "Input")
             : "Session event";
         target.appendChild(createChatHistoryRegion(label, node));
       }
 `;
 
 /** Adds Chat-only Workflow and Agent grouping without changing the Session file. */
-export function patchChatWorkflowHistory(html: string): string {
-  let patched = embedChatWorkflowStages(html);
+export function patchChatWorkflowHistory(
+  html: string,
+  delegationOrigins?: readonly ReturnType<typeof collectChatWorkflowDelegationOrigins>[number][],
+): string {
+  let patched = embedChatWorkflowStages(html, delegationOrigins);
   patched = replaceOnce(
     patched,
     "Chat Workflow history styles",
@@ -656,6 +720,7 @@ export function patchChatWorkflowHistory(html: string): string {
         let activeStageContent = null;
         let activeAgentId = null;
         const renderedAgentInputEntryIds = new Set();
+        const renderedDelegationInvocations = new Set();
 
         for (const entry of path) {
           const workflowStage = chatWorkflowStageByEntryId.get(entry.id);
@@ -663,6 +728,13 @@ export function patchChatWorkflowHistory(html: string): string {
             if (workflowStage.invocationId !== activeInvocationId) {
               const workflowView = createChatWorkflowGroup(workflowStage);
               fragment.appendChild(workflowView.group);
+              const turnConfiguration = chatWorkflowTurnConfigurationByInvocationId.get(workflowStage.invocationId);
+              if (turnConfiguration) {
+                workflowView.group.insertBefore(
+                  createChatWorkflowTurnConfiguration(turnConfiguration),
+                  workflowView.stages
+                );
+              }
               activeInvocationId = workflowStage.invocationId;
               activeWorkflowStages = workflowView.stages;
             }
@@ -683,6 +755,13 @@ export function patchChatWorkflowHistory(html: string): string {
             activeWorkflowStages = null;
             activeStageContent = null;
             activeAgentId = null;
+            continue;
+          }
+
+          if (entry.type === "custom" && (
+            entry.customType === "chat.workflow_turn_configuration"
+            || entry.customType === "chat.workflow_delegation_origin"
+          )) {
             continue;
           }
 
@@ -707,7 +786,12 @@ export function patchChatWorkflowHistory(html: string): string {
             continue;
           }
 
-          appendChatAgentEntry(activeStageContent || fragment, entry, activeAgentId);
+          const delegationOrigin = entry.type === "message" && entry.message && entry.message.role === "user"
+            && activeInvocationId && !renderedDelegationInvocations.has(activeInvocationId)
+            ? chatWorkflowDelegationOriginByTargetInvocationId.get(activeInvocationId)
+            : null;
+          if (delegationOrigin) renderedDelegationInvocations.add(activeInvocationId);
+          appendChatAgentEntry(activeStageContent || fragment, entry, activeAgentId, delegationOrigin);
         }`,
   );
 }
@@ -727,8 +811,10 @@ export async function exportChatSessionHtml(sessionFile: string): Promise<ChatSe
         PI_SKIP_VERSION_CHECK: "1",
       },
     });
+    const sessionManager = SessionManager.open(sessionFile, dirname(sessionFile));
     const html = patchChatWorkflowHistory(
       patchDeepSessionTraversal(await readFile(outputPath, "utf8")),
+      await resolveChatWorkflowDelegationOrigins(sessionManager),
     );
     return {
       fileName: `pi-session-${basename(sessionFile, ".jsonl")}.html`,

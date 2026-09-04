@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "planner-orchestrator",
+  "name": "规划协调",
+  "description": "Planner形成可审核计划；批准后Coordinator按工作包调用多个执行Workflow并汇总结果。",
+  "agentCallable": true,
+  "planReview": true,
+  "nodes": [
+    {
+      "kind": "agent",
+      "id": "plan",
+      "name": "规划",
+      "description": "Planner理解任务并形成包含依赖和并行边界的工作包计划。",
+      "agentId": "planner"
+    },
+    {
+      "kind": "task",
+      "id": "review",
+      "name": "审核",
+      "description": "等待用户补充阻塞信息、要求修改或批准计划。"
+    },
+    {
+      "kind": "agent",
+      "id": "delegate",
+      "name": "协调执行",
+      "description": "Coordinator只调用获批计划指定的执行Workflow并汇总结果。",
+      "agentId": "coordinator"
+    }
+  ],
+  "agents": [
+    {
+      "id": "planner",
+      "config": "../planning-execution/agents/planner/agent.json"
+    },
+    {
+      "id": "coordinator",
+      "config": "./agents/coordinator/agent.json"
+    }
+  ]
+}
