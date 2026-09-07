@@ -1,0 +1,40 @@
+import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
+import { resolveChatHome } from "../../../../chat-home.js";
+import { ensureProjectLongAgent } from "../../../../long-agents/project-agent.js";
+import { readLongAgentRegistry } from "../../../../long-agents/storage.js";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export default defineEventHandler(async (event) => {
+  const longAgentId = getRouterParam(event, "longAgentId");
+  if (!longAgentId) throw createError({ statusCode: 400, statusMessage: "缺少longAgentId" });
+  const body = await readBody<unknown>(event);
+  if (!isRecord(body) || typeof body.projectId !== "string" || body.projectId.trim() === "") {
+    throw createError({ statusCode: 400, statusMessage: "projectId必须是非空字符串" });
+  }
+  try {
+    const registry = await readLongAgentRegistry();
+    const agent = registry.agents.find((candidate) => candidate.enabled && candidate.id === longAgentId);
+    if (agent === undefined) throw new Error(`找不到可用LongAgent: ${longAgentId}`);
+    const result = await ensureProjectLongAgent({
+      chatHome: resolveChatHome(),
+      projectId: body.projectId,
+      agent,
+    });
+    return {
+      projectLongAgentId: result.projectAgent.id,
+      projectId: result.projectAgent.projectId,
+      longAgentId: result.projectAgent.longAgentId,
+      primarySessionId: result.projectAgent.primarySessionId,
+      status: result.projectAgent.status,
+      isNewSession: result.isNewSession,
+    };
+  } catch (error) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: error instanceof Error ? error.message : String(error),
+    });
+  }
+});

@@ -5,7 +5,7 @@
 
 ## 运行结构
 
-Chat产品本体只运行一个进程。下面是可选的双Cloudflare连接器拓扑；公开域名由每台机器未跟踪的`chat.env`和代理配置决定，两条路径最终都到达同一个Chat进程：
+Chat Web与Workflow由一个Chat进程承载；启用Long Agent时，同一系统用户再常驻一个NanoClaw Host。NanoClaw Host内部承载多个Agent Group和多个Channel Adapter实例，不按Bot、Agent或Session重复启动Host。下面是可选的双Cloudflare连接器拓扑；公开域名由每台机器未跟踪的`chat.env`和代理配置决定，两条路径最终都到达同一个Chat进程：
 
 ```text
 https://chat.example.com
@@ -34,15 +34,47 @@ Linux自动部署入口是[deploy/chatctl](../deploy/chatctl)，支持同时满�
 
 脚本通过系统包管理器安装`ca-certificates`、`curl`、`git`、OpenSSH客户端、`xz`、C/C++编译工具、`make`、`python3`和`pkg-config`；从`nodejs.org`下载固定的Node.js `22.19.0`并用官方`SHASUMS256.txt`校验，然后通过Corepack固定使用pnpm `10.13.1`。Pi模型目录也从Pi Commit指定的固定Release快照恢复并校验SHA256，不以实时模型目录作为部署输入。脚本不会使用系统中碰巧存在的其他Node或pnpm版本。
 
+### 跨环境支持矩阵
+
+| 环境 | 支持级别 | Chat服务 | NanoClaw服务与数据 |
+|---|---|---|---|
+| Linux `x86_64/aarch64` + systemd | 生产支持 | `chatctl`管理系统级Chat服务和版本化Release | NanoClaw Setup单独安装用户级systemd服务；使用稳定`/opt/chat/nanoclaw`保存`.env/data/groups` |
+| macOS + launchd | 本机生产支持 | 使用`deploy/macos`模板；构建产物位于稳定Chat Checkout | NanoClaw Setup安装按Checkout隔离的LaunchAgent；`.env/data/groups`随稳定Checkout保存 |
+| Windows | 未提供生产支持 | 无服务模板 | 无本期验收过的常驻方案 |
+| Docker/Kubernetes | 未提供生产支持 | 没有镜像、数据卷和健康编排合同 | `chat-pi`不要求Agent Docker，但不等于Chat/NanoClaw已有容器化部署 |
+
+“可在其他环境部署”不等于单命令完成Long Agent。`chatctl`目前只管理Chat进程；NanoClaw Host仍使用自己的Setup和服务管理。新环境发布顺序固定为：克隆父仓库及固定Submodule、配置Chat私有环境、构建并启动Chat、配置NanoClaw私有环境和Channel、安装NanoClaw服务、最后做双服务和真实消息验收。
+
+源码、Credential和运行数据的边界：
+
+```text
+稳定Chat Checkout/                 可更新源码，不使用临时worktree作为生产路径
+├── frontend/                      父仓库固定Commit
+├── pi/                            父仓库固定Commit
+└── nanoclaw/
+    ├── .env                       NanoClaw与Channel私有Credential，0600
+    ├── data/                      NanoClaw数据库与Mailbox事实
+    └── groups/                    Agent Group Workspace与OKF Markdown Memory
+
+CHAT_HOME/                         Chat用户事实，与源码分离
+├── long-agents.json               Long Agent映射和Chat运行策略
+├── projects/                      Project、Session与Project Memory
+├── memory/                        Personal Memory
+├── runtime/long-agents/           Ingress、Binding与派生/不可变Snapshot
+└── logs/audit.jsonl               管理和Agent Memory写入审计
+```
+
+当前NanoClaw仍采用原生的“数据随稳定Checkout”模型；升级不得删除或重新克隆该目录。迁移Checkout时先停止Host，完整复制`.env`、`data/`和`groups/`并保留权限，再从目标Checkout重装服务。不要只复制SQLite主文件而漏掉可能存在的WAL/SHM；最安全的迁移点是Host已经停止之后。
+
 安装仍有一类输入必须由用户提供：
 
 - Web登录密码，以及至少一种可用的模型Provider凭证和对应的默认Provider/模型。
 
-默认部署`main`。也可以显式选择Tag或Commit；真正生效的Pi和前端版本始终由Chat父仓库记录的两个Submodule Commit决定，脚本不会让子模块自行追踪远端分支。所有构建都在目标机器上完成，因为生产产物包含与操作系统和CPU架构有关的原生依赖，不能从其他机器复制`.output`。
+默认部署`main`。也可以显式选择Tag或Commit；Pi、前端和NanoClaw源码版本始终由Chat父仓库记录的三个Submodule Commit决定，脚本不会让子模块自行追踪远端分支。当前Linux `chatctl`仍只管理Chat进程；NanoClaw Host使用它自己的确定性Setup和服务管理配置，后续由Chat部署控制面统一编排。所有构建都必须在目标机器完成，因为Chat与NanoClaw包含和操作系统、CPU架构相关的原生依赖与容器镜像，不能从其他机器复制构建产物。
 
 ## 首次安装
 
-自动部署不是“完全零前置”：新机器至少需要可用的`root`或`sudo`权限和上述网络访问。系统依赖、固定Node/pnpm、运行用户、源码、Submodule、构建和systemd服务均由脚本处理；三个源码仓库均可通过HTTPS匿名读取。
+自动部署不是“完全零前置”：新机器至少需要可用的`root`或`sudo`权限和上述网络访问。系统依赖、固定Node/pnpm、运行用户、源码、Submodule、构建和systemd服务均由脚本处理；Chat与三个Submodule共四个源码仓库均可通过HTTPS匿名读取。
 
 可以直接下载公开`main`中的单个bootstrap脚本并执行：
 
@@ -54,12 +86,13 @@ sudo install -o root -g root -m 0755 /tmp/chatctl /usr/local/sbin/chatctl-bootst
 sudo /usr/local/sbin/chatctl-bootstrap install
 ```
 
-首次运行会自动创建`chat`系统用户，通过公开HTTPS克隆Chat，并自动同步父提交固定的两个Submodule Commit。无需创建GitHub Token、Deploy Key或SSH配置；如需单独排查网络，可以匿名检查三个仓库：
+首次运行会自动创建`chat`系统用户，通过公开HTTPS克隆Chat，并自动同步父提交固定的三个Submodule Commit。无需创建GitHub Token、Deploy Key或SSH配置；如需单独排查网络，可以匿名检查四个仓库：
 
 ```bash
 sudo -u chat -H git ls-remote https://github.com/later-3/Chat.git HEAD
 sudo -u chat -H git ls-remote https://github.com/later-3/pi.git HEAD
 sudo -u chat -H git ls-remote https://github.com/later-3/chat-frontend.git HEAD
+sudo -u chat -H git ls-remote https://github.com/later-3/nanoclaw.git HEAD
 ```
 
 如果第一次运行停在用户配置阶段，填写配置后重新运行同一个命令即可继续：
@@ -73,7 +106,8 @@ sudo /usr/local/sbin/chatctl-bootstrap install
 ```text
 /opt/chat/                                  稳定源码与Agent工作目录
 ├── frontend/                              父仓库固定的Pi Web Submodule
-└── pi/                                    父仓库固定的Pi Submodule
+├── pi/                                    父仓库固定的Pi Submodule
+└── nanoclaw/                              父仓库固定的长期Agent源码与独立常驻Host
 /var/lib/chat/runtime/
 ├── releases/<release-id>/                 不可变的已构建版本
 └── current -> releases/<release-id>/      systemd当前运行版本
@@ -167,7 +201,7 @@ sudo ./deploy/chatctl update
 sudo ./deploy/chatctl rollback
 ```
 
-`update`默认更新`main`，也可选择明确的Tag或Commit。它先在新的Release中构建和验证，成功后才原子切换`current`并重启服务；readiness失败时恢复上一版本。默认保留最近3个Release，可通过`CHAT_KEEP_RELEASES`调整为2到20；`rollback`切回保留的上一Release，不回退或覆盖用户数据。启动后只应存在一个Chat进程；不要另行启动Vite、Pi Web后端或第二个Agent服务。
+`update`默认更新`main`，也可选择明确的Tag或Commit。它先在新的Release中构建和验证，成功后才原子切换`current`并重启服务；readiness失败时恢复上一版本。默认保留最近3个Release，可通过`CHAT_KEEP_RELEASES`调整为2到20；`rollback`切回保留的上一Release，不回退或覆盖用户数据。启动后只应存在一个Chat进程；不要另行启动Vite或Pi Web后端。Long Agent使用一个NanoClaw Host，不按Agent或Bot启动多个Host。
 
 需要直接查看服务状态和日志时使用：
 
@@ -177,6 +211,35 @@ sudo journalctl -u chat -n 100 --no-pager
 ```
 
 macOS常驻运行使用[生产LaunchAgent模板](../deploy/macos/com.later.chat.production.plist.in)。先把`deploy/chat.env.example`复制到`~/Library/Application Support/Chat/chat.env`并设置`0600`权限，把其中`CHAT_HOME`和`WORKFLOW_LOCAL_DATA_DIR`改为该用户下的绝对路径，再把模板中的`__ENV_FILE__`替换为配置文件绝对路径；Node通过`--env-file`读取与systemd相同的生产配置。随后替换`__CHAT_ROOT__`、`__NODE__`、`__HOME__`和`__LOG_DIR__`。Mac直连Cloudflare使用[直连Tunnel模板](../deploy/macos/com.later.chat.cloudflare-direct.plist.in)，其私有配置和Tunnel Credential应放在`~/Library/Application Support/Chat/cloudflared/`，不能放在旧Pi Web目录或提交到Git。
+
+### NanoClaw Long Agent常驻服务
+
+在父仓库固定的`nanoclaw/`目录完成一次性Channel Gateway初始化。Token只从Chat私有Bot Registry渲染到NanoClaw的`0600` `.env`，不能提交；模型与Agent凭据由Chat Pi管理，不进入NanoClaw、OneCLI或Agent容器。`chat-pi`模式不安装OneCLI、不执行NanoClaw Provider认证，也不构建Agent镜像：
+
+```bash
+cd nanoclaw
+pnpm install --frozen-lockfile
+pnpm exec tsx setup/index.ts --step set-env -- --key NANOCLAW_EXECUTION_MODE --value chat-pi
+pnpm exec tsx setup/index.ts --step set-env -- --key CHAT_BACKEND_URL --value http://127.0.0.1:43110
+pnpm exec tsx setup/index.ts --step set-env -- --key CHAT_INTEGRATION_INSTANCE_ID --value local
+pnpm exec tsx setup/index.ts --step set-env -- --key CHAT_CHANNEL_GATEWAY_TOKEN --value '<same-random-token-as-chat-backend>'
+pnpm exec tsx setup/index.ts --step service
+```
+
+`CHAT_CHANNEL_GATEWAY_TOKEN`至少32个字符，并以`0600`权限分别保存在Chat和NanoClaw的私有环境文件中。Chat的`long-agents.json`只登记NanoClaw的`gatewayBaseUrl`，默认本机地址为`http://127.0.0.1:3000/webhook/chat-backend`；远程Channel Gateway必须通过HTTPS访问。不要把NanoClaw的全权限`ncl.sock`或本地`cli.sock`转发成HTTP服务。
+
+`service`只构建Node Host，并在macOS生成按Checkout隔离的LaunchAgent，在Linux生成用户级systemd服务；两者都设置开机启动与异常重启。`chat-pi`下该步骤不会检查Docker用户组或Docker Socket。服务直接在Node启动时读取NanoClaw `.env`。当Node版本支持时，生成的启动参数会加入`--use-env-proxy`，确保LaunchAgent/systemd在需要代理访问Telegram时使用`HTTP_PROXY`、`HTTPS_PROXY`与`NO_PROXY`，而不是依赖交互Shell环境。一个Host可以同时连接默认Telegram实例和`TELEGRAM_INSTANCES`列出的命名实例。每个Chat Long Agent映射一个Agent Group，每只Bot通过Wiring连接到对应Agent Group。
+
+服务与配置验收：
+
+```bash
+ncl groups list --json
+ncl wirings list --json
+launchctl list | grep nanoclaw          # macOS
+systemctl --user status nanoclaw       # Linux，实际Unit带Checkout标识
+```
+
+NanoClaw工作区、数据库、Channel Session和日志仍由它自己的Checkout管理；Chat不直接读写这些文件。NanoClaw通过带服务认证的HTTP Event API主动调用Chat Backend，Chat通过NanoClaw窄HTTP Gateway完成Delivery与Ack；Web和Channel最终进入同一个Chat LongAgent Runtime。删除或移动正在作为服务WorkingDirectory的Checkout前，必须先把服务迁移到新的稳定Checkout并重装服务。
 
 如果Cloudflare还有云服务器连接器，再安装[反向Relay模板](../deploy/macos/com.later.chat.cloud-relay.plist.in)，让云端`127.0.0.1:33051`回到Mac的`127.0.0.1:43110`。将`__CHAT_CLOUD_TARGET__`替换为用户自己`~/.ssh/config`中的Host别名，并替换所有路径占位符；真实别名、主机、账号和IdentityFile不进入仓库。生产入口同样是`.output/server/index.mjs`，不是开发服务器或历史`start.mjs`。
 

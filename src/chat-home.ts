@@ -9,6 +9,8 @@ export interface ChatHomePaths {
   readonly agentDir: string;
   readonly personalMemoryDir: string;
   readonly personalPromptResourceDir: string;
+  readonly workspacesDir: string;
+  readonly dailyWorkspaceDir: string;
   readonly projectsDir: string;
   readonly projectRegistryPath: string;
   readonly runtimeDir: string;
@@ -18,6 +20,9 @@ export interface ChatHomePaths {
   readonly logsDir: string;
   readonly configPath: string;
   readonly devicesConfigPath: string;
+  readonly longAgentRegistryPath: string;
+  readonly longAgentStatePath: string;
+  readonly longAgentsRuntimeDir: string;
 }
 
 export function resolveChatHome(configured = process.env[CHAT_HOME_ENV]): string {
@@ -29,6 +34,7 @@ export function resolveChatHome(configured = process.env[CHAT_HOME_ENV]): string
 export function getChatHomePaths(root = resolveChatHome()): ChatHomePaths {
   const resolvedRoot = resolve(root);
   const projectsDir = resolve(resolvedRoot, "projects");
+  const workspacesDir = resolve(resolvedRoot, "workspaces");
   const runtimeDir = resolve(resolvedRoot, "runtime");
   const cacheDir = resolve(resolvedRoot, "cache");
   return {
@@ -36,6 +42,8 @@ export function getChatHomePaths(root = resolveChatHome()): ChatHomePaths {
     agentDir: resolve(resolvedRoot, "agent"),
     personalMemoryDir: resolve(resolvedRoot, "memory", "personal"),
     personalPromptResourceDir: resolve(resolvedRoot, "prompt-resources"),
+    workspacesDir,
+    dailyWorkspaceDir: resolve(workspacesDir, "daily"),
     projectsDir,
     projectRegistryPath: resolve(projectsDir, "registry.json"),
     runtimeDir,
@@ -45,6 +53,9 @@ export function getChatHomePaths(root = resolveChatHome()): ChatHomePaths {
     logsDir: resolve(resolvedRoot, "logs"),
     configPath: resolve(resolvedRoot, "config.json"),
     devicesConfigPath: resolve(resolvedRoot, "devices.json"),
+    longAgentRegistryPath: resolve(resolvedRoot, "long-agents.json"),
+    longAgentStatePath: resolve(runtimeDir, "long-agent-state.json"),
+    longAgentsRuntimeDir: resolve(runtimeDir, "long-agents"),
   };
 }
 
@@ -60,9 +71,11 @@ export function ensureChatHome(root = resolveChatHome()): Promise<ChatHomePaths>
       mkdir(paths.agentDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.personalMemoryDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.personalPromptResourceDir, { recursive: true, mode: 0o700 }),
+      mkdir(paths.workspacesDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.projectsDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.runtimeDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.workflowDataDir, { recursive: true, mode: 0o700 }),
+      mkdir(paths.longAgentsRuntimeDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.fastEmbedCacheDir, { recursive: true, mode: 0o700 }),
       mkdir(paths.logsDir, { recursive: true, mode: 0o700 }),
     ]);

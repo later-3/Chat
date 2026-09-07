@@ -16,6 +16,7 @@ let runtimeRoot;
 let chatHome;
 let workspace;
 let sessionId;
+let longAgentSessionId;
 let server;
 let embeddingServer;
 let baseUrl;
@@ -207,6 +208,28 @@ before(async () => {
   });
   sessionId = manager.getSessionId();
 
+  const longAgentManager = SessionManager.create(workspace, sessionDir);
+  longAgentManager.appendMessage({ role: "user", content: "long agent fixture", timestamp: Date.now() });
+  longAgentManager.flush();
+  longAgentSessionId = longAgentManager.getSessionId();
+  const longAgentStateDir = path.join(chatHome, "runtime");
+  fs.mkdirSync(longAgentStateDir, { recursive: true });
+  const longAgentCreatedAt = new Date().toISOString();
+  fs.writeFileSync(path.join(longAgentStateDir, "long-agent-state.json"), JSON.stringify({
+    schemaVersion: 2,
+    cursors: {},
+    projectAgents: [{
+      id: `project-long-agent:${projectId}:nexus`,
+      projectId,
+      longAgentId: "nexus",
+      primarySessionId: longAgentSessionId,
+      status: "active",
+      createdAt: longAgentCreatedAt,
+      updatedAt: longAgentCreatedAt,
+    }],
+    bindings: [],
+  }));
+
   promptResourceId = "built-production-rule";
   const promptResourceDir = path.join(chatHome, "projects", projectId, "prompt-resources", "resources");
   fs.mkdirSync(promptResourceDir, { recursive: true });
@@ -282,6 +305,7 @@ before(async () => {
       CHAT_WEB_AUTH_USERNAME: "test-user",
       CHAT_WEB_AUTH_PASSWORD: "123456",
       CHAT_WEB_AUTH_SESSION_SECRET: "built-server-test-session-secret-at-least-32-characters",
+      CHAT_CHANNEL_GATEWAY_TOKEN: "built-server-channel-token-at-least-32-characters",
       CHAT_MEMORY_EMBEDDER_PROVIDER: "openai",
       CHAT_MEMORY_EMBEDDER_BASE_URL: embeddingBaseUrl,
       CHAT_MEMORY_EMBEDDER_API_KEY: "built-server-test",
@@ -373,6 +397,56 @@ test("health is public while Chat product APIs require login", async () => {
   const loginPage = await fetch(`${baseUrl}/login`);
   assert.equal(loginPage.status, 200);
   assert.match(await loginPage.text(), /登录到 Chat/);
+});
+
+test("Channel ingress uses machine authentication instead of the browser session", async () => {
+  const payload = {
+    schemaVersion: 1,
+    instanceId: "unknown-instance",
+    events: [{
+      seq: 1,
+      eventId: "unknown:event",
+      instanceId: "unknown-instance",
+      direction: "in",
+      messageId: "message-1",
+      nanoSessionId: "nano-session-1",
+      agentGroupId: "agent-group-1",
+      messagingGroupId: null,
+      isGroup: false,
+      senderId: "user-1",
+      senderName: "Later",
+      text: "hello",
+      kind: "chat",
+      timestamp: new Date().toISOString(),
+      source: null,
+      delivery: null,
+      chatSessionId: null,
+    }],
+  };
+  const unauthenticated = await fetch(`${baseUrl}/api/internal/channel/v1/events`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(unauthenticated.status, 401);
+
+  const browserOnly = await authenticatedFetch("/api/internal/channel/v1/events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(browserOnly.status, 401);
+
+  const service = await fetch(`${baseUrl}/api/internal/channel/v1/events`, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer built-server-channel-token-at-least-32-characters",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(service.status, 400);
+  assert.match(await service.text(), /未知NanoClaw instance/);
 });
 
 test("memory management API persists, searches, updates, rebuilds, and deletes", async () => {
@@ -538,7 +612,14 @@ test("session list and detail come from the isolated Chat session directory", as
   assert.equal(listResponse.status, 200);
   assert.match(listResponse.headers.get("cache-control") ?? "", /no-store/);
   const list = await listResponse.json();
-  assert.deepEqual(list.sessions.map((session) => session.id), [sessionId]);
+  assert.deepEqual(new Set(list.sessions.map((session) => session.id)), new Set([sessionId, longAgentSessionId]));
+  assert.deepEqual(list.sessions.find((session) => session.id === sessionId).owner, { type: "ordinary" });
+  const longAgentOwner = {
+    type: "long-agent",
+    longAgentId: "nexus",
+    projectLongAgentId: `project-long-agent:${projectId}:nexus`,
+  };
+  assert.deepEqual(list.sessions.find((session) => session.id === longAgentSessionId).owner, longAgentOwner);
 
   const detailResponse = await authenticatedFetch(`/api/sessions/${encodeURIComponent(sessionId)}?projectId=${projectId}&deferThinking=1&deferMedia=1`);
   assert.equal(detailResponse.status, 200);
@@ -547,6 +628,14 @@ test("session list and detail come from the isolated Chat session directory", as
   assert.equal(detail.context.messages.length, detail.context.entryIds.length);
   assert.deepEqual(detail.workflowCallTree, []);
   assert.deepEqual(detail.workflowCallStatistics.capacity, { active: 0, limit: 8 });
+  assert.deepEqual(detail.session.owner, { type: "ordinary" });
+
+  const longAgentDetailResponse = await authenticatedFetch(
+    `/api/sessions/${encodeURIComponent(longAgentSessionId)}?projectId=${projectId}`,
+  );
+  assert.equal(longAgentDetailResponse.status, 200);
+  const longAgentDetail = await longAgentDetailResponse.json();
+  assert.deepEqual(longAgentDetail.session.owner, longAgentOwner);
 
   const workflowCallsResponse = await authenticatedFetch(
     `/api/sessions/${encodeURIComponent(sessionId)}/workflow-calls?projectId=${projectId}`,
@@ -571,6 +660,27 @@ test("session list and detail come from the isolated Chat session directory", as
   });
   assert.equal(renameResponse.status, 200, await renameResponse.clone().text());
   assert.deepEqual(await renameResponse.json(), { sessionId, name: "Built Session" });
+});
+
+test("session APIs fail ownership resolution closed without exposing runtime paths", async () => {
+  const statePath = path.join(chatHome, "runtime", "long-agent-state.json");
+  const validState = fs.readFileSync(statePath, "utf8");
+  fs.writeFileSync(statePath, "not-json\n");
+  try {
+    for (const requestPath of [
+      `/api/sessions?projectId=${projectId}`,
+      `/api/sessions/${encodeURIComponent(sessionId)}?projectId=${projectId}`,
+    ]) {
+      const response = await authenticatedFetch(requestPath);
+      const body = await response.text();
+      assert.equal(response.status, 500, body);
+      assert.match(body, /无法读取Session归属状态/);
+      assert.doesNotMatch(body, new RegExp(runtimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.doesNotMatch(body, /long-agent-state\.json/);
+    }
+  } finally {
+    fs.writeFileSync(statePath, validState);
+  }
 });
 
 test("historical tool-result images are deferred and served from the same Project Session", async () => {
@@ -785,7 +895,14 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
   assert.equal(catalogResponse.status, 200, JSON.stringify(catalog));
   assert.deepEqual(
     catalog.tools.filter((tool) => tool.sourceInfo.scope === "system").map((tool) => tool.address),
-    ["system:tool/memory_search", "system:tool/memory_record", "system:tool/workflow_call"],
+    [
+      "system:tool/memory_search",
+      "system:tool/memory_record",
+      "system:tool/workflow_call",
+      "system:tool/agent_memory_search",
+      "system:tool/agent_memory_read",
+      "system:tool/agent_memory_write",
+    ],
   );
   const projectTool = catalog.tools.find((tool) => tool.name === "built_project_lookup");
   assert.ok(projectTool, JSON.stringify(catalog));

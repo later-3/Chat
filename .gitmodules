@@ -6,3 +6,7 @@
 	path = frontend
 	url = https://github.com/later-3/chat-frontend.git
 	branch = main
+[submodule "nanoclaw"]
+	path = nanoclaw
+	url = https://github.com/later-3/nanoclaw.git
+	branch = chat

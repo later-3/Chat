@@ -1,4 +1,4 @@
-import { openProject, resolveProjectContext } from "./registry.js";
+import { ensureDailyProject, openProject, resolveProjectContext } from "./registry.js";
 import type { ChatProjectContext } from "./types.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -8,7 +8,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Resolves Project identity once at the HTTP boundary; cwd-only input is migration compatibility. */
 export async function resolveRequestProject(
   body: unknown,
-  defaultProjectRoot: string,
+  _defaultProjectRoot: string,
 ): Promise<ChatProjectContext> {
   const value = isRecord(body) ? body : {};
   if (typeof value.projectId === "string" && value.projectId.trim() !== "") {
@@ -18,8 +18,8 @@ export async function resolveRequestProject(
     }
     return context;
   }
-  const path = typeof value.cwd === "string" && value.cwd.trim() !== ""
-    ? value.cwd
-    : defaultProjectRoot;
-  return openProject({ path });
+  if (typeof value.cwd === "string" && value.cwd.trim() !== "") {
+    return openProject({ path: value.cwd });
+  }
+  return ensureDailyProject();
 }

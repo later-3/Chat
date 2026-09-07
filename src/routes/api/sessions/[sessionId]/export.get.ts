@@ -8,6 +8,7 @@ import { exportChatSessionHtml } from "../../../../session-export.js";
 import { requireChatSession } from "../../../../session-read-model.js";
 import { SessionLifecycleError } from "../../../../session-errors.js";
 import { toSessionLifecycleHttpError } from "../../../../session-removal-http.js";
+import { SessionOwnerResolutionError } from "../../../../session-owner.js";
 
 function encodeHeaderValue(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/g, (character) =>
@@ -31,6 +32,9 @@ export default defineEventHandler(async (event) => {
   try {
     session = await requireChatSession(sessionId, projectId);
   } catch (error) {
+    if (error instanceof SessionOwnerResolutionError) {
+      throw createError({ statusCode: 500, statusMessage: error.message });
+    }
     if (error instanceof SessionLifecycleError) throw toSessionLifecycleHttpError(error);
     throw createError({
       statusCode: 404,
@@ -55,6 +59,9 @@ export default defineEventHandler(async (event) => {
     try {
       await requireChatSession(sessionId, projectId);
     } catch (stateError) {
+      if (stateError instanceof SessionOwnerResolutionError) {
+        throw createError({ statusCode: 500, statusMessage: stateError.message });
+      }
       if (stateError instanceof SessionLifecycleError) throw toSessionLifecycleHttpError(stateError);
     }
     throw createError({

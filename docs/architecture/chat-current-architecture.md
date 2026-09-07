@@ -13,7 +13,7 @@
 | Pi Web派生前端开发代码 | 持续变化 | 纯浏览器前端 |
 | Workflow框架支持的Node类型 | 2 | Agent Node、Task Node |
 
-不包含两个子模块、构建产物和依赖。前端和Pi分别由`frontend/`与`pi/`子模块固定提交。
+不包含三个子模块、构建产物和依赖。前端、Pi与长期Agent源码分别由`frontend/`、`pi/`和`nanoclaw/`子模块固定提交。
 
 ## 2. 当前组件边界
 
@@ -32,26 +32,31 @@ Chat Nitro进程
   ├── /api/workflows/.../agents/.../catalog：Agent可选择资源目录
   ├── /api/chat-config：.chat根配置读写
   ├── /api/memories：长期记忆管理
+  ├── /api/long-agents：Long Agent列表、Binding与Chat Web执行
   ├── /api/prompt-resources：规则与经验Prompt资源、草稿和版本读取
   └── /api/skills、/api/extensions、/api/plugins：Pi资源管理
           │
-          ▼
-Vercel Workflow Runtime
+          ├────────────────────────────┐
+          ▼                            ▼
+Vercel Workflow Runtime        Chat LongAgent Runtime
   ├── minimal-pi-coding-agent
   ├── planning-execution
   ├── planner-orchestrator
   ├── memory
   └── rule-management
-          │
-          ▼
-Chat Workflow Step
+          │                            │
+          ▼                            │
+Chat Workflow Step                     │
   ├── 打开Chat Session
   ├── 创建本Stage的Pi AgentSession
   ├── 订阅Pi事件并发布Run事件
   ├── 执行Prompt
   └── 销毁进程内AgentSession
-          │
-          ▼
+          └────────────┬───────────────┘
+                       ▼
+createChatPiAgentSession()
+                       │
+                       ▼
 pi/：Pi Coding Agent
   ├── ~/.chat/agent：模型、认证、Settings和个人资源
   ├── <project>/.chat：Project配置和资源声明
@@ -62,6 +67,16 @@ pi/：Pi Coding Agent
 ```
 
 生产部署只运行一个Chat进程。`frontend/dist`由Nitro提供，不再启动Pi Web Next.js服务。开发环境额外运行Vite，只提供页面热更新和到Chat的代理。
+
+### 2.1 NanoClaw源码与本机运行基线
+
+父仓库已经通过`nanoclaw/` gitlink固定公开Fork `later-3/nanoclaw`的`chat`分支，官方只读上游是`nanocoai/nanoclaw`。NanoClaw具备Agent Group身份与Workspace、Markdown Memory、Channel、调度、Destination、权限、模板与多Agent生态；Chat保留这些长期Agent能力，只把Agent Loop、Model执行和用户可见Session统一交给Chat Pi。当前已经完成Channel文本链路、Agent Group身份/Standing Instructions/Core Memory上下文和Agent Memory管理Tool；定时/主动Trigger、完整Workspace/Skill快照与其他生态资源继续接入。
+
+当前本机使用一个独立LaunchAgent常驻一个NanoClaw Channel Gateway。该Gateway承载Nexus、Architecture Muse、Coder Muse、Planner Muse、PUA Muse和Reviewer Muse共6个内部路由；6个Telegram Bot分别通过独立Adapter、Messaging Group和Wiring连接到对应Long Agent。Instance以`chat-pi`模式运行：Inbox落盘后统一交给Chat Pi，NanoClaw Session仅作为Channel坐标，Gateway不初始化Agent Session Runtime、不启动或监听Agent容器。每个Long Agent在每个Project中只有一个专属主Session，Web与IM都解析到它。
+
+NanoClaw继续是独立长期Agent Host和Channel Gateway：保留Agent Group身份、Workspace、Markdown Agent Memory、Standing Instructions、Skill与Template生态、Nano Session、耐久Inbox、Channel、调度、Destination、权限和Outbound投递；Chat拥有Model与Pi Tool运行策略、Project、Pi Session、Workflow、Mem0和用户可见历史。NanoClaw像Chat Web一样是Chat Backend的客户端，通过带服务认证的版本化HTTP Event API提交消息；Chat通过NanoClaw的窄HTTP Gateway完成Delivery与Ack。后续Agent Group资源通过单独的Management与Resource合同接入；Chat不直接读取NanoClaw数据库，也不依赖NanoClaw的全权限本地CLI Socket。
+
+NanoClaw主干明确不提供完整的用户Web聊天前端，也默认不带监控或调试UI。其`/add-dashboard` Skill可以安装本地监控Dashboard，展示Agent Group、Session、Channel、消息与日志；该Dashboard是运维观察面，不替代Chat Web这一用户产品入口。
 
 ## 3. 浏览器到Workflow的调用链
 
@@ -101,6 +116,22 @@ Run被接受后，浏览器立即使用返回的Session ID更新地址栏、当�
 
 与原Pi Web相比，Chat没有长期驻留的`AgentSessionWrapper` Registry，也没有`/api/agent/:id`命令总线。每条用户消息启动一次Workflow Run；每个Agent Stage在自己的Step中创建和销毁AgentSession。
 
+### 3.1 Long Agent调用链
+
+Chat Web从Project侧栏的常驻长期同事区域打开Long Agent时不经过NanoClaw：
+
+```text
+POST /api/long-agents/:id/messages
+  → 创建或恢复Project Session与Conversation Binding
+  → 追加chat.long_agent_turn运行标记
+  → createChatPiAgentSession()
+  → Pi原生写入User、Assistant、Tool、Usage与Compaction
+  → 追加Turn终态并返回
+  → Frontend重新读取Session事实
+```
+
+Telegram等IM入口先由NanoClaw完成身份、路由、Inbox和HTTP Event Outbox持久化，再主动`POST /api/internal/channel/v1/events`。Chat在返回`202`前把事件写入自己的耐久Ingress队列，使用稳定`eventId`作为Turn ID执行与Web相同的LongAgent Runtime；完成后先通过NanoClaw Gateway持久化Outbox Delivery，再单独确认Inbound。请求丢失、任一进程重启或Delivery重试都复用相同ID和payload hash，不重复执行Pi。
+
 ## 4. Workflow目录与选择机制
 
 当前后端注册5个Workflow：
@@ -128,6 +159,8 @@ Chat只使用Project Registry解析出的目录：
 ```text
 ~/.chat/projects/<projectId>/sessions
 ```
+
+Backend初始化时会保证系统管理的`daily` Project存在于`~/.chat/workspaces/daily`，并通过普通Manifest、Registry和`ChatProjectContext`进入同一条运行链。全新请求没有`projectId`和`cwd`时解析到Daily；Frontend把Daily置于Project列表首位，作为没有既有导航上下文时的默认选择。已有Session或显式Project解析失败时不会使用Daily掩盖错误。
 
 `openChatSession()`负责：
 
@@ -278,7 +311,7 @@ Memory Workflow使用一个`memory-agent`：
 3. Memory Skill源码位于Agent目录的`skills/memory/SKILL.md`；生产构建通过Nitro Server Asset物化到`~/.chat/runtime/skills/memory`。
 4. `resolve`和执行共用同一装配函数；检查模式使用不可执行占位服务，不创建Memory数据库或索引。
 
-Memory管理HTTP API和Memory Agent Tool都调用同一个`MemoryService`，前端管理页不绕过Chat目录数据库直接操作Mem0。
+Memory管理HTTP API和Memory Agent Tool都调用同一个`MemoryStoreManager`与`MemoryService`，前端管理页不绕过Chat Catalog直接操作Mem0。管理页默认聚合Personal与当前Project的精确列表和健康状态；语义搜索把同一组Target一次提交给Backend，新增、编辑、删除和重建始终解析为具体Target。
 
 ## 9. Workflow事件与完整历史
 
@@ -326,7 +359,7 @@ Session正常JSONL位于`~/.chat/projects/<projectId>/sessions/`，移除区位�
 
 `agent-config.ts`和`agent-config-loader.ts`严格解析并有序合并Workflow默认配置、Project持久配置、Session配置、本轮调整、主配置、追加配置、Prompt文件与已固定版本的Prompt资源。`agent-definition.ts`实现身份、基础System Prompt、Chat自定义指令区域、模型、Thinking、工具和资源策略；它通过公共Tool Resolver把限定地址转换为Pi `ToolDefinition`，再集中创建SettingsManager、ResourceLoader和AgentSession。`GET /api/tools`查询Project可见Tool与反向使用关系，`catalog`查询Agent可选择资源，`resolve`查询本轮实际装配结果。
 
-`~/.chat/config.json`保存个人默认，`<project-root>/.chat/config.json`保存Project覆盖，包括Session移除区保留天数。Session使用Pi CustomEntry保存每个Workflow的最新配置和每轮冻结快照。本轮请求只提交实际调整；后端按`Workflow默认 → Session最新 → 本轮调整`解析，先把所有Agent和Prompt资源冻结为可执行定义，再追加Session配置事实。同一Workflow的所有Stage复用该冻结结果。
+`~/.chat/config.json`保存个人默认，`<project-root>/.chat/config.json`保存Project覆盖，包括Session移除区保留天数。某个Project中某个Agent的持久模型、Thinking与Tool配置保存在`~/.chat/projects/<projectId>/workflows/<workflowId>/agents/<agentId>.json`。Session使用Pi CustomEntry保存每个Workflow的最新配置和每轮冻结快照。本轮请求只提交实际调整；后端按`Workflow默认 → Session最新 → 本轮调整`解析，先把所有Agent和Prompt资源冻结为可执行定义，再追加Session配置事实。同一Workflow的所有Stage复用该冻结结果。
 
 `GET /api/workflows`可以查询Workflow、Stage和Agent定义；可执行的`run`和`prepareAgentSession`不会投影给浏览器。Agent执行和检查都先从Registry取得Workflow定义，再调用同一个`prepareAgentSession`装配Workflow私有Tool、Skill和Context Transform，随后进入公共`createWorkflowAgentSession`。因此前端无需了解某个Workflow的Tool实现，也能通过通用检查接口看到最终Prompt、Model、Thinking、Tools和资源诊断。
 
@@ -341,6 +374,8 @@ Session正常JSONL位于`~/.chat/projects/<projectId>/sessions/`，移除区位�
 5. 运行中Steering、Follow-up、Extension交互式UI和Session Fork依赖持续运行控制面，当前一次一Run的接口尚未支持。
 6. cwd-only Session和Resource入口仅保留给旧数据迁移与现有测试；浏览器正常路径已经提交稳定`projectId`。
 7. Skill、Extension和Plugin已有基础管理API和每Agent选择，更新检查及部分原Pi Web操作仍待迁移。
+8. Project-first与Daily Project已经进入Backend和Frontend合同；运行时会确保系统管理的`daily` Project存在，并在全新请求缺少Project信息时使用它。旧数据迁移入口仍需继续收敛，但不能用Daily掩盖显式绑定失败。
+9. NanoClaw已经具备本机常驻Host、6个Telegram入口、Conversation Binding与`chat-pi`驱动；Chat Web与IM都能进入同一个LongAgent Runtime。主动任务、Agent Memory管理、Agent-to-Agent和完整配置页仍需继续实现。
 
 ## 12. 源码证据索引
 
@@ -362,5 +397,7 @@ Session正常JSONL位于`~/.chat/projects/<projectId>/sessions/`，移除区位�
 | 实时事件 | `src/workflows/agent-session-log.ts`、`chat-run-events.ts` |
 | Session前端投影 | `src/session-read-model.ts` |
 | 完整历史 | `src/session-export.ts` |
+| Long Agent与NanoClaw集成 | `src/long-agents/`、`src/agents/pi-agent-session.ts`、`nanoclaw/src/execution-driver.ts`、`nanoclaw/src/modules/chat-integration/` |
+| NanoClaw长期Agent源码基线 | `.gitmodules`、`nanoclaw/README.md`、`nanoclaw/docs/architecture.md`、`nanoclaw/docs/memory.md` |
 
 新增Workflow时以[Chat Workflow开发框架](./chat-workflow-framework.md)为规范入口，并用本文核对当前实现事实。

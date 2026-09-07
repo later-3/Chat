@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "agent-memory-search",
+  "name": "agent_memory_search",
+  "label": "Search agent memory",
+  "description": "Search this Long Agent's own NanoClaw OKF Markdown memory for identity, working methods, relationship history, open work, and durable agent-specific knowledge. This is separate from memory_search, which searches shared Personal and Project memory. The current Agent Group is bound by the host and cannot be selected in arguments.",
+  "implementationVersion": 1,
+  "risk": "read-only",
+  "permissions": ["agent-memory:read"]
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "agent-memory-write",
+  "name": "agent_memory_write",
+  "label": "Write agent memory",
+  "description": "Create or replace one Markdown file (up to 900 KiB UTF-8) in this Long Agent's NanoClaw OKF memory using optimistic concurrency. Use null expectedRevision only when creating a file that must not already exist. This is agent-specific memory, not shared Personal or Project memory.",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": ["agent-memory:write"]
+}
