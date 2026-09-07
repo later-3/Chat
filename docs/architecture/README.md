@@ -63,6 +63,8 @@ Chat详细设计
 
 现有[Pi Web前端API迁移清单](../pi-web-frontend-api-migration.md)继续作为接口迁移证据，但不能替代Pi Web架构分析。
 
+生命周期协同的已确认目标见[Chat系统生命周期](./chat-system-lifecycle.md)：完整实例启停、就绪、收尾、故障恢复与当前差距。
+
 ## 审核记录
 
 - [2026-09-07 Agent开发入口与架构治理](./reviews/2026-09-07-agent-development-readiness.md)：本次缺口、两轮只读问答、工程验证与后续输入。

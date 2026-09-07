@@ -38,6 +38,7 @@
 常用入口：
 
 - [Agent 第一性原理与架构约束](./architecture/chat-agent-first-principles.md)
+- [Chat 系统生命周期与协同](./architecture/chat-system-lifecycle.md)
 - [Chat 当前架构](./architecture/chat-current-architecture.md)
 - [Chat Project 架构](./architecture/chat-project-framework.md)
 - [Project 管理 Skill 与 Tool](./architecture/chat-project-management-design.md)

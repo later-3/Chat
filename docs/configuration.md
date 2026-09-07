@@ -407,3 +407,9 @@ src/workflows/<workflowId>/agents/<agentId>/agent.json
 | 新增内置 Workflow 或 Agent | `src/workflows/<workflowId>/`，仅限开发者 |
 
 修改 JSON 前先备份私有配置并保持 `schemaVersion: 1`。若 Chat 报告未知字段、无效 Workflow/Agent ID、找不到模型或缺少认证，应修正配置，不要绕过校验。
+
+## 系统生命周期与运行实例（已认可目标）
+
+完整Chat的启动、停止、就绪、在途收尾和恢复见[系统生命周期合同](./architecture/chat-system-lifecycle.md)。运行实例统一解析Chat Home、Nano数据范围、端点、服务归属和启用组件；具体字段与Schema尚待实现，不能直接把概念字段写入当前配置。
+
+该合同沿用Chat配置体系，避免脚本、VSCode、Nano服务和Web各自维护一份组件清单或启停策略。运行实例不是Long Agent；同一实例仍可承载多个独立Agent。当前开发脚本只管理Backend/Vite，生产Chat与Nano服务仍独立管理，完整协同尚未实现。

@@ -2,6 +2,8 @@
 
 在 Chat 根目录工作；首次依赖准备按 [README](../../README.md)执行 `pnpm pi:prepare`、`pnpm install --frozen-lockfile`。不启动或重启生产 NanoClaw Host；本地 Web/Workflow 开发与生产部署分开。
 
+**当前范围**：下面的一键脚本和F5只管理开发Backend/Vite，不启动或停止独立NanoClaw。用户已确认应升级为完整实例生命周期，见[系统生命周期合同](../architecture/chat-system-lifecycle.md)；在实现完成前，不把停止这些入口称为停止整个Chat。
+
 ## 一键启动
 
 ```bash

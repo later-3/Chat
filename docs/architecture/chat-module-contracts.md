@@ -54,6 +54,10 @@ Workflow 通过 `POST /runs` 得到稳定 Run 引用，再由 `GET /runs/:runId/
 
 Nano 入站在 Chat 返回 `202` 前耐久保存；出站通过 Gateway Delivery/Ack 关联。连接断开、推送超时和 Agent 执行失败必须分别定位。重试使用稳定事件/执行/投递标识，不靠正文去重。[集成基线](./chat-nanoclaw-pi-integration.md)维护精确职责。
 
+## 系统生命周期
+
+完整实例的启动、就绪、停止接收新工作、收尾和恢复由[系统生命周期合同](./chat-system-lifecycle.md)统一定义。进程管理复用原生服务管理者，任务状态仍归已有Workflow/Long Agent/Pi；不要让脚本、Web和Nano各自定义“整个系统已停止”。当前独立服务未完成该协同。
+
 ## 修改合同的审核证据
 
 每次跨模块变更列出：事实拥有者、实际消费者、读写接口、作用域/身份、版本与生效点、失败/并发/重连、持久化及兼容迁移。验证至少包含生产者响应→浏览器解析、检查→装配、触发→Run→Session 中本次受影响的完整链。详见[工作方法](../development/agent-contribution.md)、[测试指南](../testing.md)及[诊断记录](../development/diagnostics.md)。

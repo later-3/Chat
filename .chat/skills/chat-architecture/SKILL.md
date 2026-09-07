@@ -2,7 +2,7 @@
 name: chat-architecture
 description: Navigate Chat's authoritative architecture sources and evaluate architecture impact when changing or diagnosing Projects, Workflows, Agent assembly, Sessions, Memory, configuration, resources, or the Frontend-to-Pi execution chain.
 metadata:
-  architecture-version: 5
+  architecture-version: 6
 ---
 
 # Chat architecture
@@ -16,6 +16,7 @@ Do not reproduce large parts of the architecture documents in prompts, plans, or
 Start with the Project root `AGENTS.md`, then `docs/architecture/README.md`. Read only the documents selected by the task:
 
 - Development process, handoff and justified architecture exceptions: `docs/development/agent-contribution.md`.
+- Whole-system start/stop, service ownership, readiness, draining and recovery: `docs/architecture/chat-system-lifecycle.md`. Existing dev scripts still manage only Web/Backend; distinguish target lifecycle from current behavior.
 - Module ownership, API changes, resource refresh and long connections: `docs/architecture/chat-module-contracts.md`.
 - User feedback, logs, persistence and regression evidence: `docs/development/diagnostics.md`.
 - Long Agent Skill discovery/effective versions, native capabilities, testing and implementation order: `docs/architecture/chat-long-agent-engineering-baseline.md`, especially §4 for resources and §9 for accepted decisions.

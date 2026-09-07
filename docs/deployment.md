@@ -3,6 +3,8 @@
 直接执行Workflow中的Agent可以显式加载项目Skill
 `.chat/skills/chat-deployment/SKILL.md`执行本仓库部署。Skill在Linux上统一调用`chatctl`，不取代本文，也不授予未经用户明确要求的生产变更权限。
 
+**生命周期设计更新（2026-09-08）**：整套Chat启停须统一协调Backend、NanoClaw与实例拥有的资源，见[系统生命周期合同](./architecture/chat-system-lifecycle.md)。下文仍描述当前部署入口；目前`chatctl`与Nano服务独立，不能将其操作结果解释为整套系统已启停。
+
 ## 运行结构
 
 Chat Web与Workflow由一个Chat进程承载；启用Long Agent时，同一系统用户再常驻一个NanoClaw Host。NanoClaw Host内部承载多个Agent Group和多个Channel Adapter实例，不按Bot、Agent或Session重复启动Host。下面是可选的双Cloudflare连接器拓扑；公开域名由每台机器未跟踪的`chat.env`和代理配置决定，两条路径最终都到达同一个Chat进程：
