@@ -14,6 +14,8 @@ import {
 } from "./types.js";
 
 export const PROJECT_MANIFEST_RELATIVE_PATH = join(".chat", "project.json");
+export const DAILY_PROJECT_ID = "daily";
+export const DAILY_PROJECT_NAME = "Daily";
 
 function defaultRegistry(): ChatProjectRegistry {
   return { schemaVersion: 1, projects: [] };
@@ -169,8 +171,64 @@ async function registerProject(
   manifest: ChatProjectManifest,
   chatHome: string,
 ): Promise<ChatProjectContext> {
+  const dailyRoot = await realpath(getChatHomePaths(chatHome).dailyWorkspaceDir).catch(() =>
+    resolve(getChatHomePaths(chatHome).dailyWorkspaceDir));
+  if (manifest.id === DAILY_PROJECT_ID && root !== dailyRoot) {
+    throw new Error(`Project id ${DAILY_PROJECT_ID}只保留给Chat管理的Daily Project`);
+  }
   await upsertRegistry(root, manifest, chatHome);
   return resolveProjectContext(manifest.id, chatHome);
+}
+
+/** Creates the stable system-managed Daily Project through the normal Project contract. */
+export async function ensureDailyProject(chatHome = resolveChatHome()): Promise<ChatProjectContext> {
+  const home = await ensureChatHome(chatHome);
+  const root = home.dailyWorkspaceDir;
+  const configDir = resolve(root, ".chat");
+  await Promise.all([
+    mkdir(root, { recursive: true, mode: 0o700 }),
+    mkdir(resolve(configDir, "skills"), { recursive: true, mode: 0o700 }),
+    mkdir(resolve(configDir, "extensions"), { recursive: true, mode: 0o700 }),
+    mkdir(resolve(configDir, "prompts"), { recursive: true, mode: 0o700 }),
+  ]);
+
+  const manifestPath = resolve(root, PROJECT_MANIFEST_RELATIVE_PATH);
+  let manifest: ChatProjectManifest;
+  try {
+    manifest = await readProjectManifest(root);
+    if (manifest.id !== DAILY_PROJECT_ID) {
+      throw new Error(`Daily Workspace已经声明为其他Project: ${manifest.id}`);
+    }
+  } catch (error) {
+    if (!isMissingManifest(error)) throw error;
+    manifest = {
+      schemaVersion: 1,
+      id: DAILY_PROJECT_ID,
+      name: DAILY_PROJECT_NAME,
+      description: "Chat管理的默认日常Project",
+    };
+    await atomicWriteJson(manifestPath, manifest);
+  }
+
+  const configPath = resolve(configDir, "config.json");
+  try {
+    await stat(configPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    await atomicWriteJson(configPath, { schemaVersion: 1 });
+  }
+
+  const canonicalRoot = await projectRoot(root);
+  const existing = (await readProjectRegistry(home.root)).projects.find(
+    (project) => project.projectId === DAILY_PROJECT_ID,
+  );
+  if (existing !== undefined
+    && existing.path === canonicalRoot
+    && existing.cachedName === manifest.name
+    && existing.cachedDescription === manifest.description) {
+    return resolveProjectContext(DAILY_PROJECT_ID, home.root);
+  }
+  return registerProject(canonicalRoot, manifest, home.root);
 }
 
 /** Opens only the selected directory; it never searches parent or child directories. */
@@ -223,8 +281,13 @@ async function available(entry: ChatProjectRegistryEntry): Promise<boolean> {
 }
 
 export async function listProjects(chatHome = resolveChatHome()): Promise<readonly ChatProjectSummary[]> {
+  await ensureDailyProject(chatHome);
   const registry = await readProjectRegistry(chatHome);
-  return Promise.all(registry.projects.map(async (project) => ({ ...project, available: await available(project) })));
+  return Promise.all(registry.projects.map(async (project) => ({
+    ...project,
+    available: await available(project),
+    kind: project.projectId === DAILY_PROJECT_ID ? "daily" as const : "directory" as const,
+  })));
 }
 
 export async function ensureProjectDataLayout(projectId: string, chatHome = resolveChatHome()) {

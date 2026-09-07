@@ -26,9 +26,11 @@ export interface WorkflowCallToolContext {
   readonly chatHome?: string;
   readonly cwd: string;
   readonly sessionManager: SessionManager;
-  readonly workflowId: string;
-  readonly workflowInvocationId: string;
-  readonly stageId: string;
+  readonly workflowId?: string;
+  readonly workflowInvocationId?: string;
+  readonly stageId?: string;
+  readonly longAgentId?: string;
+  readonly longAgentTurnId?: string;
   readonly agentId: string;
 }
 
@@ -135,6 +137,13 @@ export function createWorkflowCallTool(
   runtime: ChatWorkflowCallRuntime = DEFAULT_WORKFLOW_CALL_RUNTIME,
   targets: readonly AgentCallableWorkflowTarget[] = listAgentCallableWorkflowTargets(),
 ) {
+  const parentWorkflowId = context.workflowId
+    ?? (context.longAgentId === undefined ? undefined : `long-agent:${context.longAgentId}`);
+  const parentWorkflowInvocationId = context.workflowInvocationId ?? context.longAgentTurnId;
+  const parentStageId = context.stageId ?? (context.longAgentId === undefined ? undefined : "turn");
+  if (parentWorkflowId === undefined || parentWorkflowInvocationId === undefined || parentStageId === undefined) {
+    throw new Error("workflow_call缺少Workflow或Long Agent调用身份");
+  }
   const catalogLines = targetCatalogLines(targets);
   return defineTool({
     name: "workflow_call",
@@ -220,9 +229,9 @@ export function createWorkflowCallTool(
           projectId: context.projectId,
           chatHome: context.chatHome,
           cwd: context.cwd,
-          parentWorkflowId: context.workflowId,
-          parentWorkflowInvocationId: context.workflowInvocationId,
-          parentStageId: context.stageId,
+          parentWorkflowId,
+          parentWorkflowInvocationId,
+          parentStageId,
           parentAgentId: context.agentId,
           toolCallId,
           targetWorkflowId: params.workflowId,

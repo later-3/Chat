@@ -113,7 +113,7 @@ env_value() {
 
 validate_config() {
   [[ -f "$CHAT_ENV_FILE" ]] || fail "missing environment file: $CHAT_ENV_FILE"
-  local host port target chat_home workflow_dir auth_enabled username password session_secret
+  local host port target chat_home workflow_dir auth_enabled username password session_secret channel_gateway_token
   host="$(env_value HOST "$CHAT_ENV_FILE")"
   port="$(env_value PORT "$CHAT_ENV_FILE")"
   target="$(env_value WORKFLOW_TARGET_WORLD "$CHAT_ENV_FILE")"
@@ -123,6 +123,7 @@ validate_config() {
   username="$(env_value CHAT_WEB_AUTH_USERNAME "$CHAT_ENV_FILE")"
   password="$(env_value CHAT_WEB_AUTH_PASSWORD "$CHAT_ENV_FILE")"
   session_secret="$(env_value CHAT_WEB_AUTH_SESSION_SECRET "$CHAT_ENV_FILE")"
+  channel_gateway_token="$(env_value CHAT_CHANNEL_GATEWAY_TOKEN "$CHAT_ENV_FILE")"
 
   [[ "$host" == "127.0.0.1" ]] || fail "HOST must be 127.0.0.1 for the production service"
   [[ "$port" =~ ^[0-9]+$ ]] && ((port >= 1024 && port <= 65535)) || fail "PORT must be between 1024 and 65535"
@@ -137,6 +138,8 @@ validate_config() {
   [[ "$password" != "123456" && "$password" != *"REQUIRED"* ]] || fail "replace the example Web password"
   [[ ${#session_secret} -ge 32 ]] || fail "CHAT_WEB_AUTH_SESSION_SECRET must contain at least 32 characters"
   [[ "$session_secret" != *"GENERATED_BY_CHATCTL"* ]] || fail "replace the example session secret"
+  [[ ${#channel_gateway_token} -ge 32 ]] || fail "CHAT_CHANNEL_GATEWAY_TOKEN must contain at least 32 characters"
+  [[ "$channel_gateway_token" != *"replace-with"* ]] || fail "replace the example Channel Gateway token"
   log "configuration is valid (secret values were not printed)"
 }
 
@@ -270,7 +273,7 @@ prepare_dependencies() {
 }
 
 generate_user_configuration() {
-  local generated=0 chat_home workflow_dir secret temporary
+  local generated=0 chat_home workflow_dir secret channel_gateway_token temporary
   chat_home="$CHAT_RUN_HOME/.chat"
   workflow_dir="$chat_home/runtime/workflow-data"
   if [[ -f "$CHAT_ENV_FILE" ]]; then
@@ -287,11 +290,13 @@ generate_user_configuration() {
   install -d -o "$CHAT_RUN_USER" -g "$CHAT_RUN_GROUP" -m 0700 "$chat_home/agent" "$workflow_dir"
   if [[ ! -f "$CHAT_ENV_FILE" ]]; then
     secret="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    channel_gateway_token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
     temporary="$(mktemp)"
     sed \
       -e "s|^CHAT_HOME=.*|CHAT_HOME=$chat_home|" \
       -e "s|^WORKFLOW_LOCAL_DATA_DIR=.*|WORKFLOW_LOCAL_DATA_DIR=$workflow_dir|" \
       -e "s|^CHAT_WEB_AUTH_SESSION_SECRET=.*|CHAT_WEB_AUTH_SESSION_SECRET=$secret|" \
+      -e "s|^CHAT_CHANNEL_GATEWAY_TOKEN=.*|CHAT_CHANNEL_GATEWAY_TOKEN=$channel_gateway_token|" \
       "$CHAT_ROOT/deploy/chat.env.example" >"$temporary"
     install -o root -g "$CHAT_RUN_GROUP" -m 0640 "$temporary" "$CHAT_ENV_FILE"
     rm -f -- "$temporary"
@@ -341,10 +346,11 @@ build_release() {
   release_id="$(date -u +%Y%m%dT%H%M%SZ)-${commit:0:12}-$$"
   staging="$(mktemp -d "$CHAT_RUNTIME_ROOT/releases/.staging.XXXXXX")"
   cp -a "$CHAT_ROOT/.output/." "$staging/"
-  printf 'chat=%s\nfrontend=%s\npi=%s\n' \
+  printf 'chat=%s\nfrontend=%s\npi=%s\nnanoclaw=%s\n' \
     "$commit" \
     "$(run_as_chat git -C "$CHAT_ROOT/frontend" rev-parse HEAD)" \
     "$(run_as_chat git -C "$CHAT_ROOT/pi" rev-parse HEAD)" \
+    "$(run_as_chat git -C "$CHAT_ROOT/nanoclaw" rev-parse HEAD)" \
     >"$staging/release-commits.txt"
   NEW_RELEASE="$CHAT_RUNTIME_ROOT/releases/$release_id"
   mv "$staging" "$NEW_RELEASE"

@@ -76,7 +76,8 @@ interface ResourceAddress {
 │       ├── memory/
 │       │   ├── catalog.db
 │       │   └── vector-store.db
-│       └── prompt-resources/
+│       ├── prompt-resources/
+│       └── workflows/             # Workflow运行状态与Agent持久配置
 ├── runtime/
 │   ├── workflow-data/
 │   └── skills/                  # Workflow私有构建资源，不是第三种Skill Target
@@ -209,4 +210,4 @@ Session/本次Run临时覆盖
 | 管理审计日志 | `src/audit-log.ts`，运行文件为`~/.chat/logs/audit.jsonl` |
 | Chat架构导航Skill | `.chat/skills/chat-architecture/SKILL.md` |
 
-Pi Web只通过上述后端事实工作：项目选择来自`GET /api/projects`，Memory页选择Personal或任意登记Project，Workflow、Session、Agent Resolve、配置和资源请求携带同一个`projectId`。
+Pi Web只通过上述后端事实工作：项目选择来自`GET /api/projects`；Memory页默认读取Personal与当前Project，也可以选择Personal或任意登记Project；Workflow、Session、Agent Resolve、配置和资源请求携带同一个`projectId`。

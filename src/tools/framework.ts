@@ -22,10 +22,12 @@ export interface ChatToolRuntimeContext {
   readonly cwd: string;
   readonly sessionManager: SessionManager;
   readonly sessionId: string;
-  readonly workflowId: string;
-  readonly workflowInvocationId: string;
-  readonly stageId: string;
   readonly agentId: string;
+  readonly workflowId?: string;
+  readonly workflowInvocationId?: string;
+  readonly stageId?: string;
+  readonly longAgentId?: string;
+  readonly longAgentTurnId?: string;
 }
 
 export interface ChatToolProvider {

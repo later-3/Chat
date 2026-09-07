@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "agent-memory-read",
+  "name": "agent_memory_read",
+  "label": "Read agent memory",
+  "description": "Read one Markdown file from this Long Agent's NanoClaw OKF memory. Paths are relative to the current Agent Group memory root; the Agent Group is bound by the host and cannot be selected in arguments.",
+  "implementationVersion": 1,
+  "risk": "read-only",
+  "permissions": ["agent-memory:read"]
+}

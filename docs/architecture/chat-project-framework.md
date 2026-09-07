@@ -2,9 +2,9 @@
 
 ## 1. 目的与状态
 
-本文定义并记录Chat采用的用户级目录、Project发现、Project配置、Session分区、项目资源和Memory隔离规则。它直接参考Pi现有实现，再加入Chat的Workflow、Pi Web、多工作区和长期记忆场景。所有Context、Target、Owner、Resource Address和跨Project规则以[Chat Context与Resource统一模型](./chat-context-resource-model.md)为基础。
+本文定义并记录Chat采用的Project-first产品模型、Daily Project、用户级目录、Project发现、Project配置、Session分区、项目资源和Memory隔离规则。它直接参考Pi现有实现，再加入Chat的Workflow、Pi Web、多入口长期Agent、多工作区和长期记忆场景。所有Context、Target、Owner、Resource Address和跨Project规则以[Chat Context与Resource统一模型](./chat-context-resource-model.md)为基础。
 
-核心目录、Registry、Context、分层配置、Session分区、Project资源加载、Memory独立Store、前端项目发现和可恢复迁移已经实现。尚未提供的可选管理接口会在对应章节明确说明，实际源码状态见[Chat当前架构](./chat-current-architecture.md)。
+核心目录、Registry、Context、分层配置、Session分区、Project资源加载、Memory独立Store、前端项目发现、Daily Project自动初始化与默认解析已经实现。IM多入口绑定仍按Long Agent架构继续落地；已有Session、显式Project或入口绑定解析失败时仍必须直接失败，不能回退Daily。实际源码状态见[Chat当前架构](./chat-current-architecture.md)。
 
 ## 2. Pi提供的设计基线
 
@@ -58,6 +58,32 @@ Project和Workflow是两个正交入口：
 3. Session回答“这段连续对话和Pi上下文是什么”。
 4. Agent回答“某个Workflow Node实际使用什么模型、Tool、Skill和Prompt”。
 
+### 3.1 Project-first系统不变量
+
+Project不是“开发代码模式”的可选外壳，而是Chat中所有交互的数据、上下文和权限边界：
+
+1. 每个Chat Session、Workflow Run、Long Agent对话、主动任务和定时任务都必须属于一个Project。
+2. Project先于执行能力解析；确定Project之后，才选择Workflow或长期Agent。
+3. Chat Web、IM、CLI等入口不拥有独立Project模型，只提交入口上下文并消费Backend解析结果。
+4. Session的Project归属创建后不可变；切换Project等于切换或创建Session，不等于修改当前Session。
+5. Personal资源和Personal Memory是可从Project上下文访问的用户级Target，不构成无Project执行模式。
+
+### 3.2 Daily Project
+
+Daily Project是Chat自动管理的、稳定且唯一的默认Project，保留Project ID `daily`。它解决的是“用户现在没有选择某个专项Project，但仍要立刻使用Chat”，而不是绕开Project：
+
+| 属性 | 约束 |
+|---|---|
+| 身份 | 与普通Project一样拥有Manifest、Registry记录和`ChatProjectContext` |
+| 工作目录 | 由Chat管理的稳定目录，不使用服务进程cwd |
+| 数据 | 独立拥有Session、Project配置、Project资源和Project Memory |
+| 使用范围 | 日常学习、工作、生活、娱乐，以及尚未归类的新交互 |
+| 生命周期 | 单例、自动创建、始终可用；不按自然日轮换 |
+| 默认规则 | 新交互没有显式Project、既有Session或有效入口绑定时进入Daily |
+| 安全规则 | 已明确的业务Project失败时不回退Daily |
+
+Daily Project与普通Project的差异只有“系统管理和默认角色”。进入统一`ChatProjectContext`之后，Session、Workflow、Agent装配、Memory、资源和文件授权不得增加Daily专用分支。
+
 ## 4. 统一目录
 
 ### 4.1 用户级Chat Home
@@ -78,16 +104,26 @@ Chat Home默认是`~/.chat`，测试、迁移和部署可以通过`CHAT_HOME`显
   ├── memory/
   │   └── personal/                    # Personal Memory事实源和Mem0索引
   ├── prompt-resources/                # Personal规则与经验
+  ├── workspaces/
+  │   └── daily/                       # Daily Project的Chat管理工作目录
+  │       └── .chat/
+  │           ├── project.json
+  │           ├── config.json
+  │           ├── skills/
+  │           ├── extensions/
+  │           └── prompts/
   ├── projects/
       ├── registry.json                 # 本机Project登记
       ├── chat/
       │   ├── sessions/
       │   ├── memory/
-      │   └── prompt-resources/
+      │   ├── prompt-resources/
+      │   └── workflows/                 # Project私有Workflow运行状态与Agent持久配置
       └── example-project/
           ├── sessions/
           ├── memory/
-          └── prompt-resources/
+          ├── prompt-resources/
+          └── workflows/
   ├── runtime/
   │   ├── workflow-data/               # 进程级Workflow Run、Step和Event
   │   └── skills/                      # Workflow私有构建资源；不属于Personal或Project Skill目录
@@ -97,6 +133,8 @@ Chat Home默认是`~/.chat`，测试、迁移和部署可以通过`CHAT_HOME`显
 ```
 
 `~/.chat`只属于当前用户和Chat运行时，不进入任何业务项目Git仓库。用户可管理的Skill只归属`~/.chat/agent/skills`或`<project-root>/.chat/skills`；`runtime/skills`若存在，仅是Workflow私有资源的构建暂存位置，不进入Resource Catalog，也不能被保存为用户选择路径。
+
+`workspaces/daily`是Daily Project的工作目录，`projects/daily`仍是它的运行数据目录。两者遵守与外部Project相同的“工作目录声明”和“Chat Home私有运行数据”分离原则；Daily的Managed Workspace不能被当作Personal资源目录。
 
 ### 4.2 Project本地目录
 
@@ -194,7 +232,24 @@ Manifest和Registry没有重复事实：
 
 项目切换器必须来自`GET /api/projects`，不能继续从Session列表反推。没有Session的Project也必须可见；路径暂时不可用的Project保留登记并显示不可用状态。
 
-### 5.4 决策场景与验证映射
+Daily Project在Backend初始化阶段通过同一个Manifest、Registry和Context解析能力自动建立。`daily`是保留ID，外部目录不能注册为另一个同名Project。Daily Managed Workspace位于Chat Home内，因此不会依赖某个业务源码目录是否挂载。
+
+### 5.4 统一Project解析
+
+所有用户入口最终都调用同一个Backend Project Resolver。归一化后的运行请求始终包含明确`projectId`：
+
+```text
+已有Session固有Project
+  > 本次新会话显式选择
+  > 已确认的Channel或任务绑定
+  > Daily Project
+```
+
+这里的`>`表示解析优先级，不表示高优先级失败后可以继续尝试低优先级。已有Session、显式选择或绑定已经指向某个Project时，该Project不可用、身份不匹配或未授权必须直接失败。只有完全没有Project信息的新交互才选择Daily。
+
+Frontend和Channel Adapter可以显示或提交当前选择，但不能各自实现一套Daily回退。Backend返回解析后的`projectId`，后续Session、Memory、资源、文件和Workflow都使用同一个`ChatProjectContext`。
+
+### 5.5 决策场景与验证映射
 
 | 讨论场景 | 必须行为 | 代码入口 | 测试证据 |
 |---|---|---|---|
@@ -207,6 +262,10 @@ Manifest和Registry没有重复事实：
 | 从其他Project使用文件浏览 | 只允许Registry中已打开且可用的Project，不无条件放行Chat进程cwd | `getAllowedFileRoots()` | `file access comes from registered Projects...` |
 | 前端选择一个目录 | 调用`POST /api/projects/open`并完整校验返回结构 | `openChatProject()` | `opening a directory sends that exact path...` |
 | 打开Chat源码目录 | 走与其他Project相同的Manifest、Registry、Session和资源路径 | 通用Project API | `the browser has no Chat-specific Project fallback...` |
+| 首次使用且没有Project选择 | 自动建立并选择`daily`，不打开服务进程cwd | `ensureDailyProject()`与统一Resolver | `Daily Project is created once...`、`Project列表保留Daily类型...` |
+| 已有Session携带错误Project | 拒绝请求，不迁移Session或回退Daily | 统一Resolver与Session打开边界 | 待Daily实现时增加 |
+| IM入口没有Project绑定 | 在Daily Project创建Chat Session | Channel Binding与统一Resolver | 待Long Agent接入时增加 |
+| 已绑定Project暂时不可用 | 保留绑定并报告不可用，不进入Daily | Channel Binding与统一Resolver | 待Long Agent接入时增加 |
 
 ## 6. 配置分层
 
@@ -290,6 +349,9 @@ Chat继续使用Pi `SessionManager`和JSONL格式，只改变传入的`sessionDi
 3. Session头继续保存实际cwd；Project身份由受控目录与Registry提供，不修改Pi Session Header Schema。
 4. Session不能跨Project直接继续；需要复用历史时使用Pi fork/clone语义创建目标Project的新Session。
 5. Project路径变化只更新Registry路径，不改变`projectId`或Session目录。
+6. 所有Session都必须有Project；Daily Session同样进入`~/.chat/projects/daily/sessions`，不设置空`projectId`或特殊目录。
+7. Session创建后Project归属不可变；需要在另一Project继续时创建带来源关系的新Session。
+8. 多个用户入口可以映射同一个Chat Session；Channel变化本身不能复制Session或改变Project。
 
 Pi按cwd编码Session目录；Chat使用稳定Project ID替代路径编码，是为了满足浏览器项目管理和路径迁移，不改变Pi的Session生命周期。未来确有多个worktree需求时，只扩展Registry路径映射，不提前增加运行数据目录层级。
 
@@ -354,16 +416,19 @@ interface ChatProjectContext {
 
 Session、Workflow、Agent Resolve、资源Catalog、文件访问和Memory Tool不能各自重新从cwd推导Project身份。
 
+在目标合同中，HTTP、Chat Web、IM Adapter、长期Agent主动事件和Scheduler首先产生统一Ingress Context，再由Backend得到`ChatProjectContext`。兼容请求可以在边界省略`projectId`，但省略只表示“解析到Daily”，不再表示“打开`process.cwd()`”。Backend进入Session或执行模块后不允许继续出现可选Project。
+
 ## 11. Pi Web交互
 
 前端交互顺序：
 
-1. 启动时读取`GET /api/projects`，展示已登记Project，不依赖Session存在。
-2. 选择Project后恢复该Project最后使用的Session；没有Session时展示空白新会话。
+1. 启动时读取`GET /api/projects`，其中始终包含Daily Project；没有已有导航上下文时选择Daily。
+2. 选择Project后恢复该Project最后使用的Session；没有Session时展示该Project中的空白新会话。
 3. 选择目录走`POST /api/projects/open`，由后端把该精确目录登记或初始化为Project并做安全校验。
 4. Workflow和Agent配置页面同时显示用户级默认、Project覆盖和本轮临时选择的来源。
 5. Skill、Extension和Tool显示`user / project / workflow / runtime`来源及“已发现/已启用/本轮活动”状态。
 6. 切换Project时，文件浏览器、Session列表、Workflow Resolve、Memory筛选和运行请求一起切换到新的`ProjectContext`。
+7. 从Session链接、IM会话或主动消息打开页面时，以会话固有Project为准；如果Project不可用，显示问题而不是切到Daily继续运行。
 
 前端不能维护Project白名单或针对`example-project`增加专用分支。新增符合Manifest规则的Project不修改前端代码。
 
@@ -406,16 +471,20 @@ Session、Workflow、Agent Resolve、资源Catalog、文件访问和Memory Tool�
 
 ## 14. 验收标准
 
-1. `example-project`源码保持在原目录，Chat不复制项目源码。
-2. 新Project即使没有Session，也能在重启后自动出现在Pi Web项目列表。
-3. Chat与示例项目拥有独立Project配置、资源、Session和Project Memory。
-4. 个人Skill、Tool和Memory按规则对两个Project可见。
-5. 当前Project的`.chat`配置和资源可以直接发现，实际启用范围由Agent资源配置决定。
-6. Project路径迁移后，原Session与Memory仍由稳定`projectId`关联。
-7. 示例项目不会因为上层工作区存在其他项目而被合并到同一个Project。
-8. 前端不硬编码Project ID；新增Project不修改前端。
-9. Pi Session树、分支、压缩、恢复和Tool执行语义保持不变。
-10. 迁移前现有Chat Session与Memory原文均可完整恢复。
+1. 初次启动自动存在唯一`daily` Project，用户无需选择目录即可创建Session。
+2. 所有Chat Session、Workflow Run和长期Agent会话都能追溯到有效`projectId`，不存在无Project运行数据。
+3. Daily使用独立Managed Workspace、Session、Project配置、Project资源和Project Memory，并复用标准`ChatProjectContext`。
+4. 已有Session、显式Project或入口绑定解析失败时不会静默进入Daily。
+5. `example-project`源码保持在原目录，Chat不复制项目源码。
+6. 新Project即使没有Session，也能在重启后自动出现在Pi Web项目列表。
+7. Chat、Daily与示例项目拥有独立Project配置、资源、Session和Project Memory。
+8. 个人Skill、Tool和Memory按规则对多个Project可见。
+9. 当前Project的`.chat`配置和资源可以直接发现，实际启用范围由Agent资源配置决定。
+10. Project路径迁移后，原Session与Memory仍由稳定`projectId`关联。
+11. 示例项目不会因为上层工作区存在其他项目而被合并到同一个Project。
+12. 前端不硬编码业务Project；新增Project不修改前端，Daily的系统角色由Backend投影。
+13. Pi Session树、分支、压缩、恢复和Tool执行语义保持不变。
+14. 迁移前现有Chat Session与Memory原文均可完整恢复。
 
 ## 15. 明确不做
 

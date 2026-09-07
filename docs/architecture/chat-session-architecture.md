@@ -6,6 +6,7 @@
 
 | 对象 | 含义 | 生命周期 |
 |---|---|---|
+| Project | 所有交互的数据、上下文与权限边界；Daily是默认Project | 长期存在 |
 | Chat Session | 用户看到的一条连续会话 | 跨多轮、跨Workflow持久化 |
 | Turn | 一次线性交互单元，可由人或Agent先说话 | 通常对应一次Workflow Run |
 | Workflow Run | 一次编排执行，包含Stage和审核等待 | 开始到完成、失败或取消 |
@@ -15,6 +16,8 @@
 | AgentSession | 某个Agent本次运行的Pi对象 | Agent Stage执行期间 |
 
 在一条对话中切换Workflow、Stage或Agent不会创建新的Chat Session。例外是Agent通过`workflow_call`显式委托完整子Workflow：每个并行子调用创建独立Subsession，父Session继续保持线性Pi消息链。Pi `parentSession`表达原生谱系，Chat CustomEntry补充稳定调用ID、运行状态和层级；两者都不复制父对话，也不把并行结果塞进不透明CustomEntry冒充对话。
+
+每条Chat Session创建前必须先解析有效Project，并在整个生命周期内保持同一个`projectId`。Daily Project中的Session与其他Project使用完全相同的Pi JSONL和Chat元数据合同；Daily只是默认Project，不是无Project Session类型。Chat Web、IM和CLI可以成为同一Session的交互入口，入口变化不改变Session身份和Project归属。
 
 ## 2. 三层必须分开
 
@@ -124,6 +127,9 @@ custom chat.workflow_output { message: <Planner AssistantMessage> }
 4. 前端长期从CustomEntry伪造user/assistant；这只允许作为未迁移活动Session的兼容路径。
 5. 每个Agent、Stage或Workflow创建自己的Chat Session。
 6. 把人工审核伪装成`agentId=human`。
+7. 创建`projectId`为空的普通聊天Session，或由Frontend用“Daily模式”掩盖无Project数据。
+8. 切换Project时原地修改Session归属，或因目标Project不可用而把原Session放进Daily继续。
+9. 同一外部会话从IM切到Chat Web时，仅因入口变化就复制一个新的Chat Session。
 
 ## 8. Session文件与生命周期
 
@@ -174,3 +180,5 @@ Session详情的`workflowCallStatistics`是上述关系的只读聚合：`direct
 8. 前端刷新后从Backend和Pi Session恢复，不依赖React内存重建事实。
 9. Workflow Call与Subsession关系不复制任务或结果正文，且失败、取消和部分成功都保留可恢复终态。
 10. 前端Session树从读模型恢复父子关系和耐久待确认提示；取消控制必须提交实际父Session和`callId`，并复用Tool调用相同的归属与Runtime取消逻辑。
+11. 新建、恢复、主动发言、Channel接入和定时触发都先解析Project；缺少具体归属的新交互进入Daily Project。
+12. Session固有Project与请求、Channel Binding或父任务Project不一致时明确失败，不自动迁移或回退。

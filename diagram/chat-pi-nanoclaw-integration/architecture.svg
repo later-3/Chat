@@ -1,0 +1,207 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1060">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap');
+    text { font-family: 'JetBrains Mono', 'Noto Sans SC', 'PingFang SC', sans-serif; }
+    .title { fill: #f8fafc; font-size: 22px; font-weight: 700; }
+    .subtitle { fill: #94a3b8; font-size: 11px; }
+    .region-label { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; }
+    .name { fill: #f8fafc; font-size: 13px; font-weight: 700; text-anchor: middle; }
+    .desc { fill: #cbd5e1; font-size: 9.5px; text-anchor: middle; }
+    .tiny { fill: #94a3b8; font-size: 8.5px; text-anchor: middle; }
+    .flow-label { fill: #e2e8f0; font-size: 9px; font-weight: 600; text-anchor: middle; }
+    .note { fill: #cbd5e1; font-size: 9px; }
+  </style>
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+    </pattern>
+    <marker id="arrow-cyan" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee"/>
+    </marker>
+    <marker id="arrow-emerald" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#34d399"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#fb923c"/>
+    </marker>
+    <marker id="arrow-violet" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/>
+    </marker>
+    <marker id="arrow-slate" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="1060" fill="#0f172a"/>
+  <rect width="1600" height="1060" fill="url(#grid)"/>
+
+  <!-- Regions -->
+  <rect x="55" y="105" width="1490" height="125" rx="14" fill="rgba(8,51,68,0.12)" stroke="#22d3ee" stroke-width="1" stroke-dasharray="8,5"/>
+  <text x="72" y="127" fill="#22d3ee" class="region-label">用户入口</text>
+
+  <rect x="55" y="265" width="1490" height="225" rx="14" fill="rgba(120,53,15,0.10)" stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="8,5"/>
+  <text x="72" y="288" fill="#fbbf24" class="region-label">NanoClaw — Long Agent Channel Gateway（HTTP客户端、无 Agent Session Runtime、无 Docker）</text>
+
+  <rect x="55" y="525" width="1490" height="285" rx="14" fill="rgba(6,78,59,0.10)" stroke="#34d399" stroke-width="1.2" stroke-dasharray="8,5"/>
+  <text x="72" y="548" fill="#34d399" class="region-label">Chat + Pi — 唯一 Agent Runtime 与产品事实源</text>
+
+  <rect x="55" y="845" width="1490" height="145" rx="14" fill="rgba(76,29,149,0.10)" stroke="#a78bfa" stroke-width="1" stroke-dasharray="8,5"/>
+  <text x="72" y="868" fill="#a78bfa" class="region-label">持久化与事实所有权</text>
+
+  <!-- Connection layer -->
+  <path d="M240 195 L240 585" fill="none" stroke="#22d3ee" stroke-width="2" marker-end="url(#arrow-cyan)"/>
+  <path d="M570 195 L570 325" fill="none" stroke="#22d3ee" stroke-width="2" marker-end="url(#arrow-cyan)"/>
+  <path d="M900 195 L900 325" fill="none" stroke="#22d3ee" stroke-width="2" marker-end="url(#arrow-cyan)"/>
+  <path d="M690 370 L755 370" fill="none" stroke="#fb923c" stroke-width="2" marker-end="url(#arrow-orange)"/>
+  <path d="M945 370 L1005 370" fill="none" stroke="#fb923c" stroke-width="2" marker-end="url(#arrow-orange)"/>
+  <path d="M1100 415 L1100 505 L240 505 L240 585" fill="none" stroke="#fb923c" stroke-width="2" marker-end="url(#arrow-orange)"/>
+  <path d="M360 625 L485 625" fill="none" stroke="#34d399" stroke-width="2.4" marker-end="url(#arrow-emerald)"/>
+  <path d="M705 625 L825 625" fill="none" stroke="#34d399" stroke-width="2.4" marker-end="url(#arrow-emerald)"/>
+  <path d="M1045 625 L1160 625" fill="none" stroke="#34d399" stroke-width="2.4" marker-end="url(#arrow-emerald)"/>
+  <path d="M935 675 L935 895" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrow-violet)"/>
+  <path d="M1260 675 L1260 895" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrow-violet)"/>
+  <path d="M595 675 L595 895" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrow-violet)"/>
+  <path d="M1260 585 L1260 455 L1315 455" fill="none" stroke="#fb923c" stroke-width="2" marker-end="url(#arrow-orange)"/>
+  <path d="M1315 325 L1315 195 L660 195" fill="none" stroke="#fb923c" stroke-width="2" marker-end="url(#arrow-orange)"/>
+  <path d="M240 675 L240 895" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrow-violet)"/>
+  <path d="M705 735 L760 735 L825 675" fill="none" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#arrow-slate)"/>
+  <path d="M485 735 L365 735" fill="none" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#arrow-slate)"/>
+
+  <!-- Arrow label masks -->
+  <rect x="183" y="372" width="114" height="20" rx="5" fill="#0f172a"/>
+  <text x="240" y="386" class="flow-label">Web直接执行</text>
+  <rect x="590" y="486" width="190" height="20" rx="5" fill="#0f172a"/>
+  <text x="685" y="500" class="flow-label">③ HTTP Event → Durable Ingress</text>
+  <rect x="370" y="607" width="105" height="20" rx="5" fill="#0f172a"/>
+  <text x="422" y="621" class="flow-label">④ 绑定与去重</text>
+  <rect x="716" y="607" width="100" height="20" rx="5" fill="#0f172a"/>
+  <text x="766" y="621" class="flow-label">⑤ 创建Turn</text>
+  <rect x="1056" y="607" width="96" height="20" rx="5" fill="#0f172a"/>
+  <text x="1104" y="621" class="flow-label">⑥ Tool调用</text>
+  <rect x="1182" y="477" width="156" height="20" rx="5" fill="#0f172a"/>
+  <text x="1260" y="491" class="flow-label">⑦ HTTP Delivery + Ack</text>
+  <rect x="950" y="350" width="144" height="20" rx="5" fill="#0f172a"/>
+  <text x="1022" y="364" class="flow-label">② 持久HTTP Outbox</text>
+
+  <!-- Opaque masks + boxes: entry -->
+  <rect x="145" y="145" width="190" height="50" rx="8" fill="#0f172a"/>
+  <rect x="145" y="145" width="190" height="50" rx="8" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.6"/>
+  <rect x="475" y="145" width="190" height="50" rx="8" fill="#0f172a"/>
+  <rect x="475" y="145" width="190" height="50" rx="8" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.6"/>
+  <rect x="805" y="145" width="190" height="50" rx="8" fill="#0f172a"/>
+  <rect x="805" y="145" width="190" height="50" rx="8" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.6"/>
+  <rect x="1135" y="145" width="240" height="50" rx="8" fill="#0f172a"/>
+  <rect x="1135" y="145" width="240" height="50" rx="8" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.6"/>
+
+  <text x="240" y="167" class="name">Chat Web</text>
+  <text x="240" y="184" class="desc">Project下新建或继续Session</text>
+  <text x="570" y="167" class="name">Telegram / IM</text>
+  <text x="570" y="184" class="desc">Bot私聊、群聊、Thread</text>
+  <text x="900" y="167" class="name">定时 / 主动事件</text>
+  <text x="900" y="184" class="desc">Cron、Webhook、系统唤醒</text>
+  <text x="1255" y="167" class="name">后续入口</text>
+  <text x="1255" y="184" class="desc">Slack、Discord、Email、WeChat</text>
+
+  <!-- NanoClaw boxes -->
+  <rect x="350" y="325" width="230" height="90" rx="9" fill="#0f172a"/>
+  <rect x="350" y="325" width="230" height="90" rx="9" fill="rgba(120,53,15,0.35)" stroke="#fbbf24" stroke-width="1.6"/>
+  <rect x="755" y="325" width="190" height="90" rx="9" fill="#0f172a"/>
+  <rect x="755" y="325" width="190" height="90" rx="9" fill="rgba(120,53,15,0.35)" stroke="#fbbf24" stroke-width="1.6"/>
+  <rect x="1005" y="325" width="190" height="90" rx="9" fill="#0f172a"/>
+  <rect x="1005" y="325" width="190" height="90" rx="9" fill="rgba(251,146,60,0.22)" stroke="#fb923c" stroke-width="1.8"/>
+  <rect x="1260" y="325" width="220" height="130" rx="9" fill="#0f172a"/>
+  <rect x="1260" y="325" width="220" height="130" rx="9" fill="rgba(120,53,15,0.35)" stroke="#fbbf24" stroke-width="1.6"/>
+
+  <text x="465" y="350" class="name">Channel + Router</text>
+  <text x="465" y="370" class="desc">身份、权限、Agent Group</text>
+  <text x="465" y="387" class="desc">Messaging Group、Thread</text>
+  <text x="465" y="402" class="tiny">① 外部事件标准化</text>
+
+  <text x="850" y="350" class="name">Durable Inbox</text>
+  <text x="850" y="370" class="desc">持久化后再执行</text>
+  <text x="850" y="387" class="desc">断线、重启、退避恢复</text>
+  <text x="850" y="402" class="tiny">Mailbox不是对话事实源</text>
+
+  <text x="1100" y="350" class="name">HTTP Event Client</text>
+  <text x="1100" y="374" class="desc">主动提交到Chat Backend</text>
+  <text x="1100" y="392" class="desc">不初始化Session Runtime / Docker</text>
+
+  <text x="1370" y="350" class="name">Outbound Delivery</text>
+  <text x="1370" y="371" class="desc">目标入口、文件、重试</text>
+  <text x="1370" y="389" class="desc">投递回执、失败状态</text>
+  <text x="1370" y="412" class="tiny">投递重试 ≠ 重跑Pi Turn</text>
+  <text x="1370" y="430" class="tiny">Web回复不广播Telegram</text>
+
+  <!-- Chat + Pi boxes -->
+  <rect x="120" y="585" width="240" height="90" rx="9" fill="#0f172a"/>
+  <rect x="120" y="585" width="240" height="90" rx="9" fill="rgba(6,78,59,0.42)" stroke="#34d399" stroke-width="1.7"/>
+  <rect x="485" y="585" width="220" height="90" rx="9" fill="#0f172a"/>
+  <rect x="485" y="585" width="220" height="90" rx="9" fill="rgba(6,78,59,0.42)" stroke="#34d399" stroke-width="1.7"/>
+  <rect x="825" y="575" width="220" height="110" rx="9" fill="#0f172a"/>
+  <rect x="825" y="575" width="220" height="110" rx="9" fill="rgba(59,130,246,0.28)" stroke="#60a5fa" stroke-width="2.2"/>
+  <rect x="1160" y="585" width="200" height="90" rx="9" fill="#0f172a"/>
+  <rect x="1160" y="585" width="200" height="90" rx="9" fill="rgba(6,78,59,0.42)" stroke="#34d399" stroke-width="1.7"/>
+  <rect x="485" y="705" width="220" height="60" rx="8" fill="#0f172a"/>
+  <rect x="485" y="705" width="220" height="60" rx="8" fill="rgba(30,41,59,0.72)" stroke="#94a3b8" stroke-width="1.3"/>
+  <rect x="120" y="705" width="245" height="60" rx="8" fill="#0f172a"/>
+  <rect x="120" y="705" width="245" height="60" rx="8" fill="rgba(30,41,59,0.72)" stroke="#94a3b8" stroke-width="1.3"/>
+
+  <text x="240" y="611" class="name">Chat API + Durable Ingress</text>
+  <text x="240" y="632" class="desc">Project、Chat Session、入口映射</text>
+  <text x="240" y="650" class="desc">Revision、权限、幂等键</text>
+
+  <text x="595" y="611" class="name">LongAgent Runtime</text>
+  <text x="595" y="632" class="desc">冻结Agent Definition</text>
+  <text x="595" y="650" class="desc">串行化同Session Turn</text>
+
+  <text x="935" y="605" class="name">Pi AgentSession</text>
+  <text x="935" y="629" class="desc">唯一Agent Loop</text>
+  <text x="935" y="647" class="desc">Model · Thinking · Context</text>
+  <text x="935" y="665" class="tiny">原生Session Entry / Usage / Compact</text>
+
+  <text x="1260" y="611" class="name">Chat Tool Gateway</text>
+  <text x="1260" y="632" class="desc">Workflow · Memory</text>
+  <text x="1260" y="650" class="desc">Agent-to-Agent · Delivery</text>
+
+  <text x="595" y="729" class="name">Resolved Resources</text>
+  <text x="595" y="749" class="desc">Rule · Skill · Extension · Agent Memory</text>
+  <text x="242" y="729" class="name">Project Context</text>
+  <text x="242" y="749" class="desc">Daily或显式Project，禁止隐式跨Project</text>
+
+  <!-- Storage boxes -->
+  <rect x="135" y="895" width="210" height="65" rx="8" fill="#0f172a"/>
+  <rect x="135" y="895" width="210" height="65" rx="8" fill="rgba(76,29,149,0.42)" stroke="#a78bfa" stroke-width="1.5"/>
+  <rect x="490" y="895" width="210" height="65" rx="8" fill="#0f172a"/>
+  <rect x="490" y="895" width="210" height="65" rx="8" fill="rgba(76,29,149,0.42)" stroke="#a78bfa" stroke-width="1.5"/>
+  <rect x="830" y="895" width="210" height="65" rx="8" fill="#0f172a"/>
+  <rect x="830" y="895" width="210" height="65" rx="8" fill="rgba(76,29,149,0.42)" stroke="#a78bfa" stroke-width="1.5"/>
+  <rect x="1155" y="895" width="210" height="65" rx="8" fill="#0f172a"/>
+  <rect x="1155" y="895" width="210" height="65" rx="8" fill="rgba(76,29,149,0.42)" stroke="#a78bfa" stroke-width="1.5"/>
+
+  <text x="240" y="920" class="name">Chat Project Store</text>
+  <text x="240" y="941" class="desc">Project / LongAgent / Binding</text>
+  <text x="595" y="920" class="name">Pi Session Store</text>
+  <text x="595" y="941" class="desc">用户可见完整会话事实源</text>
+  <text x="935" y="920" class="name">Long Agent Memory</text>
+  <text x="935" y="941" class="desc">按longAgentId隔离的身份与经验</text>
+  <text x="1260" y="920" class="name">Chat Mem0</text>
+  <text x="1260" y="941" class="desc">Personal / Project事实与检索</text>
+
+  <!-- Footer notes / legend -->
+  <rect x="55" y="1010" width="1490" height="30" rx="7" fill="rgba(30,41,59,0.72)" stroke="#334155"/>
+  <circle cx="82" cy="1025" r="5" fill="#22d3ee"/>
+  <text x="95" y="1029" class="note">入口</text>
+  <circle cx="157" cy="1025" r="5" fill="#fbbf24"/>
+  <text x="170" y="1029" class="note">NanoClaw通道职责</text>
+  <circle cx="315" cy="1025" r="5" fill="#34d399"/>
+  <text x="328" y="1029" class="note">Chat服务</text>
+  <circle cx="425" cy="1025" r="5" fill="#60a5fa"/>
+  <text x="438" y="1029" class="note">唯一Pi Agent Runtime</text>
+  <circle cx="615" cy="1025" r="5" fill="#a78bfa"/>
+  <text x="628" y="1029" class="note">持久事实</text>
+  <text x="1515" y="1029" class="note" text-anchor="end">原则：先绑定、再持久化、再执行；先提交Session、再投递</text>
+
+  <!-- Title -->
+  <text x="55" y="48" class="title">Chat × NanoClaw × Pi：统一 Long Agent 架构</text>
+  <text x="55" y="72" class="subtitle">NanoClaw负责长期在线入口与可靠投递；Chat负责产品事实与资源；Pi SDK是唯一Agent Runtime</text>
+</svg>

@@ -1,6 +1,7 @@
 import {
   defineEventHandler,
   getCookie,
+  getHeader,
   getRequestURL,
   sendRedirect,
   setResponseHeader,
@@ -14,6 +15,11 @@ import {
   sanitizeChatWebAuthNext,
   verifyChatWebAuthToken,
 } from "../web-auth.js";
+import {
+  getChatChannelGatewayToken,
+  isChatChannelServicePath,
+  verifyChatChannelAuthorization,
+} from "../long-agents/channel-service-auth.js";
 
 function jsonError(event: H3Event, status: number, message: string) {
   setResponseStatus(event, status);
@@ -29,6 +35,17 @@ function jsonError(event: H3Event, status: number, message: string) {
  */
 export default defineEventHandler((event) => {
   const requestUrl = getRequestURL(event, { xForwardedHost: true, xForwardedProto: true });
+  if (isChatChannelServicePath(requestUrl.pathname)) {
+    try {
+      getChatChannelGatewayToken();
+    } catch {
+      return jsonError(event, 503, "Chat Channel service authentication is not configured correctly");
+    }
+    if (!verifyChatChannelAuthorization(getHeader(event, "authorization"))) {
+      return jsonError(event, 401, "Channel service authentication required");
+    }
+    return;
+  }
   if (!isProtectedChatWebPath(requestUrl.pathname)) return;
 
   const config = getChatWebAuthConfig();

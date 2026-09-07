@@ -9,10 +9,19 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { openProject, resolveProjectContext } from "./projects/registry.js";
 import { firstSessionUtterance, listActiveSessionFiles } from "./session-files.js";
+import {
+  chatSessionOwner,
+  readChatSessionOwnerIndex,
+  type ChatSessionOwner,
+} from "./session-owner.js";
 import { requireActiveChatSessionFile } from "./session-state.js";
 import {
   collectChatWorkflowStageMarkers,
 } from "./workflows/workflow-stage.js";
+import {
+  collectChatLongAgentTurnMarkers,
+  type ChatLongAgentTurnMarker,
+} from "./long-agents/session-turn.js";
 import {
   collectChatSubsessionRelation,
   collectChatWorkflowCalls,
@@ -69,14 +78,17 @@ export interface ChatSessionListItem {
   transient: false;
   sessionSource: "chat";
   readOnly: false;
+  owner: ChatSessionOwner;
   projectId?: string;
 }
 
 async function toListItems(
   infos: SessionInfo[],
-  projectId?: string,
+  projectId: string,
+  chatHome?: string,
   activePlanningBySessionId: ReadonlyMap<string, PlanningExecutionRunRecord> = new Map(),
 ): Promise<ChatSessionListItem[]> {
+  const owners = await readChatSessionOwnerIndex(projectId, chatHome);
   const idByPath = new Map(infos.map((info) => [resolve(info.path), info.id]));
   return Promise.all(infos.map(async (info) => {
     const relation = collectChatSubsessionRelation(
@@ -112,7 +124,8 @@ async function toListItems(
       transient: false,
       sessionSource: "chat",
       readOnly: false,
-      ...(projectId === undefined ? {} : { projectId }),
+      owner: chatSessionOwner(owners, info.id),
+      projectId,
     };
   }));
 }
@@ -149,7 +162,7 @@ export async function listChatSessions(projectId?: string, chatHome?: string): P
       activePlanningBySessionId.set(record.sessionId, record);
     }
   }
-  return toListItems(infos, project.projectId, activePlanningBySessionId);
+  return toListItems(infos, project.projectId, chatHome, activePlanningBySessionId);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -194,10 +207,30 @@ function nativeMessageForFrontend(
   message: unknown,
   stage: ReturnType<typeof collectChatWorkflowStageMarkers>[number] | undefined,
   delegationOrigin?: ChatWorkflowDelegationOrigin,
+  longAgentTurn?: ChatLongAgentTurnMarker,
 ): unknown {
   const normalized = normalizeMessageForFrontend(message);
   if (!isRecord(normalized)) {
     return normalized;
+  }
+  if ((normalized.role === "user" || normalized.role === "assistant")
+    && longAgentTurn !== undefined
+    && !isRecord(normalized.chatLongAgent)) {
+    return {
+      ...normalized,
+      chatLongAgent: {
+        source: "chat.long_agent",
+        eventId: longAgentTurn.inboundEventId ?? `chat-web:${longAgentTurn.turnId}`,
+        messageId: longAgentTurn.turnId,
+        turnId: longAgentTurn.turnId,
+        bindingId: longAgentTurn.bindingId,
+        longAgentId: longAgentTurn.longAgentId,
+        nanoclawSessionId: null,
+        direction: normalized.role === "user" ? "in" : "out",
+        channelType: longAgentTurn.channelType,
+        native: true,
+      },
+    };
   }
   if (normalized.role === "user" && delegationOrigin !== undefined) {
     return {
@@ -303,6 +336,9 @@ export function projectSessionContext(
   const stageByEntryId = new Map(
     collectChatWorkflowStageMarkers(contextEntries).map((stage) => [stage.entryId, stage]),
   );
+  const longAgentTurnByEntryId = new Map(
+    collectChatLongAgentTurnMarkers(contextEntries).map((turn) => [turn.entryId, turn]),
+  );
   const reviewDecisionByEntryId = new Map(
     collectPlanReviewDecisions(contextEntries).map((decision) => [decision.entryId, decision]),
   );
@@ -312,11 +348,17 @@ export function projectSessionContext(
   );
   const projectedDelegationInvocations = new Set<string>();
   let activeStage = undefined as ReturnType<typeof collectChatWorkflowStageMarkers>[number] | undefined;
+  let activeLongAgentTurn = undefined as ChatLongAgentTurnMarker | undefined;
 
   for (const entry of contextEntries) {
     const stage = stageByEntryId.get(entry.id);
     if (stage !== undefined) {
       activeStage = stage;
+      continue;
+    }
+    const longAgentTurn = longAgentTurnByEntryId.get(entry.id);
+    if (longAgentTurn !== undefined) {
+      activeLongAgentTurn = longAgentTurn.status === "running" ? longAgentTurn : undefined;
       continue;
     }
     const reviewDecision = reviewDecisionByEntryId.get(entry.id);
@@ -348,7 +390,7 @@ export function projectSessionContext(
         projectedDelegationInvocations.add(activeStage.invocationId);
       }
       messages.push(applyProjectionOptions(
-        nativeMessageForFrontend(message, activeStage, delegationOrigin),
+        nativeMessageForFrontend(message, activeStage, delegationOrigin, activeLongAgentTurn),
         entry.id,
         options,
       ));
@@ -372,7 +414,7 @@ export async function requireChatSession(
   const project = await resolveSessionProject(projectId, chatHome);
   const active = await requireActiveChatSessionFile(project, sessionId);
   try {
-    const [session] = await toListItems([active], project.projectId);
+    const [session] = await toListItems([active], project.projectId, chatHome);
     if (session === undefined) throw new Error(`找不到Session: ${sessionId}`);
     return session;
   } catch (error) {

@@ -47,7 +47,11 @@ async function inspectWorkflowCapabilities(
   input: DescribeChatWorkflowInput,
 ): Promise<InspectedWorkflowCapabilities> {
   const workflow = requireCallableWorkflow(input.targetWorkflowId);
-  const systemToolAddresses = listChatSystemTools().map((tool) => tool.address);
+  // Agent Memory is bound to a host-injected Long Agent identity and can never
+  // be delegated into an ordinary child Workflow by model-selected capability.
+  const systemToolAddresses = listChatSystemTools()
+    .filter((tool) => !tool.manifest.permissions.some((permission) => permission.startsWith("agent-memory:")))
+    .map((tool) => tool.address);
   const agents = await Promise.all(workflow.agents.map(async (agent) => {
     const stageId = workflow.nodes.find((node) => node.kind === "agent" && node.agentId === agent.id)?.id
       ?? agent.id;

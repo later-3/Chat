@@ -6,6 +6,8 @@ import { ensureWorkflowDelegationSkill } from "./workflows/planner-orchestrator/
 import { ensureRuleLibrarySkill } from "./workflows/rule-management/agents/rule-curator-agent/skill.js";
 import { purgeExpiredRemovedSessionsAcrossProjects } from "./session-removal.js";
 import { registerChatWorkflowCallRuntime } from "./workflows/workflow-call-runtime.js";
+import { ensureDailyProject } from "./projects/registry.js";
+import { startLongAgentSync } from "./long-agents/bridge.js";
 
 const initializations = new Map<string, Promise<void>>();
 
@@ -30,11 +32,13 @@ export function ensureChatRuntimeInitialized(options: {
     .then(async () => {
       const paths = await ensureChatHome(chatHome);
       await Promise.all([
+        ensureDailyProject(paths.root),
         ensureMemorySkill(paths.runtimeDir, { refresh: true }),
         ensureWorkflowDelegationSkill(paths.runtimeDir, { refresh: true }),
         ensureRuleLibrarySkill(paths.runtimeDir, { refresh: true }),
         purgeExpiredRemovedSessionsAcrossProjects(paths.root),
       ]);
+      startLongAgentSync(paths.root);
     })
     .catch((error: unknown) => {
       initializations.delete(key);

@@ -22,7 +22,7 @@ Project目标结构另见[Chat Project架构设计](./chat-project-framework.md)
 6. 不同Workflow中的Agent可能需要不同System Prompt、模型、Thinking、工具、Skill和Extension能力。
 7. 常用Agent能力应先能由配置文件声明；当前前端负责选择配置文件和资源并检查解析结果，创建和编辑配置文件属于后续功能。
 8. Pi Web现有页面能力后续仍要逐项接入，不能因为当前功能暂未使用就从界面或目标范围中永久删除。
-9. Agent不是长期驻留对象。每次用户消息是一轮独立交互：Chat读取当前配置、恢复Pi Session上下文、创建本轮需要的AgentSession、完成执行并销毁运行对象。
+9. Workflow Agent的Pi AgentSession不是长期驻留对象。每次用户消息是一轮独立交互：Chat读取当前配置、恢复Pi Session上下文、创建本轮需要的AgentSession、完成执行并销毁运行对象。Long Agent是另一种长期产品身份，由Chat LongAgent对象与NanoClaw Agent Group承载，不受这条Pi AgentSession生命周期约束。
 10. 不定义“受限Agent”类型，也不默认禁止Extension。Planner、Pi Coding Agent或后续Agent都使用同一套能力配置机制；具体能力由配置值决定。
 11. 当前系统没有管理员与普通用户角色，资源管理接口不基于不存在的角色模型设计。
 12. Agent配置文件可以放在用户选择的任意授权路径，不要求进入Git仓库，也不由Chat复制到临时目录。前端提交文件路径和本轮资源选择，后端统一读取、合并和校验。
@@ -37,6 +37,14 @@ Project目标结构另见[Chat Project架构设计](./chat-project-framework.md)
 21. Project和Workflow是正交管理入口：Project决定工作目录、项目配置和资源作用域，Workflow决定本轮执行结构。
 22. 每个Workflow拥有自己的Agent默认配置；Session按Workflow保存最新配置。一次对话没有调整时沿用该Workflow的上次配置，有调整时冻结本轮快照并把结果保存为该Workflow的新配置。
 23. 同名或同实现的Agent出现在不同Workflow中时不自动共享配置；需要复用的是公共实现和Agent装配机制，不是隐含运行状态。
+24. Chat采用Project-first产品模型：不存在游离于Project之外的普通聊天、IM会话、长期Agent会话或Workflow执行；进入执行边界前必须得到一个有效`projectId`。
+25. `Daily Project`是系统自动提供的默认Project，用于日常学习、工作、生活、娱乐和尚未归入其他业务Project的交互；它不是“非Project模式”，也不建立第二套配置、Session或Memory规则。
+26. Daily表示稳定的日常工作空间，不表示按自然日新建Project或Session。Daily Session可以跨天延续，是否按日期整理内容属于其上的产品能力。
+27. Chat Web、IM、CLI和后续其他Channel只是用户入口；它们使用同一套Project、Session、资源、Memory和审计事实，不各自维护Project默认值。
+28. 一条Chat Session创建后固定属于一个Project。用户切换Project时创建或恢复目标Project下的Session，不能原地修改已有Session的`projectId`。
+29. Workflow和长期Agent是同一Project平面上的两种能力：Workflow组织一次执行，长期Agent提供长期身份、Channel、主动工作和Agent Memory；两者都不能绕过Project边界。
+30. 长期Agent身份可以服务多个Project，但每次对话、主动任务、定时任务和Workflow调用都必须绑定一个Project；没有更具体归属的新交互进入Daily Project。
+31. 已明确绑定的Project不可用、身份不匹配或权限校验失败时必须报错，不能静默回退到Daily Project，否则会产生错误上下文和跨Project数据污染。
 
 ## 3. 运行逻辑
 
@@ -102,6 +110,40 @@ Chat Session（独立连续上下文）
   ├── 保存每个Workflow的最新配置
   └── 保存每次对话的配置和执行快照
 ```
+
+### 3.1 Project-first交互解析
+
+无论消息来自Chat Web、IM、CLI、定时任务还是长期Agent主动触发，进入具体运行时前都必须先完成同一条归一化链路：
+
+```text
+用户或Agent事件
+  ↓
+Ingress Context
+  ├── 用户身份
+  ├── 入口与外部会话标识
+  ├── 显式Project选择
+  └── 已有Session、Channel或任务绑定
+  ↓
+Backend解析唯一Project
+  ↓
+在该Project中创建或恢复Chat Session
+  ↓
+选择本轮执行能力
+  ├── Workflow
+  └── Long Agent
+  ↓
+执行结果回到同一个Project Session
+```
+
+Project解析遵守以下优先级和失败规则：
+
+1. 已有Chat Session使用创建时固定的Project；请求携带的其他Project只能用于一致性校验，不能覆盖它。
+2. 新会话优先使用用户本次明确选择的Project。
+3. 没有本次选择时，可以使用已经确认的Channel、长期Agent任务或入口绑定。
+4. 以上均不存在时使用Daily Project。
+5. 前三项已经给出Project但该Project不可用时终止请求，不进入Daily Project。
+
+这条链路只负责确定“在哪个Project中发生”，不决定“由哪个Workflow或长期Agent执行”。Project解析完成后，Workflow与Long Agent仍是正交的执行选择。
 
 ## 4. 核心用户场景
 
@@ -175,6 +217,41 @@ Workflow开发者应能复用Pi原生装配点定义一个Agent Stage需要的�
 4. 切换Project时同时切换cwd、Session列表、Project配置、项目资源、文件访问和Project Memory范围。
 5. 保持项目源码位于原目录；Chat只管理配置、索引和运行数据。
 6. `A`和`A/B/C`可以分别是独立Project；目录嵌套、Git根目录和父目录Manifest都不改变用户本次选择的Project根。
+
+### 4.7 首次使用与Daily Project
+
+用户第一次打开Chat时不应先选择源码目录才能对话。系统自动提供并选择Daily Project，用户可以直接开始日常学习、工作、生活或娱乐会话。
+
+Daily Project必须：
+
+1. 在Project列表、Session列表、Memory管理和资源配置中表现为真实Project。
+2. 使用与其他Project相同的`ChatProjectContext`、Session目录、Project配置、Project资源和Project Memory合同。
+3. 拥有Chat管理的稳定工作目录，使Pi和Tool始终获得明确cwd；不能使用Chat服务进程的`process.cwd()`冒充Daily工作目录。
+4. 自动创建、始终可解析且不能因用户尚未打开外部目录而缺失。
+5. 不按日期自动创建新的Project或Session，也不把已经明确属于其他Project的失败请求吞入Daily。
+
+### 4.8 在Daily与业务Project之间切换
+
+用户可以从Daily Project进入一个开发、学习或工作Project，也可以返回Daily：
+
+1. Project切换改变后续新会话的Project上下文和当前展示的Session集合。
+2. 打开已有Session时，以该Session固有的Project为准。
+3. 切换Project不会迁移、改写或继续使用原Project的Session。
+4. 确需复用对话时，使用带来源关系的Fork、摘要或显式导入，在目标Project创建新Session。
+5. Personal资源可以按规则跨Project可见；Project配置、Project资源、Project Memory和Session继续隔离。
+
+### 4.9 Long Agent与多入口会话
+
+同一个长期Agent可以通过Chat Web、IM或其他Channel服务用户，也可以在多个Project中工作。入口变化不改变Project模型：
+
+1. Chat Web新建长期Agent会话时，使用界面当前Project；没有有效选择时使用Daily Project。
+2. 新IM会话没有绑定时进入Daily Project；用户或管理配置可以把群、频道、话题或会话明确绑定到业务Project。
+3. Chat Web打开已有IM会话时，附着同一个Project下的Chat Session，不能因为换了入口就复制一条会话。
+4. 长期Agent主动回复使用触发它的Session或任务所属Project；真正没有来源Project的主动事件进入Daily Project。
+5. 长期Agent调用Workflow时，Workflow继承当前Project与父Session关系；跨Project调用必须显式创建目标Project Session并保留来源。
+6. 同一个长期Agent可以共享自己的Agent Memory，但不能据此把不同Project Session的完整对话历史隐式合并。
+
+Daily下的已确认默认交互是：每个Long Agent可以拥有一个Inbox/IM主会话；IM消息与回复同步到Chat Session；Chat Web可以打开并继续已有IM Session；回复默认回到本轮来源入口；Web独立新会话不自动合并到IM主会话。多Agent、主动消息、身份边界、消息绑定和Chat Tool合同见[Chat Long Agent与多入口架构](./chat-long-agent-architecture.md)。
 
 ## 5. Chat全局、Project配置和Pi资源是什么关系
 
@@ -323,6 +400,11 @@ Chat本轮冻结的Workflow Agent配置是运行事实源。配置按`Workflow�
 8. 实时事件丢失后，前端必须能用Session持久历史和Run状态收敛。
 9. 一次Workflow Run启动后固定使用本轮解析出的全局配置、Project配置和请求覆盖；文件更新从下一条用户消息开始生效。
 10. Project路径迁移只更新Registry路径，不能改变Session与Memory归属。
+11. 所有新Session都必须写入有效Project作用域；API、Channel Adapter、定时任务和长期Agent入口不能创建无Project Session。
+12. Daily Project使用完全相同的Session合同，不允许出现`projectId = null`、特殊Session目录或仅由Frontend识别的伪Project。
+13. Session的Project归属创建后不可变；打开Session时，请求Project与持久归属不一致必须失败。
+14. 新入口缺少Project上下文时由Backend统一解析到Daily Project；Frontend、NanoClaw Adapter或其他Channel不能分别实现默认规则。
+15. 已绑定Project不可用时保留原绑定并报告问题，不得通过Daily Project继续执行。
 
 ## 9. 安全和部署要求
 
@@ -341,10 +423,12 @@ Chat本轮冻结的Workflow Agent配置是运行事实源。配置按`Workflow�
 | 已完成 | Backend持久化Session Workflow最新配置和本轮快照 | 刷新、手工选择和Agent辅助调整使用同一事实源 |
 | 已完成 | Chat Home、Project Manifest/Registry和ProjectContext | Project路径、配置、Session、Memory和Prompt资源由稳定`projectId`解析 |
 | 已完成 | 个人与项目Prompt资源及规则管理Workflow | 已覆盖Target、来源、标签、草稿、绑定确认、版本、归档、检索和Agent选择 |
-| 1 | Agent配置文件只能选择，尚不能在前端创建和编辑 | 当前默认选择已持久化，但文件内容编辑仍需外部工具 |
-| 2 | 普通Node已有Schema和校验，但尚无内置Workflow实例 | 需要在真实需求出现时验证展示和观察数据，不为示例增加空业务 |
-| 3 | 资源管理接口尚未全部迁移 | Skill更新检查及部分原Pi Web操作仍待接入 |
-| 4 | 运行中交互和Session分支未迁移 | 需要先决定持续运行控制面，不应塞进一次Run返回值 |
+| 1 | Daily Project与统一Project解析尚未实现 | 当前兼容入口仍可能用Chat进程cwd打开Project；必须先建立稳定Daily工作目录和唯一Backend默认规则 |
+| 2 | Agent配置文件只能选择，尚不能在前端创建和编辑 | 当前默认选择已持久化，但文件内容编辑仍需外部工具 |
+| 3 | 普通Node已有Schema和校验，但尚无内置Workflow实例 | 需要在真实需求出现时验证展示和观察数据，不为示例增加空业务 |
+| 4 | 资源管理接口尚未全部迁移 | Skill更新检查及部分原Pi Web操作仍待接入 |
+| 5 | 运行中交互和Session分支未迁移 | 需要先决定持续运行控制面，不应塞进一次Run返回值 |
+| 6 | Long Agent与多入口Conversation Binding尚未实现 | 必须先以Project-first合同统一Chat Web、IM、主动任务和NanoClaw Session映射 |
 
 ## 11. 已确认的配置场景
 

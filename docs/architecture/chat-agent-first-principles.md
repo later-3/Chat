@@ -41,6 +41,17 @@ Pi Agent Core拥有模型消息、工具调用和Agent循环。Pi Coding Agent�
 
 产品层可以统一管理和展示这些Agent能力；运行层必须保留它们在Pi中的真实差异。例如规则文本进入System Prompt，Skill通常按需读取，Tool还绑定参数Schema和可执行函数。统一管理不等于把不同能力伪装成同一种运行对象。
 
+### 2.1 两种Agent生命周期
+
+Chat同时支持Workflow Agent与Long Agent。两者共享“模型、Prompt、Context、Tool和Agent循环”这一Agent本质，但生命周期和产品职责不同：
+
+1. Workflow Agent是Workflow内的执行定义；其Pi AgentSession按Stage或Turn创建并销毁，通过Chat Session恢复上下文。
+2. Long Agent是用户长期管理的助手身份；由Chat产品对象和NanoClaw Agent Group共同承载，拥有长期Channel、Agent Memory、任务和多个NanoClaw Session。
+3. Long Agent可以调用Chat Workflow；被调用Workflow仍使用统一Pi装配和独立运行证据。
+4. Long Agent不能成为绕过Project、Session、资源Target或授权边界的全局隐式状态。
+
+完整对象、Daily多入口和多Agent部署合同见[Chat Long Agent与多入口架构](./chat-long-agent-architecture.md)。
+
 ## 3. Chat只增加Workflow协作层
 
 Chat增加Workflow，是因为一次用户对话可能需要一个或多个Agent或非Agent节点协作。Workflow负责：
@@ -148,6 +159,8 @@ Pi继续拥有Agent Loop、Provider消息转换、Tool执行、ResourceLoader、
 ### 4.6 Project、Context与Resource Target
 
 Project与Workflow正交：Project确定本轮工作目录、Session归属、Project配置和资源范围；Workflow确定一次对话的Stage关系和Agent装配。每个Session只属于一个稳定`projectId`，项目绝对路径由Backend Registry解析，不能由浏览器或`cwd`兼任长期身份。
+
+Chat的所有交互都必须先落入Project，再选择Workflow或长期Agent执行。`daily`是系统自动管理的默认Project，用于没有更具体Project归属的新交互；它不是无Project模式，也不使用另一套Session、Memory或资源规则。Chat Web、IM、CLI等入口只提供交互上下文，最终Project由Backend统一解析。Session创建后Project归属不可变，已绑定Project失败时不能静默回退Daily。
 
 资源操作必须区分两个概念：
 

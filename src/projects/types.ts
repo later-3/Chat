@@ -25,6 +25,7 @@ export interface ChatProjectRegistry {
 
 export interface ChatProjectSummary extends ChatProjectRegistryEntry {
   readonly available: boolean;
+  readonly kind: "daily" | "directory";
 }
 
 export interface ChatProjectContext {

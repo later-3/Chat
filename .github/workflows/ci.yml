@@ -45,6 +45,7 @@ jobs:
           fi
           test "$(git -C pi rev-parse HEAD)" = "$(git rev-parse HEAD:pi)"
           test "$(git -C frontend rev-parse HEAD)" = "$(git rev-parse HEAD:frontend)"
+          test "$(git -C nanoclaw rev-parse HEAD)" = "$(git rev-parse HEAD:nanoclaw)"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10

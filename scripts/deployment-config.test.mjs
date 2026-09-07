@@ -58,6 +58,7 @@ test("server and Cloudflare examples expose only the intended Chat origin", () =
   assert.match(environment, /CHAT_PUBLIC_URL=https:\/\/chat\.example\.com/);
   assert.doesNotMatch(environment, /^CHAT_WEB_AUTH_PASSWORD=123456$/m);
   assert.match(environment, /^CHAT_WEB_AUTH_PASSWORD=__REQUIRED_STRONG_PASSWORD__$/m);
+  assert.match(environment, /^CHAT_CHANNEL_GATEWAY_TOKEN=replace-with-at-least-32-random-characters$/m);
   assert.match(environment, /CHAT_HOME=\/home\/chat\/\.chat/);
   assert.match(environment, /WORKFLOW_LOCAL_DATA_DIR=\/home\/chat\/\.chat\/runtime\/workflow-data/);
   assert.doesNotMatch(deployment, /codex\/pi-web-frontend-in-chat/);
@@ -107,6 +108,9 @@ test("GitHub CI verifies the pinned public Submodules through the release gate",
   }
   assert.match(gitmodules, /https:\/\/github\.com\/later-3\/pi\.git/);
   assert.match(gitmodules, /https:\/\/github\.com\/later-3\/chat-frontend\.git/);
+  assert.match(gitmodules, /https:\/\/github\.com\/later-3\/nanoclaw\.git/);
+  assert.match(ci, /git -C nanoclaw rev-parse HEAD/);
+  assert.match(chatctl, /nanoclaw=%s/);
   assert.doesNotMatch(gitmodules, /git@github\.com/);
   assert.match(chatctl, /CHAT_REPO_URL="\$\{CHAT_REPO_URL:-https:\/\/github\.com\/later-3\/Chat\.git\}"/);
   assert.match(documentation, /不需要个人Token、SSH私钥或额外的Actions Secret/);
@@ -152,6 +156,7 @@ test("chatctl validates production authentication without echoing credentials", 
     `CHAT_WEB_AUTH_PASSWORD=${strongPassword}`,
     "CHAT_WEB_AUTH_SESSION_DAYS=30",
     `CHAT_WEB_AUTH_SESSION_SECRET=${sessionSecret}`,
+    "CHAT_CHANNEL_GATEWAY_TOKEN=deployment-test-channel-token-at-least-32-characters",
     "",
   ].join("\n");
   writeFileSync(strongEnvironmentPath, baseEnvironment, { mode: 0o600 });
