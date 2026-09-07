@@ -273,4 +273,17 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       createdAt: "2026-09-01T07:30:00.000Z",
     }],
   },
+  {
+    schemaVersion: 1,
+    id: "long-agent-provider-validation",
+    revisions: [{
+      schemaVersion: 1, id: "long-agent-provider-validation", revision: 1, kind: "experience",
+      title: "Long Agent 切换 Provider 的认证与工具合同",
+      purpose: "避免离线认证快照未初始化与工具参数不兼容阻断已接收的 Channel 消息。",
+      content: "配置校验必须先完成 ModelRuntime 离线认证刷新，再读取 hasConfiguredAuth；关闭网络发现不等于跳过本地刷新。对外工具参数应是普通 object，避免根部 anyOf；在执行前用 action Union 保留严格分支校验。用成功保存显式模型和真实工具 Schema 回归验证。Channel ready 不能代替模型结果、Delivery 与 Ack 验收。429 服务过载应保留消息重试，切换模型遵从用户选择。",
+      tags: ["development", "incident", "long-agent", "provider", "tools"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development-experiences/long-agent-provider-validation.md", capturedAt: "2026-09-07T09:35:00.000Z" }],
+      author: { type: "user" }, createdAt: "2026-09-07T09:35:00.000Z",
+    }],
+  },
 ] as const satisfies readonly PromptResourceDocument[];

@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { assertFileWithin, atomicWriteJson, expectRevision, withFileLock } from "../persistence/versioned-file.js";
+import { readFile, rm } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
   parseModel,
@@ -13,7 +13,6 @@ import {
 const SCHEMA_VERSION = 1;
 const ENTITY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ALLOWED_FIELDS = new Set(["schemaVersion", "model", "thinkingLevel", "tools"]);
-const writes = new Map<string, Promise<unknown>>();
 
 /**
  * Chat-owned per-Agent model configuration, persisted per Project and read on
@@ -35,7 +34,7 @@ function assertEntityId(value: string, field: string): void {
   if (!ENTITY_ID_PATTERN.test(value)) throw new Error(`${field}格式无效: ${value}`);
 }
 
-function parseDurableConfig(value: unknown, source: string): ChatAgentDurableConfig {
+export function parseDurableConfig(value: unknown, source: string): ChatAgentDurableConfig {
   if (!isRecord(value) || value.schemaVersion !== SCHEMA_VERSION) {
     throw new Error(`Agent模型配置必须使用schemaVersion 1: ${source}`);
   }
@@ -89,13 +88,36 @@ export async function writeAgentDurableConfig(
   agentId: string,
   value: unknown,
 ): Promise<ChatAgentDurableConfig> {
+  const parsed = parseDurableConfig(value, "Agent durable config");
   const path = agentModelConfigPath(projectDataDir, workflowId, agentId);
-  const config = parseDurableConfig(value, path);
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(tempPath, `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await rename(tempPath, path);
-  return config;
+  return withFileLock(path, async () => {
+    await assertFileWithin(path, projectDataDir);
+    await atomicWriteJson(path, parsed);
+    return parsed;
+  });
+}
+
+export async function mutateAgentDurableConfig(
+  projectDataDir: string,
+  workflowId: string,
+  agentId: string,
+  transform: (current: ChatAgentDurableConfig | undefined) => unknown | Promise<unknown>,
+  options: { readonly expectedRevision?: string; readonly validateOnly?: boolean } = {},
+): Promise<ChatAgentDurableConfig | undefined> {
+  const path = agentModelConfigPath(projectDataDir, workflowId, agentId);
+  return withFileLock(path, async () => {
+    await assertFileWithin(path, projectDataDir);
+    if (options.expectedRevision !== undefined) await expectRevision(path, options.expectedRevision);
+    const value = await transform(await readAgentDurableConfig(projectDataDir, workflowId, agentId));
+    const config = value === undefined ? undefined : parseDurableConfig(value, path);
+    if (options.validateOnly === true) return config;
+    if (config === undefined) {
+      await rm(path).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      });
+    } else await atomicWriteJson(path, config);
+    return config;
+  });
 }
 
 export async function updateAgentDurableConfig(
@@ -108,10 +130,7 @@ export async function updateAgentDurableConfig(
     readonly tools?: WorkflowAgentToolPolicy | null;
   },
 ): Promise<ChatAgentDurableConfig | undefined> {
-  const path = agentModelConfigPath(projectDataDir, workflowId, agentId);
-  const previous = writes.get(path) ?? Promise.resolve();
-  const current = previous.catch(() => undefined).then(async () => {
-    const existing = await readAgentDurableConfig(projectDataDir, workflowId, agentId);
+  return mutateAgentDurableConfig(projectDataDir, workflowId, agentId, async (existing) => {
     const next = {
       schemaVersion: SCHEMA_VERSION,
       ...(existing?.model === undefined ? {} : { model: existing.model }),
@@ -129,20 +148,8 @@ export async function updateAgentDurableConfig(
       ...(next.thinkingLevel === undefined ? {} : { thinkingLevel: next.thinkingLevel }),
       ...(next.tools === undefined ? {} : { tools: next.tools }),
     };
-    if (Object.keys(normalized).length === 1) {
-      await rm(path).catch((error: unknown) => {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      });
-      return undefined;
-    }
-    return writeAgentDurableConfig(projectDataDir, workflowId, agentId, normalized);
+    return Object.keys(normalized).length === 1 ? undefined : normalized;
   });
-  writes.set(path, current);
-  try {
-    return await current;
-  } finally {
-    if (writes.get(path) === current) writes.delete(path);
-  }
 }
 
 /** Compatibility entry point for the existing model route and callers. */

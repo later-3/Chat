@@ -10,6 +10,7 @@
 | 配置网页登录、模型、Workflow、Agent 和 Project | [Chat 系统配置](./configuration.md) |
 | 部署、更新、诊断和回滚 | [部署指南](./deployment.md) |
 | 使用和管理长期记忆 | [Memory](./memory.md) |
+| 了解 Long Agent、配置、使用场景与当前限制 | [Long Agent 使用与配置](./long-agents.md) |
 
 ## 开发 Chat
 
@@ -17,6 +18,9 @@
 
 | 修改范围 | 文档 |
 |---|---|
+| Agent参与开发、架构审核与交接 | [贡献工作方法](./development/agent-contribution.md) |
+| VSCode调试和一键启动 | [本地开发与调试](./development/local-debugging.md) |
+| 用户反馈、日志、持久记录和故障闭环 | [诊断与记录](./development/diagnostics.md) |
 | Backend、HTTP、Project、持久化或 Pi 装配 | [Backend 开发](./development/backend.md) |
 | TypeScript、模块、错误、安全和持久化代码 | [编码规范](./development/coding-standards.md) |
 | Frontend 页面、状态、HTTP 合同或 PWA | [Frontend 开发](../frontend/docs/development.md) |
@@ -36,11 +40,18 @@
 - [Agent 第一性原理与架构约束](./architecture/chat-agent-first-principles.md)
 - [Chat 当前架构](./architecture/chat-current-architecture.md)
 - [Chat Project 架构](./architecture/chat-project-framework.md)
+- [Project 管理 Skill 与 Tool](./architecture/chat-project-management-design.md)
 - [Chat Workflow 开发框架](./architecture/chat-workflow-framework.md)
 - [Chat Session 架构](./architecture/chat-session-architecture.md)
-- [Chat Long Agent 能力与 NanoClaw Agent Group 模型](./architecture/chat-long-agent-capability-model.md)
-- [Chat Long Agent 路线图与续接任务账本](./architecture/chat-long-agent-roadmap.md)
-- [Chat、NanoClaw 与 Pi 统一集成设计](./architecture/chat-nanoclaw-pi-integration.md)
+- [Chat Long Agent 定义与配置模型](./architecture/chat-long-agent-capability-model.md)
+- [Chat Long Agent 架构](./architecture/chat-long-agent-architecture.md)
+- [Chat Long Agent 机制与扩展合同（收口入口）](./architecture/chat-long-agent-mechanism-contract.md)
+- [Long Agent 实施前约束、验证与场景依赖](./architecture/chat-long-agent-engineering-baseline.md)
+- [Chat Long Agent 场景与验收要求](./architecture/chat-long-agent-scenarios.md)
+- [Chat Long Agent 交互场景收敛与模拟（评审稿）](./architecture/chat-long-agent-interaction-simulations.md)
+- [Chat Long Agent 共享认知与自主工作（新增要求与机制评审）](./architecture/chat-long-agent-awareness-and-autonomy.md)
+- [Chat Long Agent 实施状态与迁移要求](./architecture/chat-long-agent-roadmap.md)
+- [Chat、NanoClaw 与 Pi 当前集成基线](./architecture/chat-nanoclaw-pi-integration.md)
 - [Context 与 Resource 模型](./architecture/chat-context-resource-model.md)
 
 ## 维护与排障

@@ -6,6 +6,8 @@
 
 核心目录、Registry、Context、分层配置、Session分区、Project资源加载、Memory独立Store、前端项目发现、Daily Project自动初始化与默认解析已经实现。IM多入口绑定仍按Long Agent架构继续落地；已有Session、显式Project或入口绑定解析失败时仍必须直接失败，不能回退Daily。实际源码状态见[Chat当前架构](./chat-current-architecture.md)。
 
+2026-09-07 Long Agent 目标已调整为独立 Daily、按日日常 Session 与业务项目多 Session，并补充可见项目与进度的机制化发现。本文目录/API 示例仍描述当前 Project 基础实现；Long Agent 扩展以[定义](./chat-long-agent-capability-model.md)和[架构](./chat-long-agent-architecture.md)为准，迁移见[实施状态](./chat-long-agent-roadmap.md)。
+
 ## 2. Pi提供的设计基线
 
 Pi当前实现提供以下事实：
@@ -70,19 +72,30 @@ Project不是“开发代码模式”的可选外壳，而是Chat中所有交互
 
 ### 3.2 Daily Project
 
-Daily Project是Chat自动管理的、稳定且唯一的默认Project，保留Project ID `daily`。它解决的是“用户现在没有选择某个专项Project，但仍要立刻使用Chat”，而不是绕开Project：
+Daily 是稳定 Project 的系统管理角色，不是无 Project 模式。普通 Chat 保留默认 Project ID daily；Long Agent 的目标是每个身份拥有自己的独立 Daily Project，不共用这一个 ID。
 
 | 属性 | 约束 |
 |---|---|
-| 身份 | 与普通Project一样拥有Manifest、Registry记录和`ChatProjectContext` |
-| 工作目录 | 由Chat管理的稳定目录，不使用服务进程cwd |
-| 数据 | 独立拥有Session、Project配置、Project资源和Project Memory |
-| 使用范围 | 日常学习、工作、生活、娱乐，以及尚未归类的新交互 |
-| 生命周期 | 单例、自动创建、始终可用；不按自然日轮换 |
-| 默认规则 | 新交互没有显式Project、既有Session或有效入口绑定时进入Daily |
-| 安全规则 | 已明确的业务Project失败时不回退Daily |
+| 身份 | 普通 Project Manifest、Registry 与 ChatProjectContext |
+| 工作目录 | Chat 管理的稳定 Workspace，不使用服务 cwd |
+| 数据 | 按稳定 projectId 保存 Session、配置、资源与 Project Memory |
+| Project 生命周期 | 长期稳定，不按日期新建 Project |
+| 普通 Chat Session | 按用户工作需要创建，不因日期强制轮换 |
+| Long Agent 日常主 Session | 每 Agent 按日历日选择或创建，后台独立任务可另有 Session |
+| 默认规则 | 无明确工作归属时进入对应默认 Project；Long Agent 使用自己的 Daily |
+| 安全规则 | 已明确目标不可用时报告错误，不回退 Daily |
 
-Daily Project与普通Project的差异只有“系统管理和默认角色”。进入统一`ChatProjectContext`之后，Session、Workflow、Agent装配、Memory、资源和文件授权不得增加Daily专用分支。
+当前实现只提供共享 daily，独立 Agent Daily 仍待迁移。下文 workspaces/daily 与 projects/daily 是现有目录示例，不表示所有未来 Agent 共享它。Daily 与其他 Project 使用同一配置、Session、Memory、资源和授权合同。
+
+### 3.3 Long Agent 参与项目
+
+Long Agent 进入业务 Project 工作，创建或续接项目内合适的 Session；同一 Project 可有多个与它关联的主题 Session。按日轮换只约束 Daily 日常主 Session，业务 Session 可以跨日。
+
+Agent 通过活动索引、历史查询和 Memory 知道自己的其他工作；Project 页面和 Agent 页面引用同一 Session。查询其他项目不必切换当前工作，但必须显式指定目标并校验权限。当前唯一 primarySessionId 限制及迁移由 Long Agent 架构负责。
+
+### 3.4 可见概览与进度（目标补充）
+
+项目可见概览的目标补充：尚未参与某项目的 Agent，也可通过 Project 服务发现配置为向它开放的名称、用途与进度。概览可见、详情可读和工作可执行分别表达；目录及底层数据隔离不要求项目存在本身一律隐藏。共享范围一次配置后持续生效，不依赖用户反复口述。详细场景与来源规则见[共享认知与自主工作](./chat-long-agent-awareness-and-autonomy.md)，当前 Registry 和 Tool Schema 不能直接视为已经支持这些目标。
 
 ## 4. 统一目录
 
@@ -233,6 +246,10 @@ Manifest和Registry没有重复事实：
 项目切换器必须来自`GET /api/projects`，不能继续从Session列表反推。没有Session的Project也必须可见；路径暂时不可用的Project保留登记并显示不可用状态。
 
 Daily Project在Backend初始化阶段通过同一个Manifest、Registry和Context解析能力自动建立。`daily`是保留ID，外部目录不能注册为另一个同名Project。Daily Managed Workspace位于Chat Home内，因此不会依赖某个业务源码目录是否挂载。
+
+### 5.4a Agent 创建普通托管 Project
+
+`project_create` 为未指定外部目录的学习、旅游等项目分配 `<CHAT_HOME>/workspaces/<projectId>`，以同一 Manifest/Registry/Context 合同创建并默认继承配置。`daily`仍是唯一默认角色。六个系统 Project Tool、Skill 发布、参数、幂等与配置 revision 合同见 [Project 管理 Skill 与 Tool](./chat-project-management-design.md)。普通托管项目的运行数据仍位于 `<CHAT_HOME>/projects/<projectId>`；创建不改变来源 Session 归属。
 
 ### 5.4 统一Project解析
 

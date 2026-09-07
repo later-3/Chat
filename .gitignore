@@ -10,6 +10,8 @@ frontend/dist/
 # Legacy Pi runtime data is only read by the one-way .chat migration.
 .pi/
 .workflow-data/
+# Isolated local development state and logs.
+.data/
 .env
 .env.*
 *.log

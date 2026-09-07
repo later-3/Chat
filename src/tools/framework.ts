@@ -17,6 +17,8 @@ export interface ChatToolManifest {
 
 export interface ChatToolRuntimeContext {
   readonly purpose: "execution" | "inspection";
+  readonly authorizedToolAddresses?: readonly string[];
+  readonly authorizedToolNames?: readonly string[];
   readonly projectId: string;
   readonly chatHome: string;
   readonly cwd: string;

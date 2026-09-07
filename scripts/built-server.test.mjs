@@ -1,3 +1,4 @@
+import { respondProjectManagement, exerciseProjectManagementRun } from "./project-management-runtime-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -49,6 +50,7 @@ async function startEmbeddingServer() {
   const localServer = http.createServer(async (request, response) => {
     if (request.method === "POST" && request.url === "/v1/chat/completions") {
       const modelRequest = await readJson(request);
+      if (respondProjectManagement(modelRequest, response, chatHome, "built-runtime-model")) return;
       const requestText = JSON.stringify(modelRequest);
       const responseText = !requestText.includes("workflow_execution_task_brief")
         && requestText.includes("chat-planner-output")
@@ -902,6 +904,13 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
       "system:tool/agent_memory_search",
       "system:tool/agent_memory_read",
       "system:tool/agent_memory_write",
+    "system:tool/project_search",
+    "system:tool/project_read",
+    "system:tool/project_create",
+    "system:tool/project_open",
+    "system:tool/project_update",
+    "system:tool/project_configure",
+
     ],
   );
   const projectTool = catalog.tools.find((tool) => tool.name === "built_project_lookup");
@@ -1385,4 +1394,9 @@ test("file access outside Chat-authorized roots is rejected", async () => {
   const response = await authenticatedFetch("/api/files/etc/passwd?type=read");
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: "Access denied" });
+});
+
+
+test("built Project Skill and all six tools execute through a real Workflow and Pi", async () => {
+  await exerciseProjectManagementRun(authenticatedFetch, { chatHome, projectId, workspace });
 });

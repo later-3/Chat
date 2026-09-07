@@ -219,6 +219,13 @@ function parseAgent(value: unknown): LongAgentConfig {
         systemToolAddress("agent_memory_search"),
         systemToolAddress("agent_memory_read"),
         systemToolAddress("agent_memory_write"),
+        systemToolAddress("project_search"),
+        systemToolAddress("project_read"),
+        systemToolAddress("project_create"),
+        systemToolAddress("project_open"),
+        systemToolAddress("project_update"),
+        systemToolAddress("project_configure"),
+
       ],
     },
     resources: { mode: "inherit" },

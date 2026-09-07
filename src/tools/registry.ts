@@ -1,3 +1,9 @@
+import { PROJECT_SEARCH_TOOL_PROVIDER } from "./builtins/project-search/index.js";
+import { PROJECT_READ_TOOL_PROVIDER } from "./builtins/project-read/index.js";
+import { PROJECT_CREATE_TOOL_PROVIDER } from "./builtins/project-create/index.js";
+import { PROJECT_OPEN_TOOL_PROVIDER } from "./builtins/project-open/index.js";
+import { PROJECT_UPDATE_TOOL_PROVIDER } from "./builtins/project-update/index.js";
+import { PROJECT_CONFIGURE_TOOL_PROVIDER } from "./builtins/project-configure/index.js";
 import type { ChatToolRuntimeContext, ResolvedChatTool } from "./framework.js";
 import { MEMORY_RECORD_TOOL_PROVIDER } from "./builtins/memory-record/index.js";
 import { MEMORY_SEARCH_TOOL_PROVIDER } from "./builtins/memory-search/index.js";
@@ -13,6 +19,13 @@ export const CHAT_SYSTEM_TOOL_PROVIDERS = [
   AGENT_MEMORY_SEARCH_TOOL_PROVIDER,
   AGENT_MEMORY_READ_TOOL_PROVIDER,
   AGENT_MEMORY_WRITE_TOOL_PROVIDER,
+  PROJECT_SEARCH_TOOL_PROVIDER,
+  PROJECT_READ_TOOL_PROVIDER,
+  PROJECT_CREATE_TOOL_PROVIDER,
+  PROJECT_OPEN_TOOL_PROVIDER,
+  PROJECT_UPDATE_TOOL_PROVIDER,
+  PROJECT_CONFIGURE_TOOL_PROVIDER,
+
 ] as const;
 
 const providersByAddress = new Map(CHAT_SYSTEM_TOOL_PROVIDERS.map((provider) => [provider.address, provider]));

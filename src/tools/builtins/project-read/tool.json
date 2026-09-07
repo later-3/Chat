@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "project-read",
+  "name": "project_read",
+  "label": "Project read",
+  "description": "读取Chat Project身份、版本、配置来源或可选能力。省略projectId表示当前Project。",
+  "implementationVersion": 1,
+  "risk": "read-only",
+  "permissions": [
+    "project:read"
+  ]
+}

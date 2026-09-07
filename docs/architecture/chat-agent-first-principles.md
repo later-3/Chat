@@ -50,7 +50,7 @@ Chat同时支持Workflow Agent与Long Agent。两者共享“模型、Prompt、C
 3. Long Agent可以调用Chat Workflow；被调用Workflow仍使用统一Pi装配和独立运行证据。
 4. Long Agent不能成为绕过Project、Session、资源Target或授权边界的全局隐式状态。
 
-完整对象、Daily多入口和多Agent部署合同见[Chat Long Agent与多入口架构](./chat-long-agent-architecture.md)。
+完整定义见[Long Agent定义与配置模型](./chat-long-agent-capability-model.md)，运行机制见[Long Agent架构](./chat-long-agent-architecture.md)。2026-09-07 已确认独立Agent配置根与Daily、Daily按日主Session、业务项目多Session、历史连续性和Docker工具环境；共享认知、自主工作与协作按[机制与扩展合同](./chat-long-agent-mechanism-contract.md)收口，具体实现合同待审核，当前实现差距见[实施状态](./chat-long-agent-roadmap.md)。
 
 ## 3. Chat只增加Workflow协作层
 
@@ -160,7 +160,7 @@ Pi继续拥有Agent Loop、Provider消息转换、Tool执行、ResourceLoader、
 
 Project与Workflow正交：Project确定本轮工作目录、Session归属、Project配置和资源范围；Workflow确定一次对话的Stage关系和Agent装配。每个Session只属于一个稳定`projectId`，项目绝对路径由Backend Registry解析，不能由浏览器或`cwd`兼任长期身份。
 
-Chat的所有交互都必须先落入Project，再选择Workflow或长期Agent执行。`daily`是系统自动管理的默认Project，用于没有更具体Project归属的新交互；它不是无Project模式，也不使用另一套Session、Memory或资源规则。Chat Web、IM、CLI等入口只提供交互上下文，最终Project由Backend统一解析。Session创建后Project归属不可变，已绑定Project失败时不能静默回退Daily。
+Chat的所有交互都必须先落入Project，再选择Workflow或长期Agent执行。普通Chat保留系统默认`daily`；Long Agent目标中各自拥有独立Daily Project，用于没有更具体Project归属的新交互。所有Daily都使用统一Session、Memory与资源规则。Chat Web、IM、CLI等入口只提供交互上下文，最终Project由Backend统一解析。Session创建后Project归属不可变，已绑定Project失败时不能静默回退Daily。
 
 资源操作必须区分两个概念：
 
@@ -309,6 +309,8 @@ Agent Configuration
 
 一个产品名词可以同时落入多个既有职责，但不因此成为新的架构层。例如“规则库”包含Backend资源目录、Frontend能力面板、Prompt资源适配和规则管理Workflow；它仍然没有超出Frontend、Backend、Workflow和Agent能力体系。
 
+Long Agent的持续工作额外按“意图、触发、Project归属、可见事实、能力、交互与连续状态”归类，采用机制合同的扩展顺序。长期职责、时间或事件驱动不要求每次工作都先有用户消息，也不要求确定性检查创建Pi Session；进入模型执行仍使用同一公共装配。
+
 ## 10. 需要单独讨论的架构冲击
 
 出现以下任一情况时，必须在实现前单独评审：
@@ -421,8 +423,8 @@ Agent装配 → Pi公开接口
 
 任何新增需求进入详细设计前必须能够回答：
 
-1. 用户场景发生在哪一次对话中？
-2. 由哪个Workflow负责，是否真的需要新Workflow？
+1. 场景由什么请求、职责或自由活动意图产生，通过消息、时间还是事件触发，属于哪个Project？
+2. 使用直接Long Agent、哪个Workflow或确定性处理，是否真的需要新Workflow？
 3. 涉及哪些Agent或普通Stage？
 4. 新内容属于哪类Agent能力？
 5. 默认配置、Session最新配置和本轮调整分别是什么？

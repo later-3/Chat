@@ -2,6 +2,8 @@
 
 本文是Chat Session语义、Workflow持久化和历史投影的约束性规范。Pi `SessionManager`是会话事实源；Workflow只能增加编排信息，不能发明第二套消息格式。
 
+2026-09-07 Long Agent 目标扩展了会话选择与跨日生命周期，见本文第10节及[Long Agent架构](./chat-long-agent-architecture.md)。下文的Workflow消息、谱系和持久化合同继续有效；多Agent与用户共同会话的参与者协议尚未定案。
+
 ## 1. 对象边界
 
 | 对象 | 含义 | 生命周期 |
@@ -125,7 +127,7 @@ custom chat.workflow_output { message: <Planner AssistantMessage> }
 2. 把审核原文只存在`plan_review_decision.feedback`中，或按钮批准只写CustomEntry而没有原生MessageEntry。
 3. 为适配Agent B而把Agent A的持久化`assistant`改成`user`。
 4. 前端长期从CustomEntry伪造user/assistant；这只允许作为未迁移活动Session的兼容路径。
-5. 每个Agent、Stage或Workflow创建自己的Chat Session。
+5. 仅因一个线性Workflow切换Agent或Stage就隐式创建新Session；显式子调用、Daily按日轮换或新的独立工作使用各自已声明的会话创建合同。
 6. 把人工审核伪装成`agentId=human`。
 7. 创建`projectId`为空的普通聊天Session，或由Frontend用“Daily模式”掩盖无Project数据。
 8. 切换Project时原地修改Session归属，或因目标Project不可用而把原Session放进Daily继续。
@@ -182,3 +184,17 @@ Session详情的`workflowCallStatistics`是上述关系的只读聚合：`direct
 10. 前端Session树从读模型恢复父子关系和耐久待确认提示；取消控制必须提交实际父Session和`callId`，并复用Tool调用相同的归属与Runtime取消逻辑。
 11. 新建、恢复、主动发言、Channel接入和定时触发都先解析Project；缺少具体归属的新交互进入Daily Project。
 12. Session固有Project与请求、Channel Binding或父任务Project不一致时明确失败，不自动迁移或回退。
+
+## 10. Long Agent 的目标生命周期扩展
+
+1. 每个 Long Agent 有独立且长期稳定的 Daily Project；日常主 Session 按 Agent 时区和日历日选择或创建。
+2. 业务 Project 内按主题创建/续接 Session，同一 Agent 可以关联多条 Session，允许跨日；不再以永久唯一 primarySessionId 限制。
+3. Project、Long Agent、任务和 Social 页面只投影同一 Session，不复制消息。Session 创建后 projectId 不变。
+4. 正在运行的 Turn/Workflow 跨午夜保持原 Session；新日常交互选择当日 Session，继承有来源的交接与历史入口。
+5. 日期轮换、Project切换和容器重建不修改 Pi 消息格式；上下文连续性由历史/活动/Memory提供，Compaction仍由Pi负责。
+6. 不调用模型的任务检查可以只有 Project 和 Run，不必为每次检查制造空 Session。
+7. Agent历史摘要、活动索引与日记遵守源内容权限和生命周期；来源删除或撤权不能因缓存副本继续泄露。
+8. 当前共享Daily与唯一主Session的旧记录保留原归属，通过可核实关联续接，不批量改写历史身份。
+9. 新Session由Agent发起时必须记录真实调用者。现有Workflow委派提供参考，但多个Agent与用户共同交互的角色投影、发言和Session关系需要另行评审，不能把所有Agent输入无来源地显示成人类发言。
+
+上述为目标要求，实施状态和验收见[迁移要求](./chat-long-agent-roadmap.md)与[场景验收](./chat-long-agent-scenarios.md)。

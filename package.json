@@ -24,7 +24,10 @@
     "test:frontend": "pnpm --dir frontend test",
     "test:built": "node --test scripts/built-server.test.mjs",
     "test:dev": "node --test scripts/dev-server.test.mjs",
-    "verify": "pnpm test && pnpm typecheck && pnpm build && pnpm test:built && pnpm test:dev"
+    "verify": "pnpm check:architecture && pnpm test:tooling && pnpm test && pnpm typecheck && pnpm build && pnpm test:built && pnpm test:dev",
+    "dev:all": "bash scripts/dev-start.sh",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "test:tooling": "node --test scripts/dev-start.test.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "link:./pi/packages/agent",

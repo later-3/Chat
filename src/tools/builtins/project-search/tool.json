@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "project-search",
+  "name": "project_search",
+  "label": "Project search",
+  "description": "查找或列出已登记的Chat Project；只搜索名称和简介，不扫描文件或Memory。",
+  "implementationVersion": 1,
+  "risk": "read-only",
+  "permissions": [
+    "project:read"
+  ]
+}

@@ -1,3 +1,4 @@
+import { respondProjectManagement, exerciseProjectManagementRun } from "./project-management-runtime-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -110,6 +111,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       }
       const modelRequest = await readJson(request);
       modelRequests.push(modelRequest);
+      if (respondProjectManagement(modelRequest, response, chatHome, "dev-e2e-model")) return;
       const systemText = modelRequest.messages
         .filter((message) => message.role === "system")
         .map((message) => JSON.stringify(message.content))
@@ -1315,6 +1317,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(childRequests.every((request) => (request.tools ?? []).length === 0), true);
     assert.match(output, /\[workflow-coordinator\] tool started name=workflow_call/);
     assert.doesNotMatch(output, /Workflow不允许由Agent调用|Workflow不能直接调用自身/);
+    await exerciseProjectManagementRun(authenticatedFetch, { chatHome, projectId: "dev-e2e-project", workspace: canonicalWorkspace });
   } finally {
     await stopProcess(devServer);
     if (modelServer?.listening) {

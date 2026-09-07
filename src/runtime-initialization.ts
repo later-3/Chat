@@ -1,3 +1,4 @@
+import { ensureProjectManagementSkill } from "./resources/project-management-skill.js";
 import { resolve } from "node:path";
 import { ensureChatHome, resolveChatHome } from "./chat-home.js";
 import { migrateLegacyProjectLayout } from "./migrations/project-layout-v1.js";
@@ -33,6 +34,7 @@ export function ensureChatRuntimeInitialized(options: {
       const paths = await ensureChatHome(chatHome);
       await Promise.all([
         ensureDailyProject(paths.root),
+        ensureProjectManagementSkill(paths.root),
         ensureMemorySkill(paths.runtimeDir, { refresh: true }),
         ensureWorkflowDelegationSkill(paths.runtimeDir, { refresh: true }),
         ensureRuleLibrarySkill(paths.runtimeDir, { refresh: true }),

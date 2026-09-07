@@ -1,0 +1,28 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // 不调试时使用与命令行相同的一键入口；Ctrl+C 停止所启动的进程。
+      "label": "Chat: start development",
+      "type": "shell",
+      "command": "pnpm dev:all",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Chat: verify",
+      "type": "shell",
+      "command": "pnpm verify",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Chat: check architecture entrypoints",
+      "type": "shell",
+      "command": "pnpm check:architecture",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}

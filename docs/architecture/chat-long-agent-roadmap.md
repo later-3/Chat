@@ -1,159 +1,149 @@
-# Chat Long Agent路线图与续接任务账本
+# Chat Long Agent 实施状态与迁移要求
 
-## 1. 用途与当前状态
+## 1. 文档状态
 
-本文保存Chat Long Agent从产品设想、架构决定到后续任务的完整上下文，供未来继续开发时恢复目标和范围。当前发布只收口“Project专属长期同事会话 + Chat Pi运行时 + NanoClaw Channel/Agent Group/OKF Memory + Web管理”；后续能力记录在本文，但不阻断当前版本发布。
+2026-09-07：用户已确认完整 Long Agent 定义、配置、连续性、调度、Docker 与四个场景，要求先落文档，由执行 Agent 后续开发，架构师负责方向与审核。
 
-状态基线：2026-09-07。代码版本目标为Chat `0.1.0`、Frontend `0.3.0`、NanoClaw `2.4.0`；Pi本期未修改。
+本次交付仅包含文档和导航更新。本文是现状/目标差距表与迁移要求，不是已下发的开发任务书，也不表示部署完成。
 
-## 2. 最初产品目标
+目标事实源为[定义与配置模型](./chat-long-agent-capability-model.md)、[架构](./chat-long-agent-architecture.md)、[场景验收](./chat-long-agent-scenarios.md)。现有 JSON/API 用法见[系统配置](../configuration.md)，旧执行合同见[当前集成基线](./chat-nanoclaw-pi-integration.md)。
 
-Chat服务用户的学习、工作和娱乐。Chat Web与IM只是不同入口，底层共享Project、Session、Agent、Workflow、Memory和资源治理：
+本轮新增明确要求为共享项目/进度的机制化发现、长期职责与自主推进（灵魂模式）、自由活动与具体任务的区分，以及 Social 事件触发。建议机制和新增场景在[共享认知与自主工作](./chat-long-agent-awareness-and-autonomy.md)评审，默认策略与具体合同尚未确定。
 
-```text
-用户
-  ├── Chat Web：主动进入Project，使用普通Session、Workflow或长期同事
-  └── IM Channel：随时联系长期同事，接收主动消息
-             ↓
-Project → Chat Session → Pi Agent Runtime
-             ↑
-NanoClaw Agent Group：身份、Channel、Mailbox、Workspace、OKF Memory与生态能力
-```
+用户随后认可方向并要求机制收口，目标以可组合、可扩展的机制覆盖约70%～80%的常见需求。[机制与扩展合同](./chat-long-agent-mechanism-contract.md)现为新增需求归类和实施评审入口；该比例尚未验证，当前源码能力不因文档收口而改变。
 
-Workflow和Long Agent不是竞争关系：Workflow组织一次确定性或多阶段执行；Long Agent提供持续身份、长期上下文、多入口和主动协作，并可以把适合的任务交给Workflow。
+本轮进一步要求在软件工程/项目管理动作之前，确认原生能力接入、代码质量、测试、场景覆盖和实施依赖。静态核查及决策建议见[实施前基线](./chat-long-agent-engineering-baseline.md)，尚未下发任务书或进入代码设计实现。
 
-## 3. 已确认的用户场景
+## 2. 当前能力与目标差距
 
-### 3.1 日常使用
+以下依据当前工作区源码、配置文档及先前已完成的链路记录；本轮没有重新执行模型、Channel 或 Docker 验收。“原生有”不等于“Chat 已接入”。
 
-用户没有更具体项目时进入系统管理的`daily` Project，在Chat Web或Telegram联系某个长期同事。两个入口映射到`daily + longAgentId`的同一个专属Chat Session，历史在Web可见，回复由同一Pi Runtime生成。
+| 能力 | 当前 Chat/NanoClaw 状态 | 已确认的目标 |
+|---|---|---|
+| Pi 执行 | 公共装配入口，Web/Channel 使用 Chat Pi | 保持统一配置与 Session 事实 |
+| 多身份 | 单 Host 多 Group；Long Agent 稳定映射 | 每个 Agent 完整独立空间及生命周期管理 |
+| 配置来源 | long-agents.json + Nano Group 数据/文件 | 独立 Agent 文件配置根，受管字段只有一个可写定义 |
+| 模型 | Chat 模型选择及认证校验已接入 | 自身有效配置/目录查询、明确范围和替代策略 |
+| 身份与 Memory | Group Snapshot、Standing Instructions、OKF 核心注入与 agent_memory_* | 保留领域合同，整合独立根、完整来源与维护能力 |
+| Personal/Project Memory | Chat Memory Tool 已接入 | 与 Agent Memory 分工，不隐式复制 |
+| Daily | 共享 daily，未按 Agent/日历分区 | 每 Agent 独立 Daily，按日选择日常主 Session |
+| 业务 Session | Project × Agent 唯一 primarySessionId | 多个主题 Session，可选择、续接、跨日 |
+| Channel | Telegram/微信文本路径、耐久 Event/Delivery/Ack | 显式工作切换、通知回复关联、富消息与目的地管理 |
+| 历史连续性 | Pi 历史与 Memory；缺完整 Agent 活动索引/查询 Tool | 自动关联、分区历史 Prompt、按需查询与交接 |
+| Project 管理 | project-management Skill 与 6 个 Tool 已在工作树实现 | 与 Agent 工作切换及资源授权配合 |
+| 共享认知 | 已有 Project 查询；面向 Agent 的可见进度/活动概览、统一更新与装配未完整接入 | 无须用户逐一告知，按共享范围发现项目与进度，详情和工作分别授权 |
+| Prompt | 共用 Agent Definition，已有自定义指令/资源能力 | 完整有序区域、任意自定义区域、同源预览 |
+| 自有资源 | 部分共享/Project资源可装配；Nano私有Skill/Template未完整接入 | 独立资源目录、版本化装配、增删改和依赖影响 |
+| 调度 | Nano 原生支持一次性/周期/检查脚本，Chat 非Channel唤醒未打通 | 固定 Project 的 Task/Run/Session/Delivery 合同 |
+| 长期职责与自由活动 | 当前 Standing Instructions 有职责文本，未形成完整自主推进与管理合同 | 持久职责、自主安排、项目工作连续性；自由活动保留无交付空间 |
+| Social 事件 | Social及其订阅链未实现；Channel耐久事件不代表已经支持动态订阅 | 可见更新触发处理、过滤/去重/合并、可只读或不回应 |
+| 主动投递 | 主要是文本原路回复 | 结构化 Destination、通知政策和可续接结果 |
+| 附件与交互 | Nano原生有文件/卡片/提问/编辑/Reaction；Chat主要是文本合同 | 按Channel能力适配，保留回复和待处理事项关联 |
+| 权限与Credential | Channel发送者控制已使用；原生OneCLI执行链未接入Chat Pi | 复用Chat Credential引用和领域授权，明确需要用户决定的动作 |
+| Agent/模板生命周期 | 原生有创建与模板；Chat完整管理面未接入 | 创建独立空间、管理资源和模板更新，保留本地修改与数据 |
+| Docker | chat-pi 跳过原生 Session Runtime 与所有 Docker 管理 | 解耦后的受控工具、脚本、MCP和开发环境 |
+| Social/每日整理 | 未实现 | 按 Agent/日期的活动与有来源回顾 |
+| 公共管理 Skill | 仓库文档/开发导航已有；运行时公共管理Skill未发布 | 所有 Long Agent 可发现并查询真实有效配置 |
+| Agent 间交互 | 原生 Nano 有通信能力，Chat Tool 未接入 | 暂待讨论 Session、参与者与多方交互 |
 
-### 3.2 项目协作
+关键实现证据：
 
-用户进入具体Project后，可以继续使用普通Session和Workflow，也可以打开该Project下某个长期同事的唯一专属主Session。长期同事读取当前Project上下文和授权资源，但不能从消息参数伪造Project或跨Project访问。
+- [Long Agent 配置与默认工具](../../src/long-agents/types.ts)、[配置校验](../../src/long-agents/configuration.ts)。
+- [唯一主 Session 的当前实现](../../src/long-agents/project-agent.ts)。
+- [当前 Long Agent 执行](../../src/long-agents/runtime.ts)、[公共 Pi 装配](../../src/agents/pi-agent-session.ts)。
+- [Group/Memory 服务](../../src/long-agents/agent-group-service.ts)。
+- [Nano 非 Channel 唤醒限制](../../nanoclaw/src/modules/chat-integration/execution-driver.ts)、[恢复范围](../../nanoclaw/src/modules/chat-integration/recovery.ts)。
+- [Nano 任务创建](../../nanoclaw/src/modules/scheduling/create.ts)、[原生任务语义](../../nanoclaw/docs/scheduled-tasks.md)。
+- [关闭原生 Runtime 的启动边界](../../nanoclaw/src/agent-execution-startup.ts)。
+- [原生跨会话功能](../../nanoclaw/src/modules/cross-session-context/index.ts)、[模板](../../nanoclaw/docs/templates.md)。
 
-### 3.3 长期身份与记忆
+## 3. 已确认替换的旧约束
 
-每个Chat Long Agent映射一个NanoClaw Agent Group。Agent Group的名称、Standing Instructions和OKF Markdown Memory构成运行身份与Agent私有记忆；Chat显示别名只是UI元数据。Personal/Project Mem0保存多个Agent共享的用户与项目事实，两类Memory不自动复制。
-
-### 3.4 多长期同事
-
-一个NanoClaw Host承载多个Agent Group和多个Telegram Bot/Channel Wiring。每个长期同事拥有独立身份、Workspace与Agent Memory；不为每个Agent启动独立NanoClaw进程。
-
-### 3.5 可靠会话
-
-一个`Project + Long Agent`只有一个稳定Chat Session。每次消息只创建一次User/Assistant事实；Pi `AgentSession`是按Turn恢复的执行对象，不是新的产品Session。Channel重试、Chat或NanoClaw重启不能重复执行同一Turn或重复投递回复。
-
-## 4. 当前版本已经落地
-
-| 能力 | 当前实现与验收边界 |
+| 旧实现/旧设计 | 新目标与迁移要求 |
 |---|---|
-| Project-first与Daily | 所有普通Session、Long Agent Session和Workflow都归属Project；`daily`使用同一合同 |
-| Web信息架构 | 侧边栏在“会话 / 长期同事”间切换；普通Session布局不被Long Agent占位干扰 |
-| 专属Session | 每个Project Long Agent创建或恢复唯一主Session，Web和Channel共享其历史 |
-| 统一Runtime | Chat Backend通过Pi运行Agent；NanoClaw `chat-pi`模式关闭自己的Provider/容器Session Runtime |
-| Channel可靠性 | NanoClaw耐久Inbox/Event Outbox，Chat耐久Ingress、幂等Turn、Delivery和Ack |
-| Agent Group身份 | NanoClaw提供名称、Standing Instructions、Workspace安全摘要和Revision；Chat按Turn装配 |
-| Agent Memory | NanoClaw OKF Markdown为事实源；Web可管理，Pi具备`agent_memory_search/read/write` |
-| Shared Memory | Chat现有`memory_search/memory_record`继续访问Personal/Project Mem0 |
-| 配置管理 | Web区分Chat运行策略、NanoClaw Agent Group和Agent Memory三个事实源 |
-| 审计与恢复 | 配置/Memory写入进入Chat审计；Turn记录Group/Core Revision并可恢复不可变Snapshot |
-| 安全边界 | 浏览器只访问Chat Backend；服务Token、Nano数据库、Socket和绝对路径不对前端开放 |
+| 所有 Long Agent 默认使用共享 daily | 分配独立 Daily Project；普通 Chat 的默认 daily 可继续保留 |
+| 一个 Project × Agent 永远一个主 Session | 保留旧 Session，增加主题集合、参与关系和当前选择 |
+| 长期连续性依赖一条持续增长的 Session | Daily 按日轮换，历史/活动/Memory维持连续性 |
+| Group 显示名与 Chat 别名可能不同 | 产品身份由文件配置统一定义，Nano 保存明确运行投影 |
+| 身份在数据库、模型在注册表、Prompt各处分散 | 独立 Agent 定义与统一 Resolver；状态/缓存不成为第二配置源 |
+| 所有 Docker 功能永久禁用 | 支持隔离工具环境；继续禁用另一套原生 Agent Runtime |
+| 自我扩展一律需要提案和审批 | 已授权自有修改可执行；共享/扩权按 Policy 处理 |
+| 新 Skill 在仓库落盘等同于已安装 | 发布、发现、选择、授权、装配和实际 Tool 分别验收 |
 
-## 5. 当前版本明确不扩张的范围
+## 4. 实施依赖顺序
 
-以下目标从本期发布范围移出。现有文档和接口不得把它们展示为已经可用：
+后续任务书可以按以下依赖组织，具体拆分、负责人和排期尚未下发：
 
-1. NanoClaw定时任务、Webhook和其他非Router事件触发Chat Pi。
-2. Long Agent之间的Agent-to-Agent调用。
-3. 完整Workspace文件Tool、Skill/Template资源快照与自我扩展审批。
-4. 文件、卡片、Reaction、编辑消息和多Destination富消息。
-5. 多NanoClaw Host、跨机器Gateway和每Instance独立Credential。本期Registry v1只允许一个Host。
-6. Agent创建/删除、Bot Token轮换、Host重启和Channel重连的Web运维控制面。
-7. Agent Memory语义向量索引、Mem0自动同步、自动总结/晋升和Telegram历史回填。
-8. 一个Project下同一Long Agent的多个主会话，以及在普通Session中临时切换Long Agent。
+以下保留能力依赖概览；实际先后与可并行分支以[基础场景B0～B6](./chat-long-agent-engineering-baseline.md#7-基础场景的实施依赖)为准。尤其不能把Docker、Web、并发和多方消息的风险验证全部留到最后。
 
-## 6. 后续任务池
+1. 锁定独立配置、领域事实所有权与迁移 Schema，建立有效配置查询/编辑及能力检查。
+2. 实现 Agent 独立根、独立 Daily 与资源合同，发布公共管理 Skill。
+3. 实现多 Session 选择、按日 Daily、活动索引、历史及共享概览查询和 Prompt 装配。
+4. 接入 Docker 工具环境、依赖与权限，并验证没有宿主执行旁路。
+5. 接入统一主动触发、Task/Run/Session/Delivery、目的地和回复关联，并按评审合同承载长期职责的自主推进、自由活动与事件订阅。
+6. 实现每日整理、Memory维护和 Social，验证连续多日与来源失效。
+7. 完成 Agent 详情及 Project/任务/环境/日记的同源展示和编辑。
+8. 单独评审多 Agent 合同，再安排其实现；已有 Workflow 调用继续复用。
 
-### P1：主动协作
+这些是能力依赖，不是只交付后端再长期缺少前端的阶段划分。每个可用能力需同时交付配置、管理 Tool/API、实际装配、前端可观察性、文档和验收证据。
 
-目标场景：长期同事按计划提醒、主动检查任务，并把结果同时写入专属Chat Session和指定Channel。
+### 4.1 收口后的首项交付：详细合同与任务书
 
-任务：
+前置步骤：先完成实施前基线中的约束、验证及D1～D6决策评审，然后准备决策记录与需求/约束/测试对应表，再将本节作为详细设计阶段的交付要求。当前不提前分派实现或生成排期。
 
-1. 定义统一`TriggerEnvelope`，覆盖Channel、schedule、webhook、agent和proactive来源。
-2. NanoClaw Task只生成耐久Trigger，不直接启动旧容器Runtime。
-3. Chat校验Project Binding、Long Agent状态、目标Session和Delivery Policy。
-4. 加入重试、取消、暂停、重复触发和跨重启验收。
+由执行Agent先提交详细设计，架构师审核后再实施。合同需覆盖：
 
-验收：同一Trigger只产生一个Pi Turn；禁用或暂停的Agent不会执行；Web和IM看到同一结果。
+| 合同包 | 必须明确 | 评审证据 |
+|---|---|---|
+| 定义与发现 | 独立目录迁移、职责/任务/订阅和共享策略Schema、版本、公共Skill与有效配置查询 | Web/Tool/Prompt同源解析示例，旧配置兼容与应用状态 |
+| 归属与交互 | Daily轮换、业务多Session、参与者/工作/消息关系、真实身份与Pi原生消息映射 | 单聊、Agent互助、多方讨论、跨入口及跨日的ID与历史示例 |
+| 触发与执行 | 消息/时间/事件、职责推进、状态迁移、去重、等待/继续、并发与Docker边界 | 重复触发、互相追问、共享写入冲突、重启及投递失败处理 |
+| 展示与交付 | 配置编辑、能力检查、工作状态、共享概览、Social与继续入口；分批任务及迁移顺序 | 每批均有完整用户路径、实际装配和场景验收对应关系 |
 
-### P2：受控Workspace与资源生态
+详细设计可以选择具体实现，不重新穷举行业；使用机制合同E1～E4说明扩展级别。不能先写业务旁路再用文档解释，也不能以未定字段为由重新开启无限场景讨论。此处是交付要求，尚未向任何运行Agent下发开发任务。
 
-目标场景：长期同事维护自己的工作区、技能与可复用知识，同时遵守Chat Project授权。
+## 5. 迁移边界
 
-任务：
+### 5.1 配置与 Agent 数据
 
-1. 将NanoClaw Workspace能力暴露为窄Tool，而不是挂载整个宿主目录。
-2. 把Skills、Template和Plugin状态转为固定Revision的Pi Resource Snapshot。
-3. 自我扩展只能生成变更提案，经过审批后形成新Revision。
-4. 记录`longAgentId/agentGroupId/projectId/sessionId/turnId`和资源来源。
+稳定 Agent/Group ID 保留。将已有定义、名称、Standing Instructions、资源与环境声明迁入统一文件合同；旧受管入口停止独立写同一字段。记录源 revision、迁移标记与应用结果。
 
-验收：不同Agent Group和Project不能串读写；历史Turn可解释自己使用的资源Revision。
+Agent Memory 仍使用 NanoClaw OKF 服务，迁移物理根时保证单一可写目录。路径适配、停止/恢复写入和失败恢复在详细任务书中明确；不通过无边界挂载或直接读取 Nano 数据库绕过 API。
 
-### P3：多Agent协作
+### 5.2 Daily 与已有会话
 
-目标场景：一个长期同事把独立任务交给另一位长期同事或Workflow，并在父Session看到过程和结果。
+为每个 Agent 创建独立稳定 Daily Project；普通 Chat 的 daily 不自动删除。
 
-任务：
+旧共享 Daily 历史保留原 ID、Project 与来源。按可核实参与关系建立受控历史入口，不把全部旧记录复制给每个 Agent，也不改写历史 Project 来伪造隔离。后续新日常交互进入各自 Daily。
 
-1. 定义Agent-to-Agent目标解析、权限、Child Turn和父子Session投影。
-2. 复用Workflow调用的并发、取消、状态与审计机制。
-3. 防止循环调用、无限扇出和跨Project越权。
+已有业务 primarySessionId 作为可续接 Session 保留，不清空、不重复导入。Project × Agent 关系升级后允许多个主题会话。
 
-验收：每次委派有稳定ID、来源和结果；重试不重复建立Child Turn。
+### 5.3 原生任务与 Docker
 
-### P4：Channel与运维扩展
+任务迁移必须解析负责人、Project、Session 策略和投递目的地。无法可靠推断的旧任务保留为待配置/暂停并说明原因，不能自动指定共享 Daily。
 
-目标场景：在多个Channel和机器上安全管理长期同事。
+Docker 接入需要新的环境执行合同及部署门禁。仅移除 chat-pi 或恢复 Nano 原生 Provider 会违反统一 Pi 架构，不能作为迁移办法。环境不可用时报告失败/等待，不静默回退宿主无限权限执行。
 
-任务：
+### 5.4 派生数据与恢复
 
-1. 富消息与Channel能力协商。
-2. 每NanoClaw Instance独立Credential并把认证身份绑定到请求Instance。
-3. Agent、Wiring、Channel、Task和Host状态管理页面。
-4. 将NanoClaw源码、Credential、数据库和Workspace进一步拆成稳定部署目录。
+配置快照、活动索引和 Social 有明确来源/版本，引用更新或撤回后可失效或重建。并发创建、重试和恢复不能重复创建当日主 Session、同次 Run 或 Delivery。
 
-验收：不同信任域Credential不能互相冒充；升级或回滚代码不会移动或覆盖Agent数据。
+已完成外部动作不可凭重试重放；结果不确定时保存待核实状态。运行取消、数据移除、Agent 归档的作用域需要明确显示。
 
-### P5：Memory演进
+## 6. 交付与验收
 
-目标场景：Agent可以积累经验，同时用户知道事实来自哪里并能审阅、纠正和删除。
+[场景验收编号](./chat-long-agent-scenarios.md)是后续执行 Agent 提交证据的入口。跨日、恢复、Channel 回复、配置生效与 Docker 隔离必须走用户实际使用链；单纯新增 Tool 声明、文档或单元测试不表示产品能力完成。
 
-任务：
+此轮只做文档链接、内容一致性和差异检查，不运行 pnpm verify，不声称目标场景通过。代码实施时按 AGENTS.md 执行相应完整验证。
 
-1. 评估兼容OKF的全文或语义索引，不新增不透明的第三事实库。
-2. 设计Agent Memory与Personal/Project Mem0之间的显式“提议复制”流程。
-3. 为不可变Context Snapshot实现引用扫描GC；只删除没有任何保留Session引用的快照。
-4. 增加来源、置信度、冲突和隐私管理界面。
+## 7. 机制已收口，转入具体合同审核
 
-验收：自动化不能静默污染共享Memory；删除和更正可追溯；失败Turn仍可恢复原Revision。
+已有[交互模拟](./chat-long-agent-interaction-simulations.md)和[共享认知与自主工作](./chat-long-agent-awareness-and-autonomy.md)作为场景依据，分类、机制与扩展范围已进入收口合同。停止按具体业务无限发散，下一步按第4.1节审核详细合同与任务书。
 
-## 7. 未来续接时的恢复顺序
+按用户最新要求，进入第4.1节前先审核实施前基线，特别是Skill的发现/选择/装配区分、Nano调度责任、Pi消息投影及跨仓库测试覆盖。
 
-1. 从[文档索引](../README.md)和本文确认目标场景与本期范围。
-2. 阅读[能力模型](./chat-long-agent-capability-model.md)、[多入口架构](./chat-long-agent-architecture.md)和[Pi集成设计](./chat-nanoclaw-pi-integration.md)。
-3. 运行当前版本的Chat、Frontend和NanoClaw测试，确认不是在修复未发布工作树。
-4. 从第6节只选择一个优先级主题，先补场景、合同、数据所有权和验收，再开发。
-5. 不重新引入NanoClaw第二Agent Runtime；不让Frontend直连NanoClaw；不把Agent Memory与Mem0混成同一个事实库。
+需在详细合同中完成参与者与Pi角色、消息和工作关联、等待/继续、发言策略、取消与结果回传的具体表达；外部A2A仅在出现互操作需求时评估为适配，不作为当前内建协作的前置依赖。
 
-## 8. 当前发布剩余检查
+已确认并发需求：同一Agent可同时与用户、其他Agent交互，独立工作不因身份相同而全局串行。会话写入、共享资源和独占工具分别控制冲突；具体消息队列与调度实现需证明满足该合同。自由活动不因收到正式任务而一律暂停，长期职责也不能被零散消息长期饿死。
 
-本节只用于`0.1.0 / 0.3.0 / 2.4.0`发布，完成后可标记：
-
-- [x] Chat完整`pnpm verify`通过。
-- [x] NanoClaw最终完整测试、Typecheck和Build通过。
-- [x] Agent Group与Memory最小真实CRUD、Web Turn、Telegram Turn和审计验收通过。
-- [x] Frontend和NanoClaw提交已推送并合入各自长期分支。
-- [x] Chat固定可公开获取的Submodule Commit并合入`main`。
-- [x] 稳定Checkout完成NanoClaw私有数据迁移、服务重启和健康验收。
+用户关于“复用调用Workflow的原理，另建Session，由Agent发起交互”的判断针对底层实现。场景已用于检验参与、介入、共享和完成行为；后续把这些要求映射到现有Project、Pi和公共装配，不要求中央协调者，也不增加Team Runtime。

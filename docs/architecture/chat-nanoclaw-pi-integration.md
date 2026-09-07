@@ -1,14 +1,14 @@
-# Chat、NanoClaw与Pi统一集成设计
+# Chat、NanoClaw与Pi当前集成基线
 
 ## 1. 文档状态
 
-本文是在阅读NanoClaw实际Router、Session、Mailbox、Container Runner、Agent Provider和Delivery实现后形成的目标设计。它定义Chat如何使用NanoClaw提供长期在线入口，同时保证Pi是唯一Agent Runtime。
+本文保留迁移前的 Chat Pi 集成边界、代码位置、HTTP 合同和验证要求。2026-09-07 用户确认的完整目标以[定义与配置模型](./chat-long-agent-capability-model.md)、[Long Agent 架构](./chat-long-agent-architecture.md)和[场景验收](./chat-long-agent-scenarios.md)为准；实现差距见[实施状态](./chat-long-agent-roadmap.md)。
 
-本文同时描述目标合同和当前实现。公共Pi装配、Chat Web原生Long Agent执行、双向服务认证HTTP合同、NanoClaw `chat-pi` Execution Driver、稳定Turn幂等、Outbound持久化与Inbound确认已经落地。`chat-pi`是NanoClaw Instance级运行模式：一个Host进入Chat Channel Gateway模式后，全部路由目标都交给Chat Pi，NanoClaw Agent Session Runtime完全禁用，不能按Long Agent选择另一套容器运行时。
+下文的共享 daily、唯一 primarySessionId、分散身份配置及 Docker-free 启动是当前实现合同，不再约束目标设计。文中沿用的“目标”“必须”和代码示例，仅适用于这套迁移前接入方案。新目标保留 Pi 唯一 Runtime、Project 固有归属与耐久消息机制，增加独立 Daily、业务多 Session 和受控 Docker 工具环境；不能通过改配置恢复 Nano 原生 Agent Runtime 来冒充完成迁移。
 
-完整组件边界和主要数据流见[统一Long Agent架构图](../../diagram/chat-pi-nanoclaw-integration/architecture.svg)。
+公共 Pi 装配、Chat Web 原生 Long Agent 执行、服务认证、耐久 Channel Event、可靠 Delivery/Ack 及 Group/OKF Memory 已接入；调度等非 Channel 触发和其他完整能力尚未接入。本轮只更新文档，不改当前运行行为。
 
-## 2. 架构结论
+## 2. 当前集成约束
 
 Chat中的目标关系固定为：
 
@@ -30,7 +30,7 @@ NanoClaw Scheduler / Proactive Event ┘
 8. Chat Pi不可用时，NanoClaw保留耐久Inbox并重试；禁止回退到容器、Codex或其他Agent Runtime。
 9. Daily是用户的个人日常Project，与其他Project使用同一套Session、Long Agent与侧边栏导航合同；不另建个人模式。
 
-## 3. 为什么不把Pi SDK重新装进NanoClaw容器
+## 3. 当前Pi部署选择与原生容器边界
 
 NanoClaw当前的`AgentProvider`扩展点位于Session容器内，因此技术上可以增加一个直接调用Pi SDK的Provider。但对Chat产品而言，这不是最优边界：
 
@@ -113,7 +113,7 @@ createChatPiAgentSession()
 | 包装 | 只负责的差异 |
 |---|---|
 | Workflow | Stage、Node、Child Workflow、Review和Run状态 |
-| Long Agent | Channel来源、Delivery Binding、主动事件、Agent Group Context Snapshot和长期身份；当前已实现Memory仅有Chat Mem0 Tool，Nano Markdown Agent Memory继续接入 |
+| Long Agent | Channel来源、Delivery Binding、主动事件、Agent Group Context Snapshot和长期身份；Chat Mem0 与 Nano Markdown Agent Memory 已通过受控 Tool 和 Group Snapshot 接入 |
 
 Long Agent每轮创建新的Pi `AgentSession`执行对象，但必须绑定同一个`ProjectLongAgent.primarySessionId`和Pi `SessionManager`。新执行对象会恢复原生Session分支、消息、Tool、Usage与Compaction状态；它不是新建产品会话。Turn完成后释放执行对象可以避免常驻模型连接和进程内状态泄漏，不影响Long Agent的持续上下文。
 
@@ -129,7 +129,7 @@ Chat Web从当前Project侧边栏切换到“长期同事”导航面板，再�
 2. `PUT /api/long-agents/:id/config`使用`expectedRevision`做乐观并发控制，校验通过后对`<CHAT_HOME>/long-agents.json`串行化原子替换；冲突返回`409`。
 3. Telegram adapter、Channel instance和NanoClaw Host是只读运行信息，不通过该`PUT`修改。GET和PUT响应都不返回Gateway地址、Credential、Bot Token、模型密钥或凭据摘要。
 
-## 6. 核心身份与绑定
+## 6. 当前身份与绑定合同
 
 产品会话身份始终是`chatSessionId`。NanoClaw的Session只是通道路由身份，不成为用户可见会话事实。Long Agent在Project中的产品身份由`ProjectLongAgent`表示：
 

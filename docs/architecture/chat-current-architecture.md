@@ -1,5 +1,8 @@
 # Chat当前架构与源码分析
 
+
+Long Agent当前能力以[实施状态](./chat-long-agent-roadmap.md)中的逐项源码核对为准。2026-09-07已确认的独立配置、Daily轮换、业务多Session、主动工作和Docker是目标要求，见[定义](./chat-long-agent-capability-model.md)与[架构](./chat-long-agent-architecture.md)；本文其余历史分析不代表这些目标已实现。
+
 ## 1. 目的和源码规模
 
 本文描述当前开发分支已经由自动测试覆盖的实现事实，不把后续设想写成现状。目标架构和新增需求必须遵守[Chat Agent第一性原理与架构约束](./chat-agent-first-principles.md)。

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "project-open",
+  "name": "project_open",
+  "label": "Project open",
+  "description": "重新打开用户已在Chat中授权的精确目录；首次外部目录请先使用Chat项目选择器。不会改变当前Session。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": [
+    "project:open"
+  ]
+}

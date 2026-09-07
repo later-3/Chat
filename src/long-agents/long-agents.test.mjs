@@ -1,3 +1,5 @@
+import { respondProjectManagement } from "../../scripts/project-management-runtime-fixture.mjs";
+import { ensureProjectManagementSkill } from "../resources/project-management-skill.ts";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import http from "node:http";
@@ -131,6 +133,7 @@ async function startModelServer(requests, options = {}) {
       return;
     }
     requests.push(await readJson(request));
+    if (options.chatHome && respondProjectManagement(requests.at(-1), response, options.chatHome, "long-agent-model")) return;
     if (requests.length <= (options.failFirstRequests ?? 0)) {
       response.writeHead(400, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
@@ -425,6 +428,17 @@ test("LongAgent configuration is versioned, atomic, and keeps private routing ou
     LongAgentConfigurationInvalidError,
   );
 
+  fs.writeFileSync(path.join(chatHome, "agent", "models.json"), JSON.stringify({
+    providers: {
+      "configured-auth-test": {
+        baseUrl: "http://127.0.0.1:1/v1", api: "openai-completions", apiKey: "test-only-key",
+        models: [{ id: "configured-model", name: "Configured model", input: ["text"],
+          reasoning: false, contextWindow: 8192, maxTokens: 1024,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+      },
+    },
+  }));
+  validUpdate.definition.model = { provider: "configured-auth-test", modelId: "configured-model" };
   const updated = await updateLongAgentConfiguration("nexus", validUpdate, chatHome);
   assert.equal(updated.agent.name, "Nexus Daily");
   assert.equal(updated.agent.enabled, false);
@@ -582,7 +596,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-long-agent-pi-"));
   const chatHome = path.join(root, "home");
   const modelRequests = [];
-  const model = await startModelServer(modelRequests);
+  const model = await startModelServer(modelRequests, { chatHome });
   t.after(async () => {
     await closeServer(model.server);
     fs.rmSync(root, { recursive: true, force: true });
@@ -713,6 +727,18 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     ["stable-web-turn-1", "stable-web-turn-1", "stable-web-turn-2", "stable-web-turn-2"],
   );
   assert.equal(projected.context.messages[1].usage.totalTokens, 7);
+
+  await ensureProjectManagementSkill(chatHome);
+  const projectTurn = await executeLongAgentTurn({ longAgentId: "nexus", projectId: "daily", sessionId: first.sessionId,
+    text: "PROJECT_TOOL_E2E: 创建学习道德经项目并完成配置", chatHome, turnId: "project-management-turn" });
+  assert.equal(projectTurn.text, "PROJECT_TOOL_E2E_OK");
+  assert.equal(projectTurn.sessionId, first.sessionId);
+  const projectHistory = await readChatSession(first.sessionId, undefined, {}, "daily", chatHome);
+  const toolResults = projectHistory.context.messages.filter((m) => m.role === "toolResult" && m.toolName.startsWith("project_"));
+  assert.equal(toolResults.length, 8);
+  assert.ok(toolResults.slice(0, -1).every((m) => !m.isError));
+  assert.equal(toolResults.at(-1).isError, true);
+
 });
 
 test("Long Agent retries a failed stable Turn without duplicating its user message", { concurrency: false }, async (t) => {
@@ -935,6 +961,29 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
   assert.equal(replay.pulled, 0);
   assert.equal(modelRequests.length, 1);
   assert.equal(commands.length, commandCount);
+
+  const wechat = event(2, "in", {
+    eventId: "local:wechat-session:in:message-2",
+    nanoSessionId: "wechat-session",
+    messagingGroupId: "wechat-mg-1",
+    senderId: "wechat:user-1",
+    text: "微信继续刚才的对话",
+    source: address("wechat", "wechat", "wechat:user-1"),
+    delivery: address("wechat", "wechat", "wechat:user-1"),
+  });
+  await acceptLongAgentEvents({ instanceId: "local", events: [wechat], chatHome });
+  const [wechatSync] = await syncLongAgentEvents(chatHome);
+  assert.equal(wechatSync.executed, 1);
+  assert.equal(modelRequests.length, 2);
+  assert.match(JSON.stringify(modelRequests[1].messages), /Telegram 通过 Chat Pi 提问/);
+  const wechatDelivery = commands.filter((request) => request.path.endsWith("/deliveries")).at(-1);
+  assert.equal(wechatDelivery.body.destination.channelType, "wechat");
+  assert.equal(wechatDelivery.body.destination.platformId, "wechat:user-1");
+  const sharedState = await readLongAgentState(chatHome);
+  assert.equal(sharedState.projectAgents.length, 1);
+  assert.equal(sharedState.projectAgents[0].primarySessionId, state.projectAgents[0].primarySessionId);
+  assert.equal(sharedState.bindings.length, 2);
+  assert.equal(sharedState.pendingEvents.length, 0);
 });
 
 test("Chat HTTP ingress accepts registered routes and rejects unknown or conflicting events", { concurrency: false }, async (t) => {

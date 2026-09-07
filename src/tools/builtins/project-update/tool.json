@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "project-update",
+  "name": "project_update",
+  "label": "Project update",
+  "description": "更新Chat Project名称和简介，必须使用project_read返回的Manifest revision。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": [
+    "project:update"
+  ]
+}

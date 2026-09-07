@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "project-configure",
+  "name": "project_configure",
+  "label": "Project configure",
+  "description": "修改Project或Workflow Agent配置，使用configuration视图对应revision；unset恢复继承，validateOnly只检查。不会修改Long Agent的Personal定义。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": [
+    "project:configure"
+  ]
+}

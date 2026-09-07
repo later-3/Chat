@@ -2,10 +2,13 @@
 
 ## 文档入口与同步
 
+- Agent开发Chat前读取`.chat/skills/chat-architecture/SKILL.md`；按`docs/development/agent-contribution.md`先分析场景和机制，再进入架构/技术方案与实施。跨模块核对`docs/architecture/chat-module-contracts.md`，诊断与交接见`docs/development/diagnostics.md`；具体红线例外须有理由、替代保障和明确架构审核，不能先旁路再补文档。
 - `docs/README.md`是项目文档索引。开始任务时按修改范围读取对应模块文档，不要求无差别读取全部文档。
 - 修改模型、Workflow、Agent、Project配置、目录、Schema、继承顺序或配置API前，必须完整阅读`docs/configuration.md`。
 - 修改Backend、通用编码约束或测试时，分别阅读`docs/development/backend.md`、`docs/development/coding-standards.md`和`docs/testing.md`。
 - 修改Frontend时，同时遵守`frontend/AGENTS.md`及其文档索引；修改架构敏感机制时从`docs/architecture/README.md`选择相关文档。
+- Long Agent定义、配置、连续性、Docker和主动工作设计从`docs/long-agents.md`及`docs/architecture/chat-long-agent-capability-model.md`进入；新增场景按`docs/architecture/chat-long-agent-mechanism-contract.md`归类和评审扩展，实现差距见`docs/architecture/chat-long-agent-roadmap.md`。目标设计不能写成已发布能力，具体实现合同仍需审核。
+- Long Agent详细设计与实施前须核对`docs/architecture/chat-long-agent-engineering-baseline.md`中的原生接入证据、Skill生效合同、Session扩展、约束与测试门槛、场景依赖及待确认决策；状态为建议的部分先完成评审，不能当作已实现事实。
 - README和AGENTS只保存导航与强制边界。完整用法和模块规范保存在独立文档中，不在多个入口复制。
 - 用户可观察行为、配置格式、目录、API、开发约束或验证命令发生变化时，必须在同一变更中更新对应文档和测试。若实现与文档冲突，先判断实现缺陷或规范变化，不能只改文档来合理化意外行为。
 
@@ -37,11 +40,12 @@ IM → NanoClaw Channel → LongAgent┘
 ## Project与数据边界
 
 - 用户级事实位于`~/.chat`，测试和部署只能通过`CHAT_HOME`覆盖，业务代码不能用`process.cwd()`推断Chat Home。
-- Chat采用Project-first模型：所有Chat Session、Workflow Run、长期Agent会话、主动任务和定时任务都必须属于一个Project。系统管理的`daily`是无更具体归属时的默认Project，不是无Project模式；已绑定Project失败时不得静默回退Daily。
+- Chat采用Project-first模型：所有Chat Session、Workflow Run、长期Agent会话、主动任务和定时任务都必须属于一个Project。普通Chat保留系统管理的`daily`默认Project；Long Agent目标中各自拥有独立Daily Project，其日常主Session按日轮换，业务Project允许多个主题Session。当前共享Daily/唯一主Session的迁移差距见Long Agent实施状态；已绑定Project失败时不得静默回退Daily。
 - 每个Project在源码根目录使用`.chat/project.json`和`.chat/config.json`声明身份与配置；Session、Memory和Prompt资源按稳定`projectId`保存到`~/.chat/projects/<projectId>`。
 - Daily Project使用Chat Home中的稳定Managed Workspace作为Project根，但进入`ChatProjectContext`后与其他Project共用同一套配置、Session、Memory、资源和权限合同，不能增加Daily专用运行旁路。
-- Agent上下文只能来自`~/.chat/agent`和用户明确打开的Project根目录中的Pi Context文件（`AGENTS.override.md`、`AGENTS.md`或`CLAUDE.md`变体）。父目录和子目录Context都不得自动继承。
-- Project源码不移动到Chat仓库。不同Project的配置、Session、Memory和资源默认隔离，跨Project访问必须显式指定目标。
+- Agent上下文通过公共装配读取已授权的Personal、当前Project及Long Agent自身资源；Pi Context文件（`AGENTS.override.md`、`AGENTS.md`或`CLAUDE.md`变体）不自动继承父目录或子目录。Long Agent独立根的接入属于已确认目标，不能以此声称当前运行时已支持。
+- Long Agent身份和能力采用独立文件配置根，模型目录与认证统一来自Chat；Frontend与Agent共用配置服务和有效配置Resolver。NanoClaw受管字段不得形成第二份独立可写定义；Memory、运行状态与派生索引按领域分开。
+- Project源码不移动到Chat仓库。不同Project的配置、Session、Memory和资源默认隔离；目标支持按持久可见范围发现项目概览和进度，详情读写与实际工作仍按显式目标授权。共享概览不依赖用户逐Agent转述，也不自动开放完整历史；具体合同见Long Agent共享认知设计。
 - 用户主动打开的Project直接提供自己的配置和资源；Agent的资源策略、路径授权和Project隔离决定实际加载范围。
 
 ## Pi集成规则
@@ -57,7 +61,7 @@ IM → NanoClaw Channel → LongAgent┘
 - `nanoclaw/`是Chat选定的长期Agent源码Submodule，固定到公开Fork `later-3/nanoclaw`的`chat`分支；官方只读上游是`nanocoai/nanoclaw`。
 - NanoClaw在Chat架构中保留Agent Group长期身份、独立Workspace、Markdown Agent Memory、Standing Instructions、Skill生态、Channel路由、调度触发、Destination、权限、耐久Inbox、Outbound投递与回执；Chat Backend只接管Agent Loop、Model、Project Context、Pi执行和原生Chat Session。不能把第二套Agent Runtime或Model执行放回NanoClaw。
 - 一个Chat长期Agent对应一个NanoClaw Agent Group；其Markdown Memory属于该长期Agent。Chat的Personal/Project Memory仍由Chat Catalog与Mem0管理。两类Memory作用域不同，必须通过显式Tool区分，不能互相冒充或自动复制。
-- 多个Chat长期Agent默认由一个NanoClaw Host进程承载。Agent Group是Long Agent的NanoClaw侧长期实体，不是多个Agent组成的Team；其Profile、Workspace和资源通过版本化管理合同进入Chat Pi装配，Chat不得直接读取NanoClaw数据库或无边界挂载整个`groups/`。Chat Channel Gateway实例固定以`chat-pi`模式运行，必须完全跳过NanoClaw Session Runtime初始化、容器接管、Docker事件监听与Docker网络维护；所有长期Agent都不启动NanoClaw Agent容器。只有不同系统用户、信任域、机器或明确故障边界才拆分NanoClaw实例。
+- 多个Chat长期Agent默认由一个NanoClaw Host进程承载。Agent Group是Long Agent的NanoClaw侧长期实体，不是多个Agent组成的Team；其Profile、Workspace和资源通过版本化管理合同进入Chat Pi装配，Chat不得直接读取NanoClaw数据库或无边界挂载整个`groups/`。Chat Channel Gateway实例固定以`chat-pi`模式运行，继续禁用NanoClaw原生Session Runtime及AgentProvider Loop。已确认目标支持Docker作为隔离工具、脚本、MCP和开发环境，必须与原生Agent容器生命周期解耦并通过窄合同管理；当前实现仍未接入这套Docker环境，不能通过关闭`chat-pi`或恢复另一套模型/Session Runtime来实现。只有不同系统用户、信任域、机器或明确故障边界才拆分NanoClaw实例。
 - Chat Web与NanoClaw Channel是面向用户的不同入口。后续会话关联必须保留各自运行时事实，并用稳定ID把NanoClaw会话对应到Project下的Chat Session，不能靠消息正文去重或在Frontend维护第二份状态。
 - NanoClaw是独立长期Agent Host和Channel Gateway客户端，通过带服务认证的版本化HTTP Event API主动调用Chat Backend；Chat返回`202`前必须耐久保存事件，再通过NanoClaw窄HTTP Gateway完成Delivery与Ack。Agent Group Profile、Memory、Skill和任务管理使用单独的版本化Management/Resource合同；不得让Chat读取NanoClaw数据库、依赖其全权限CLI Socket，或把该Socket原样暴露成HTTP。
 - Long Agent通过受控Chat Tool/MCP桥接读取当前Project并调用Workflow、Memory和资源服务；不挂载整个Chat Home、不直接读取Chat数据库，也不能由Agent参数伪造当前Project或Chat Session身份。

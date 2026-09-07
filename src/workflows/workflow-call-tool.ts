@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type, type Static, validateToolArguments } from "@earendil-works/pi-ai";
 import { defineTool, type SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   listAgentCallableWorkflowTargets,
@@ -145,28 +145,7 @@ export function createWorkflowCallTool(
     throw new Error("workflow_call缺少Workflow或Long Agent调用身份");
   }
   const catalogLines = targetCatalogLines(targets);
-  return defineTool({
-    name: "workflow_call",
-    label: "Call workflow",
-    description: [
-      "Describe, start, wait for, or cancel one Chat Workflow running in an isolated Subsession.",
-      `Each start/wait waits at most ${String(DEFAULT_CHAT_WORKFLOW_CALL_WAIT_TIMEOUT_MS)}ms by default and returns a resumable callId if the child is still running.`,
-      `One parent Session may have at most ${String(MAX_ACTIVE_CHAT_WORKFLOW_CALLS_PER_PARENT)} active child calls; terminal calls free capacity and do not limit later calls.`,
-      "Available targets for the current caller:",
-      ...catalogLines,
-    ].join("\n"),
-    promptSnippet: [
-      "Use workflow_call when a listed Workflow is better suited to a self-contained part of the current request.",
-      "Use action=describe before start to discover the exact Child Agent, Tool, and Skill names you may choose.",
-      "Use action=start to create a child and explicitly select tools and skills for every Child Agent. If it returns status=running, use action=wait repeatedly until terminal, or action=cancel when the child is no longer needed.",
-      "A wait timeout only yields control back to you; it never cancels the child. Only cancel when stopping it is intentional.",
-      "Do not start the same work package again or claim it finished while its call is still running. Control one call with at most one wait or cancel operation per turn.",
-      "You can explain the exact available targets and their purposes from this catalog:",
-      ...catalogLines,
-      "Use only a listed Workflow ID. The prompt must contain the objective, relevant context, constraints, expected output, and authorization boundary. Child capabilities come only from your explicit start selection.",
-    ].join("\n"),
-    executionMode: "parallel",
-    parameters: Type.Union([
+  const actionParameters = Type.Union([
       Type.Object({
         action: Type.Literal("describe"),
         workflowId: targetIdSchema(targets),
@@ -191,8 +170,43 @@ export function createWorkflowCallTool(
         action: Type.Literal("cancel"),
         callId: Type.String({ minLength: 1, maxLength: 100 }),
       }, { additionalProperties: false }),
-    ]),
+    ], { type: "object" });
+
+  return defineTool({
+    name: "workflow_call",
+    label: "Call workflow",
+    description: [
+      "Describe, start, wait for, or cancel one Chat Workflow running in an isolated Subsession.",
+      `Each start/wait waits at most ${String(DEFAULT_CHAT_WORKFLOW_CALL_WAIT_TIMEOUT_MS)}ms by default and returns a resumable callId if the child is still running.`,
+      `One parent Session may have at most ${String(MAX_ACTIVE_CHAT_WORKFLOW_CALLS_PER_PARENT)} active child calls; terminal calls free capacity and do not limit later calls.`,
+      "Available targets for the current caller:",
+      ...catalogLines,
+    ].join("\n"),
+    promptSnippet: [
+      "Use workflow_call when a listed Workflow is better suited to a self-contained part of the current request.",
+      "Use action=describe before start to discover the exact Child Agent, Tool, and Skill names you may choose.",
+      "Use action=start to create a child and explicitly select tools and skills for every Child Agent. If it returns status=running, use action=wait repeatedly until terminal, or action=cancel when the child is no longer needed.",
+      "A wait timeout only yields control back to you; it never cancels the child. Only cancel when stopping it is intentional.",
+      "Do not start the same work package again or claim it finished while its call is still running. Control one call with at most one wait or cancel operation per turn.",
+      "You can explain the exact available targets and their purposes from this catalog:",
+      ...catalogLines,
+      "Use only a listed Workflow ID. The prompt must contain the objective, relevant context, constraints, expected output, and authorization boundary. Child capabilities come only from your explicit start selection.",
+    ].join("\n"),
+    executionMode: "parallel",
+    parameters: Type.Unsafe<Static<typeof actionParameters>>({
+      type: "object",
+      properties: {
+        ...Object.assign({}, ...actionParameters.anyOf.map((branch) => branch.properties)),
+        action: { type: "string", enum: ["describe", "start", "wait", "cancel"] },
+      },
+      required: ["action"],
+      additionalProperties: false,
+    }),
     async execute(toolCallId, params, signal, onUpdate) {
+      validateToolArguments(
+        { name: "workflow_call", description: "Workflow action validation", parameters: actionParameters },
+        { type: "toolCall", id: toolCallId, name: "workflow_call", arguments: params },
+      );
       if (context.purpose !== "execution") throw new Error("Agent检查期间不能调用Workflow");
       const controlInput = {
         parentSessionManager: context.sessionManager,

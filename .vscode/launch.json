@@ -1,4 +1,5 @@
 {
+  // F5 使用独立开发数据；模型在该 Chat Home 中配置，不自动复制生产凭据。
   "version": "0.2.0",
   "configurations": [
     {
@@ -9,7 +10,9 @@
       "runtimeArgs": ["dev"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
+      "env": { "CHAT_HOME": "${workspaceFolder}/.data/dev/chat-home" },
       "autoAttachChildProcesses": true,
+      // Nitro/Workflow 子进程及 Pi dist 映射回源码。先执行 pnpm pi:prepare。
       "sourceMaps": true,
       "pauseForSourceMap": true,
       "sourceMapPathOverrides": {
@@ -30,7 +33,8 @@
       "serverReadyAction": {
         "pattern": "http://127\\.0\\.0\\.1:43112/",
         "action": "startDebugging",
-        "name": "Start Chat Frontend"
+        "name": "Start Chat Frontend",
+        "killOnServerStop": true
       }
     },
     {
@@ -38,7 +42,9 @@
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev:frontend"],
+      "runtimeArgs": ["dev:frontend", "--host", "127.0.0.1", "--port", "30145", "--strictPort"],
+      // 与后端端口保持一致；版本注入仍由 run-frontend.mjs 负责。
+      "env": { "CHAT_BACKEND_URL": "http://127.0.0.1:43112" },
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "autoAttachChildProcesses": true,

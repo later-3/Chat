@@ -2,6 +2,10 @@
 
 本文说明 Chat 的网页登录、模型、Workflow、Agent 和项目资源配置放在哪里，以及最常用的写法。它面向 Chat 用户和协助用户管理 Chat 的外部 AI；开发者若要修改配置机制，应另读[架构文档](./architecture/README.md)。
 
+本文的 JSON、文件位置和 HTTP 接口描述当前实现。Long Agent 的完整目标见[使用与配置](./long-agents.md)、[定义与配置模型](./architecture/chat-long-agent-capability-model.md)；独立 Agent 目录、独立 Daily、按日 Session、完整历史/调度/Docker 尚待实施，不能直接向现有 schemaVersion 1 添加目标字段。
+
+共享项目概览、长期职责（灵魂模式）、自由活动和 Social 订阅的配置领域见[共享认知与自主工作](./architecture/chat-long-agent-awareness-and-autonomy.md)。本轮仅形成设计要求与机制评审稿，现有 JSON/API 尚不支持直接添加这些目标字段。
+
 ## 1. 配置范围
 
 Chat 的配置入口按作用域分为进程/部署、Personal、Project、Session/本轮和产品源码。网页登录必须在进入产品前生效，因此由进程或部署环境配置；用户通常只需要网页登录、Personal 与 Project 配置。Session 由 Chat 保存，产品源码配置只供开发内置 Workflow 和 Agent 时修改。
@@ -24,7 +28,9 @@ export CHAT_HOME=/srv/chat-data
 
 Chat会在启动和读取Project列表时保证Daily Project存在：工作目录固定为`<CHAT_HOME>/workspaces/daily`，运行数据位于`<CHAT_HOME>/projects/daily`。`daily`是用户的个人日常Project，也是没有更具体归属时的默认Project；Chat不再另建“个人模式”或无Project模式。不要把外部目录手工声明为`daily`，也不要删除或移动Managed Workspace。Daily仍使用普通的`.chat/project.json`、`.chat/config.json`、Session、Memory和资源合同，没有另一套专用配置。
 
-### Long Agent注册与配置管理
+### Long Agent注册与配置管理（当前实现）
+
+以下共享 daily、long-agents.json、NanoClaw Group 身份和唯一 primarySessionId 是迁移前用法，不是新目标。已确认目标要求每个 Agent 独立空间、文件配置统一身份、业务项目多 Session 和 Docker 工具环境；具体差距见[实施状态](./architecture/chat-long-agent-roadmap.md)。
 
 Chat使用`<CHAT_HOME>/long-agents.json`登记可选择的长期Agent及其NanoClaw本机实例。这个文件属于Personal产品配置，不属于某个Project；每个Agent的`defaultProjectId`决定IM首次来信缺少更具体归属时在哪个Project建立Chat Session，通常使用`daily`。
 
@@ -85,7 +91,7 @@ Chat使用`<CHAT_HOME>/long-agents.json`登记可选择的长期Agent及其NanoC
 
 `executionMode`固定为`chat-pi`：该NanoClaw Instance中的全部Chat Long Agent都由Chat Pi执行，不支持逐Agent选择Runtime。Registry `schemaVersion: 1`只允许一个NanoClaw Instance，由该Host承载多个Agent Group；当前服务Token是单一Host信任边界，不能把多个信任域伪装成已经隔离。`gatewayBaseUrl`是NanoClaw提供给Chat Backend的窄HTTP Gateway，本期使用loopback HTTP。Agent ID和Instance ID只能使用小写字母、数字、点、下划线或连字符；`defaultProjectId`必须是已经登记的稳定Project ID。同一个NanoClaw Agent Group不能重复映射成两个Chat Long Agent。`nanoclawAgentGroupId`既是Channel路由键，也是Long Agent独立身份、Workspace、Markdown Agent Memory和NanoClaw生态资源的稳定引用。Chat Web通过Backend管理Agent Group展示身份、Standing Instructions与OKF Markdown Memory，不直连NanoClaw。
 
-`name`与`description`是Chat Web列表使用的显示别名和摘要，不是Long Agent运行身份事实源；兼容期内`definition.name/description`仍与它们保持一致。NanoClaw Agent Group的`name`才是运行身份名称，`standingInstructions`才是长期职责事实源，两者在每轮Pi装配时优先注入。为控制模型上下文，每轮最多注入Standing Instructions的32,000个Unicode code point，以及`index.md`、`system/definition.md`各16,000个；截断提示会要求Agent按需使用`agent_memory_read`读取全文，而管理API与Snapshot仍保留完整内容。`definition`只保存Chat拥有的Pi运行策略，使用与Workflow Agent相同的Model、Thinking Level、System Prompt、自定义Prompt、Tool和Resource结构。省略时Chat会生成具备`memory_search`、`memory_record`、`workflow_call`与3个`agent_memory_*` Tool的默认定义。`memory_*`访问Chat Personal/Project共享Memory；`agent_memory_*`只访问当前Long Agent映射的NanoClaw Agent Group，模型不能在Tool参数中指定另一个Group。Chat Web和所有NanoClaw入口都使用同一份Pi运行策略。
+`name`与`description`是Chat Web列表使用的显示别名和摘要，不是Long Agent运行身份事实源；兼容期内`definition.name/description`仍与它们保持一致。NanoClaw Agent Group的`name`才是运行身份名称，`standingInstructions`才是长期职责事实源，两者在每轮Pi装配时优先注入。为控制模型上下文，每轮最多注入Standing Instructions的32,000个Unicode code point，以及`index.md`、`system/definition.md`各16,000个；截断提示会要求Agent按需使用`agent_memory_read`读取全文，而管理API与Snapshot仍保留完整内容。`definition`只保存Chat拥有的Pi运行策略，使用与Workflow Agent相同的Model、Thinking Level、System Prompt、自定义Prompt、Tool和Resource结构。省略时Chat会生成具备`memory_search`、`memory_record`、`workflow_call`、3个`agent_memory_*` Tool和6个`project_*` Tool的默认定义。`memory_*`访问Chat Personal/Project共享Memory；`agent_memory_*`只访问当前Long Agent映射的NanoClaw Agent Group，模型不能在Tool参数中指定另一个Group。Chat Web和所有NanoClaw入口都使用同一份Pi运行策略。
 
 `long-agents.json`只保存Chat到NanoClaw的稳定映射、默认Project和Pi运行策略，不复制Agent Group身份、Standing Instructions或Memory。最后一次成功读取的Agent Group Snapshot作为派生缓存保存到`<CHAT_HOME>/runtime/long-agents/<longAgentId>/agent-group-snapshot.json`；每个实际进入Turn的Snapshot还按内容Revision不可变保存到同目录的`snapshots/<sha256>.json`。Turn的schemaVersion 2 Marker冻结`contextRevision`、Group/Core Revision、stale和fetchedAt；同一Turn重试只按该内容Revision读取历史Snapshot，不会静默换成后来更新的身份或Memory。只有明确的网络错误、超时或NanoClaw 5xx才使用最后有效缓存，并标记`stale=true`。认证失败、对象不存在、版本冲突或响应合同不匹配都会关闭失败，不能被旧缓存掩盖；缓存也不能反向覆盖NanoClaw事实源。
 
@@ -106,7 +112,7 @@ Long Agent配置入口位于“长期同事”面板的同事条目中。入口�
 | `GET /api/long-agents/:id/config` | 读取Personal LongAgent定义与可见的Channel Gateway摘要 | 返回`revision`；Channel adapter/gateway只读，不返回Gateway地址、Credential或Token |
 | `PUT /api/long-agents/:id/config` | 替换可编辑配置 | 请求必须带`expectedRevision`；过期revision返回`409`，保存采用串行化原子替换 |
 
-`PUT`会校验`defaultProjectId`、Model与Provider认证、Tool地址以及完整Agent Definition，不接受未知字段。保存成功后以返回的新`revision`替换页面基线；冲突时重新读取，不得用过期表单覆盖新配置。
+`PUT`会先离线刷新本地模型与认证快照，再校验`defaultProjectId`、Model与Provider认证、Tool地址以及完整Agent Definition，不接受未知字段。保存成功后以返回的新`revision`替换页面基线；冲突时重新读取，不得用过期表单覆盖新配置。
 
 `ProjectLongAgent`不复制上述Agent Definition，也不保存Project级Model、Prompt或Resource覆盖；它只保存该Long Agent在当前Project的`active/paused`状态和唯一`primarySessionId`。Personal的`enabled=false`会使整个Long Agent不可执行，Project启停只影响当前Project的挂载。
 
@@ -124,6 +130,14 @@ CHAT_CHANNEL_GATEWAY_TOKEN=<至少32个字符的随机值>
 同一份`CHAT_CHANNEL_GATEWAY_TOKEN`也要进入Chat Backend的私有进程环境，不能写入`long-agents.json`、Frontend响应或日志。该模式接管整个NanoClaw Instance；NanoClaw中的Session只作为Channel、Thread和Mailbox路由坐标，不再表示Agent运行Session。Host启动时完全跳过NanoClaw Session Runtime、Docker可用性检查、旧容器接管、Docker事件监听、OneCLI Agent审批订阅和Egress网络维护。`container_configs`的数据迁移仍会执行，因为当前调度时区也复用该表；这不是容器Runtime初始化。缺少Backend URL、服务Credential、合法Instance ID或配置未知execution mode时Host必须启动失败，不能静默回退Docker。NanoClaw先耐久保存Inbox与Event Outbox，再主动通过HTTP提交给Chat；若两种SQLite事实之间发生瞬时失败，外部执行唤醒会从仍待确认的Inbox重建缺失Event。Chat先耐久接收，再使用与Web相同的LongAgent Runtime运行Pi。Chat完成后调用NanoClaw窄HTTP Gateway持久化Delivery，最后单独确认Inbound。
 
 从独立NanoClaw切换到`chat-pi`属于显式迁移：启用前先停止旧Host及其Agent容器。进入Channel Gateway模式后的日常启动不再访问Docker，也不承担清理旧容器的责任。
+
+### 微信通道与多个 Long Agent
+
+微信通道通过 NanoClaw 的 `add-wechat` Skill 安装，包含 `src/channels/wechat.ts`、通道注册及固定版本 `wechat-ilink-client@0.1.0`。在 NanoClaw 私有 `.env` 中设置 `WECHAT_ENABLED=true`；扫码登录凭据保存在该 Host 的 `data/wechat/auth.json`，不进入 Chat 配置、Git 或浏览器 API。登录入口保存在 `data/wechat/qr.txt`。
+
+当前适配器使用一份微信账号登录，不等于只能连接一个 Long Agent。NanoClaw Wiring 支持一个 Messaging Group 对应多个 Agent Group；每条 Wiring 独立匹配触发规则，同一消息可以触发多个 Agent。初次接入建议只绑定 Nexus。后续可以通过互斥的消息前缀配置多个 Agent，例如 `^Nexus[：:]` 和 `^Coder[：:]`；不要给多个 Agent 同时使用匹配所有消息的 `.`，除非希望全部回答。
+
+微信接入复用现有 `chat-pi` Host 和 HTTP Event/Delivery/Ack 合同，不修改 Long Agent 的 Telegram 默认 inbox，也不新增 Agent Runtime。当前 Chat 自动建立的是私聊与默认 Project 的绑定；群聊仍需要显式 Project Binding，不能以适配器声明群聊能力代替端到端验收。微信文本收发须在扫码、Wiring 和发送者权限配置完成后进行真实验收。未知发送者默认 `strict`，绑定 Agent 不自动授予陌生人访问权限。
 
 ## 3. Web 登录认证
 
@@ -181,7 +195,7 @@ Thinking Level 可使用 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`
 }
 ```
 
-这是 Pi 兼容配置。若要为某个 Workflow 的某个 Agent 固定模型，使用第 7 节的 Project 私有 Agent 配置，不要用 `.pi/settings.json` 代替 Agent 级选择。
+这是 Pi 兼容配置。若要为某个 Workflow 的某个 Agent 固定模型，使用第 7 节的 Project 私有 Agent 配置，不要用 `.pi/settings.json` 代替 Agent 级选择。Long Agent 的模型管理必须经由 Chat 的 Agent 配置及模型目录；本段不授权它寻找或修改 `~/.pi`，目标中也不会用 Project 的 Pi 兼容设置覆盖其有效 Agent 定义。
 
 自定义 Provider 和模型位于 `<CHAT_HOME>/agent/models.json`。例如添加本地 Ollama 模型：
 
@@ -308,6 +322,16 @@ Personal 默认 Workflow 位于 `<CHAT_HOME>/config.json`。它必须是完整�
 `project.json`、项目 `config.json`、`.pi/settings.json`以及团队需要共享的 Skill、Extension、Prompt 是否提交，由各项目自己的版本控制策略决定，并且必须确认其中没有 Credential。先检查项目的`.gitignore`，不要用强制暂存绕过既有策略；需要共享原本被忽略的配置时，应明确评审并修改该项目的跟踪规则。
 
 Chat 源码仓库当前只跟踪`.chat/project.json`和`.chat/skills/**`，默认忽略`.chat/config.json`与整个`.pi/`。这是 Chat 项目自身的策略，不代表其他 Project 必须采用相同规则。Session、Memory、认证和运行状态不应放入项目`.chat`，也不应提交。
+
+### Project 管理 Skill 与 Tool
+
+Backend 初始化会把随产品发布的 `project-management` 安装到 `<CHAT_HOME>/agent/skills/project-management/SKILL.md`。下一轮继承资源的 Agent 可发现；已有同名用户 Skill 或用户修改的内容不会被升级覆盖。安装版本收据位于 `<CHAT_HOME>/runtime/builtin-skills/`，它不属于 Skill 目录。
+
+Long Agent 未提供自定义 Definition 时，默认拥有 `project_search`、`project_read`、`project_create`、`project_open`、`project_update`、`project_configure`。已经保存显式 Definition 的 Agent 保留原选择；需要时在长期同事配置页选择这六个 `system:tool/project_*` 地址，资源用 inherit 或明确选择 Skill 路径。普通 Workflow Agent 也可通过同一 Tool 配置入口启用。
+
+例如直接说“创建学习道德经项目”或“创建云南旅游规划，预算8000元，两个人”。不指定目录时，工作目录为 `<CHAT_HOME>/workspaces/<生成的projectId>`；`.chat/project.json` 保存身份和用途，`.chat/config.json` 默认继承。首次接入外部目录仍需先通过 Chat 项目选择器授权打开。
+
+`project_read` 的 configuration 视图提供版本；`project_configure` 修改指定字段或通过 unset 恢复继承。创建结果提供进入新项目会话的链接，不修改当前会话归属。现有 Long Agent 的模型配置仍属于 Personal，不受 Project Workflow Agent 配置影响。完整参数和并发合同见 [Project 管理 Skill 与 Tool](./architecture/chat-project-management-design.md)。
 
 ## 7. Project 私有 Agent 配置
 

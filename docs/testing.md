@@ -22,6 +22,10 @@ Chat 的测试从快到慢分为四层：
 node --import ./scripts/typescript-test-loader.mjs \
   --experimental-strip-types --test src/example.test.mjs
 
+# 架构导航、Skill单一来源与开发启动脚本
+pnpm check:architecture
+pnpm test:tooling
+
 # 全部 Backend 测试
 pnpm test:backend
 
@@ -56,14 +60,15 @@ node --experimental-strip-types --test frontend/lib/example.test.mjs
 
 | 改动 | 开发中至少运行 | 完成前运行 |
 |---|---|---|
-| 纯文档 | 链接与示例人工检查 | `git diff --check` |
+| 纯文档/架构Skill | 链接与示例检查；Skill变更做有界只读场景问答 | `pnpm check:architecture`、`git diff --check` |
+| 开发启动与调试配置 | `pnpm test:tooling`；核对VSCode配置 | 隔离Chat Home的真实启动/停止冒烟；源码映射与断点需单独验证 |
 | 单个 Backend 模块 | 对应的单文件测试 | `pnpm test:backend`、`pnpm typecheck` |
 | Backend API 或持久化合同 | 相关模块与 API 测试 | `pnpm verify` |
 | Frontend 逻辑或 Backend/Frontend 合同 | 对应 Frontend 测试 | `pnpm test:frontend`、`pnpm typecheck`；完成前通常运行 `pnpm verify` |
 | 构建、路由、静态资源或生产启动 | 相关测试 | `pnpm build`、`pnpm test:built` |
 | `src/workflows/**`、Workflow SDK、Builder Patch、Agent 装配或 Workflow 可达资源 | 对应单元/合同测试 | `pnpm verify`，并确认 `pnpm test:dev` 实际覆盖目标启动链 |
 | `frontend/` 或 `pi/` 的 gitlink | 子仓库自身验证 | 父仓库 `pnpm verify` |
-| `nanoclaw/` 的 gitlink | 确认Commit已存在于公开Fork的`chat`分支；源码改动运行NanoClaw自身验证 | 父仓库Submodule与差异检查；运行桥接实现后再加入`pnpm verify` |
+| `nanoclaw/` 源码或 gitlink | 源码改动运行NanoClaw自身测试/构建及受影响桥接合同；更新gitlink时确认Commit已存在于公开Fork的`chat`分支 | 父仓库Submodule与差异检查；涉及Chat桥接运行的改动运行父仓库`pnpm verify`并验证两侧合同 |
 
 完成代码修改后还应运行：
 
@@ -116,7 +121,8 @@ git -C frontend diff --check
 `pnpm verify` 是父仓库完成代码改动后的统一验证入口，当前顺序为：
 
 ```text
-Backend 与 Frontend 测试
+架构入口与开发启动工具检查
+→ Backend 与 Frontend 测试
 → TypeScript 类型检查
 → Frontend 与 Nitro 生产构建
 → 构建产物服务测试
@@ -124,3 +130,9 @@ Backend 与 Frontend 测试
 ```
 
 CI 的职责、环境版本和 Submodule 边界见 [Chat CI](./ci.md)。
+
+`pnpm verify`不包含NanoClaw自身测试或所有真实Docker/浏览器路径。Long Agent后续设计必须按[实施前约束与验证](./architecture/chat-long-agent-engineering-baseline.md)明确各入口的门禁，不能用父仓库通过代替子仓库与桥接验证。新增目标场景的测试计划不等于现有命令已覆盖。
+
+## Agent入口的低成本验证
+
+修改架构导航时，用没有前文的Agent读取入口和最多3–4份相关文档，只回答方案，不实施需求。题目至少覆盖新资源如何生效、跨模块合同变化、并发/失败恢复之一。核对它能否区分当前与目标、指出拥有者和实际入口、选择正确门禁、记录未验证项。错误回答先修概念或导航，再复测；不靠增加泛化禁令弥补。结构检查和问答不能证明生产Agent已装配Skill，也不能代替实现验收。审核证据放入`docs/architecture/reviews/`。

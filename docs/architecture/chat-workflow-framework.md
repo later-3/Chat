@@ -262,6 +262,8 @@ Chat系统内置Tool是第二种来源的公共管理形式：实现与严格Man
 
 Workflow调用按“Skill定义方法、Tool提供动作”实现。`workflow-delegation`是Coordinator使用的Pi Skill，规定获批计划不可变、自包含任务书、依赖分批、独立任务同轮并行、失败保留和汇总证据；`workflow_call`是通过`system:tool/workflow_call`统一解析并按Agent配置装配的Chat系统Tool，使用`describe | start | wait | cancel`四个操作完成一次调用的全生命周期。`describe`返回目标每个Child Agent可选的Tool/Skill准确名称；`start`接收目标Workflow ID、父Agent编写的Prompt、每个Child Agent的明确能力选择和可选等待窗口；`wait/cancel`只接收当前父Session已有的`callId`。
 
+`workflow_call`对模型暴露根部为普通`object`、不含根`anyOf`的参数Schema，以兼容Kimi等Provider；执行前仍使用按action区分的严格Schema校验必填字段和额外字段，不能因对外展平而放松执行合同。
+
 Tool必须从中央Registry取得目标，并校验`agentCallable`、最大深度和每父Session最多8个活跃调用；能力名称必须通过目标Workflow实际检查结果解析，不能直接接受模型提供的路径或地址。随后为目标预留独立Subsession，通过Pi `parentSession`记录不复制上下文的原生谱系，再由`startChatWorkflow()`运行完整Workflow。父Tool参数与Child冻结配置分别保留调用前后事实。等待超时只返回可恢复的`running`句柄，不取消子Run；后续等待和主动取消都通过Workflow Runtime公共Run API完成，并用父Session中的调用关系校验所有权。审核型Child在自己的Session等待人，批准后同一个子Run继续；相同Workflow定义允许创建新的子Session与子Run。Backend中断后通过同一Chat Session的新回合恢复旧`callId`，不假设本地Runtime自动续跑被杀死的Step。不能直接调用目标Agent、复用父Session并发写入、让前端维护可调用白名单，或把Workflow调用实现成第二套Agent Runtime。完整合同见[Chat Workflow调用Workflow设计](./chat-subworkflow-design.md)。
 
 ## 9. 后端与前端接口

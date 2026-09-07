@@ -29,6 +29,7 @@ export default defineConfig({
     ignore: ["**/index.html", "**/*.test.mjs"],
   }],
   serverAssets: [
+    { baseName: "builtin-skills", dir: "src/resources/builtin-skills", pattern: "**/*.md" },
     { baseName: "frontend", dir: "frontend/dist", pattern: "index.html" },
     // Workflow-owned Markdown remains the source of truth while built output
     // can materialize private Skills into Chat's runtime data directory.

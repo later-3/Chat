@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "project-create",
+  "name": "project_create",
+  "label": "Project create",
+  "description": "创建学习、旅行等托管Chat Project，无需用户提供目录。同一逻辑请求重试必须复用requestId；不会切换当前Session。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": [
+    "project:create"
+  ]
+}

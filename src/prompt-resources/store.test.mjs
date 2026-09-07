@@ -337,11 +337,7 @@ test("Personal and Project Prompt libraries stay isolated unless Targets are exp
   const currentView = await listPromptResources(targets.slice(0, 2), {}, chatHome);
   assert.deepEqual(
     currentView
-      .filter((resource) => ![
-        AGENT_CAPABILITY_DESIGN_RULE_ID,
-        WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID,
-        PLANNER_READINESS_CONTRACT_EXPERIENCE_ID,
-      ].includes(resource.id))
+      .filter((resource) => !BUILT_IN_PERSONAL_PROMPT_RESOURCES.some((builtin) => builtin.id === resource.id))
       .map((resource) => resource.title)
       .sort(),
     ["Target 0", "Target 1"],

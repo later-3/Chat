@@ -8,12 +8,13 @@ import { appendChatAuditEvent } from "../audit-log.js";
 import { resolveProjectContext } from "../projects/registry.js";
 import { describeResourceVersion, qualifiedResourceAddress } from "./version.js";
 
-export async function listPiSkills(cwd: string, projectId?: string) {
-  const { agentDir } = await ensureChatHome();
-  const project = projectId === undefined ? undefined : await resolveProjectContext(projectId);
+export async function listPiSkills(cwd: string, projectId?: string, chatHome?: string) {
+  const { agentDir } = await ensureChatHome(chatHome);
+  const project = projectId === undefined ? undefined : await resolveProjectContext(projectId, chatHome);
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
+    noExtensions: true,
     ...(project !== undefined
       ? { additionalSkillPaths: [`${project.projectConfigDir}/skills`] }
       : {}),

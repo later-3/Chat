@@ -230,6 +230,14 @@ pnpm exec tsx setup/index.ts --step service
 
 `service`只构建Node Host，并在macOS生成按Checkout隔离的LaunchAgent，在Linux生成用户级systemd服务；两者都设置开机启动与异常重启。`chat-pi`下该步骤不会检查Docker用户组或Docker Socket。服务直接在Node启动时读取NanoClaw `.env`。当Node版本支持时，生成的启动参数会加入`--use-env-proxy`，确保LaunchAgent/systemd在需要代理访问Telegram时使用`HTTP_PROXY`、`HTTPS_PROXY`与`NO_PROXY`，而不是依赖交互Shell环境。一个Host可以同时连接默认Telegram实例和`TELEGRAM_INSTANCES`列出的命名实例。每个Chat Long Agent映射一个Agent Group，每只Bot通过Wiring连接到对应Agent Group。
 
+#### 启用微信
+
+在同一个稳定 NanoClaw Checkout 按 [add-wechat Skill](../nanoclaw/.claude/skills/add-wechat/SKILL.md) 安装适配器、注册测试和固定依赖，完成构建及 NanoClaw 验证后再启用 `WECHAT_ENABLED=true`。扫码凭据保存在 `data/wechat/auth.json`，目录应为 `0700`，凭据为 `0600`。可以先单独完成登录，再用上述 `service` 步骤重启现有 Host，避免等待扫码阻塞其他通道初始化。
+
+通过本机 `ncl` 把扫码用户加入目标 Agent Group 成员名单，创建微信私聊 Messaging Group，并用 Wiring 连接到已登记的 Chat Long Agent。保留 `unknown_sender_policy=strict`，按需要使用 `sender_scope=known`；扫码登录与 Wiring 均不会自动授权其他联系人。无需把 Chat Registry 的 Telegram inbox 替换为微信地址。
+
+验收顺序：确认 `WeChat adapter ready`、Host 完成启动、Chat 与 Gateway 健康，再由扫码用户发送一条真实文本；确认 Chat Session 记录入站、Pi 回复、微信 Delivery 和 Ack。仅有登录成功或适配器 ready 不算收发验收。当前先支持 Chat 私聊自动绑定，多 Agent 的触发与群聊限制见[配置指南](./configuration.md#微信通道与多个-long-agent)。停用时将 `WECHAT_ENABLED` 改为 `false` 并重启现有 Host，保留私有凭据与 Wiring 以便恢复。
+
 #### 已有NanoClaw安装升级
 
 父仓库更新后如果`nanoclaw` gitlink发生变化，不能只切换Commit后直接重启Host。NanoClaw会用`data/upgrade-state.json`校验版本、Commit和Tree；跳过依赖安装、构建与升级标记的更新会被启动Tripwire拒绝。Chat固定Submodule的部署采用下面的受控流程：

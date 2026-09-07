@@ -64,6 +64,9 @@ test("workflow_call is a parallel Pi Tool and forwards exact parent provenance",
   assert.match(tool.description, /`planning-execution` \(规划执行\)/);
   assert.match(tool.description, /`planner-orchestrator` \(规划协调\)/);
   assert.match(tool.description, /`memory` \(长期记忆\)/);
+  assert.equal(tool.parameters.type, "object", "model APIs require an object root even for action unions");
+  assert.equal(tool.parameters.anyOf, undefined, "Kimi rejects a union at the tool root");
+  await assert.rejects(tool.execute("invalid-start", { action: "start" }), /workflowId|prompt|agents/);
   assert.match(JSON.stringify(tool.parameters), /minimal-pi-coding-agent/);
   assert.match(JSON.stringify(tool.parameters), /memory/);
   assert.equal(calls.length, 1);

@@ -130,12 +130,17 @@ export async function createChatPiAgentSession(
 
   const toolAddresses = agent.tools.mode === "none" ? [] : agent.tools.addresses ?? [];
   let chatTools: ResolvedChatTool[] = [];
+  // Filled from Pi after assembly, before any Tool can execute.
+  const authorizedToolAddresses: string[] = [];
+  const authorizedToolNames: string[] = [];
   if (toolAddresses.length > 0) {
     if (chatSession.projectContext === undefined || options.toolContext === undefined) {
       throw new Error(`Agent ${agent.id}配置了Chat系统Tool，但缺少Project或Tool运行上下文`);
     }
     chatTools = resolveChatSystemTools(toolAddresses, {
       ...options.toolContext,
+      authorizedToolAddresses,
+      authorizedToolNames,
       projectId: chatSession.projectContext.projectId,
       chatHome: chatSession.projectContext.chatHome,
       cwd: chatSession.cwd,
@@ -200,6 +205,9 @@ export async function createChatPiAgentSession(
       throw new Error(`Agent配置包含不存在的Tool: ${[...new Set(unknown)].join(", ")}`);
     }
   }
+
+  authorizedToolNames.push(...created.session.getActiveToolNames());
+  authorizedToolAddresses.push(...chatTools.filter((tool) => authorizedToolNames.includes(tool.manifest.name)).map((tool) => tool.address));
 
   const chatToolsByName = new Map(chatTools.map((tool) => [tool.manifest.name, tool]));
   const toolResources = await Promise.all(created.session.getAllTools().map(async (tool): Promise<ChatSessionToolResource> => {

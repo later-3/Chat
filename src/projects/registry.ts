@@ -1,3 +1,4 @@
+import { assertFileWithin, expectRevision, PersistedWriteError, withFileLock } from "../persistence/versioned-file.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -113,6 +114,7 @@ export async function createProjectManifest(options: {
     description: options.description?.trim() || "",
   });
   const path = resolve(root, PROJECT_MANIFEST_RELATIVE_PATH);
+  await assertFileWithin(path, root);
   try {
     const existing = await readProjectManifest(root);
     if (existing.id !== manifest.id) throw new Error(`目录已经属于Project ${existing.id}`);
@@ -248,7 +250,7 @@ export async function openProject(options: OpenProjectOptions): Promise<ChatProj
   const active = projectOpens.get(key);
   if (active !== undefined) return active;
 
-  const opened = (async () => {
+  const opened = withFileLock(resolve(root, PROJECT_MANIFEST_RELATIVE_PATH), async () => {
     let manifest: ChatProjectManifest;
     try {
       manifest = await readProjectManifest(root);
@@ -262,7 +264,7 @@ export async function openProject(options: OpenProjectOptions): Promise<ChatProj
       });
     }
     return registerProject(root, manifest, chatHome);
-  })();
+  });
   projectOpens.set(key, opened);
   try {
     return await opened;
@@ -334,4 +336,25 @@ export async function resolveProjectContext(
     projectConfigPath: resolve(projectConfigDir, "config.json"),
     ...data,
   };
+}
+
+/** Manifest owns identity; Registry metadata is a repairable display cache. */
+export async function updateProjectManifest(
+  projectId: string,
+  changes: { readonly name?: string; readonly description?: string },
+  expectedRevision: string,
+  chatHome = resolveChatHome(),
+): Promise<ChatProjectContext> {
+  const project = await resolveProjectContext(projectId, chatHome);
+  const path = resolve(project.projectConfigDir, "project.json");
+  return withFileLock(path, async () => {
+    await assertFileWithin(path, project.projectRoot);
+    await expectRevision(path, expectedRevision);
+    const manifest = parseProjectManifest({ ...await readProjectManifest(project.projectRoot), ...changes });
+    await atomicWriteJson(path, manifest);
+    try { return await registerProject(project.projectRoot, manifest, chatHome); }
+    catch (error) {
+      throw new PersistedWriteError("Project资料已保存，但Registry缓存刷新失败；重新打开该Project以恢复", { cause: error });
+    }
+  });
 }

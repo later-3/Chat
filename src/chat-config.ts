@@ -1,3 +1,4 @@
+import { assertFileWithin, expectRevision, PersistedWriteError, withFileLock } from "./persistence/versioned-file.js";
 import { randomUUID } from "node:crypto";
 import { readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { ensureChatHome, resolveChatHome } from "./chat-home.js";
@@ -190,7 +191,7 @@ export async function writeChatRootConfig(value: unknown, chatHome = resolveChat
   return config;
 }
 
-async function readProjectOverride(projectId: string, chatHome = resolveChatHome()): Promise<ChatConfigOverride> {
+export async function readProjectOverride(projectId: string, chatHome = resolveChatHome()): Promise<ChatConfigOverride> {
   const project = await resolveProjectContext(projectId, chatHome);
   try {
     return parseChatConfigOverride(JSON.parse(await readFile(project.projectConfigPath, "utf8")));
@@ -209,13 +210,42 @@ export async function writeProjectChatConfig(
 ): Promise<ChatConfigOverride> {
   const project = await resolveProjectContext(projectId, chatHome);
   const config = parseChatConfigOverride(value);
-  await writeValidatedConfig(project.projectConfigPath, config);
-  await appendChatAuditEvent({
-    action: "config.update",
-    target: { type: "project", projectId, kind: "config" },
-    details: { schemaVersion: config.schemaVersion, workflowCount: Object.keys(config.workflows ?? {}).length },
-  }, chatHome);
-  return config;
+  return withFileLock(project.projectConfigPath, async () => {
+    await assertFileWithin(project.projectConfigPath, project.projectRoot);
+    await persistProjectConfig(project.projectConfigPath, projectId, config, chatHome);
+    return config;
+  });
+}
+
+async function persistProjectConfig(path: string, projectId: string, config: ChatConfigOverride, chatHome: string): Promise<void> {
+  await writeValidatedConfig(path, config);
+  try {
+    await appendChatAuditEvent({
+      action: "config.update",
+      target: { type: "project", projectId, kind: "config" },
+      details: { schemaVersion: config.schemaVersion, workflowCount: Object.keys(config.workflows ?? {}).length },
+    }, chatHome);
+  } catch (error) {
+    throw new PersistedWriteError("Project配置已保存，但审计写入失败；请先读取实际状态", { cause: error });
+  }
+}
+
+/** One read/validate/write lock shared by browser replacements and Agent patches. */
+export async function mutateProjectChatConfig(
+  projectId: string,
+  transform: (current: ChatConfigOverride) => unknown | Promise<unknown>,
+  chatHome = resolveChatHome(),
+  options: { readonly expectedRevision?: string; readonly validateOnly?: boolean } = {},
+): Promise<ChatConfigOverride> {
+  const project = await resolveProjectContext(projectId, chatHome);
+  return withFileLock(project.projectConfigPath, async () => {
+    await assertFileWithin(project.projectConfigPath, project.projectRoot);
+    if (options.expectedRevision !== undefined) await expectRevision(project.projectConfigPath, options.expectedRevision);
+    const config = parseChatConfigOverride(await transform(await readProjectOverride(projectId, chatHome)));
+    if (options.validateOnly === true) return config;
+    await persistProjectConfig(project.projectConfigPath, projectId, config, chatHome);
+    return config;
+  });
 }
 
 export async function updateProjectSessionRetentionDays(
@@ -223,14 +253,10 @@ export async function updateProjectSessionRetentionDays(
   removedRetentionDays: unknown,
   chatHome = resolveChatHome(),
 ): Promise<ChatConfigOverride> {
-  const current = await readProjectOverride(projectId, chatHome);
-  return writeProjectChatConfig(projectId, {
+  return mutateProjectChatConfig(projectId, (current) => ({
     ...current,
-    sessions: {
-      ...current.sessions,
-      removedRetentionDays: parseRemovedRetentionDays(removedRetentionDays),
-    },
-  }, chatHome);
+    sessions: { ...current.sessions, removedRetentionDays: parseRemovedRetentionDays(removedRetentionDays) },
+  }), chatHome);
 }
 
 export async function resolveChatConfig(

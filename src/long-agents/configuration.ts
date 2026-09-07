@@ -206,7 +206,7 @@ async function validateModel(definition: WorkflowAgentDefinition, chatHome: stri
   const runtime = await ModelRuntime.create({
     authPath: join(home.agentDir, "auth.json"),
     modelsPath: join(home.agentDir, "models.json"),
-    refreshOnCreate: false,
+    allowModelNetwork: false,
   });
   const model = runtime.getModel(definition.model.provider, definition.model.modelId);
   if (model === undefined) {

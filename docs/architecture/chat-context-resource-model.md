@@ -6,6 +6,8 @@
 
 Chat在Pi Agent公开能力之上增加管理层，不改变Pi的`SKILL.md`、Extension、`registerTool()`、`ToolDefinition`、`ResourceLoader`、`SettingsManager`、`SessionManager`或`AgentSession`合同。
 
+本文既有类型/目录描述当前基础实现。2026-09-07 已确认的 Long Agent 私有 Owner 与独立目录扩展见第14节；不能把当前 ResourceTarget 类型当作已经支持该目标，也不能以旧枚举拒绝新的已确认作用域。
+
 ## 2. 核心不变量
 
 1. 当前执行上下文不等于操作目标。
@@ -211,3 +213,23 @@ Session/本次Run临时覆盖
 | Chat架构导航Skill | `.chat/skills/chat-architecture/SKILL.md` |
 
 Pi Web只通过上述后端事实工作：项目选择来自`GET /api/projects`；Memory页默认读取Personal与当前Project，也可以选择Personal或任意登记Project；Workflow、Session、Agent Resolve、配置和资源请求携带同一个`projectId`。
+
+## 14. Long Agent 私有资源的目标扩展
+
+Long Agent 是已确认的独立资源 Owner，具有稳定 longAgentId；不是某个 Project 或 Workflow 私有目录的别名。其配置、Skill、Tool资源、Prompt和Markdown Memory的逻辑根及领域责任以[定义与配置模型](./chat-long-agent-capability-model.md)为准。
+
+ResourceTarget/Address 后续需表达明确的 Long Agent 目标，具体 Schema 和地址语法在实施任务中确定。调用方不能通过自报 longAgentId 取得其他 Agent 权限；当前身份由可信执行上下文绑定，目标由服务端解析并授权。
+
+发现与装配同时区分：Personal公共资源、当前Agent自有资源、当前Project资源、Workflow私有资源及本轮显式选择。同名冲突必须可解释，不能按磁盘遍历顺序覆盖。Agent引用公共或Project资源不改变其Owner，也不自动复制。
+
+Agent的System Prompt和模型选择来自Chat配置；Project提供上下文、资源与权限，不能隐式覆盖长期身份。NanoClaw资源通过版本化服务提供；仅允许显式受控目录或快照，不挂载全部groups或Chat Home。
+
+本仓库chat-architecture Skill仍是开发导航。面向运行中Long Agent的公共管理Skill是独立的发布/发现需求，必须包含实际有效配置与能力查询入口，不能把仓库文件存在当作部署证据。
+
+Markdown Agent Memory与Chat Personal/Project Memory保持不同领域服务和来源。活动索引与摘要读取任何Owner资源时仍检查权限，授权撤回、修正和删除要作用到派生视图。
+
+### 14.1 共享概览的目标补充
+
+资源归属与可见范围分开，也适用于 Project/Agent 的概览：尚未参与项目的 Agent 可发现面向它开放的项目名称、用途、阶段和活动；发现不同时取得完整 Session、Memory、文件或执行权限。可见范围由持久配置与服务端身份解析，不能靠用户逐个向 Agent 转述。
+
+公开概览通过领域服务提供，不作为一份全局 Memory 再复制进所有 Owner。公共 Prompt 区域和 Tool 使用同一来源、更新时间和权限；长期职责与事件订阅仍通过 Chat 配置及现有执行链管理。场景和详细机制待审稿见[共享认知与自主工作](./chat-long-agent-awareness-and-autonomy.md)。

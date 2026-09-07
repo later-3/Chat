@@ -4,6 +4,9 @@
 
 | 修改内容 | 开发文档 |
 |---|---|
+| Agent参与开发、架构审核与交接 | [贡献工作方法](./agent-contribution.md) |
+| VSCode调试和一键启动 | [本地开发与调试](./local-debugging.md) |
+| 用户反馈、日志、持久记录和故障闭环 | [诊断与记录](./diagnostics.md) |
 | Backend、HTTP、Project、存储或 Pi 装配 | [Backend 开发](./backend.md) |
 | 父仓库 TypeScript 与通用工程代码 | [编码规范](./coding-standards.md) |
 | Frontend 页面、状态和浏览器合同 | [Frontend 开发](../../frontend/docs/development.md) |

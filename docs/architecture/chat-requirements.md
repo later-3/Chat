@@ -228,7 +228,7 @@ Daily Project必须：
 2. 使用与其他Project相同的`ChatProjectContext`、Session目录、Project配置、Project资源和Project Memory合同。
 3. 拥有Chat管理的稳定工作目录，使Pi和Tool始终获得明确cwd；不能使用Chat服务进程的`process.cwd()`冒充Daily工作目录。
 4. 自动创建、始终可解析且不能因用户尚未打开外部目录而缺失。
-5. 不按日期自动创建新的Project或Session，也不把已经明确属于其他Project的失败请求吞入Daily。
+5. Daily Project长期稳定，不按日期新建Project；普通Chat会话按用户需要创建，Long Agent自己的日常主Session按日轮换。已明确属于其他Project的失败请求不得吞入Daily。
 
 ### 4.8 在Daily与业务Project之间切换
 
@@ -244,14 +244,14 @@ Daily Project必须：
 
 同一个长期Agent可以通过Chat Web、IM或其他Channel服务用户，也可以在多个Project中工作。入口变化不改变Project模型：
 
-1. Chat Web新建长期Agent会话时，使用界面当前Project；没有有效选择时使用Daily Project。
-2. 新IM会话没有绑定时进入Daily Project；用户或管理配置可以把群、频道、话题或会话明确绑定到业务Project。
+1. Chat Web新建长期Agent会话时，使用界面当前Project；没有明确工作归属时使用该Agent自己的Daily Project。
+2. 新IM会话没有绑定或明确工作焦点时进入该Agent自己的Daily Project；用户或管理配置可以把群、频道、话题或会话明确绑定到业务Project。
 3. Chat Web打开已有IM会话时，附着同一个Project下的Chat Session，不能因为换了入口就复制一条会话。
-4. 长期Agent主动回复使用触发它的Session或任务所属Project；真正没有来源Project的主动事件进入Daily Project。
+4. 长期Agent主动回复使用触发它的Session或任务所属Project；真正没有来源Project的主动事件解析到该Agent自己的Daily Project。后台工作不改变用户当前交互焦点。
 5. 长期Agent调用Workflow时，Workflow继承当前Project与父Session关系；跨Project调用必须显式创建目标Project Session并保留来源。
 6. 同一个长期Agent可以共享自己的Agent Memory，但不能据此把不同Project Session的完整对话历史隐式合并。
 
-Daily下的已确认默认交互是：每个Long Agent可以拥有一个Inbox/IM主会话；IM消息与回复同步到Chat Session；Chat Web可以打开并继续已有IM Session；回复默认回到本轮来源入口；Web独立新会话不自动合并到IM主会话。多Agent、主动消息、身份边界、消息绑定和Chat Tool合同见[Chat Long Agent与多入口架构](./chat-long-agent-architecture.md)。
+2026-09-07已确认：每个Long Agent拥有独立Daily Project，日常主Session按日轮换；业务Project按主题组织多个Session并可跨日。Web/IM引用同一工作历史，Agent通过活动索引、历史查询和Memory保持连续性。定义与配置见[能力模型](./chat-long-agent-capability-model.md)，运行机制见[Long Agent架构](./chat-long-agent-architecture.md)，四个场景见[验收要求](./chat-long-agent-scenarios.md)。多Agent及用户共同会话的交互协议尚待讨论；以下历史差距分析不能替代最新[实施状态](./chat-long-agent-roadmap.md)。
 
 ## 5. Chat全局、Project配置和Pi资源是什么关系
 
