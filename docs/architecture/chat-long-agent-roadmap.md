@@ -153,7 +153,7 @@ Workflow和Long Agent不是竞争关系：Workflow组织一次确定性或多阶
 
 - [x] Chat完整`pnpm verify`通过。
 - [x] NanoClaw最终完整测试、Typecheck和Build通过。
-- [ ] Agent Group与Memory最小真实CRUD、Web Turn、Telegram Turn和审计验收通过。
+- [x] Agent Group与Memory最小真实CRUD、Web Turn、Telegram Turn和审计验收通过。
 - [x] Frontend和NanoClaw提交已推送并合入各自长期分支。
 - [x] Chat固定可公开获取的Submodule Commit并合入`main`。
 - [ ] 稳定Checkout完成NanoClaw私有数据迁移、服务重启和健康验收。

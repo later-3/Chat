@@ -230,6 +230,18 @@ pnpm exec tsx setup/index.ts --step service
 
 `service`只构建Node Host，并在macOS生成按Checkout隔离的LaunchAgent，在Linux生成用户级systemd服务；两者都设置开机启动与异常重启。`chat-pi`下该步骤不会检查Docker用户组或Docker Socket。服务直接在Node启动时读取NanoClaw `.env`。当Node版本支持时，生成的启动参数会加入`--use-env-proxy`，确保LaunchAgent/systemd在需要代理访问Telegram时使用`HTTP_PROXY`、`HTTPS_PROXY`与`NO_PROXY`，而不是依赖交互Shell环境。一个Host可以同时连接默认Telegram实例和`TELEGRAM_INSTANCES`列出的命名实例。每个Chat Long Agent映射一个Agent Group，每只Bot通过Wiring连接到对应Agent Group。
 
+#### 已有NanoClaw安装升级
+
+父仓库更新后如果`nanoclaw` gitlink发生变化，不能只切换Commit后直接重启Host。NanoClaw会用`data/upgrade-state.json`校验版本、Commit和Tree；跳过依赖安装、构建与升级标记的更新会被启动Tripwire拒绝。Chat固定Submodule的部署采用下面的受控流程：
+
+1. 停止当前NanoClaw Host，并在Host停止后备份`.env`、`data/`和`groups/`；SQLite的WAL/SHM必须与主文件一起保留。
+2. 更新Chat父仓库并同步父提交固定的NanoClaw Commit，不让NanoClaw自行漂移到其他分支头。
+3. 在`nanoclaw/`运行`pnpm install --frozen-lockfile`，然后运行`pnpm format:check`、`pnpm typecheck`、`pnpm build`和`pnpm exec vitest run --testTimeout=30000`。
+4. 验证成功后运行`pnpm exec tsx setup/index.ts --step service`。该步骤会重新构建、写入当前精确Commit的升级标记、刷新服务定义并重启Host。
+5. 检查服务状态、`data/ncl.sock`、Gateway鉴权、所有Channel Adapter和一次真实消息。任何一步失败时保留备份和旧Commit，不手工删除Tripwire文件。
+
+自建自动部署若不调用`service`步骤，也必须只在依赖、测试、构建和所需迁移全部成功后运行`pnpm exec tsx scripts/upgrade-state.ts set`，再做健康门禁重启。写入升级标记代表部署系统确认当前Checkout已经完成受控升级，不能把它当作绕过失败检查的命令。
+
 服务与配置验收：
 
 ```bash

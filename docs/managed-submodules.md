@@ -97,6 +97,8 @@ Chat `0.1.0`发布固定Frontend `0.3.0`和NanoClaw `2.4.0`的具体Commit；Pi�
 
 其他机器部署时必须使用稳定、长期存在的父仓库Checkout。NanoClaw原生把`.env`、`data/`和`groups/`保存在自己的Checkout中，因此不能把它作为Chat的临时Release目录反复删除。Linux推荐父源码固定在`/opt/chat`，NanoClaw数据随`/opt/chat/nanoclaw`保留；macOS推荐固定在用户的`~/Code/Chat`。切换开发worktree或移动Checkout前，先停止NanoClaw服务并迁移这三个私有位置，再从新目录重新安装服务。
 
+父仓库将NanoClaw gitlink升级到新Commit后，必须在固定Checkout完成依赖、测试和构建，再通过NanoClaw `service` Setup刷新服务与`data/upgrade-state.json`。只执行`git submodule update`后直接重启会触发NanoClaw的精确代码Tripwire；完整升级步骤见[部署文档](./deployment.md#已有nanoclaw安装升级)。
+
 当前自动化边界如下：
 
 | 环境 | Chat | NanoClaw Long Agent |
