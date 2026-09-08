@@ -141,6 +141,8 @@ export const memoryWorkflowDefinition = defineChatWorkflow({
 });
 ```
 
+可选的`supportsImageInput: true`声明该Workflow的`run`会把用户图片输入传递给Pi AgentSession（例如`session.prompt(text, { images })`）。未声明的Workflow在HTTP边界拒绝携带图片的请求，避免图片被静默丢弃；浏览器安全投影同时携带该能力供输入区禁用图片入口。
+
 新增内置Workflow需要在中央组合入口注册一次。前端、HTTP解析和Agent配置页面不得增加该Workflow的专用分支。若未来内置Workflow数量使手工注册成为维护问题，可在构建期生成Registry；不在服务启动时动态执行任意目录中的代码。
 
 ## 6. 源码配置契约
@@ -297,6 +299,14 @@ DELETE /api/sessions/:parentSessionId/workflow-calls/:callId
 5. `tools`返回当前Project可见Tool及Workflow Agent反向使用关系；`tool-config`只修改当前Project的Agent持久Tool策略。
 6. Prompt资源HTTP接口只负责列表、搜索、草稿查看和历史读取；创建、修改、归档、Draft提交、Proposal应用与拒绝由Rule Management Workflow持续对话完成，不能增加绕过对象ID确认的写接口。
 7. `workflow-calls`从Pi Session里的调用关系生成轻量调用树和统计；取消接口复用`workflow_call`的Runtime取消实现并校验父Session归属，前端不能直接控制子`runId`。
+
+### 9.1 用户图片输入
+
+`POST /runs`接受可选的`images`字段（Pi ImageContent线格式：`{ type: "image", data, mimeType }`，一条消息最多10张、单张解码后不超过10MB，纯图片允许空文本Prompt）。合同分三层：
+
+1. HTTP解析层校验图片结构，并拒绝未声明`supportsImageInput`的Workflow，返回可操作的错误信息。
+2. Agent装配后、发起Provider调用前，用生效模型的`input`能力（`["text", "image"]`）检查图片输入；不支持图片的模型以友好错误结束本轮，Run状态接口附带原始错误信息供前端展示。
+3. 浏览器通过`GET /api/workflows`投影中的`supportsImageInput`在输入区禁用图片入口；提交后的模型能力错误原样展示并保留输入草稿。
 
 前端使用通用Workflow/Agent页面渲染这些数据。新增同类型资源不修改前端；只有框架新增资源类型或交互语义时才修改前端合同。
 

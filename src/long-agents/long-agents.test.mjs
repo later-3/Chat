@@ -986,6 +986,129 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
   assert.equal(sharedState.pendingEvents.length, 0);
 });
 
+const TEST_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+test("channel images reach a vision model and text-only models answer in-channel", { concurrency: false }, async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-long-agent-channel-images-"));
+  const chatHome = path.join(root, "home");
+  const modelRequests = [];
+  const model = await startModelServer(modelRequests);
+  const commands = [];
+  const gateway = await startNanoGatewayServer(commands);
+  const previousToken = process.env.CHAT_CHANNEL_GATEWAY_TOKEN;
+  process.env.CHAT_CHANNEL_GATEWAY_TOKEN = "test-channel-token-that-is-at-least-32-characters";
+  t.after(async () => {
+    if (previousToken === undefined) delete process.env.CHAT_CHANNEL_GATEWAY_TOKEN;
+    else process.env.CHAT_CHANNEL_GATEWAY_TOKEN = previousToken;
+    await Promise.all([closeServer(gateway.server), closeServer(model.server)]);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await ensureDailyProject(chatHome);
+  const agentDir = path.join(chatHome, "agent");
+  fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
+    defaultProvider: "long-agent-test",
+    defaultModel: "long-agent-model",
+    defaultThinkingLevel: "off",
+  }));
+  const writeModels = (input) => fs.writeFileSync(path.join(agentDir, "models.json"), JSON.stringify({
+    providers: {
+      "long-agent-test": {
+        baseUrl: model.baseUrl,
+        api: "openai-completions",
+        apiKey: "long-agent-test-key",
+        models: [{
+          id: "long-agent-model",
+          name: "Long Agent Model",
+          reasoning: false,
+          input,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128000,
+          maxTokens: 8192,
+        }],
+      },
+    },
+  }));
+  writeModels(["text", "image"]);
+  await writeLongAgentRegistry({
+    schemaVersion: 1,
+    instances: [{ id: "local", name: "Local NanoClaw", gatewayBaseUrl: gateway.baseUrl }],
+    agents: [{
+      id: "nexus",
+      name: "Nexus",
+      description: "Daily Long Agent",
+      enabled: true,
+      instanceId: "local",
+      nanoclawAgentGroupId: "nano-agent-1",
+      defaultProjectId: "daily",
+      inbox: {
+        messagingGroupId: "telegram-mg-1",
+        channelType: "telegram",
+        instance: "telegram",
+        platformId: "telegram:user-1",
+        threadId: null,
+      },
+    }],
+  }, chatHome);
+
+  // Phase 1: the vision model receives the image as multimodal content.
+  const withImage = event(1, "in", {
+    text: "看看这张截图",
+    images: [{ type: "image", data: TEST_PNG_BASE64, mimeType: "image/png" }],
+  });
+  await acceptLongAgentEvents({ instanceId: "local", events: [withImage], chatHome });
+  const [imageSync] = await syncLongAgentEvents(chatHome);
+  assert.equal(imageSync.executed, 1);
+  assert.equal(modelRequests.length, 1);
+  const requestJson = JSON.stringify(modelRequests[0].messages);
+  assert.match(requestJson, /image_url/);
+  assert.match(requestJson, new RegExp(TEST_PNG_BASE64.slice(0, 32)));
+  const visionDelivery = commands.filter((request) => request.path.endsWith("/deliveries")).at(-1);
+  assert.equal(visionDelivery.body.files, undefined);
+
+  const state = await readLongAgentState(chatHome);
+  const opened = await openChatSession({
+    projectId: "daily",
+    chatHome,
+    sessionId: state.projectAgents[0].primarySessionId,
+  });
+  const messages = opened.manager.buildSessionContext().messages;
+  const userMessage = messages.find((message) => message.role === "user");
+  assert.equal(userMessage.content[0].type, "text");
+  assert.equal(userMessage.content[1].type, "image");
+  assert.equal(userMessage.content[1].mimeType, "image/png");
+
+  // Phase 2: a text-only model answers in-channel without ever calling the model.
+  writeModels(["text"]);
+  const textOnlyEvent = event(2, "in", {
+    text: "",
+    images: [{ type: "image", data: TEST_PNG_BASE64, mimeType: "image/png" }],
+  });
+  await acceptLongAgentEvents({ instanceId: "local", events: [textOnlyEvent], chatHome });
+  const [textOnlySync] = await syncLongAgentEvents(chatHome);
+  assert.equal(textOnlySync.executed, 1);
+  assert.equal(modelRequests.length, 1);
+  const noticeDelivery = commands.filter((request) => request.path.endsWith("/deliveries")).at(-1);
+  assert.match(noticeDelivery.body.text, /Long Agent Model/);
+  assert.match(noticeDelivery.body.text, /不支持图片输入/);
+  const noticeAck = commands.filter((request) => request.path.endsWith("/acks")).at(-1);
+  assert.equal(noticeAck.body.messageId, textOnlyEvent.messageId);
+
+  const reopened = await openChatSession({
+    projectId: "daily",
+    chatHome,
+    sessionId: state.projectAgents[0].primarySessionId,
+  });
+  const transcript = reopened.manager.buildSessionContext().messages;
+  const noticeMessage = transcript.at(-1);
+  assert.equal(noticeMessage.role, "assistant");
+  assert.match(noticeMessage.content[0].text, /不支持图片输入/);
+  const noticeUser = transcript.at(-2);
+  assert.equal(noticeUser.role, "user");
+  assert.equal(noticeUser.content[1].type, "image");
+});
+
 test("Chat HTTP ingress accepts registered routes and rejects unknown or conflicting events", { concurrency: false }, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-long-agent-http-ingress-"));
   const chatHome = path.join(root, "home");

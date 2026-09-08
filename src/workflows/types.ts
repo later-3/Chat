@@ -1,3 +1,4 @@
+import type { ImageContent } from "@earendil-works/pi-ai";
 import type { AgentConfigSelection } from "./agent-config.js";
 
 export interface ChatWorkflowInput {
@@ -5,6 +6,8 @@ export interface ChatWorkflowInput {
   readonly chatHome?: string;
   readonly cwd: string;
   readonly prompt: string;
+  /** Optional image attachments consumed by image-capable Agent steps. */
+  readonly images?: readonly ImageContent[];
   readonly sessionId?: string;
   readonly workflowInvocationId: string;
   readonly defaultAgentConfigs?: Readonly<Record<string, AgentConfigSelection>>;

@@ -13,6 +13,8 @@ export const minimalPiCodingAgentWorkflowDefinition = defineChatWorkflow({
   manifest: MINIMAL_PI_CODING_AGENT_WORKFLOW_MANIFEST,
   agents: [PI_CODING_AGENT],
   run: minimalPiCodingAgentWorkflow,
+  // The single Agent step forwards user images straight into the Pi prompt.
+  supportsImageInput: true,
 });
 
 export { minimalPiCodingAgentWorkflow } from "./workflow.js";

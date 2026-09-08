@@ -4,10 +4,12 @@ import {
   getChatWorkflowDefinition,
   type ChatWorkflowId,
 } from "./workflows/registry.js";
+import type { ImageContent } from "@earendil-works/pi-ai";
 import {
   parseAgentConfigSelection,
   type AgentConfigSelection,
 } from "./workflows/agent-config.js";
+import { parseWorkflowImages } from "./workflows/image-input.js";
 
 export const MAX_WORKFLOW_PROMPT_CHARS = 100_000;
 
@@ -22,6 +24,8 @@ export interface ChatWorkflowHttpInput {
   readonly chatHome?: string;
   readonly cwd: string;
   readonly prompt: string;
+  /** Optional image attachments (Pi ImageContent wire shape), execution-gated per Workflow. */
+  readonly images?: readonly ImageContent[];
   readonly sessionId?: string;
   readonly workflow: ChatWorkflowId;
   readonly defaultAgentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
@@ -53,13 +57,19 @@ export function parseChatWorkflowHttpInput(
   const sessionId = value.sessionId ?? defaults.sessionId;
   const workflow = value.workflow ?? defaults.workflow;
   const rawAgentConfigs = value.agentConfigs;
+  const images = parseWorkflowImages(value.images);
   if (typeof cwd !== "string" || cwd.trim() === "") {
     throw new Error("cwd必须是非空字符串");
   }
   if (projectId !== undefined && (typeof projectId !== "string" || projectId.trim() === "")) {
     throw new Error("projectId必须是非空字符串");
   }
-  if (typeof prompt !== "string" || prompt.trim() === "") {
+  if (typeof prompt !== "string") {
+    throw new Error("prompt必须是字符串");
+  }
+  const hasImages = images !== undefined && images.length > 0;
+  // 图片可以单独成消息（纯图片输入），此时允许空文本Prompt。
+  if (prompt.trim() === "" && !hasImages) {
     throw new Error("prompt必须是非空字符串");
   }
   if (prompt.length > MAX_WORKFLOW_PROMPT_CHARS) {
@@ -68,14 +78,20 @@ export function parseChatWorkflowHttpInput(
   if (sessionId !== undefined && (typeof sessionId !== "string" || sessionId.trim() === "")) {
     throw new Error("sessionId必须是非空字符串");
   }
-  if (typeof workflow !== "string" || getChatWorkflowDefinition(workflow) === undefined) {
+  if (typeof workflow !== "string") {
     throw new Error(`workflow必须是${CHAT_WORKFLOW_IDS.join("或")}`);
+  }
+  const definition = getChatWorkflowDefinition(workflow);
+  if (definition === undefined) {
+    throw new Error(`workflow必须是${CHAT_WORKFLOW_IDS.join("或")}`);
+  }
+  if (hasImages && definition.supportsImageInput !== true) {
+    throw new Error(`Workflow ${workflow}暂不支持图片输入，请移除图片或切换Workflow后重试`);
   }
   let agentConfigs: Record<string, AgentConfigSelection> | undefined;
   if (rawAgentConfigs !== undefined) {
     if (!isRecord(rawAgentConfigs)) throw new Error("agentConfigs必须是对象");
-    const definition = getChatWorkflowDefinition(workflow);
-    const agentIds = new Set(definition?.agents.map((agent) => agent.id) ?? []);
+    const agentIds = new Set(definition.agents.map((agent) => agent.id));
     agentConfigs = {};
     for (const [agentId, selection] of Object.entries(rawAgentConfigs)) {
       if (!agentIds.has(agentId)) throw new Error(`Workflow ${workflow}不存在Agent: ${agentId}`);
@@ -89,6 +105,7 @@ export function parseChatWorkflowHttpInput(
     cwd,
     prompt,
     workflow: workflow as ChatWorkflowId,
+    ...(images === undefined ? {} : { images }),
     ...(sessionId === undefined ? {} : { sessionId }),
     ...(defaults.defaultAgentConfigs === undefined ? {} : { defaultAgentConfigs: defaults.defaultAgentConfigs }),
     ...(agentConfigs === undefined ? {} : { agentConfigs }),

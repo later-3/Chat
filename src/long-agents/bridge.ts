@@ -4,6 +4,10 @@ import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
 import { chatSessionOperationKey, withChatSessionOperationLock } from "../session-operation-lock.js";
+import { readBase64ToolResultImage } from "../session-tool-result-images.js";
+import {
+  collectChatLongAgentTurnMarkers,
+} from "./session-turn.js";
 import {
   acknowledgeNanoClawInbound,
   checkNanoClawGateway,
@@ -23,6 +27,65 @@ import type {
   NanoClawIntegrationEvent,
   ProjectLongAgent,
 } from "./types.js";
+
+const MAX_TURN_DELIVERY_IMAGES = 10;
+
+const IMAGE_MIME_TO_EXTENSION: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/bmp": "bmp",
+  "image/avif": "avif",
+};
+
+/** One image attachment in the NanoClaw Delivery envelope (base64 payload). */
+export interface TurnDeliveryImage {
+  readonly filename: string;
+  readonly data: string;
+}
+
+/**
+ * Collects image blocks produced during one completed Turn (Tool results are
+ * the only Pi message role that carries images) so they can ride the NanoClaw
+ * Delivery envelope and reach the channel as real image messages.
+ */
+async function collectTurnDeliveryImages(
+  chatHome: string,
+  projectId: string,
+  sessionId: string,
+  turnId: string,
+): Promise<TurnDeliveryImage[]> {
+  const chatSession = await openChatSession({ projectId, chatHome, sessionId });
+  const entries = chatSession.manager.getBranch();
+  const markers = collectChatLongAgentTurnMarkers(entries).filter((marker) => marker.turnId === turnId);
+  const start = markers.find((marker) => marker.status === "running");
+  const end = markers.findLast((marker) => marker.status === "completed");
+  if (start === undefined || end === undefined) return [];
+  const startIndex = entries.findIndex(
+    (entry) => typeof entry === "object" && entry !== null && "id" in entry && entry.id === start.entryId,
+  );
+  const endIndex = entries.findIndex(
+    (entry) => typeof entry === "object" && entry !== null && "id" in entry && entry.id === end.entryId,
+  );
+  if (startIndex < 0 || endIndex < 0 || endIndex <= startIndex) return [];
+  const images: TurnDeliveryImage[] = [];
+  for (let index = startIndex + 1; index < endIndex && images.length < MAX_TURN_DELIVERY_IMAGES; index += 1) {
+    const entry = entries[index];
+    if (typeof entry !== "object" || entry === null || !("message" in entry)) continue;
+    const message = (entry as { message?: unknown }).message;
+    if (typeof message !== "object" || message === null) continue;
+    const record = message as { role?: unknown; content?: unknown };
+    if (record.role !== "toolResult" || !Array.isArray(record.content)) continue;
+    for (const block of record.content) {
+      const image = readBase64ToolResultImage(block);
+      if (image === null || images.length >= MAX_TURN_DELIVERY_IMAGES) continue;
+      const extension = IMAGE_MIME_TO_EXTENSION[image.mime] ?? "png";
+      images.push({ filename: `image-${String(images.length + 1)}.${extension}`, data: image.data });
+    }
+  }
+  return images;
+}
 
 export const LONG_AGENT_MESSAGE_SOURCE = "chat.long_agent";
 const PUBLIC_CHANNEL_GATEWAY_ERROR = "NanoClaw Channel Gateway不可用";
@@ -213,7 +276,7 @@ async function projectEvent(
   projectAgent: ProjectLongAgent,
   event: NanoClawIntegrationEvent,
 ): Promise<boolean> {
-  if (event.kind !== "chat" || event.text.trim() === "") return false;
+  if (event.kind !== "chat" || (event.text.trim() === "" && (event.images?.length ?? 0) === 0)) return false;
   return withChatSessionOperationLock(
     chatSessionOperationKey(projectAgent.projectId, projectAgent.primarySessionId),
     async () => {
@@ -227,7 +290,7 @@ async function projectEvent(
       if (event.direction === "in") {
         const message: LongAgentUserMessage = {
           role: "user",
-          content: [{ type: "text", text: event.text }],
+          content: [{ type: "text", text: event.text }, ...(event.images ?? [])],
           timestamp,
           chatLongAgent: provenance(binding, projectAgent, event),
         };
@@ -286,6 +349,7 @@ async function syncInstance(
           projectId: resolved.projectAgent.projectId,
           sessionId: resolved.projectAgent.primarySessionId,
           text: event.text,
+          ...(event.images === undefined ? {} : { images: event.images }),
           chatHome,
           turnId: event.eventId,
           inboundEventId: event.eventId,
@@ -293,6 +357,12 @@ async function syncInstance(
           channelType: event.source?.channelType ?? destination.channelType,
         });
         const deliveryId = `chat-pi:${result.turnId}`;
+        const files = await collectTurnDeliveryImages(
+          chatHome,
+          resolved.projectAgent.projectId,
+          resolved.projectAgent.primarySessionId,
+          result.turnId,
+        );
         await persistNanoClawDelivery({
           instance,
           agentGroupId: agent.nanoclawAgentGroupId,
@@ -301,6 +371,7 @@ async function syncInstance(
           chatSessionId: resolved.projectAgent.primarySessionId,
           destination,
           text: result.text,
+          ...(files.length === 0 ? {} : { files }),
         });
         await acknowledgeNanoClawInbound({
           instance,

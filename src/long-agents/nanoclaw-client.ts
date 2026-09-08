@@ -463,6 +463,8 @@ export async function persistNanoClawDelivery(input: {
   readonly chatSessionId: string;
   readonly destination: LongAgentAddress;
   readonly text: string;
+  /** Optional channel-deliverable image attachments (base64 payload). */
+  readonly files?: readonly { readonly filename: string; readonly data: string }[];
 }): Promise<void> {
   const data = await requestGateway(input.instance, "v1/deliveries", {
     method: "POST",
@@ -474,6 +476,7 @@ export async function persistNanoClawDelivery(input: {
       chatSessionId: input.chatSessionId,
       destination: input.destination,
       text: input.text,
+      ...(input.files === undefined || input.files.length === 0 ? {} : { files: input.files }),
     }),
   });
   if (!isRecord(data) || data.persisted !== true || data.messageId !== input.messageId) {

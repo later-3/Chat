@@ -1,5 +1,7 @@
+import type { ImageContent } from "@earendil-works/pi-ai";
 import { PROJECT_ID_PATTERN } from "../projects/types.js";
 import { systemToolAddress } from "../tools/framework.js";
+import { parseWorkflowImages } from "../workflows/image-input.js";
 import {
   parseWorkflowAgentDefinition,
   type WorkflowAgentDefinition,
@@ -102,6 +104,8 @@ export interface NanoClawIntegrationEvent {
   readonly senderId: string | null;
   readonly senderName: string;
   readonly text: string;
+  /** Inbound image attachments in Pi ImageContent wire shape; absent for text-only events. */
+  readonly images?: readonly ImageContent[];
   readonly kind: string;
   readonly timestamp: string;
   readonly source: LongAgentAddress | null;
@@ -523,6 +527,7 @@ export function parseNanoClawIntegrationEvent(value: unknown): NanoClawIntegrati
   if (!Number.isSafeInteger(value.seq) || (value.seq as number) <= 0) throw new Error("event.seq无效");
   if (value.direction !== "in" && value.direction !== "out") throw new Error("event.direction无效");
   if (typeof value.isGroup !== "boolean") throw new Error("event.isGroup无效");
+  const images = parseWorkflowImages(value.images);
   return {
     seq: value.seq as number,
     eventId: requiredString(value.eventId, "event.eventId"),
@@ -536,6 +541,7 @@ export function parseNanoClawIntegrationEvent(value: unknown): NanoClawIntegrati
     senderId: value.senderId === null ? null : requiredString(value.senderId, "event.senderId"),
     senderName: typeof value.senderName === "string" ? value.senderName : "",
     text: typeof value.text === "string" ? value.text : "",
+    ...(images === undefined ? {} : { images }),
     kind: requiredString(value.kind, "event.kind"),
     timestamp: parseTimestamp(value.timestamp, "event.timestamp"),
     source: value.source === null ? null : parseLongAgentAddress(value.source, "event.source"),

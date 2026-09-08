@@ -129,3 +129,48 @@ test("invalid and oversized prompts are rejected", () => {
     /prompt不能超过/,
   );
 });
+
+const VALID_IMAGE = {
+  type: "image",
+  data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  mimeType: "image/png",
+};
+
+test("image attachments flow through the direct-execution Workflow", () => {
+  const parsed = parseChatWorkflowHttpInput(
+    { prompt: "看这张图", images: [VALID_IMAGE] },
+    defaults,
+  );
+  assert.deepEqual(parsed.images, [VALID_IMAGE]);
+});
+
+test("an image-only message does not require a text prompt", () => {
+  const parsed = parseChatWorkflowHttpInput({ prompt: "", images: [VALID_IMAGE] }, defaults);
+  assert.equal(parsed.prompt, "");
+  assert.deepEqual(parsed.images, [VALID_IMAGE]);
+});
+
+test("Workflows without image support reject image input with a friendly error", () => {
+  assert.throws(
+    () => parseChatWorkflowHttpInput(
+      { workflow: "planning-execution", prompt: "看这张图", images: [VALID_IMAGE] },
+      defaults,
+    ),
+    /planning-execution暂不支持图片输入/,
+  );
+});
+
+test("malformed image attachments are rejected at the HTTP boundary", () => {
+  assert.throws(
+    () => parseChatWorkflowHttpInput({ prompt: "x", images: [{ type: "file", data: VALID_IMAGE.data, mimeType: "image/png" }] }, defaults),
+    /\.type必须是image/,
+  );
+  assert.throws(
+    () => parseChatWorkflowHttpInput({ prompt: "x", images: [{ type: "image", data: "not-base64", mimeType: "image/png" }] }, defaults),
+    /有效的base64/,
+  );
+  assert.throws(
+    () => parseChatWorkflowHttpInput({ prompt: "x", images: [{ type: "image", data: VALID_IMAGE.data, mimeType: "text/plain" }] }, defaults),
+    /image\/\*/,
+  );
+});

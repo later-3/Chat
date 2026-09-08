@@ -67,6 +67,8 @@ export interface ChatWorkflowDefinition<Id extends string = string> {
   readonly description: string;
   readonly agentCallable: boolean;
   readonly planReview: boolean;
+  /** Whether this Workflow's run can consume user-submitted image input. */
+  readonly supportsImageInput?: boolean;
   readonly nodes: readonly ChatWorkflowNodeDefinition[];
   readonly agents: readonly WorkflowAgentDefinition[];
   readonly agentConfigPaths: Readonly<Record<string, string>>;
@@ -79,6 +81,8 @@ interface DefineChatWorkflowOptions<Id extends string> {
   readonly agents: readonly WorkflowAgentDefinition[];
   readonly prepareAgentSession?: PrepareChatWorkflowAgentSession;
   readonly run: (input: ChatWorkflowInput) => Promise<ChatWorkflowResult>;
+  /** Declares that `run` passes user images through to a Pi AgentSession. */
+  readonly supportsImageInput?: boolean;
 }
 
 function requireNonEmpty(value: string, field: string): void {
@@ -241,6 +245,7 @@ export function defineChatWorkflow<Id extends string>(
     ...(options.prepareAgentSession === undefined
       ? {}
       : { prepareAgentSession: options.prepareAgentSession }),
+    ...(options.supportsImageInput === true ? { supportsImageInput: true } : {}),
     run: options.run,
   };
 }
@@ -253,6 +258,7 @@ export function browserSafeWorkflowDefinition(definition: ChatWorkflowDefinition
     description: definition.description,
     agentCallable: definition.agentCallable,
     planReview: definition.planReview,
+    supportsImageInput: definition.supportsImageInput === true,
     nodes: definition.nodes,
     agents: definition.agents.map((agent) => ({
       ...agent,

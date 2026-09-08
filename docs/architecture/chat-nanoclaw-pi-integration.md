@@ -177,6 +177,8 @@ interface ChannelEventRequest {
 
 NanoClaw调用`POST /api/internal/channel/v1/events`，使用独立于网页登录Cookie的Bearer服务认证。`eventId`由`nanoclawInstanceId + nanoSessionId + direction + messageId`生成；请求只能携带Channel、Session、Agent Group和消息事实，不能指定Chat `projectId`、Prompt、Model或Credential。Chat校验请求中的Instance与Agent Group已登记，再解析Long Agent与Binding，原子写入耐久Ingress后返回逐事件`accepted/duplicate`结果和HTTP `202`。同ID不同payload hash返回`409`。
 
+入站图片随事件`images`字段传递，格式为Pi `ImageContent`（`{ type: "image", data, mimeType }`，base64，一条消息最多10张、单张解码后不超过10MB）。纯图片消息允许空`text`。Chat在Pi装配后用生效模型的`input`能力检查图片输入：不支持图片的模型不调用Provider，而是生成一条友好的Assistant回复经Delivery返回渠道，Turn按完成归档，不进入退避重试。
+
 ### 7.2 Chat到NanoClaw的Delivery Envelope
 
 ```ts
@@ -188,6 +190,8 @@ interface LongAgentDeliveryEnvelope {
   chatSessionId: string;
   destination: ChannelAddress;
   text: string;
+  /** 可选：本轮产生的图片（base64），文件名带与MIME一致的扩展名 */
+  files?: { filename: string; data: string }[];
 }
 ```
 

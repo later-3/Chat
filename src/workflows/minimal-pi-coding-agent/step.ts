@@ -4,6 +4,7 @@ import {
   createWorkflowAgentSession,
 } from "../agent-definition.js";
 import { subscribeAgentSessionLog } from "../agent-session-log.js";
+import { assertModelSupportsImages } from "../image-input.js";
 import { stripLegacyPlanningHandoffs } from "../planning-execution/context.js";
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 import { appendChatWorkflowStage } from "../workflow-stage.js";
@@ -59,6 +60,9 @@ export async function runPiCodingAgentPromptStep(
     session.dispose();
     throw new Error("Pi Coding Agent没有创建持久Session文件");
   }
+  // Reject image input against the effective model before any provider call,
+  // so text-only models surface a friendly, actionable failure.
+  assertModelSupportsImages(session.model, input.images);
 
   console.log(`${localTimestamp()} [pi] source=${import.meta.resolve("@earendil-works/pi-coding-agent")}`);
   console.log(`${localTimestamp()} [pi] agentDir=${chatSession.agentDir}`);
@@ -83,8 +87,13 @@ export async function runPiCodingAgentPromptStep(
     toolResources,
   });
   try {
-    console.log(`${localTimestamp()} [pi] prompt submitted chars=${input.prompt.length}`);
-    await session.prompt(input.prompt);
+    console.log(
+      `${localTimestamp()} [pi] prompt submitted chars=${input.prompt.length} images=${String(input.images?.length ?? 0)}`,
+    );
+    await session.prompt(
+      input.prompt,
+      input.images === undefined ? undefined : { images: [...input.images] },
+    );
     console.log(
       `${localTimestamp()} [pi] prompt completed elapsedMs=${Date.now() - stepStartedAt}`,
     );
