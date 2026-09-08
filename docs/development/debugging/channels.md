@@ -10,70 +10,37 @@ Nano仓库有[文档索引](../../../nanoclaw/docs/README.md)、[架构草稿](.
 
 ## LA-01前置：建立调试Group和Chat映射
 
-先启动`Debug NanoClaw`。默认渠道关闭，Host仍应完成DB迁移和Gateway/CLI启动。日志找到`NanoClaw running`，不要把没有Bot输出当作Host失败。
+先启动`Debug NanoClaw`或`pnpm debug:start -- --nanoclaw`。Host完成DB迁移和Gateway/CLI启动后，启动器自动调用原生ncl与资源Gateway：
 
-在新终端进入调试工作区：
+1. 复用/创建folder为debug-agent的Group；创建时由Nano初始化`groups/<folder>/`及`plugins/`。
+2. 复用/创建cli/local Messaging Group与`^DEBUG_` Wiring。
+3. 读取Group资源，补齐`memory/index.md`、`memory/system/index.md`、`memory/system/definition.md`；已有Memory不覆盖。
+4. 调试`long-agents.json`缺失时生成debug实例和debug-agent映射，inbox使用真实CLI记录ID。已有Registry保留，包括过去的telegram/debug-offline占位inbox；若其映射与本实验冲突则报错。
+
+终端出现`[debug] lab ready`后再刷新长期同事页面。需要重试只运行`pnpm debug:bootstrap`，不要重新create Group。ncl是操作者本地初始化工具，Chat业务仍只调用窄HTTP API，不依赖CLI Socket或Nano数据库。
+
+查看结果（在调试Nano工作区）：
 
 ```bash
 cd .data/debug/nanoclaw
 pnpm ncl groups list --json
-pnpm ncl groups create --name 'Debug Agent' --folder debug-agent --json
-pnpm ncl groups list --json
-pnpm ncl messaging-groups create --channel-type telegram --instance telegram \
-  --platform-id debug-offline --name 'Offline debug placeholder' --is-group 0 --unknown-sender-policy strict --json
+pnpm ncl messaging-groups list --json
+pnpm ncl wirings list --json
 ```
 
-只创建一次，记录返回的真实Group ID；不要把示例ID当作可执行配置。ncl是当前Host本地运维CLI，允许人在调试实例中使用，但Chat Backend不能调用它代替窄HTTP API。Socket来自当前工作目录的`data/ncl.sock`。
-
-当前Registry要求inbox。上面建立的Messaging Group仅作离线占位，不绑定真实账号、不配置Wiring、不投递平台消息。记录返回的`data.id`（不是请求帧顶层id）。在调试Home新建`long-agents.json`，按下面结构填写两个真实记录ID。渠道接入时替换为真实测试私聊的inbox。不要改正常Home。
-
-```json
-{
-  "schemaVersion": 1,
-  "instances": [{
-    "id": "debug",
-    "name": "Debug NanoClaw",
-    "executionMode": "chat-pi",
-    "gatewayBaseUrl": "http://127.0.0.1:45300/webhook/chat-backend"
-  }],
-  "agents": [{
-    "id": "debug-agent",
-    "name": "Debug Agent",
-    "description": "仅用于隔离调试",
-    "enabled": true,
-    "instanceId": "debug",
-    "nanoclawAgentGroupId": "替换为真实Group ID",
-    "defaultProjectId": "daily",
-    "inbox": {
-      "messagingGroupId": "替换为离线Messaging Group的data.id",
-      "channelType": "telegram",
-      "instance": "telegram",
-      "platformId": "debug-offline",
-      "threadId": null
-    }
-  }]
-}
-```
-
-精确必填字段以[Registry parser](../../../src/long-agents/types.ts)为准；当前格式和完整示例统一见[配置文档](../../configuration.md)。不要添加目标中的独立Daily/历史/任务字段。
-
-刷新Chat长期同事列表，按Web章节发送DEBUG_HELLO；在公共装配确认模型是debug-local/debug-model。配置完成后也可从Chat根目录执行`pnpm debug:smoke -- --long-agent`，通过真实Gateway验证Web长期同事链路，不发送平台消息。无自定义Definition时使用系统默认工具策略；有显式Definition则保留用户选择。
+刷新Chat长期同事列表并发送DEBUG_HELLO，或在Chat根目录执行`pnpm debug:smoke -- --long-agent`。模型应为debug-local/debug-model。真实平台接入时再按下一节创建对应User/Messaging Group/Wiring；Registry精确格式仍见[配置文档](../../configuration.md)。
 
 ## CLI-01：先用本地终端验证完整渠道链
 
-完成LA-01的Group与Registry后，可以先用Nano原生CLI渠道验证入站、Chat执行和回程，不需要平台账号。以下仍只在调试Nano工作区执行；替换真实Group ID：
+自动初始化已准备cli/local，只需在`.data/debug/nanoclaw`执行：
 
 ```bash
-pnpm ncl messaging-groups create --channel-type cli --instance cli \
-  --platform-id local --name 'Local debug terminal' --is-group 0 --unknown-sender-policy public --json
-pnpm ncl wirings create --channel-type cli --instance cli --platform-id local \
-  --agent-group-id '<Group ID>' --engage-mode pattern --engage-pattern '^DEBUG_' --sender-scope all --json
 pnpm chat DEBUG_HELLO
 ```
 
-这里只对权限为0600的本机Unix Socket使用public/all，不能照搬到Telegram或微信。当前私聊自动绑定会依据入站source建立cli/local对应绑定；无需把LA-01占位inbox改成CLI。`pnpm chat`应收到`DEBUG_OK`，Nano日志应出现Session created、Message routed、Message delivered，Backend应完成同一事件的Pi Turn。`pnpm chat`收到回复后会退出，下一条消息重新执行命令。
+终端应收到DEBUG_OK，Nano日志有Message routed和Message delivered，Backend完成同一事件的Pi Turn。该渠道只对0600的本机Unix Socket使用public/all，不能照搬到Telegram或微信。命令收到回复后退出，下一条消息重新执行。
 
-实际路径是`scripts/chat.ts → data/cli.sock → src/channels/cli.ts → routeInbound → chat-pi HTTP Event → Chat/Pi → Nano Delivery → CLI客户端`。它验证公共渠道链路，不能证明真实平台登录、轮询和发送API可用；这些继续做TG-01/WX-01。
+路径：`scripts/chat.ts → data/cli.sock → channels/cli.ts → routeInbound → chat-pi HTTP Event → Chat/Pi → Nano Delivery → CLI客户端`。它验证公共链路，真实平台登录、轮询和发送API仍做TG-01/WX-01。
 
 ## TG-01：独立测试Telegram Bot私聊
 

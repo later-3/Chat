@@ -1,4 +1,5 @@
 // Dedicated debug ports/data. Read docs/development/debugging/README.md first.
+// Repeated launches replace verified owners only; Nano launch also initializes the local lab.
 {
   "version": "0.2.0",
   "configurations": [

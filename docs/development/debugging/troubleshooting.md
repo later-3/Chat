@@ -49,7 +49,7 @@ Backend时间包含UTC偏移；Nano控制台常用本地时分秒，日志文件
 
 | 症状 | 先查 | 继续到哪里 |
 |---|---|---|
-| F5提示端口/lock占用 | 本次PID、端口、重复调试会话 | 停自己会话；确认stale后只清对应lock |
+| F5提示端口/lock占用 | 归属记录、PID启动时间、端口、并发control操作 | 重试启动或debug:stop；未知归属不按端口强杀 |
 | 页面显示正常环境历史 | 浏览器profile、URL、projectId、Backend agentDir | 停本次调试，修复路径；不要删正常数据 |
 | 页面401/登录循环 | `chat-session` Cookie、profile、签名密钥 | 单独调试profile；不清理正常浏览器 |
 | 点击发送无网络请求 | useAgentSession、owner、输入校验 | Frontend分支/事件处理 |

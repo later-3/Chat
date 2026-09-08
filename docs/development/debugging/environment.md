@@ -19,7 +19,7 @@
 | 浏览器资料 | 日常 Chrome/PWA | `.data/debug/browser` |
 | 日志 | 各原进程/服务输出 | `.data/debug/logs/<时间-PID-模块>.log` |
 
-不要把调试端口改回表格第二列，也不要把调试目录软链接到正式目录。脚本拒绝占用端口，不执行杀进程、服务重启或自动换端口。调试 Node Inspector 由 VS Code 自动分配，不要求复用固定 `9229`。Workflow 可能拥有自己的内部临时监听，应以当前进程日志为准；HTTP 回调必须落在 `45112`。
+不要把调试端口改回表格第二列，也不要把调试目录软链接到正式目录。脚本默认替换同一checkout、同一调试角色的旧进程：检查所有权后TERM，必要时KILL其自有进程组；无关占用者报错保留，不重启生产服务或自动换端口。调试 Node Inspector 由 VS Code 自动分配，不要求复用固定 `9229`。Workflow 可能拥有自己的内部临时监听，应以当前进程日志为准；HTTP 回调必须落在 `45112`。
 
 **Cookie 不按端口隔离。** 普通 Chrome 同时访问两个 `127.0.0.1` 端口可能互相覆盖同名 Cookie，所以 F5 使用独立 Chrome profile 和独立签名密钥。不要把调试网页安装进日常 PWA，也不要在原浏览器里清空正常站点数据。
 
@@ -51,7 +51,7 @@ pnpm debug:prepare
 | `Debug NanoClaw` | 独立 Host | Nano 准备已完成；Backend按场景另开 |
 | `Debug Local Model` | 本地确定性响应 | 其他模型配置不会自动切到它 |
 
-同一组件不要同时单独启动又放进 compound。调试面板会出现多个会话；通过 Call Stack 选择当前暂停的进程。跨 HTTP 调用不会形成一个跨进程调用栈，靠 ID 和两侧断点衔接。
+重复启动同一组件会替换旧调试实例；并发启动/停止同一角色会明确报操作进行中，稍后重试。若旧CLI整套启动器发现自己的组件退出，会收回它拥有的其他组件，所以切换CLI/F5时先运行`pnpm debug:stop`。调试面板会出现多个会话；通过 Call Stack 选择当前暂停的进程。跨 HTTP 调用不会形成一个跨进程调用栈，靠 ID 和两侧断点衔接。
 
 F5 停止 compound 会停止关联调试会话；Backend→Frontend→Browser 的关联使用 `killOnServerStop`。脚本收到终止信号后只终止自己建立的进程组，5 秒后才清理仍存活的自有子进程。不会停止 launchd/systemd，也不会删除运行数据。该操作不保证在途模型、Tool 或外部投递完成；恢复语义见故障章节。
 
@@ -67,9 +67,21 @@ pnpm debug:prepare:nanoclaw
 
 生成的 `.data/debug/nanoclaw/.env` 默认 Telegram Token 为空、微信关闭。添加测试账号见[渠道章节](./channels.md)。这个文件与 `.data/debug/backend.env` 的服务 Token 必须一致。Nano 的固定运行模式为 `chat-pi`，不得改回原生容器 Runtime 试图绕过 Chat 错误。
 
+Nano启动后自动通过原生ncl复用/创建Debug Agent和cli/local Wiring，通过资源Gateway补齐Memory，再仅在缺失时写调试`long-agents.json`。看到`[debug] lab ready`才表示初始化完成。已有Registry若不含预期debug-agent映射会明确报错并保留，不覆盖用户配置；可单独执行`pnpm debug:bootstrap`重试。CLI练习权限仅作用于0600的本机Socket，真实平台仍须单独授权。
+
 本套调试无需Docker；`debug:prepare:nanoclaw`安装和构建的是Node Host，不构建Agent镜像。将来可选Docker工具环境的边界及无Docker生产部署步骤见[部署文档](../../deployment.md#docker是可选环境能力)。本地read等宿主工具实验不代表容器隔离已启用。
 
 ## 命令行与验证
+
+推荐一次拉起整套调试入口（前台运行）：
+
+```bash
+pnpm debug:start                    # Web + Backend + 本地模型
+pnpm debug:start -- --nanoclaw       # 再包含Nano，自动初始化本地练习Group/Memory/Registry
+pnpm debug:stop                     # 可从另一终端执行；重复停止安全
+```
+
+重复执行`debug:start`会先停止旧的同一调试栈，再依次检查模型、Backend、Vite、Nano；失败会回收本次子进程。此处ready表示Web/本地练习链的基础就绪，不代表真实Telegram/微信账号已完成收发验收。首次Nano依赖准备仍执行`debug:prepare:nanoclaw`；日常不重复安装依赖。
 
 不使用 VS Code 时，在独立终端运行：
 
@@ -81,7 +93,7 @@ pnpm debug:frontend
 pnpm debug:nanoclaw
 ```
 
-这些是各自的前台命令，命令行不会自动开浏览器或把多个终端组成整套启停。F5 使用同一启动器并提供关联启停。
+上面4个单模块命令各自前台运行；`debug:start`负责把它们组合起来。命令行不会自动打开调试浏览器。F5 使用同一启动器并提供关联启停。
 
 启动 Web/Backend/假模型后执行 `pnpm debug:smoke`：通过真实 Vite 代理登录、打开 Debug Lab、提交 2 个 Workflow Run、验证 Tool 读取与 Session 重读。它会在调试目录生成会话；不访问正常 URL，不使用真实模型。
 
@@ -90,6 +102,10 @@ curl --fail http://127.0.0.1:45112/api/health
 lsof -nP -iTCP:45112 -iTCP:35145 -iTCP:45300 -iTCP:45401 -sTCP:LISTEN
 ```
 
-发生端口占用时先辨认 PID/工作目录，退出重复调试会话；不要使用按端口强杀。若硬崩溃留下 `.data/debug/<模块>.lock`，先检查文件中的 PID 是否还存在、相关端口是否释放，以及 VS Code 自有子进程是否退出，确认之后只删除该 stale lock。脚本不会自动抢锁。
+`.data/debug/<模块>.lock`记录PID、OS启动时间、用户、进程组与随机归属标识；`.control`串行化启动/停止。重复F5或命令行启动先停止验证过的旧owner，再等端口释放。owner被SIGKILL但已记录的子进程组leader仍存活时，可回收该组；PID被复用、记录损坏或leader消失而仍有孤儿时，不猜测归属。旧版纯PID锁只在owner已退出且端口空闲时自动清理。
+
+启动器本身被暂停时，先等12秒让它处理TERM，再核对身份并强制清理；因此恢复可能比普通停止更慢。过期control锁的删除也串行化；若回收过程自身崩溃留下`.control.recovery`目录，确认没有同角色控制操作后只删除该空目录再重试，不能批量删除所有归属记录。
+
+`pnpm debug:stop -- backend`可只停止一个角色；`node scripts/debug-launch.mjs backend --no-replace`保留“已运行则报错”行为。无归属的端口占用会报错，先用lsof/服务管理器确认它属于哪个实例，再停止正确的服务；不能为了保证一次命令成功而误杀正常Chat。调试启动器不会修改KeepAlive/systemd服务。
 
 修改 Pi 后需重建 dist。若正常运行的进程也从本 checkout 动态读取 Pi dist，使用独立完整 checkout 完成构建/验证，避免覆盖正在使用的产物。`pnpm verify` 会写 `frontend/dist` 和 `.output`，也必须遵守这条边界。

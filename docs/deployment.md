@@ -1,5 +1,7 @@
 # Chat 部署
 
+全新环境由Agent搭建时，先按[初始化与交付清单](./development/debugging/first-install.md)核对自动创建范围、Group/Memory、私有配置和重复拉起；安装Host不等于已经创建完整长期Agent。
+
 直接执行Workflow中的Agent可以显式加载项目Skill
 `.chat/skills/chat-deployment/SKILL.md`执行本仓库部署。Skill在Linux上统一调用`chatctl`，不取代本文，也不授予未经用户明确要求的生产变更权限。
 

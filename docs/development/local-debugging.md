@@ -8,6 +8,8 @@
 
 需要NanoClaw时先执行`pnpm debug:prepare:nanoclaw`，它建立独立Git worktree、安装并验证，不操作正常Host。F5选择 **Debug Chat + NanoClaw**，调试Gateway端口为`45300`；默认不启用真实渠道。Telegram/微信必须使用独立测试Bot/账号，详见[渠道步骤](./debugging/channels.md)。
 
+命令行整套拉起用`pnpm debug:start -- --nanoclaw`，停止用`pnpm debug:stop`。Nano启动后自动复用/初始化Lab Group、Workspace、Memory与缺失的Registry。重复拉起会清理已验证归属的旧调试进程；未知端口占用明确报错。新机器交付前按[初始化清单](./debugging/first-install.md)完成配置与两次启动验收。
+
 停止compound只处理本次启动的调试会话与子进程，不停止正常服务。尚未实现[全系统在途任务排空合同](../architecture/chat-system-lifecycle.md)；不要把调试进程停止描述成所有任务都已完成收尾。端口/数据隔离也不隔离同一个源文件的修改；正常dev同时使用本checkout时，源码改动仍会热更新它。
 
 断点、配置列表、锁与Source Map排查见[环境章节](./debugging/environment.md)。启动后可执行`pnpm debug:smoke`验证2个真实Run和Session重读；GUI断点需另外验收。

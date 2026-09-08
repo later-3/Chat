@@ -28,6 +28,18 @@
       "problemMatcher": []
     },
     {
+      "label": "Chat Debug: stop owned debug processes",
+      "type": "process",
+      "command": "node",
+      "args": [
+        "scripts/debug-stop.mjs"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Chat: verify",
       "type": "shell",
       "command": "pnpm verify",

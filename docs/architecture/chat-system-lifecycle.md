@@ -83,6 +83,7 @@ Web未来可以提供同义操作，但页面关闭/断线不能取消停止操�
 | 当前实现 | 差距及复用方式 |
 |---|---|
 | [dev-start.sh](../../scripts/dev-start.sh)管理普通Nitro/Vite；[专用F5](../development/debugging/environment.md)可组合隔离Backend/Vite/假模型/Nano工作区 | 仍不是完整Chat生命周期；接入统一入口后再改变其默认语义 |
+| [debug-start](../../scripts/debug-start.mjs)与[debug-stop](../../scripts/debug-stop.mjs)管理隔离调试栈，模块启动器记录PID启动时间/进程组，支持重复替换、可验证孤儿回收与Lab初始化 | 仅实现调试进程归属/就绪，不声称业务排空、生产服务统一编排或任意孤儿均能安全回收；未知占用失败关闭 |
 | [chatctl](../../deploy/chatctl)管理Linux Chat发布/健康，Nano Setup独立管理Host | 复用服务安装与升级，不复制；补同实例操作、状态聚合与所有权 |
 | [Chat systemd模板](../../deploy/systemd/chat.service)、[launchd模板](../../deploy/macos/com.later.chat.production.plist.in)及[Nano服务生成](../../nanoclaw/setup/service.ts)已有重启策略 | 尚无整套停止与重新拉起协调；Linux系统级Chat与用户级Nano跨管理范围，不能假设直接加同一个target即可解决 |
 | [Nano shutdown](../../nanoclaw/src/index.ts)会停模块、投递、通道并关闭数据库 | 尚无跨Chat在途执行收尾协议，不能当成整套graceful stop已经具备 |

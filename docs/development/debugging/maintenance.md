@@ -18,6 +18,7 @@
 | 调试配置与隔离回归 | `pnpm test:debug`，随`pnpm test:tooling`进入完整门禁 |
 | 实际调试 Web/Backend/Pi | 启动Debug Chat后`pnpm debug:smoke`；2个Run和Session重读 |
 | 实际Nano渠道公共链 | 完成CLI-01后在调试Nano工作区`pnpm chat DEBUG_HELLO`，终端回复与Nano投递日志 |
+| 新环境与重复拉起 | first-install清单；重复debug:start/F5，验证旧owner退出、端口复用、Group/Memory/配置不变、异常启动回收 |
 | Backend定向测试 | `node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types --test <文件>` |
 | Frontend合同 | `pnpm test:frontend`或目标`frontend/lib/*.test.mjs` |
 | 全部Chat门禁 | `pnpm verify`：架构/工具、前后端测试、类型、构建、built、dev |

@@ -102,7 +102,7 @@ test("launcher startup error releases its lock without touching another director
   const root = await mkdtemp(join(tmpdir(), "chat-debug-launch-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "scripts"));
-  for (const name of ["debug-launch.mjs", "debug-environment.mjs"]) await copyFile(`scripts/${name}`, join(root, "scripts", name));
+  for (const name of ["debug-launch.mjs", "debug-environment.mjs", "debug-processes.mjs"]) await copyFile(`scripts/${name}`, join(root, "scripts", name));
   // Missing backend program fails after taking the lock. No actual service or credentials are used.
   const child = spawn(process.execPath, [join(root, "scripts/debug-launch.mjs"), "backend"], { stdio: "pipe" });
   let output = "";
@@ -119,6 +119,7 @@ test("Stop reaps an owned grandchild even after its parent exits, and preserves 
   await mkdir(join(root, "scripts"));
   await mkdir(join(debug, "logs"), { recursive: true });
   await copyFile("scripts/debug-launch.mjs", join(root, "scripts/debug-launch.mjs"));
+  await copyFile("scripts/debug-processes.mjs", join(root, "scripts/debug-processes.mjs"));
   // Stub only environment discovery; exercise the real launcher, logs, lock and process-group cleanup.
   await writeFile(join(root, "scripts/debug-environment.mjs"), `
     export const repositoryRoot=${JSON.stringify(root)}, debugRoot=${JSON.stringify(debug)}, nanoRoot=${JSON.stringify(root)};
@@ -173,4 +174,128 @@ test("Stop reaps an owned grandchild even after its parent exits, and preserves 
   assert.equal(grandchild, undefined, "launcher leaked its grandchild");
   assert.equal(unrelated.listening, true);
   await assert.rejects(readFile(join(debug, "backend.lock")), { code: "ENOENT" });
+});
+
+test("repeated launch replaces only its own instance and recovers a killed launcher", { timeout: 60000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), "chat-debug-restart-"));
+  const debug = join(root, "debug");
+  await mkdir(join(root, "scripts"));
+  await mkdir(join(debug, "logs"), { recursive: true });
+  for (const name of ["debug-launch.mjs", "debug-processes.mjs"]) await copyFile(`scripts/${name}`, join(root, "scripts", name));
+  const reserved = createServer(); reserved.listen(0, "127.0.0.1"); await once(reserved, "listening");
+  const port = reserved.address().port;
+  await new Promise(accept => reserved.close(accept));
+  await writeFile(join(root, "scripts/debug-environment.mjs"), `
+    export const repositoryRoot=${JSON.stringify(root)},debugRoot=${JSON.stringify(debug)},nanoRoot=${JSON.stringify(root)};
+    export const ports={backend:${port}};
+    export async function prepareDebug(){}
+    export {assertPortFree} from ${JSON.stringify(pathToFileURL(join(process.cwd(), "scripts/debug-environment.mjs")).href)};
+    export async function debugEnvironment(){return {PATH:process.env.PATH};}
+  `);
+  await writeFile(join(root, "scripts/debug-backend.mjs"), `
+    import {createServer} from 'node:http';
+    const server=createServer((req,res)=>res.end(String(process.pid)));
+    server.listen(${port},'127.0.0.1');
+    process.on('SIGTERM',()=>server.close(()=>process.exit(0)));
+  `);
+  const children = [];
+  let servicePid;
+  t.after(async () => {
+    for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+    if (servicePid) { try { process.kill(servicePid, "SIGTERM"); } catch {} }
+    await Promise.all(children.map(child => child.done));
+    await rm(root, { recursive: true, force: true });
+  });
+  function launch() {
+    const child = spawn(process.execPath, [join(root, "scripts/debug-launch.mjs"), "backend"], { stdio: "pipe" });
+    child.output = "";
+    child.stdout.on("data", chunk => { child.output += chunk; });
+    child.stderr.on("data", chunk => { child.output += chunk; });
+    child.done = once(child, "exit"); children.push(child); return child;
+  }
+  async function ready(child) {
+    for (const deadline = Date.now() + 35000; Date.now() < deadline;) {
+      if (child.exitCode !== null) throw new Error(child.output);
+      try {
+        const owner = JSON.parse(await readFile(join(debug, "backend.lock"), "utf8"));
+        const response = await fetch(`http://127.0.0.1:${port}`, { signal: AbortSignal.timeout(100) });
+        const pid = Number(await response.text());
+        if (owner.owner.pid === child.pid && owner.child.pid === pid) { servicePid = pid; return pid; }
+      } catch {}
+      await delay(50);
+    }
+    throw new Error(`not ready: ${child.output}`);
+  }
+  const first = launch(); const firstPid = await ready(first);
+  const second = launch(); const secondPid = await ready(second);
+  assert.notEqual(secondPid, firstPid);
+  assert.equal((await first.done)[0], 0);
+  assert.throws(() => process.kill(firstPid, 0), { code: "ESRCH" });
+  second.kill("SIGKILL"); await second.done;
+  const third = launch(); const thirdPid = await ready(third);
+  assert.notEqual(thirdPid, secondPid);
+  assert.throws(() => process.kill(secondPid, 0), { code: "ESRCH" });
+  third.kill("SIGSTOP");
+  const fourth = launch(); await ready(fourth);
+  assert.equal((await third.done)[1], "SIGKILL");
+  assert.throws(() => process.kill(thirdPid, 0), { code: "ESRCH" });
+  fourth.kill("SIGTERM"); assert.equal((await fourth.done)[0], 0);
+  servicePid = undefined;
+  await assert.rejects(readFile(join(debug, "backend.lock")), { code: "ENOENT" });
+  // An unrelated occupant remains alive and makes startup fail clearly.
+  const other = createServer(); other.listen(port, "127.0.0.1"); await once(other, "listening");
+  try {
+    const rejected = launch(); assert.notEqual((await rejected.done)[0], 0);
+    assert.match(rejected.output, /occupied/); assert.equal(other.listening, true);
+  } finally { await new Promise(accept => other.close(accept)); }
+});
+
+test("lab bootstrap retries partial setup without duplicate identities or overwriting config", async () => {
+  const { ensureDebugLab } = await import("./debug-bootstrap.mjs");
+  const rows = { groups: [], "messaging-groups": [], wirings: [] };
+  let registry, saves = 0, failResource = true;
+  const dependencies = {
+    ncl: async (kind, verb, ...args) => {
+      if (verb === "list") return rows[kind];
+      const value = flag => args[args.indexOf(flag) + 1];
+      const entry = { id: `${kind}-1`, folder: value("--folder"),
+        channel_type: value("--channel-type"), instance: value("--instance"), platform_id: value("--platform-id"),
+        messaging_group_id: value("--messaging-group-id"), agent_group_id: value("--agent-group-id") };
+      rows[kind].push(entry); return entry;
+    },
+    gateway: async () => {
+      if (failResource) throw new Error("resource temporarily unavailable");
+      return { agentGroup: { id: "groups-1", workspace: { memoryFileCount: 3 } } };
+    },
+    save: async value => { saves++; registry = value; },
+  };
+  await assert.rejects(ensureDebugLab(dependencies), /temporarily/);
+  failResource = false;
+  await ensureDebugLab(dependencies);
+  registry.agents[0].name = "My edited name";
+  await ensureDebugLab({ ...dependencies, registry });
+  assert.deepEqual(Object.values(rows).map(entries => entries.length), [1, 1, 1]);
+  assert.equal(saves, 1);
+  assert.equal(registry.agents[0].name, "My edited name");
+  await assert.rejects(ensureDebugLab({ ...dependencies, registry: { agents: [], instances: [] } }), /differs/);
+});
+
+test("concurrent control is refused and a recycled PID record never signals the current process", async t => {
+  const { controlRole, stopRole, identity } = await import("./debug-processes.mjs");
+  const root = await mkdtemp(join(tmpdir(), "chat-debug-control-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await controlRole(root, "backend", async () => {
+    await assert.rejects(controlRole(root, "backend", async () => {}), /already in progress/);
+  });
+  await writeFile(join(root, "backend.control"), JSON.stringify({ owner: { ...identity(process.pid), started: "previous lifetime" } }));
+  let active = 0, maximum = 0;
+  const recover = () => controlRole(root, "backend", async () => { active++; maximum = Math.max(maximum, active); await delay(50); active--; });
+  const results = await Promise.allSettled([recover(), recover()]);
+  assert.ok(results.some(result => result.status === "fulfilled"));
+  assert.equal(maximum, 1);
+  await writeFile(join(root, "backend.lock"), JSON.stringify({ schema: 1, role: "backend", root,
+    owner: { ...identity(process.pid), started: "an earlier lifetime" }, child: null, token: "stale" }));
+  await controlRole(root, "backend", () => stopRole(root, "backend", async () => {}));
+  assert.ok(identity(process.pid));
+  await assert.rejects(readFile(join(root, "backend.lock")), { code: "ENOENT" });
 });
