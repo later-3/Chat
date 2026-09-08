@@ -19,3 +19,5 @@
 - [Planner 续聊中的阶段与输出协议修正](./planner-conversation-output-repair.md)
 
 - [Long Agent 切换 Provider 的认证与工具合同](./long-agent-provider-validation.md)
+
+- [调试构建目录重入 Workflow 源码扫描](./debug-build-directory-isolation.md)

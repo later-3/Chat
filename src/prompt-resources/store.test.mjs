@@ -232,6 +232,10 @@ test("built-in rules and experiences are seeded once into the Personal Prompt li
   assert.equal(agentDesignRule?.revision, 1);
   assert.match(agentDesignRule?.content ?? "", /System Prompt负责身份、目标、基本决策逻辑/);
   assert.match(agentDesignRule?.content ?? "", /createWorkflowAgentSession\(\)/);
+  const debugExperience = await secondStore.get("debug-build-directory-isolation");
+  assert.equal(debugExperience?.kind, "experience");
+  assert.match(debugExperience?.content ?? "", /node_modules\/\.nitro-debug/);
+  assert.equal((await secondStore.history("debug-build-directory-isolation")).length, 1);
 });
 
 test("a built-in experience upgrades only while its stored revision prefix is unchanged", async (t) => {

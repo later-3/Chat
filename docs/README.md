@@ -19,6 +19,7 @@
 | 修改范围 | 文档 |
 |---|---|
 | Agent参与开发、架构审核与交接 | [贡献工作方法](./development/agent-contribution.md) |
+| 端到端调试、源码学习与问题定位 | [调试与开发说明书](./development/debugging/README.md) |
 | VSCode调试和一键启动 | [本地开发与调试](./development/local-debugging.md) |
 | 用户反馈、日志、持久记录和故障闭环 | [诊断与记录](./development/diagnostics.md) |
 | Backend、HTTP、Project、持久化或 Pi 装配 | [Backend 开发](./development/backend.md) |

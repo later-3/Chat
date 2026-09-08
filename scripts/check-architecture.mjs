@@ -1,5 +1,5 @@
 // Read-only navigation check; semantic architecture review still needs scenario evidence.
-import { readFile, realpath, stat } from "node:fs/promises";
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,6 +10,9 @@ const entrypoints = [
   "docs/development/agent-contribution.md", "docs/development/diagnostics.md",
   "docs/development/local-debugging.md", "docs/architecture/chat-module-contracts.md",
 ];
+for (const name of await readdir(resolve(root, "docs/development/debugging"))) {
+  if (name.endsWith(".md")) entrypoints.push(`docs/development/debugging/${name}`);
+}
 let checked = 0;
 const errors = [];
 for (const name of entrypoints) {

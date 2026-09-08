@@ -27,7 +27,15 @@
     "verify": "pnpm check:architecture && pnpm test:tooling && pnpm test && pnpm typecheck && pnpm build && pnpm test:built && pnpm test:dev",
     "dev:all": "bash scripts/dev-start.sh",
     "check:architecture": "node scripts/check-architecture.mjs",
-    "test:tooling": "node --test scripts/dev-start.test.mjs"
+    "test:tooling": "node --test scripts/dev-start.test.mjs scripts/debug-environment.test.mjs",
+    "debug:prepare": "node scripts/debug-environment.mjs prepare",
+    "debug:prepare:nanoclaw": "node scripts/debug-environment.mjs prepare-nanoclaw",
+    "debug:backend": "node scripts/debug-launch.mjs backend",
+    "debug:frontend": "node scripts/debug-launch.mjs frontend",
+    "debug:nanoclaw": "node scripts/debug-launch.mjs nanoclaw",
+    "debug:model": "node scripts/debug-launch.mjs model",
+    "test:debug": "node --test scripts/debug-environment.test.mjs",
+    "debug:smoke": "node scripts/debug-smoke.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "link:./pi/packages/agent",

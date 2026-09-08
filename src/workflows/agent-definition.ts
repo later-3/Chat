@@ -50,7 +50,9 @@ export { buildChatAgentCustomInstructions };
 /**
  * Creates one Pi AgentSession from the Agent definition owned by a Workflow.
  * Session selection stays with Chat; Agent capability assembly is centralized
- * here so individual Workflows do not recreate Pi's ResourceLoader setup.
+ * in createChatPiAgentSession so individual Workflows do not recreate Pi's ResourceLoader setup.
+ * 本包装只增加 Workflow 本轮上下文投影；检查路径同样调用公共装配，
+ * 不要在此新增与 Long Agent 不一致的模型、Skill 或 Tool 加载分支。
  */
 export async function createWorkflowAgentSession(
   options: CreateWorkflowAgentSessionOptions,

@@ -30,8 +30,10 @@ import type { WorkflowAgentDefinition } from "../workflows/agent-config.js";
 export type ChatPiAgentDefinition = WorkflowAgentDefinition;
 
 export interface CreateChatPiAgentSessionOptions {
+  /** 已授权的 Project/Chat Home/cwd；Tool 身份必须由此派生，不能信任模型传入的路径或 ID。 */
   readonly chatSession: ChatSession;
   readonly sessionManager: SessionManager;
+  /** 本轮已解析的有效能力；不要在公共装配内重新读取另一份 Agent 选择。 */
   readonly agent: ChatPiAgentDefinition;
   readonly additionalSkillPaths?: readonly string[];
   readonly customTools?: readonly ToolDefinition[];
@@ -73,6 +75,11 @@ export function buildChatAgentCustomInstructions(
  * Creates the one Pi AgentSession assembly used by every Chat execution mode.
  * Callers own product lifecycle and tracing; Model, resources, Tools and Pi
  * Session persistence are assembled only here.
+ *
+ * 调试顺序：agent 有效定义 → reload 后的资源/diagnostics → created.session
+ * 的实际模型与 active tools。发现资源不代表启用，更不代表模型调用过它。
+ * 本函数不发送 prompt；调用方负责执行、订阅事件并最终 dispose()。
+ * 场景与断点见 docs/development/debugging/configuration-resources.md。
  */
 export async function createChatPiAgentSession(
   options: CreateChatPiAgentSessionOptions,

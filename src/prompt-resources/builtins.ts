@@ -299,4 +299,17 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       author: { type: "user" }, createdAt: "2026-09-07T09:35:00.000Z",
     }],
   },
+  {
+    schemaVersion: 1,
+    id: "debug-build-directory-isolation",
+    revisions: [{
+      schemaVersion: 1, id: "debug-build-directory-isolation", revision: 1, kind: "experience",
+      title: "调试缓存必须隔离并避开Workflow源码扫描",
+      purpose: "避免专用调试产物被再次编译，以及调试进程与正常Chat共享端口、数据或浏览器状态。",
+      content: "调试Nitro buildDir应使用独立的node_modules/.nitro-debug；产品Workflow发现目录限定src/workflows，不能扫描其他worktree或把生成的Step bundle放回源码输入。曾在.data/debug/nitro首轮构建成功、热更新后二次扫描steps.mjs，导致227条Node模块/原生依赖构建错误。端口、Chat Home、Workflow数据、Vite缓存、Nano工作区/账号与浏览器profile分别隔离；Cookie不按端口隔离。健康HTTP或首次构建不代表可用，必须在源码热更新后通过真实Frontend Run合同验证文本、Tool调用和Session重读。源码与dist仍共享时使用独立完整checkout构建，不覆盖正常服务产物。",
+      tags: ["development", "incident", "debugging", "workflow"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development-experiences/debug-build-directory-isolation.md", capturedAt: "2026-09-08T01:02:00.000Z" }],
+      author: { type: "user" }, createdAt: "2026-09-08T01:02:00.000Z",
+    }],
+  },
 ] as const satisfies readonly PromptResourceDocument[];

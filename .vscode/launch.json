@@ -1,62 +1,169 @@
+// Dedicated debug ports/data. Read docs/development/debugging/README.md first.
 {
-  // F5 使用独立开发数据；模型在该 Chat Home 中配置，不自动复制生产凭据。
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Chat",
       "type": "node",
       "request": "launch",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
+      "runtimeExecutable": "node",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
-      "env": { "CHAT_HOME": "${workspaceFolder}/.data/dev/chat-home" },
       "autoAttachChildProcesses": true,
-      // Nitro/Workflow 子进程及 Pi dist 映射回源码。先执行 pnpm pi:prepare。
       "sourceMaps": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "preLaunchTask": "Chat Debug: prepare",
+      "name": "Debug Backend",
+      "program": "${workspaceFolder}/scripts/debug-launch.mjs",
+      "args": [
+        "backend"
+      ],
       "pauseForSourceMap": true,
       "sourceMapPathOverrides": {
         "src/*": "${workspaceFolder}/src/*",
         "../../../src/*": "${workspaceFolder}/src/*"
       },
       "outFiles": [
-        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
-        "${workspaceFolder}/.output/server/**/*.mjs",
+        "${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs",
         "${workspaceFolder}/pi/packages/**/dist/**/*.js"
       ],
       "resolveSourceMapLocations": [
-        "${workspaceFolder}/node_modules/.nitro/workflow/**/*.mjs",
-        "${workspaceFolder}/.output/server/**/*.mjs",
+        "${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs",
+        "${workspaceFolder}/pi/packages/**/dist/**/*.js"
+      ]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "node",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "sourceMaps": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "preLaunchTask": "Chat Debug: prepare",
+      "name": "Debug Backend + Web",
+      "program": "${workspaceFolder}/scripts/debug-launch.mjs",
+      "args": [
+        "backend"
+      ],
+      "pauseForSourceMap": true,
+      "sourceMapPathOverrides": {
+        "src/*": "${workspaceFolder}/src/*",
+        "../../../src/*": "${workspaceFolder}/src/*"
+      },
+      "outFiles": [
+        "${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs",
         "${workspaceFolder}/pi/packages/**/dist/**/*.js"
       ],
-      "skipFiles": ["<node_internals>/**"],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs",
+        "${workspaceFolder}/pi/packages/**/dist/**/*.js"
+      ],
       "serverReadyAction": {
-        "pattern": "http://127\\.0\\.0\\.1:43112/",
+        "pattern": "Chat debug backend ready: http://127\\.0\\.0\\.1:45112",
         "action": "startDebugging",
-        "name": "Start Chat Frontend",
+        "name": "Debug Frontend Server",
         "killOnServerStop": true
       }
     },
     {
-      "name": "Start Chat Frontend",
       "type": "node",
       "request": "launch",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev:frontend", "--host", "127.0.0.1", "--port", "30145", "--strictPort"],
-      // 与后端端口保持一致；版本注入仍由 run-frontend.mjs 负责。
-      "env": { "CHAT_BACKEND_URL": "http://127.0.0.1:43112" },
+      "runtimeExecutable": "node",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "autoAttachChildProcesses": true,
-      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "preLaunchTask": "Chat Debug: prepare",
+      "name": "Debug Frontend Server",
+      "program": "${workspaceFolder}/scripts/debug-launch.mjs",
+      "args": [
+        "frontend"
+      ],
       "serverReadyAction": {
-        "pattern": "http://127\\.0\\.0\\.1:30145",
-        "uriFormat": "http://127.0.0.1:30145",
-        "action": "openExternally"
-      },
-      "presentation": {
-        "hidden": true
+        "pattern": "http://127\\.0\\.0\\.1:35145",
+        "action": "startDebugging",
+        "name": "Debug Browser",
+        "killOnServerStop": true
       }
+    },
+    {
+      "name": "Debug Browser",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:35145",
+      "webRoot": "${workspaceFolder}/frontend",
+      "userDataDir": "${workspaceFolder}/.data/debug/browser",
+      "runtimeArgs": [
+        "--no-first-run"
+      ],
+      "sourceMaps": true
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "node",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "sourceMaps": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "preLaunchTask": "Chat Debug: prepare",
+      "name": "Debug NanoClaw",
+      "program": "${workspaceFolder}/scripts/debug-launch.mjs",
+      "args": [
+        "nanoclaw"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/.data/debug/nanoclaw/**",
+        "!**/node_modules/**"
+      ]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "node",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "sourceMaps": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "preLaunchTask": "Chat Debug: prepare",
+      "name": "Debug Local Model",
+      "program": "${workspaceFolder}/scripts/debug-launch.mjs",
+      "args": [
+        "model"
+      ]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Debug Chat",
+      "configurations": [
+        "Debug Local Model",
+        "Debug Backend + Web"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Debug Chat + NanoClaw",
+      "configurations": [
+        "Debug Local Model",
+        "Debug Backend + Web",
+        "Debug NanoClaw"
+      ],
+      "stopAll": true
     }
   ]
 }

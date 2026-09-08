@@ -116,6 +116,12 @@ git -C frontend diff --check
 
 开发故障如果形成可复用结论，还应在 `docs/development-experiences/` 记录事故背景、原因和门禁；对应自动化测试是结论的一部分，不能只补文档。
 
+## 调试专用入口
+
+`pnpm test:debug`检查VS Code引用、专用端口/缓存、环境过滤、符号链接拒绝、私有配置保留和本地假模型；已并入`pnpm test:tooling`。启动`Debug Chat`后，`pnpm debug:smoke`通过Vite代理验证真实文本/Tool Run与Session重读。该冒烟会写调试Home，不会访问正式模型/渠道。Source Map实际断点与真实Telegram/微信收发需单独验收，见[调试说明书](./development/debugging/README.md)。
+
+`pnpm verify`会重写`.output`和`frontend/dist`；正常实例使用这些产物时，先在独立checkout应用本次改动并安装依赖，再运行验证。
+
 ## 完整验证
 
 `pnpm verify` 是父仓库完成代码改动后的统一验证入口，当前顺序为：

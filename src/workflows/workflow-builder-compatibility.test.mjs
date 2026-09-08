@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { loadOptions } from "nitro/builder";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
@@ -41,19 +42,30 @@ test("Nitro dev step bundle embeds local Agent JSON configs and loads in Node", 
   const nitroBuildersEntry = join(dirname(nitroEntry), "builders.js");
   const { LocalBuilder } = await import(pathToFileURL(nitroBuildersEntry).href);
   const rootDir = process.cwd();
+  await mkdir(resolve(".data"), { recursive: true });
+  const unrelated = await mkdtemp(resolve(".data", "workflow-discovery-test-"));
+  t.after(() => rm(unrelated, { recursive: true, force: true }));
+  await writeFile(join(unrelated, "unrelated-worktree.ts"), [
+    'import { forbidden } from "THIS_MUST_NOT_BE_BUNDLED";',
+    'export async function unrelatedStep() { "use step"; return forbidden(); }',
+  ].join("\n"));
+  // Use the real product config, not a narrower test-only directory list that
+  // can pass while production still scans generated output and other worktrees.
+  const options = await loadOptions({ rootDir, buildDir, dev: true }, { dotenv: false });
   const nitro = {
     options: {
+      ...options,
       buildDir,
       rootDir,
       workspaceDir: rootDir,
       dev: true,
-      workflow: { dirs: ["src/workflows"] },
     },
   };
 
   await new LocalBuilder(nitro).build();
   const stepsPath = join(buildDir, "workflow", "steps.mjs");
   const steps = await readFile(stepsPath, "utf8");
+  assert.doesNotMatch(steps, /THIS_MUST_NOT_BE_BUNDLED|unrelatedStep/);
 
   assert.doesNotMatch(
     steps,

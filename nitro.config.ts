@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { defineConfig } from "nitro";
+import type {} from "workflow/nitro";
 
 const isolatedBuildDir = process.env.CHAT_NITRO_BUILD_DIR?.trim();
 
@@ -16,6 +17,11 @@ export default defineConfig({
     : { buildDir: resolve(isolatedBuildDir) }),
   serverDir: "src",
   modules: ["workflow/nitro"],
+  // Only product Workflow entrypoints participate in discovery. Scanning "."
+  // also discovers generated bundles and independent NanoClaw worktrees under
+  // .data, causing recursive compilation or duplicate serialized class IDs.
+  // Transitive Step dependencies are still bundled by the Workflow builder.
+  workflow: { dirs: ["src/workflows"] },
   // Keep native SQLite and ONNX assets external to the server bundle while
   // tracing the exact runtime files into `.output`.
   traceDeps: ["mem0ai", "pg", "better-sqlite3", "fastembed*", "onnxruntime-node*"],
