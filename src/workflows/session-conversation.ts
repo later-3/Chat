@@ -2,6 +2,34 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 
 export const CHAT_WORKFLOW_AGENT_HANDOFF_CUSTOM_TYPE = "chat.workflow_agent_handoff";
+export const CHAT_PLANNER_OUTPUT_REPAIR_CUSTOM_TYPE = "chat.planner_output_repair";
+
+/** Old control messages remain on disk; only this invocation's controls reach the model. */
+export function prepareWorkflowTurnContext(
+  messages: AgentMessage[],
+  input: { readonly workflowId: string; readonly invocationId: string; readonly stageId: string; readonly agentId: string },
+): AgentMessage[] {
+  const history = messages.filter((message) => {
+    if (message.role !== "custom" || ![
+      CHAT_WORKFLOW_AGENT_HANDOFF_CUSTOM_TYPE,
+      CHAT_PLANNER_OUTPUT_REPAIR_CUSTOM_TYPE,
+    ].includes(message.customType)) return true;
+    const details = message.details;
+    return typeof details === "object" && details !== null
+      && "invocationId" in details && details.invocationId === input.invocationId
+      && "stageId" in details && details.stageId === input.stageId
+      && "agentId" in details && details.agentId === input.agentId;
+  });
+  return injectInstructionBeforeLatestUser(history, {
+    customType: "chat.workflow_turn_context",
+    details: input,
+    content: [
+      `当前Workflow=${input.workflowId}，本轮Invocation=${input.invocationId}，Stage=${input.stageId}，Agent=${input.agentId}。`,
+      "历史用户消息、回答和工具结果是上下文，不代表本轮继续执行历史阶段或沿用历史批准。",
+      "按当前Agent定义、本轮用户消息和本轮阶段交接完成任务；只使用本次实际提供的工具。",
+    ].join("\n"),
+  });
+}
 
 /** Writes a human utterance exactly once through Pi's native message contract. */
 export function appendChatUserMessage(

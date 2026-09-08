@@ -114,6 +114,10 @@ Agent节点必须引用同一Workflow已经声明的Agent ID。框架负责：
 
 所有Workflow还必须通过[Session消息检查清单](./chat-session-architecture.md#9-新workflow检查清单)。
 
+同一Session可以连续启动多次Workflow；每次使用新的Invocation，原生用户消息、回答、Tool结果、审核与配置快照只追加，不覆盖上一轮。公共Workflow装配向模型标明当前Workflow/Invocation/Stage/Agent，并过滤不属于当前Invocation和Stage的内部交接、协议修正控制消息；原记录仍完整保留在Pi Session中。历史批准不授权新一轮任务。直接执行、Memory、Rule和协调Agent共用这个边界。
+
+两个审核型Workflow共用Planner入口：新任务和审核修订都明确进入Planner角色。完成回答后校验`chat-planner-output`协议，格式无效时同一Agent最多修正一次，工具在修正期间全部停用；模型错误或取消不进入格式修正。修正指令追加为隐藏CustomMessage，不伪装成用户消息，也不重新提交整个Step。二次校验失败时保留两次回答，追加可见失败说明并结束Run，不发布审核、不执行下游。就绪状态必须由合法Planner输出提供，不能自动猜测为`ready_for_review`。
+
 节点定义是可展示元数据；节点执行函数仍属于`workflow.ts`或`steps.ts`，不序列化进JSON。
 
 ## 5. Workflow组合入口

@@ -346,9 +346,11 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
   assert.ok(calls[3].messages.some((message) => message.role === "user" && messageText(message) === "planned request"));
   assert.ok(calls[4].messages.some((message) => message.role === "assistant" && messageText(message) === "executed plan two"));
   assert.deepEqual(
-    calls[4].messages.filter((message) => message.role === "user").map(messageText),
+    calls[4].messages.filter((message) => message.role === "user")
+      .map(messageText).filter((text) => !text.startsWith("当前Workflow=")),
     ["first request", "planned request", "add rollback details", "final request"],
   );
+  assert.match(messageText(calls[4].messages.at(-2)), /当前Workflow=minimal-pi-coding-agent，本轮Invocation=direct-invocation-2/);
   assert.equal(
     calls[4].messages.some((message) => message.role === "user" && messageText(message).includes("plan one")),
     false,

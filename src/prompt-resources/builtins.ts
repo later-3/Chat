@@ -134,6 +134,19 @@ const PLANNER_READINESS_CONTRACT_EXPERIENCE_V1 = [
 export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
   {
     schemaVersion: 1,
+    id: "planner-conversation-output-repair",
+    revisions: [{
+      schemaVersion: 1, id: "planner-conversation-output-repair", revision: 1, kind: "experience",
+      title: "Planner续聊的阶段边界与协议修正",
+      purpose: "避免续聊沿用历史执行阶段，以及一次输出格式错误直接终止规划。",
+      content: "同一Session的多次请求使用独立Invocation，历史消息和审核只追加不覆盖。公共装配标明本轮阶段，旧内部交接不作为当前授权。Planner协议无效时可在同一Agent中关闭工具并修正一次，保留原回答和CustomMessage；二次失败说明原因并关闭失败，不自动补ready_for_review。模型错误和取消不能当成格式错误重试。工具必须检查实际Resolve结果：Project显式覆盖可能取消默认read，不得绕过配置自动加权限。门禁：两个审核Workflow的连续交互、格式修复、失败后续聊必须通过Built Server和Nitro开发Runtime，并证明Pi JSONL历史前缀不变。",
+      tags: ["development", "incident", "workflow", "session", "planning"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development-experiences/planner-conversation-output-repair.md", capturedAt: "2026-09-08T01:00:00.000Z" }],
+      author: { type: "user" }, createdAt: "2026-09-08T01:00:00.000Z",
+    }],
+  },
+  {
+    schemaVersion: 1,
     id: AGENT_CAPABILITY_DESIGN_RULE_ID,
     revisions: [{
       schemaVersion: 1,

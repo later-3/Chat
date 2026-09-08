@@ -16,5 +16,6 @@
 - [Workflow Step复用与Registry依赖必须保持运行时边界](./workflow-step-runtime-boundary.md)
 - [本地运行时升级掩盖部署 Node.js 语法不兼容](./deployment-runtime-version-parity.md)
 - [Planner 未区分任务澄清与可执行计划](./planner-readiness-contract.md)
+- [Planner 续聊中的阶段与输出协议修正](./planner-conversation-output-repair.md)
 
 - [Long Agent 切换 Provider 的认证与工具合同](./long-agent-provider-validation.md)

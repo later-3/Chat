@@ -9,6 +9,7 @@ import { createChatRunEventPublisher } from "../chat-run-events.js";
 import {
   appendChatUserMessage,
   requireNativeAssistantLeafId,
+  CHAT_PLANNER_OUTPUT_REPAIR_CUSTOM_TYPE,
 } from "../session-conversation.js";
 import {
   appendChatWorkflowAgentInput,
@@ -16,8 +17,8 @@ import {
 } from "../workflow-stage.js";
 import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
 import { MAX_PLANNING_RESULT_CHARS } from "./agents/planner/index.js";
-import { injectPlanningRevisionContext, stripLegacyPlanningHandoffs } from "./context.js";
-import { parsePlannerOutput } from "./planner-output.js";
+import { injectPlanningRevisionContext } from "./context.js";
+import { parsePlannerOutput, type ParsedPlannerOutput } from "./planner-output.js";
 import {
   appendPlanReview,
   appendPlanReviewDecision,
@@ -122,13 +123,12 @@ async function runPlannerIteration(input: {
       stageId: "plan",
       agentId: input.plannerAgentId,
     },
-    transformContext: input.previousPlan === undefined
-      ? stripLegacyPlanningHandoffs
-      : (messages) => injectPlanningRevisionContext(messages, {
-          invocationId: input.workflowInvocationId,
-          planRevision: input.planRevision,
-          previousPlan: input.previousPlan as string,
-        }),
+    transformContext: (messages) => injectPlanningRevisionContext(messages, {
+      workflowId: input.workflowId,
+      invocationId: input.workflowInvocationId,
+      planRevision: input.planRevision,
+      ...(input.previousPlan === undefined ? {} : { previousPlan: input.previousPlan }),
+    }),
   });
   if (modelFallbackMessage !== undefined) {
     console.log(`${localTimestamp()} [planner] modelFallback=${modelFallbackMessage}`);
@@ -151,14 +151,68 @@ async function runPlannerIteration(input: {
   let completed = false;
   try {
     await session.resumePendingTurn();
-    const plannerOutput = observer.getLastAssistantText();
-    const plannerMessage = observer.getLastAssistantMessage();
-    if (plannerOutput === "") throw new Error("Planner Agent没有返回计划文本");
-    if (plannerMessage === undefined) throw new Error("Planner Agent没有返回Assistant消息");
-    if (plannerOutput.length > MAX_PLANNING_RESULT_CHARS) {
-      throw new Error(`规划结果不能超过${MAX_PLANNING_RESULT_CHARS}个字符`);
+    const readOutput = () => {
+      const message = observer.getLastAssistantMessage();
+      if (message === undefined) throw new Error("Planner Agent没有返回Assistant消息");
+      if (message.stopReason === "error" || message.stopReason === "aborted") {
+        throw new Error("Planner模型调用失败或已取消，不能作为输出格式修正");
+      }
+      return observer.getLastAssistantText();
+    };
+    const validateOutput = (text: string) => {
+      if (text.length > MAX_PLANNING_RESULT_CHARS) {
+        throw new Error(`规划结果不能超过${MAX_PLANNING_RESULT_CHARS}个字符`);
+      }
+      return parsePlannerOutput(text);
+    };
+    const plannerOutput = readOutput();
+    let parsed: ParsedPlannerOutput;
+    try {
+      parsed = validateOutput(plannerOutput);
+    } catch (error) {
+      const validationError = error instanceof Error ? error.message : String(error);
+      const activeTools = session.getActiveToolNames();
+      console.warn(`${localTimestamp()} [planner] revision=${input.planRevision} output repair attempt=1 reason=${validationError}`);
+      // One protocol repair, not a Step retry: preserve the failed answer and never rerun tools.
+      session.setActiveToolsByName([]);
+      try {
+        await session.sendCustomMessage({
+          customType: CHAT_PLANNER_OUTPUT_REPAIR_CUSTOM_TYPE,
+          display: false,
+          details: {
+            schemaVersion: 1,
+            workflowId: input.workflowId,
+            invocationId: input.workflowInvocationId,
+            stageId: "plan",
+            agentId: input.plannerAgentId,
+            planRevision: input.planRevision,
+            attempt: 1,
+            validationError,
+          },
+          content: [
+            `Planner输出校验失败：${validationError}。这是唯一一次格式修正机会。`,
+            "保留已有信息，重新输出符合当前Planner协议的完整待审核计划或澄清稿。不要执行用户任务，不重新调查，不调用工具。",
+            '第一行必须是<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->，或将readiness设为needs_clarification并填写真实阻塞问题。',
+            "不得为了通过校验而猜测就绪状态。第一行之后是完整Markdown计划正文。",
+          ].join("\n"),
+        }, { triggerTurn: true });
+        const repairedOutput = readOutput();
+        try {
+          parsed = validateOutput(repairedOutput);
+        } catch (repairError) {
+          const failure = `Planner输出格式修正后仍不符合协议：${repairError instanceof Error ? repairError.message : String(repairError)}`;
+          await session.sendCustomMessage({
+            customType: "chat.planner_output_failure",
+            display: true,
+            details: { invocationId: input.workflowInvocationId, workflowId: input.workflowId },
+            content: `${failure}。本轮未进入审核或执行；原始请求和两次回答均已保留，可以继续对话重新规划。`,
+          });
+          throw new Error(failure);
+        }
+      } finally {
+        session.setActiveToolsByName(activeTools);
+      }
     }
-    const parsed = parsePlannerOutput(plannerOutput);
 
     const planEntryId = requireNativeAssistantLeafId(input.chatSession.manager);
     input.chatSession.manager.flush();

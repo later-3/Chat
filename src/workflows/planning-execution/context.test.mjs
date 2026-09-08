@@ -57,3 +57,21 @@ test("revision instructions are model-facing while persisted feedback remains th
   assert.match(transformed[2].content, /<previous_plan>\nearlier answer/);
   assert.equal(transformed[3], messages[2]);
 });
+
+test("a fresh planning turn preserves prior answers and identifies the current stage", () => {
+  const messages = [
+    { role: "user", content: "first request", timestamp: 1 },
+    { role: "assistant", content: [{ type: "text", text: "earlier execution result" }], timestamp: 2 },
+    { role: "user", content: "revise it", timestamp: 3 },
+  ];
+  const before = structuredClone(messages);
+  const result = injectPlanningRevisionContext(messages, {
+    workflowId: "planner-orchestrator", invocationId: "new-run", planRevision: 1,
+  });
+  assert.deepEqual(messages, before);
+  assert.equal(result[0], messages[0]);
+  assert.equal(result[1], messages[1]);
+  assert.equal(result.at(-1), messages[2]);
+  assert.match(result[2].content, /新一轮的Planner阶段/);
+  assert.equal(result[2].details.workflow, "planner-orchestrator");
+});

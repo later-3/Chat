@@ -1,3 +1,4 @@
+import { respondPlannerConversation, exercisePlannerConversation } from "./planner-conversation-fixture.mjs";
 import { respondProjectManagement, exerciseProjectManagementRun } from "./project-management-runtime-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -50,6 +51,7 @@ async function startEmbeddingServer() {
   const localServer = http.createServer(async (request, response) => {
     if (request.method === "POST" && request.url === "/v1/chat/completions") {
       const modelRequest = await readJson(request);
+      if (respondPlannerConversation(modelRequest, response)) return;
       if (respondProjectManagement(modelRequest, response, chatHome, "built-runtime-model")) return;
       const requestText = JSON.stringify(modelRequest);
       const responseText = !requestText.includes("workflow_execution_task_brief")
@@ -1399,4 +1401,9 @@ test("file access outside Chat-authorized roots is rejected", async () => {
 
 test("built Project Skill and all six tools execute through a real Workflow and Pi", async () => {
   await exerciseProjectManagementRun(authenticatedFetch, { chatHome, projectId, workspace });
+});
+
+
+test("reviewed Workflows support repeated conversations and bounded format repair without rewriting history", async () => {
+  await exercisePlannerConversation(authenticatedFetch, { projectId, workspace, chatHome });
 });

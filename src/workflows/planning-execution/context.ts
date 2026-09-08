@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { injectInstructionBeforeLatestUser } from "../session-conversation.js";
+import { CHAT_PLANNER_OUTPUT_REPAIR_CUSTOM_TYPE, injectInstructionBeforeLatestUser } from "../session-conversation.js";
 
 export const LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE = "planning-execution-handoff";
 
@@ -45,23 +45,30 @@ export function injectPlanningRevisionContext(
   input: {
     readonly invocationId: string;
     readonly planRevision: number;
-    readonly previousPlan: string;
+    readonly previousPlan?: string;
+    readonly workflowId?: string;
   },
 ): AgentMessage[] {
-  return injectInstructionBeforeLatestUser(stripLegacyPlanningHandoffs(messages), {
+  const history = stripLegacyPlanningHandoffs(messages).filter((message) => {
+    if (message.role !== "custom" || message.customType !== CHAT_PLANNER_OUTPUT_REPAIR_CUSTOM_TYPE) return true;
+    const details = message.details;
+    return typeof details === "object" && details !== null
+      && "planRevision" in details && details.planRevision === input.planRevision;
+  });
+  return injectInstructionBeforeLatestUser(history, {
     customType: "chat.planning_revision_context",
     details: {
-      workflow: "planning-execution",
+      workflow: input.workflowId ?? "planning-execution",
       invocationId: input.invocationId,
       planRevision: input.planRevision,
     },
     content: [
-      `你正在修订第${String(input.planRevision)}版计划。`,
-      "最新一条原生user消息是审核人对上一版计划的修改意见。",
+      input.previousPlan === undefined
+        ? "你现在进入新一轮的Planner阶段。最新一条原生user消息是本轮任务，历史Executor回答仅供参考。"
+        : `你正在修订第${String(input.planRevision)}版计划。最新一条原生user消息是审核人对上一版计划的修改意见。`,
       "请逐条响应用户信息，重新完成任务理解和就绪判定，并输出可独立审核的完整任务澄清稿或执行计划；不要执行任务，也不要只输出差异。",
-      "<previous_plan>",
-      input.previousPlan,
-      "</previous_plan>",
+      "即使任务是编写或修订方案，也应先生成交给下游Agent的计划，不能直接代替它交付。第一行必须遵守System Prompt中的chat-planner-output协议。",
+      ...(input.previousPlan === undefined ? [] : ["<previous_plan>", input.previousPlan, "</previous_plan>"]),
     ].join("\n"),
   });
 }

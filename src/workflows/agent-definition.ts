@@ -11,6 +11,7 @@ import {
 } from "../agents/pi-agent-session.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { WorkflowAgentDefinition } from "./agent-config.js";
+import { prepareWorkflowTurnContext } from "./session-conversation.js";
 
 export {
   parseWorkflowAgentDefinition,
@@ -54,5 +55,21 @@ export { buildChatAgentCustomInstructions };
 export async function createWorkflowAgentSession(
   options: CreateWorkflowAgentSessionOptions,
 ): Promise<CreatedWorkflowAgentSession> {
-  return createChatPiAgentSession(options);
+  const context = options.toolContext;
+  if (context?.purpose !== "execution" || context.workflowId === undefined
+    || context.workflowInvocationId === undefined || context.stageId === undefined
+    || context.agentId === undefined) return createChatPiAgentSession(options);
+  const turn = {
+    workflowId: context.workflowId,
+    invocationId: context.workflowInvocationId,
+    stageId: context.stageId,
+    agentId: context.agentId,
+  };
+  return createChatPiAgentSession({
+    ...options,
+    transformContext: async (messages, signal) => {
+      const current = prepareWorkflowTurnContext(messages, turn);
+      return options.transformContext === undefined ? current : options.transformContext(current, signal);
+    },
+  });
 }

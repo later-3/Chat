@@ -374,6 +374,8 @@ Project 私有 Agent 文件单独覆盖该 Agent 的模型、Thinking Level 和 
 
 修改 Personal 默认不会重写已有 Session 的最近选择。若要立即恢复新默认，请在界面中重置对应 Agent，或新建 Session。
 
+显式Tool策略是完整选择：`names: []`加上`addresses: ["system:tool/memory_search"]`表示只启用Memory搜索，不会继承内置Planner的`read`。Planner需要读取Skill或Project文档时，应在该项目的Tool配置中保留`read`；运行时不会绕过用户覆盖偷偷增加工具。修正配置不修改历史Session，后续Run重新解析默认值；Session/本轮若另有明确覆盖，仍按上述优先级生效。
+
 ## 9. Workflow 源码配置
 
 内置 Workflow 的开发配置位于：

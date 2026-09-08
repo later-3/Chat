@@ -1,3 +1,4 @@
+import { respondPlannerConversation, exercisePlannerConversation } from "./planner-conversation-fixture.mjs";
 import { respondProjectManagement, exerciseProjectManagementRun } from "./project-management-runtime-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -110,6 +111,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
         return;
       }
       const modelRequest = await readJson(request);
+      if (respondPlannerConversation(modelRequest, response)) return;
       modelRequests.push(modelRequest);
       if (respondProjectManagement(modelRequest, response, chatHome, "dev-e2e-model")) return;
       const systemText = modelRequest.messages
@@ -1280,6 +1282,8 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       workflowCallStatistics: parentSession.workflowCallStatistics,
       workflowCallTree: parentSession.workflowCallTree,
     });
+
+    await exercisePlannerConversation(authenticatedFetch, { projectId: "dev-e2e-project", workspace, chatHome });
 
     const orchestrationEventsResponse = await authenticatedFetch(
       `/runs/${encodeURIComponent(orchestrationStarted.runId)}/events?startIndex=0`,
