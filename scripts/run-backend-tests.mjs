@@ -4,7 +4,7 @@ import { run } from "node:test";
 import { spec } from "node:test/reporters";
 
 const files = [];
-for await (const file of glob("src/**/*.test.mjs")) files.push(file);
+for await (const file of glob("test/**/*.test.mjs")) files.push(file);
 files.push("scripts/deployment-config.test.mjs");
 files.sort();
 

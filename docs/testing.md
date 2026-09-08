@@ -20,7 +20,7 @@ Chat 的测试从快到慢分为四层：
 ```bash
 # 单个 Backend node:test 文件
 node --import ./scripts/typescript-test-loader.mjs \
-  --experimental-strip-types --test src/example.test.mjs
+  --experimental-strip-types --test test/example.test.mjs
 
 # 架构导航、Skill单一来源与开发启动/关闭脚本
 pnpm check:architecture

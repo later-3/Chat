@@ -118,8 +118,8 @@ Tool 抛出 JSON 错误文本，由 Pi 生成原生 `isError=true` ToolResult；
 
 ## 7. 验证入口
 
-- `src/projects/management.test.mjs`：创建重放与恢复、精确路径授权、字段校验、并发 revision、继承恢复、资源授权、Skill 安装保护及 Pi 装配。
-- `src/long-agents/long-agents.test.mjs`：同一 Long Agent 主 Session 中读取 Skill 并执行全部六个 Tool，不改变来源项目。
+- `test/projects/management.test.mjs`：创建重放与恢复、精确路径授权、字段校验、并发 revision、继承恢复、资源授权、Skill 安装保护及 Pi 装配。
+- `test/long-agents/long-agents.test.mjs`：同一 Long Agent 主 Session 中读取 Skill 并执行全部六个 Tool，不改变来源项目。
 - `scripts/project-management-runtime-fixture.mjs`：本地假模型真实调用 Skill/read 与六个 Tool。
 - `scripts/built-server.test.mjs`、`scripts/dev-server.test.mjs`：同一场景经过生产和 Nitro 开发 Workflow/Step/Pi 链。
 

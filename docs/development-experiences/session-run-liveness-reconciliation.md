@@ -20,5 +20,5 @@ Chat 的 Session 活跃守卫把 **durable 记录当存活信号**用：
 2. **durable 记录降级为意图账本，由对账收敛**：`reconcileStaleChatSessionRuns` 只在"进程内登记表无条目 + 记录非终态 + 已过宽限期（10s，关闭 accept→pickup 竞态）"时判定为崩溃残留，binding 走 `getRun(runId).cancel()` 公开 API 写 `run_cancelled` 事件，planning record 推进到 `failed`。不手改 SDK 存储文件。
 3. **`waiting_review` 是合法可恢复状态**（hook 是 durable 的，重启后 `resumeHook` 仍可用），对账必须跳过它，守卫继续拦截。
 4. 守卫先对账再判定，删除/改名/发起新 Run 三个入口共用同一套逻辑，僵尸自愈一次后永久解除。
-5. 回归门禁：`src/session-activity.test.mjs` 覆盖注册表生命周期、运行中拦截、宽限期保守拦截、僵尸对账放行、waiting_review 不被误杀。
+5. 回归门禁：`test/session-activity.test.mjs` 覆盖注册表生命周期、运行中拦截、宽限期保守拦截、僵尸对账放行、waiting_review 不被误杀。
 6. 排查同类问题时，`~/.chat/runtime/workflow-data/runs/<runId>.json` 的 `status` + `steps/` 里是否有 `attempt` 事件能区分"接受后从未执行"（僵尸）与"执行中崩溃"。

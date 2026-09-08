@@ -99,7 +99,7 @@ HTTP → ProjectContext → Workflow Registry → Workflow → Agent 装配 → 
 pnpm test:backend
 ```
 
-Backend 测试与所属模块放在`src/**`中并使用`*.test.mjs`命名；测试运行器会统一发现这些文件。新增行为优先在相邻现有测试中补场景，只有职责独立时才新建测试文件。
+Backend 测试独立放在与`src/`平级的`test/**`目录（目录结构镜像`src/`）并使用`*.test.mjs`命名；测试运行器会统一发现这些文件。新增行为优先在相邻现有测试中补场景，只有职责独立时才新建测试文件。
 
 交付 Backend 代码前运行完整验证：
 

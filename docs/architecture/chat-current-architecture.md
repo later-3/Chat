@@ -12,7 +12,7 @@ Long Agent当前能力以[实施状态](./chat-long-agent-roadmap.md)中的逐�
 | 类型 | 数量 | 说明 |
 |---|---:|---|
 | Chat后端开发代码（`src/`，不含测试） | 持续变化 | 以当前分支源码为准 |
-| Chat后端与脚本测试 | 持续变化 | `*.test.mjs`与`scripts/`中的构建测试 |
+| Chat后端与脚本测试 | 持续变化 | `test/`与`scripts/`中的测试 |
 | Pi Web派生前端开发代码 | 持续变化 | 纯浏览器前端 |
 | Workflow框架支持的Node类型 | 2 | Agent Node、Task Node |
 
