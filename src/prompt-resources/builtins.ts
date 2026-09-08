@@ -312,4 +312,17 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       author: { type: "user" }, createdAt: "2026-09-08T01:02:00.000Z",
     }],
   },
+  {
+    schemaVersion: 1,
+    id: "stop-service-port-verification",
+    revisions: [{
+      schemaVersion: 1, id: "stop-service-port-verification", revision: 1, kind: "experience",
+      title: "停机检查必须覆盖真实监听地址与服务管理者",
+      purpose: "避免正常或调试服务仍在监听却报告已停止，以及KeepAlive立即重启被kill的服务。",
+      content: "macOS可能允许同一端口的通配地址与回环地址监听并存，单次bind成功不能证明端口空闲。检查IPv4/IPv6的回环与通配地址，IPv6未启用时只跳过明确的不支持错误；其他检查失败不能当作空闲。停止正常Chat通过已验证checkout归属的launchd/systemd，停止后复核服务状态、原PID身份和端口；不按端口猜测并杀进程。普通dev-start wrapper不一定是进程组leader，只向它发送TERM，让其trap清理自有子进程组。使用真实临时KeepAlive服务和无关监听器回归；不能停止用户正常服务来证明测试通过。",
+      tags: ["development", "incident", "debugging", "lifecycle"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development-experiences/stop-service-port-verification.md", capturedAt: "2026-09-08T08:00:00.000Z" }],
+      author: { type: "user" }, createdAt: "2026-09-08T08:00:00.000Z",
+    }],
+  },
 ] as const satisfies readonly PromptResourceDocument[];

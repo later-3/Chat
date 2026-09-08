@@ -61,6 +61,7 @@
 - [开发经验案例](./development-experiences/README.md)：已经发生过的故障、原因和回归门禁。
 - [Pi Web 前端 API 迁移清单](./pi-web-frontend-api-migration.md)：Frontend 能力迁移状态。
 - [部署指南](./deployment.md)：生产目录、服务、升级和回滚。
+- [分别关闭正常与调试Chat](./development/debugging/stopping.md)：关闭选项、检查输出、范围与恢复。
 
 ## 文档维护规则
 

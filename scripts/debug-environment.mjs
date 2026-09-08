@@ -23,12 +23,19 @@ async function assertUnredirected(path) {
 
 /** Refuse occupied ports; never kill, attach to, or silently reuse another instance. */
 export async function assertPortFree(port) {
-  const server = createServer();
-  await new Promise((accept, reject) => {
-    server.once("error", () => reject(new Error(`Debug port ${port} is occupied; its owner was not stopped.`)));
-    server.listen(port, "127.0.0.1", accept);
-  });
-  await new Promise((accept, reject) => server.close(error => error ? reject(error) : accept()));
+  // macOS may allow wildcard and loopback binds to coexist. Check both address
+  // families and both scopes; a single successful bind does not prove vacancy.
+  for (const host of ["127.0.0.1", "0.0.0.0", "::1", "::"]) {
+    const server = createServer();
+    const listening = await new Promise((accept, reject) => {
+      server.once("error", error => {
+        if (host.includes(":") && ["EAFNOSUPPORT", "EADDRNOTAVAIL"].includes(error.code)) accept(false);
+        else reject(new Error(`Debug port ${port} is occupied or cannot be checked (${error.code}); its owner was not stopped.`));
+      });
+      server.listen({ port, host, ...(host.includes(":") ? { ipv6Only: true } : {}) }, () => accept(true));
+    });
+    if (listening) await new Promise((accept, reject) => server.close(error => error ? reject(error) : accept()));
+  }
 }
 
 /** Keep OS/debugger transport, but do not inherit production credentials or service endpoints. */

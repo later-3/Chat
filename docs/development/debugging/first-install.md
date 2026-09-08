@@ -43,7 +43,7 @@ sudo systemctl restart chat.service
 systemctl --user restart '<安装输出的Nano Unit>'
 ```
 
-以上示例假设安装时沿用默认Chat服务名；自定义名用安装记录替换。不要在root的user manager操作另一个用户的Nano服务。macOS使用已安装的准确LaunchAgent label执行`launchctl kickstart`；显式重启才加`-k`。完整停止应让实际管理器卸载/停止对应服务，避免直接kill后KeepAlive立即复活；当前整套业务排空仍是[生命周期待实现合同](../../architecture/chat-system-lifecycle.md)。
+以上示例假设安装时沿用默认Chat服务名；自定义名用安装记录替换。不要在root的user manager操作另一个用户的Nano服务。macOS使用已安装的准确LaunchAgent label执行`launchctl kickstart`；显式重启才加`-k`。现在可用`pnpm chat:stop -- --normal`让实际管理器卸载/停止正常Backend与Nano，追加`--check`只检查；开发/调试使用`--debug`。macOS已bootout后需bootstrap恢复，准确命令见[关闭手册](./stopping.md)；当前整套业务排空仍是[生命周期待实现合同](../../architecture/chat-system-lifecycle.md)。
 
 启动前用`lsof -nP -iTCP:<实际端口> -sTCP:LISTEN`核对占用；已有正确服务用start/restart管理。若端口属于旧的本实例手工进程，先核对用户、启动命令、cwd和服务归属，再TERM并等待释放；超时只KILL已确认属于该实例的PID/进程组。若属于其他实例，报告冲突并协调其端口或服务，不能为了把检查变绿误杀它。生产端口来自私有配置，不照抄本手册调试端口。
 

@@ -78,8 +78,11 @@ Nano启动后自动通过原生ncl复用/创建Debug Agent和cli/local Wiring，
 ```bash
 pnpm debug:start                    # Web + Backend + 本地模型
 pnpm debug:start -- --nanoclaw       # 再包含Nano，自动初始化本地练习Group/Memory/Registry
-pnpm debug:stop                     # 可从另一终端执行；重复停止安全
+pnpm debug:stop                     # 仅专用调试，可从另一终端重复执行
+pnpm chat:stop -- --debug           # 也关闭本checkout普通dev:all
 ```
+
+正常服务关闭使用`pnpm chat:stop -- --normal`；加`--check`只检查。服务管理、自启动与恢复见[关闭手册](./stopping.md)。
 
 重复执行`debug:start`会先停止旧的同一调试栈，再依次检查模型、Backend、Vite、Nano；失败会回收本次子进程。此处ready表示Web/本地练习链的基础就绪，不代表真实Telegram/微信账号已完成收发验收。首次Nano依赖准备仍执行`debug:prepare:nanoclaw`；日常不重复安装依赖。
 

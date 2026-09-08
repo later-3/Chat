@@ -66,6 +66,60 @@
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "Chat: check normal services",
+      "type": "process",
+      "command": "node",
+      "args": [
+        "scripts/chat-stop.mjs",
+        "--normal",
+        "--check"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Chat: stop normal services",
+      "type": "process",
+      "command": "node",
+      "args": [
+        "scripts/chat-stop.mjs",
+        "--normal"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Chat: check development and debug",
+      "type": "process",
+      "command": "node",
+      "args": [
+        "scripts/chat-stop.mjs",
+        "--debug",
+        "--check"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Chat: stop development and debug",
+      "type": "process",
+      "command": "node",
+      "args": [
+        "scripts/chat-stop.mjs",
+        "--debug"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
     }
   ]
 }

@@ -5,7 +5,7 @@
 直接执行Workflow中的Agent可以显式加载项目Skill
 `.chat/skills/chat-deployment/SKILL.md`执行本仓库部署。Skill在Linux上统一调用`chatctl`，不取代本文，也不授予未经用户明确要求的生产变更权限。
 
-**生命周期设计更新（2026-09-08）**：整套Chat启停须统一协调Backend、NanoClaw与实例拥有的资源，见[系统生命周期合同](./architecture/chat-system-lifecycle.md)。下文仍描述当前部署入口；目前`chatctl`与Nano服务独立，不能将其操作结果解释为整套系统已启停。
+**生命周期设计更新（2026-09-08）**：整套Chat启停须统一协调Backend、NanoClaw与实例拥有的资源，见[系统生命周期合同](./architecture/chat-system-lifecycle.md)。当前可用`pnpm chat:stop -- --normal`关闭本checkout的正常Backend与Nano服务，`--debug`关闭开发/调试，追加`--check`只检查。准确范围、权限与恢复命令见[关闭手册](./development/debugging/stopping.md)。此入口实现进程/服务停止，尚未实现跨组件业务排空；`chatctl`与Nano的启动入口仍独立。
 
 ## 运行结构
 

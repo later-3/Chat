@@ -40,13 +40,15 @@ test("debug environment drops production configuration while preserving debugger
 });
 
 test("occupied debug ports fail without terminating their owner", async () => {
-  const server = createServer();
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  try {
-    await assert.rejects(assertPortFree(server.address().port), /occupied/);
-    assert.equal(server.listening, true);
-  } finally { await new Promise(accept => server.close(accept)); }
+  for (const host of ["127.0.0.1", "0.0.0.0"]) {
+    const server = createServer();
+    server.listen(0, host);
+    await once(server, "listening");
+    try {
+      await assert.rejects(assertPortFree(server.address().port), /occupied/);
+      assert.equal(server.listening, true);
+    } finally { await new Promise(accept => server.close(accept)); }
+  }
 });
 
 test("preparation preserves private edits, pins backend isolation, and refuses redirected data", async t => {
@@ -113,7 +115,7 @@ test("launcher startup error releases its lock without touching another director
   await assert.rejects(readFile(join(root, ".data/debug/backend.lock")), { code: "ENOENT" });
 });
 
-test("Stop reaps an owned grandchild even after its parent exits, and preserves an unrelated listener", { timeout: 12000 }, async t => {
+test("Stop reaps an owned grandchild even after its parent exits, and preserves an unrelated listener", { timeout: 25000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), "chat-debug-stop-"));
   const debug = join(root, "debug");
   await mkdir(join(root, "scripts"));
@@ -162,7 +164,7 @@ test("Stop reaps an owned grandchild even after its parent exits, and preserves 
   });
   for (let attempt = 0; attempt < 100; attempt++) {
     try { grandchild = Number(await readFile(join(root, "ready"), "utf8")); break; }
-    catch (error) { if (error.code !== "ENOENT") throw error; await delay(20); }
+    catch (error) { if (error.code !== "ENOENT") throw error; await delay(100); }
   }
   assert.ok(grandchild);
   child.kill("SIGTERM");

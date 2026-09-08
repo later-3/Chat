@@ -66,7 +66,7 @@ Backend时间包含UTC偏移；Nano控制台常用本地时分秒，日志文件
 | Group身份看起来旧 | Snapshot revision、stale原因 | 临时网络失败可用缓存；401/404/合同错误不能用旧缓存掩盖 |
 | 改默认模型后旧Session没变 | Session最近选择/显式覆盖 | 重置该Agent或新Session验证 |
 | Nano启动Tripwire失败 | worktree commit、marker、安装/构建/测试 | 受控升级完成后写marker，不删除保护 |
-| “停止”后还看到服务 | 进程是否属于普通dev/生产，或独立启动配置 | 只管理自己的进程；整套生产停止合同尚未实现 |
+| “停止”后还看到服务 | 进程是否属于普通dev/生产，或独立启动配置 | 按[关闭手册](./stopping.md)选择--normal或--debug；跨组件业务排空尚未实现 |
 
 ## 人工只读检查Nano
 

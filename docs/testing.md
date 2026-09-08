@@ -22,7 +22,7 @@ Chat 的测试从快到慢分为四层：
 node --import ./scripts/typescript-test-loader.mjs \
   --experimental-strip-types --test src/example.test.mjs
 
-# 架构导航、Skill单一来源与开发启动脚本
+# 架构导航、Skill单一来源与开发启动/关闭脚本
 pnpm check:architecture
 pnpm test:tooling
 
@@ -61,7 +61,7 @@ node --experimental-strip-types --test frontend/lib/example.test.mjs
 | 改动 | 开发中至少运行 | 完成前运行 |
 |---|---|---|
 | 纯文档/架构Skill | 链接与示例检查；Skill变更做有界只读场景问答 | `pnpm check:architecture`、`git diff --check` |
-| 开发启动与调试配置 | `pnpm test:tooling`；核对VSCode配置 | 隔离Chat Home的真实启动/停止冒烟；源码映射与断点需单独验证 |
+| 开发启动、正常/调试关闭与VSCode配置 | `pnpm test:tooling`；核对VSCode配置 | 隔离Chat Home的真实启动/停止冒烟；关闭测试只用临时服务，不试停生产；源码映射与断点需单独验证 |
 | 单个 Backend 模块 | 对应的单文件测试 | `pnpm test:backend`、`pnpm typecheck` |
 | Backend API 或持久化合同 | 相关模块与 API 测试 | `pnpm verify` |
 | Frontend 逻辑或 Backend/Frontend 合同 | 对应 Frontend 测试 | `pnpm test:frontend`、`pnpm typecheck`；完成前通常运行 `pnpm verify` |

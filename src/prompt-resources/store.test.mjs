@@ -236,6 +236,9 @@ test("built-in rules and experiences are seeded once into the Personal Prompt li
   assert.equal(debugExperience?.kind, "experience");
   assert.match(debugExperience?.content ?? "", /node_modules\/\.nitro-debug/);
   assert.equal((await secondStore.history("debug-build-directory-isolation")).length, 1);
+  const stopExperience = await secondStore.get("stop-service-port-verification");
+  assert.equal(stopExperience?.kind, "experience");
+  assert.equal((await secondStore.history("stop-service-port-verification")).length, 1);
 });
 
 test("a built-in experience upgrades only while its stored revision prefix is unchanged", async (t) => {
