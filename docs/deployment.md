@@ -36,6 +36,19 @@ Linux自动部署入口是[deploy/chatctl](../deploy/chatctl)，支持同时满�
 
 脚本通过系统包管理器安装`ca-certificates`、`curl`、`git`、OpenSSH客户端、`xz`、C/C++编译工具、`make`、`python3`和`pkg-config`；从`nodejs.org`下载固定的Node.js `22.19.0`并用官方`SHASUMS256.txt`校验，然后通过Corepack固定使用pnpm `10.13.1`。Pi模型目录也从Pi Commit指定的固定Release快照恢复并校验SHA256，不以实时模型目录作为部署输入。脚本不会使用系统中碰巧存在的其他Node或pnpm版本。
 
+### Docker是可选环境能力
+
+**当前Chat部署不需要安装Docker。** Chat Backend/Pi直接运行在Node中；接入Long Agent时，NanoClaw固定使用`NANOCLAW_EXECUTION_MODE=chat-pi`，仅启动Host/Channel Gateway，跳过原生Agent Session Runtime。`chatctl`不安装Docker，Nano的`service`步骤在该模式下也不要求Docker daemon、Docker用户组或Socket权限。
+
+| 使用场景 | 是否要求Docker | 当前边界 |
+|---|---|---|
+| 普通Chat Web、Workflow、Pi及已授权的宿主Tool/Skill | 否 | 具体Tool仍需自己的程序和依赖；无Docker不等于有容器隔离 |
+| Web长期同事、Telegram/微信→Nano→Chat/Pi | 否 | 需要Nano Host、模型服务及相应渠道账号/网络；不需要Agent镜像 |
+| Docker中的隔离工具、脚本、MCP或开发环境 | 可选能力启用后才要求 | 已确认目标，当前Chat尚未接入，不能宣称安装Docker即自动启用 |
+| 脱离Chat使用Nano原生Agent容器Runtime | 按Nano独立运行规范要求 | 不属于本文Chat部署路线；不能用它替代Chat的唯一Pi执行链 |
+
+后续Docker环境应按需安装、显式启用。未启用或机器没有Docker时，基础Chat和渠道服务仍须可启动；只有明确依赖该环境的任务报告环境不可用，不能自动改成宿主执行或恢复Nano Provider Loop。当前没有`dockerEnabled`之类的Chat配置开关，不要自行添加无实现的字段；实现状态见[Long Agent路线图](./architecture/chat-long-agent-roadmap.md#53-原生任务与-docker)。
+
 ### 跨环境支持矩阵
 
 | 环境 | 支持级别 | Chat服务 | NanoClaw服务与数据 |
@@ -72,7 +85,7 @@ CHAT_HOME/                         Chat用户事实，与源码分离
 
 - Web登录密码，以及至少一种可用的模型Provider凭证和对应的默认Provider/模型。
 
-默认部署`main`。也可以显式选择Tag或Commit；Pi、前端和NanoClaw源码版本始终由Chat父仓库记录的三个Submodule Commit决定，脚本不会让子模块自行追踪远端分支。当前Linux `chatctl`仍只管理Chat进程；NanoClaw Host使用它自己的确定性Setup和服务管理配置，后续由Chat部署控制面统一编排。所有构建都必须在目标机器完成，因为Chat与NanoClaw包含和操作系统、CPU架构相关的原生依赖与容器镜像，不能从其他机器复制构建产物。
+默认部署`main`。也可以显式选择Tag或Commit；Pi、前端和NanoClaw源码版本始终由Chat父仓库记录的三个Submodule Commit决定，脚本不会让子模块自行追踪远端分支。当前Linux `chatctl`仍只管理Chat进程；NanoClaw Host使用它自己的确定性Setup和服务管理配置，后续由Chat部署控制面统一编排。所有构建都必须在目标机器完成，因为Chat与NanoClaw Node Host包含和操作系统、CPU架构相关的原生依赖，不能从其他机器复制构建产物；当前chat-pi部署不构建或拉取Agent容器镜像。
 
 ## 首次安装
 
@@ -232,9 +245,18 @@ pnpm exec tsx setup/index.ts --step service
 
 `service`只构建Node Host，并在macOS生成按Checkout隔离的LaunchAgent，在Linux生成用户级systemd服务；两者都设置开机启动与异常重启。`chat-pi`下该步骤不会检查Docker用户组或Docker Socket。服务直接在Node启动时读取NanoClaw `.env`。当Node版本支持时，生成的启动参数会加入`--use-env-proxy`，确保LaunchAgent/systemd在需要代理访问Telegram时使用`HTTP_PROXY`、`HTTPS_PROXY`与`NO_PROXY`，而不是依赖交互Shell环境。一个Host可以同时连接默认Telegram实例和`TELEGRAM_INSTANCES`列出的命名实例。每个Chat Long Agent映射一个Agent Group，每只Bot通过Wiring连接到对应Agent Group。
 
+#### 无Docker机器的部署与验收
+
+1. 按本文完成Chat安装与模型配置，再执行上面的Nano定向`set-env`和`service`步骤；`chat-pi`必须在安装/启动服务前写入，不省略或清空它。
+2. 跳过原生容器镜像、OneCLI、Provider认证和Docker安装步骤。不要直接套用Nano独立安装的完整`setup/auto`流程。
+3. Nano启动日志应出现`External Agent execution owns this NanoClaw instance; Session Runtime disabled`且`driver=chat-pi`，随后出现`NanoClaw running`。Chat本机健康、带服务认证的Gateway健康都必须通过。
+4. 验收一次普通Web对话，以及所需渠道的一次真实入站、Pi响应、Delivery/Ack；没有配置渠道时，不把渠道未启动归因于缺Docker。无外部账号时可先按[CLI-01](./development/debugging/channels.md#cli-01先用本地终端验证完整渠道链)在隔离调试实例验证公共渠道链。
+
+Nano通用`setup/index.ts --step environment`与`--step verify`尚未完整适配chat-pi：仍探测Docker、报告原生Provider Credential；`verify`还可能因Nano侧没有Provider Credential而失败。`CONTAINER_RUNTIME=none`不是本模式部署失败的证据，也不要为了让通用verify变绿而向Nano复制模型密钥。当前采用上面的Chat/Gateway/实际消息验收；该检查器适配差距不能用来忽略真实的服务、鉴权或路由错误。相关实现证据见[Nano启动选择](../nanoclaw/src/agent-execution-startup.ts)、[service前提](../nanoclaw/setup/service.ts)与[通用verify](../nanoclaw/setup/verify.ts)。
+
 #### 启用微信
 
-在同一个稳定 NanoClaw Checkout 按 [add-wechat Skill](../nanoclaw/.claude/skills/add-wechat/SKILL.md) 安装适配器、注册测试和固定依赖，完成构建及 NanoClaw 验证后再启用 `WECHAT_ENABLED=true`。扫码凭据保存在 `data/wechat/auth.json`，目录应为 `0700`，凭据为 `0600`。可以先单独完成登录，再用上述 `service` 步骤重启现有 Host，避免等待扫码阻塞其他通道初始化。
+父仓库当前固定的NanoClaw Fork已包含微信适配器，部署时按固定依赖安装和构建，无需重复运行add-wechat修改源码，也不需要Docker。启用前按渠道配置说明设置`WECHAT_ENABLED=true`。扫码凭据保存在 `data/wechat/auth.json`，目录应为 `0700`，凭据为 `0600`。可以先单独完成登录，再用上述 `service` 步骤重启现有 Host，避免等待扫码阻塞其他通道初始化。
 
 通过本机 `ncl` 把扫码用户加入目标 Agent Group 成员名单，创建微信私聊 Messaging Group，并用 Wiring 连接到已登记的 Chat Long Agent。保留 `unknown_sender_policy=strict`，按需要使用 `sender_scope=known`；扫码登录与 Wiring 均不会自动授权其他联系人。无需把 Chat Registry 的 Telegram inbox 替换为微信地址。
 
@@ -266,6 +288,8 @@ NanoClaw工作区、数据库、Channel Session和日志仍由它自己的Checko
 如果Cloudflare还有云服务器连接器，再安装[反向Relay模板](../deploy/macos/com.later.chat.cloud-relay.plist.in)，让云端`127.0.0.1:33051`回到Mac的`127.0.0.1:43110`。将`__CHAT_CLOUD_TARGET__`替换为用户自己`~/.ssh/config`中的Host别名，并替换所有路径占位符；真实别名、主机、账号和IdentityFile不进入仓库。生产入口同样是`.output/server/index.mjs`，不是开发服务器或历史`start.mjs`。
 
 ## Chat域名
+
+生产公开入口只指向生产Backend。VS Code使用的35145/45112/45300/45401、`.data/debug`和独立浏览器资料仅供调试，不加入Tunnel或生产服务配置；并存规则见[调试环境](./development/debugging/environment.md)。调试准备命令不代替本文的生产安装/升级步骤。
 
 公开入口由`CHAT_PUBLIC_URL`配置，例如：
 

@@ -124,6 +124,8 @@ Agent Memory 仍使用 NanoClaw OKF 服务，迁移物理根时保证单一可�
 
 Docker 接入需要新的环境执行合同及部署门禁。仅移除 chat-pi 或恢复 Nano 原生 Provider 会违反统一 Pi 架构，不能作为迁移办法。环境不可用时报告失败/等待，不静默回退宿主无限权限执行。
 
+部署约束：Docker按需安装、显式启用，基础Chat/Nano Channel服务不得因未安装Docker而拒绝启动。仅声明依赖Docker环境的任务受其可用性约束；当前仍未提供这套工具环境的产品开关，已有chat-pi无Docker路径继续保留。
+
 ### 5.4 派生数据与恢复
 
 配置快照、活动索引和 Social 有明确来源/版本，引用更新或撤回后可失效或重建。并发创建、重试和恢复不能重复创建当日主 Session、同次 Run 或 Delivery。

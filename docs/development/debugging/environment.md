@@ -67,6 +67,8 @@ pnpm debug:prepare:nanoclaw
 
 生成的 `.data/debug/nanoclaw/.env` 默认 Telegram Token 为空、微信关闭。添加测试账号见[渠道章节](./channels.md)。这个文件与 `.data/debug/backend.env` 的服务 Token 必须一致。Nano 的固定运行模式为 `chat-pi`，不得改回原生容器 Runtime 试图绕过 Chat 错误。
 
+本套调试无需Docker；`debug:prepare:nanoclaw`安装和构建的是Node Host，不构建Agent镜像。将来可选Docker工具环境的边界及无Docker生产部署步骤见[部署文档](../../deployment.md#docker是可选环境能力)。本地read等宿主工具实验不代表容器隔离已启用。
+
 ## 命令行与验证
 
 不使用 VS Code 时，在独立终端运行：

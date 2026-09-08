@@ -74,6 +74,8 @@ Social 使用日历和时间流展示每个 Agent 每天的工作及来源。没
 
 目标中的 Docker 为工具、脚本、MCP 和开发提供受控环境。Agent 有独立环境配置，进入不同项目按授权获得工作范围；多人并行开发可使用独立副本。
 
+Docker是可选环境依赖，不是Chat或Nano Channel Host的安装前提。当前chat-pi可在无Docker机器运行；后续只有显式选择Docker环境的任务才依赖它，环境缺失应报告不可用，不能自动回退宿主执行。无Docker部署与当前能力边界见[部署文档](./deployment.md#docker是可选环境能力)。
+
 停止或重建容器不删除 Agent 的身份、Memory、Session 和任务。执行环境、Project 工作目录和 Agent 自身 Workspace 分开管理。当前 chat-pi 仍关闭 NanoClaw 原生 Agent 容器，新的 Docker 工具环境尚未接入。
 
 ## 9. Agent 应如何阅读本说明
