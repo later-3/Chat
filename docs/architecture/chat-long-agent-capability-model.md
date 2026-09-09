@@ -47,7 +47,7 @@ Long Agent 与 Workflow 共用 Pi 底座：Workflow 组织一次执行，Long Ag
 
 | 领域 | 必须表达的配置与状态 |
 |---|---|
-| 身份 | 稳定 ID、名称、职责、描述、启停、NanoClaw Group 映射 |
+| 身份 | 稳定 ID、名称、职责、描述、启停、展示头像（auto/emoji/图片引用）、NanoClaw Group 映射 |
 | 独立空间 | Agent 配置根、Workspace、自己的 Daily Project、持久数据位置 |
 | 模型 | Chat Provider/Model 引用、Thinking、默认与显式选择、已授权替代策略 |
 | Prompt | System Prompt、有序区域、自定义内容、资源引用、条件与预算、实际装配结果 |

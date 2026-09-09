@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { PROJECT_ID_PATTERN } from "../projects/types.js";
 import { systemToolAddress } from "../tools/framework.js";
@@ -25,12 +26,19 @@ export interface LongAgentInstanceConfig {
   readonly gatewayBaseUrl: string;
 }
 
+export type LongAgentAvatar =
+  | { readonly kind: "auto" }
+  | { readonly kind: "emoji"; readonly emoji: string }
+  | { readonly kind: "image"; readonly file: string; readonly revision: number };
+
 export interface LongAgentConfig {
   readonly id: string;
   /** Chat UI display alias. NanoClaw Agent Group owns the runtime identity name. */
   readonly name: string;
   /** Chat UI summary. NanoClaw standingInstructions own the long-running role. */
   readonly description: string;
+  /** Chat-owned display avatar; `auto` derives color and initials from the stable id. */
+  readonly avatar: LongAgentAvatar;
   readonly enabled: boolean;
   readonly instanceId: string;
   readonly nanoclawAgentGroupId: string;
@@ -38,6 +46,11 @@ export interface LongAgentConfig {
   readonly inbox: LongAgentAddress & { readonly messagingGroupId: string };
   /** Chat-owned Pi capability definition. NanoClaw never receives this value. */
   readonly definition: WorkflowAgentDefinition;
+}
+
+/** Content revision of one LongAgent definition; any identity/avatar/config change moves it. */
+export function longAgentConfigRevision(agent: LongAgentConfig): string {
+  return createHash("sha256").update(JSON.stringify(agent)).digest("hex");
 }
 
 export interface LongAgentRegistry {
@@ -181,11 +194,32 @@ function parseInstance(value: unknown): LongAgentInstanceConfig {
   };
 }
 
+function parseAgentAvatar(value: unknown): LongAgentAvatar {
+  if (value === undefined) return { kind: "auto" };
+  if (!isRecord(value)) throw new Error("agent.avatar必须是对象");
+  exactFields(value, ["kind", "emoji", "file", "revision"], "agent.avatar");
+  if (value.kind === "auto") return { kind: "auto" };
+  if (value.kind === "emoji") {
+    const emoji = requiredString(value.emoji, "agent.avatar.emoji");
+    if ([...emoji].length > 16) throw new Error("agent.avatar.emoji最多16个字符");
+    return { kind: "emoji", emoji };
+  }
+  if (value.kind === "image") {
+    const file = requiredString(value.file, "agent.avatar.file");
+    if (!/^avatar\.(png|jpe?g|webp)$/.test(file)) throw new Error(`agent.avatar.file格式无效: ${file}`);
+    if (!Number.isSafeInteger(value.revision) || (value.revision as number) < 1) {
+      throw new Error("agent.avatar.revision必须是正整数");
+    }
+    return { kind: "image", file, revision: value.revision as number };
+  }
+  throw new Error("agent.avatar.kind必须是auto、emoji或image");
+}
+
 function parseAgent(value: unknown): LongAgentConfig {
   if (!isRecord(value)) throw new Error("LongAgent agent必须是对象");
   exactFields(
     value,
-    ["id", "name", "description", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "inbox", "definition"],
+    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "inbox", "definition"],
     "LongAgent agent",
   );
   if (!isRecord(value.inbox)) throw new Error("agent.inbox必须是对象");
@@ -244,6 +278,7 @@ function parseAgent(value: unknown): LongAgentConfig {
     id,
     name,
     description,
+    avatar: parseAgentAvatar(value.avatar),
     enabled: value.enabled,
     instanceId: parseId(value.instanceId, "agent.instanceId"),
     nanoclawAgentGroupId: requiredString(value.nanoclawAgentGroupId, "agent.nanoclawAgentGroupId"),

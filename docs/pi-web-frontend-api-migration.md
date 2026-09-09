@@ -54,7 +54,7 @@ Chat/frontend（纯浏览器）
 
 | 接口 | 前端用途 | 状态 | 后续实现方向 |
 |---|---|---|---|
-| `GET /api/cwd/browse` | 目录选择器 | 待迁移 | Chat校验根目录和可见范围后列目录 |
+| `GET /api/cwd/browse` | 目录选择器 | 已接入 | 迁移自Pi Web目录浏览（`~`展开、父目录、排序与符号链接防护）；登录后只列目录名，不读文件内容，打开目录仍走`POST /api/projects/open`授权 |
 | `GET /api/default-cwd`、`POST /api/default-cwd` | 默认工作目录 | 待迁移 | Chat配置，不写入浏览器或Pi Session |
 | `GET /api/file-index` | `@file`搜索 | 待迁移 | 优先复用Pi/独立文件索引能力 |
 | `GET /api/files/[...path]` | 文件列表、读取、元数据、下载、预览和文件变化监听 | 已接入 | 已迁入Pi Web实现；Chat验证允许根目录、路径穿越和符号链接真实路径 |

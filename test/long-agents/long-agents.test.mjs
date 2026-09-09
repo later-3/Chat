@@ -1067,6 +1067,23 @@ test("channel images reach a vision model and text-only models answer in-channel
   const visionDelivery = commands.filter((request) => request.path.endsWith("/deliveries")).at(-1);
   assert.equal(visionDelivery.body.files, undefined);
 
+  // Phase 1b: an image-only message must not send an empty text block,
+  // which providers like Kimi reject with "text content is empty".
+  const imageOnly = event(2, "in", {
+    text: "",
+    images: [{ type: "image", data: TEST_PNG_BASE64, mimeType: "image/png" }],
+  });
+  await acceptLongAgentEvents({ instanceId: "local", events: [imageOnly], chatHome });
+  const [imageOnlySync] = await syncLongAgentEvents(chatHome);
+  assert.equal(imageOnlySync.executed, 1);
+  assert.equal(modelRequests.length, 2);
+  const imageOnlyJson = JSON.stringify(modelRequests[1].messages);
+  assert.match(imageOnlyJson, /image_url/);
+  assert.equal(imageOnlyJson.includes('"text":""'), false);
+  assert.match(imageOnlyJson, /see attached image/);
+  const imageOnlyDelivery = commands.filter((request) => request.path.endsWith("/deliveries")).at(-1);
+  assert.equal(imageOnlyDelivery.body.text, "Pi Long Agent reply 2");
+
   const state = await readLongAgentState(chatHome);
   const opened = await openChatSession({
     projectId: "daily",
@@ -1081,14 +1098,15 @@ test("channel images reach a vision model and text-only models answer in-channel
 
   // Phase 2: a text-only model answers in-channel without ever calling the model.
   writeModels(["text"]);
-  const textOnlyEvent = event(2, "in", {
+  const textOnlyEvent = event(3, "in", {
     text: "",
     images: [{ type: "image", data: TEST_PNG_BASE64, mimeType: "image/png" }],
   });
   await acceptLongAgentEvents({ instanceId: "local", events: [textOnlyEvent], chatHome });
   const [textOnlySync] = await syncLongAgentEvents(chatHome);
   assert.equal(textOnlySync.executed, 1);
-  assert.equal(modelRequests.length, 1);
+  // No new model call: phase 1 and 1b already made exactly two requests.
+  assert.equal(modelRequests.length, 2);
   const noticeDelivery = commands.filter((request) => request.path.endsWith("/deliveries")).at(-1);
   assert.match(noticeDelivery.body.text, /Long Agent Model/);
   assert.match(noticeDelivery.body.text, /不支持图片输入/);

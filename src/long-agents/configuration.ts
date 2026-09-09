@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
   createCodingTools,
@@ -15,11 +14,26 @@ import {
   type WorkflowAgentDefinition,
 } from "../workflows/agent-config.js";
 import { readLongAgentRegistry, updateLongAgentRegistry } from "./storage.js";
+import { removeLongAgentAvatarAssets } from "./avatars.js";
 import {
   LONG_AGENT_ID_PATTERN,
+  longAgentConfigRevision,
+  type LongAgentAvatar,
   type LongAgentConfig,
   type LongAgentInstanceConfig,
 } from "./types.js";
+
+export type PublicLongAgentAvatar =
+  | { readonly kind: "auto" }
+  | { readonly kind: "emoji"; readonly emoji: string }
+  | { readonly kind: "image"; readonly revision: number };
+
+/** Browser-safe avatar projection: no absolute paths or asset file names. */
+export function publicLongAgentAvatar(avatar: LongAgentAvatar): PublicLongAgentAvatar {
+  if (avatar.kind === "emoji") return { kind: "emoji", emoji: avatar.emoji };
+  if (avatar.kind === "image") return { kind: "image", revision: avatar.revision };
+  return { kind: "auto" };
+}
 
 export interface LongAgentConfigurationDocument {
   readonly schemaVersion: 1;
@@ -28,6 +42,7 @@ export interface LongAgentConfigurationDocument {
     readonly id: string;
     readonly name: string;
     readonly description: string;
+    readonly avatar: PublicLongAgentAvatar;
     readonly enabled: boolean;
     readonly defaultProjectId: string;
     readonly definition: {
@@ -102,8 +117,8 @@ function parseLongAgentId(value: unknown): string {
   return id;
 }
 
-function revisionOf(agent: LongAgentConfig): string {
-  return createHash("sha256").update(JSON.stringify(agent)).digest("hex");
+export function revisionOf(agent: LongAgentConfig): string {
+  return longAgentConfigRevision(agent);
 }
 
 function findInstance(instances: readonly LongAgentInstanceConfig[], instanceId: string): LongAgentInstanceConfig {
@@ -120,6 +135,7 @@ function documentOf(agent: LongAgentConfig, instance: LongAgentInstanceConfig): 
       id: agent.id,
       name: agent.name,
       description: agent.description,
+      avatar: publicLongAgentAvatar(agent.avatar),
       enabled: agent.enabled,
       defaultProjectId: agent.defaultProjectId,
       definition: {
@@ -162,9 +178,28 @@ interface ParsedUpdate {
   readonly expectedRevision: string;
   readonly name: string;
   readonly description: string;
+  readonly avatar?: { readonly kind: "auto" } | { readonly kind: "emoji"; readonly emoji: string };
   readonly enabled: boolean;
   readonly defaultProjectId: string;
   readonly definition: WorkflowAgentDefinition;
+}
+
+function parseAvatarUpdate(value: unknown): ParsedUpdate["avatar"] {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new LongAgentConfigurationInvalidError("avatar必须是对象");
+  exactFields(value, ["kind", "emoji"], "avatar");
+  if (value.kind === "auto") return { kind: "auto" };
+  if (value.kind === "emoji") {
+    const emoji = readNonEmptyString(value.emoji, "avatar.emoji");
+    if ([...emoji].length > 16) throw new LongAgentConfigurationInvalidError("avatar.emoji最多16个字符");
+    return { kind: "emoji", emoji };
+  }
+  if (value.kind === "image") {
+    // Echoing the current image avatar keeps it; setting or changing an image
+    // avatar is only possible through the binary upload endpoint.
+    return undefined;
+  }
+  throw new LongAgentConfigurationInvalidError("avatar.kind必须是auto或emoji");
 }
 
 function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
@@ -172,7 +207,7 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
     throw new LongAgentConfigurationInvalidError("Long Agent配置必须使用schemaVersion 1");
   }
   exactFields(value, [
-    "schemaVersion", "expectedRevision", "name", "description", "enabled", "defaultProjectId", "definition",
+    "schemaVersion", "expectedRevision", "name", "description", "avatar", "enabled", "defaultProjectId", "definition",
   ], "Long Agent配置");
   const expectedRevision = readNonEmptyString(value.expectedRevision, "expectedRevision");
   if (!/^[a-f0-9]{64}$/.test(expectedRevision)) {
@@ -184,6 +219,7 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
     throw new LongAgentConfigurationInvalidError("enabled必须是布尔值");
   }
   const defaultProjectId = readNonEmptyString(value.defaultProjectId, "defaultProjectId");
+  const avatar = parseAvatarUpdate(value.avatar);
   if (!isRecord(value.definition)) throw new LongAgentConfigurationInvalidError("definition必须是对象");
   let definition: WorkflowAgentDefinition;
   try {
@@ -197,7 +233,15 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
   if (definition.id !== longAgentId || definition.name !== name || definition.description !== description) {
     throw new LongAgentConfigurationInvalidError("definition的id、name和description必须与Long Agent身份一致");
   }
-  return { expectedRevision, name, description, enabled: value.enabled, defaultProjectId, definition };
+  return {
+    expectedRevision,
+    name,
+    description,
+    ...(avatar === undefined ? {} : { avatar }),
+    enabled: value.enabled,
+    defaultProjectId,
+    definition,
+  };
 }
 
 async function validateModel(definition: WorkflowAgentDefinition, chatHome: string): Promise<void> {
@@ -268,7 +312,7 @@ export async function updateLongAgentConfiguration(
   await validateModel(update.definition, root);
   await validateTools(update.definition, update.defaultProjectId, root);
 
-  const document = await updateLongAgentRegistry(root, (registry) => {
+  const document = await updateLongAgentRegistry(root, async (registry) => {
     const index = registry.agents.findIndex((candidate) => candidate.id === id);
     if (index < 0) throw new LongAgentConfigurationNotFoundError(`找不到Long Agent: ${id}`);
     const previous = registry.agents[index];
@@ -280,23 +324,28 @@ export async function updateLongAgentConfiguration(
       ...previous,
       name: update.name,
       description: update.description,
+      ...(update.avatar === undefined ? {} : { avatar: update.avatar }),
       enabled: update.enabled,
       defaultProjectId: update.defaultProjectId,
       definition: update.definition,
     };
+    if (update.avatar !== undefined && previous.avatar.kind === "image") {
+      await removeLongAgentAvatarAssets(id, root);
+    }
     const agents = [...registry.agents];
     agents[index] = next;
     return {
       registry: { ...registry, agents },
       result: documentOf(next, findInstance(registry.instances, next.instanceId)),
     };
-  });
+});
 
   await appendChatAuditEvent({
     action: "long-agent.config.update",
     target: { type: "long-agent", longAgentId: id },
     details: {
       enabled: document.agent.enabled,
+      avatar: document.agent.avatar.kind,
       defaultProjectId: document.agent.defaultProjectId,
       model: document.agent.definition.model ?? null,
       thinkingLevel: document.agent.definition.thinkingLevel ?? null,

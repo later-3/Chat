@@ -50,6 +50,7 @@ Chat使用`<CHAT_HOME>/long-agents.json`登记可选择的长期Agent及其NanoC
       "id": "nexus",
       "name": "Nexus",
       "description": "默认长期助手",
+      "avatar": { "kind": "emoji", "emoji": "🦉" },
       "enabled": true,
       "instanceId": "local",
       "nanoclawAgentGroupId": "ag-example",
@@ -91,7 +92,7 @@ Chat使用`<CHAT_HOME>/long-agents.json`登记可选择的长期Agent及其NanoC
 
 `executionMode`固定为`chat-pi`：该NanoClaw Instance中的全部Chat Long Agent都由Chat Pi执行，不支持逐Agent选择Runtime。Registry `schemaVersion: 1`只允许一个NanoClaw Instance，由该Host承载多个Agent Group；当前服务Token是单一Host信任边界，不能把多个信任域伪装成已经隔离。`gatewayBaseUrl`是NanoClaw提供给Chat Backend的窄HTTP Gateway，本期使用loopback HTTP。Agent ID和Instance ID只能使用小写字母、数字、点、下划线或连字符；`defaultProjectId`必须是已经登记的稳定Project ID。同一个NanoClaw Agent Group不能重复映射成两个Chat Long Agent。`nanoclawAgentGroupId`既是Channel路由键，也是Long Agent独立身份、Workspace、Markdown Agent Memory和NanoClaw生态资源的稳定引用。Chat Web通过Backend管理Agent Group展示身份、Standing Instructions与OKF Markdown Memory，不直连NanoClaw。
 
-`name`与`description`是Chat Web列表使用的显示别名和摘要，不是Long Agent运行身份事实源；兼容期内`definition.name/description`仍与它们保持一致。NanoClaw Agent Group的`name`才是运行身份名称，`standingInstructions`才是长期职责事实源，两者在每轮Pi装配时优先注入。为控制模型上下文，每轮最多注入Standing Instructions的32,000个Unicode code point，以及`index.md`、`system/definition.md`各16,000个；截断提示会要求Agent按需使用`agent_memory_read`读取全文，而管理API与Snapshot仍保留完整内容。`definition`只保存Chat拥有的Pi运行策略，使用与Workflow Agent相同的Model、Thinking Level、System Prompt、自定义Prompt、Tool和Resource结构。省略时Chat会生成具备`memory_search`、`memory_record`、`workflow_call`、3个`agent_memory_*` Tool和6个`project_*` Tool的默认定义。`memory_*`访问Chat Personal/Project共享Memory；`agent_memory_*`只访问当前Long Agent映射的NanoClaw Agent Group，模型不能在Tool参数中指定另一个Group。Chat Web和所有NanoClaw入口都使用同一份Pi运行策略。
+`name`与`description`是Chat Web列表使用的显示别名和摘要，不是Long Agent运行身份事实源；兼容期内`definition.name/description`仍与它们保持一致。`avatar`是可选的Chat展示头像：`{ "kind": "auto" }`（缺省，按稳定Agent ID派生固定配色和首字符）、`{ "kind": "emoji", "emoji": "🦉" }`或`{ "kind": "image", "file": "avatar.png", "revision": 1 }`。图片二进制不写入该文件，而是保存在受管目录`<CHAT_HOME>/long-agents-assets/<longAgentId>/avatar.<png|jpg|webp>`；只能上传PNG/JPEG/WebP且不超过2MB。展示头像通过`PUT /api/long-agents/:id/config`（auto/emoji，随完整表单带`expectedRevision`）和`PUT/DELETE /api/long-agents/:id/avatar?expectedRevision=…`（图片raw bytes上传/删除）修改，两者保存后都返回新的配置revision；浏览器经`GET /api/long-agents/:id/avatar?v=<revision>`读取图片，配置投影只暴露`kind/emoji/revision`，不暴露宿主绝对路径或资产文件名。图片头像只能经上传接口设置，配置表单回读`image`表示保持不变。头像属于纯展示配置，保存即生效，不等下一轮。NanoClaw Agent Group的`name`才是运行身份名称，`standingInstructions`才是长期职责事实源，两者在每轮Pi装配时优先注入。为控制模型上下文，每轮最多注入Standing Instructions的32,000个Unicode code point，以及`index.md`、`system/definition.md`各16,000个；截断提示会要求Agent按需使用`agent_memory_read`读取全文，而管理API与Snapshot仍保留完整内容。`definition`只保存Chat拥有的Pi运行策略，使用与Workflow Agent相同的Model、Thinking Level、System Prompt、自定义Prompt、Tool和Resource结构。省略时Chat会生成具备`memory_search`、`memory_record`、`workflow_call`、3个`agent_memory_*` Tool和6个`project_*` Tool的默认定义。`memory_*`访问Chat Personal/Project共享Memory；`agent_memory_*`只访问当前Long Agent映射的NanoClaw Agent Group，模型不能在Tool参数中指定另一个Group。Chat Web和所有NanoClaw入口都使用同一份Pi运行策略。
 
 `long-agents.json`只保存Chat到NanoClaw的稳定映射、默认Project和Pi运行策略，不复制Agent Group身份、Standing Instructions或Memory。最后一次成功读取的Agent Group Snapshot作为派生缓存保存到`<CHAT_HOME>/runtime/long-agents/<longAgentId>/agent-group-snapshot.json`；每个实际进入Turn的Snapshot还按内容Revision不可变保存到同目录的`snapshots/<sha256>.json`。Turn的schemaVersion 2 Marker冻结`contextRevision`、Group/Core Revision、stale和fetchedAt；同一Turn重试只按该内容Revision读取历史Snapshot，不会静默换成后来更新的身份或Memory。只有明确的网络错误、超时或NanoClaw 5xx才使用最后有效缓存，并标记`stale=true`。认证失败、对象不存在、版本冲突或响应合同不匹配都会关闭失败，不能被旧缓存掩盖；缓存也不能反向覆盖NanoClaw事实源。
 
@@ -354,6 +355,8 @@ Long Agent 未提供自定义 Definition 时，默认拥有 `project_search`、`
 
 模型必须已存在于内置或自定义模型目录中，并具有有效认证。该文件至少包含 `model`、`thinkingLevel` 或 `tools` 之一。通常应通过 Chat 界面或 API 修改，以便保存前验证模型、认证和 Tool；不要提交到项目 Git。
 
+`PUT /api/workflows/:workflowId/agents/:agentId/model-config` 只覆盖请求中出现的字段：传对象或字符串表示设置，传 `null` 表示只清除该字段并保留其他覆盖，省略的字段保持不变；`model`、`thinkingLevel` 和 `tools` 全部移除后该文件自动删除。`DELETE` 一次清除 `model` 和 `thinkingLevel`，保留 `tools`。界面上“使用Workflow默认”对应逐字段清除，“恢复Workflow默认模型与思考等级”对应 `DELETE`。
+
 ## 8. Session、本轮调整与优先级
 
 Session 位于 `<CHAT_HOME>/projects/<projectId>/sessions/*.jsonl`。它会记住该 Session 中各 Workflow 最近使用的 Agent 选择，并保存每一轮的冻结快照。它是运行历史，不是供用户手工维护的配置文件。
@@ -400,6 +403,7 @@ src/workflows/<workflowId>/agents/<agentId>/agent.json
 | 添加自定义 Provider 或模型 | `<CHAT_HOME>/agent/models.json` |
 | 管理 Provider 认证 | `<CHAT_HOME>/agent/auth.json`，使用认证流程 |
 | 管理Long Agent身份、全局启停、默认Project与Agent能力 | Project侧边栏切到“长期同事”面板后使用同事设置；Personal事实在`<CHAT_HOME>/long-agents.json` |
+| 修改Long Agent显示头像 | 同事设置页的身份区域；图片资产在`<CHAT_HOME>/long-agents-assets/` |
 | 查看Long Agent的Telegram/NanoClaw Host信息 | 同一配置页的只读摘要；不返回Credential或Token |
 | 修改 Personal 默认 Workflow | `<CHAT_HOME>/config.json` |
 | 修改一个项目的默认 Workflow | `<project-root>/.chat/config.json` |

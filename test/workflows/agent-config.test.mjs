@@ -11,6 +11,7 @@ import { resolveWorkflowAgentDefinition } from "../../src/workflows/agent-config
 import {
   clearAgentModelConfig,
   readAgentModelConfig,
+  updateAgentDurableConfig,
   writeAgentModelConfig,
 } from "../../src/workflows/agent-model-config.ts";
 
@@ -275,6 +276,40 @@ test("clearing the durable model configuration restores the Workflow default", a
   });
   assert.equal(resolved.model, undefined);
   assert.deepEqual(resolved.sources, [{ kind: "workflow-default" }]);
+});
+
+test("clearing a single durable field keeps the other overrides", async (t) => {
+  const projectDataDir = fixture(t);
+  await writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", {
+    schemaVersion: 1,
+    model: { provider: "durable-provider", modelId: "durable-model" },
+    thinkingLevel: "high",
+    tools: { mode: "explicit", names: ["read"], exclude: [] },
+  });
+
+  // Clearing only the model keeps the durable thinking level and Tool policy.
+  const afterModelClear = await updateAgentDurableConfig(projectDataDir, "workflow-1", "test-agent", { model: null });
+  assert.deepEqual(afterModelClear, {
+    schemaVersion: 1,
+    thinkingLevel: "high",
+    tools: { mode: "explicit", names: ["read"], exclude: [] },
+  });
+  const resolved = await resolveWorkflowAgentDefinition({
+    defaultAgent,
+    cwd: projectDataDir,
+    durableModelConfig: { projectDataDir, workflowId: "workflow-1", agentId: "test-agent" },
+  });
+  assert.equal(resolved.model, undefined);
+  assert.equal(resolved.thinkingLevel, "high");
+
+  // Clearing the last remaining model field removes the file only when nothing else persists.
+  await updateAgentDurableConfig(projectDataDir, "workflow-1", "test-agent", { tools: null });
+  assert.deepEqual(await readAgentModelConfig(projectDataDir, "workflow-1", "test-agent"), {
+    schemaVersion: 1,
+    thinkingLevel: "high",
+  });
+  await updateAgentDurableConfig(projectDataDir, "workflow-1", "test-agent", { thinkingLevel: null });
+  assert.equal(await readAgentModelConfig(projectDataDir, "workflow-1", "test-agent"), undefined);
 });
 
 test("durable model configuration rejects unknown fields, empty configs, and invalid entity ids", async (t) => {

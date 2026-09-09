@@ -16,7 +16,7 @@ function errorResponse(error: unknown): never {
   });
 }
 
-/** Persists one Workflow Agent's durable model configuration for a Project. */
+/** Persists one Workflow Agent's durable model configuration for a Project; `null` clears a single field. */
 export default defineEventHandler(async (event) => {
   const workflowId = getRouterParam(event, "workflowId");
   const agentId = getRouterParam(event, "agentId");
@@ -35,16 +35,25 @@ export default defineEventHandler(async (event) => {
     if (rawProjectId === undefined) throw new Error("必须提供projectId");
     const project = await resolveProjectContext(rawProjectId);
 
-    const rawModel = "model" in body && typeof body.model === "object" && body.model !== null ? body.model : undefined;
-    const rawThinkingLevel = "thinkingLevel" in body && typeof body.thinkingLevel === "string"
-      ? body.thinkingLevel
-      : undefined;
-    const thinkingLevel = rawThinkingLevel === undefined ? undefined : parseThinkingLevel(rawThinkingLevel);
-    if (rawModel === undefined && rawThinkingLevel === undefined) {
+    const hasModelField = "model" in body;
+    const hasThinkingField = "thinkingLevel" in body;
+    if (!hasModelField && !hasThinkingField) {
       throw new Error("至少需要model或thinkingLevel");
     }
+    // null clears one persisted field while keeping the others; omitted fields stay unchanged.
+    const clearModel = hasModelField && body.model === null;
+    const clearThinking = hasThinkingField && body.thinkingLevel === null;
+    const rawModel = hasModelField && typeof body.model === "object" && body.model !== null ? body.model : undefined;
+    if (hasModelField && !clearModel && rawModel === undefined) throw new Error("model必须是对象或null");
+    const rawThinkingLevel = hasThinkingField && typeof body.thinkingLevel === "string"
+      ? body.thinkingLevel
+      : undefined;
+    if (hasThinkingField && !clearThinking && rawThinkingLevel === undefined) {
+      throw new Error("thinkingLevel必须是字符串或null");
+    }
+    const thinkingLevel = rawThinkingLevel === undefined ? undefined : parseThinkingLevel(rawThinkingLevel);
     let modelConfig: AgentModelConfig | undefined;
-    if (rawModel !== undefined && ("provider" in rawModel || "modelId" in rawModel)) {
+    if (rawModel !== undefined) {
       const provider = "provider" in rawModel && typeof rawModel.provider === "string" ? rawModel.provider : undefined;
       const modelId = "modelId" in rawModel && typeof rawModel.modelId === "string" ? rawModel.modelId : undefined;
       if (provider === undefined || modelId === undefined) throw new Error("model必须包含provider和modelId");
@@ -59,8 +68,8 @@ export default defineEventHandler(async (event) => {
     }
 
     const config = await updateAgentDurableConfig(project.projectDataDir, workflow.id, agent.id, {
-      ...(modelConfig === undefined ? {} : { model: modelConfig }),
-      ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
+      ...(clearModel ? { model: null } : modelConfig === undefined ? {} : { model: modelConfig }),
+      ...(clearThinking ? { thinkingLevel: null } : thinkingLevel === undefined ? {} : { thinkingLevel }),
     });
     return config;
   } catch (error) {

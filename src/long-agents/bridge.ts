@@ -14,6 +14,7 @@ import {
   persistNanoClawDelivery,
 } from "./nanoclaw-client.js";
 import { ensureProjectLongAgent } from "./project-agent.js";
+import { publicLongAgentAvatar } from "./configuration.js";
 import { executeLongAgentTurn } from "./runtime.js";
 import { readLongAgentRegistry, readLongAgentState, updateLongAgentState } from "./storage.js";
 import type {
@@ -590,6 +591,7 @@ export async function listLongAgents(input: {
         id: agent.id,
         name: agent.name,
         description: agent.description,
+        avatar: publicLongAgentAvatar(agent.avatar),
         defaultProjectId: agent.defaultProjectId,
         runtime: "pi" as const,
         configuration: {
