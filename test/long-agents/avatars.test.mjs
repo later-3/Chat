@@ -180,6 +180,51 @@ test("configuration updates switch the display avatar and clean up image assets"
   );
 });
 
+test("effective model resolves from the definition or from Chat defaults", async (t) => {
+  const chatHome = fixture(t);
+  await ensureDailyProject(chatHome);
+
+  // Agent without an explicit model resolves the Chat default (agent/settings.json).
+  await writeLongAgentRegistry(registryFixture(), chatHome);
+  fs.mkdirSync(path.join(chatHome, "agent"), { recursive: true });
+  fs.writeFileSync(path.join(chatHome, "agent", "settings.json"), JSON.stringify({
+    defaultProvider: "kimi6603",
+    defaultModel: "kimi-for-coding",
+    defaultThinkingLevel: "high",
+  }));
+  const following = await readLongAgentConfiguration("nexus", chatHome);
+  assert.deepEqual(following.agent.effective, {
+    model: { provider: "kimi6603", modelId: "kimi-for-coding" },
+    thinkingLevel: "high",
+    modelSource: "chat-default",
+    thinkingSource: "chat-default",
+  });
+
+  // An explicit model in the definition wins and is marked as such (read path,
+  // which does not re-check provider auth: that is a save-time validation).
+  const withModel = registryFixture();
+  withModel.agents[0].definition = {
+    schemaVersion: 1,
+    id: "nexus",
+    name: "Nexus",
+    description: "Daily coworker",
+    model: { provider: "kimi6603", modelId: "kimi-for-coding" },
+    thinkingLevel: "low",
+    systemPrompt: { mode: "pi-default" },
+    customInstructions: [],
+    tools: { mode: "pi-default" },
+    resources: { mode: "inherit" },
+  };
+  await writeLongAgentRegistry(withModel, chatHome);
+  const explicit = await readLongAgentConfiguration("nexus", chatHome);
+  assert.deepEqual(explicit.agent.effective, {
+    model: { provider: "kimi6603", modelId: "kimi-for-coding" },
+    thinkingLevel: "low",
+    modelSource: "explicit",
+    thinkingSource: "explicit",
+  });
+});
+
 test("summary projection carries the public avatar", async (t) => {
   const chatHome = fixture(t);
   await ensureDailyProject(chatHome);

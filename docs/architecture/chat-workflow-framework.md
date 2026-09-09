@@ -295,7 +295,7 @@ DELETE /api/sessions/:parentSessionId/workflow-calls/:callId
 1. `chat-config`按`projectId`返回Personal与可信Project配置的Backend合并投影；写入明确指定作用域。
 2. `workflows`返回Workflow、Node、Agent和源码配置来源的浏览器安全投影。
 3. `catalog`返回当前可发现资源，不伪造一次Agent配置来获取目录。
-4. `resolve`使用与执行完全相同的装配路径，返回最终Prompt、Tool、Skill、Extension、模型和诊断。
+4. `resolve`使用与执行完全相同的装配路径，返回最终Prompt、Tool、Skill、Extension、模型和诊断；`agent.modelSource/thinkingSource`标注生效模型与思考等级的来源（`workflow-default`/`config-file`/`durable`/`chat-default`），与Long Agent配置文档的`agent.effective`语义一致，前端模型区可直接显示“生效模型 + 来源”。
 5. `tools`返回当前Project可见Tool及Workflow Agent反向使用关系；`tool-config`只修改当前Project的Agent持久Tool策略。
 6. Prompt资源HTTP接口只负责列表、搜索、草稿查看和历史读取；创建、修改、归档、Draft提交、Proposal应用与拒绝由Rule Management Workflow持续对话完成，不能增加绕过对象ID确认的写接口。
 7. `workflow-calls`从Pi Session里的调用关系生成轻量调用树和统计；取消接口复用`workflow_call`的Runtime取消实现并校验父Session归属，前端不能直接控制子`runId`。

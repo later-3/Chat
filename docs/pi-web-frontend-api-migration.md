@@ -36,7 +36,7 @@ Chat/frontend（纯浏览器）
 | 用户家目录 | `GET /api/home` | 同路径 | 已接入 | 只用于路径显示和目录选择，不代表默认Project |
 | 打开Project | `POST /api/projects/open` | Chat新增 | 已接入 | 用户所选目录就是Project根，后端登记或初始化 |
 | 本机设备 | `GET /api/devices` | 同路径 | 部分接入 | 当前只有本机Chat实例 |
-| 模型展示 | `GET /api/models` | 同路径 | 部分接入 | 当前模型以Workflow实际返回值为准 |
+| 模型展示 | `GET /api/models` | 已接入 | 只列出用户在 Chat Home `models.json` 配置的模型（provider × modelId），展示信息与认证状态经 ModelRuntime 解析；不暴露 Pi 内置全量目录 |
 
 ## 4. 必须支持的后续接口
 

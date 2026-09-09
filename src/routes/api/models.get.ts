@@ -2,36 +2,60 @@ import { join } from "node:path";
 import { createError, defineEventHandler } from "nitro/h3";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { ensureChatHome } from "../../chat-home.js";
+import { readChatModelsConfig } from "../../models-config.js";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 /**
- * Lists the model catalog from the same Chat Home agent directory that the
- * Workflow assembly path reads, so every selectable model is one the runtime
- * can actually resolve.
+ * Lists only the models the user configured in Chat Home's models.json, with
+ * display metadata and auth state resolved through the same runtime the
+ * assembly path reads. It never imports the whole Pi built-in catalog, so the
+ * picker can only offer models the user actually gave to Chat.
  */
 export default defineEventHandler(async () => {
   try {
     const home = await ensureChatHome();
-    const runtime = await ModelRuntime.create({
-      authPath: join(home.agentDir, "auth.json"),
-      modelsPath: join(home.agentDir, "models.json"),
-    });
-    return {
-      schemaVersion: 1,
-      providers: runtime.getProviders().map((provider) => ({
-        id: provider.id,
-        name: provider.name,
-        authConfigured: runtime.hasConfiguredAuth(provider.id),
-      })),
-      models: runtime.getModels().map((model) => ({
-        provider: model.provider,
-        modelId: model.id,
-        name: model.name,
-        reasoning: model.reasoning,
-        contextWindow: model.contextWindow,
-        maxTokens: model.maxTokens,
-        authConfigured: runtime.hasConfiguredAuth(model.provider),
-      })),
-    };
+    const authPath = join(home.agentDir, "auth.json");
+    const modelsPath = join(home.agentDir, "models.json");
+    const config = await readChatModelsConfig();
+    const runtime = await ModelRuntime.create({ authPath, modelsPath });
+
+    const providers: Array<{ id: string; name: string; authConfigured: boolean }> = [];
+    const models: Array<{
+      provider: string;
+      modelId: string;
+      name: string;
+      reasoning: boolean;
+      contextWindow: number;
+      maxTokens: number;
+      authConfigured: boolean;
+    }> = [];
+    for (const [providerId, rawProvider] of Object.entries(config.config.providers)) {
+      if (!isRecord(rawProvider) || !Array.isArray(rawProvider.models)) continue;
+      const authConfigured = runtime.hasConfiguredAuth(providerId);
+      providers.push({
+        id: providerId,
+        name: runtime.getProvider(providerId)?.name ?? providerId,
+        authConfigured,
+      });
+      for (const rawModel of rawProvider.models) {
+        if (!isRecord(rawModel) || typeof rawModel.id !== "string" || rawModel.id.trim() === "") continue;
+        const modelId = rawModel.id;
+        const model = runtime.getModel(providerId, modelId);
+        models.push({
+          provider: providerId,
+          modelId,
+          name: model?.name ?? modelId,
+          reasoning: model?.reasoning ?? false,
+          contextWindow: model?.contextWindow ?? 0,
+          maxTokens: model?.maxTokens ?? 0,
+          authConfigured,
+        });
+      }
+    }
+    return { schemaVersion: 1, providers, models };
   } catch (error) {
     throw createError({
       statusCode: 500,

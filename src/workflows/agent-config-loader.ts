@@ -20,6 +20,7 @@ import {
   type RawSystemPrompt,
   type ResolvedWorkflowAgentDefinition,
   type WorkflowAgentDefinition,
+  type WorkflowAgentModelSource,
   type WorkflowAgentResources,
   type WorkflowAgentSystemPrompt,
 } from "./agent-config.js";
@@ -231,6 +232,12 @@ export async function resolveWorkflowAgentDefinition(options: {
   const allowedRoots = await resolveAllowedRoots(options);
 
   let current = options.defaultAgent;
+  let modelSource: WorkflowAgentModelSource | undefined = options.defaultAgent.model === undefined
+    ? undefined
+    : "workflow-default";
+  let thinkingSource: WorkflowAgentModelSource | undefined = options.defaultAgent.thinkingLevel === undefined
+    ? undefined
+    : "workflow-default";
   const sources: AgentConfigSource[] = [{ kind: "workflow-default" }];
   if (options.selection?.primary !== undefined) {
     const primary = await readAgentConfig(resolve(options.cwd, options.selection.primary), true, allowedRoots);
@@ -238,6 +245,8 @@ export async function resolveWorkflowAgentDefinition(options: {
     if (materialized.id !== options.defaultAgent.id) {
       throw new Error(`Agent配置id必须是${options.defaultAgent.id}: ${primary.path}`);
     }
+    if (materialized.model !== undefined) modelSource = "config-file";
+    if (materialized.thinkingLevel !== undefined) thinkingSource = "config-file";
     current = {
       schemaVersion: 1,
       id: materialized.id,
@@ -258,6 +267,8 @@ export async function resolveWorkflowAgentDefinition(options: {
     if (addition.config.id !== undefined || addition.config.name !== undefined || addition.config.description !== undefined) {
       throw new Error(`追加Agent配置不能修改id、name或description: ${addition.path}`);
     }
+    if (addition.config.model !== undefined) modelSource = "config-file";
+    if (addition.config.thinkingLevel !== undefined) thinkingSource = "config-file";
     current = mergeAgentConfig(current, await materializeConfig(addition.config, addition.path, allowedRoots));
     sources.push({ kind: "append", path: addition.path });
   }
@@ -301,6 +312,8 @@ export async function resolveWorkflowAgentDefinition(options: {
       options.durableModelConfig.agentId,
     );
     if (durable !== undefined) {
+      if (durable.model !== undefined) modelSource = "durable";
+      if (durable.thinkingLevel !== undefined) thinkingSource = "durable";
       current = {
         ...current,
         ...(durable.model === undefined ? {} : { model: durable.model }),
@@ -320,6 +333,8 @@ export async function resolveWorkflowAgentDefinition(options: {
 
   return {
     ...current,
+    ...(modelSource === undefined ? {} : { modelSource }),
+    ...(thinkingSource === undefined ? {} : { thinkingSource }),
     ...(options.selection?.tools === undefined ? {} : { tools: options.selection.tools }),
     customInstructions: [
       ...current.customInstructions,

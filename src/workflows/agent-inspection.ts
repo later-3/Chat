@@ -208,6 +208,10 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
           ? null
           : { provider: session.model.provider, modelId: session.model.id },
         effectiveThinkingLevel: session.thinkingLevel,
+        // The definition never set a model/thinking level but the session still
+        // resolved one from the Chat settings chain, so the source is Chat default.
+        modelSource: agent.modelSource ?? (session.model === undefined ? null : "chat-default"),
+        thinkingSource: agent.thinkingSource ?? (session.thinkingLevel === undefined ? null : "chat-default"),
         durableConfig: durableConfig ?? null,
       },
       prompt: {

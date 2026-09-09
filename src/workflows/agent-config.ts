@@ -90,8 +90,17 @@ export interface AgentConfigSource {
   readonly revision?: number;
 }
 
+export type WorkflowAgentModelSource =
+  | "workflow-default"
+  | "config-file"
+  | "durable"
+  | "chat-default";
+
 export interface ResolvedWorkflowAgentDefinition extends WorkflowAgentDefinition {
   readonly sources: readonly AgentConfigSource[];
+  /** Which source set the effective model; `chat-default` is assigned at inspection. */
+  readonly modelSource?: WorkflowAgentModelSource;
+  readonly thinkingSource?: WorkflowAgentModelSource;
 }
 
 export type RawSystemPrompt =

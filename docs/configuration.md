@@ -198,6 +198,8 @@ Thinking Level 可使用 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`
 
 这是 Pi 兼容配置。若要为某个 Workflow 的某个 Agent 固定模型，使用第 7 节的 Project 私有 Agent 配置，不要用 `.pi/settings.json` 代替 Agent 级选择。Long Agent 的模型管理必须经由 Chat 的 Agent 配置及模型目录；本段不授权它寻找或修改 `~/.pi`，目标中也不会用 Project 的 Pi 兼容设置覆盖其有效 Agent 定义。
 
+Long Agent 的模型是其自身定义的一部分，与头像/身份一样可逐 Agent 配置：定义中的 `model`/`thinkingLevel` 为显式选择；未显式配置时，运行时按同一默认链解析（`agent/settings.json` → 项目 `.pi/settings.json`）。`GET/PUT /api/long-agents/:id/config` 在 `agent.effective` 中返回解析后的生效模型、生效思考等级及其来源（`explicit` 或 `chat-default`），设置页始终展示并可直接配置；保存时选择的具体模型写入定义。
+
 自定义 Provider 和模型位于 `<CHAT_HOME>/agent/models.json`。例如添加本地 Ollama 模型：
 
 ```json

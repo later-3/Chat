@@ -3,6 +3,7 @@ import {
   createCodingTools,
   createReadOnlyTools,
   ModelRuntime,
+  SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { appendChatAuditEvent } from "../audit-log.js";
 import { ensureChatHome, resolveChatHome } from "../chat-home.js";
@@ -35,6 +36,16 @@ export function publicLongAgentAvatar(avatar: LongAgentAvatar): PublicLongAgentA
   return { kind: "auto" };
 }
 
+export type LongAgentModelSource = "explicit" | "chat-default";
+
+/** Effective model/thinking as the runtime would resolve it, plus its source. */
+export interface LongAgentEffectiveConfig {
+  readonly model: { readonly provider: string; readonly modelId: string } | null;
+  readonly thinkingLevel: string | null;
+  readonly modelSource: LongAgentModelSource | null;
+  readonly thinkingSource: LongAgentModelSource | null;
+}
+
 export interface LongAgentConfigurationDocument {
   readonly schemaVersion: 1;
   readonly revision: string;
@@ -45,6 +56,7 @@ export interface LongAgentConfigurationDocument {
     readonly avatar: PublicLongAgentAvatar;
     readonly enabled: boolean;
     readonly defaultProjectId: string;
+    readonly effective: LongAgentEffectiveConfig;
     readonly definition: {
       readonly schemaVersion: 1;
       readonly id: string;
@@ -138,6 +150,12 @@ function documentOf(agent: LongAgentConfig, instance: LongAgentInstanceConfig): 
       avatar: publicLongAgentAvatar(agent.avatar),
       enabled: agent.enabled,
       defaultProjectId: agent.defaultProjectId,
+      effective: {
+        model: null,
+        thinkingLevel: null,
+        modelSource: null,
+        thinkingSource: null,
+      },
       definition: {
         schemaVersion: 1,
         id: agent.definition.id,
@@ -163,6 +181,56 @@ function documentOf(agent: LongAgentConfig, instance: LongAgentInstanceConfig): 
   };
 }
 
+/** Resolves the effective model/thinking exactly as the runtime would: explicit definition first, then Chat defaults. */
+export async function resolveEffectiveConfiguration(
+  document: LongAgentConfigurationDocument,
+  chatHome = resolveChatHome(),
+): Promise<LongAgentConfigurationDocument> {
+  const root = resolveChatHome(chatHome);
+  const definition = document.agent.definition;
+  const explicitModel = definition.model;
+  const explicitThinking = definition.thinkingLevel;
+  if (explicitModel !== null && explicitModel !== undefined) {
+    return {
+      ...document,
+      agent: {
+        ...document.agent,
+        effective: {
+          model: { provider: explicitModel.provider, modelId: explicitModel.modelId },
+          thinkingLevel: explicitThinking ?? null,
+          modelSource: "explicit",
+          thinkingSource: explicitThinking === null || explicitThinking === undefined ? null : "explicit",
+        },
+      },
+    };
+  }
+  try {
+    const project = await resolveProjectContext(document.agent.defaultProjectId, root);
+    const settings = SettingsManager.create(project.cwd, project.agentDir);
+    const defaultProvider = settings.getDefaultProvider();
+    const defaultModel = settings.getDefaultModel();
+    const defaultThinking = settings.getDefaultThinkingLevel();
+    return {
+      ...document,
+      agent: {
+        ...document.agent,
+        effective: {
+          model: defaultProvider !== undefined && defaultModel !== undefined
+            ? { provider: defaultProvider, modelId: defaultModel }
+            : null,
+          thinkingLevel: defaultThinking ?? null,
+          modelSource: defaultProvider !== undefined && defaultModel !== undefined ? "chat-default" : null,
+          thinkingSource: defaultThinking === undefined ? null : "chat-default",
+        },
+      },
+    };
+  } catch {
+    // The default chain is display-only; an unreadable settings file must not
+    // break reading the Agent's own definition.
+    return document;
+  }
+}
+
 export async function readLongAgentConfiguration(
   longAgentId: string,
   chatHome = resolveChatHome(),
@@ -171,7 +239,7 @@ export async function readLongAgentConfiguration(
   const registry = await readLongAgentRegistry(chatHome);
   const agent = registry.agents.find((candidate) => candidate.id === id);
   if (agent === undefined) throw new LongAgentConfigurationNotFoundError(`找不到Long Agent: ${id}`);
-  return documentOf(agent, findInstance(registry.instances, agent.instanceId));
+  return resolveEffectiveConfiguration(documentOf(agent, findInstance(registry.instances, agent.instanceId)), chatHome);
 }
 
 interface ParsedUpdate {
@@ -353,5 +421,5 @@ export async function updateLongAgentConfiguration(
       resourceMode: document.agent.definition.resources.mode,
     },
   }, root);
-  return document;
+  return resolveEffectiveConfiguration(document, root);
 }

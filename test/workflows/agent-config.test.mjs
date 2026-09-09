@@ -232,6 +232,44 @@ test("durable Agent model configuration persists and applies over the Workflow d
   assert.equal(resolved.sources.at(-1).kind, "durable-config");
 });
 
+test("model source tracks which configuration layer set the effective model", async (t) => {
+  const dir = fixture(t);
+  const projectDataDir = path.join(dir, "data");
+  fs.mkdirSync(projectDataDir, { recursive: true });
+
+  // Workflow default carries the model.
+  const withDefault = { ...defaultAgent, model: { provider: "default-provider", modelId: "default-model" } };
+  const fromDefault = await resolveWorkflowAgentDefinition({ defaultAgent: withDefault, cwd: dir });
+  assert.equal(fromDefault.modelSource, "workflow-default");
+  assert.equal(fromDefault.thinkingSource, undefined);
+
+  // A selected configuration file overrides the source.
+  fs.writeFileSync(path.join(dir, "append.json"), JSON.stringify({
+    schemaVersion: 1,
+    model: { provider: "file-provider", modelId: "file-model" },
+  }));
+  const fromFile = await resolveWorkflowAgentDefinition({
+    defaultAgent: withDefault,
+    cwd: dir,
+    selection: { append: ["append.json"] },
+  });
+  assert.equal(fromFile.modelSource, "config-file");
+
+  // The durable Project override wins and is labelled as such.
+  await writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", {
+    schemaVersion: 1,
+    model: { provider: "durable-provider", modelId: "durable-model" },
+  });
+  const fromDurable = await resolveWorkflowAgentDefinition({
+    defaultAgent: withDefault,
+    cwd: dir,
+    selection: { append: ["append.json"] },
+    durableModelConfig: { projectDataDir, workflowId: "workflow-1", agentId: "test-agent" },
+  });
+  assert.deepEqual(fromDurable.model, { provider: "durable-provider", modelId: "durable-model" });
+  assert.equal(fromDurable.modelSource, "durable");
+});
+
 test("durable model configuration wins over selected configuration files", async (t) => {
   const dir = fixture(t);
   fs.writeFileSync(path.join(dir, "append.json"), JSON.stringify({
