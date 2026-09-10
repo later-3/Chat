@@ -6,8 +6,21 @@ import path from "node:path";
 import test from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { writeLongAgentRegistry } from "../../src/long-agents/storage.ts";
-import { ensureDailyProject } from "../../src/projects/registry.ts";
+import { ensureLongAgentShareProject } from "../../src/projects/registry.ts";
 import { listChatSystemTools, resolveChatSystemTools } from "../../src/tools/registry.ts";
+
+// 归一后：每个已登记的 Long Agent 都有自己的 home Project（id 即 longAgentId）。
+// 测试在写入 Registry 后补齐 home 项目，等价于生产启动时的归一/创建 provisioning。
+async function writeLongAgentRegistryWithHomes(value, chatHome) {
+  const { ensureAgentHomeProject } = await import("../../src/projects/registry.ts");
+  const { writeLongAgentRegistry } = await import("../../src/long-agents/storage.ts");
+  const registry = await writeLongAgentRegistry(value, chatHome);
+  for (const agent of registry.agents) {
+    await ensureAgentHomeProject(agent.id, agent.name, chatHome);
+  }
+  return registry;
+}
+
 
 const INSTANCE = (port) => ({
   id: "local", name: "Local NanoClaw", executionMode: "chat-pi",
@@ -19,7 +32,7 @@ const CHANNEL_TOKEN = "test-channel-token-that-is-at-least-32-characters";
 function agentEntry(overrides = {}) {
   return {
     id: "nexus", name: "Nexus", description: "Daily coworker", enabled: true,
-    instanceId: "local", nanoclawAgentGroupId: "ag-nexus", defaultProjectId: "daily",
+    instanceId: "local", nanoclawAgentGroupId: "ag-nexus", defaultProjectId: "longagentshare",
     inbox: {
       messagingGroupId: "mg-private", channelType: "telegram", instance: "telegram",
       platformId: "telegram:user", threadId: null,
@@ -32,14 +45,14 @@ async function setup(t, agents) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-channel-send-"));
   const chatHome = path.join(base, "home");
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const project = await ensureDailyProject(chatHome);
+  const project = await ensureLongAgentShareProject(chatHome);
   const manager = SessionManager.inMemory(project.cwd);
   return { base, chatHome, project, manager };
 }
 
 function contextOf(base) {
   return {
-    purpose: "execution", projectId: "daily", chatHome: base.chatHome, cwd: base.project.cwd,
+    purpose: "execution", projectId: "longagentshare", chatHome: base.chatHome, cwd: base.project.cwd,
     sessionManager: base.manager, sessionId: base.manager.getSessionId(), agentId: "nexus",
     longAgentId: "nexus", longAgentTurnId: "turn-1",
     authorizedToolAddresses: ["system:tool/channel_send"], authorizedToolNames: ["channel_send"],
@@ -64,7 +77,7 @@ test("channel_send delivers through the bound destination and records the audit"
   const base = await setup(t);
   process.env.CHAT_CHANNEL_GATEWAY_TOKEN = CHANNEL_TOKEN;
   t.after(() => { delete process.env.CHAT_CHANNEL_GATEWAY_TOKEN; });
-  await writeLongAgentRegistry({
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1, instances: [INSTANCE(port)], agents: [agentEntry()],
   }, base.chatHome);
 
@@ -85,7 +98,7 @@ test("channel_send rejects non-Long-Agent contexts and unbound or archived Agent
   const base = await setup(t);
   process.env.CHAT_CHANNEL_GATEWAY_TOKEN = CHANNEL_TOKEN;
   t.after(() => { delete process.env.CHAT_CHANNEL_GATEWAY_TOKEN; });
-  await writeLongAgentRegistry({
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1, instances: [INSTANCE(1)],
     agents: [
       agentEntry({ id: "unbound", inbox: undefined, nanoclawAgentGroupId: "ag-unbound" }),

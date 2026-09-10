@@ -4,8 +4,21 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { writeLongAgentRegistry } from "../../src/long-agents/storage.ts";
-import { ensureDailyProject, openProject } from "../../src/projects/registry.ts";
+import { ensureLongAgentShareProject, openProject } from "../../src/projects/registry.ts";
 import { buildChatSkillTree } from "../../src/resources/skills-tree.ts";
+
+// 归一后：每个已登记的 Long Agent 都有自己的 home Project（id 即 longAgentId）。
+// 测试在写入 Registry 后补齐 home 项目，等价于生产启动时的归一/创建 provisioning。
+async function writeLongAgentRegistryWithHomes(value, chatHome) {
+  const { ensureAgentHomeProject } = await import("../../src/projects/registry.ts");
+  const { writeLongAgentRegistry } = await import("../../src/long-agents/storage.ts");
+  const registry = await writeLongAgentRegistry(value, chatHome);
+  for (const agent of registry.agents) {
+    await ensureAgentHomeProject(agent.id, agent.name, chatHome);
+  }
+  return registry;
+}
+
 
 function fixture(t) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-skill-tree-"));
@@ -27,7 +40,7 @@ function writeSkill(dir, name, description) {
 
 test("Skill tree lists Personal, Project, Workflow and Long Agent ownership", async (t) => {
   const { base, chatHome } = fixture(t);
-  await ensureDailyProject(chatHome);
+  await ensureLongAgentShareProject(chatHome);
   fs.mkdirSync(path.join(base, "workspace"));
   const project = await openProject({
     path: path.join(base, "workspace"),
@@ -37,7 +50,7 @@ test("Skill tree lists Personal, Project, Workflow and Long Agent ownership", as
   });
   writeSkill(path.join(chatHome, "agent", "skills", "personal-note"), "personal-note", "Personal note skill");
   writeSkill(path.join(project.projectConfigDir, "skills", "project-review"), "project-review", "Project review skill");
-  await writeLongAgentRegistry({
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{
       id: "local", name: "Local NanoClaw", executionMode: "chat-pi",
@@ -45,7 +58,7 @@ test("Skill tree lists Personal, Project, Workflow and Long Agent ownership", as
     }],
     agents: [{
       id: "nexus", name: "Nexus", description: "Daily coworker", enabled: true,
-      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "daily",
+      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "longagentshare",
       inbox: {
         messagingGroupId: "mg", channelType: "telegram", instance: "telegram",
         platformId: "telegram:user", threadId: null,
@@ -61,7 +74,7 @@ test("Skill tree lists Personal, Project, Workflow and Long Agent ownership", as
   const ownProject = tree.projects.find((entry) => entry.projectId === project.projectId);
   assert.ok(ownProject);
   assert.deepEqual(ownProject.skills.map((skill) => skill.name), ["project-review"]);
-  const daily = tree.projects.find((entry) => entry.projectId === "daily");
+  const daily = tree.projects.find((entry) => entry.projectId === "longagentshare");
   assert.ok(daily);
   // Project sections must not leak Personal skills.
   assert.equal(tree.projects.every((entry) => entry.skills.every((skill) => skill.name !== "personal-note")), true);
