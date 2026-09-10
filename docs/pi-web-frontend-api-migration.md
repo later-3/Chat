@@ -101,6 +101,7 @@ Chat/frontend（纯浏览器）
 | `POST /api/memories/search` | 语义搜索 | 已接入 | 使用本地embedding，支持全局和项目范围 |
 | `GET /api/memories/health` | 管理页状态 | 已接入 | 返回事实源数量和索引同步状态 |
 | `POST /api/memories/rebuild` | 完整重建索引 | 已接入 | 从Chat事实源重建Mem0，不依赖原索引 |
+| `GET /api/memories/tree` | Memory 归属树总览 | 已接入 | Chat 系统（Personal）/各 Project 的活跃条数 + 各 Long Agent 的 OKF 快照文件数与 core index revision；管理页左侧归属树使用 |
 
 ### 4.6 其他现有前端功能
 

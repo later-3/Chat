@@ -22,6 +22,8 @@
 
 2026-09-09 修正：S3 迁移改为**启动时全量执行**（替代依赖入口的懒迁移），并且迁移会建立新 Daily Project 的当日主 Session、把指向旧共享 daily 绑定的通道绑定重定向到新绑定——否则存量 Telegram 等通道会话会永远路由到旧会话。修正有回归测试（config-root.test.mjs）。
 
+2026-09-10 进展（归一）：Long Agent 只有一个根——`long-agents/<id>/` 同时是身份、资源、Workspace、按天会话与 memory 的位置，项目 id 即 longAgentId（kind=agent）；共享 `daily` 归一为 `longagentshare`（kind=share）；旧共享空间里的 Agent 历史会话迁回各自 Agent，遗留 catalog 记忆归并到 Personal。记忆只有三类（Chat/Project/Long Agent），系统容器不进入项目列表与记忆树。迁移幂等、带备份与完成标记。默认落点改为 Long Agent（优先 nexus）。剩余：S5b（Agent Memory 迁入本地 OKF）、换日上下文交接、跨域授权记录。
+
 2026-09-09 进展（通道主动联系）：新增 `channel_send` 系统 Tool（Long Agent 默认能力；目的地由服务端按可信身份从 Registry 绑定解析，NanoClaw 强制校验接线）、NanoClaw 窄端点 `POST /v1/agent-messages`、公共 Skill `channel-messaging`（何时联系、内容与节制规则、失败处理）。定时任务/自由活动的触发机制仍属机制合同后续项，但通道出口已就绪。
 
 ## 2. 当前能力与目标差距

@@ -21,18 +21,18 @@
 ```text
 <CHAT_HOME>/
   long-agents.json                    # 索引：longAgentId → 根路径、状态、NanoClaw 绑定；不再是配置事实源
-  long-agents/<longAgentId>/          # 每个 Agent 的独立根（配置事实源）
-    agent.json                        # 身份文件：schemaVersion、longAgentId、name、NanoClaw 绑定、状态
-    definition.json                   # 能力定义：模型引用、System Prompt、Tool/资源策略（现 registry 内联 definition 的迁出目标）
-    prompts/  skills/  tools/  extensions/  plugins/
-    memory/                           # Agent Memory 的目标唯一可写位置（迁出 NanoClaw groups/<folder>）
-    tasks/                            # 该 Agent 的任务定义，每条明确绑定 Project
-    workspace/                        # Agent 自身工作资料；不等同于任何 Project cwd
-  workspaces/daily-<longAgentId>/     # 该 Agent 独立 Daily Project 的 Managed Workspace
-  projects/daily-<longAgentId>/       # 该 Agent 独立 Daily Project 的数据（Session、Memory、Prompt资源）
+  long-agents/<longAgentId>/          # 每个 Agent 的独立根（配置事实源，同时是它的日常项目）
+    definition.json                   # 能力定义：模型引用、System Prompt、Tool/资源策略
+    prompts/  skills/  extensions/    # 自有资源
+    workspace/                        # Agent Workspace，同时就是它的日常项目根（cwd）
+    sessions/                         # 按天轮换的会话（项目 id 即 longAgentId）
+    memory/                           # Agent Memory 的唯一可写位置
+    environments/  tasks/
+  workspaces/longagentshare/          # 公共 Long Agent 资源共享空间（原共享 daily；不默认打开）
+  projects/<projectId>/               # 只有用户自己的真实项目
 ```
 
-- 普通 Chat 保留现有共享 `daily` 项目与 `workspaces/daily/`，不属于任何 Long Agent。
+- 公共 Long Agent 资源共享空间是 `longagentshare`（原共享 `daily` 归一而来），不默认打开，也不属于任何用户项目。
 - 业务 Project 保持原位，Agent 参与不搬运项目文件；Agent Workspace、Daily Workspace、业务 Project 根和运行时 cwd 是不同概念。
 - `runtime/` 继续只放派生快照与执行状态，不升级为配置事实源。
 
@@ -84,13 +84,14 @@
 
 ## 8. 实现差距与进展（2026-09-09 第二轮）
 
-已落地（S1～S4、S5a）：
+已落地（S1～S5a、归一）：
 
 - `long-agents/<id>/` 独立配置根：`definition.json` 承载能力定义，`long-agents.json` 降级为索引；存量内联 definition 带备份幂等迁移（`runtime/migrations/long-agent-definition-split/`）。
 - 每个 Agent 独立 Daily Project（`daily-<longAgentId>`）与 Managed Workspace；存量共享 `daily` 的 Agent 在配置读取时一次性迁移归属，历史 Session 不搬运。
 - 自有资源目录（`skills/` 等）接入执行与检查装配，Skill 归属新增 `agent` 分类；Skill 树与 Agent 配置页可见。
 - 生命周期：create（全量 provisioning 可回滚）/archive/unarchive/delete（两阶段）服务 + HTTP API + 前端入口 + `long_agent_manage` 系统 Tool（特权，不默认授予）+ 公共管理 Skill `long-agent-management`。
-- 日常主 Session 按本地日期轮换（绑定记录 `sessionDate`），非 Daily 绑定不受影响。
+- 日常主 Session 按本地日期轮换（绑定记录 `sessionDate`），非 home 绑定不受影响。
+- **归一（2026-09-10）**：Agent 日常项目并入它自己的根（`long-agents/<id>/{workspace,sessions,...}`，项目 id 即 longAgentId，kind=agent）；共享 `daily` 改名为 `longagentshare`（kind=share）；旧共享空间里属于 Agent 的历史会话按 turn marker 迁回各自 Agent；遗留 catalog 记忆归并到 Personal；记忆 Target 层禁止系统容器（Agent home / 共享空间）产生 Project Memory。幂等迁移带备份与完成标记（`runtime/migrations/agent-home-normalization/`）。
 
 剩余差距：
 

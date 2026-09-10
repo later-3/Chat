@@ -145,17 +145,20 @@ Tool 写入会记录 `projectId`、`sessionId`、`workflowId`、`workflowInvocat
 
 ## 7. Memory 管理页
 
-Memory 管理页是 Backend Memory 能力的浏览器控制面：
+Memory 管理页是 Backend Memory 能力的浏览器控制面，按**归属树**组织（与 Skill 树一致）：
 
-1. 默认范围为“Personal + 当前 Project”。页面分别请求两个 Store 的精确列表，在浏览器中按 `updatedAt` 合并排序后分页；没有当前 Project 时只读取 Personal。
-2. 选择 Personal 或某个 Project 后，列表、健康状态和重建操作只作用于该 Target。
-3. 输入搜索文字后，页面调用多 Target 语义搜索 API；清除搜索后恢复 Catalog 精确列表。
-4. 顶部状态卡汇总当前选择范围内的记录数、已索引、待索引、索引失败和待清理数量。
-5. 在组合范围中点击“添加记忆”时，编辑器必须显示一个具体写入 Target，默认选择当前 Project；用户可以改为 Personal 或其他已登记 Project。
-6. 编辑和删除使用记录自身的 Target，不受之后切换筛选范围影响。
-7. “重建索引”只重建当前选中范围；组合范围会分别重建 Personal 与当前 Project，并汇总结果。
+左侧归属树分三层：**Chat 系统（Personal）**、**各 Project**、**各 Long Agent**，节点显示活跃条数（Project/Personal）或 OKF 记忆文件数（Long Agent）。数据来自 `GET /api/memories/tree`，它同时是页面初始化与刷新后的结构来源。
 
-页面不会把“当前范围没有记忆”等同于系统没有任何 Memory。用户可以切换 Target 或清除语义搜索条件查看其他记录。
+记忆只有三类：Chat（Personal）/ Project（真实项目）/ Long Agent（OKF）。**Long Agent 的 home 项目（id 即 longAgentId）与公共共享空间 `longagentshare` 都是系统容器**：不进入项目列表与归属树的“项目”节，也不能作为 Project Memory 的写入目标（服务端在 Memory Target 层拒绝），因此归属树的“项目”节只列用户自己的真实项目（它们不是用户项目，否则同一份 Agent 记忆会以“项目记忆”的形式重复出现）。共享空间里历史遗留的少量 catalog 记录会在物理归一迁移中归并到 Personal。
+
+1. 选择 Personal 或某个 Project 后，列表、健康状态和重建操作只作用于该 Target；语义搜索在单 Target 上执行。
+2. 顶部状态卡汇总当前选择范围的记录数、已索引、待索引、索引失败和待清理数量。
+3. 新建记忆时必须显示一个具体写入 Target，默认跟随当前选中范围；用户可以改为 Personal 或其他已登记 Project。
+4. 编辑和删除使用记录自身的 Target，不受之后切换范围影响。
+5. “重建索引”只重建当前选中范围。
+6. 选择某个 Long Agent 时，内容区直接嵌入该 Agent 的 OKF Markdown 记忆浏览器（列表、搜索、读取、写入、删除），与长期同事设置页的 Agent Memory 标签页共用同一套 API 与组件；它的接口归属是 Agent（NanoClaw Agent Group），不是 Chat Catalog。
+
+页面不会把“当前范围没有记忆”等同于系统没有任何 Memory；切换归属节点或清除搜索条件即可查看其他记录。
 
 ## 8. 数据模型与生命周期
 
@@ -196,6 +199,7 @@ Mem0 使用 `infer: false`，存入索引的文字由调用 `memory_record` 的 
 | 删除 | `DELETE /api/memories/:memoryId` | Query 中的 `scope`、`projectId` |
 | 完整重建 | `POST /api/memories/rebuild` | Body 中的 `target` |
 | 状态 | `GET /api/memories/health` | Query 中的 `scope`、`projectId` |
+| 归属树总览 | `GET /api/memories/tree` | 无 Body；返回 Personal/各 Project 活跃条数与各 Long Agent 的 OKF 快照统计 |
 
 写入当前 Project：
 

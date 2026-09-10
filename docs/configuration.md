@@ -30,7 +30,7 @@ Chat会在启动和读取Project列表时保证Daily Project存在：工作目�
 
 ### Long Agent注册与配置管理（当前实现）
 
-Chat使用`<CHAT_HOME>/long-agents.json`登记长期Agent及其NanoClaw本机实例。该文件已降级为**索引**（身份、NanoClaw绑定、状态与 Channel 绑定）；每个 Agent 的能力定义位于独立配置根`<CHAT_HOME>/long-agents/<longAgentId>/definition.json`，资源目录（`skills/`、`prompts/`、`extensions/`）位于同一根下。存量内联 definition 会在首次读取时幂等迁移（备份与标记位于`runtime/migrations/long-agent-definition-split/`）。每个 Agent 拥有独立 Daily Project `daily-<longAgentId>`（Workspace 位于`workspaces/daily-<longAgentId>/`），其日常主 Session 按本地日期轮换；普通 Chat 保留共享`daily`。`defaultProjectId`决定IM首次来信缺少更具体归属时在哪个Project建立Chat Session。Agent Memory 仍由 NanoClaw Agent Group 承载，迁入 Chat Home 是后续切片（S5b）。剩余差距见[实施状态](./architecture/chat-long-agent-roadmap.md)。
+Chat使用`<CHAT_HOME>/long-agents.json`登记长期Agent及其NanoClaw本机实例。该文件已降级为**索引**（身份、NanoClaw绑定、状态与 Channel 绑定）；每个 Agent 的能力定义位于独立配置根`<CHAT_HOME>/long-agents/<longAgentId>/definition.json`，资源目录（`skills/`、`prompts/`、`extensions/`）位于同一根下。存量内联 definition 会在首次读取时幂等迁移（备份与标记位于`runtime/migrations/long-agent-definition-split/`）。每个 Agent 只有一个根：`long-agents/<longAgentId>/{workspace,sessions,memory,skills,...}`，其 home 项目的 projectId 就是 `longAgentId`，日常主 Session 按本地日期轮换。公共共享空间为 `longagentshare`（原共享 `daily` 归一而来，不默认打开）；普通会话必须属于用户自己的项目。`defaultProjectId`决定IM首次来信缺少更具体归属时在哪个Project建立Chat Session。Agent Memory 仍由 NanoClaw Agent Group 承载，迁入 Chat Home 是后续切片（S5b）。剩余差距见[实施状态](./architecture/chat-long-agent-roadmap.md)。
 
 ```json
 {

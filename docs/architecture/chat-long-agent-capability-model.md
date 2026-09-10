@@ -48,7 +48,7 @@ Long Agent 与 Workflow 共用 Pi 底座：Workflow 组织一次执行，Long Ag
 | 领域 | 必须表达的配置与状态 |
 |---|---|
 | 身份 | 稳定 ID、名称、职责、描述、启停、展示头像（auto/emoji/图片引用）、NanoClaw Group 映射 |
-| 独立空间 | Agent 配置根、Workspace、自己的 Daily Project、持久数据位置 |
+| 独立空间 | Agent 单一根（配置、Workspace、按天会话、memory、资源）、持久数据位置 |
 | 模型 | Chat Provider/Model 引用、Thinking、默认与显式选择、已授权替代策略 |
 | Prompt | System Prompt、有序区域、自定义内容、资源引用、条件与预算、实际装配结果 |
 | Skill | 自有与共享资源、安装来源、版本、发现、选择、启停、更新与卸载 |
@@ -68,7 +68,7 @@ Long Agent 与 Workflow 共用 Pi 底座：Workflow 组织一次执行，Long Ag
 
 ### 5.1 目标目录合同
 
-配置根采用 Chat Home 下按稳定 longAgentId 分区的独立目录。2026-09-09 起，独立根的身份文件、索引降级、独立 Daily Project（`daily-<longAgentId>`）、全量隔离与生命周期合同以[管理实体与隔离架构](./chat-long-agent-management.md)为已确认决策；下面仍是目标逻辑布局，分文件 Schema 是后续详细设计项，当前版本不能直接读取这份布局。
+配置根采用 Chat Home 下按稳定 longAgentId 分区的独立目录。**2026-09-09 归一：Long Agent 只有一个根**——`long-agents/<longAgentId>/` 同时是它的 Agent Workspace、日常项目根与资源根，根下按天保存会话。不再存在“Agent Workspace 与 Daily Workspace”两个概念，也不再有单独的 `daily-<longAgentId>` 项目。独立根的身份文件、索引降级、全量隔离与生命周期合同以[管理实体与隔离架构](./chat-long-agent-management.md)为已确认决策；下面仍是目标逻辑布局，分文件 Schema 是后续详细设计项。
 
 ~~~text
 <CHAT_HOME>/
@@ -81,12 +81,13 @@ Long Agent 与 Workflow 共用 Pi 底座：Workflow 组织一次执行，Long Ag
     tools/                       # 自有工具资源与声明
     extensions/
     plugins/
-    memory/                      # NanoClaw OKF Agent Memory 的目标持久位置
-    workspace/                   # Agent 自身工作资料；不等同于当前 Project cwd
+    memory/                      # Agent Memory（唯一可写位置；S5b 迁入）
+    workspace/                   # Agent Workspace，同时是它的日常项目根（cwd）
+    sessions/                    # 按天轮换的会话（归一后由 projects/daily-<id> 迁入）
     environments/                # 环境定义与依赖声明
     tasks/                       # 该 Agent 的任务定义，每条明确绑定 Project
-  workspaces/<dailyProjectId>/    # 每个 Agent 自己的稳定 Daily Workspace
-  projects/<projectId>/
+  workspaces/longagentshare/     # 公共 Long Agent 资源共享空间（原共享 daily；不默认打开）
+  projects/<projectId>/          # 只有用户自己的真实项目
     sessions/                    # Pi 原生 Session
     memory/                      # Chat Project Memory
     prompt-resources/            # Project Rule / Experience
@@ -95,7 +96,7 @@ Long Agent 与 Workflow 共用 Pi 底座：Workflow 组织一次执行，Long Ag
 
 身份、人格和职责以文件配置为准，不能在 Memory 中另藏一份覆盖身份的定义；Memory 可以保存事实与记忆维护方法，发生冲突时应修正并保留来源。
 
-Project 源码保持原位置，使用 .chat/project.json 与 .chat/config.json。Agent Workspace、Daily Workspace、业务 Project Workspace 和运行时 cwd 是不同概念。业务 Project 的文件不会因为 Agent 参与而搬入它的私有目录。
+Project 源码保持原位置，使用 .chat/project.json 与 .chat/config.json。**Long Agent 只有一个根**：`long-agents/<id>/workspace` 就是它的日常项目根与 cwd；业务 Project 的文件不会因为 Agent 参与而搬入它的私有目录。
 
 Agent Memory 保留 NanoClaw Markdown/OKF 的领域合同，通过受控 Resource API 管理。迁移后必须只有一个可写事实位置；不能同时维护 `groups/<folder>/memory` 与 Chat Home 中一份双向同步的副本。NanoClaw 路径适配及迁移顺序见实施状态，尚未实现。
 
