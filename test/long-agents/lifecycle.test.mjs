@@ -11,7 +11,20 @@ import {
   unarchiveLongAgent,
 } from "../../src/long-agents/lifecycle.ts";
 import { longAgentConfigRoot, readLongAgentRegistry } from "../../src/long-agents/storage.ts";
-import { ensureDailyProject, readProjectRegistry } from "../../src/projects/registry.ts";
+import { ensureLongAgentShareProject, readProjectRegistry } from "../../src/projects/registry.ts";
+
+// 归一后：每个已登记的 Long Agent 都有自己的 home Project（id 即 longAgentId）。
+// 测试在写入 Registry 后补齐 home 项目，等价于生产启动时的归一/创建 provisioning。
+async function writeLongAgentRegistryWithHomes(value, chatHome) {
+  const { ensureAgentHomeProject } = await import("../../src/projects/registry.ts");
+  const { writeLongAgentRegistry } = await import("../../src/long-agents/storage.ts");
+  const registry = await writeLongAgentRegistry(value, chatHome);
+  for (const agent of registry.agents) {
+    await ensureAgentHomeProject(agent.id, agent.name, chatHome);
+  }
+  return registry;
+}
+
 
 const INSTANCE = {
   id: "local", name: "Local NanoClaw", executionMode: "chat-pi",
@@ -22,15 +35,15 @@ async function setup(t, agents = []) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-long-agent-lifecycle-"));
   const chatHome = path.join(base, "home");
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  await ensureDailyProject(chatHome);
+  await ensureLongAgentShareProject(chatHome);
   const { writeLongAgentRegistry } = await import("../../src/long-agents/storage.ts");
-  await writeLongAgentRegistry({ schemaVersion: 1, instances: [INSTANCE], agents }, chatHome);
+  await writeLongAgentRegistryWithHomes({ schemaVersion: 1, instances: [INSTANCE], agents }, chatHome);
   return { base, chatHome };
 }
 
 const verifyOk = async () => {};
 
-test("createLongAgent provisions config root, Daily Project and registry entry atomically", async (t) => {
+test("createLongAgent provisions config root, Agent home Project and registry entry atomically", async (t) => {
   const { chatHome } = await setup(t);
   const agent = await createLongAgent({
     id: "luna",
@@ -41,12 +54,12 @@ test("createLongAgent provisions config root, Daily Project and registry entry a
     chatHome,
     verifyAgentGroup: verifyOk,
   });
-  assert.equal(agent.defaultProjectId, "daily-luna");
+  assert.equal(agent.defaultProjectId, "luna");
   assert.equal(agent.status, "active");
   assert.ok(fs.existsSync(path.join(longAgentConfigRoot(chatHome, "luna"), "skills")));
   assert.ok(fs.existsSync(path.join(longAgentConfigRoot(chatHome, "luna"), "definition.json")));
   const projects = await readProjectRegistry(chatHome);
-  assert.ok(projects.projects.some((entry) => entry.projectId === "daily-luna"));
+  assert.ok(projects.projects.some((entry) => entry.projectId === "luna" && entry.kind === "agent"));
 
   await assert.rejects(
     createLongAgent({

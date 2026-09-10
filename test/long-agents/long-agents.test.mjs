@@ -8,7 +8,7 @@ import path from "node:path";
 import process from "node:process";
 import test from "node:test";
 import { createRouter } from "nitro/h3";
-import { ensureDailyProject } from "../../src/projects/registry.ts";
+import { ensureLongAgentShareProject } from "../../src/projects/registry.ts";
 import { openChatSession } from "../../src/chat-session.ts";
 import { readChatSession } from "../../src/session-read-model.ts";
 import { readLongAgentState, writeLongAgentRegistry } from "../../src/long-agents/storage.ts";
@@ -25,6 +25,19 @@ import { collectChatLongAgentTurnMarkers } from "../../src/long-agents/session-t
 import readLongAgentConfigurationHandler from "../../src/routes/api/long-agents/[longAgentId]/config.get.ts";
 import inspectLongAgentHandler from "../../src/routes/api/long-agents/[longAgentId]/inspection.get.ts";
 import updateLongAgentConfigurationHandler from "../../src/routes/api/long-agents/[longAgentId]/config.put.ts";
+
+// 归一后：每个已登记的 Long Agent 都有自己的 home Project（id 即 longAgentId）。
+// 测试在写入 Registry 后补齐 home 项目，等价于生产启动时的归一/创建 provisioning。
+async function writeLongAgentRegistryWithHomes(value, chatHome) {
+  const { ensureAgentHomeProject } = await import("../../src/projects/registry.ts");
+  const { writeLongAgentRegistry } = await import("../../src/long-agents/storage.ts");
+  const registry = await writeLongAgentRegistry(value, chatHome);
+  for (const agent of registry.agents) {
+    await ensureAgentHomeProject(agent.id, agent.name, chatHome);
+  }
+  return registry;
+}
+
 
 function address(channelType, instance, platformId) {
   return { channelType, instance, platformId, threadId: null };
@@ -249,10 +262,10 @@ test("legacy per-session bindings migrate to one Project Long Agent primary sess
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-long-agent-"));
   const chatHome = path.join(root, "home");
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await ensureDailyProject(chatHome);
+  await ensureLongAgentShareProject(chatHome);
   const legacyBinding = {
     id: "telegram-binding",
-    projectId: "daily",
+    projectId: "nexus",
     chatSessionId: "telegram-session",
     longAgentId: "nexus",
     nanoclawInstanceId: "local",
@@ -286,8 +299,8 @@ test("legacy per-session bindings migrate to one Project Long Agent primary sess
   const state = await readLongAgentState(chatHome);
   assert.equal(state.schemaVersion, 3);
   assert.deepEqual(state.projectAgents, [{
-    id: "project-long-agent:daily:nexus",
-    projectId: "daily",
+    id: "project-long-agent:nexus:nexus",
+    projectId: "nexus",
     longAgentId: "nexus",
     primarySessionId: "telegram-session",
     status: "active",
@@ -304,8 +317,8 @@ test("LongAgent default definition grants every registered Chat system Tool", as
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-long-agent-default-tools-"));
   const chatHome = path.join(root, "home");
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await ensureDailyProject(chatHome);
-  await writeLongAgentRegistry({
+  await ensureLongAgentShareProject(chatHome);
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{
       id: "local", name: "Local NanoClaw", executionMode: "chat-pi",
@@ -313,7 +326,7 @@ test("LongAgent default definition grants every registered Chat system Tool", as
     }],
     agents: [{
       id: "nexus", name: "Nexus", description: "Daily coworker", enabled: true,
-      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "daily",
+      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "nexus",
       inbox: {
         messagingGroupId: "private-messaging-group", channelType: "telegram", instance: "telegram",
         platformId: "telegram:private-user", threadId: null,
@@ -344,8 +357,8 @@ test("LongAgent inspection resolves effective Skills through the execution path 
     if (previousHome === undefined) delete process.env.CHAT_HOME;
     else process.env.CHAT_HOME = previousHome;
   });
-  await ensureDailyProject(chatHome);
-  await writeLongAgentRegistry({
+  await ensureLongAgentShareProject(chatHome);
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{
       id: "local", name: "Local NanoClaw", executionMode: "chat-pi",
@@ -353,7 +366,7 @@ test("LongAgent inspection resolves effective Skills through the execution path 
     }],
     agents: [{
       id: "nexus", name: "Nexus", description: "Daily coworker", enabled: true,
-      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "daily",
+      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "nexus",
       inbox: {
         messagingGroupId: "private-messaging-group", channelType: "telegram", instance: "telegram",
         platformId: "telegram:private-user", threadId: null,
@@ -405,22 +418,22 @@ test("LongAgent registry rejects unsafe Gateway URLs and duplicate Agent Group m
     instances: [{ id: "local", name: "Local", gatewayBaseUrl: "http://remote.example/webhook/chat-backend" }],
     agents: [],
   };
-  await assert.rejects(writeLongAgentRegistry(base, root), /必须使用HTTPS/);
+  await assert.rejects(writeLongAgentRegistryWithHomes(base, root), /必须使用HTTPS/);
   const instance = { id: "local", name: "Local", gatewayBaseUrl: "http://127.0.0.1:3000/webhook/chat-backend" };
-  await assert.rejects(writeLongAgentRegistry({
+  await assert.rejects(writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [instance, { ...instance, id: "second", name: "Second" }],
     agents: [],
   }, root), /只支持一个NanoClaw instance/);
   const agent = {
     id: "one", name: "One", description: "", enabled: true, instanceId: "local",
-    nanoclawAgentGroupId: "ag-shared", defaultProjectId: "daily",
+    nanoclawAgentGroupId: "ag-shared", defaultProjectId: "nexus",
     inbox: {
       messagingGroupId: "mg-one", channelType: "telegram", instance: "telegram",
       platformId: "telegram:user", threadId: null,
     },
   };
-  await assert.rejects(writeLongAgentRegistry({
+  await assert.rejects(writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [instance],
     agents: [agent, { ...agent, id: "two", inbox: { ...agent.inbox, messagingGroupId: "mg-two" } }],
@@ -431,8 +444,8 @@ test("LongAgent configuration is versioned, atomic, and keeps private routing ou
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-long-agent-config-"));
   const chatHome = path.join(root, "home");
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await ensureDailyProject(chatHome);
-  await writeLongAgentRegistry({
+  await ensureLongAgentShareProject(chatHome);
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{
       id: "local", name: "Local NanoClaw", executionMode: "chat-pi",
@@ -440,7 +453,7 @@ test("LongAgent configuration is versioned, atomic, and keeps private routing ou
     }],
     agents: [{
       id: "nexus", name: "Nexus", description: "Daily coworker", enabled: true,
-      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "daily",
+      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "nexus",
       inbox: {
         messagingGroupId: "private-messaging-group", channelType: "telegram", instance: "telegram",
         platformId: "telegram:private-user", threadId: null,
@@ -463,7 +476,7 @@ test("LongAgent configuration is versioned, atomic, and keeps private routing ou
   ]) {
     assert.equal(currentJson.includes(privateValue), false);
   }
-  const enabledListJson = JSON.stringify(await listLongAgents({ projectId: "daily", chatHome }));
+  const enabledListJson = JSON.stringify(await listLongAgents({ projectId: "nexus", chatHome }));
   assert.equal(JSON.parse(enabledListJson).agents[0].available, true);
   assert.equal(enabledListJson.includes(path.join(root, "ncl.sock")), false);
   assert.equal(enabledListJson.includes(path.join(root, "cli.sock")), false);
@@ -549,12 +562,12 @@ test("LongAgent configuration is versioned, atomic, and keeps private routing ou
   ]);
   assert.notEqual(updated.revision, current.revision);
   assert.equal((await readLongAgentConfiguration("nexus", chatHome)).agent.enabled, false);
-  const listed = await listLongAgents({ projectId: "daily", chatHome });
+  const listed = await listLongAgents({ projectId: "nexus", chatHome });
   assert.deepEqual(listed.agents.map((agent) => [agent.id, agent.available]), [["nexus", false]]);
   await assert.rejects(
     executeLongAgentTurn({
       longAgentId: "nexus",
-      projectId: "daily",
+      projectId: "nexus",
       text: "disabled agents cannot run",
       chatHome,
     }),
@@ -601,8 +614,8 @@ test("LongAgent configuration HTTP contract returns safe status codes and suppor
     else process.env.CHAT_HOME = previousChatHome;
     fs.rmSync(root, { recursive: true, force: true });
   });
-  await ensureDailyProject(chatHome);
-  await writeLongAgentRegistry({
+  await ensureLongAgentShareProject(chatHome);
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{
       id: "local", name: "Local NanoClaw", executionMode: "chat-pi",
@@ -610,7 +623,7 @@ test("LongAgent configuration HTTP contract returns safe status codes and suppor
     }],
     agents: [{
       id: "nexus", name: "Nexus", description: "Daily coworker", enabled: false,
-      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "daily",
+      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "nexus",
       inbox: {
         messagingGroupId: "private-messaging-group", channelType: "telegram", instance: "telegram",
         platformId: "telegram:private-platform", threadId: null,
@@ -701,7 +714,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  await ensureDailyProject(chatHome);
+  await ensureLongAgentShareProject(chatHome);
   const agentDir = path.join(chatHome, "agent");
   fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
     defaultProvider: "long-agent-test",
@@ -726,7 +739,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
       },
     },
   }));
-  await writeLongAgentRegistry({
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{
       id: "local",
@@ -740,7 +753,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
       enabled: true,
       instanceId: "local",
       nanoclawAgentGroupId: "nano-agent-1",
-      defaultProjectId: "daily",
+      defaultProjectId: "nexus",
       inbox: {
         messagingGroupId: "telegram-mg-1",
         channelType: "telegram",
@@ -755,7 +768,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
 
   const first = await executeLongAgentTurn({
     longAgentId: "nexus",
-    projectId: "daily",
+    projectId: "nexus",
     text: "原生 Pi 第一问",
     chatHome,
     turnId: "stable-web-turn-1",
@@ -767,7 +780,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
 
   const replay = await executeLongAgentTurn({
     longAgentId: "nexus",
-    projectId: "daily",
+    projectId: "nexus",
     sessionId: first.sessionId,
     text: "原生 Pi 第一问",
     chatHome,
@@ -778,7 +791,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
 
   const second = await executeLongAgentTurn({
     longAgentId: "nexus",
-    projectId: "daily",
+    projectId: "nexus",
     sessionId: first.sessionId,
     text: "原生 Pi 第二问",
     chatHome,
@@ -791,7 +804,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
 
   const oldReplayAfterNewTurn = await executeLongAgentTurn({
     longAgentId: "nexus",
-    projectId: "daily",
+    projectId: "nexus",
     sessionId: first.sessionId,
     text: "原生 Pi 第一问",
     chatHome,
@@ -800,7 +813,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
   assert.equal(oldReplayAfterNewTurn.text, "Pi Long Agent reply 1");
   assert.equal(modelRequests.length, 2);
 
-  const opened = await openChatSession({ projectId: "daily", chatHome, sessionId: first.sessionId });
+  const opened = await openChatSession({ projectId: "nexus", chatHome, sessionId: first.sessionId });
   assert.deepEqual(
     opened.manager.buildSessionContext().messages.map((message) => message.role),
     ["user", "assistant", "user", "assistant"],
@@ -820,7 +833,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     ],
   );
 
-  const projected = await readChatSession(first.sessionId, undefined, {}, "daily", chatHome);
+  const projected = await readChatSession(first.sessionId, undefined, {}, "nexus", chatHome);
   assert.deepEqual(
     projected.context.messages.map((message) => message.chatLongAgent?.turnId ?? null),
     ["stable-web-turn-1", "stable-web-turn-1", "stable-web-turn-2", "stable-web-turn-2"],
@@ -828,11 +841,11 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
   assert.equal(projected.context.messages[1].usage.totalTokens, 7);
 
   await ensureProjectManagementSkill(chatHome);
-  const projectTurn = await executeLongAgentTurn({ longAgentId: "nexus", projectId: "daily", sessionId: first.sessionId,
+  const projectTurn = await executeLongAgentTurn({ longAgentId: "nexus", projectId: "nexus", sessionId: first.sessionId,
     text: "PROJECT_TOOL_E2E: 创建学习道德经项目并完成配置", chatHome, turnId: "project-management-turn" });
   assert.equal(projectTurn.text, "PROJECT_TOOL_E2E_OK");
   assert.equal(projectTurn.sessionId, first.sessionId);
-  const projectHistory = await readChatSession(first.sessionId, undefined, {}, "daily", chatHome);
+  const projectHistory = await readChatSession(first.sessionId, undefined, {}, "nexus", chatHome);
   const toolResults = projectHistory.context.messages.filter((m) => m.role === "toolResult" && m.toolName.startsWith("project_"));
   assert.equal(toolResults.length, 8);
   assert.ok(toolResults.slice(0, -1).every((m) => !m.isError));
@@ -850,7 +863,7 @@ test("Long Agent retries a failed stable Turn without duplicating its user messa
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  await ensureDailyProject(chatHome);
+  await ensureLongAgentShareProject(chatHome);
   const agentDir = path.join(chatHome, "agent");
   fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
     defaultProvider: "long-agent-test",
@@ -876,7 +889,7 @@ test("Long Agent retries a failed stable Turn without duplicating its user messa
       },
     },
   }));
-  await writeLongAgentRegistry({
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{
       id: "local",
@@ -890,7 +903,7 @@ test("Long Agent retries a failed stable Turn without duplicating its user messa
       enabled: true,
       instanceId: "local",
       nanoclawAgentGroupId: "nano-agent-1",
-      defaultProjectId: "daily",
+      defaultProjectId: "nexus",
       inbox: {
         messagingGroupId: "telegram-mg-1",
         channelType: "telegram",
@@ -905,7 +918,7 @@ test("Long Agent retries a failed stable Turn without duplicating its user messa
 
   const input = {
     longAgentId: "nexus",
-    projectId: "daily",
+    projectId: "nexus",
     text: "失败后只保留一条用户消息",
     chatHome,
     turnId: "stable-retry-turn-1",
@@ -930,7 +943,7 @@ test("Long Agent retries a failed stable Turn without duplicating its user messa
   assert.equal(modelRequests.length, 3);
 
   const opened = await openChatSession({
-    projectId: "daily",
+    projectId: "nexus",
     chatHome,
     sessionId: retried.sessionId,
   });
@@ -974,7 +987,7 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  await ensureDailyProject(chatHome);
+  await ensureLongAgentShareProject(chatHome);
   const agentDir = path.join(chatHome, "agent");
   fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
     defaultProvider: "long-agent-test",
@@ -999,7 +1012,7 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
       },
     },
   }));
-  await writeLongAgentRegistry({
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{ id: "local", name: "Local NanoClaw", gatewayBaseUrl: gateway.baseUrl }],
     agents: [{
@@ -1009,7 +1022,7 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
       enabled: true,
       instanceId: "local",
       nanoclawAgentGroupId: "nano-agent-1",
-      defaultProjectId: "daily",
+      defaultProjectId: "nexus",
       inbox: {
         messagingGroupId: "telegram-mg-1",
         channelType: "telegram",
@@ -1043,7 +1056,7 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
   assert.equal(state.pendingEvents.length, 0);
   assert.equal(state.processedEvents[0].eventId, inbound.eventId);
   const opened = await openChatSession({
-    projectId: "daily",
+    projectId: "nexus",
     chatHome,
     sessionId: state.projectAgents[0].primarySessionId,
   });
@@ -1104,7 +1117,7 @@ test("channel images reach a vision model and text-only models answer in-channel
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  await ensureDailyProject(chatHome);
+  await ensureLongAgentShareProject(chatHome);
   const agentDir = path.join(chatHome, "agent");
   fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
     defaultProvider: "long-agent-test",
@@ -1130,7 +1143,7 @@ test("channel images reach a vision model and text-only models answer in-channel
     },
   }));
   writeModels(["text", "image"]);
-  await writeLongAgentRegistry({
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{ id: "local", name: "Local NanoClaw", gatewayBaseUrl: gateway.baseUrl }],
     agents: [{
@@ -1140,7 +1153,7 @@ test("channel images reach a vision model and text-only models answer in-channel
       enabled: true,
       instanceId: "local",
       nanoclawAgentGroupId: "nano-agent-1",
-      defaultProjectId: "daily",
+      defaultProjectId: "nexus",
       inbox: {
         messagingGroupId: "telegram-mg-1",
         channelType: "telegram",
@@ -1185,7 +1198,7 @@ test("channel images reach a vision model and text-only models answer in-channel
 
   const state = await readLongAgentState(chatHome);
   const opened = await openChatSession({
-    projectId: "daily",
+    projectId: "nexus",
     chatHome,
     sessionId: state.projectAgents[0].primarySessionId,
   });
@@ -1213,7 +1226,7 @@ test("channel images reach a vision model and text-only models answer in-channel
   assert.equal(noticeAck.body.messageId, textOnlyEvent.messageId);
 
   const reopened = await openChatSession({
-    projectId: "daily",
+    projectId: "nexus",
     chatHome,
     sessionId: state.projectAgents[0].primarySessionId,
   });
@@ -1230,8 +1243,8 @@ test("Chat HTTP ingress accepts registered routes and rejects unknown or conflic
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-long-agent-http-ingress-"));
   const chatHome = path.join(root, "home");
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await ensureDailyProject(chatHome);
-  await writeLongAgentRegistry({
+  await ensureLongAgentShareProject(chatHome);
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{
       id: "local",
@@ -1245,7 +1258,7 @@ test("Chat HTTP ingress accepts registered routes and rejects unknown or conflic
       enabled: true,
       instanceId: "local",
       nanoclawAgentGroupId: "nano-agent-1",
-      defaultProjectId: "daily",
+      defaultProjectId: "nexus",
       inbox: {
         messagingGroupId: "telegram-mg-1",
         channelType: "telegram",
@@ -1285,7 +1298,7 @@ test("Chat HTTP ingress accepts registered routes and rejects unknown or conflic
   assert.equal(groupState.pendingEvents.some((pending) => pending.event.eventId === unboundGroup.eventId), true);
   assert.equal(groupState.processedEvents.some((processed) => processed.eventId === unboundGroup.eventId), false);
 
-  await writeLongAgentRegistry({
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{
       id: "local",
@@ -1299,7 +1312,7 @@ test("Chat HTTP ingress accepts registered routes and rejects unknown or conflic
       enabled: false,
       instanceId: "local",
       nanoclawAgentGroupId: "nano-agent-1",
-      defaultProjectId: "daily",
+      defaultProjectId: "nexus",
       inbox: {
         messagingGroupId: "telegram-mg-1",
         channelType: "telegram",

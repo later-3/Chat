@@ -1,5 +1,5 @@
 import { openChatSession, reserveChatSession } from "../chat-session.js";
-import { agentDailyProjectId, resolveProjectContext } from "../projects/registry.js";
+import { agentHomeProjectId, resolveProjectContext } from "../projects/registry.js";
 import { updateLongAgentState } from "./storage.js";
 import type { LongAgentConfig, ProjectLongAgent } from "./types.js";
 
@@ -29,7 +29,7 @@ export async function ensureProjectLongAgent(input: {
     const existing = state.projectAgents.find((candidate) => candidate.projectId === input.projectId
       && candidate.longAgentId === input.agent.id);
     // S5：Agent 独立 Daily Project 的日常主 Session 按日轮换；历史 Session 原位保留。
-    if (existing !== undefined && input.projectId === agentDailyProjectId(input.agent.id)) {
+    if (existing !== undefined && input.projectId === agentHomeProjectId(input.agent.id)) {
       const today = localDate();
       if (existing.sessionDate === today) {
         // 当天复用。
@@ -80,7 +80,7 @@ export async function ensureProjectLongAgent(input: {
     if (input.requestedSessionId !== undefined) {
       throw new Error(`Long Agent ${input.agent.name}尚未在Project ${input.projectId}启动，不能接管已有普通Session`);
     }
-    const isDaily = input.projectId === agentDailyProjectId(input.agent.id);
+    const isDaily = input.projectId === agentHomeProjectId(input.agent.id);
     const reserved = await reserveChatSession(
       { projectId: input.projectId, chatHome: input.chatHome },
       isDaily ? `${input.agent.name} · ${localDate()}` : `${input.agent.name} · 专属会话`,

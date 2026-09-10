@@ -50,7 +50,14 @@ export class MemoryStoreManager {
   }
 
   async store(target: MemoryTarget): Promise<MemoryService> {
-    if (target.type === "project") await resolveProjectContext(target.projectId, this.chatHome);
+    if (target.type === "project") {
+      const project = await resolveProjectContext(target.projectId, this.chatHome);
+      // 记忆只有三类：Chat（个人）/ Project（真实项目）/ Long Agent（OKF）。
+      // Agent home 与共享空间是系统容器，不提供 Project Memory。
+      if (project.kind !== "project") {
+        throw new Error(`Project ${target.projectId}是系统管理的Long Agent容器，不提供Project Memory`);
+      }
+    }
     const key = targetKey(target);
     const existing = this.stores.get(key);
     if (existing !== undefined) return existing;

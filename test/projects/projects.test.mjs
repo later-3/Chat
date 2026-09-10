@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   createProjectManifest,
-  ensureDailyProject,
+  ensureLongAgentShareProject,
   listProjects,
   openProject,
   resolveProjectContext,
@@ -62,7 +62,7 @@ test("the directory selected by the user is the exact Project root even below an
   assert.equal(openedChild.projectRoot, fs.realpathSync(child));
   assert.notEqual(openedChild.projectId, openedParent.projectId);
   assert.equal(JSON.parse(fs.readFileSync(path.join(child, ".chat", "project.json"), "utf8")).id, openedChild.projectId);
-  assert.deepEqual((await listProjects(chatHome)).filter((project) => project.kind === "directory").map((project) => project.path).sort(), [
+  assert.deepEqual((await listProjects(chatHome)).filter((project) => project.kind === "project").map((project) => project.path).sort(), [
     fs.realpathSync(child),
     fs.realpathSync(parent),
   ].sort());
@@ -92,47 +92,47 @@ test("first open initializes the selected directory with a unique stable Project
   assert.notEqual(openedFirst.projectId, openedSecond.projectId);
   assert.equal(reopenedFirst.projectId, openedFirst.projectId);
   assert.equal(concurrentFirst.projectId, concurrentSecond.projectId);
-  assert.equal((await listProjects(chatHome)).filter((project) => project.kind === "directory").length, 3);
+  assert.equal((await listProjects(chatHome)).filter((project) => project.kind === "project").length, 3);
 });
 
-test("Daily Project is created once in a managed workspace and always listed", async (t) => {
+test("Long Agent share space is created once in a managed workspace and always listed", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-project-daily-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const chatHome = path.join(root, "home");
 
-  const first = await ensureDailyProject(chatHome);
+  const first = await ensureLongAgentShareProject(chatHome);
   const registryAfterFirstOpen = fs.readFileSync(path.join(chatHome, "projects", "registry.json"), "utf8");
   await new Promise((resolve) => setTimeout(resolve, 5));
-  const second = await ensureDailyProject(chatHome);
+  const second = await ensureLongAgentShareProject(chatHome);
   const projects = await listProjects(chatHome);
 
-  assert.equal(first.projectId, "daily");
+  assert.equal(first.projectId, "longagentshare");
   assert.equal(second.projectRoot, first.projectRoot);
   assert.equal(
     fs.readFileSync(path.join(chatHome, "projects", "registry.json"), "utf8"),
     registryAfterFirstOpen,
     "读取Daily或Project列表不应持续改写Registry",
   );
-  assert.equal(first.projectRoot, fs.realpathSync(path.join(chatHome, "workspaces", "daily")));
-  assert.equal(first.sessionDir, path.join(chatHome, "projects", "daily", "sessions"));
+  assert.equal(first.projectRoot, fs.realpathSync(path.join(chatHome, "workspaces", "longagentshare")));
+  assert.equal(first.sessionDir, path.join(chatHome, "projects", "longagentshare", "sessions"));
   assert.deepEqual(
     JSON.parse(fs.readFileSync(path.join(first.projectRoot, ".chat", "project.json"), "utf8")),
     {
       schemaVersion: 1,
-      id: "daily",
-      name: "Daily",
-      description: "Chat管理的默认日常Project",
+      id: "longagentshare",
+      name: "Long Agent 共享",
+      description: "公共 Long Agent 资源共享空间",
     },
   );
   assert.deepEqual(
     JSON.parse(fs.readFileSync(path.join(first.projectRoot, ".chat", "config.json"), "utf8")),
     { schemaVersion: 1 },
   );
-  assert.equal(projects.filter((project) => project.projectId === "daily").length, 1);
-  assert.equal(projects.find((project) => project.projectId === "daily")?.kind, "daily");
+  assert.equal(projects.filter((project) => project.projectId === "longagentshare").length, 1);
+  assert.equal(projects.find((project) => project.projectId === "longagentshare")?.kind, "share");
 });
 
-test("the reserved daily id cannot be registered from an external directory", async (t) => {
+test("the reserved Long Agent share id cannot be registered from an external directory", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-project-reserved-daily-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const chatHome = path.join(root, "home");
@@ -140,8 +140,8 @@ test("the reserved daily id cannot be registered from an external directory", as
   fs.mkdirSync(external, { recursive: true });
 
   await assert.rejects(
-    openProject({ path: external, chatHome, id: "daily", name: "Not Daily" }),
-    /只保留给Chat管理的Daily Project/,
+    openProject({ path: external, chatHome, id: "longagentshare", name: "Not Share" }),
+    /只保留给Chat管理的Long Agent共享空间/,
   );
 });
 

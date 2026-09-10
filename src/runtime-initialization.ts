@@ -9,7 +9,7 @@ import { ensureWorkflowDelegationSkill } from "./workflows/planner-orchestrator/
 import { ensureRuleLibrarySkill } from "./workflows/rule-management/agents/rule-curator-agent/skill.js";
 import { purgeExpiredRemovedSessionsAcrossProjects } from "./session-removal.js";
 import { registerChatWorkflowCallRuntime } from "./workflows/workflow-call-runtime.js";
-import { ensureDailyProject } from "./projects/registry.js";
+import { ensureLongAgentShareProject } from "./projects/registry.js";
 import { startLongAgentSync } from "./long-agents/bridge.js";
 
 const initializations = new Map<string, Promise<void>>();
@@ -35,7 +35,7 @@ export function ensureChatRuntimeInitialized(options: {
     .then(async () => {
       const paths = await ensureChatHome(chatHome);
       await Promise.all([
-        ensureDailyProject(paths.root),
+        ensureLongAgentShareProject(paths.root),
         ensureProjectManagementSkill(paths.root),
         ensureLongAgentManagementSkill(paths.root),
         ensureChannelMessagingSkill(paths.root),
@@ -44,14 +44,16 @@ export function ensureChatRuntimeInitialized(options: {
         ensureRuleLibrarySkill(paths.runtimeDir, { refresh: true }),
         purgeExpiredRemovedSessionsAcrossProjects(paths.root),
       ]);
-      // S3/S4 启动时全量迁移：每个 Agent 的独立配置根与 Daily Project 一次性就绪，
-      // 不做依赖入口的懒迁移，避免通道绑定继续路由到共享 daily 的旧会话。
+      // 归一迁移（幂等，带备份与完成标记）：Agent 日常项目并入自己的根、
+      // 共享 daily 改名为 longagentshare、Agent 历史会话迁回各自 Agent。
+      const { migrateAgentHomeNormalization, sweepLegacyAgentProjectDirs } = await import("./migrations/agent-home-normalization.js");
+      await migrateAgentHomeNormalization(paths.root);
+      await sweepLegacyAgentProjectDirs(paths.root);
+      // 启动时确保每个 Agent 的配置根与资源目录就绪。
       const { readLongAgentRegistry, ensureLongAgentResourceDirs } = await import("./long-agents/storage.js");
-      const { ensureLongAgentDailyProject } = await import("./long-agents/daily-project.js");
       const longAgentRegistry = await readLongAgentRegistry(paths.root);
       for (const agent of longAgentRegistry.agents) {
         await ensureLongAgentResourceDirs(paths.root, agent.id);
-        await ensureLongAgentDailyProject(agent, paths.root);
       }
       startLongAgentSync(paths.root);
     })

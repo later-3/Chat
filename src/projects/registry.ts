@@ -12,12 +12,16 @@ import {
   type ChatProjectManifest,
   type ChatProjectRegistry,
   type ChatProjectRegistryEntry,
+  type ChatProjectKind,
   type ChatProjectSummary,
 } from "./types.js";
 
 export const PROJECT_MANIFEST_RELATIVE_PATH = join(".chat", "project.json");
-export const DAILY_PROJECT_ID = "daily";
-export const DAILY_PROJECT_NAME = "Daily";
+/** 公共 Long Agent 资源共享空间（归一后替代旧共享 daily）。 */
+export const LONG_AGENT_SHARE_PROJECT_ID = "longagentshare";
+export const LONG_AGENT_SHARE_PROJECT_NAME = "Long Agent 共享";
+/** 归一迁移前的共享 daily id；仅供迁移模块识别旧数据。 */
+export const LEGACY_DAILY_PROJECT_ID = "daily";
 
 function defaultRegistry(): ChatProjectRegistry {
   return { schemaVersion: 1, projects: [] };
@@ -131,6 +135,7 @@ async function upsertRegistry(
   root: string,
   manifest: ChatProjectManifest,
   chatHome: string,
+  kind: ChatProjectKind = "project",
 ): Promise<ChatProjectRegistryEntry> {
   let result: ChatProjectRegistryEntry | undefined;
   await serializeRegistryWrite(chatHome, async () => {
@@ -146,6 +151,7 @@ async function upsertRegistry(
       cachedName: manifest.name,
       cachedDescription: manifest.description,
       path: root,
+      ...(kind === "project" ? {} : { kind }),
       firstOpenedAt: byId?.firstOpenedAt ?? now,
       lastOpenedAt: now,
     };
@@ -173,30 +179,35 @@ async function registerProject(
   root: string,
   manifest: ChatProjectManifest,
   chatHome: string,
+  kind: ChatProjectKind = "project",
 ): Promise<ChatProjectContext> {
-  const dailyRoot = await realpath(getChatHomePaths(chatHome).dailyWorkspaceDir).catch(() =>
-    resolve(getChatHomePaths(chatHome).dailyWorkspaceDir));
-  if (manifest.id === DAILY_PROJECT_ID && root !== dailyRoot) {
-    throw new Error(`Project id ${DAILY_PROJECT_ID}只保留给Chat管理的Daily Project`);
+  const shareRoot = await realpath(getChatHomePaths(chatHome).longAgentShareWorkspaceDir).catch(() =>
+    resolve(getChatHomePaths(chatHome).longAgentShareWorkspaceDir));
+  if (manifest.id === LONG_AGENT_SHARE_PROJECT_ID && root !== shareRoot) {
+    throw new Error(`Project id ${LONG_AGENT_SHARE_PROJECT_ID}只保留给Chat管理的Long Agent共享空间`);
   }
-  await upsertRegistry(root, manifest, chatHome);
+  await upsertRegistry(root, manifest, chatHome, kind);
   return resolveProjectContext(manifest.id, chatHome);
 }
 
-const AGENT_DAILY_PROJECT_PREFIX = "daily-";
-
-/** 每个 Long Agent 的独立 Daily Project id（管理架构 S3）。 */
-export function agentDailyProjectId(longAgentId: string): string {
+/** 每个 Long Agent 的 home Project id 就是它的稳定 longAgentId。 */
+export function agentHomeProjectId(longAgentId: string): string {
   if (!LONG_AGENT_ID_PATTERN.test(longAgentId)) throw new Error(`longAgentId格式无效: ${longAgentId}`);
-  return `${AGENT_DAILY_PROJECT_PREFIX}${longAgentId}`;
+  return longAgentId;
 }
 
-async function ensureManagedDailyProject(input: {
+/** 归一迁移前的 per-agent Daily Project id；只供迁移模块识别旧数据。 */
+export function legacyAgentDailyProjectId(longAgentId: string): string {
+  return `daily-${longAgentId}`;
+}
+
+async function ensureManagedProject(input: {
   readonly projectId: string;
   readonly name: string;
   readonly description: string;
   readonly root: string;
   readonly chatHome: string;
+  readonly kind: ChatProjectKind;
 }): Promise<ChatProjectContext> {
   const home = await ensureChatHome(input.chatHome);
   const root = input.root;
@@ -213,7 +224,7 @@ async function ensureManagedDailyProject(input: {
   try {
     manifest = await readProjectManifest(root);
     if (manifest.id !== input.projectId) {
-      throw new Error(`Daily Workspace已经声明为其他Project: ${manifest.id}`);
+      throw new Error(`受管Workspace已经声明为其他Project: ${manifest.id}`);
     }
   } catch (error) {
     if (!isMissingManifest(error)) throw error;
@@ -244,35 +255,40 @@ async function ensureManagedDailyProject(input: {
     && existing.cachedDescription === manifest.description) {
     return resolveProjectContext(input.projectId, home.root);
   }
-  return registerProject(canonicalRoot, manifest, home.root);
+  return registerProject(canonicalRoot, manifest, home.root, input.kind);
 }
 
-/** Creates the stable system-managed Daily Project through the normal Project contract. */
-export async function ensureDailyProject(chatHome = resolveChatHome()): Promise<ChatProjectContext> {
+/** 公共 Long Agent 资源共享空间（原共享 daily）：不默认打开，也不属于任何用户项目。 */
+export async function ensureLongAgentShareProject(chatHome = resolveChatHome()): Promise<ChatProjectContext> {
   const home = await ensureChatHome(chatHome);
-  return ensureManagedDailyProject({
-    projectId: DAILY_PROJECT_ID,
-    name: DAILY_PROJECT_NAME,
-    description: "Chat管理的默认日常Project",
-    root: home.dailyWorkspaceDir,
+  return ensureManagedProject({
+    projectId: LONG_AGENT_SHARE_PROJECT_ID,
+    name: LONG_AGENT_SHARE_PROJECT_NAME,
+    description: "公共 Long Agent 资源共享空间",
+    root: home.longAgentShareWorkspaceDir,
     chatHome: home.root,
+    kind: "share",
   });
 }
 
-/** 创建或解析某个 Long Agent 的独立 Daily Project 与 Managed Workspace。 */
-export async function ensureAgentDailyProject(
+/**
+ * 创建或解析某个 Long Agent 的 home Project：项目 id 就是它的 longAgentId，
+ * 根目录就是它的 Agent Workspace（`long-agents/<id>/workspace`），
+ * 数据目录（会话、memory、资源）也在 `long-agents/<id>/` 下。
+ */
+export async function ensureAgentHomeProject(
   longAgentId: string,
   agentName: string,
   chatHome = resolveChatHome(),
 ): Promise<ChatProjectContext> {
   const home = await ensureChatHome(chatHome);
-  const projectId = agentDailyProjectId(longAgentId);
-  return ensureManagedDailyProject({
-    projectId,
-    name: `Daily · ${agentName}`,
-    description: `Long Agent ${agentName} 的日常Project`,
-    root: resolve(home.workspacesDir, projectId),
+  return ensureManagedProject({
+    projectId: agentHomeProjectId(longAgentId),
+    name: agentName,
+    description: `Long Agent ${agentName} 的 home`,
+    root: resolve(home.root, "long-agents", longAgentId, "workspace"),
     chatHome: home.root,
+    kind: "agent",
   });
 }
 
@@ -326,19 +342,26 @@ async function available(entry: ChatProjectRegistryEntry): Promise<boolean> {
 }
 
 export async function listProjects(chatHome = resolveChatHome()): Promise<readonly ChatProjectSummary[]> {
-  await ensureDailyProject(chatHome);
+  await ensureLongAgentShareProject(chatHome);
   const registry = await readProjectRegistry(chatHome);
   return Promise.all(registry.projects.map(async (project) => ({
     ...project,
     available: await available(project),
-    kind: project.projectId === DAILY_PROJECT_ID ? "daily" as const : "directory" as const,
+    kind: project.kind ?? "project" as const,
   })));
 }
 
-export async function ensureProjectDataLayout(projectId: string, chatHome = resolveChatHome()) {
+export async function ensureProjectDataLayout(
+  projectId: string,
+  chatHome = resolveChatHome(),
+  kind: ChatProjectKind = "project",
+) {
   if (!PROJECT_ID_PATTERN.test(projectId)) throw new Error(`Project id无效: ${projectId}`);
   const home = await ensureChatHome(chatHome);
-  const projectDataDir = resolve(home.projectsDir, projectId);
+  // Agent home 的全部事实（会话、资源、memory、workspace）都在 long-agents/<id>/ 下。
+  const projectDataDir = kind === "agent"
+    ? resolve(home.root, "long-agents", projectId)
+    : resolve(home.projectsDir, projectId);
   const sessionDir = resolve(projectDataDir, "sessions");
   const memoryDir = resolve(projectDataDir, "memory");
   const promptResourceDir = resolve(projectDataDir, "prompt-resources");
@@ -365,12 +388,14 @@ export async function resolveProjectContext(
   const manifest = await readProjectManifest(root);
   if (manifest.id !== projectId) throw new Error(`Project Manifest与Registry不一致: ${projectId}`);
   const home = await ensureChatHome(chatHome);
-  const data = await ensureProjectDataLayout(projectId, home.root);
+  const kind: ChatProjectKind = entry.kind ?? "project";
+  const data = await ensureProjectDataLayout(projectId, home.root, kind);
   const projectConfigDir = resolve(root, ".chat");
   return {
     projectId,
     name: manifest.name,
     description: manifest.description,
+    kind,
     projectRoot: root,
     cwd: root,
     chatHome: home.root,

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { ensureDailyProject } from "../../src/projects/registry.ts";
+import { ensureLongAgentShareProject } from "../../src/projects/registry.ts";
 import {
   clearLongAgentAvatarImage,
   LongAgentAvatarError,
@@ -19,6 +19,19 @@ import {
 import { listLongAgents } from "../../src/long-agents/bridge.ts";
 import { readLongAgentRegistry, writeLongAgentRegistry } from "../../src/long-agents/storage.ts";
 import { parseLongAgentRegistry } from "../../src/long-agents/types.ts";
+
+// 归一后：每个已登记的 Long Agent 都有自己的 home Project（id 即 longAgentId）。
+// 测试在写入 Registry 后补齐 home 项目，等价于生产启动时的归一/创建 provisioning。
+async function writeLongAgentRegistryWithHomes(value, chatHome) {
+  const { ensureAgentHomeProject } = await import("../../src/projects/registry.ts");
+  const { writeLongAgentRegistry } = await import("../../src/long-agents/storage.ts");
+  const registry = await writeLongAgentRegistry(value, chatHome);
+  for (const agent of registry.agents) {
+    await ensureAgentHomeProject(agent.id, agent.name, chatHome);
+  }
+  return registry;
+}
+
 
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
 const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
@@ -38,7 +51,7 @@ function registryFixture() {
     }],
     agents: [{
       id: "nexus", name: "Nexus", description: "Daily coworker", enabled: true,
-      instanceId: "local", nanoclawAgentGroupId: "nano-agent-1", defaultProjectId: "daily",
+      instanceId: "local", nanoclawAgentGroupId: "nano-agent-1", defaultProjectId: "longagentshare",
       inbox: {
         messagingGroupId: "mg-1", channelType: "telegram", instance: "telegram",
         platformId: "telegram:user-1", threadId: null,
@@ -78,8 +91,8 @@ test("registry parsing defaults the avatar to auto and validates configured avat
 
 test("image avatar upload sniffs bytes, bumps revisions, and keeps one asset file", async (t) => {
   const chatHome = fixture(t);
-  await ensureDailyProject(chatHome);
-  await writeLongAgentRegistry(registryFixture(), chatHome);
+  await ensureLongAgentShareProject(chatHome);
+  await writeLongAgentRegistryWithHomes(registryFixture(), chatHome);
 
   const readRevision = async () => (await readLongAgentConfiguration("nexus", chatHome)).revision;
 
@@ -121,8 +134,8 @@ test("image avatar upload sniffs bytes, bumps revisions, and keeps one asset fil
 
 test("configuration updates switch the display avatar and clean up image assets", async (t) => {
   const chatHome = fixture(t);
-  await ensureDailyProject(chatHome);
-  await writeLongAgentRegistry(registryFixture(), chatHome);
+  await ensureLongAgentShareProject(chatHome);
+  await writeLongAgentRegistryWithHomes(registryFixture(), chatHome);
 
   const base = await readLongAgentConfiguration("nexus", chatHome);
   const update = (document, avatar) => {
@@ -182,10 +195,10 @@ test("configuration updates switch the display avatar and clean up image assets"
 
 test("effective model resolves from the definition or from Chat defaults", async (t) => {
   const chatHome = fixture(t);
-  await ensureDailyProject(chatHome);
+  await ensureLongAgentShareProject(chatHome);
 
   // Agent without an explicit model resolves the Chat default (agent/settings.json).
-  await writeLongAgentRegistry(registryFixture(), chatHome);
+  await writeLongAgentRegistryWithHomes(registryFixture(), chatHome);
   fs.mkdirSync(path.join(chatHome, "agent"), { recursive: true });
   fs.writeFileSync(path.join(chatHome, "agent", "settings.json"), JSON.stringify({
     defaultProvider: "kimi6603",
@@ -215,7 +228,7 @@ test("effective model resolves from the definition or from Chat defaults", async
     tools: { mode: "pi-default" },
     resources: { mode: "inherit" },
   };
-  await writeLongAgentRegistry(withModel, chatHome);
+  await writeLongAgentRegistryWithHomes(withModel, chatHome);
   const explicit = await readLongAgentConfiguration("nexus", chatHome);
   assert.deepEqual(explicit.agent.effective, {
     model: { provider: "kimi6603", modelId: "kimi-for-coding" },
@@ -227,10 +240,10 @@ test("effective model resolves from the definition or from Chat defaults", async
 
 test("summary projection carries the public avatar", async (t) => {
   const chatHome = fixture(t);
-  await ensureDailyProject(chatHome);
+  await ensureLongAgentShareProject(chatHome);
   const registry = registryFixture();
   registry.agents[0].avatar = { kind: "emoji", emoji: "🦉" };
-  await writeLongAgentRegistry(registry, chatHome);
-  const listed = await listLongAgents({ projectId: "daily", chatHome });
+  await writeLongAgentRegistryWithHomes(registry, chatHome);
+  const listed = await listLongAgents({ projectId: "longagentshare", chatHome });
   assert.deepEqual(listed.agents[0].avatar, { kind: "emoji", emoji: "🦉" });
 });

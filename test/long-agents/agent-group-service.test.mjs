@@ -16,6 +16,19 @@ import updateAgentGroupHandler from "../../src/routes/api/long-agents/[longAgent
 import readAgentMemoryHandler from "../../src/routes/api/long-agents/[longAgentId]/agent-memory.get.ts";
 import updateAgentMemoryHandler from "../../src/routes/api/long-agents/[longAgentId]/agent-memory.patch.ts";
 
+// 归一后：每个已登记的 Long Agent 都有自己的 home Project（id 即 longAgentId）。
+// 测试在写入 Registry 后补齐 home 项目，等价于生产启动时的归一/创建 provisioning。
+async function writeLongAgentRegistryWithHomes(value, chatHome) {
+  const { ensureAgentHomeProject } = await import("../../src/projects/registry.ts");
+  const { writeLongAgentRegistry } = await import("../../src/long-agents/storage.ts");
+  const registry = await writeLongAgentRegistry(value, chatHome);
+  for (const agent of registry.agents) {
+    await ensureAgentHomeProject(agent.id, agent.name, chatHome);
+  }
+  return registry;
+}
+
+
 const REVISION_A = `sha256:${"a".repeat(64)}`;
 const REVISION_B = `sha256:${"b".repeat(64)}`;
 const REVISION_C = `sha256:${"c".repeat(64)}`;
@@ -140,7 +153,7 @@ async function setup(t) {
     else process.env.CHAT_CHANNEL_GATEWAY_TOKEN = previousToken;
     fs.rmSync(root, { recursive: true, force: true });
   });
-  await writeLongAgentRegistry({
+  await writeLongAgentRegistryWithHomes({
     schemaVersion: 1,
     instances: [{ id: "local", name: "Local", executionMode: "chat-pi", gatewayBaseUrl: nano.baseUrl }],
     agents: [{
@@ -150,7 +163,7 @@ async function setup(t) {
       enabled: true,
       instanceId: "local",
       nanoclawAgentGroupId: "nano-agent-1",
-      defaultProjectId: "daily",
+      defaultProjectId: "longagentshare",
       inbox: {
         messagingGroupId: "mg-1",
         channelType: "telegram",
@@ -345,7 +358,7 @@ test("agent_memory tools bind the Nano Agent Group from host LongAgent context",
     "system:tool/agent_memory_write",
   ], {
     purpose: "execution",
-    projectId: "daily",
+    projectId: "longagentshare",
     chatHome,
     cwd: chatHome,
     sessionManager: {},
@@ -375,7 +388,7 @@ test("agent_memory tools bind the Nano Agent Group from host LongAgent context",
   assert.equal(JSON.stringify(searchTool.definition.parameters).includes("agentGroupId"), false);
   const audit = fs.readFileSync(path.join(chatHome, "logs", "audit.jsonl"), "utf8");
   assert.match(audit, /"type":"pi-tool"/);
-  assert.match(audit, /"projectId":"daily"/);
+  assert.match(audit, /"projectId":"longagentshare"/);
   assert.match(audit, /"sessionId":"chat-session-1"/);
   assert.match(audit, /"turnId":"turn-1"/);
   assert.match(audit, /"resourcePath":"log.md"/);

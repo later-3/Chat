@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { ensureDailyProject, openProject, readProjectRegistry, resolveProjectContext } from "../../src/projects/registry.ts";
+import { ensureLongAgentShareProject, openProject, readProjectRegistry, resolveProjectContext } from "../../src/projects/registry.ts";
 import { resolveChatSystemTools, listChatSystemTools } from "../../src/tools/registry.ts";
 import { writeProjectChatConfig, resolveChatConfig } from "../../src/chat-config.ts";
 import { updateAgentDurableConfig } from "../../src/workflows/agent-model-config.ts";
@@ -15,10 +15,10 @@ import { createChatPiAgentSession } from "../../src/agents/pi-agent-session.ts";
 async function fixture(t) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-project-management-"));
   const chatHome = path.join(base, "home");
-  const project = await ensureDailyProject(chatHome);
+  const project = await ensureLongAgentShareProject(chatHome);
   const manager = SessionManager.inMemory(project.cwd);
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const context = { purpose: "execution", projectId: "daily", chatHome, cwd: project.cwd,
+  const context = { purpose: "execution", projectId: "longagentshare", chatHome, cwd: project.cwd,
     sessionManager: manager, sessionId: manager.getSessionId(), agentId: "nexus", longAgentId: "nexus", longAgentTurnId: "turn-1",
     authorizedToolAddresses: listChatSystemTools().map((t) => t.address), authorizedToolNames: ["read", "bash", "write", "edit"] };
   const definitions = resolveChatSystemTools(listChatSystemTools().filter((t) => t.manifest.name.startsWith("project_")).map((t) => t.address), context);
@@ -45,7 +45,7 @@ test("create a Chinese learning project, replay safely and expose it after reope
   const project = await resolveProjectContext(created.project.projectId, context.chatHome);
   assert.equal(project.cwd, fs.realpathSync(path.join(context.chatHome, "workspaces", project.projectId)));
   assert.deepEqual(JSON.parse(fs.readFileSync(project.projectConfigPath)), { schemaVersion: 1 });
-  assert.equal(context.projectId, "daily");
+  assert.equal(context.projectId, "longagentshare");
   assert.notEqual(context.cwd, project.cwd);
   assert.equal(new URL(created.navigation.url, "http://chat.local").searchParams.get("cwd"), project.cwd);
   const list = await ok("project_search", { query: "道德经" });
@@ -55,7 +55,7 @@ test("create a Chinese learning project, replay safely and expose it after reope
   assert.notEqual(second.project.projectId, project.projectId);
   const audit = fs.readFileSync(path.join(context.chatHome, "logs/audit.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
   const event = audit.find((e) => e.action === "project.create");
-  assert.equal(event.source.projectId, "daily");
+  assert.equal(event.source.projectId, "longagentshare");
   assert.equal(event.target.projectId, project.projectId);
   assert.equal(event.source.longAgentId, "nexus");
 });
@@ -120,16 +120,16 @@ test("manifest updates compare revisions, preserve IDs and reject invalid fields
 
 test("configuration patch preserves other settings, supports preview/unset, and rejects stale writes", async (t) => {
   const { ok, call, context } = await fixture(t);
-  await writeProjectChatConfig("daily", { schemaVersion: 1, sessions: { removedRetentionDays: 91 } }, context.chatHome);
+  await writeProjectChatConfig("longagentshare", { schemaVersion: 1, sessions: { removedRetentionDays: 91 } }, context.chatHome);
   const read = await ok("project_read", { view: "configuration" });
   const input = { target: { kind: "project" }, expectedRevision: read.configuration.revision, operations: [{ op: "set", path: ["defaultWorkflowId"], value: "memory" }] };
   assert.equal((await ok("project_configure", { ...input, validateOnly: true })).status, "validated");
-  assert.equal((await resolveChatConfig("daily", context.chatHome)).project.defaultWorkflowId, undefined);
+  assert.equal((await resolveChatConfig("longagentshare", context.chatHome)).project.defaultWorkflowId, undefined);
   const changed = await ok("project_configure", input);
   assert.equal(changed.configuration.sessions.removedRetentionDays, 91);
   assert.equal((await call("project_configure", input)).details.code, "REVISION_CONFLICT");
   await ok("project_configure", { ...input, expectedRevision: changed.revision, operations: [{ op: "unset", path: ["defaultWorkflowId"] }] });
-  assert.equal((await resolveChatConfig("daily", context.chatHome)).project.defaultWorkflowId, undefined);
+  assert.equal((await resolveChatConfig("longagentshare", context.chatHome)).project.defaultWorkflowId, undefined);
 });
 
 test("invalid references, overlapping paths and prototype pollution do not modify configuration", async (t) => {
@@ -191,7 +191,7 @@ test("unset removes empty ancestors so Personal defaults really become effective
   await writeChatRootConfig({ schemaVersion: 1, defaultWorkflowId: "memory", workflows: {
     "minimal-pi-coding-agent": { agents: { "pi-coding-agent": { tools: { mode: "none" } } } },
   }, sessions: { removedRetentionDays: 42 } }, context.chatHome);
-  await writeProjectChatConfig("daily", { schemaVersion: 1, workflows: {
+  await writeProjectChatConfig("longagentshare", { schemaVersion: 1, workflows: {
     "minimal-pi-coding-agent": { agents: { "pi-coding-agent": { tools: { mode: "none" } } } },
   }, sessions: { removedRetentionDays: 7 } }, context.chatHome);
   const read = await ok("project_read", { view: "configuration" });
@@ -200,7 +200,7 @@ test("unset removes empty ancestors so Personal defaults really become effective
     { op: "unset", path: ["sessions", "removedRetentionDays"] },
   ] });
   assert.deepEqual(result.configuration, { schemaVersion: 1 });
-  const effective = (await resolveChatConfig("daily", context.chatHome)).effective;
+  const effective = (await resolveChatConfig("longagentshare", context.chatHome)).effective;
   assert.equal(effective.sessions.removedRetentionDays, 42);
   assert.equal(effective.workflows["minimal-pi-coding-agent"].agents["pi-coding-agent"].tools.mode, "none");
 });
@@ -214,7 +214,7 @@ test("committed configuration with audit failure reports applied instead of clai
   assert.equal(result.isError, true);
   assert.equal(result.details.applied, true);
   assert.equal(result.details.code, "PERSISTENCE_INCOMPLETE");
-  assert.equal((await resolveChatConfig("daily", context.chatHome)).project.defaultWorkflowId, "memory");
+  assert.equal((await resolveChatConfig("longagentshare", context.chatHome)).project.defaultWorkflowId, "memory");
 });
 
 test("existing full-document writers can repair malformed files while patches refuse corrupt state", async (t) => {
@@ -222,8 +222,8 @@ test("existing full-document writers can repair malformed files while patches re
   fs.writeFileSync(project.projectConfigPath, "not-json");
   const revision = await fileRevision(project.projectConfigPath);
   assert.equal((await call("project_configure", { target: { kind: "project" }, expectedRevision: revision, operations: [{ op: "set", path: ["defaultWorkflowId"], value: "memory" }] })).isError, true);
-  await writeProjectChatConfig("daily", { schemaVersion: 1, defaultWorkflowId: "memory" }, context.chatHome);
-  assert.equal((await resolveChatConfig("daily", context.chatHome)).project.defaultWorkflowId, "memory");
+  await writeProjectChatConfig("longagentshare", { schemaVersion: 1, defaultWorkflowId: "memory" }, context.chatHome);
+  assert.equal((await resolveChatConfig("longagentshare", context.chatHome)).project.defaultWorkflowId, "memory");
   const { agentModelConfigPath, writeAgentDurableConfig, readAgentDurableConfig } = await import("../../src/workflows/agent-model-config.ts");
   const file = agentModelConfigPath(project.projectDataDir, "minimal-pi-coding-agent", "pi-coding-agent");
   fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, "broken");

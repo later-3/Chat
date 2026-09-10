@@ -1,6 +1,6 @@
 import { appendChatAuditEvent } from "../audit-log.js";
 import { resolveChatHome } from "../chat-home.js";
-import { agentDailyProjectId, ensureAgentDailyProject } from "../projects/registry.js";
+import { agentHomeProjectId, ensureAgentHomeProject } from "../projects/registry.js";
 import { getNanoClawAgentGroup } from "./nanoclaw-client.js";
 import { removeLongAgentAvatarAssets } from "./avatars.js";
 import { rm } from "node:fs/promises";
@@ -77,7 +77,7 @@ export async function createLongAgent(input: CreateLongAgentInput): Promise<Long
       enabled: true,
       instanceId: input.instanceId,
       nanoclawAgentGroupId: input.nanoclawAgentGroupId,
-      defaultProjectId: agentDailyProjectId(input.id),
+      defaultProjectId: agentHomeProjectId(input.id),
       status: "active",
       definition: {
         schemaVersion: 1,
@@ -99,7 +99,7 @@ export async function createLongAgent(input: CreateLongAgentInput): Promise<Long
 
   try {
     await ensureLongAgentResourceDirs(chatHome, created.id);
-    await ensureAgentDailyProject(created.id, created.name, chatHome);
+    await ensureAgentHomeProject(created.id, created.name, chatHome);
   } catch (error) {
     await updateLongAgentRegistry(chatHome, (registry) => ({
       registry: { ...registry, agents: registry.agents.filter((agent) => agent.id !== created.id) },

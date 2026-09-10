@@ -10,7 +10,8 @@ export interface ChatHomePaths {
   readonly personalMemoryDir: string;
   readonly personalPromptResourceDir: string;
   readonly workspacesDir: string;
-  readonly dailyWorkspaceDir: string;
+  /** 公共 Long Agent 资源共享空间的根（归一后替代旧共享 daily）。 */
+  readonly longAgentShareWorkspaceDir: string;
   readonly projectsDir: string;
   readonly projectRegistryPath: string;
   readonly runtimeDir: string;
@@ -43,7 +44,7 @@ export function getChatHomePaths(root = resolveChatHome()): ChatHomePaths {
     personalMemoryDir: resolve(resolvedRoot, "memory", "personal"),
     personalPromptResourceDir: resolve(resolvedRoot, "prompt-resources"),
     workspacesDir,
-    dailyWorkspaceDir: resolve(workspacesDir, "daily"),
+    longAgentShareWorkspaceDir: resolve(workspacesDir, "longagentshare"),
     projectsDir,
     projectRegistryPath: resolve(projectsDir, "registry.json"),
     runtimeDir,

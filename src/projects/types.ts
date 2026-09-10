@@ -14,9 +14,19 @@ export interface ChatProjectRegistryEntry {
   readonly cachedName: string;
   readonly cachedDescription: string;
   readonly path: string;
+  /** 系统管理项目的种类；缺省为普通用户项目。 */
+  readonly kind?: ChatProjectKind;
   readonly firstOpenedAt: string;
   readonly lastOpenedAt: string;
 }
+
+/**
+ * 项目种类：
+ * - project：用户自己的真实项目（有 Project Memory，出现在项目列表）
+ * - agent：Long Agent 的 home（根即它的 workspace、会话与 memory；对用户隐藏）
+ * - share：公共 Long Agent 资源共享空间（原共享 daily；不默认打开）
+ */
+export type ChatProjectKind = "project" | "agent" | "share";
 
 export interface ChatProjectRegistry {
   readonly schemaVersion: 1;
@@ -25,13 +35,14 @@ export interface ChatProjectRegistry {
 
 export interface ChatProjectSummary extends ChatProjectRegistryEntry {
   readonly available: boolean;
-  readonly kind: "daily" | "directory";
+  readonly kind: ChatProjectKind;
 }
 
 export interface ChatProjectContext {
   readonly projectId: string;
   readonly name: string;
   readonly description: string;
+  readonly kind: ChatProjectKind;
   readonly projectRoot: string;
   readonly cwd: string;
   readonly chatHome: string;
@@ -95,7 +106,7 @@ function parseRegistryEntry(value: unknown): ChatProjectRegistryEntry {
   if (!isRecord(value)) throw new Error("Project Registry entry必须是对象");
   exactFields(
     value,
-    ["projectId", "cachedName", "cachedDescription", "path", "firstOpenedAt", "lastOpenedAt"],
+    ["projectId", "cachedName", "cachedDescription", "path", "kind", "firstOpenedAt", "lastOpenedAt"],
     "Project Registry entry",
   );
   const projectId = requiredString(value.projectId, "Registry projectId");
@@ -105,11 +116,15 @@ function parseRegistryEntry(value: unknown): ChatProjectRegistryEntry {
   if (Number.isNaN(Date.parse(firstOpenedAt)) || Number.isNaN(Date.parse(lastOpenedAt))) {
     throw new Error(`Registry ${projectId}时间无效`);
   }
+  if (value.kind !== undefined && value.kind !== "project" && value.kind !== "agent" && value.kind !== "share") {
+    throw new Error(`Registry ${projectId}的kind无效`);
+  }
   return {
     projectId,
     cachedName: requiredString(value.cachedName, "Registry cachedName"),
     cachedDescription: typeof value.cachedDescription === "string" ? value.cachedDescription : "",
     path: requiredString(value.path, "Registry path"),
+    ...(value.kind === undefined ? {} : { kind: value.kind as ChatProjectKind }),
     firstOpenedAt,
     lastOpenedAt,
   };
