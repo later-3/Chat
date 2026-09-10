@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
-import { basename } from "node:path";
+import { homedir } from "node:os";
+import { basename, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { ensureChatHome } from "../chat-home.js";
 import { resolveProjectContext } from "../projects/registry.js";
@@ -12,8 +13,46 @@ import { resolveWorkflowAgentDefinition } from "./agent-config-loader.js";
 import type { PrepareChatWorkflowAgentSession } from "./registry.js";
 import { describeResourceVersion, qualifiedResourceAddress } from "../resources/version.js";
 import { readAgentDurableConfig } from "./agent-model-config.js";
+import { ensureLongAgentResourceDirs, longAgentConfigRoot } from "../long-agents/storage.js";
 
 const MAX_VISIBLE_RESOURCE_BYTES = 1_000_000;
+
+/**
+ * Skill 的四级归属分类。Pi 只区分 user/project/temporary scope，Chat 增加的
+ * Project `.chat/skills` 与运行时注入路径在 Pi 看来都是 temporary，因此这里按
+ * 真实路径对已知根做分类；分类只用于展示与诊断，不改变装配结果。
+ */
+export type ChatSkillOwner = "personal" | "project" | "plugin" | "agent" | "injected";
+
+function isPathUnder(filePath: string, root: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/");
+  const prefix = root.replace(/\\/g, "/").replace(/\/$/, "");
+  return normalized === prefix || normalized.startsWith(`${prefix}/`);
+}
+
+export function classifyChatSkillOwner(
+  skill: { readonly filePath: string; readonly sourceInfo: { readonly origin: string } },
+  roots: {
+    readonly agentDir: string;
+    readonly cwd: string;
+    readonly projectConfigDir?: string;
+    readonly longAgentSkillsDir?: string;
+  },
+): ChatSkillOwner {
+  if (skill.sourceInfo.origin === "package") return "plugin";
+  if (isPathUnder(skill.filePath, `${roots.agentDir}/skills`)) return "personal";
+  // Pi 包管理器全局扫描的用户级目录，与 agentDir 一样属于 Personal 层。
+  if (isPathUnder(skill.filePath, `${homedir()}/.agents/skills`)) return "personal";
+  if (roots.projectConfigDir !== undefined && isPathUnder(skill.filePath, `${roots.projectConfigDir}/skills`)) {
+    return "project";
+  }
+  if (isPathUnder(skill.filePath, `${roots.cwd}/.pi/skills`)) return "project";
+  if (isPathUnder(skill.filePath, `${roots.cwd}/.agents/skills`)) return "project";
+  if (roots.longAgentSkillsDir !== undefined && isPathUnder(skill.filePath, roots.longAgentSkillsDir)) {
+    return "agent";
+  }
+  return "injected";
+}
 
 interface AgentInspectionOptions {
   readonly projectId?: string;
@@ -24,6 +63,8 @@ interface AgentInspectionOptions {
   readonly workflowId?: string;
   readonly agentId?: string;
   readonly stageId?: string;
+  /** 检查 Long Agent 时传入：接入其自有资源目录并按 agent 归属分类（S4）。 */
+  readonly longAgentId?: string;
   readonly prepareAgentSession?: PrepareChatWorkflowAgentSession;
 }
 
@@ -96,17 +137,35 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
     workflowInvocationId: `inspection:${workflowId}:${agentId}`,
     userPrompt: "",
   });
+  const agentDir = projectContext?.agentDir ?? home!.agentDir;
+  // S4：Long Agent 自有 Skill 目录与执行路径同样接入。
+  const chatHomeRoot = projectContext?.chatHome ?? home!.root;
+  const longAgentSkillsDir = options.longAgentId === undefined
+    ? undefined
+    : resolve(longAgentConfigRoot(chatHomeRoot, options.longAgentId), "skills");
+  if (longAgentSkillsDir !== undefined && options.longAgentId !== undefined) {
+    await ensureLongAgentResourceDirs(chatHomeRoot, options.longAgentId);
+  }
+  const mergedExtensions = longAgentSkillsDir === undefined
+    ? sessionExtensions
+    : {
+        ...sessionExtensions,
+        additionalSkillPaths: [
+          ...(sessionExtensions?.additionalSkillPaths ?? []),
+          longAgentSkillsDir,
+        ],
+      };
   const created = await createWorkflowAgentSession({
     chatSession: {
       ...(projectContext === undefined ? {} : { projectId: projectContext.projectId, projectContext }),
       cwd,
-      agentDir: projectContext?.agentDir ?? home!.agentDir,
+      agentDir,
       sessionDir: projectContext?.sessionDir ?? home!.runtimeDir,
       manager: sessionManager,
     },
     sessionManager,
     agent,
-    ...(sessionExtensions ?? {}),
+    ...(mergedExtensions ?? {}),
     toolContext: {
       purpose: "inspection",
       workflowId,
@@ -118,6 +177,12 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
 
   try {
     const { resourceLoader, session } = created;
+    const skillRoots = {
+      agentDir,
+      cwd,
+      ...(projectContext === undefined ? {} : { projectConfigDir: projectContext.projectConfigDir }),
+      ...(longAgentSkillsDir === undefined ? {} : { longAgentSkillsDir }),
+    };
     const skillResult = resourceLoader.getSkills();
     const skills = await Promise.all(skillResult.skills.map(async (skill) => ({
       name: skill.name,
@@ -126,6 +191,7 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
       baseDir: skill.baseDir,
       disableModelInvocation: skill.disableModelInvocation,
       sourceInfo: skill.sourceInfo,
+      owner: classifyChatSkillOwner(skill, skillRoots),
       address: qualifiedResourceAddress({
         kind: "skill",
         id: skill.name,

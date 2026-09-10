@@ -1,4 +1,5 @@
 import { createError, defineEventHandler, readBody } from "nitro/h3";
+import { CHAT_MODEL_CAPABILITIES } from "../../model-capabilities.js";
 import {
   InvalidChatModelsConfigError,
   writeChatModelsConfig,
@@ -7,7 +8,8 @@ import {
 /** Replaces Chat Home's models.json after Pi validates the complete document. */
 export default defineEventHandler(async (event) => {
   try {
-    return await writeChatModelsConfig(await readBody<unknown>(event));
+    const document = await writeChatModelsConfig(await readBody<unknown>(event));
+    return { ...document, capabilities: CHAT_MODEL_CAPABILITIES };
   } catch (error) {
     throw createError({
       statusCode: error instanceof InvalidChatModelsConfigError ? 400 : 500,

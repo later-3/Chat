@@ -1,4 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { CHAT_THINKING_LEVELS } from "../model-capabilities.js";
 import {
   parsePromptResourceTarget,
   promptResourceTargetKey,
@@ -7,9 +8,7 @@ import {
 
 export const MAX_AGENT_CONFIG_FILES = 32;
 export const MAX_AGENT_PROMPT_RESOURCES = 64;
-const THINKING_LEVELS = new Set<ThinkingLevel>([
-  "off", "minimal", "low", "medium", "high", "xhigh", "max",
-]);
+const THINKING_LEVELS: ReadonlySet<string> = new Set(CHAT_THINKING_LEVELS);
 
 export interface AgentModelConfig {
   readonly provider: string;
@@ -234,7 +233,7 @@ export function parseWorkflowAgentToolPolicy(value: unknown): WorkflowAgentToolP
   };
 }
 
-function parseResources(value: unknown): WorkflowAgentResources {
+export function parseWorkflowAgentResources(value: unknown): WorkflowAgentResources {
   if (!isRecord(value)) throw new Error("resources必须是对象");
   assertKnownFields(value, ["mode", "skillPaths", "extensionPaths", "pluginSources"]);
   if (value.mode === "inherit") {
@@ -292,7 +291,7 @@ export function parseRawAgentConfig(value: unknown, complete: boolean): RawAgent
     ...(value.systemPrompt === undefined ? {} : { systemPrompt: parseSystemPrompt(value.systemPrompt) }),
     ...(value.customInstructions === undefined ? {} : { customInstructions: parseInstructions(value.customInstructions) }),
     ...(value.tools === undefined ? {} : { tools: parseWorkflowAgentToolPolicy(value.tools) }),
-    ...(value.resources === undefined ? {} : { resources: parseResources(value.resources) }),
+    ...(value.resources === undefined ? {} : { resources: parseWorkflowAgentResources(value.resources) }),
   };
 }
 
@@ -306,7 +305,7 @@ export function parseAgentConfigSelection(value: unknown): AgentConfigSelection 
     ? undefined
     : parsePromptResourceSelections(value.promptResources);
   const tools = value.tools === undefined ? undefined : parseWorkflowAgentToolPolicy(value.tools);
-  const resources = value.resources === undefined ? undefined : parseResources(value.resources);
+  const resources = value.resources === undefined ? undefined : parseWorkflowAgentResources(value.resources);
   const count = (primary === undefined ? 0 : 1) + (append?.length ?? 0) + (promptFiles?.length ?? 0);
   if (count > MAX_AGENT_CONFIG_FILES) throw new Error(`单个Agent最多加载${MAX_AGENT_CONFIG_FILES}个配置和提示词文件`);
   return {

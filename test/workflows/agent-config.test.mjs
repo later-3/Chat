@@ -358,7 +358,7 @@ test("durable model configuration rejects unknown fields, empty configs, and inv
   );
   await assert.rejects(
     writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", { schemaVersion: 1 }),
-    /至少需要model、thinkingLevel或tools/,
+    /至少需要model、thinkingLevel、tools或resources/,
   );
   await assert.rejects(
     writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", {

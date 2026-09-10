@@ -314,11 +314,24 @@ export async function resolveWorkflowAgentDefinition(options: {
     if (durable !== undefined) {
       if (durable.model !== undefined) modelSource = "durable";
       if (durable.thinkingLevel !== undefined) thinkingSource = "durable";
+      // 持久资源路径与本轮选择走同一条授权边界校验。
+      const durableResources = durable.resources === undefined
+        ? undefined
+        : await resolveResourcePaths(
+            durable.resources,
+            agentModelConfigPath(
+              options.durableModelConfig.projectDataDir,
+              options.durableModelConfig.workflowId,
+              options.durableModelConfig.agentId,
+            ),
+            allowedRoots,
+          );
       current = {
         ...current,
         ...(durable.model === undefined ? {} : { model: durable.model }),
         ...(durable.thinkingLevel === undefined ? {} : { thinkingLevel: durable.thinkingLevel }),
         ...(durable.tools === undefined ? {} : { tools: durable.tools }),
+        ...(durableResources === undefined ? {} : { resources: durableResources }),
       };
       sources.push({
         kind: "durable-config",

@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { createRouter } from "nitro/h3";
 import { openProject } from "../../src/projects/registry.ts";
+import catalogHandler from "../../src/routes/api/workflows/[workflowId]/agents/[agentId]/catalog.get.ts";
 import { listChatTools } from "../../src/resources/tools.ts";
 import { inspectWorkflowAgent } from "../../src/workflows/agent-inspection.ts";
 import { updateAgentDurableConfig } from "../../src/workflows/agent-model-config.ts";
@@ -98,6 +100,12 @@ test("Chat system Tool manifests are stable, qualified, and risk classified", ()
       risk: "write",
       permissions: ["project:configure"],
     },
+    {
+      address: "system:tool/long_agent_manage",
+      name: "long_agent_manage",
+      risk: "destructive",
+      permissions: ["long-agent:manage"],
+    },
   ]);
   const memorySearch = listChatSystemTools().find((tool) => tool.manifest.name === "memory_search");
   assert.equal(memorySearch?.version, "system:memory-search@2");
@@ -143,9 +151,64 @@ test("Planner resolves the system Memory Tool and Project overrides remain durab
   );
   assert.equal(initial.tools.some((tool) => tool.name === "workflow_call"), false);
   assert.equal(initial.skills.some((skill) => skill.name === "planner-context"), true);
+  assert.equal(initial.skills.find((skill) => skill.name === "planner-context")?.owner, "project");
+  const personalSkillDir = path.join(chatHome, "agent", "skills", "personal-note");
+  fs.mkdirSync(personalSkillDir, { recursive: true });
+  fs.writeFileSync(path.join(personalSkillDir, "SKILL.md"), [
+    "---",
+    "name: personal-note",
+    "description: Personal skill for note taking",
+    "---",
+    "Use this when taking personal notes.",
+  ].join("\n"));
+  const withPersonal = await inspectWorkflowAgent({
+    projectId: project.projectId,
+    chatHome,
+    cwd: project.cwd,
+    defaultAgent: PLANNER_AGENT,
+    workflowId: "planning-execution",
+    agentId: PLANNER_AGENT.id,
+    stageId: "plan",
+  });
+  assert.equal(withPersonal.skills.find((skill) => skill.name === "personal-note")?.owner, "personal");
+  assert.equal(withPersonal.skills.find((skill) => skill.name === "planner-context")?.owner, "project");
   assert.match(initial.prompt.final, /<available_skills>/);
   assert.match(initial.prompt.final, /Read planning context for architecture tasks/);
   assert.match(initial.prompt.final, new RegExp(skillFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+  // Durable resource policy: explicit selection is Project-scoped and persistent.
+  await updateAgentDurableConfig(project.projectDataDir, "planning-execution", PLANNER_AGENT.id, {
+    resources: { mode: "explicit", skillPaths: [skillFile], extensionPaths: [], pluginSources: [] },
+  });
+  const withResources = await inspectWorkflowAgent({
+    projectId: project.projectId,
+    chatHome,
+    cwd: project.cwd,
+    defaultAgent: PLANNER_AGENT,
+    workflowId: "planning-execution",
+    agentId: PLANNER_AGENT.id,
+    stageId: "plan",
+  });
+  assert.deepEqual(withResources.skills.map((skill) => skill.name), ["planner-context"]);
+  assert.deepEqual(withResources.agent.durableConfig?.resources, {
+    mode: "explicit",
+    skillPaths: [skillFile],
+    extensionPaths: [],
+    pluginSources: [],
+  });
+  await updateAgentDurableConfig(project.projectDataDir, "planning-execution", PLANNER_AGENT.id, {
+    resources: null,
+  });
+  const restoredResources = await inspectWorkflowAgent({
+    projectId: project.projectId,
+    chatHome,
+    cwd: project.cwd,
+    defaultAgent: PLANNER_AGENT,
+    workflowId: "planning-execution",
+    agentId: PLANNER_AGENT.id,
+    stageId: "plan",
+  });
+  assert.equal(restoredResources.agent.durableConfig?.resources, undefined);
 
   await updateAgentDurableConfig(project.projectDataDir, "planning-execution", PLANNER_AGENT.id, {
     tools: { mode: "none" },
@@ -215,6 +278,43 @@ test("Planner resolves the system Memory Tool and Project overrides remain durab
   assert.equal(projectSelected.tools.find((tool) => tool.name === "project_lookup")?.active, true);
   assert.equal(projectSelected.tools.find((tool) => tool.name === "project_lookup")?.sourceInfo.scope, "project");
   assert.equal(projectSelected.tools.find((tool) => tool.name === "memory_search")?.active, true);
+});
+
+test("Workflow Agent catalog keeps listing every system Tool after a durable Tool selection is saved", async (t) => {
+  const { chatHome, workspace } = fixture(t);
+  const previousHome = process.env.CHAT_HOME;
+  process.env.CHAT_HOME = chatHome;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousHome;
+  });
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    id: "tool-catalog-project",
+    name: "Tool Catalog Project",
+  });
+  // Simulates the user checking one system Tool in the Workflow Agent dialog:
+  // the durable policy narrows to that single address.
+  await updateAgentDurableConfig(project.projectDataDir, "planning-execution", PLANNER_AGENT.id, {
+    tools: { mode: "pi-default", addresses: ["system:tool/memory_search"] },
+  });
+
+  const router = createRouter();
+  router.get("/api/workflows/:workflowId/agents/:agentId/catalog", catalogHandler);
+  const response = await router.fetch(new Request(
+    `http://chat.test/api/workflows/planning-execution/agents/planner/catalog?projectId=${encodeURIComponent(project.projectId)}`,
+  ));
+  assert.equal(response.status, 200);
+  const catalog = await response.json();
+  assert.deepEqual(
+    catalog.tools
+      .filter((tool) => typeof tool.address === "string" && tool.address.startsWith("system:tool/"))
+      .map((tool) => tool.address)
+      .sort(),
+    listChatSystemTools().map((tool) => tool.address).sort(),
+    "catalog must keep listing every system Tool so unchecked options do not disappear",
+  );
 });
 
 test("workflow_call is available to any Agent only when its system Tool address is selected", async (t) => {

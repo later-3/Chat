@@ -6,13 +6,15 @@ import {
   parseModel,
   parseThinkingLevel,
   parseWorkflowAgentToolPolicy,
+  parseWorkflowAgentResources,
   type AgentModelConfig,
+  type WorkflowAgentResources,
   type WorkflowAgentToolPolicy,
 } from "./agent-config.js";
 
 const SCHEMA_VERSION = 1;
 const ENTITY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const ALLOWED_FIELDS = new Set(["schemaVersion", "model", "thinkingLevel", "tools"]);
+const ALLOWED_FIELDS = new Set(["schemaVersion", "model", "thinkingLevel", "tools", "resources"]);
 
 /**
  * Chat-owned per-Agent model configuration, persisted per Project and read on
@@ -24,6 +26,7 @@ export interface ChatAgentDurableConfig {
   readonly model?: AgentModelConfig;
   readonly thinkingLevel?: ThinkingLevel;
   readonly tools?: WorkflowAgentToolPolicy;
+  readonly resources?: WorkflowAgentResources;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -43,14 +46,16 @@ export function parseDurableConfig(value: unknown, source: string): ChatAgentDur
   const model = value.model === undefined ? undefined : parseModel(value.model);
   const thinkingLevel = value.thinkingLevel === undefined ? undefined : parseThinkingLevel(value.thinkingLevel);
   const tools = value.tools === undefined ? undefined : parseWorkflowAgentToolPolicy(value.tools);
-  if (model === undefined && thinkingLevel === undefined && tools === undefined) {
-    throw new Error(`Agent持久配置至少需要model、thinkingLevel或tools: ${source}`);
+  const resources = value.resources === undefined ? undefined : parseWorkflowAgentResources(value.resources);
+  if (model === undefined && thinkingLevel === undefined && tools === undefined && resources === undefined) {
+    throw new Error(`Agent持久配置至少需要model、thinkingLevel、tools或resources: ${source}`);
   }
   return {
     schemaVersion: SCHEMA_VERSION,
     ...(model === undefined ? {} : { model }),
     ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
     ...(tools === undefined ? {} : { tools }),
+    ...(resources === undefined ? {} : { resources }),
   };
 }
 
@@ -128,6 +133,7 @@ export async function updateAgentDurableConfig(
     readonly model?: AgentModelConfig | null;
     readonly thinkingLevel?: ThinkingLevel | null;
     readonly tools?: WorkflowAgentToolPolicy | null;
+    readonly resources?: WorkflowAgentResources | null;
   },
 ): Promise<ChatAgentDurableConfig | undefined> {
   return mutateAgentDurableConfig(projectDataDir, workflowId, agentId, async (existing) => {
@@ -136,17 +142,22 @@ export async function updateAgentDurableConfig(
       ...(existing?.model === undefined ? {} : { model: existing.model }),
       ...(existing?.thinkingLevel === undefined ? {} : { thinkingLevel: existing.thinkingLevel }),
       ...(existing?.tools === undefined ? {} : { tools: existing.tools }),
+      ...(existing?.resources === undefined ? {} : { resources: existing.resources }),
       ...(patch.model === undefined ? {} : patch.model === null ? { model: undefined } : { model: patch.model }),
       ...(patch.thinkingLevel === undefined
         ? {}
         : patch.thinkingLevel === null ? { thinkingLevel: undefined } : { thinkingLevel: patch.thinkingLevel }),
       ...(patch.tools === undefined ? {} : patch.tools === null ? { tools: undefined } : { tools: patch.tools }),
+      ...(patch.resources === undefined
+        ? {}
+        : patch.resources === null ? { resources: undefined } : { resources: patch.resources }),
     };
     const normalized = {
       schemaVersion: SCHEMA_VERSION,
       ...(next.model === undefined ? {} : { model: next.model }),
       ...(next.thinkingLevel === undefined ? {} : { thinkingLevel: next.thinkingLevel }),
       ...(next.tools === undefined ? {} : { tools: next.tools }),
+      ...(next.resources === undefined ? {} : { resources: next.resources }),
     };
     return Object.keys(normalized).length === 1 ? undefined : normalized;
   });

@@ -50,6 +50,10 @@ export default defineEventHandler(async (event) => {
           tools: { mode: "pi-default", addresses: systemToolAddresses },
           resources: { mode: "inherit" },
         },
+        // Catalog返回“可选项清单”，不是本次解析结果。Project持久Tool策略会在
+        // resolveWorkflowAgentDefinition中覆盖defaultAgent.tools，必须用selection
+        // 再覆盖回来，否则用户勾选并保存一个系统Tool后，其余Tool会从清单中消失。
+        selection: { tools: { mode: "pi-default", addresses: systemToolAddresses } },
         workflowId: workflow.id,
         agentId: agent.id,
         stageId: workflow.nodes.find((node) => node.kind === "agent" && node.agentId === agent.id)?.id ?? agent.id,

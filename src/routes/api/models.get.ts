@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { createError, defineEventHandler } from "nitro/h3";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { ensureChatHome } from "../../chat-home.js";
+import { CHAT_THINKING_LEVELS } from "../../model-capabilities.js";
 import { readChatModelsConfig } from "../../models-config.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -55,7 +56,7 @@ export default defineEventHandler(async () => {
         });
       }
     }
-    return { schemaVersion: 1, providers, models };
+    return { schemaVersion: 1, providers, models, thinkingLevels: CHAT_THINKING_LEVELS };
   } catch (error) {
     throw createError({
       statusCode: 500,
