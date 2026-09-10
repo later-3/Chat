@@ -3,6 +3,7 @@ import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
+import { DAILY_PROJECT_ID } from "../projects/registry.js";
 import { chatSessionOperationKey, withChatSessionOperationLock } from "../session-operation-lock.js";
 import { readBase64ToolResultImage } from "../session-tool-result-images.js";
 import {
@@ -604,7 +605,13 @@ export async function listLongAgents(input: {
         project: input.projectId === undefined
           ? null
           : (() => {
-              const projectAgent = refreshedState.projectAgents.find((candidate) => candidate.projectId === input.projectId
+              // 共享 daily 视图下，已迁移 Agent 展示自己 Daily Project 的当前会话，
+              // 而不是迁移前的旧共享绑定。
+              const effectiveProjectId = input.projectId === DAILY_PROJECT_ID
+                && agent.defaultProjectId !== DAILY_PROJECT_ID
+                ? agent.defaultProjectId
+                : input.projectId;
+              const projectAgent = refreshedState.projectAgents.find((candidate) => candidate.projectId === effectiveProjectId
                 && candidate.longAgentId === agent.id);
               return projectAgent === undefined
                 ? { started: false as const, status: null, projectLongAgentId: null, primarySessionId: null }

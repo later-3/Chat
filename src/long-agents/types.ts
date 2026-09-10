@@ -270,7 +270,7 @@ function parseAgent(value: unknown): LongAgentConfig {
         systemToolAddress("project_open"),
         systemToolAddress("project_update"),
         systemToolAddress("project_configure"),
-
+        systemToolAddress("channel_send"),
       ],
     },
     resources: { mode: "inherit" },

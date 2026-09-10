@@ -2,6 +2,7 @@ import { createError, defineEventHandler, getRouterParam, readBody } from "nitro
 import { resolveChatHome } from "../../../../chat-home.js";
 import { ensureProjectLongAgent } from "../../../../long-agents/project-agent.js";
 import { readLongAgentRegistry } from "../../../../long-agents/storage.js";
+import { DAILY_PROJECT_ID } from "../../../../projects/registry.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -18,9 +19,14 @@ export default defineEventHandler(async (event) => {
     const registry = await readLongAgentRegistry();
     const agent = registry.agents.find((candidate) => candidate.enabled && candidate.id === longAgentId);
     if (agent === undefined) throw new Error(`找不到可用LongAgent: ${longAgentId}`);
+    // Agent 的家是它自己的 Daily Project；从共享 daily 入口打开时归属到它的家，
+    // 否则会落到迁移前的旧共享会话，看不到通道里的当前对话。
+    const projectId = body.projectId === DAILY_PROJECT_ID && agent.defaultProjectId !== DAILY_PROJECT_ID
+      ? agent.defaultProjectId
+      : body.projectId;
     const result = await ensureProjectLongAgent({
       chatHome: resolveChatHome(),
-      projectId: body.projectId,
+      projectId,
       agent,
     });
     return {

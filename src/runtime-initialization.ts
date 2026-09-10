@@ -1,3 +1,4 @@
+import { ensureChannelMessagingSkill } from "./resources/channel-messaging-skill.js";
 import { ensureLongAgentManagementSkill } from "./resources/long-agent-management-skill.js";
 import { ensureProjectManagementSkill } from "./resources/project-management-skill.js";
 import { resolve } from "node:path";
@@ -37,11 +38,21 @@ export function ensureChatRuntimeInitialized(options: {
         ensureDailyProject(paths.root),
         ensureProjectManagementSkill(paths.root),
         ensureLongAgentManagementSkill(paths.root),
+        ensureChannelMessagingSkill(paths.root),
         ensureMemorySkill(paths.runtimeDir, { refresh: true }),
         ensureWorkflowDelegationSkill(paths.runtimeDir, { refresh: true }),
         ensureRuleLibrarySkill(paths.runtimeDir, { refresh: true }),
         purgeExpiredRemovedSessionsAcrossProjects(paths.root),
       ]);
+      // S3/S4 启动时全量迁移：每个 Agent 的独立配置根与 Daily Project 一次性就绪，
+      // 不做依赖入口的懒迁移，避免通道绑定继续路由到共享 daily 的旧会话。
+      const { readLongAgentRegistry, ensureLongAgentResourceDirs } = await import("./long-agents/storage.js");
+      const { ensureLongAgentDailyProject } = await import("./long-agents/daily-project.js");
+      const longAgentRegistry = await readLongAgentRegistry(paths.root);
+      for (const agent of longAgentRegistry.agents) {
+        await ensureLongAgentResourceDirs(paths.root, agent.id);
+        await ensureLongAgentDailyProject(agent, paths.root);
+      }
       startLongAgentSync(paths.root);
     })
     .catch((error: unknown) => {

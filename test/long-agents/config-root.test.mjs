@@ -118,7 +118,7 @@ test("definition file identity must match the registry entry", async (t) => {
   await assert.rejects(readLongAgentRegistry(chatHome), /身份不一致/);
 });
 
-test("legacy shared-daily Agents migrate to their own Daily Project (S3)", async (t) => {
+test("legacy shared-daily Agents migrate to their own Daily Project and re-point channel bindings (S3)", async (t) => {
   const { chatHome } = fixture(t);
   await ensureDailyProject(chatHome);
   await writeLongAgentRegistry({
@@ -126,10 +126,35 @@ test("legacy shared-daily Agents migrate to their own Daily Project (S3)", async
     instances: [INSTANCE],
     agents: [agentEntry()],
   }, chatHome);
+  // 存量状态：旧共享 daily 的绑定 + 一个指向旧绑定的 Telegram 通道绑定。
+  const { ensureProjectLongAgent, projectLongAgentId } = await import("../../src/long-agents/project-agent.ts");
+  const { readLongAgentRegistry, readLongAgentState, updateLongAgentState } = await import("../../src/long-agents/storage.ts");
+  const before = await readLongAgentRegistry(chatHome);
+  await ensureProjectLongAgent({ chatHome, projectId: "daily", agent: before.agents[0] });
+  await updateLongAgentState(chatHome, (state) => ({
+    state: {
+      ...state,
+      bindings: [{
+        id: "binding-tg",
+        projectLongAgentId: projectLongAgentId("daily", "nexus"),
+        nanoclawInstanceId: "local",
+        nanoclawAgentGroupId: "private-agent-group",
+        nanoclawSessionId: "nano-sess-1",
+        primaryMessagingGroupId: "mg-private",
+        source: { channelType: "telegram", instance: "telegram", platformId: "telegram:user", threadId: null },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }],
+    },
+    result: undefined,
+  }));
 
-  const { readLongAgentConfiguration } = await import("../../src/long-agents/configuration.ts");
-  const document = await readLongAgentConfiguration("nexus", chatHome);
-  assert.equal(document.agent.defaultProjectId, "daily-nexus");
+  const { ensureLongAgentDailyProject } = await import("../../src/long-agents/daily-project.ts");
+  const target = await ensureLongAgentDailyProject(before.agents[0], chatHome);
+  assert.equal(target, "daily-nexus");
+
+  const migrated = await readLongAgentRegistry(chatHome);
+  assert.equal(migrated.agents[0].defaultProjectId, "daily-nexus");
 
   const { resolveProjectContext, readProjectRegistry } = await import("../../src/projects/registry.ts");
   const project = await resolveProjectContext("daily-nexus", chatHome);
@@ -137,13 +162,18 @@ test("legacy shared-daily Agents migrate to their own Daily Project (S3)", async
   const registered = await readProjectRegistry(chatHome);
   assert.ok(registered.projects.some((entry) => entry.projectId === "daily-nexus"));
 
-  // 普通 Chat 的共享 daily 不受影响。
+  // 通道绑定重定向到新 Daily Project 的绑定；旧绑定仍保留。
+  const state = await readLongAgentState(chatHome);
+  const redirected = state.bindings.find((binding) => binding.id === "binding-tg");
+  assert.equal(redirected.projectLongAgentId, projectLongAgentId("daily-nexus", "nexus"));
+  assert.ok(state.projectAgents.some((candidate) => candidate.projectId === "daily"));
+  assert.ok(state.projectAgents.some((candidate) => candidate.projectId === "daily-nexus"));
+
+  // 普通 Chat 的共享 daily 不受影响；幂等。
   const daily = await resolveProjectContext("daily", chatHome);
   assert.ok(daily.cwd.endsWith(path.join("workspaces", "daily")));
-
-  // 幂等：再次读取不重复迁移。
-  const again = await readLongAgentConfiguration("nexus", chatHome);
-  assert.equal(again.agent.defaultProjectId, "daily-nexus");
+  const again = await ensureLongAgentDailyProject(migrated.agents[0], chatHome);
+  assert.equal(again, "daily-nexus");
 });
 
 test("daily main Session rotates by local date; non-daily bindings stay stable (S5a)", async (t) => {
@@ -154,15 +184,15 @@ test("daily main Session rotates by local date; non-daily bindings stay stable (
     instances: [INSTANCE],
     agents: [agentEntry()],
   }, chatHome);
-  const { readLongAgentConfiguration } = await import("../../src/long-agents/configuration.ts");
-  await readLongAgentConfiguration("nexus", chatHome);
+  const { ensureLongAgentDailyProject } = await import("../../src/long-agents/daily-project.ts");
   const { readLongAgentState, readLongAgentRegistry } = await import("../../src/long-agents/storage.ts");
+  await ensureLongAgentDailyProject((await readLongAgentRegistry(chatHome)).agents[0], chatHome);
   const { ensureProjectLongAgent } = await import("../../src/long-agents/project-agent.ts");
   const registry = await readLongAgentRegistry(chatHome);
   const agent = registry.agents[0];
 
+  // 迁移已建立当日主 Session；再次进入复用它。
   const first = await ensureProjectLongAgent({ chatHome, projectId: "daily-nexus", agent });
-  assert.equal(first.isNewSession, true);
   const second = await ensureProjectLongAgent({ chatHome, projectId: "daily-nexus", agent });
   assert.equal(second.isNewSession, false);
   assert.equal(second.projectAgent.primarySessionId, first.projectAgent.primarySessionId);
@@ -189,4 +219,31 @@ test("daily main Session rotates by local date; non-daily bindings stay stable (
   const businessAgain = await ensureProjectLongAgent({ chatHome, projectId: "daily", agent });
   assert.equal(businessAgain.projectAgent.primarySessionId, business.projectAgent.primarySessionId);
   assert.equal(businessAgain.projectAgent.sessionDate, undefined);
+});
+
+test("starting an Agent from the shared daily view routes to its own Daily Project", async (t) => {
+  const { chatHome } = fixture(t);
+  await ensureDailyProject(chatHome);
+  await writeLongAgentRegistry({
+    schemaVersion: 1,
+    instances: [INSTANCE],
+    agents: [{ ...agentEntry(), defaultProjectId: "daily-nexus" }],
+  }, chatHome);
+  const { ensureLongAgentDailyProject } = await import("../../src/long-agents/daily-project.ts");
+  const { readLongAgentRegistry } = await import("../../src/long-agents/storage.ts");
+  await ensureLongAgentDailyProject((await readLongAgentRegistry(chatHome)).agents[0], chatHome);
+
+  const { createRouter } = await import("nitro/h3");
+  const startHandler = (await import("../../src/routes/api/long-agents/[longAgentId]/start.post.ts")).default;
+  const router = createRouter();
+  router.post("/api/long-agents/:longAgentId/start", startHandler);
+  const response = await router.fetch(new Request("http://chat.test/api/long-agents/nexus/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId: "daily" }),
+  }));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.projectId, "daily-nexus");
+  assert.ok(body.primarySessionId);
 });
