@@ -30,9 +30,7 @@ Chat会在启动和读取Project列表时保证Daily Project存在：工作目�
 
 ### Long Agent注册与配置管理（当前实现）
 
-以下共享 daily、long-agents.json、NanoClaw Group 身份和唯一 primarySessionId 是迁移前用法，不是新目标。已确认目标要求每个 Agent 独立空间、文件配置统一身份、业务项目多 Session 和 Docker 工具环境；具体差距见[实施状态](./architecture/chat-long-agent-roadmap.md)。
-
-Chat使用`<CHAT_HOME>/long-agents.json`登记可选择的长期Agent及其NanoClaw本机实例。这个文件属于Personal产品配置，不属于某个Project；每个Agent的`defaultProjectId`决定IM首次来信缺少更具体归属时在哪个Project建立Chat Session，通常使用`daily`。
+Chat使用`<CHAT_HOME>/long-agents.json`登记长期Agent及其NanoClaw本机实例。该文件已降级为**索引**（身份、NanoClaw绑定、状态与 Channel 绑定）；每个 Agent 的能力定义位于独立配置根`<CHAT_HOME>/long-agents/<longAgentId>/definition.json`，资源目录（`skills/`、`prompts/`、`extensions/`）位于同一根下。存量内联 definition 会在首次读取时幂等迁移（备份与标记位于`runtime/migrations/long-agent-definition-split/`）。每个 Agent 拥有独立 Daily Project `daily-<longAgentId>`（Workspace 位于`workspaces/daily-<longAgentId>/`），其日常主 Session 按本地日期轮换；普通 Chat 保留共享`daily`。`defaultProjectId`决定IM首次来信缺少更具体归属时在哪个Project建立Chat Session。Agent Memory 仍由 NanoClaw Agent Group 承载，迁入 Chat Home 是后续切片（S5b）。剩余差距见[实施状态](./architecture/chat-long-agent-roadmap.md)。
 
 ```json
 {
@@ -112,6 +110,10 @@ Long Agent配置入口位于“长期同事”面板的同事条目中。入口�
 |---|---|---|
 | `GET /api/long-agents/:id/config` | 读取Personal LongAgent定义与可见的Channel Gateway摘要 | 返回`revision`；Channel adapter/gateway只读，不返回Gateway地址、Credential或Token |
 | `PUT /api/long-agents/:id/config` | 替换可编辑配置 | 请求必须带`expectedRevision`；过期revision返回`409`，保存采用串行化原子替换 |
+| `GET /api/long-agents/:id/inspection` | 按与执行完全相同的Pi装配路径解析该Agent的生效Skill、Tool与Prompt | 只读；默认使用`defaultProjectId`，可用`?projectId=`检查其他已登记Project上下文；Skill带`owner`归属分类（personal/project/plugin/agent/injected） |
+| `POST /api/long-agents` | 创建 Long Agent：一次性配齐独立配置根、默认定义与专属 Daily Project | NanoClaw Agent Group 必须先存在；失败整体回滚；写入审计 |
+| `POST /api/long-agents/:id/archive` | 归档（停新工作、保留数据）或恢复（`?restore=true`） | 幂等；归档同时置`enabled=false` |
+| `DELETE /api/long-agents/:id` | 两阶段删除 | 必须先归档；不删除业务 Project 历史，Daily Workspace 文件保留在磁盘 |
 
 `PUT`会先离线刷新本地模型与认证快照，再校验`defaultProjectId`、Model与Provider认证、Tool地址以及完整Agent Definition，不接受未知字段。保存成功后以返回的新`revision`替换页面基线；冲突时重新读取，不得用过期表单覆盖新配置。
 
@@ -355,7 +357,7 @@ Long Agent 未提供自定义 Definition 时，默认拥有 `project_search`、`
 }
 ```
 
-模型必须已存在于内置或自定义模型目录中，并具有有效认证。该文件至少包含 `model`、`thinkingLevel` 或 `tools` 之一。通常应通过 Chat 界面或 API 修改，以便保存前验证模型、认证和 Tool；不要提交到项目 Git。
+模型必须已存在于内置或自定义模型目录中，并具有有效认证。该文件至少包含 `model`、`thinkingLevel`、`tools` 或 `resources` 之一。通常应通过 Chat 界面或 API 修改，以便保存前验证模型、认证和 Tool；不要提交到项目 Git。`resources` 保存该 Agent 在当前 Project 的持久资源策略（`inherit` 或含 `skillPaths`/`extensionPaths`/`pluginSources` 的 `explicit`），路径在加载时重新经过授权边界校验；`PUT /api/workflows/:workflowId/agents/:agentId/resource-config` 写入，`DELETE` 同路径恢复 Workflow 默认。
 
 `PUT /api/workflows/:workflowId/agents/:agentId/model-config` 只覆盖请求中出现的字段：传对象或字符串表示设置，传 `null` 表示只清除该字段并保留其他覆盖，省略的字段保持不变；`model`、`thinkingLevel` 和 `tools` 全部移除后该文件自动删除。`DELETE` 一次清除 `model` 和 `thinkingLevel`，保留 `tools`。界面上“使用Workflow默认”对应逐字段清除，“恢复Workflow默认模型与思考等级”对应 `DELETE`。
 

@@ -34,9 +34,9 @@ Long Agent 是 Chat 中长期陪伴用户工作的助手。每个 Agent 有自�
 
 ## 4. 配置在哪里、改动影响什么
 
-当前可用配置仍在 Chat Home 的 long-agents.json，NanoClaw Group 和 Memory 通过管理 API 维护；具体路径、JSON 与 API 见系统配置。
+每个 Agent 的能力定义位于独立配置根 `<CHAT_HOME>/long-agents/<longAgentId>/definition.json`，`long-agents.json` 只保留身份、绑定与状态索引；每个 Agent 拥有独立 Daily Project（`daily-<longAgentId>`）与按日轮换的日常主 Session。NanoClaw Group 和 Memory 通过管理 API 维护；具体路径、JSON 与 API 见系统配置。生命周期（创建/归档/恢复/删除）由后端服务统一执行，页面与 `long_agent_manage` Tool 同源。
 
-目标为每个 Agent 提供独立的 `<CHAT_HOME>/long-agents/<longAgentId>/` 配置与资源根。该目录合同和布局说明见[定义与配置模型](./architecture/chat-long-agent-capability-model.md#5-独立空间与共享空间)，当前不能据此手工创建文件来启用尚未实现的能力。
+目标为每个 Agent 提供独立的 `<CHAT_HOME>/long-agents/<longAgentId>/` 配置与资源根、独立 Daily Project 与 Workspace；身份、配置、Session、Memory、任务和日志按 Agent 全量隔离，共享资源只能放在明确规定的共享位置，且写入该 Agent 配置后才生效。管理实体、隔离与生命周期合同见[管理实体与隔离架构](./architecture/chat-long-agent-management.md)，目录布局说明见[定义与配置模型](./architecture/chat-long-agent-capability-model.md#5-独立空间与共享空间)。当前不能据此手工创建文件来启用尚未实现的能力。
 
 模型目录与认证统一来自 Chat。Agent 修改模型时应明确是整个 Agent、某个任务还是本轮；不能自行到 ~/.pi 修改配置，也不为每个 Agent 复制 Credential。
 

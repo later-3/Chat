@@ -14,6 +14,12 @@
 
 本轮进一步要求在软件工程/项目管理动作之前，确认原生能力接入、代码质量、测试、场景覆盖和实施依赖。静态核查及决策建议见[实施前基线](./chat-long-agent-engineering-baseline.md)，尚未下发任务书或进入代码设计实现。
 
+2026-09-09：用户确认 Long Agent 比照 Project 建设为一级管理实体，身份、配置、Session、Memory、任务、日志与 Workspace 全量隔离，共享资源只能放在明确规定的共享位置且写入 Agent 配置后才生效，每个 Agent 拥有独立 Daily Project。决策与 S1～S5 实施切片见[管理实体与隔离架构](./chat-long-agent-management.md)；该文档与本文的差距表共同作为实施输入，S1（配置根）是当前首个可下发切片。
+
+2026-09-09 进展（任务一）：Skill 生效可见性（T1.2）、四级 Skill 归属树（`/api/skills/tree` + Skills 页树形总览）、Long Agent 按树勾选配置、Workflow Agent 资源纳入 Project 持久配置（T1.3，durable config 新增 `resources` 字段 + 读写端点）、配置中心壳（T1.1，左下角改“配置中心”分层菜单）均已落地并上线。
+
+2026-09-09 进展（任务二）：S1 配置根（definition 拆分为 `long-agents/<id>/definition.json` + 索引化 + 幂等迁移）、S2 生命周期（create/archive/unarchive/delete 服务、API、前端入口、`long_agent_manage` Tool、`long-agent-management` Skill）、S3 独立 Daily Project（`daily-<id>` + 存量归属迁移）、S4 自有资源目录接入装配与展示、S5a 日常主 Session 按日轮换均已落地并有测试门禁。**当前唯一切片级剩余项是 S5b（Agent Memory 迁入 Chat Home 本地 OKF 服务）**；“配置为唯一生效来源”、跨域授权记录、换日上下文恢复与 Agent 时区为后续迭代。
+
 ## 2. 当前能力与目标差距
 
 以下依据当前工作区源码、配置文档及先前已完成的链路记录；本轮没有重新执行模型、Channel 或 Docker 验收。“原生有”不等于“Chat 已接入”。

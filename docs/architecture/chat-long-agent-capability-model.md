@@ -68,7 +68,7 @@ Long Agent 与 Workflow 共用 Pi 底座：Workflow 组织一次执行，Long Ag
 
 ### 5.1 目标目录合同
 
-配置根采用 Chat Home 下按稳定 longAgentId 分区的独立目录。下面是目标逻辑布局；agent.json 等文件名及分文件 Schema 是后续详细设计项，当前版本不能直接读取这份布局。
+配置根采用 Chat Home 下按稳定 longAgentId 分区的独立目录。2026-09-09 起，独立根的身份文件、索引降级、独立 Daily Project（`daily-<longAgentId>`）、全量隔离与生命周期合同以[管理实体与隔离架构](./chat-long-agent-management.md)为已确认决策；下面仍是目标逻辑布局，分文件 Schema 是后续详细设计项，当前版本不能直接读取这份布局。
 
 ~~~text
 <CHAT_HOME>/

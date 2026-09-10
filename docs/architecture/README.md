@@ -51,6 +51,7 @@ Chat详细设计
 | [Project 管理 Skill 与 Tool 设计](./chat-project-management-design.md) | 自然语言创建学习、旅游等项目，6 个管理 Tool、Skill 发布、配置与会话边界 | 当前工作区已实现，随 Backend 发布 |
 | [Long Agent使用与配置](../long-agents.md) | 用户和Agent的阅读入口、操作场景、配置与能力限制 | 区分当前可用与目标 |
 | [Chat Long Agent定义与配置模型](./chat-long-agent-capability-model.md) | 独立空间、文件配置、Prompt区域、资源、自我管理与公共Skill | 2026-09-07已确认目标，待实施 |
+| [Chat Long Agent管理实体与隔离架构](./chat-long-agent-management.md) | 一级管理实体、全量隔离、目录合同、四级资源生效矩阵、生命周期与实施切片 | 2026-09-09已确认目标，S1待实施 |
 | [Chat Long Agent架构](./chat-long-agent-architecture.md) | Project/Session、历史连续性、调度、Docker、Social与恢复 | 目标架构；具体实现合同待审核 |
 | [Chat Long Agent机制与扩展合同](./chat-long-agent-mechanism-contract.md) | 三类意图、三类触发、六项机制、扩展分级及完整交付 | 2026-09-07机制收口，详细合同待审核 |
 | [Long Agent实施前约束、验证与场景依赖](./chat-long-agent-engineering-baseline.md) | Nano原生接入核查、代码约束、Skill生效、Session扩展、测试层级与基础场景依赖 | 已认可设计输入；具体合同待设计，未下发实现任务 |

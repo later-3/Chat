@@ -36,7 +36,7 @@ Chat/frontend（纯浏览器）
 | 用户家目录 | `GET /api/home` | 同路径 | 已接入 | 只用于路径显示和目录选择，不代表默认Project |
 | 打开Project | `POST /api/projects/open` | Chat新增 | 已接入 | 用户所选目录就是Project根，后端登记或初始化 |
 | 本机设备 | `GET /api/devices` | 同路径 | 部分接入 | 当前只有本机Chat实例 |
-| 模型展示 | `GET /api/models` | 已接入 | 只列出用户在 Chat Home `models.json` 配置的模型（provider × modelId），展示信息与认证状态经 ModelRuntime 解析；不暴露 Pi 内置全量目录 |
+| 模型展示 | `GET /api/models` | 已接入 | 只列出用户在 Chat Home `models.json` 配置的模型（provider × modelId），展示信息与认证状态经 ModelRuntime 解析；不暴露 Pi 内置全量目录；响应同时携带 `thinkingLevels`，作为 Frontend 思考等级选项的唯一来源 |
 
 ## 4. 必须支持的后续接口
 
@@ -67,7 +67,7 @@ Chat/frontend（纯浏览器）
 
 | 接口 | 前端用途 | 状态 | 后续实现方向 |
 |---|---|---|---|
-| `GET/PUT /api/models-config` | 模型配置 | 已接入 | 只读写Chat Home的`agent/models.json`，由Pi ModelRuntime校验，不读取`~/.pi` |
+| `GET/PUT /api/models-config` | 模型配置 | 已接入 | 只读写Chat Home的`agent/models.json`，由Pi ModelRuntime校验，不读取`~/.pi`；响应携带 `capabilities`（`thinkingLevels`/`modelApis`），编辑器选项不允许在 Frontend 硬编码 |
 | `GET /api/models-config/catalog` | 模型目录 | 待迁移 | 复用Pi模型目录 |
 | `POST /api/models-config/discover` | Provider模型发现 | 待迁移 | 后端执行网络发现，不暴露Credential |
 | `POST /api/models-config/test` | 模型连接测试 | 待迁移 | 后端执行显式Provider测试 |
@@ -83,13 +83,14 @@ Chat/frontend（纯浏览器）
 | 接口 | 前端用途 | 状态 | 后续实现方向 |
 |---|---|---|---|
 | `GET/PATCH /api/skills` | Skill列表与模型调用开关 | 已接入 | 使用`~/.chat/agent`和Pi ResourceLoader；只修改已解析Skill的frontmatter |
+| `GET /api/skills/tree` | 四级Skill归属树 | 已接入 | Chat系统/各Project/各Workflow Agent/Long Agent 分组；Workflow节使用与执行同源的解析并只保留`injected`归属；只读发现，不改动文件 |
 | `POST /api/skills/search` | Skill搜索 | 已接入 | 后端访问skills.sh，失败时使用参数化npx调用 |
 | `POST /api/skills/install` | Skill安装 | 已接入 | 后端校验cwd并执行参数化npx调用 |
 | `POST /api/skills/check` | Skill更新检查 | 待迁移 | 后端检查版本 |
 | `POST /api/skills/update` | Skill更新 | 待迁移 | 明确升级与失败恢复 |
 | `GET/POST /api/plugins` | Plugin列表、安装、删除、更新和启停 | 已接入 | 直接使用Pi SettingsManager与DefaultPackageManager |
 | `GET/POST /api/extensions` | Extension列表与文件级启停 | 已接入 | 使用Pi Package解析；本地单文件通过`.disabled`切换 |
-| `POST /api/workflows/:workflowId/agents/:agentId/resolve` | 查看Agent最终能力 | 已接入 | 从Registry调用与执行相同的Workflow `prepareAgentSession`，再创建不发送Prompt的内存Pi AgentSession，返回最终Prompt、Tool和资源事实 |
+| `POST /api/workflows/:workflowId/agents/:agentId/resolve` | 查看Agent最终能力 | 已接入 | 从Registry调用与执行相同的Workflow `prepareAgentSession`，再创建不发送Prompt的内存Pi AgentSession，返回最终Prompt、Tool和资源事实；Skill带`owner`归属分类（personal/project/plugin/injected），前端按归属分组展示当前生效Skill |
 
 ### 4.5 长期记忆
 
