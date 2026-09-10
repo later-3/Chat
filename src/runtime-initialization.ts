@@ -1,3 +1,4 @@
+import { ensureLongAgentManagementSkill } from "./resources/long-agent-management-skill.js";
 import { ensureProjectManagementSkill } from "./resources/project-management-skill.js";
 import { resolve } from "node:path";
 import { ensureChatHome, resolveChatHome } from "./chat-home.js";
@@ -35,6 +36,7 @@ export function ensureChatRuntimeInitialized(options: {
       await Promise.all([
         ensureDailyProject(paths.root),
         ensureProjectManagementSkill(paths.root),
+        ensureLongAgentManagementSkill(paths.root),
         ensureMemorySkill(paths.runtimeDir, { refresh: true }),
         ensureWorkflowDelegationSkill(paths.runtimeDir, { refresh: true }),
         ensureRuleLibrarySkill(paths.runtimeDir, { refresh: true }),

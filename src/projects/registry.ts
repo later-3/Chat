@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { ensureChatHome, getChatHomePaths, resolveChatHome } from "../chat-home.js";
+import { LONG_AGENT_ID_PATTERN } from "../long-agents/types.js";
 import {
   parseProjectManifest,
   parseProjectRegistry,
@@ -182,10 +183,23 @@ async function registerProject(
   return resolveProjectContext(manifest.id, chatHome);
 }
 
-/** Creates the stable system-managed Daily Project through the normal Project contract. */
-export async function ensureDailyProject(chatHome = resolveChatHome()): Promise<ChatProjectContext> {
-  const home = await ensureChatHome(chatHome);
-  const root = home.dailyWorkspaceDir;
+const AGENT_DAILY_PROJECT_PREFIX = "daily-";
+
+/** 每个 Long Agent 的独立 Daily Project id（管理架构 S3）。 */
+export function agentDailyProjectId(longAgentId: string): string {
+  if (!LONG_AGENT_ID_PATTERN.test(longAgentId)) throw new Error(`longAgentId格式无效: ${longAgentId}`);
+  return `${AGENT_DAILY_PROJECT_PREFIX}${longAgentId}`;
+}
+
+async function ensureManagedDailyProject(input: {
+  readonly projectId: string;
+  readonly name: string;
+  readonly description: string;
+  readonly root: string;
+  readonly chatHome: string;
+}): Promise<ChatProjectContext> {
+  const home = await ensureChatHome(input.chatHome);
+  const root = input.root;
   const configDir = resolve(root, ".chat");
   await Promise.all([
     mkdir(root, { recursive: true, mode: 0o700 }),
@@ -198,16 +212,16 @@ export async function ensureDailyProject(chatHome = resolveChatHome()): Promise<
   let manifest: ChatProjectManifest;
   try {
     manifest = await readProjectManifest(root);
-    if (manifest.id !== DAILY_PROJECT_ID) {
+    if (manifest.id !== input.projectId) {
       throw new Error(`Daily Workspace已经声明为其他Project: ${manifest.id}`);
     }
   } catch (error) {
     if (!isMissingManifest(error)) throw error;
     manifest = {
       schemaVersion: 1,
-      id: DAILY_PROJECT_ID,
-      name: DAILY_PROJECT_NAME,
-      description: "Chat管理的默认日常Project",
+      id: input.projectId,
+      name: input.name,
+      description: input.description,
     };
     await atomicWriteJson(manifestPath, manifest);
   }
@@ -222,15 +236,44 @@ export async function ensureDailyProject(chatHome = resolveChatHome()): Promise<
 
   const canonicalRoot = await projectRoot(root);
   const existing = (await readProjectRegistry(home.root)).projects.find(
-    (project) => project.projectId === DAILY_PROJECT_ID,
+    (project) => project.projectId === input.projectId,
   );
   if (existing !== undefined
     && existing.path === canonicalRoot
     && existing.cachedName === manifest.name
     && existing.cachedDescription === manifest.description) {
-    return resolveProjectContext(DAILY_PROJECT_ID, home.root);
+    return resolveProjectContext(input.projectId, home.root);
   }
   return registerProject(canonicalRoot, manifest, home.root);
+}
+
+/** Creates the stable system-managed Daily Project through the normal Project contract. */
+export async function ensureDailyProject(chatHome = resolveChatHome()): Promise<ChatProjectContext> {
+  const home = await ensureChatHome(chatHome);
+  return ensureManagedDailyProject({
+    projectId: DAILY_PROJECT_ID,
+    name: DAILY_PROJECT_NAME,
+    description: "Chat管理的默认日常Project",
+    root: home.dailyWorkspaceDir,
+    chatHome: home.root,
+  });
+}
+
+/** 创建或解析某个 Long Agent 的独立 Daily Project 与 Managed Workspace。 */
+export async function ensureAgentDailyProject(
+  longAgentId: string,
+  agentName: string,
+  chatHome = resolveChatHome(),
+): Promise<ChatProjectContext> {
+  const home = await ensureChatHome(chatHome);
+  const projectId = agentDailyProjectId(longAgentId);
+  return ensureManagedDailyProject({
+    projectId,
+    name: `Daily · ${agentName}`,
+    description: `Long Agent ${agentName} 的日常Project`,
+    root: resolve(home.workspacesDir, projectId),
+    chatHome: home.root,
+  });
 }
 
 /** Opens only the selected directory; it never searches parent or child directories. */

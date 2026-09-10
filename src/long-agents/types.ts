@@ -43,7 +43,10 @@ export interface LongAgentConfig {
   readonly instanceId: string;
   readonly nanoclawAgentGroupId: string;
   readonly defaultProjectId: string;
-  readonly inbox: LongAgentAddress & { readonly messagingGroupId: string };
+  /** Channel 绑定；未绑定的 Agent 仅从 Chat Web 入口工作（S2 生命周期允许先创建后绑定）。 */
+  readonly inbox?: LongAgentAddress & { readonly messagingGroupId: string };
+  /** 生命周期状态；缺省为 active。archived 停止新工作但保留全部数据。 */
+  readonly status: "active" | "archived";
   /** Chat-owned Pi capability definition. NanoClaw never receives this value. */
   readonly definition: WorkflowAgentDefinition;
 }
@@ -77,6 +80,8 @@ export interface ProjectLongAgent {
   readonly longAgentId: string;
   readonly primarySessionId: string;
   readonly status: "active" | "paused";
+  /** 仅 Agent 独立 Daily Project 使用：当前主 Session 所属的本地日期（YYYY-MM-DD），换日轮换。 */
+  readonly sessionDate?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -219,15 +224,17 @@ function parseAgent(value: unknown): LongAgentConfig {
   if (!isRecord(value)) throw new Error("LongAgent agent必须是对象");
   exactFields(
     value,
-    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "inbox", "definition"],
+    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "inbox", "status", "definition"],
     "LongAgent agent",
   );
-  if (!isRecord(value.inbox)) throw new Error("agent.inbox必须是对象");
-  exactFields(
-    value.inbox,
-    ["messagingGroupId", "channelType", "instance", "platformId", "threadId"],
-    "agent.inbox",
-  );
+  if (value.inbox !== undefined) {
+    if (!isRecord(value.inbox)) throw new Error("agent.inbox必须是对象");
+    exactFields(
+      value.inbox,
+      ["messagingGroupId", "channelType", "instance", "platformId", "threadId"],
+      "agent.inbox",
+    );
+  }
   const defaultProjectId = requiredString(value.defaultProjectId, "agent.defaultProjectId");
   if (!PROJECT_ID_PATTERN.test(defaultProjectId)) throw new Error(`agent.defaultProjectId格式无效: ${defaultProjectId}`);
   if (typeof value.enabled !== "boolean") throw new Error("agent.enabled必须是布尔值");
@@ -283,17 +290,27 @@ function parseAgent(value: unknown): LongAgentConfig {
     instanceId: parseId(value.instanceId, "agent.instanceId"),
     nanoclawAgentGroupId: requiredString(value.nanoclawAgentGroupId, "agent.nanoclawAgentGroupId"),
     defaultProjectId,
-    inbox: {
-      messagingGroupId: requiredString(value.inbox.messagingGroupId, "agent.inbox.messagingGroupId"),
-      ...parseLongAgentAddress({
-        channelType: value.inbox.channelType,
-        instance: value.inbox.instance,
-        platformId: value.inbox.platformId,
-        threadId: value.inbox.threadId,
-      }, "agent.inbox.address"),
-    },
+    ...(value.inbox === undefined
+      ? {}
+      : {
+          inbox: {
+            messagingGroupId: requiredString(value.inbox.messagingGroupId, "agent.inbox.messagingGroupId"),
+            ...parseLongAgentAddress({
+              channelType: value.inbox.channelType,
+              instance: value.inbox.instance,
+              platformId: value.inbox.platformId,
+              threadId: value.inbox.threadId,
+            }, "agent.inbox.address"),
+          },
+        }),
+    status: value.status === undefined ? "active" as const : parseAgentStatus(value.status),
     definition,
   };
+}
+
+function parseAgentStatus(value: unknown): "active" | "archived" {
+  if (value !== "active" && value !== "archived") throw new Error("agent.status必须是active或archived");
+  return value;
 }
 
 export function parseLongAgentRegistry(value: unknown): LongAgentRegistry {
@@ -360,12 +377,16 @@ function parseBinding(value: unknown): LongAgentConversationBinding {
 function parseProjectLongAgent(value: unknown): ProjectLongAgent {
   if (!isRecord(value)) throw new Error("Project Long Agent必须是对象");
   exactFields(value, [
-    "id", "projectId", "longAgentId", "primarySessionId", "status", "createdAt", "updatedAt",
+    "id", "projectId", "longAgentId", "primarySessionId", "status", "sessionDate", "createdAt", "updatedAt",
   ], "Project Long Agent");
   const projectId = requiredString(value.projectId, "projectLongAgent.projectId");
   if (!PROJECT_ID_PATTERN.test(projectId)) throw new Error(`projectLongAgent.projectId格式无效: ${projectId}`);
   if (value.status !== "active" && value.status !== "paused") {
     throw new Error("projectLongAgent.status必须是active或paused");
+  }
+  if (value.sessionDate !== undefined
+    && (typeof value.sessionDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value.sessionDate))) {
+    throw new Error("projectLongAgent.sessionDate必须是YYYY-MM-DD");
   }
   return {
     id: requiredString(value.id, "projectLongAgent.id"),
@@ -373,6 +394,7 @@ function parseProjectLongAgent(value: unknown): ProjectLongAgent {
     longAgentId: parseId(value.longAgentId, "projectLongAgent.longAgentId"),
     primarySessionId: requiredString(value.primarySessionId, "projectLongAgent.primarySessionId"),
     status: value.status,
+    ...(value.sessionDate === undefined ? {} : { sessionDate: value.sessionDate as string }),
     createdAt: parseTimestamp(value.createdAt, "projectLongAgent.createdAt"),
     updatedAt: parseTimestamp(value.updatedAt, "projectLongAgent.updatedAt"),
   };

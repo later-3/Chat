@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import type { AssistantMessage, ImageContent, UserMessage } from "@earendil-works/pi-ai";
 import { createChatPiAgentSession } from "../agents/pi-agent-session.js";
+import { ensureLongAgentResourceDirs, longAgentConfigRoot } from "./storage.js";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
 import { resolveProjectContext } from "../projects/registry.js";
@@ -226,9 +228,12 @@ export async function executeLongAgentTurn(
         // before Pi assembly so Web and Channel execute with the same Nano-owned
         // identity and OKF core memory. A valid cache is explicitly marked stale.
         const definition = createLongAgentDefinition(agent);
+        await ensureLongAgentResourceDirs(chatHome, agent.id);
         created = await createChatPiAgentSession({
           chatSession,
           sessionManager: chatSession.manager,
+          // S4：Agent 自有 Skill 目录默认接入装配；其他层级仍由 resources 策略控制。
+          additionalSkillPaths: [resolve(longAgentConfigRoot(chatHome, agent.id), "skills")],
           agent: {
             ...definition,
             customInstructions: [

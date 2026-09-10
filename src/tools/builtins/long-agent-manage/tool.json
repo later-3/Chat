@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "long-agent-manage",
+  "name": "long_agent_manage",
+  "label": "Long Agent manage",
+  "description": "管理 Chat 长期同事的生命周期：list 列出全部 Agent，get 读取一个 Agent 的配置摘要，create 创建（一次性配齐独立配置目录与专属日常 Project），archive/unarchive 归档与恢复，delete 删除（必须先归档）。删除不可逆；create/delete 前向用户确认。",
+  "implementationVersion": 1,
+  "risk": "destructive",
+  "permissions": [
+    "long-agent:manage"
+  ]
+}

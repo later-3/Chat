@@ -14,7 +14,8 @@ import {
   parseWorkflowAgentDefinition,
   type WorkflowAgentDefinition,
 } from "../workflows/agent-config.js";
-import { readLongAgentRegistry, updateLongAgentRegistry } from "./storage.js";
+import { ensureLongAgentDailyProject } from "./daily-project.js";
+import { ensureLongAgentResourceDirs, readLongAgentRegistry, updateLongAgentRegistry } from "./storage.js";
 import { removeLongAgentAvatarAssets } from "./avatars.js";
 import {
   LONG_AGENT_ID_PATTERN,
@@ -78,7 +79,7 @@ export interface LongAgentConfigurationDocument {
       readonly name: string;
       readonly executionMode: "chat-pi";
     };
-  };
+  } | null;
 }
 
 export class LongAgentConfigurationInvalidError extends Error {
@@ -169,15 +170,17 @@ function documentOf(agent: LongAgentConfig, instance: LongAgentInstanceConfig): 
         resources: agent.definition.resources,
       },
     },
-    channel: {
-      type: agent.inbox.channelType,
-      instance: agent.inbox.instance,
-      host: {
-        id: instance.id,
-        name: instance.name,
-        executionMode: instance.executionMode,
-      },
-    },
+    channel: agent.inbox === undefined
+      ? null
+      : {
+          type: agent.inbox.channelType,
+          instance: agent.inbox.instance,
+          host: {
+            id: instance.id,
+            name: instance.name,
+            executionMode: instance.executionMode,
+          },
+        },
   };
 }
 
@@ -236,9 +239,17 @@ export async function readLongAgentConfiguration(
   chatHome = resolveChatHome(),
 ): Promise<LongAgentConfigurationDocument> {
   const id = parseLongAgentId(longAgentId);
-  const registry = await readLongAgentRegistry(chatHome);
-  const agent = registry.agents.find((candidate) => candidate.id === id);
+  let registry = await readLongAgentRegistry(chatHome);
+  let agent = registry.agents.find((candidate) => candidate.id === id);
   if (agent === undefined) throw new LongAgentConfigurationNotFoundError(`找不到Long Agent: ${id}`);
+  // S3：确保独立 Daily Project；存量共享 daily 的 Agent 在这里迁移归属。
+  // S4：同时确保自有资源目录存在（只建目录，不写配置）。
+  await ensureLongAgentResourceDirs(resolveChatHome(chatHome), agent.id);
+  const dailyProjectId = await ensureLongAgentDailyProject(agent, resolveChatHome(chatHome));
+  if (dailyProjectId !== agent.defaultProjectId) {
+    registry = await readLongAgentRegistry(chatHome);
+    agent = registry.agents.find((candidate) => candidate.id === id) ?? agent;
+  }
   return resolveEffectiveConfiguration(documentOf(agent, findInstance(registry.instances, agent.instanceId)), chatHome);
 }
 

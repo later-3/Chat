@@ -593,12 +593,13 @@ export async function listLongAgents(input: {
         description: agent.description,
         avatar: publicLongAgentAvatar(agent.avatar),
         defaultProjectId: agent.defaultProjectId,
+        status: agent.status,
         runtime: "pi" as const,
         configuration: {
           model: agent.definition.model ?? null,
           thinkingLevel: agent.definition.thinkingLevel ?? null,
           toolMode: agent.definition.tools.mode,
-          channelType: agent.inbox.channelType,
+          channelType: agent.inbox?.channelType ?? null,
         },
         project: input.projectId === undefined
           ? null

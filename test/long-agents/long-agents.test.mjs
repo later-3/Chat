@@ -20,8 +20,10 @@ import {
 } from "../../src/long-agents/configuration.ts";
 import { acceptLongAgentEvents, listLongAgents, syncLongAgentEvents } from "../../src/long-agents/bridge.ts";
 import { executeLongAgentTurn } from "../../src/long-agents/runtime.ts";
+import { listChatSystemTools } from "../../src/tools/registry.ts";
 import { collectChatLongAgentTurnMarkers } from "../../src/long-agents/session-turn.ts";
 import readLongAgentConfigurationHandler from "../../src/routes/api/long-agents/[longAgentId]/config.get.ts";
+import inspectLongAgentHandler from "../../src/routes/api/long-agents/[longAgentId]/inspection.get.ts";
 import updateLongAgentConfigurationHandler from "../../src/routes/api/long-agents/[longAgentId]/config.put.ts";
 
 function address(channelType, instance, platformId) {
@@ -296,6 +298,103 @@ test("legacy per-session bindings migrate to one Project Long Agent primary sess
   assert.equal(state.bindings[0].projectLongAgentId, state.projectAgents[0].id);
   assert.equal(state.bindings[0].nanoclawSessionId, "nano-session-1");
   assert.equal(JSON.parse(fs.readFileSync(path.join(chatHome, "runtime", "long-agent-state.json"), "utf8")).schemaVersion, 3);
+});
+
+test("LongAgent default definition grants every registered Chat system Tool", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-long-agent-default-tools-"));
+  const chatHome = path.join(root, "home");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  await ensureDailyProject(chatHome);
+  await writeLongAgentRegistry({
+    schemaVersion: 1,
+    instances: [{
+      id: "local", name: "Local NanoClaw", executionMode: "chat-pi",
+      gatewayBaseUrl: "http://127.0.0.1:3000/webhook/chat-backend",
+    }],
+    agents: [{
+      id: "nexus", name: "Nexus", description: "Daily coworker", enabled: true,
+      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "daily",
+      inbox: {
+        messagingGroupId: "private-messaging-group", channelType: "telegram", instance: "telegram",
+        platformId: "telegram:private-user", threadId: null,
+      },
+    }],
+  }, chatHome);
+
+  const current = await readLongAgentConfiguration("nexus", chatHome);
+  assert.equal(current.agent.definition.tools.mode, "pi-default");
+  // 默认授予除 long_agent_manage 外的全部系统 Tool；管理其他 Agent 生命周期是特权能力，必须显式配置。
+  assert.deepEqual(
+    [...current.agent.definition.tools.addresses].sort(),
+    listChatSystemTools()
+      .map((tool) => tool.address)
+      .filter((address) => address !== "system:tool/long_agent_manage")
+      .sort(),
+    "default Long Agent grants every registered system Tool except the privileged long_agent_manage",
+  );
+});
+
+test("LongAgent inspection resolves effective Skills through the execution path with ownership", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-long-agent-inspection-"));
+  const chatHome = path.join(root, "home");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const previousHome = process.env.CHAT_HOME;
+  process.env.CHAT_HOME = chatHome;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousHome;
+  });
+  await ensureDailyProject(chatHome);
+  await writeLongAgentRegistry({
+    schemaVersion: 1,
+    instances: [{
+      id: "local", name: "Local NanoClaw", executionMode: "chat-pi",
+      gatewayBaseUrl: "http://127.0.0.1:3000/webhook/chat-backend",
+    }],
+    agents: [{
+      id: "nexus", name: "Nexus", description: "Daily coworker", enabled: true,
+      instanceId: "local", nanoclawAgentGroupId: "private-agent-group", defaultProjectId: "daily",
+      inbox: {
+        messagingGroupId: "private-messaging-group", channelType: "telegram", instance: "telegram",
+        platformId: "telegram:private-user", threadId: null,
+      },
+    }],
+  }, chatHome);
+  const personalSkillDir = path.join(chatHome, "agent", "skills", "personal-note");
+  fs.mkdirSync(personalSkillDir, { recursive: true });
+  fs.writeFileSync(path.join(personalSkillDir, "SKILL.md"), [
+    "---",
+    "name: personal-note",
+    "description: Personal skill for note taking",
+    "---",
+    "Use this when taking personal notes.",
+  ].join("\n"));
+  const ownSkillDir = path.join(chatHome, "long-agents", "nexus", "skills", "daily-briefing");
+  fs.mkdirSync(ownSkillDir, { recursive: true });
+  fs.writeFileSync(path.join(ownSkillDir, "SKILL.md"), [
+    "---",
+    "name: daily-briefing",
+    "description: Nexus-owned daily briefing skill",
+    "---",
+    "Compose the daily briefing.",
+  ].join("\n"));
+
+  const router = createRouter();
+  router.get("/api/long-agents/:longAgentId/inspection", inspectLongAgentHandler);
+  const response = await router.fetch(new Request("http://chat.test/api/long-agents/nexus/inspection"));
+  assert.equal(response.status, 200);
+  const inspection = await response.json();
+  assert.equal(inspection.agent.id, "nexus");
+  const personalSkill = inspection.skills.find((skill) => skill.name === "personal-note");
+  assert.equal(personalSkill?.owner, "personal");
+  // S4：自有目录的 Skill 默认生效并按 agent 归属分类。
+  const ownSkill = inspection.skills.find((skill) => skill.name === "daily-briefing");
+  assert.equal(ownSkill?.owner, "agent");
+  for (const skill of inspection.skills) {
+    assert.ok(["personal", "project", "plugin", "agent", "injected"].includes(skill.owner));
+  }
+  const missing = await router.fetch(new Request("http://chat.test/api/long-agents/ghost/inspection"));
+  assert.equal(missing.status, 404);
 });
 
 test("LongAgent registry rejects unsafe Gateway URLs and duplicate Agent Group mappings", async (t) => {
