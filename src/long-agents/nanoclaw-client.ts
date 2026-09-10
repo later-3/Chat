@@ -455,6 +455,36 @@ export async function searchNanoClawAgentMemory(input: {
   });
 }
 
+/**
+ * Sends one proactive message from a Long Agent to its own bound channel
+ * destination. NanoClaw validates the destination wiring; there is no inbound
+ * trigger session for proactive sends.
+ */
+export async function sendNanoClawAgentMessage(input: {
+  readonly instance: LongAgentInstanceConfig;
+  readonly agentGroupId: string;
+  readonly destination: LongAgentAddress & { readonly messagingGroupId: string };
+  readonly messageId: string;
+  readonly text: string;
+}): Promise<{ readonly nanoSessionId: string }> {
+  const data = await requestGateway(input.instance, "v1/agent-messages", {
+    method: "POST",
+    body: JSON.stringify({
+      schemaVersion: 1,
+      agentGroupId: input.agentGroupId,
+      messagingGroupId: input.destination.messagingGroupId,
+      threadId: input.destination.threadId,
+      messageId: input.messageId,
+      text: input.text,
+    }),
+  });
+  if (!isRecord(data) || data.persisted !== true || data.messageId !== input.messageId
+    || typeof data.nanoSessionId !== "string") {
+    throw new Error(`NanoClaw ${input.instance.id}没有确认主动消息持久化`);
+  }
+  return { nanoSessionId: data.nanoSessionId };
+}
+
 export async function persistNanoClawDelivery(input: {
   readonly instance: LongAgentInstanceConfig;
   readonly agentGroupId: string;

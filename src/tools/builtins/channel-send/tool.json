@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "channel-send",
+  "name": "channel_send",
+  "label": "Channel send",
+  "description": "Long Agent 主动向自己绑定的通道目的地（如 Telegram 对话）发送一条文本消息，用于定时任务结果、需要用户决策的阻塞、重要进度通知。目的地由服务端按可信 Agent 身份解析，不能指定他人或其他群。节制使用：只在有明确价值时发送。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": [
+    "channel:send"
+  ]
+}

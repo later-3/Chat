@@ -12,6 +12,7 @@ import { AGENT_MEMORY_SEARCH_TOOL_PROVIDER } from "./builtins/agent-memory-searc
 import { AGENT_MEMORY_READ_TOOL_PROVIDER } from "./builtins/agent-memory-read/index.js";
 import { AGENT_MEMORY_WRITE_TOOL_PROVIDER } from "./builtins/agent-memory-write/index.js";
 import { LONG_AGENT_MANAGE_TOOL_PROVIDER } from "./builtins/long-agent-manage/index.js";
+import { CHANNEL_SEND_TOOL_PROVIDER } from "./builtins/channel-send/index.js";
 
 export const CHAT_SYSTEM_TOOL_PROVIDERS = [
   MEMORY_SEARCH_TOOL_PROVIDER,
@@ -27,6 +28,7 @@ export const CHAT_SYSTEM_TOOL_PROVIDERS = [
   PROJECT_UPDATE_TOOL_PROVIDER,
   PROJECT_CONFIGURE_TOOL_PROVIDER,
   LONG_AGENT_MANAGE_TOOL_PROVIDER,
+  CHANNEL_SEND_TOOL_PROVIDER,
 ] as const;
 
 const providersByAddress = new Map(CHAT_SYSTEM_TOOL_PROVIDERS.map((provider) => [provider.address, provider]));
