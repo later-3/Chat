@@ -195,7 +195,7 @@ interface LongAgentDeliveryEnvelope {
 }
 ```
 
-Chat调用NanoClaw `/webhook/chat-backend/v1/deliveries`，NanoClaw只负责把Envelope持久化到Outbound Mailbox并投递。Delivery成功持久化后，Chat再调用独立的`/acks`确认Inbound；重试不能再次运行Pi，也不能在Chat中追加第二条Assistant Message。NanoClaw对Chat只开放`/health`、`/deliveries`、`/acks`和版本化的`/agent-groups/*`身份/OKF Memory资源合同，不能扩展成通用CLI command dispatcher；这些接口均使用同一服务认证且不能直接暴露给浏览器。
+Chat调用NanoClaw `/webhook/chat-backend/v1/deliveries`，NanoClaw只负责把Envelope持久化到Outbound Mailbox并投递。Delivery成功持久化后，Chat再调用独立的`/acks`确认Inbound；重试不能再次运行Pi，也不能在Chat中追加第二条Assistant Message。NanoClaw对Chat只开放`/health`、`/deliveries`、`/acks`、`/agent-messages`和版本化的`/agent-groups/*`身份/OKF Memory资源合同，不能扩展成通用CLI command dispatcher；这些接口均使用同一服务认证且不能直接暴露给浏览器。`/agent-messages`承载Long Agent的主动联系：目的地必须是该Agent Group已接线的Messaging Group（NanoClaw侧强制校验），由Chat按可信Agent身份从Registry绑定解析，模型不能指定接收方。
 
 ### 7.3 Chat内部Long Agent执行请求
 

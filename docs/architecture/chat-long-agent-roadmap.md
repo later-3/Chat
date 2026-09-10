@@ -20,6 +20,10 @@
 
 2026-09-09 进展（任务二）：S1 配置根（definition 拆分为 `long-agents/<id>/definition.json` + 索引化 + 幂等迁移）、S2 生命周期（create/archive/unarchive/delete 服务、API、前端入口、`long_agent_manage` Tool、`long-agent-management` Skill）、S3 独立 Daily Project（`daily-<id>` + 存量归属迁移）、S4 自有资源目录接入装配与展示、S5a 日常主 Session 按日轮换均已落地并有测试门禁。**当前唯一切片级剩余项是 S5b（Agent Memory 迁入 Chat Home 本地 OKF 服务）**；“配置为唯一生效来源”、跨域授权记录、换日上下文恢复与 Agent 时区为后续迭代。
 
+2026-09-09 修正：S3 迁移改为**启动时全量执行**（替代依赖入口的懒迁移），并且迁移会建立新 Daily Project 的当日主 Session、把指向旧共享 daily 绑定的通道绑定重定向到新绑定——否则存量 Telegram 等通道会话会永远路由到旧会话。修正有回归测试（config-root.test.mjs）。
+
+2026-09-09 进展（通道主动联系）：新增 `channel_send` 系统 Tool（Long Agent 默认能力；目的地由服务端按可信身份从 Registry 绑定解析，NanoClaw 强制校验接线）、NanoClaw 窄端点 `POST /v1/agent-messages`、公共 Skill `channel-messaging`（何时联系、内容与节制规则、失败处理）。定时任务/自由活动的触发机制仍属机制合同后续项，但通道出口已就绪。
+
 ## 2. 当前能力与目标差距
 
 以下依据当前工作区源码、配置文档及先前已完成的链路记录；本轮没有重新执行模型、Channel 或 Docker 验收。“原生有”不等于“Chat 已接入”。
