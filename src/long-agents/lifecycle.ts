@@ -7,8 +7,10 @@ import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { getChatHomePaths } from "../chat-home.js";
 import { ensureDefaultLongAgentTasks } from "./agent-tasks.js";
+import { parseWorkflowAgentDefinition } from "../workflows/agent-config.js";
 import { ensureLongAgentResourceDirs, longAgentConfigRoot, readLongAgentRegistry, updateLongAgentRegistry } from "./storage.js";
 import {
+  buildDefaultLongAgentDefinition,
   LONG_AGENT_ID_PATTERN,
   type LongAgentConfig,
   type LongAgentRegistry,
@@ -80,17 +82,8 @@ export async function createLongAgent(input: CreateLongAgentInput): Promise<Long
       nanoclawAgentGroupId: input.nanoclawAgentGroupId,
       defaultProjectId: agentHomeProjectId(input.id),
       status: "active",
-      definition: {
-        schemaVersion: 1,
-        id: input.id,
-        name,
-        // definition.description 必填非空；与 types.ts 默认定义的语义保持一致。
-        description: (input.description?.trim() ?? "") === "" ? "Chat Long Agent" : input.description!.trim(),
-        systemPrompt: { mode: "pi-default" },
-        customInstructions: [],
-        tools: { mode: "pi-default" },
-        resources: { mode: "inherit" },
-      },
+      toolsManagedByDefault: true,
+      definition: parseWorkflowAgentDefinition(buildDefaultLongAgentDefinition(input.id, name, input.description?.trim() ?? "")),
     };
     return {
       registry: { ...registry, agents: [...registry.agents, agent] },

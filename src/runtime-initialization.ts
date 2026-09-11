@@ -53,6 +53,8 @@ export function ensureChatRuntimeInitialized(options: {
       await sweepLegacyAgentProjectDirs(paths.root);
       // 启动时确保每个 Agent 的配置根与资源目录就绪。
       const { readLongAgentRegistry, ensureLongAgentResourceDirs } = await import("./long-agents/storage.js");
+      const { reconcileDefaultLongAgentTools } = await import("./long-agents/definition-defaults.js");
+      await reconcileDefaultLongAgentTools(paths.root);
       const { ensureDefaultLongAgentTasks } = await import("./long-agents/agent-tasks.js");
       const longAgentRegistry = await readLongAgentRegistry(paths.root);
       for (const agent of longAgentRegistry.agents) {

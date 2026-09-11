@@ -14,6 +14,7 @@ import {
   parseWorkflowAgentDefinition,
   type WorkflowAgentDefinition,
 } from "../workflows/agent-config.js";
+import { toolsMatchDefault } from "./definition-defaults.js";
 import { readLongAgentRegistry, updateLongAgentRegistry } from "./storage.js";
 import { removeLongAgentAvatarAssets } from "./avatars.js";
 import {
@@ -398,6 +399,8 @@ export async function updateLongAgentConfiguration(
       ...(update.avatar === undefined ? {} : { avatar: update.avatar }),
       enabled: update.enabled,
       defaultProjectId: update.defaultProjectId,
+      // 工具集与当前默认一致 → 仍由默认托管（后续新增默认能力会补齐）；用户自定义过 → 退出托管。
+      toolsManagedByDefault: toolsMatchDefault({ ...previous, definition: update.definition }),
       definition: update.definition,
     };
     if (update.avatar !== undefined && previous.avatar.kind === "image") {

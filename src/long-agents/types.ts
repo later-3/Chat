@@ -47,13 +47,21 @@ export interface LongAgentConfig {
   readonly inbox?: LongAgentAddress & { readonly messagingGroupId: string };
   /** 生命周期状态；缺省为 active。archived 停止新工作但保留全部数据。 */
   readonly status: "active" | "archived";
+  /**
+   * 定义的工具集是否仍由默认托管：true 时启动补齐新增默认能力（只增不减）；
+   * 用户在配置页自定义过工具后变为 false，补齐不再触碰。
+   */
+  readonly toolsManagedByDefault?: boolean;
   /** Chat-owned Pi capability definition. NanoClaw never receives this value. */
   readonly definition: WorkflowAgentDefinition;
 }
 
 /** Content revision of one LongAgent definition; any identity/avatar/config change moves it. */
 export function longAgentConfigRevision(agent: LongAgentConfig): string {
-  return createHash("sha256").update(JSON.stringify(agent)).digest("hex");
+  // toolsManagedByDefault 是托管标记，不是用户配置内容：不参与 revision，
+  // 否则保存/补齐这个标记本身会干扰乐观并发控制。
+  const { toolsManagedByDefault: _managed, ...config } = agent;
+  return createHash("sha256").update(JSON.stringify(config)).digest("hex");
 }
 
 export interface LongAgentRegistry {
@@ -226,7 +234,7 @@ function parseAgent(value: unknown): LongAgentConfig {
   if (!isRecord(value)) throw new Error("LongAgent agent必须是对象");
   exactFields(
     value,
-    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "inbox", "status", "definition"],
+    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "inbox", "status", "toolsManagedByDefault", "definition"],
     "LongAgent agent",
   );
   if (value.inbox !== undefined) {
@@ -243,7 +251,51 @@ function parseAgent(value: unknown): LongAgentConfig {
   const id = parseId(value.id, "agent.id");
   const name = requiredString(value.name, "agent.name");
   const description = typeof value.description === "string" ? value.description.trim() : "";
-  const defaultDefinition = {
+  const defaultDefinition = buildDefaultLongAgentDefinition(id, name, description);
+  const definition = value.definition === undefined
+    ? parseWorkflowAgentDefinition(defaultDefinition)
+    : parseWorkflowAgentDefinition(value.definition);
+  if (definition.id !== id || definition.name !== name || definition.description !== defaultDefinition.description) {
+    throw new Error("agent.definition的id、name和description必须与LongAgent身份一致");
+  }
+  return {
+    id,
+    name,
+    description,
+    avatar: parseAgentAvatar(value.avatar),
+    enabled: value.enabled,
+    instanceId: parseId(value.instanceId, "agent.instanceId"),
+    nanoclawAgentGroupId: requiredString(value.nanoclawAgentGroupId, "agent.nanoclawAgentGroupId"),
+    defaultProjectId,
+    ...(value.inbox === undefined
+      ? {}
+      : {
+          inbox: {
+            messagingGroupId: requiredString(value.inbox.messagingGroupId, "agent.inbox.messagingGroupId"),
+            ...parseLongAgentAddress({
+              channelType: value.inbox.channelType,
+              instance: value.inbox.instance,
+              platformId: value.inbox.platformId,
+              threadId: value.inbox.threadId,
+            }, "agent.inbox.address"),
+          },
+        }),
+    status: value.status === undefined ? "active" as const : parseAgentStatus(value.status),
+    ...(value.toolsManagedByDefault === undefined
+      ? {}
+      : { toolsManagedByDefault: value.toolsManagedByDefault === true }),
+    definition,
+  };
+}
+
+function parseAgentStatus(value: unknown): "active" | "archived" {
+  if (value !== "active" && value !== "archived") throw new Error("agent.status必须是active或archived");
+  return value;
+}
+
+/** Long Agent 的默认能力定义（与 parseAgent 内联默认值同源，供默认能力补齐复用）。 */
+export function buildDefaultLongAgentDefinition(id: string, name: string, description: string) {
+  return {
     schemaVersion: 1,
     id,
     name,
@@ -278,42 +330,6 @@ function parseAgent(value: unknown): LongAgentConfig {
     },
     resources: { mode: "inherit" },
   } as const;
-  const definition = value.definition === undefined
-    ? parseWorkflowAgentDefinition(defaultDefinition)
-    : parseWorkflowAgentDefinition(value.definition);
-  if (definition.id !== id || definition.name !== name || definition.description !== defaultDefinition.description) {
-    throw new Error("agent.definition的id、name和description必须与LongAgent身份一致");
-  }
-  return {
-    id,
-    name,
-    description,
-    avatar: parseAgentAvatar(value.avatar),
-    enabled: value.enabled,
-    instanceId: parseId(value.instanceId, "agent.instanceId"),
-    nanoclawAgentGroupId: requiredString(value.nanoclawAgentGroupId, "agent.nanoclawAgentGroupId"),
-    defaultProjectId,
-    ...(value.inbox === undefined
-      ? {}
-      : {
-          inbox: {
-            messagingGroupId: requiredString(value.inbox.messagingGroupId, "agent.inbox.messagingGroupId"),
-            ...parseLongAgentAddress({
-              channelType: value.inbox.channelType,
-              instance: value.inbox.instance,
-              platformId: value.inbox.platformId,
-              threadId: value.inbox.threadId,
-            }, "agent.inbox.address"),
-          },
-        }),
-    status: value.status === undefined ? "active" as const : parseAgentStatus(value.status),
-    definition,
-  };
-}
-
-function parseAgentStatus(value: unknown): "active" | "archived" {
-  if (value !== "active" && value !== "archived") throw new Error("agent.status必须是active或archived");
-  return value;
 }
 
 export function parseLongAgentRegistry(value: unknown): LongAgentRegistry {
