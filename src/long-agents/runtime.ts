@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import type { AssistantMessage, ImageContent, UserMessage } from "@earendil-works/pi-ai";
 import { createChatPiAgentSession } from "../agents/pi-agent-session.js";
-import { localDate, renderResponseTemplate } from "./reply-template.js";
+import { buildReplyFormatInstruction, localDate } from "./reply-template.js";
 import { ensureLongAgentResourceDirs, longAgentConfigRoot } from "./storage.js";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
@@ -81,28 +81,12 @@ export function createLongAgentDefinition(agent: LongAgentConfig): WorkflowAgent
   return agent.definition;
 }
 
-/**
- * 回复文本的最终形态（B2）：正文 + 渲染后的模板。
- * 正常返回与重放/重试返回走同一函数，保证两条路径看到的文本一致。
- */
-async function finalizeReplyText(
-  rawText: string,
-  agent: LongAgentConfig,
-  contextProject: { readonly name: string } | null,
-  runProjectId: string,
-  chatHome: string,
-): Promise<string> {
-  let runProjectName = runProjectId;
+async function resolveProjectName(projectId: string, chatHome: string): Promise<string> {
   try {
-    runProjectName = (await resolveProjectContext(runProjectId, chatHome)).name;
+    return (await resolveProjectContext(projectId, chatHome)).name;
   } catch {
-    // 项目不可读时退回 id，不影响回复正文。
+    return projectId;
   }
-  return `${rawText}${renderResponseTemplate(agent.responseTemplate, {
-    project: contextProject?.name ?? runProjectName,
-    agentName: agent.name,
-    date: localDate(),
-  })}`;
 }
 
 function assistantText(message: AssistantMessage | undefined): string {
@@ -221,7 +205,7 @@ export async function executeLongAgentTurn(
           messageId: turnId,
           turnId,
           isNewSession,
-          text: await finalizeReplyText(assistantText(recoveredAssistant), agent, contextProject, projectAgent.projectId, chatHome),
+          text: assistantText(recoveredAssistant),
           model: {
             provider: recoveredAssistant.provider,
             modelId: recoveredAssistant.model,
@@ -261,6 +245,12 @@ export async function executeLongAgentTurn(
         // before Pi assembly so Web and Channel execute with the same Nano-owned
         // identity and OKF core memory. A valid cache is explicitly marked stale.
         const definition = createLongAgentDefinition(agent);
+        // B2：模板是给 Agent 的格式要求（不是程序事后拼接），因此注入自定义区域。
+        const replyFormatInstruction = buildReplyFormatInstruction(agent.responseTemplate, {
+          project: contextProject?.name ?? await resolveProjectName(projectAgent.projectId, chatHome),
+          agentName: agent.name,
+          date: localDate(),
+        });
         await ensureLongAgentResourceDirs(chatHome, agent.id);
         created = await createChatPiAgentSession({
           chatSession,
@@ -275,6 +265,7 @@ export async function executeLongAgentTurn(
               ...(contextProject === null
                 ? []
                 : [{ text: `当前上下文项目：${contextProject.name}（${contextProject.projectId}）。这只说明用户在哪个项目里和你协作；你的工作归属与任务范围仍以会话和职责为准。` }]),
+              ...(replyFormatInstruction === null ? [] : [{ text: replyFormatInstruction }]),
             ],
           },
           toolContext: {
@@ -396,7 +387,7 @@ export async function executeLongAgentTurn(
           messageId: turnId,
           turnId,
           isNewSession,
-          text: await finalizeReplyText(responseText, agent, contextProject, projectAgent.projectId, chatHome),
+          text: responseText,
           model: created.session.model === undefined
             ? null
             : { provider: created.session.model.provider, modelId: created.session.model.id },
