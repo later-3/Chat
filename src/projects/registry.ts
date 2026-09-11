@@ -305,6 +305,19 @@ const projectOpens = new Map<string, Promise<ChatProjectContext>>();
 export async function openProject(options: OpenProjectOptions): Promise<ChatProjectContext> {
   const chatHome = resolve(options.chatHome ?? resolveChatHome());
   const root = await projectRoot(options.path);
+  // 系统管理目录不能打开为用户项目：Agent home 根与共享空间都有自己的归属。
+  // （workspaces/ 下还住着用户经 project_create 建的受管项目，不能一并拦掉。）
+  const home = getChatHomePaths(chatHome);
+  const systemRoots = await Promise.all(
+    [resolve(home.root, "long-agents"), home.longAgentShareWorkspaceDir].map(async (systemRoot) => (
+      await realpath(systemRoot).catch(() => resolve(systemRoot))
+    )),
+  );
+  for (const systemRoot of systemRoots) {
+    if (root === systemRoot || root.startsWith(`${systemRoot}/`)) {
+      throw new Error(`该目录由 Chat 系统管理，不能打开为项目: ${root}`);
+    }
+  }
   const key = `${chatHome}\0${root}`;
   const active = projectOpens.get(key);
   if (active !== undefined) return active;

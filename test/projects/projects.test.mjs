@@ -181,3 +181,30 @@ test("opening a legacy project data directory backfills the workflows directory"
   );
   assert.equal(resolved.workflowsDir, path.join(chatHome, "projects", opened.projectId, "workflows"));
 });
+
+test("system-managed directories cannot be opened as user Projects", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-project-guard-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const chatHome = path.join(root, "home");
+  await ensureLongAgentShareProject(chatHome);
+  fs.mkdirSync(path.join(chatHome, "long-agents", "nexus"), { recursive: true });
+  // workspaces/ 与 long-agents/ 都是系统管理目录
+  await assert.rejects(
+    openProject({ path: path.join(chatHome, "workspaces", "longagentshare"), chatHome, id: "fake", name: "Fake" }),
+    /系统管理/,
+  );
+  await assert.rejects(
+    openProject({ path: path.join(chatHome, "long-agents", "nexus"), chatHome, id: "fake", name: "Fake" }),
+    /系统管理/,
+  );
+  // workspaces/ 下的用户受管项目仍可正常打开（project_create 走这里）
+  const managed = path.join(chatHome, "workspaces", "user-managed");
+  fs.mkdirSync(managed, { recursive: true });
+  const openedManaged = await openProject({ path: managed, chatHome, id: "user-managed", name: "User Managed" });
+  assert.equal(openedManaged.kind, "project");
+  // 普通目录不受影响
+  const normal = path.join(root, "normal");
+  fs.mkdirSync(normal, { recursive: true });
+  const opened = await openProject({ path: normal, chatHome });
+  assert.equal(opened.kind, "project");
+});
