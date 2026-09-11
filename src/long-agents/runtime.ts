@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type { AssistantMessage, ImageContent, UserMessage } from "@earendil-works/pi-ai";
 import { createChatPiAgentSession } from "../agents/pi-agent-session.js";
 import { buildReplyFormatInstruction, localDate } from "./reply-template.js";
+import { buildLongAgentHandoff } from "./summaries.js";
 import { ensureLongAgentResourceDirs, longAgentConfigRoot } from "./storage.js";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
@@ -246,6 +247,10 @@ export async function executeLongAgentTurn(
         // identity and OKF core memory. A valid cache is explicitly marked stale.
         const definition = createLongAgentDefinition(agent);
         // B2：模板是给 Agent 的格式要求（不是程序事后拼接），因此注入自定义区域。
+        // A3：换日交接——新一天的首个 turn 注入最近几天的总结与交接上下文（程序注入，不调用模型）。
+        const handoff = isNewSession
+          ? await buildLongAgentHandoff({ chatHome, longAgentId: agent.id })
+          : null;
         const replyFormatInstruction = buildReplyFormatInstruction(agent.responseTemplate, {
           project: contextProject?.name ?? await resolveProjectName(projectAgent.projectId, chatHome),
           agentName: agent.name,
@@ -266,6 +271,7 @@ export async function executeLongAgentTurn(
                 ? []
                 : [{ text: `当前上下文项目：${contextProject.name}（${contextProject.projectId}）。这只说明用户在哪个项目里和你协作；你的工作归属与任务范围仍以会话和职责为准。` }]),
               ...(replyFormatInstruction === null ? [] : [{ text: replyFormatInstruction }]),
+              ...(handoff === null ? [] : [{ text: handoff }]),
             ],
           },
           toolContext: {

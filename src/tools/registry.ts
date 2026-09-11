@@ -14,6 +14,8 @@ import { AGENT_MEMORY_WRITE_TOOL_PROVIDER } from "./builtins/agent-memory-write/
 import { LONG_AGENT_MANAGE_TOOL_PROVIDER } from "./builtins/long-agent-manage/index.js";
 import { CHANNEL_SEND_TOOL_PROVIDER } from "./builtins/channel-send/index.js";
 import { TASK_MANAGE_TOOL_PROVIDER } from "./builtins/task-manage/index.js";
+import { SUMMARY_MANAGE_TOOL_PROVIDER } from "./builtins/summary-manage/index.js";
+import { SOCIAL_MANAGE_TOOL_PROVIDER } from "./builtins/social-manage/index.js";
 
 export const CHAT_SYSTEM_TOOL_PROVIDERS = [
   MEMORY_SEARCH_TOOL_PROVIDER,
@@ -31,6 +33,8 @@ export const CHAT_SYSTEM_TOOL_PROVIDERS = [
   LONG_AGENT_MANAGE_TOOL_PROVIDER,
   CHANNEL_SEND_TOOL_PROVIDER,
   TASK_MANAGE_TOOL_PROVIDER,
+  SUMMARY_MANAGE_TOOL_PROVIDER,
+  SOCIAL_MANAGE_TOOL_PROVIDER,
 ] as const;
 
 const providersByAddress = new Map(CHAT_SYSTEM_TOOL_PROVIDERS.map((provider) => [provider.address, provider]));

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "summary-manage",
+  "name": "summary_manage",
+  "label": "Summary manage",
+  "description": "管理自己的每日总结：write 写入某天的总结（做了什么/反思与改进/交接上下文），read 读取某天，list 列出最近几天，search 按关键词检索历史总结。交接上下文会在新一天的会话里自动注入。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": [
+    "long-agent:summary"
+  ]
+}

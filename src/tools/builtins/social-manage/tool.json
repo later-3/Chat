@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "social-manage",
+  "name": "social_manage",
+  "label": "Social manage",
+  "description": "自己的朋友圈：post 发布一条动态（通常在完成每日总结后），read 看时间流（默认全部长期同事，可按天筛选），comment 评论某条动态（给出自己的看法或建议）。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": [
+    "long-agent:social"
+  ]
+}

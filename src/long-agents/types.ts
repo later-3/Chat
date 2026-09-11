@@ -328,6 +328,8 @@ export function buildDefaultLongAgentDefinition(id: string, name: string, descri
         systemToolAddress("project_configure"),
         systemToolAddress("channel_send"),
         systemToolAddress("task_manage"),
+        systemToolAddress("summary_manage"),
+        systemToolAddress("social_manage"),
       ],
     },
     resources: { mode: "inherit" },
