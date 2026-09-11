@@ -774,7 +774,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     turnId: "stable-web-turn-1",
   });
   assert.equal(first.completed, true);
-  assert.equal(first.text, "Pi Long Agent reply 1");
+  assert.equal(first.text, "Pi Long Agent reply 1\n\nproject：Nexus");
   assert.equal(first.model?.provider, "long-agent-test");
   assert.equal(modelRequests.length, 1);
 
@@ -797,7 +797,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     chatHome,
     turnId: "stable-web-turn-2",
   });
-  assert.equal(second.text, "Pi Long Agent reply 2");
+  assert.equal(second.text, "Pi Long Agent reply 2\n\nproject：Nexus");
   assert.equal(modelRequests.length, 2);
   assert.match(JSON.stringify(modelRequests[1].messages), /原生 Pi 第一问/);
   assert.match(JSON.stringify(modelRequests[1].messages), /Pi Long Agent reply 1/);
@@ -810,7 +810,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     chatHome,
     turnId: "stable-web-turn-1",
   });
-  assert.equal(oldReplayAfterNewTurn.text, "Pi Long Agent reply 1");
+  assert.equal(oldReplayAfterNewTurn.text, "Pi Long Agent reply 1\n\nproject：Nexus");
   assert.equal(modelRequests.length, 2);
 
   const opened = await openChatSession({ projectId: "nexus", chatHome, sessionId: first.sessionId });
@@ -843,7 +843,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
   await ensureProjectManagementSkill(chatHome);
   const projectTurn = await executeLongAgentTurn({ longAgentId: "nexus", projectId: "nexus", sessionId: first.sessionId,
     text: "PROJECT_TOOL_E2E: 创建学习道德经项目并完成配置", chatHome, turnId: "project-management-turn" });
-  assert.equal(projectTurn.text, "PROJECT_TOOL_E2E_OK");
+  assert.equal(projectTurn.text, "PROJECT_TOOL_E2E_OK\n\nproject：Nexus");
   assert.equal(projectTurn.sessionId, first.sessionId);
   const projectHistory = await readChatSession(first.sessionId, undefined, {}, "nexus", chatHome);
   const toolResults = projectHistory.context.messages.filter((m) => m.role === "toolResult" && m.toolName.startsWith("project_"));
@@ -935,7 +935,7 @@ test("Long Agent retries a failed stable Turn without duplicating its user messa
   assert.equal(modelRequests.length, 2);
 
   const retried = await executeLongAgentTurn(input);
-  assert.equal(retried.text, "Pi Long Agent reply 3");
+  assert.equal(retried.text, "Pi Long Agent reply 3\n\nproject：Nexus");
   assert.equal(modelRequests.length, 3);
 
   const replay = await executeLongAgentTurn({ ...input, sessionId: retried.sessionId });
@@ -1047,7 +1047,7 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
   assert.equal(delivery.body.messageId, `chat-pi:${inbound.eventId}`);
   assert.equal(delivery.body.destination.channelType, "telegram");
   assert.equal(delivery.body.destination.platformId, "telegram:user-1");
-  assert.equal(delivery.body.text, "Pi Long Agent reply 1");
+  assert.equal(delivery.body.text, "Pi Long Agent reply 1\n\nproject：Nexus");
   assert.equal(ack.body.messageId, inbound.messageId);
   assert.ok(commands.indexOf(delivery) < commands.indexOf(ack));
 
@@ -1194,7 +1194,7 @@ test("channel images reach a vision model and text-only models answer in-channel
   assert.equal(imageOnlyJson.includes('"text":""'), false);
   assert.match(imageOnlyJson, /see attached image/);
   const imageOnlyDelivery = commands.filter((request) => request.path.endsWith("/deliveries")).at(-1);
-  assert.equal(imageOnlyDelivery.body.text, "Pi Long Agent reply 2");
+  assert.equal(imageOnlyDelivery.body.text, "Pi Long Agent reply 2\n\nproject：Nexus");
 
   const state = await readLongAgentState(chatHome);
   const opened = await openChatSession({

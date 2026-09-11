@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import type { AssistantMessage, ImageContent, UserMessage } from "@earendil-works/pi-ai";
 import { createChatPiAgentSession } from "../agents/pi-agent-session.js";
+import { localDate, renderResponseTemplate } from "./reply-template.js";
 import { ensureLongAgentResourceDirs, longAgentConfigRoot } from "./storage.js";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
@@ -42,6 +43,8 @@ export interface ExecuteLongAgentTurnInput {
   readonly inboundEventId?: string;
   readonly source?: ChatLongAgentTurnSource;
   readonly channelType?: string | null;
+  /** 用户在顶栏选择的上下文项目（B1）：只作为提示词上下文注入，不改变会话归属。 */
+  readonly contextProjectId?: string | null;
 }
 
 export interface ExecuteLongAgentTurnResult {
@@ -76,6 +79,30 @@ function nonEmpty(value: string | undefined, field: string): string | undefined 
 /** Chat-owned default definition used until a Long Agent has explicit overrides. */
 export function createLongAgentDefinition(agent: LongAgentConfig): WorkflowAgentDefinition {
   return agent.definition;
+}
+
+/**
+ * 回复文本的最终形态（B2）：正文 + 渲染后的模板。
+ * 正常返回与重放/重试返回走同一函数，保证两条路径看到的文本一致。
+ */
+async function finalizeReplyText(
+  rawText: string,
+  agent: LongAgentConfig,
+  contextProject: { readonly name: string } | null,
+  runProjectId: string,
+  chatHome: string,
+): Promise<string> {
+  let runProjectName = runProjectId;
+  try {
+    runProjectName = (await resolveProjectContext(runProjectId, chatHome)).name;
+  } catch {
+    // 项目不可读时退回 id，不影响回复正文。
+  }
+  return `${rawText}${renderResponseTemplate(agent.responseTemplate, {
+    project: contextProject?.name ?? runProjectName,
+    agentName: agent.name,
+    date: localDate(),
+  })}`;
 }
 
 function assistantText(message: AssistantMessage | undefined): string {
@@ -115,6 +142,12 @@ export async function executeLongAgentTurn(
   const chatHome = resolveChatHome(input.chatHome);
   const images = input.images === undefined || input.images.length === 0 ? undefined : input.images;
   const text = parseText(input.text, images !== undefined);
+  // B1：上下文项目只作为提示词上下文，不改变会话归属。
+  let contextProject: { readonly projectId: string; readonly name: string } | null = null;
+  if (input.contextProjectId !== undefined && input.contextProjectId !== null) {
+    const context = await resolveProjectContext(input.contextProjectId, chatHome);
+    contextProject = { projectId: context.projectId, name: context.name };
+  }
   const turnId = nonEmpty(input.turnId, "turnId") ?? randomUUID();
   const inboundEventId = nonEmpty(input.inboundEventId, "inboundEventId") ?? null;
   const registry = await readLongAgentRegistry(chatHome);
@@ -188,7 +221,7 @@ export async function executeLongAgentTurn(
           messageId: turnId,
           turnId,
           isNewSession,
-          text: assistantText(recoveredAssistant),
+          text: await finalizeReplyText(assistantText(recoveredAssistant), agent, contextProject, projectAgent.projectId, chatHome),
           model: {
             provider: recoveredAssistant.provider,
             modelId: recoveredAssistant.model,
@@ -239,6 +272,9 @@ export async function executeLongAgentTurn(
             customInstructions: [
               ...definition.customInstructions,
               { text: buildAgentGroupContextInstructions(groupContext) },
+              ...(contextProject === null
+                ? []
+                : [{ text: `当前上下文项目：${contextProject.name}（${contextProject.projectId}）。这只说明用户在哪个项目里和你协作；你的工作归属与任务范围仍以会话和职责为准。` }]),
             ],
           },
           toolContext: {
@@ -360,7 +396,7 @@ export async function executeLongAgentTurn(
           messageId: turnId,
           turnId,
           isNewSession,
-          text: responseText,
+          text: await finalizeReplyText(responseText, agent, contextProject, projectAgent.projectId, chatHome),
           model: created.session.model === undefined
             ? null
             : { provider: created.session.model.provider, modelId: created.session.model.id },

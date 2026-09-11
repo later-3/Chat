@@ -27,6 +27,9 @@ export default defineEventHandler(async (event) => {
       projectId: body.projectId,
       ...(typeof body.sessionId === "string" ? { sessionId: body.sessionId } : {}),
       text: body.text,
+      ...(typeof body.contextProjectId === "string" && body.contextProjectId.trim() !== ""
+        ? { contextProjectId: body.contextProjectId }
+        : {}),
     });
   } catch (error) {
     throw createError({

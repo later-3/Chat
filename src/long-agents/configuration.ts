@@ -57,6 +57,8 @@ export interface LongAgentConfigurationDocument {
     readonly avatar: PublicLongAgentAvatar;
     readonly enabled: boolean;
     readonly defaultProjectId: string;
+    /** 回复模板；null 表示使用默认（project 尾注）。 */
+    readonly responseTemplate: string | null;
     readonly effective: LongAgentEffectiveConfig;
     readonly definition: {
       readonly schemaVersion: 1;
@@ -151,6 +153,7 @@ function documentOf(agent: LongAgentConfig, instance: LongAgentInstanceConfig): 
       avatar: publicLongAgentAvatar(agent.avatar),
       enabled: agent.enabled,
       defaultProjectId: agent.defaultProjectId,
+      responseTemplate: agent.responseTemplate ?? null,
       effective: {
         model: null,
         thinkingLevel: null,
@@ -253,6 +256,8 @@ interface ParsedUpdate {
   readonly avatar?: { readonly kind: "auto" } | { readonly kind: "emoji"; readonly emoji: string };
   readonly enabled: boolean;
   readonly defaultProjectId: string;
+  /** null 表示恢复默认模板；undefined 表示不改。 */
+  readonly responseTemplate?: string | null;
   readonly definition: WorkflowAgentDefinition;
 }
 
@@ -312,6 +317,13 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
     ...(avatar === undefined ? {} : { avatar }),
     enabled: value.enabled,
     defaultProjectId,
+    ...(value.responseTemplate === undefined
+      ? {}
+      : { responseTemplate: value.responseTemplate === null
+          ? null
+          : typeof value.responseTemplate === "string" && value.responseTemplate.length <= 2_000
+            ? value.responseTemplate
+            : (() => { throw new LongAgentConfigurationInvalidError("responseTemplate必须是不超过2000字符的字符串或null"); })() }),
     definition,
   };
 }
@@ -399,6 +411,11 @@ export async function updateLongAgentConfiguration(
       ...(update.avatar === undefined ? {} : { avatar: update.avatar }),
       enabled: update.enabled,
       defaultProjectId: update.defaultProjectId,
+      ...(update.responseTemplate === undefined
+        ? {}
+        : update.responseTemplate === null
+          ? {}
+          : { responseTemplate: update.responseTemplate }),
       // 工具集与当前默认一致 → 仍由默认托管（后续新增默认能力会补齐）；用户自定义过 → 退出托管。
       toolsManagedByDefault: toolsMatchDefault({ ...previous, definition: update.definition }),
       definition: update.definition,

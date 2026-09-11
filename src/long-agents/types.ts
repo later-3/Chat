@@ -52,6 +52,8 @@ export interface LongAgentConfig {
    * 用户在配置页自定义过工具后变为 false，补齐不再触碰。
    */
   readonly toolsManagedByDefault?: boolean;
+  /** 回复末尾追加模板；变量 {{project}}/{{agentName}}/{{date}}。缺省为 `project：{{project}}`。 */
+  readonly responseTemplate?: string;
   /** Chat-owned Pi capability definition. NanoClaw never receives this value. */
   readonly definition: WorkflowAgentDefinition;
 }
@@ -234,7 +236,7 @@ function parseAgent(value: unknown): LongAgentConfig {
   if (!isRecord(value)) throw new Error("LongAgent agent必须是对象");
   exactFields(
     value,
-    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "inbox", "status", "toolsManagedByDefault", "definition"],
+    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "inbox", "status", "toolsManagedByDefault", "responseTemplate", "definition"],
     "LongAgent agent",
   );
   if (value.inbox !== undefined) {
