@@ -1,4 +1,5 @@
 import { ensureChannelMessagingSkill } from "./resources/channel-messaging-skill.js";
+import { ensureTaskSchedulingSkill } from "./resources/task-scheduling-skill.js";
 import { ensureLongAgentManagementSkill } from "./resources/long-agent-management-skill.js";
 import { ensureProjectManagementSkill } from "./resources/project-management-skill.js";
 import { resolve } from "node:path";
@@ -39,6 +40,7 @@ export function ensureChatRuntimeInitialized(options: {
         ensureProjectManagementSkill(paths.root),
         ensureLongAgentManagementSkill(paths.root),
         ensureChannelMessagingSkill(paths.root),
+        ensureTaskSchedulingSkill(paths.root),
         ensureMemorySkill(paths.runtimeDir, { refresh: true }),
         ensureWorkflowDelegationSkill(paths.runtimeDir, { refresh: true }),
         ensureRuleLibrarySkill(paths.runtimeDir, { refresh: true }),

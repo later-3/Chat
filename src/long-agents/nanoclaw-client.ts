@@ -455,6 +455,76 @@ export async function searchNanoClawAgentMemory(input: {
   });
 }
 
+export interface NanoClawTask {
+  readonly id: string;
+  readonly seriesId: string;
+  readonly status: string;
+  readonly processAfter: string | null;
+  readonly recurrence: string | null;
+  readonly prompt: string;
+  readonly script: string | null;
+  readonly originSessionId: string | null;
+  readonly sessionId: string;
+  readonly agentGroupId: string;
+  readonly createdAt: string;
+  readonly tries: number;
+}
+
+export type NanoClawTaskOperation =
+  | { readonly operation: "list"; readonly status?: "pending" | "paused" }
+  | { readonly operation: "get"; readonly taskId: string }
+  | {
+      readonly operation: "create";
+      readonly name?: string;
+      readonly prompt: string;
+      readonly recurrence?: string | null;
+      readonly script?: string | null;
+      readonly processAfter?: string;
+      readonly originSessionId?: string;
+      readonly paused?: boolean;
+    }
+  | {
+      readonly operation: "update";
+      readonly taskId: string;
+      readonly prompt?: string;
+      readonly recurrence?: string | null;
+      readonly script?: string | null;
+      readonly processAfter?: string;
+    }
+  | { readonly operation: "pause" | "resume" | "delete" | "run"; readonly taskId: string };
+
+function parseNanoClawTask(value: unknown, field: string): NanoClawTask {
+  if (!isRecord(value)) throw new Error(`NanoClaw返回了无效的${field}`);
+  const required = ["id", "seriesId", "status", "processAfter", "recurrence", "prompt", "sessionId", "agentGroupId", "createdAt"];
+  for (const key of required) {
+    const entry = value[key];
+    if (entry !== null && typeof entry !== "string") throw new Error(`NanoClaw返回了无效的${field}.${key}`);
+  }
+  return value as unknown as NanoClawTask;
+}
+
+/** 该 Agent Group 的定时任务管理（list/get/create/update/pause/resume/delete/run）。 */
+export async function requestNanoClawTasks(input: {
+  readonly instance: LongAgentInstanceConfig;
+  readonly agentGroupId: string;
+  readonly operation: NanoClawTaskOperation;
+}): Promise<{ readonly tasks?: readonly NanoClawTask[]; readonly task?: NanoClawTask; readonly firedTaskId?: string }> {
+  const data = await requestGateway(input.instance, "v1/agent-groups/tasks", {
+    method: "POST",
+    body: JSON.stringify({ schemaVersion: 1, agentGroupId: input.agentGroupId, ...input.operation }),
+  });
+  if (!isRecord(data)) throw new Error(`NanoClaw ${input.instance.id}返回了无效的任务响应`);
+  const tasks = Array.isArray(data.tasks)
+    ? data.tasks.map((task, index) => parseNanoClawTask(task, `tasks[${String(index)}]`))
+    : undefined;
+  const task = isRecord(data.task) ? parseNanoClawTask(data.task, "task") : undefined;
+  return {
+    ...(tasks === undefined ? {} : { tasks }),
+    ...(task === undefined ? {} : { task }),
+    ...(typeof data.firedTaskId === "string" ? { firedTaskId: data.firedTaskId } : {}),
+  };
+}
+
 /**
  * Sends one proactive message from a Long Agent to its own bound channel
  * destination. NanoClaw validates the destination wiring; there is no inbound

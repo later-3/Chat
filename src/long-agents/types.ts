@@ -273,6 +273,7 @@ function parseAgent(value: unknown): LongAgentConfig {
         systemToolAddress("project_update"),
         systemToolAddress("project_configure"),
         systemToolAddress("channel_send"),
+        systemToolAddress("task_manage"),
       ],
     },
     resources: { mode: "inherit" },

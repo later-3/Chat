@@ -914,6 +914,7 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
     "system:tool/project_configure",
     "system:tool/long_agent_manage",
     "system:tool/channel_send",
+    "system:tool/task_manage",
     ],
   );
   const projectTool = catalog.tools.find((tool) => tool.name === "built_project_lookup");
