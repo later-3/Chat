@@ -129,6 +129,8 @@ export interface NanoClawIntegrationEvent {
   readonly source: LongAgentAddress | null;
   readonly delivery: LongAgentAddress | null;
   readonly chatSessionId: string | null;
+  /** 定时任务触发时携带的任务 id；普通消息为 undefined（或 null）。 */
+  readonly taskId?: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -604,5 +606,8 @@ export function parseNanoClawIntegrationEvent(value: unknown): NanoClawIntegrati
     source: value.source === null ? null : parseLongAgentAddress(value.source, "event.source"),
     delivery: value.delivery === null ? null : parseLongAgentAddress(value.delivery, "event.delivery"),
     chatSessionId: value.chatSessionId === null ? null : requiredString(value.chatSessionId, "event.chatSessionId"),
+    ...(value.taskId === undefined || value.taskId === null
+      ? {}
+      : { taskId: requiredString(value.taskId, "event.taskId") }),
   };
 }

@@ -1328,3 +1328,95 @@ test("Chat HTTP ingress accepts registered routes and rejects unknown or conflic
     chatHome,
   }), /未映射到Chat Long Agent/);
 });
+
+test("a scheduled task event runs in the Agent home session without any channel binding", { concurrency: false }, async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-long-agent-schedule-"));
+  const chatHome = path.join(root, "home");
+  const modelRequests = [];
+  const model = await startModelServer(modelRequests);
+  const commands = [];
+  const gateway = await startNanoGatewayServer(commands);
+  const previousToken = process.env.CHAT_CHANNEL_GATEWAY_TOKEN;
+  process.env.CHAT_CHANNEL_GATEWAY_TOKEN = "test-channel-token-that-is-at-least-32-characters";
+  t.after(async () => {
+    if (previousToken === undefined) delete process.env.CHAT_CHANNEL_GATEWAY_TOKEN;
+    else process.env.CHAT_CHANNEL_GATEWAY_TOKEN = previousToken;
+    await Promise.all([closeServer(gateway.server), closeServer(model.server)]);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await ensureLongAgentShareProject(chatHome);
+  const agentDir = path.join(chatHome, "agent");
+  fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify({
+    defaultProvider: "long-agent-test",
+    defaultModel: "long-agent-model",
+    defaultThinkingLevel: "off",
+  }));
+  fs.writeFileSync(path.join(agentDir, "models.json"), JSON.stringify({
+    providers: {
+      "long-agent-test": {
+        baseUrl: model.baseUrl,
+        api: "openai-completions",
+        apiKey: "long-agent-test-key",
+        models: [{
+          id: "long-agent-model",
+          name: "Long Agent Model",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128000,
+          maxTokens: 8192,
+        }],
+      },
+    },
+  }));
+  await writeLongAgentRegistryWithHomes({
+    schemaVersion: 1,
+    instances: [{ id: "local", name: "Local NanoClaw", gatewayBaseUrl: gateway.baseUrl }],
+    agents: [{
+      id: "nexus", name: "Nexus", description: "Daily Long Agent", enabled: true,
+      instanceId: "local", nanoclawAgentGroupId: "nano-agent-1", defaultProjectId: "nexus",
+    }],
+  }, chatHome);
+
+  // 定时任务事件：没有 source / delivery / messaging group，也要能执行。
+  const scheduled = {
+    seq: 1,
+    eventId: "nano:sess-task-1:in:task-evening-summary-1",
+    instanceId: "local",
+    direction: "in",
+    messageId: "task-evening-summary-1",
+    nanoSessionId: "sess-task-1",
+    agentGroupId: "nano-agent-1",
+    messagingGroupId: null,
+    isGroup: false,
+    senderId: null,
+    senderName: "",
+    text: "做今天的每日总结",
+    kind: "schedule",
+    timestamp: new Date().toISOString(),
+    source: null,
+    delivery: null,
+    chatSessionId: null,
+    taskId: "task-evening-summary-1",
+  };
+  const accepted = await acceptLongAgentEvents({ instanceId: "local", events: [scheduled], chatHome });
+  assert.deepEqual(accepted.results, [{ eventId: scheduled.eventId, status: "accepted" }]);
+  const [result] = await syncLongAgentEvents(chatHome);
+  assert.equal(result.executed, 1);
+  assert.equal(modelRequests.length, 1);
+  assert.match(JSON.stringify(modelRequests[0].messages), /每日总结/);
+
+  // 落在 Agent 自己的 home 项目当日会话；本次运行不自动回投。
+  const { readLongAgentState } = await import("../../src/long-agents/storage.ts");
+  const state = await readLongAgentState(chatHome);
+  const home = state.projectAgents.find((candidate) => candidate.projectId === "nexus");
+  assert.ok(home);
+  const projected = await readChatSession(home.primarySessionId, undefined, {}, "nexus", chatHome);
+  assert.equal(
+    projected.context.messages.some((message) => message.chatLongAgent?.turnId === scheduled.eventId),
+    true,
+    "the scheduled task turn must be recorded in the Agent home session",
+  );
+  assert.equal(commands.some((request) => request.path.endsWith("/deliveries")), false);
+});

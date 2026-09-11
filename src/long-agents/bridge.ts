@@ -342,6 +342,43 @@ async function syncInstance(
     try {
       const agent = agentForEvent(registry, instance.id, event);
       if (agent === undefined) throw new Error(`NanoClaw事件没有可用Long Agent映射: ${event.agentGroupId}`);
+
+      // 定时任务（kind: schedule）：没有对话来源，直接落在该 Agent 自己的 home 项目当日会话。
+      // 与容器时代的隔离运行一致：不自动回投，需要对外时由 Agent 用 channel_send 投递；
+      // 任务行已由 NanoClaw 转发器标记完成，因此这里既不需要 delivery 也不需要 inbound ack。
+      if (event.kind === "schedule") {
+        const home = await ensureProjectLongAgent({
+          chatHome,
+          projectId: agent.defaultProjectId,
+          agent,
+        });
+        await executeLongAgentTurn({
+          longAgentId: agent.id,
+          projectId: home.projectAgent.projectId,
+          sessionId: home.projectAgent.primarySessionId,
+          text: event.text,
+          chatHome,
+          turnId: event.eventId,
+          inboundEventId: event.eventId,
+          source: "scheduled",
+          channelType: agent.inbox?.channelType ?? null,
+        });
+        executed += 1;
+        await updateLongAgentState(chatHome, (state) => ({
+          state: {
+            ...state,
+            pendingEvents: state.pendingEvents.filter((candidate) => candidate.event.eventId !== event.eventId),
+            processedEvents: [
+              ...state.processedEvents.filter((candidate) => candidate.eventId !== event.eventId),
+              { eventId: event.eventId, payloadHash: eventPayloadHash(event), processedAt: new Date().toISOString() },
+            ].slice(-10_000),
+          },
+          result: undefined,
+        }));
+        cursor = Math.max(cursor, event.seq);
+        continue;
+      }
+
       const resolved = await ensureEventBinding(chatHome, agent, event);
       if (event.direction === "in" && resolved === undefined) {
         throw new Error(`LongAgent入站事件尚未绑定Project会话: ${event.eventId}`);
