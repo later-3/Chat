@@ -53,9 +53,18 @@ export function ensureChatRuntimeInitialized(options: {
       await sweepLegacyAgentProjectDirs(paths.root);
       // 启动时确保每个 Agent 的配置根与资源目录就绪。
       const { readLongAgentRegistry, ensureLongAgentResourceDirs } = await import("./long-agents/storage.js");
+      const { ensureDefaultLongAgentTasks } = await import("./long-agents/agent-tasks.js");
       const longAgentRegistry = await readLongAgentRegistry(paths.root);
       for (const agent of longAgentRegistry.agents) {
         await ensureLongAgentResourceDirs(paths.root, agent.id);
+        // 预置的两个日常任务（幂等）。NanoClaw 不可用时只记录，不阻塞 Chat 启动。
+        const instance = longAgentRegistry.instances.find((candidate) => candidate.id === agent.instanceId);
+        if (instance === undefined || !agent.enabled) continue;
+        try {
+          await ensureDefaultLongAgentTasks({ instance, agentGroupId: agent.nanoclawAgentGroupId });
+        } catch (error) {
+          console.warn(`预置Long Agent任务失败（${agent.id}）: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
       startLongAgentSync(paths.root);
     })

@@ -6,7 +6,8 @@ import { removeLongAgentAvatarAssets } from "./avatars.js";
 import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { getChatHomePaths } from "../chat-home.js";
-import { ensureLongAgentResourceDirs, longAgentConfigRoot, updateLongAgentRegistry } from "./storage.js";
+import { ensureDefaultLongAgentTasks } from "./agent-tasks.js";
+import { ensureLongAgentResourceDirs, longAgentConfigRoot, readLongAgentRegistry, updateLongAgentRegistry } from "./storage.js";
 import {
   LONG_AGENT_ID_PATTERN,
   type LongAgentConfig,
@@ -100,6 +101,14 @@ export async function createLongAgent(input: CreateLongAgentInput): Promise<Long
   try {
     await ensureLongAgentResourceDirs(chatHome, created.id);
     await ensureAgentHomeProject(created.id, created.name, chatHome);
+    // 预置两个日常任务（日终总结 / 晨间联系）。这一步是尽力而为：任务接口暂时不可用
+    // 不应让 Agent 创建失败——启动时的幂等补齐会重试。
+    const instance = findInstanceOrThrow(await readLongAgentRegistry(chatHome), created.instanceId);
+    try {
+      await ensureDefaultLongAgentTasks({ instance, agentGroupId: created.nanoclawAgentGroupId });
+    } catch (error) {
+      console.warn(`预置Long Agent任务失败（${created.id}）: ${error instanceof Error ? error.message : String(error)}`);
+    }
   } catch (error) {
     await updateLongAgentRegistry(chatHome, (registry) => ({
       registry: { ...registry, agents: registry.agents.filter((agent) => agent.id !== created.id) },
