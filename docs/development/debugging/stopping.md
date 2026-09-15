@@ -3,12 +3,18 @@
 在目标Chat checkout根目录执行。命令必须显式选择一个范围；不带参数只显示帮助。关闭浏览器或VS Code窗口不等于关闭后台服务。
 
 ```bash
+scripts/dev-start.sh stop release          # 关闭当前仓库正常 Backend + NanoClaw
+scripts/dev-start.sh stop debug            # 关闭当前仓库开发/调试
+scripts/dev-start.sh stop release --check  # 只检查；debug 同样支持 --check
+
 pnpm chat:stop -- --normal --check  # 只检查正常服务
 pnpm chat:stop -- --normal          # 关闭正常Backend + NanoClaw
 
 pnpm chat:stop -- --debug --check   # 只检查开发/调试
 pnpm chat:stop -- --debug           # 关闭专用调试栈 + 本checkout普通dev:all
 ```
+
+启动脚本的 `stop release` / `stop debug` 分别委托同一 `chat-stop` 控制器的 `--normal` / `--debug`，不启动任何组件。也可执行 `pnpm dev:all stop release` 或 `pnpm dev:all stop debug`。停止结果和进程归属边界与下面的范围表一致；遇到未托管的手动进程会报出，不能把这种失败解释为已经全部关闭。
 
 VS Code → Terminal → Run Task中也有`Chat: check normal services`、`Chat: stop normal services`、`Chat: check development and debug`和`Chat: stop development and debug`。停止正常服务不是F5的自动步骤，必须主动选择。
 

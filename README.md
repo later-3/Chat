@@ -249,7 +249,7 @@ http://127.0.0.1:43112/
 
 这些目录都不属于Chat源码仓库。新的Linux/systemd环境需要`root`/`sudo`以及访问GitHub、Node、npm Registry和依赖原生包CDN的网络，但不需要GitHub账号或Submodule凭证。脚本会自动创建`chat`用户，准备固定Node/pnpm、公开Submodule、经过SHA256校验的Pi模型快照、版本化构建、systemd服务和回滚点，只暂停等待用户填写Web密码、Provider凭证与默认模型；多设备目录是可选的`$CHAT_HOME/devices.json`。`WORKFLOW_LOCAL_DATA_DIR`必须位于`CHAT_HOME`内部。更新、诊断和回滚分别使用`chatctl update`、`chatctl doctor`和`chatctl rollback`。必须在目标操作系统和CPU架构上构建，不能复制其他机器的`.output`；完整步骤见[部署指南](./docs/deployment.md)。
 
-# 启动脚本
+# 启停脚本
 
 统一入口可用`pnpm dev:all`；默认隔离开发数据、校验前后端就绪并在退出时清理所启动的进程组，日志按次保留在`.data/dev-logs/`。
 
@@ -262,4 +262,15 @@ scripts/dev-start.sh --kill
 
 # 选项可组合
 scripts/dev-start.sh --kill --backend-port 44112 --frontend-port 31145
+
+# 关闭当前仓库的生产 Backend + NanoClaw
+scripts/dev-start.sh stop release
+
+# 关闭当前仓库的专用调试栈及 dev:all 开发进程
+scripts/dev-start.sh stop debug
+
+# 仅检查，不停止（release/debug 均支持）
+scripts/dev-start.sh stop release --check
 ```
+
+也可用 `pnpm dev:all stop release` / `pnpm dev:all stop debug`。停止复用已有服务/进程归属检查，保留配置与会话，无法确认归属的手动进程会报出。范围、恢复命令与限制见[关闭手册](./docs/development/debugging/stopping.md)。

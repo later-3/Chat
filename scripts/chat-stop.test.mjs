@@ -124,7 +124,16 @@ test("macOS real KeepAlive fixture is unloaded without respawn; repeated stop ke
   assert.equal(services.length, 1);
   const owner = services[0].read().pid;
   assert.ok(owner);
-  assert.equal(await stopNormal(services, { log() {} }), true);
+  // Exercise the public shell entry against this temporary service only.
+  await mkdir(join(root, "scripts"));
+  await copyFile("scripts/dev-start.sh", join(root, "scripts/dev-start.sh"));
+  await writeFile(join(root, "scripts/chat-stop.mjs"), `
+    import { macServices, stopNormal } from ${JSON.stringify(pathToFileURL(join(process.cwd(), "scripts/chat-stop.mjs")).href)};
+    if (process.argv[2] !== "--normal") throw new Error("wrong scope");
+    process.exitCode = await stopNormal(await macServices(${JSON.stringify(root)}, {home:${JSON.stringify(root)}})) ? 0 : 1;
+  `);
+  const stopped = command("bash", [join(root, "scripts/dev-start.sh"), "stop", "release"]);
+  assert.equal(stopped.ok, true, stopped.text + (stopped.error ?? ""));
   await delay(500);
   assert.equal(identity(owner), null);
   assert.equal(services[0].read().active, false);
@@ -181,7 +190,19 @@ test("ordinary dev stop reaps the real wrapper's children and preserves an unrel
   const options = { run: command, status: port => [43112, 30145].includes(port) ? Promise.resolve("空闲") : portStatus(port), log() {} };
   assert.equal(await stopDevelopment(root, { ...options, check: true }), true);
   assert.ok(identity(child.pid));
-  assert.equal(await stopDevelopment(root, options), true);
+  await writeFile(join(root, "scripts/chat-stop.mjs"), `
+    import { command, portStatus } from ${JSON.stringify(pathToFileURL(join(process.cwd(), "scripts/chat-stop.mjs")).href)};
+    import { stopDevelopment } from ${JSON.stringify(pathToFileURL(join(process.cwd(), "scripts/dev-stop.mjs")).href)};
+    if (process.argv[2] !== "--debug") throw new Error("wrong scope");
+    process.exitCode = await stopDevelopment(${JSON.stringify(root)}, {
+      run: command, status: port => [43112,30145].includes(port) ? Promise.resolve("空闲") : portStatus(port)
+    }) ? 0 : 1;
+  `);
+  const stop = spawn("bash", [join(root, "scripts/dev-start.sh"), "stop", "debug"], { stdio: ["ignore", "pipe", "pipe"] });
+  let stopOutput = "";
+  stop.stdout.on("data", chunk => { stopOutput += chunk; });
+  stop.stderr.on("data", chunk => { stopOutput += chunk; });
+  assert.equal((await once(stop, "close"))[0], 0, stopOutput);
   assert.equal((await exited)[0], 143);
   assert.equal(await portStatus(backend), "空闲"); assert.equal(await portStatus(frontend), "空闲");
   assert.equal(await stopDevelopment(root, options), true);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -108,4 +108,34 @@ test("invalid or occupied ports are rejected without terminating the occupant", 
     }
     assert.ok(server.listening);
   } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test("stop subcommands dispatch from another cwd, preserve failures, and reject invalid scopes before startup", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "chat-stop-entry-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(join(directory, "scripts"));
+  const script = join(directory, "scripts/dev-start.sh");
+  await copyFile("scripts/dev-start.sh", script);
+  await writeFile(join(directory, "scripts/chat-stop.mjs"), 'console.log(JSON.stringify(process.argv.slice(2))); process.exitCode = Number(process.env.FIXTURE_EXIT || 0);');
+  for (const [args, expected, code] of [
+    [["stop", "release"], ["--normal"], 0],
+    [["stop", "debug"], ["--debug"], 7],
+    [["stop", "release", "--check"], ["--normal", "--check"], 0],
+    [["stop", "debug", "--check"], ["--debug", "--check"], 0],
+    [["stop"], null, 1],
+    [["stop", "all"], null, 1],
+    [["stop", "debug", "--kill"], null, 1],
+    [["stop", "release", "--check", "extra"], null, 1],
+  ]) {
+    const child = spawn("bash", [script, ...args], {
+      cwd: tmpdir(), env: { ...process.env, FIXTURE_EXIT: expected ? String(code) : "0" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout.on("data", chunk => { output += chunk; });
+    assert.equal((await once(child, "close"))[0], code);
+    if (expected) assert.deepEqual(JSON.parse(output), expected);
+    else assert.equal(output, "");
+    await assert.rejects(readFile(join(directory, ".data/dev-logs")), { code: "ENOENT" });
+  }
 });

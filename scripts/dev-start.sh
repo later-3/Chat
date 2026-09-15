@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # 一起启动 Chat 开发后端 (默认 127.0.0.1:43112) 和前端 (默认 127.0.0.1:30145)。
 # 用法: scripts/dev-start.sh [--backend-port <port>] [--frontend-port <port>] [--kill]
+# 停止: scripts/dev-start.sh stop release|debug [--check]
 # --kill: 端口被占用时，终止占用进程后继续启动（默认行为是报错退出）。
-# 停止: 在前台按 Ctrl+C，两个进程同时退出。
+# 前台按 Ctrl+C，两个开发进程同时退出。
 # 默认使用隔离的 .data/dev/chat-home；设置 CHAT_HOME 可显式使用其他数据目录。
 # 日志按启动保留在 .data/dev-logs/，不覆盖上一轮诊断证据。
 
@@ -19,10 +20,31 @@ KILL_OCCUPANTS=0
 
 usage() {
   echo "用法: $(basename "$0") [--backend-port <port>] [--frontend-port <port>] [--kill]" >&2
+  echo "      $(basename "$0") stop release|debug [--check]" >&2
+  echo "stop release: 关闭当前仓库的生产 Backend + NanoClaw 服务" >&2
+  echo "stop debug: 关闭当前仓库的专用调试栈及 dev:all 开发进程" >&2
+  echo "--check: 仅检查停止范围，不停止服务；无法确认归属的占用会报出" >&2
   echo "默认端口: 后端 43112，前端 30145" >&2
   echo "默认数据: $ROOT/.data/dev/chat-home；可显式设置 CHAT_HOME" >&2
   echo "--kill: 端口被占用时，终止占用进程后继续启动" >&2
 }
+
+# Dispatch before port checks, log creation, or startup traps. The existing
+# controller owns service identity checks and stop semantics for both scopes.
+if [ "${1:-}" = "stop" ]; then
+  case "${2:-}" in
+    release) STOP_SCOPE=--normal ;;
+    debug) STOP_SCOPE=--debug ;;
+    *) echo "错误: stop 必须指定 release 或 debug" >&2; usage; exit 1 ;;
+  esac
+  shift 2
+  if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != "--check" ]; }; then
+    echo "错误: stop 仅支持可选参数 --check" >&2
+    usage
+    exit 1
+  fi
+  exec node "$ROOT/scripts/chat-stop.mjs" "$STOP_SCOPE" "$@"
+fi
 
 while [ $# -gt 0 ]; do
   case "$1" in
