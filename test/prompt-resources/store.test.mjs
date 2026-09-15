@@ -236,6 +236,9 @@ test("built-in rules and experiences are seeded once into the Personal Prompt li
   assert.equal(debugExperience?.kind, "experience");
   assert.match(debugExperience?.content ?? "", /node_modules\/\.nitro-debug/);
   assert.equal((await secondStore.history("debug-build-directory-isolation")).length, 1);
+  const feedExperience = await secondStore.get("social-feed-surface-and-translations");
+  assert.equal(feedExperience?.kind, "experience");
+  assert.equal((await secondStore.history("social-feed-surface-and-translations")).length, 1);
   const stopExperience = await secondStore.get("stop-service-port-verification");
   assert.equal(stopExperience?.kind, "experience");
   assert.equal((await secondStore.history("stop-service-port-verification")).length, 1);

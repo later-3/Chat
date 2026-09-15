@@ -325,4 +325,17 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       author: { type: "user" }, createdAt: "2026-09-08T08:00:00.000Z",
     }],
   },
+  {
+    schemaVersion: 1,
+    id: "social-feed-surface-and-translations",
+    revisions: [{
+      schemaVersion: 1, id: "social-feed-surface-and-translations", revision: 1, kind: "experience",
+      title: "朋友圈阅读面与翻译的真实界面验证",
+      purpose: "避免独立阅读面被侧栏尺寸约束，以及未注册翻译键和非法动态数据直接进入界面。",
+      content: "适用范围：Chat Frontend 的独立阅读面与社交动态界面。独立阅读页进入主内容区，验证全局导航、浏览器返回、聊天草稿与滚动恢复；隐藏聊天不应响应会停止后台工作的快捷键。遍历组件引用的文案键，检查所有支持语言，不能用编译成功证明翻译完整。网络边界验证帖子、评论、时间和重复身份。使用隔离fixture分别检查有内容、空内容、筛选为空和请求失败，并保存同视口的前后截图；不得往用户正式数据填演示内容。",
+      tags: ["development", "incident", "frontend", "accessibility"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development-experiences/social-feed-surface-and-translations.md", capturedAt: "2026-09-12T09:00:00.000Z" }],
+      author: { type: "user" }, createdAt: "2026-09-12T09:00:00.000Z",
+    }],
+  },
 ] as const satisfies readonly PromptResourceDocument[];
