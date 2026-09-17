@@ -325,3 +325,7 @@ DELETE /api/sessions/:parentSessionId/workflow-calls/:callId
 11. 运行后端测试、前端测试、类型检查、生产构建和Built Server真实Workflow Run测试。
 12. 验证Session配置隔离、本轮冻结、解析失败不落盘，以及刷新不覆盖未发送编辑。
 13. 若声明`agentCallable: true`，验证子调用使用独立Pi父子Session、不复制父上下文、父Agent明确选择每个Child Agent能力，以及深度与取消门禁；若调用其他Workflow，必须通过Pi Skill + Tool，不直接调用目标Agent或Workflow函数。
+
+## 2026-09-17 SDK 维护
+
+Workflow 依赖固定为 `4.8.9`，通过包管理更新，不维护 Workflow 源码 Fork。`@workflow/builders` 补丁迁移到 `4.1.14`，继续保留 JSON import attribute、开发 Step 本地 JSON 内联和 source map。不能只更新包版本而移除补丁或跳过 `pnpm test:dev`。本轮范围与架构审核见 [上游维护记录](./reviews/2026-09-17-upstream-maintenance.md)。
