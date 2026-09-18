@@ -210,6 +210,16 @@
         "Debug TUI"
       ],
       "stopAll": true
+    },
+    {
+      "name": "Debug Chat Web + TUI + NanoClaw",
+      "configurations": [
+        "Debug Local Model",
+        "Debug Backend + Web",
+        "Debug TUI",
+        "Debug NanoClaw"
+      ],
+      "stopAll": true
     }
   ]
 }

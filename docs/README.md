@@ -7,6 +7,7 @@
 | 任务 | 文档 |
 |---|---|
 | 了解、安装和启动 Chat | [项目 README](../README.md) |
+| 对比上游安装方式、厘清单模块/整套启动与发行差距 | [启动、安装与发行梳理](./architecture/reviews/2026-09-18-startup-installation-distribution.md) |
 | 配置网页登录、模型、Workflow、Agent 和 Project | [Chat 系统配置](./configuration.md) |
 | 部署、更新、诊断和回滚 | [部署指南](./deployment.md) |
 | 从终端运行 Workflow、Fork 与接续 Web 会话 | [Workflow 命令行](./cli.md) |

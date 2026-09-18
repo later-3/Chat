@@ -36,6 +36,9 @@ test("debug launch contracts use dedicated ports, browser profile, and independe
   for (const name of ["Debug Chat TUI", "Debug Chat Web + TUI"]) {
     assert.ok(launch.compounds.find(compound => compound.name === name).configurations.includes("Debug TUI"));
   }
+  const fullStack = launch.compounds.find(compound => compound.name === "Debug Chat Web + TUI + NanoClaw");
+  assert.ok(fullStack, "F5 must offer Web, TUI and NanoClaw together");
+  assert.deepEqual(fullStack.configurations, ["Debug Local Model", "Debug Backend + Web", "Debug TUI", "Debug NanoClaw"]);
   const tasks = JSON.parse(await readFile(".vscode/tasks.json", "utf8"));
   for (const config of launch.configurations) {
     if (config.preLaunchTask) assert.ok(tasks.tasks.some(task => task.label === config.preLaunchTask));

@@ -53,7 +53,7 @@ test("TUI launchers reject piped terminals before preparing services", async () 
   }
 });
 
-test("stack services cannot consume foreground terminal input and are reaped on stop", { timeout: 15000 }, async t => {
+test("stack services cannot consume foreground terminal input and are reaped on stop", { timeout: 30000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), "chat-stack-stdin-"));
   await mkdir(join(root, "scripts"));
   const debug = join(root, "debug"); await mkdir(debug);
@@ -95,7 +95,9 @@ test("stack services cannot consume foreground terminal input and are reaped on 
     await rm(root, { recursive: true, force: true });
   });
   child.stdin.end("DEBUG_HELLO\n");
-  for (let attempt = 0; attempt < 100 && !output.includes("Web ready:"); attempt++) {
+  // Parallel tooling tests also spawn process trees; allow startup headroom
+  // while still requiring HTTP readiness and verifying every child exits.
+  for (let attempt = 0; attempt < 300 && !output.includes("Web ready:"); attempt++) {
     assert.equal(child.exitCode, null, output); await delay(50);
   }
   assert.match(output, /Web ready:/);

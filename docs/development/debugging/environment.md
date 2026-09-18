@@ -1,5 +1,27 @@
 # 环境、隔离与 VS Code
 
+## 按需要选择启动入口
+
+下面命令都从 Chat 根目录执行。首次先按根 README 准备依赖；需要 NanoClaw 时再执行一次 `pnpm debug:prepare:nanoclaw`（VS Code 任务为 `Chat Debug: prepare NanoClaw (install + verify)`）。之后日常启动不需要进入 Nano 目录手工拉起 Host。
+
+| 想启动什么 | 命令行 | F5 配置 |
+|---|---|---|
+| Web + Backend + 假模型 | `pnpm debug:start` | `Debug Chat` |
+| 上述组件 + NanoClaw | `pnpm debug:start -- --nanoclaw` | `Debug Chat + NanoClaw` |
+| 上述 Web 组件 + TUI | `pnpm debug:start -- --tui` | `Debug Chat Web + TUI` |
+| Web + TUI + NanoClaw + Backend + 假模型 | `pnpm debug:start -- --nanoclaw --tui` | `Debug Chat Web + TUI + NanoClaw` |
+| 只启动 NanoClaw 模块 | `pnpm debug:nanoclaw` | `Debug NanoClaw` |
+| 只打开 TUI 客户端 | `pnpm debug:tui` | `Debug TUI` |
+| 只启动 Backend/Pi | `pnpm debug:backend` | `Debug Backend` |
+| 只启动 Web 开发服务 | `pnpm debug:frontend` | `Debug Frontend Server` |
+| 只启动假模型 | `pnpm debug:model` | `Debug Local Model` |
+
+单模块入口保留模块依赖：TUI 要连接已运行的 Backend；Nano 启动器初始化练习 Group/Memory 时也需要调试 Backend。纯 TUI 整套调试、不启动 Web 可用 F5 `Debug Chat TUI`。命令行组合里的 TUI 必须在交互终端运行；退出它会结束本次整套栈，单独 `debug:tui` 退出则只关闭客户端。
+
+普通开发 Web 用 `pnpm dev:all`，另一个终端用 `pnpm dev:tui` 连接；它们使用普通 dev 实例，不能直接与上表隔离 debug 模块混搭。正常服务的 TUI 用 `pnpm tui --url <Backend地址>`（或安装后的 `chat tui`），无需 Nano；当前 TUI 只接普通 Workflow。Nano 的本地 `ncl`/渠道 CLI 与 Chat TUI 是不同入口。
+
+停止专用调试用 `pnpm debug:stop`；从 CLI 切换到 F5 前先停止旧调试栈。生产 Chat/Nano 仍由各自 systemd/launchd 服务管理，准备与运行方式见[部署指南](../../deployment.md)，上表不操作生产服务。
+
 ## ENV-01：让正常使用与调试并存
 
 在一个 VS Code 窗口打开 Chat 根目录。Frontend、TUI、Backend 和 Pi 的断点放在原仓库；NanoClaw 调试使用自动建立的独立 Git worktree，断点放在 `.data/debug/nanoclaw/src`。可用 VS Code“打开文件夹/添加文件夹到工作区”查看该目录，也可用 Quick Open 输入完整路径；无需按模块分别打开多个窗口。
@@ -47,6 +69,7 @@ pnpm debug:prepare
 | `Debug Chat + NanoClaw` | 上述服务 + 独立 Nano Host | 先完成下文 Nano 准备；不是“渠道都已连通”的声明 |
 | `Debug Chat TUI` | 假模型 + Backend + TUI，无浏览器 | 自动构建CLI并登记Debug Lab；交互终端 |
 | `Debug Chat Web + TUI` | 假模型 + Backend + Vite/Chrome + TUI | 双端Session同步与断点 |
+| `Debug Chat Web + TUI + NanoClaw` | 上述服务 + 独立 Nano Host | Nano 准备已完成；TUI仍接普通Workflow，Nano接长期Agent |
 | `Debug TUI` | 只调终端客户端，无监听端口 | 专用Backend/模型已运行；自动等待Backend最多60秒 |
 | `Debug Backend` | 只调 Backend/Pi | 模型服务按需另开 |
 | `Debug Backend + Web` | Backend 带 Vite/浏览器 | 模型服务按需另开 |
