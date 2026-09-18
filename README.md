@@ -1,6 +1,6 @@
 # Chat：Pi Web前端与Pi Agent Workflow
 
-Chat允许用户在同一个连续Session中逐轮选择Workflow。浏览器中的Pi Web派生前端把Prompt、Workflow和Agent配置选择提交给Chat，Chat启动对应的Vercel Workflow，并把Agent执行过程、Assistant回复和Pi Session展示在前端。
+Chat允许用户在同一个连续Session中逐轮选择Workflow。独立的[Workflow TUI](./docs/cli.md)复用Pi终端显示组件，通过同一Backend与Web共享Project、Run和原生Session。浏览器中的Pi Web派生前端把Prompt、Workflow和Agent配置选择提交给Chat，Chat启动对应的Vercel Workflow，并把Agent执行过程、Assistant回复和Pi Session展示在前端。
 
 Chat以Workflow作为一级管理对象。每个Workflow目录归拢自己的Workflow定义、Stage、Agent定义、专用Prompt、上下文适配和测试；HTTP、Session、Workflow Runtime及Pi Agent运行能力由公共代码提供。
 
@@ -149,12 +149,15 @@ Debug Chat
 
 它会启动：
 
-- Chat Nitro与Workflow Runtime：`http://127.0.0.1:43112`
-- Vite前端：`http://127.0.0.1:30145`
+- Chat Nitro与Workflow Runtime：`http://127.0.0.1:45112`
+- Vite前端与独立调试Chrome：`http://127.0.0.1:35145`
+- 本地假模型：`http://127.0.0.1:45401`
 
 Vite只在开发环境提供页面热更新，并把`/api`和`/runs`代理到Chat。生产环境不运行Vite。
 
-F5和一键启动默认使用独立的`.data/dev/chat-home`，不会自动复制生产模型凭据。调试、初始化模型和日志说明见[本地开发与调试](./docs/development/local-debugging.md)。
+F5使用独立的`.data/debug/chat-home`；普通一键开发`pnpm dev:all`使用`.data/dev/chat-home`与`43112/30145`端口，两者都不会自动复制生产模型凭据。启动说明见[调试环境](./docs/development/debugging/environment.md)，文件、函数、断点与数据结构见[源码地图](./docs/development/debugging/code-map.md)。
+
+终端入口：已有开发后端时在另一终端执行 `pnpm dev:tui`；隔离假模型整套启动用 `pnpm debug:start --tui`。F5可选 **Debug Chat TUI** 或 **Debug Chat Web + TUI**，断点和双端验证见[TUI调试](./docs/development/debugging/workflow-tui.md)。
 
 也可以分别启动（裸`pnpm dev`仍按`CHAT_HOME`或`~/.chat`解析数据；建议显式指定开发目录）：
 

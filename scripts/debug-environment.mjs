@@ -90,7 +90,7 @@ export async function prepareDebug() {
     "---", "name: debug-trace", "description: Read this skill when practicing DEBUG_READ_SKILL.", "---",
     "# Debug trace", "This harmless fixture contains DEBUG_SKILL_LOADED. Read it and report that marker.", "",
   ].join("\n"));
-  for (const folder of [debugHome, join(debugRoot, "logs"), join(debugRoot, "empty-env"), join(debugRoot, "nano-home")]) {
+  for (const folder of [debugHome, join(debugRoot, "client"), join(debugRoot, "logs"), join(debugRoot, "empty-env"), join(debugRoot, "nano-home")]) {
     await assertUnredirected(folder);
     await mkdir(folder, { recursive: true, mode: 0o700 });
     if (await realpath(folder) !== folder) throw new Error("Debug directories must not contain symlinks");
@@ -102,6 +102,12 @@ export async function debugEnvironment(role) {
   const base = cleanEnvironment();
   base.NO_PROXY = [base.NO_PROXY ?? base.no_proxy, "127.0.0.1", "localhost", "::1"].filter(Boolean).join(",");
   base.no_proxy = base.NO_PROXY;
+  if (role === "tui") return {
+    ...base, CHAT_SERVER_URL: `http://127.0.0.1:${ports.backend}`,
+    CHAT_CLI_HOME: join(debugRoot, "client"),
+    CHAT_CLI_USERNAME: privateValues.CHAT_WEB_AUTH_USERNAME,
+    CHAT_CLI_PASSWORD: privateValues.CHAT_WEB_AUTH_PASSWORD,
+  };
   if (role === "backend") return {
     ...base, ...privateValues,
     CHAT_HOME: debugHome, HOST: "127.0.0.1", PORT: String(ports.backend),

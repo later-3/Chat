@@ -2,6 +2,7 @@
 # 一起启动 Chat 开发后端 (默认 127.0.0.1:43112) 和前端 (默认 127.0.0.1:30145)。
 # 用法: scripts/dev-start.sh [--backend-port <port>] [--frontend-port <port>] [--kill]
 # 停止: scripts/dev-start.sh stop release|debug [--check]
+# TUI: scripts/dev-start.sh tui [--url URL] [--project ID]（连接已启动的后端）
 # --kill: 端口被占用时，终止占用进程后继续启动（默认行为是报错退出）。
 # 前台按 Ctrl+C，两个开发进程同时退出。
 # 默认使用隔离的 .data/dev/chat-home；设置 CHAT_HOME 可显式使用其他数据目录。
@@ -21,6 +22,7 @@ KILL_OCCUPANTS=0
 usage() {
   echo "用法: $(basename "$0") [--backend-port <port>] [--frontend-port <port>] [--kill]" >&2
   echo "      $(basename "$0") stop release|debug [--check]" >&2
+  echo "      $(basename "$0") tui [CLI 参数]（另一终端中连接开发后端）" >&2
   echo "stop release: 关闭当前仓库的生产 Backend + NanoClaw 服务" >&2
   echo "stop debug: 关闭当前仓库的专用调试栈及 dev:all 开发进程" >&2
   echo "--check: 仅检查停止范围，不停止服务；无法确认归属的占用会报出" >&2
@@ -44,6 +46,13 @@ if [ "${1:-}" = "stop" ]; then
     exit 1
   fi
   exec node "$ROOT/scripts/chat-stop.mjs" "$STOP_SCOPE" "$@"
+fi
+
+if [ "${1:-}" = "tui" ]; then
+  shift
+  export CHAT_SERVER_URL="${CHAT_SERVER_URL:-http://127.0.0.1:43112}"
+  export CHAT_CLI_HOME="${CHAT_CLI_HOME:-$ROOT/.data/dev/client}"
+  exec node --import "$ROOT/scripts/typescript-test-loader.mjs" --experimental-strip-types "$ROOT/cli/src/main.ts" tui "$@"
 fi
 
 while [ $# -gt 0 ]; do
@@ -223,6 +232,7 @@ echo "Chat 开发环境已启动:"
 echo "  前端:   $FRONTEND_URL"
 echo "  后端:   $BACKEND_URL/api/health"
 echo "  数据:   $CHAT_HOME"
+echo "  TUI:    另一终端执行 pnpm dev:tui --url $BACKEND_URL"
 echo "  日志:   $BACKEND_LOG"
 echo "          $FRONTEND_LOG"
 echo "按 Ctrl+C 停止全部进程并跟踪日志输出。"

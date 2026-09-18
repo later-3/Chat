@@ -9,6 +9,7 @@
 | 了解、安装和启动 Chat | [项目 README](../README.md) |
 | 配置网页登录、模型、Workflow、Agent 和 Project | [Chat 系统配置](./configuration.md) |
 | 部署、更新、诊断和回滚 | [部署指南](./deployment.md) |
+| 从终端运行 Workflow、Fork 与接续 Web 会话 | [Workflow 命令行](./cli.md) |
 | 使用和管理长期记忆 | [Memory](./memory.md) |
 | 了解 Long Agent、配置、使用场景与当前限制 | [Long Agent 使用与配置](./long-agents.md) |
 

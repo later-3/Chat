@@ -82,7 +82,7 @@ Web未来可以提供同义操作，但页面关闭/断线不能取消停止操�
 
 | 当前实现 | 差距及复用方式 |
 |---|---|
-| [dev-start.sh](../../scripts/dev-start.sh)管理普通Nitro/Vite；[专用F5](../development/debugging/environment.md)可组合隔离Backend/Vite/假模型/Nano工作区 | 仍不是完整Chat生命周期；接入统一入口后再改变其默认语义 |
+| [dev-start.sh](../../scripts/dev-start.sh)管理普通Nitro/Vite，`tui`子命令连接已有Backend；[专用F5](../development/debugging/environment.md)可组合隔离Backend/Vite/假模型/TUI/Nano工作区，`debug:start --tui`管理前台终端与自有服务 | 仍不是完整Chat生命周期；独立TUI退出只断开，整套调试停止会中断服务，未实现业务排空 |
 | [debug-start](../../scripts/debug-start.mjs)与[debug-stop](../../scripts/debug-stop.mjs)管理隔离调试栈，模块启动器记录PID启动时间/进程组，支持重复替换、可验证孤儿回收与Lab初始化 | 仅实现调试进程归属/就绪，不声称业务排空、生产服务统一编排或任意孤儿均能安全回收；未知占用失败关闭 |
 | [chatctl](../../deploy/chatctl)管理Linux Chat发布/健康，Nano Setup独立管理Host | 复用服务安装与升级，不复制；补同实例操作、状态聚合与所有权 |
 | [chat-stop](../../scripts/chat-stop.mjs)分别关闭正常服务与开发/调试，VS Code提供同一操作任务 | 已实现服务/进程停止、归属预检与结果检查；不改变自启动，未实现业务排空。审核见[关闭入口审核](./reviews/2026-09-08-stop-normal-and-debug.md) |

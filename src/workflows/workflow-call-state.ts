@@ -1,5 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { ownSessionEntries } from "../session-fork-boundary.js";
 
 export const CHAT_WORKFLOW_CALL_CUSTOM_TYPE = "chat.workflow_call";
 export const CHAT_SESSION_RELATION_CUSTOM_TYPE = "chat.session_relation";
@@ -184,6 +185,7 @@ export function appendChatWorkflowCall(
 
 /** Returns the latest valid state for each call in first-call order. */
 export function collectChatWorkflowCalls(entries: readonly unknown[]): ChatWorkflowCall[] {
+  entries = ownSessionEntries(entries);
   const calls = new Map<string, ChatWorkflowCall>();
   for (const entry of entries) {
     if (!isRecord(entry) || entry.type !== "custom"
@@ -210,6 +212,7 @@ export function appendChatSubsessionRelation(
 export function collectChatSubsessionRelation(
   entries: readonly unknown[],
 ): ChatSubsessionRelation | undefined {
+  entries = ownSessionEntries(entries);
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (!isRecord(entry) || entry.type !== "custom"

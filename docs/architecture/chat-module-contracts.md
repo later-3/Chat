@@ -6,6 +6,7 @@
 
 ```text
 Web ──HTTP / Run NDJSON──→ Chat Backend
+Chat CLI（复用 Pi UI 组件）──同一 HTTP / Run NDJSON──→ Chat Backend
 IM → NanoClaw ──认证 Event / Management HTTP──↔ Chat Backend
                            Workflow / Long Agent 生命周期
                                       ↓
@@ -17,6 +18,7 @@ IM → NanoClaw ──认证 Event / Management HTTP──↔ Chat Backend
 | 模块 | 拥有的事实与职责 | 消费者使用的边界 |
 |---|---|---|
 | Frontend | 草稿、导航、临时交互状态；展示和校验 Backend 响应 | `frontend/lib/*-browser.ts`；不拥有配置或 Session 的另一份事实 |
+| Workflow CLI | 终端交互、服务地址绑定的登录 Cookie；复用 Pi 原生显示组件 | 同一 Run API 与 v1 transcript/fork 投影；不装配 Agent、不写服务端 Session，见 [TUI 合同](./chat-workflow-tui.md) |
 | Chat 配置、Project、资源服务 | Chat Home、稳定 Project 身份、配置解析、Catalog、授权及资源选择 | HTTP 与受控 Tool 使用同一服务；模型配置来自 Chat，不读 `~/.pi` |
 | Workflow / Long Agent 生命周期 | 一次 Workflow 执行；长期身份关联、入站事件、执行关联与恢复 | 分别包装公共 Pi 装配；不再实现 Agent Loop |
 | 公共 Agent 装配 | 把已解析的模型、Prompt、Skill、Tool、Extension 和 Session 装入 Pi | `src/agents/pi-agent-session.ts`；检查和运行遵守同一解析合同 |
@@ -25,6 +27,8 @@ IM → NanoClaw ──认证 Event / Management HTTP──↔ Chat Backend
 | Memory | Chat Personal/Project Catalog+Mem0；Nano Group Markdown 各自持久化 | 两种作用域明确的接口/Tool；不能复制一份冒充另一类 Memory |
 
 Long Agent 独立配置根、每人 Daily、跨 Session 历史、资源包版本和工具执行 Docker 是[已确认目标](./chat-long-agent-mechanism-contract.md)。当前旧配置分属 Chat 与 Nano；迁移前不能用“唯一事实源”的目标描述掩盖现有分工，也不能继续新增双写字段。
+
+Frontend和TUI是并列客户端，互不承载对方的执行；TUI当前仅接普通Workflow。TUI无监听端口，Pi UI组件在终端进程中渲染，Pi AgentSession在Backend执行链中运行。NanoClaw是独立Host，通过Long Agent生命周期接入Backend，普通Web/TUI Workflow不依赖它。启动与停止只管理明确归属的进程，参见[调试环境](../development/debugging/environment.md)。
 
 ## A 改了，B 怎样知道
 

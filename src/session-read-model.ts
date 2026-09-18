@@ -1,4 +1,5 @@
 import { dirname, resolve } from "node:path";
+import { readSessionWorkflowActivity } from "./session-workflow-activity.js";
 import {
   buildContextEntries,
   buildSessionContext,
@@ -499,9 +500,11 @@ export async function readChatSession(
   );
   const pendingPlanReview = collectPendingPlanReview(entries);
   let activePlanningExecution;
+  let activeWorkflowRun;
   let workflowCallProjection;
   if (info.projectId !== undefined) {
     const project = await resolveProjectContext(info.projectId, chatHome);
+    activeWorkflowRun = await readSessionWorkflowActivity(project, manager.getSessionId());
     workflowCallProjection = await collectChatWorkflowCallProjection({
       rootSessionId: manager.getSessionId(),
       rootEntries: entries,
@@ -549,5 +552,6 @@ export async function readChatSession(
     toolExecutions: collectChatToolExecutions(entries),
     promptResourceProposals: collectChatPromptResourceProposals(entries),
     ...(activePlanningExecution === undefined ? {} : { activePlanningExecution }),
+    ...(activeWorkflowRun === undefined ? {} : { activeWorkflowRun }),
   };
 }

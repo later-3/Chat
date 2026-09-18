@@ -1,5 +1,6 @@
 import { respondPlannerConversation, exercisePlannerConversation } from "./planner-conversation-fixture.mjs";
 import { respondProjectManagement, exerciseProjectManagementRun } from "./project-management-runtime-fixture.mjs";
+import { exerciseWorkflowTui } from "./workflow-tui-runtime-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -1405,6 +1406,10 @@ test("file access outside Chat-authorized roots is rejected", async () => {
 
 test("built Project Skill and all six tools execute through a real Workflow and Pi", async () => {
   await exerciseProjectManagementRun(authenticatedFetch, { chatHome, projectId, workspace });
+});
+
+test("shipped Workflow TUI shares Web Sessions, review, Fork and cancellation on the built server", async () => {
+  await exerciseWorkflowTui({ baseUrl, cookie: await authenticatedCookie(), projectId });
 });
 
 

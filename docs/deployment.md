@@ -27,6 +27,8 @@ https://chat.example.com
 前端静态文件已经打进`.output`，生产环境不运行Vite，也不需要另行启动Pi Web。
 云服务器只做代理，不保存Chat Session、模型配置或Provider Credential。
 
+Workflow 终端是独立 HTTP 客户端，可安装到其他机器连接这个 Chat 进程。打包、安装、登录和版本配套步骤见[Workflow 命令行](./cli.md)。`pnpm build` 同时生成 `cli/dist`；`pnpm pack:cli` 输出分发 tarball。正式发布仍须先提交 Frontend 改动并更新父仓库 gitlink，再按本文部署；客户端安装不能替代 Backend 升级。
+
 ## 可移植部署前提
 
 Linux自动部署入口是[deploy/chatctl](../deploy/chatctl)，支持同时满足以下条件的机器：

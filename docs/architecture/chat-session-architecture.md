@@ -135,6 +135,8 @@ custom chat.workflow_output { message: <Planner AssistantMessage> }
 
 ## 8. Session文件与生命周期
 
+普通 Workflow 支持显式 Fork：选择用户 Entry，在该输入之前通过 Pi `createBranchedSession()`（空历史使用 `newSession`）创建同 Project 的新会话，保留 `parentSession`，源会话不变。`chat.session_fork` 标记之前复制的审核、子调用和 Subsession 关联只属于历史，不成为子会话的活跃控制状态。幂等发布、Web/TUI 接续和完整历史投影见 [Workflow TUI 合同](./chat-workflow-tui.md)。
+
 Pi `SessionManager`继续拥有Session JSONL格式、创建、打开、列表和上下文构建。Chat只增加Project作用域和产品生命周期：
 
 ```text

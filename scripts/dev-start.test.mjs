@@ -139,3 +139,26 @@ test("stop subcommands dispatch from another cwd, preserve failures, and reject 
     await assert.rejects(readFile(join(directory, ".data/dev-logs")), { code: "ENOENT" });
   }
 });
+
+test("development TUI forwards options from another cwd with isolated client credentials", async t => {
+  const root = await mkdtemp(join(tmpdir(), "chat-dev-tui-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "scripts"));
+  await mkdir(join(root, "cli/src"), { recursive: true });
+  await copyFile("scripts/dev-start.sh", join(root, "scripts/dev-start.sh"));
+  await writeFile(join(root, "scripts/typescript-test-loader.mjs"), "");
+  await writeFile(join(root, "cli/src/main.ts"), 'console.log(JSON.stringify({args:process.argv.slice(2),url:process.env.CHAT_SERVER_URL,home:process.env.CHAT_CLI_HOME}));');
+  const env = { ...process.env };
+  delete env.CHAT_SERVER_URL; delete env.CHAT_CLI_HOME;
+  for (const overrides of [{}, { CHAT_SERVER_URL: "http://127.0.0.1:44112", CHAT_CLI_HOME: join(root, "custom-client") }]) {
+    const child = spawn("bash", [join(root, "scripts/dev-start.sh"), "tui", "--project", "space id"], {
+      cwd: tmpdir(), env: { ...env, ...overrides }, stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout.on("data", chunk => { output += chunk; });
+    assert.equal((await once(child, "close"))[0], 0);
+    assert.deepEqual(JSON.parse(output), { args: ["tui", "--project", "space id"],
+      url: overrides.CHAT_SERVER_URL ?? "http://127.0.0.1:43112", home: overrides.CHAT_CLI_HOME ?? join(root, ".data/dev/client") });
+    await assert.rejects(readFile(join(root, ".data/dev-logs")), { code: "ENOENT" });
+  }
+});

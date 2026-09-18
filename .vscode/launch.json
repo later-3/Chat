@@ -146,6 +146,33 @@
       "args": [
         "model"
       ]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "node",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "sourceMaps": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "preLaunchTask": "Chat Debug: prepare",
+      "name": "Debug TUI",
+      "program": "${workspaceFolder}/scripts/debug-launch.mjs",
+      "args": [
+        "tui"
+      ],
+      "pauseForSourceMap": true,
+      "outFiles": [
+        "${workspaceFolder}/cli/dist/**/*.js",
+        "${workspaceFolder}/pi/packages/**/dist/**/*.js"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/cli/dist/**/*.js",
+        "${workspaceFolder}/pi/packages/**/dist/**/*.js"
+      ]
     }
   ],
   "compounds": [
@@ -163,6 +190,24 @@
         "Debug Local Model",
         "Debug Backend + Web",
         "Debug NanoClaw"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Debug Chat TUI",
+      "configurations": [
+        "Debug Local Model",
+        "Debug Backend",
+        "Debug TUI"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Debug Chat Web + TUI",
+      "configurations": [
+        "Debug Local Model",
+        "Debug Backend + Web",
+        "Debug TUI"
       ],
       "stopAll": true
     }

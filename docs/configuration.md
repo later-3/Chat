@@ -1,5 +1,7 @@
 # Chat 系统配置
 
+Workflow 终端的服务地址、客户端登录目录和启动参数见[命令行指南](./cli.md)。它消费同一 Backend 配置，不新增模型、Workflow 或 Agent 配置源；客户端 `CHAT_CLI_HOME` 与服务端 `CHAT_HOME` 独立。
+
 本文说明 Chat 的网页登录、模型、Workflow、Agent 和项目资源配置放在哪里，以及最常用的写法。它面向 Chat 用户和协助用户管理 Chat 的外部 AI；开发者若要修改配置机制，应另读[架构文档](./architecture/README.md)。
 
 本文的 JSON、文件位置和 HTTP 接口描述当前实现。Long Agent 的完整目标见[使用与配置](./long-agents.md)、[定义与配置模型](./architecture/chat-long-agent-capability-model.md)；独立 Agent 目录、独立 Daily、按日 Session、完整历史/调度/Docker 尚待实施，不能直接向现有 schemaVersion 1 添加目标字段。

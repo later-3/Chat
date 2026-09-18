@@ -17,13 +17,13 @@
 Chat是围绕Agent构建的本地系统，执行链固定为：
 
 ```text
-Chat Web → Backend ───────────────┐
-                                 ├→ 公共Agent装配 → Pi AgentSession
-IM → NanoClaw Channel → LongAgent┘
-                 Backend → Workflow┘
+Chat Web / Chat TUI → Backend → Workflow ─┐
+Chat Web → Backend → LongAgent ──────────┼→ 公共Agent装配 → Pi AgentSession
+IM → NanoClaw Channel → Backend → LongAgent┘
 ```
 
 - Workflow组织一次执行需要的Node、Agent、Stage和资源，不是第二套Agent运行时。
+- Chat TUI是复用Pi显示组件的HTTP客户端；命令、Session共享与运行时边界见`docs/architecture/chat-workflow-tui.md`。
 - Agent能力由Model、Thinking Level、System Prompt、自定义Prompt、Skill、Tool、Extension、Plugin和Session上下文组成。
 - 规则与经验是Agent自定义Prompt资源；Memory是独立持久化能力。不要把它们实现成与Agent平行的新执行系统。
 - Pi SessionManager、ResourceLoader和AgentSession是底层事实源。Chat只增加产品配置、Project作用域、Workflow组织和前后端管理。

@@ -1,5 +1,7 @@
 # 源码、流程与核心接口地图
 
+Workflow终端入口从 `cli/src/main.ts` → `controller.ts` → `api.ts` →同一 `POST /runs` 接入；UI组合在 `tui.ts`。启动、具体断点与Web/Fork同步场景见[Workflow TUI调试](./workflow-tui.md)。
+
 ## 先分清 4 个模块
 
 | 模块 | 学习入口 | 负责的事实 | 不负责的事 |

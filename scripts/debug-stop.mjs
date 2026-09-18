@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import { ports, debugRoot, assertPortFree } from "./debug-environment.mjs";
 import { controlRole, stopRole, identity } from "./debug-processes.mjs";
 
-export async function stopDebug({ check = false, roles = ["stack", "nanoclaw", "frontend", "backend", "model"], log = console.log } = {}) {
-  for (const role of roles) if (role !== "stack" && !Object.hasOwn(ports, role)) throw new Error(`Unknown debug role: ${role}`);
+export async function stopDebug({ check = false, roles = ["stack", "tui", "nanoclaw", "frontend", "backend", "model"], log = console.log } = {}) {
+  for (const role of roles) if (!["stack", "tui"].includes(role) && !Object.hasOwn(ports, role)) throw new Error(`Unknown debug role: ${role}`);
   let exists = true;
   try { await access(debugRoot); if (await realpath(debugRoot) !== debugRoot) throw new Error("Debug root must not be redirected"); }
   catch (error) { if (error.code === "ENOENT") exists = false; else throw error; }
@@ -23,14 +23,15 @@ export async function stopDebug({ check = false, roles = ["stack", "nanoclaw", "
       const pid = typeof record === "number" ? record : record?.owner?.pid;
       if (pid !== undefined && (!Number.isSafeInteger(pid) || pid < 1)) throw new Error("Invalid debug owner PID");
       let busy = false;
-      if (role !== "stack") { try { await assertPortFree(ports[role]); } catch { busy = true; } }
-      log(`[检查] ${role}: 记录PID=${pid ?? "-"}, 进程=${pid && identity(pid) ? "存在" : "无"}${role === "stack" ? "" : `, 端口=${ports[role]}(${busy ? "占用" : "空闲"})`}`);
+      const hasPort = Object.hasOwn(ports, role);
+      if (hasPort) { try { await assertPortFree(ports[role]); } catch { busy = true; } }
+      log(`[检查] ${role}: 记录PID=${pid ?? "-"}, 进程=${pid && identity(pid) ? "存在" : "无"}${hasPort ? `, 端口=${ports[role]}(${busy ? "占用" : "空闲"})` : ", 无监听端口"}`);
       if (check) continue;
       if (exists) {
         log(`[关闭] ${role}: 校验归属并停止；不按端口杀无关进程`);
-        await controlRole(debugRoot, role, () => stopRole(debugRoot, role, () => role === "stack" ? Promise.resolve() : assertPortFree(ports[role])));
+        await controlRole(debugRoot, role, () => stopRole(debugRoot, role, () => hasPort ? assertPortFree(ports[role]) : Promise.resolve()));
       } else if (busy) throw new Error("没有归属记录但端口占用，无法安全关闭");
-      log(`[结果] ${role} 已停止${role === "stack" ? "" : `，端口 ${ports[role]} 空闲`}`);
+      log(`[结果] ${role} 已停止${hasPort ? `，端口 ${ports[role]} 空闲` : ""}`);
     } catch (error) { ok = false; log(`[失败] ${role}: ${error.message}`); }
   }
   log(`[调试] ${check ? "检查完成" : ok ? "所选调试进程已停止，数据保留" : "未全部关闭；请处理失败项后重试"}`);

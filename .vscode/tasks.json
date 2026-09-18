@@ -120,6 +120,24 @@
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "Chat: open development TUI",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "scripts/dev-start.sh",
+        "tui"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": []
     }
   ]
 }

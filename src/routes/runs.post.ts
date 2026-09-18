@@ -21,6 +21,7 @@ import { SessionLifecycleError } from "../session-errors.js";
 import { toSessionLifecycleHttpError } from "../session-removal-http.js";
 import { getSessionExecution } from "../workflows/execution-registry.js";
 import { reconcileStaleChatSessionRuns } from "../session-activity.js";
+import { findActiveChatSessionRun } from "../workflows/session-run-registry.js";
 
 async function assertSessionHasNoActivePlanningRun(input: ChatWorkflowHttpInput): Promise<void> {
   if (input.sessionId === undefined) return;
@@ -47,6 +48,12 @@ async function assertSessionHasNoActivePlanningRun(input: ChatWorkflowHttpInput)
       statusCode: 400,
       statusMessage: `Session已有${active.workflowId} Workflow${suffix}`,
     });
+  }
+
+  // Include accepted Runs whose first Step has not yet entered the in-process registry.
+  const accepted = await findActiveChatSessionRun(chatSession.projectContext.projectDataDir, input.sessionId);
+  if (accepted !== undefined) {
+    throw createError({ statusCode: 400, statusMessage: `Session正在运行Workflow ${accepted.workflowId}，暂时不能发起新的Workflow` });
   }
 
   // Compatibility fallback for a Session created before durable Run bindings existed.

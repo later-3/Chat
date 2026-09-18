@@ -45,6 +45,7 @@ Chat详细设计
 | [Chat需求分析](./chat-requirements.md) | Project-first与Daily Project、统一交互入口、Workflow、Long Agent、Session和Agent能力需求 | 持续确认中 |
 | [Chat详细设计](./chat-detailed-design.md) | Workflow目录、内部Agent、装配边界、根配置和注册API | 已按当前实现校正 |
 | [Chat Workflow开发框架](./chat-workflow-framework.md) | 新增Workflow时必须遵守的目录、配置、节点、Tool和前后端合同 | 规范基线 |
+| [Workflow TUI 接入](./chat-workflow-tui.md) | Pi 原生终端组件、HTTP 适配、Fork 与 Web 接续 | 当前实现；验证见审核记录 |
 | [Chat Workflow调用Workflow设计](./chat-subworkflow-design.md) | Planner审批后通过Pi Skill/Tool并行调用完整子Workflow，以及父子Session与调用状态合同 | 已实现并有真实Runtime门禁 |
 | [Chat Context与Resource统一模型](./chat-context-resource-model.md) | Context、Target、Owner、跨Project资源、加载、版本和日志的统一协议 | 规范基线 |
 | [Chat Project架构设计](./chat-project-framework.md) | 定义Project-first、Daily Project、Workspace、Session、资源、信任和Memory隔离 | Project核心与Daily默认解析已实现；多入口绑定实现中 |

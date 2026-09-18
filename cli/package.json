@@ -1,0 +1,13 @@
+{
+  "name": "@later/chat-cli",
+  "version": "0.3.1",
+  "description": "Chat Workflow terminal client using Pi's native TUI components",
+  "type": "module",
+  "bin": { "chat": "dist/main.js" },
+  "files": ["dist", "README.md"],
+  "engines": { "node": ">=22.19.0" },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1"
+  }
+}

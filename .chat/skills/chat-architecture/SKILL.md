@@ -18,6 +18,7 @@ Start with the Project root `AGENTS.md`, then `docs/architecture/README.md`. Rea
 - Development process, handoff and justified architecture exceptions: `docs/development/agent-contribution.md`.
 - Whole-system start/stop, service ownership, readiness, draining and recovery: `docs/architecture/chat-system-lifecycle.md`. Existing dev scripts still manage only Web/Backend; distinguish target lifecycle from current behavior.
 - Module ownership, API changes, resource refresh and long connections: `docs/architecture/chat-module-contracts.md`.
+- Workflow TUI, native Pi UI reuse, Web/TUI Session sharing and terminal commands: `docs/architecture/chat-workflow-tui.md`; startup/breakpoints: `docs/development/debugging/workflow-tui.md`.
 - User feedback, logs, persistence and regression evidence: `docs/development/diagnostics.md`.
 - Long Agent Skill discovery/effective versions, native capabilities, testing and implementation order: `docs/architecture/chat-long-agent-engineering-baseline.md`, especially §4 for resources and §9 for accepted decisions.
 - Long Agent definition/configuration and independent resources: `docs/long-agents.md` and `docs/architecture/chat-long-agent-capability-model.md`.
@@ -39,7 +40,7 @@ Before editing, trace scenario → mechanism → architecture/contracts → tech
 Trace architecture-sensitive behavior through the actual chain that the user exercises:
 
 ```text
-Chat Web / NanoClaw Channel or Trigger -> Backend
+Chat Web / Workflow TUI / NanoClaw Channel or Trigger -> Backend
   -> Workflow or Long Agent lifecycle -> shared Agent assembly -> Pi AgentSession
 ```
 

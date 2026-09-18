@@ -14,3 +14,5 @@ export class SessionLifecycleError extends Error {
     this.code = code;
   }
 }
+
+export class SessionInputError extends Error {}

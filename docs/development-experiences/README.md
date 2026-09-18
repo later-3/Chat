@@ -12,6 +12,9 @@
 
 当前案例：
 
+- [整套启动器中的终端输入归属](./terminal-stdin-ownership.md)
+- [远程 TUI 的原生渲染副作用](./remote-tui-renderer-boundary.md)
+
 - [Workflow 开发 Step 产物外置 Agent JSON](./workflow-builder-json-import-attribute.md)
 - [Workflow Step复用与Registry依赖必须保持运行时边界](./workflow-step-runtime-boundary.md)
 - [本地运行时升级掩盖部署 Node.js 语法不兼容](./deployment-runtime-version-parity.md)

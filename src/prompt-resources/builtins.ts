@@ -338,4 +338,30 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       author: { type: "user" }, createdAt: "2026-09-12T09:00:00.000Z",
     }],
   },
+  {
+    schemaVersion: 1,
+    id: "remote-tui-renderer-boundary",
+    revisions: [{
+      schemaVersion: 1, id: "remote-tui-renderer-boundary", revision: 1, kind: "experience",
+      title: "远程 TUI 复用原生组件前检查渲染副作用",
+      purpose: "避免客户端渲染远端 Tool 时读取本机文件，或绕过 Backend 建立第二条执行链。",
+      content: "适用范围：Chat Workflow TUI 与其他远程 Pi 客户端。原生 UI 组件不一定是纯渲染：Pi edit 在 argsComplete 时调用 computeEditsDiff 读取 cwd 下或绝对路径文件；传入空目录不能阻止绝对路径读取。远程模式禁止触发本地预览，只消费服务端 ToolResult diff；本地文件补全也必须关闭。沿用公开组件并适配命令，不复制 renderer，不创建本地 AgentSession。使用真实临时文件读取探针、原生虚拟终端、仓库外安装包和真实 Backend Runtime 分层验证。新增并发守卫须保留已有审核错误合同，不能只凭单元测试判断 Web 与 TUI 兼容。",
+      tags: ["development", "tui", "pi", "remote"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development-experiences/remote-tui-renderer-boundary.md", capturedAt: "2026-09-18T00:00:00.000Z" }],
+      author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-18T00:00:00.000Z",
+    }],
+  },
+  {
+    schemaVersion: 1,
+    id: "terminal-stdin-ownership",
+    revisions: [{
+      schemaVersion: 1, id: "terminal-stdin-ownership", revision: 1, kind: "experience",
+      title: "整套启动器只让前台 TUI 读取终端输入",
+      purpose: "避免后台服务的快捷键监听消费终端按键，使 TUI 首屏正常却无法交互。",
+      content: "适用范围：同时启动 TUI 与 Backend、Vite 等服务的开发和调试脚本。后台进程也可能读取 stdin，Vite 在 TTY 下会监听快捷键。stdout 分流不等于输入隔离：整套启动器对后台服务关闭 stdin，仅前台 TUI 继承真实终端；TUI 活动时后台输出留在服务日志。测试须包含会读取 stdin 的真实后台子进程，断言未消费用户输入，并验证退出清理；另用隔离数据、本地假模型和真实 PTY 验证输入到 Run 完成，不能只靠非交互单测或首屏截图。",
+      tags: ["development", "tui", "debugging"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development-experiences/terminal-stdin-ownership.md", capturedAt: "2026-09-18T00:00:00.000Z" }],
+      author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-18T00:00:00.000Z",
+    }],
+  },
 ] as const satisfies readonly PromptResourceDocument[];

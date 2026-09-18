@@ -242,6 +242,14 @@ test("built-in rules and experiences are seeded once into the Personal Prompt li
   const stopExperience = await secondStore.get("stop-service-port-verification");
   assert.equal(stopExperience?.kind, "experience");
   assert.equal((await secondStore.history("stop-service-port-verification")).length, 1);
+  const tuiExperience = await secondStore.get("remote-tui-renderer-boundary");
+  assert.equal(tuiExperience?.kind, "experience");
+  assert.match(tuiExperience?.content ?? "", /argsComplete/);
+  assert.equal((await secondStore.history("remote-tui-renderer-boundary")).length, 1);
+  const stdinExperience = await secondStore.get("terminal-stdin-ownership");
+  assert.equal(stdinExperience?.kind, "experience");
+  assert.match(stdinExperience?.content ?? "", /stdin/);
+  assert.equal((await secondStore.history("terminal-stdin-ownership")).length, 1);
 });
 
 test("a built-in experience upgrades only while its stored revision prefix is unchanged", async (t) => {

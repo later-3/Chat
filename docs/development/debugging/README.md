@@ -12,6 +12,7 @@
 | 1 | [环境与 VS Code](./environment.md) | 正常 Chat 与调试并存；启动、停止、识别工作区与日志 |
 | 2 | [源码与核心接口地图](./code-map.md) | 区分 4 个模块，沿请求找到状态的拥有者 |
 | 3 | [Chat Web 与 Frontend](./web-frontend.md) | 从点击发送追踪请求、事件流、React 状态与刷新恢复 |
+| 3a | [Workflow TUI](./workflow-tui.md) | 终端启动、命令断点、Web共享历史与Fork |
 | 4 | [Backend 与 Workflow](./backend-workflow.md) | 追踪配置冻结、Workflow/Step、Agent 装配与 Run 终态 |
 | 5 | [Pi 源码调试](./pi.md) | 进入 AgentSession、模型协议、Tool 执行和 Session 持久化 |
 | 6 | [配置、Tool、Skill 与 Prompt](./configuration-resources.md) | 判断改动存在哪里、何时生效、资源为何没加载或没调用 |
@@ -21,11 +22,11 @@
 
 第一次学习建议顺序：环境 → Web 普通对话 → Backend → Pi 的 `read` → Skill 装配 → Web 长期同事 → Telegram 私聊 → 微信私聊 → 失败重试。无需先把所有架构文档读完。
 
-## 当前系统的两条主要执行链
+## 当前系统的主要执行链
 
 ```text
-普通 Web Session
-  React → POST /runs → Workflow → Step → Workflow Agent 包装
+普通 Workflow Session
+  React / Chat TUI → POST /runs → Workflow → Step → Workflow Agent 包装
                                           ↓
                                     公共 Pi 装配 → Pi AgentSession
                                           ↑
@@ -35,7 +36,7 @@ Telegram / 微信 → NanoClaw → HTTP Event → Chat 耐久入站 → Long Age
                        └──── Channel 投递 ← Delivery / Ack ┘
 ```
 
-普通 Web 对话不需要 NanoClaw；Web 长期同事当前会从 NanoClaw读取 Group 身份/Memory，因此练习它时需要已准备的调试 Gateway。Pi 是 Backend 内调用的 SDK，不是另一个必须占端口的服务。模型协议、资源加载和 Session 的权威实现都在 Pi。
+普通 Web/TUI Workflow 对话不需要 NanoClaw；Web 长期同事当前会从 NanoClaw读取 Group 身份/Memory，因此练习它时需要已准备的调试 Gateway。Pi 是 Backend 内调用的 SDK，不是另一个必须占端口的服务。模型协议、资源加载和 Session 的权威实现都在 Pi。
 
 ## 场景编号与覆盖范围
 
@@ -44,6 +45,7 @@ Telegram / 微信 → NanoClaw → HTTP Event → Chat 耐久入站 → Long Age
 | ENV-01 | 与正常实例并存 | 专用端口、数据/缓存/浏览器资料隔离，停止调试后正常实例不变 |
 | WEB-01 | 普通对话 | `/runs` 接收、模型返回、Run completed、Session 刷新可读 |
 | WEB-02 | 流与刷新 | NDJSON 事件、重连/刷新重读，Session 归属不变 |
+| TUI-01/02/03 | 普通Workflow终端入口 | 独立TTY、假模型完成、Web共享Session、恢复与Fork |
 | WF-01 | Step 装载 | 真正进入 Step、公共装配和 Pi，而非仅得到 202 |
 | PI-01 | Tool 调用 | 模型 tool call → 实际 `read` → tool result → 第二次模型响应 |
 | CFG-01 | 模型/Thinking 覆盖 | 本轮有效定义与实际 `session.model/thinkingLevel` 一致 |

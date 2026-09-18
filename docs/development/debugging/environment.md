@@ -2,7 +2,7 @@
 
 ## ENV-01：让正常使用与调试并存
 
-在一个 VS Code 窗口打开 Chat 根目录。Frontend、Backend 和 Pi 的断点放在原仓库；NanoClaw 调试使用自动建立的独立 Git worktree，断点放在 `.data/debug/nanoclaw/src`。可用 VS Code“打开文件夹/添加文件夹到工作区”查看该目录，也可用 Quick Open 输入完整路径；无需为了 4 个模块开 4 个窗口。
+在一个 VS Code 窗口打开 Chat 根目录。Frontend、TUI、Backend 和 Pi 的断点放在原仓库；NanoClaw 调试使用自动建立的独立 Git worktree，断点放在 `.data/debug/nanoclaw/src`。可用 VS Code“打开文件夹/添加文件夹到工作区”查看该目录，也可用 Quick Open 输入完整路径；无需按模块分别打开多个窗口。
 
 | 项目 | 正常使用/普通开发默认值 | 本手册调试专用值 |
 |---|---|---|
@@ -16,6 +16,7 @@
 | Vite 依赖缓存 | Frontend 默认缓存 | `.data/debug/vite` |
 | Nano 数据、Group、Socket、微信登录 | 正常 Nano checkout 下 | `.data/debug/nanoclaw/{data,groups,store}` |
 | Nano OS 用户级配置 | 正常用户 Home | `.data/debug/nano-home` |
+| TUI客户端凭据 | `~/.chat-client`；`dev:tui`为 `.data/dev/client` | `.data/debug/client`，按服务地址保存Cookie |
 | 浏览器资料 | 日常 Chrome/PWA | `.data/debug/browser` |
 | 日志 | 各原进程/服务输出 | `.data/debug/logs/<时间-PID-模块>.log` |
 
@@ -44,6 +45,9 @@ pnpm debug:prepare
 |---|---|---|
 | `Debug Chat` | 假模型 + Backend，Backend 就绪后 Vite → 调试 Chrome | `debug:prepare` 自动执行；本机安装 Chrome |
 | `Debug Chat + NanoClaw` | 上述服务 + 独立 Nano Host | 先完成下文 Nano 准备；不是“渠道都已连通”的声明 |
+| `Debug Chat TUI` | 假模型 + Backend + TUI，无浏览器 | 自动构建CLI并登记Debug Lab；交互终端 |
+| `Debug Chat Web + TUI` | 假模型 + Backend + Vite/Chrome + TUI | 双端Session同步与断点 |
+| `Debug TUI` | 只调终端客户端，无监听端口 | 专用Backend/模型已运行；自动等待Backend最多60秒 |
 | `Debug Backend` | 只调 Backend/Pi | 模型服务按需另开 |
 | `Debug Backend + Web` | Backend 带 Vite/浏览器 | 模型服务按需另开 |
 | `Debug Frontend Server` | Vite 带调试浏览器 | Backend 已由另一个调试配置启动 |
@@ -54,6 +58,8 @@ pnpm debug:prepare
 重复启动同一组件会替换旧调试实例；并发启动/停止同一角色会明确报操作进行中，稍后重试。若旧CLI整套启动器发现自己的组件退出，会收回它拥有的其他组件，所以切换CLI/F5时先运行`pnpm debug:stop`。调试面板会出现多个会话；通过 Call Stack 选择当前暂停的进程。跨 HTTP 调用不会形成一个跨进程调用栈，靠 ID 和两侧断点衔接。
 
 F5 停止 compound 会停止关联调试会话；Backend→Frontend→Browser 的关联使用 `killOnServerStop`。脚本收到终止信号后只终止自己建立的进程组，5 秒后才清理仍存活的自有子进程。不会停止 launchd/systemd，也不会删除运行数据。该操作不保证在途模型、Tool 或外部投递完成；恢复语义见故障章节。
+
+TUI入口使用 `integratedTerminal`，编译产物和Source Map为 `cli/dist`，断点放在 `cli/src`。终端与服务日志分开，不能将TUI输出pipe给日志工具。命令行整套启动用 `pnpm debug:start --tui`，已有调试服务时用 `pnpm debug:tui`；调试登录与Project登记由启动器准备。步骤与验收见[Workflow TUI](./workflow-tui.md)。
 
 ## NanoClaw 独立工作区
 
@@ -77,6 +83,8 @@ Nano启动后自动通过原生ncl复用/创建Debug Agent和cli/local Wiring，
 
 ```bash
 pnpm debug:start                    # Web + Backend + 本地模型
+pnpm debug:start --tui              # 再打开Workflow TUI；/quit结束本次整套栈
+pnpm debug:tui                     # 已有专用服务时，只打开独立TUI
 pnpm debug:start -- --nanoclaw       # 再包含Nano，自动初始化本地练习Group/Memory/Registry
 pnpm debug:stop                     # 仅专用调试，可从另一终端重复执行
 pnpm chat:stop -- --debug           # 也关闭本checkout普通dev:all

@@ -1,5 +1,6 @@
 import { respondPlannerConversation, exercisePlannerConversation } from "./planner-conversation-fixture.mjs";
 import { respondProjectManagement, exerciseProjectManagementRun } from "./project-management-runtime-fixture.mjs";
+import { exerciseWorkflowTui } from "./workflow-tui-runtime-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -1322,6 +1323,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.match(output, /\[workflow-coordinator\] tool started name=workflow_call/);
     assert.doesNotMatch(output, /Workflow不允许由Agent调用|Workflow不能直接调用自身/);
     await exerciseProjectManagementRun(authenticatedFetch, { chatHome, projectId: "dev-e2e-project", workspace: canonicalWorkspace });
+    await exerciseWorkflowTui({ baseUrl, cookie, projectId: "dev-e2e-project" });
   } finally {
     await stopProcess(devServer);
     if (modelServer?.listening) {

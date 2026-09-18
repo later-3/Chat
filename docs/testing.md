@@ -35,7 +35,7 @@ pnpm test:frontend
 # 父仓库与 Frontend 类型检查
 pnpm typecheck
 
-# Frontend 与 Nitro 生产构建
+# Frontend、Nitro 与独立 CLI 生产构建
 pnpm build
 
 # 测试已经生成的 .output 生产服务
@@ -49,6 +49,10 @@ pnpm verify
 ```
 
 `pnpm test:built` 依赖 `pnpm build` 生成的 `.output`，不要把旧构建产物的通过结果当成当前源码的验证结果。
+
+Workflow TUI 的认证、NDJSON、原生终端输入/显示、缩放与响应校验位于 `test/workflow-tui.test.mjs`，Fork 与压缩前历史边界位于 `test/session-fork.test.mjs`。`scripts/workflow-tui-runtime-fixture.mjs` 使用编译后的客户端，在 built/dev 两种真实服务上验证 Web/TUI 双向历史、审核恢复、Fork 隔离与取消；仅使用隔离 CHAT_HOME 和本地假模型。`pnpm test:dev` 会先构建 CLI。发布前还需 `pnpm pack:cli` 并在仓库外临时目录安装 tarball，确认 bin 和 Pi Registry 依赖可用。
+
+TUI启动/调试变更还须运行 `pnpm test:tooling`：覆盖开发入口参数转发、客户端凭据隔离、F5任务/组合引用、Source Map选项、Backend就绪/登录/Project登记、非TTY拒绝和既有进程停止边界。实际PTY启动、输入到Run完成及退出清理应使用临时checkout/隔离数据与本地假模型；CLI Source Map通过不等于VS Code GUI断点已命中，二者分别记录证据。
 
 Frontend 单个测试可在需要时直接运行：
 

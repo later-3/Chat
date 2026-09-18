@@ -1,10 +1,12 @@
 # 本地开发与调试
 
-完整学习路线、VS Code配置、Web/Telegram/微信场景、Pi源码、配置资源、日志及维护规则见[Chat调试与开发说明书](./debugging/README.md)。
+完整学习路线、VS Code配置、Web/TUI/Telegram/微信场景、Pi源码、配置资源、日志及维护规则见[Chat调试与开发说明书](./debugging/README.md)。
 
 ## VS Code专用调试
 
 在Chat根目录运行`pnpm debug:prepare`，F5选择 **Debug Chat**：启动本地假模型、专用Backend，随后启动Vite与独立Chrome调试会话。端口为Backend `45112`、Frontend `35145`、假模型 `45401`；数据是`.data/debug/chat-home`，日志在`.data/debug/logs`。Nitro缓存使用`node_modules/.nitro-debug`，与普通开发分开。
+
+终端调试可选 **Debug Chat TUI**（假模型 + Backend + TUI）或 **Debug Chat Web + TUI**（再加Vite/Chrome）。命令行用 `pnpm debug:start --tui`；已有调试服务时 `pnpm debug:tui` 只开客户端。自动编译Source Map、登记Debug Lab并使用 `.data/debug/client` 保存独立Cookie，详见[TUI调试](./debugging/workflow-tui.md)。
 
 需要NanoClaw时先执行`pnpm debug:prepare:nanoclaw`，它建立独立Git worktree、安装并验证，不操作正常Host。F5选择 **Debug Chat + NanoClaw**，调试Gateway端口为`45300`；默认不启用真实渠道。Telegram/微信必须使用独立测试Bot/账号，详见[渠道步骤](./debugging/channels.md)。
 
@@ -20,11 +22,13 @@
 
 ```bash
 pnpm dev:all
+# 另一交互终端连接已启动的开发后端
+pnpm dev:tui
 # 或明确选择空闲端口
 scripts/dev-start.sh --backend-port 44112 --frontend-port 31145
 ```
 
-默认Backend `43112`、Vite `30145`，Chat Home为`.data/dev/chat-home`，日志是`.data/dev-logs/<时间-PID>`。脚本只管理Backend/Vite，不管理独立NanoClaw。Ctrl+C收回自己的进程组；默认端口占用报错，`--kill`只在显式要求时请求占用者退出，正常使用与调试并存时不要使用该参数。
+默认Backend `43112`、Vite `30145`，Chat Home为`.data/dev/chat-home`，日志是`.data/dev-logs/<时间-PID>`。默认启动脚本只管理Backend/Vite，不管理独立NanoClaw；`tui`子命令仅连接已有后端，默认凭据目录 `.data/dev/client`，自定义端口用 `pnpm dev:tui --url URL`。Ctrl+C收回自己的进程组；默认端口占用报错，`--kill`只在显式要求时请求占用者退出，正常使用与调试并存时不要使用该参数。
 
 裸`pnpm dev`仍默认使用`~/.chat`；需要隔离时显式指定CHAT_HOME。首次依赖准备按根README；不要自动复制正式模型/渠道凭据。`pnpm verify`会重建frontend/dist和.output，如果正常实例使用这些产物，应在独立checkout验证。
 

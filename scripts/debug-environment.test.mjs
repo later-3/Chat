@@ -28,6 +28,21 @@ test("debug launch contracts use dedicated ports, browser profile, and independe
   assert.equal(browser.webRoot, "${workspaceFolder}/frontend");
   const backend = launch.configurations.find(config => config.name === "Debug Backend");
   assert.ok(backend.outFiles.includes("${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs"));
+  const tui = launch.configurations.find(config => config.name === "Debug TUI");
+  assert.equal(tui.console, "integratedTerminal");
+  assert.equal(tui.autoAttachChildProcesses, true);
+  assert.deepEqual(tui.args, ["tui"]);
+  assert.ok(tui.outFiles.includes("${workspaceFolder}/cli/dist/**/*.js"));
+  for (const name of ["Debug Chat TUI", "Debug Chat Web + TUI"]) {
+    assert.ok(launch.compounds.find(compound => compound.name === name).configurations.includes("Debug TUI"));
+  }
+  const tasks = JSON.parse(await readFile(".vscode/tasks.json", "utf8"));
+  for (const config of launch.configurations) {
+    if (config.preLaunchTask) assert.ok(tasks.tasks.some(task => task.label === config.preLaunchTask));
+  }
+  const cli = JSON.parse(await readFile("cli/tsconfig.json", "utf8"));
+  assert.equal(cli.compilerOptions.sourceMap, true);
+  assert.equal(cli.compilerOptions.inlineSources, true);
   assert.equal(new Set(Object.values(ports)).size, 4);
   for (const port of Object.values(ports)) assert.ok(![43110, 43112, 30145, 3000].includes(port));
 });
@@ -35,7 +50,8 @@ test("debug launch contracts use dedicated ports, browser profile, and independe
 test("debug environment drops production configuration while preserving debugger auto-attach", () => {
   const env = cleanEnvironment({ PATH: "/bin", HOME: "/home/test", NODE_OPTIONS: "--require /debugger.js",
     VSCODE_INSPECTOR_OPTIONS: "debug", CHAT_HOME: "/production", CHAT_CHANNEL_GATEWAY_TOKEN: "secret",
-    OPENAI_API_KEY: "secret", TELEGRAM_BOT_TOKEN: "secret", WEBHOOK_PORT: "3000", PORT: "43110" });
+    OPENAI_API_KEY: "secret", TELEGRAM_BOT_TOKEN: "secret", WEBHOOK_PORT: "3000", PORT: "43110",
+    CHAT_SERVER_URL: "https://production.example", CHAT_CLI_HOME: "/production-client", CHAT_CLI_PASSWORD: "secret" });
   assert.deepEqual(Object.keys(env).sort(), ["HOME", "NODE_OPTIONS", "PATH", "VSCODE_INSPECTOR_OPTIONS"].sort());
 });
 
@@ -70,6 +86,19 @@ test("preparation preserves private edits, pins backend isolation, and refuses r
   assert.equal(env.PORT, "45112");
   assert.equal(env.CHAT_NITRO_BUILD_DIR, join(debug.repositoryRoot, "node_modules/.nitro-debug"));
   assert.equal(env.WORKFLOW_LOCAL_DATA_DIR, join(debug.debugHome, "runtime/workflow-data"));
+  const tui = await debug.debugEnvironment("tui");
+  assert.equal(tui.CHAT_SERVER_URL, "http://127.0.0.1:45112");
+  assert.equal(tui.CHAT_CLI_HOME, join(debug.debugRoot, "client"));
+  assert.equal(tui.CHAT_CLI_USERNAME, "chat");
+  assert.equal(tui.CHAT_CLI_PASSWORD, "123456");
+  assert.equal(tui.CHAT_HOME, undefined);
+  assert.equal(tui.CHAT_CHANNEL_GATEWAY_TOKEN, undefined);
+  await rm(join(debug.debugRoot, "client"), { recursive: true });
+  const externalClient = join(root, "external-client");
+  await mkdir(externalClient);
+  await symlink(externalClient, join(debug.debugRoot, "client"));
+  await assert.rejects(debug.prepareDebug(), /symlinks/);
+  await rm(join(debug.debugRoot, "client"));
   await rm(settings);
   const outside = join(root, "private-settings.json");
   await writeFile(outside, "unchanged");

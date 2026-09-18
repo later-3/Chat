@@ -18,6 +18,7 @@ rg -n 'accepted|step starting|tool started|tool finished|failed|completed' .data
 |---|---|---|
 | 页面报错、请求/响应 | 专用Chrome Console、Network | Console堆栈、HTTP状态、响应体、发起者分别看 |
 | Vite构建/代理错误 | `*-frontend.log` | 不是浏览器运行时异常日志 |
+| TUI启动/退出 | `*-tui.log`与交互终端提示 | 日志只记生命周期；API/Run事实仍在Backend，见[TUI调试](./workflow-tui.md) |
 | Backend/Workflow/Pi执行 | `*-backend.log` | `[workflow]`与`[pi]`；Long Agent日志标签可能不同 |
 | 本地假模型收到请求 | `*-model.log` | 只记录模型/消息数/响应类别，不记录完整Prompt |
 | Nano启动、路由、投递 | `*-nanoclaw.log` | ANSI颜色正常；LOG_LEVEL=debug仅在调试Nano env显式开启 |
@@ -50,6 +51,8 @@ Backend时间包含UTC偏移；Nano控制台常用本地时分秒，日志文件
 | 症状 | 先查 | 继续到哪里 |
 |---|---|---|
 | F5提示端口/lock占用 | 归属记录、PID启动时间、端口、并发control操作 | 重试启动或debug:stop；未知归属不按端口强杀 |
+| TUI首屏正常但输入无响应 | 是否与Vite等后台服务共享stdin | 整套启动只让TUI继承stdin；[输入归属案例](../../development-experiences/terminal-stdin-ownership.md) |
+| TUI提示需要交互终端 | stdin/stdout是否TTY、是否pipe/tee | 使用集成终端；F5选择Debug TUI |
 | 页面显示正常环境历史 | 浏览器profile、URL、projectId、Backend agentDir | 停本次调试，修复路径；不要删正常数据 |
 | 页面401/登录循环 | `chat-session` Cookie、profile、签名密钥 | 单独调试profile；不清理正常浏览器 |
 | 点击发送无网络请求 | useAgentSession、owner、输入校验 | Frontend分支/事件处理 |

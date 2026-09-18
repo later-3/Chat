@@ -2,6 +2,7 @@ node_modules/
 .nitro/
 .output/
 frontend/dist/
+cli/dist/
 .chat/*
 !.chat/project.json
 !.chat/skills/

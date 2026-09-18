@@ -23,11 +23,13 @@ VS Code → Terminal → Run Task中也有`Chat: check normal services`、`Chat:
 | 选项 | 关闭内容 | 保留内容 |
 | --- | --- | --- |
 | `--normal` | 当前checkout已安装的Chat Backend及NanoClaw原生服务；从安装配置读取服务名、工作目录和端口，默认43110/3000 | 开发/调试进程、其他checkout、共享Tunnel/Relay/Nginx、Docker daemon、外部模型 |
-| `--debug` | F5/`debug:start`的stack、Nano、Vite、Backend、本地练习模型，默认45300/35145/45112/45401；同一用户及checkout的`dev:all`脚本（默认43112/30145，支持脚本端口参数） | 正常服务、其他checkout与用户的进程 |
+| `--debug` | F5/`debug:start`的stack、TUI、Nano、Vite、Backend、本地练习模型，默认45300/35145/45112/45401；同一用户及checkout的`dev:all`脚本（默认43112/30145，支持脚本端口参数） | 正常服务、其他checkout与用户的进程 |
 
 Pi在Backend中执行，生产Frontend是静态文件，两者都没有独立的服务需要关闭。工具Docker尚未接入当前Chat运行合同，脚本不会清理整机容器。手动直接启动的`pnpm dev`/`vite`/`node`没有本入口认可的归属记录；若端口仍占用，脚本报出失败，需在其原终端Ctrl+C或用实际管理者停止。不能因同端口就认定是本实例。
 
-仅停止专用调试、保留普通`dev:all`时，继续使用`pnpm debug:stop`；加`-- --check`只检查，加`-- backend`仅停止Backend角色。单模块停止不能解释为整个系统已关闭。
+仅停止专用调试、保留普通`dev:all`时，继续使用`pnpm debug:stop`；加`-- --check`只检查，加`-- backend`仅停止Backend角色。单模块停止不能解释为整个系统已关闭。`pnpm debug:stop -- tui` 校验并关闭TUI角色，无需检查监听端口；若该TUI属于 `debug:start --tui`，父启动器收到退出后也会停止它自己的整套服务。
+
+独立 `dev:tui`、安装后的 `chat tui` 没有调试归属记录，在其原终端 `/quit` 退出；这不取消后端Run。独立 `debug:tui` 同样只退出客户端；`debug:start --tui` 中 `/quit` 则结束该次整套栈。F5 compound的Stop会停止关联服务，均可能中断在途工作。
 
 ## 如何读取输出
 

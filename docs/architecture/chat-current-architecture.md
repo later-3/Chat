@@ -14,6 +14,7 @@ Long Agent当前能力以[实施状态](./chat-long-agent-roadmap.md)中的逐�
 | Chat后端开发代码（`src/`，不含测试） | 持续变化 | 以当前分支源码为准 |
 | Chat后端与脚本测试 | 持续变化 | `test/`与`scripts/`中的测试 |
 | Pi Web派生前端开发代码 | 持续变化 | 纯浏览器前端 |
+| Workflow TUI客户端（`cli/`） | 持续变化 | Pi显示组件与Chat HTTP适配，无本地Agent执行 |
 | Workflow框架支持的Node类型 | 2 | Agent Node、Task Node |
 
 不包含三个子模块、构建产物和依赖。前端、Pi与长期Agent源码分别由`frontend/`、`pi/`和`nanoclaw/`子模块固定提交。
@@ -21,14 +22,14 @@ Long Agent当前能力以[实施状态](./chat-long-agent-roadmap.md)中的逐�
 ## 2. 当前组件边界
 
 ```text
-frontend/：Pi Web派生的纯浏览器前端
-  │
-  │ HTTP
-  ▼
+frontend/：Pi Web派生浏览器客户端 ─用户认证 HTTP─┐
+cli/：Chat Workflow TUI + Pi UI ─用户认证 HTTP──┤
+nanoclaw/：独立Host/Channel Gateway ─服务HTTP───┘
+                                             ↓
 Chat Nitro进程
   ├── 认证与前端静态文件
   ├── /runs：Workflow控制与事件读取
-  ├── /api/sessions：Pi Session读取投影
+  ├── /api/sessions：Pi Session读取投影、完整历史与Fork
   ├── /api/projects：Project Registry发现与切换
   ├── /api/files：受限文件读取
   ├── /api/workflows/.../agents/.../resolve：Agent实际装配结果
@@ -70,6 +71,8 @@ pi/：Pi Coding Agent
 ```
 
 生产部署只运行一个Chat进程。`frontend/dist`由Nitro提供，不再启动Pi Web Next.js服务。开发环境额外运行Vite，只提供页面热更新和到Chat的代理。
+
+这里的“一个Chat进程”指服务端部署；可额外连接多个浏览器和独立 `chat tui` 客户端，NanoClaw Host也仍是独立进程。TUI复用Pi公开显示组件，Chat负责命令、提示/状态栏和HTTP适配；不在终端运行模型、AgentSession或维护另一份历史。Web/TUI共用Project、Session和Run，当前TUI只接普通Workflow，不接Long Agent。详见[Workflow TUI合同](./chat-workflow-tui.md)。
 
 ### 2.1 NanoClaw源码与本机运行基线
 
@@ -374,7 +377,7 @@ Session正常JSONL位于`~/.chat/projects/<projectId>/sessions/`，移除区位�
 2. Task Node当前用于`planning-execution`和`planner-orchestrator`的人工审核；其他确定性Task仍按实际需求增加，不能伪装成Agent。
 3. Context Transform和宿主依赖Tool仍由Workflow代码注册；配置只能引用稳定名称，不能序列化函数。
 4. Catalog表示已安装/可选择资源，Resolve表示当前Agent实际生效能力；前端仍可进一步强化这两个状态的视觉区分。
-5. 运行中Steering、Follow-up、Extension交互式UI和Session Fork依赖持续运行控制面，当前一次一Run的接口尚未支持。
+5. 运行中Steering、Follow-up与Extension交互式UI尚未支持。普通Session的原生Fork已通过Backend接口接通Web/TUI；只能在无活跃Run/审核等待时，从User Entry之前分叉，边界见[Workflow TUI合同](./chat-workflow-tui.md)。
 6. cwd-only Session和Resource入口仅保留给旧数据迁移与现有测试；浏览器正常路径已经提交稳定`projectId`。
 7. Skill、Extension和Plugin已有基础管理API和每Agent选择，更新检查及部分原Pi Web操作仍待迁移。
 8. Project-first与Daily Project已经进入Backend和Frontend合同；运行时会确保系统管理的`daily` Project存在，并在全新请求缺少Project信息时使用它。旧数据迁移入口仍需继续收敛，但不能用Daily掩盖显式绑定失败。

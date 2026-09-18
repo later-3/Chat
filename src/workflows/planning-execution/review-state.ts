@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { ownSessionEntries } from "../../session-fork-boundary.js";
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
@@ -387,6 +388,7 @@ export function planReviewDecisionMessage(decision: PlanReviewDecision): string 
 
 /** Reconstructs the latest unresolved review from append-only Session entries. */
 export function collectPendingPlanReview(entries: readonly unknown[]): ChatPlanReview | undefined {
+  entries = ownSessionEntries(entries);
   const reviews: ChatPlanReview[] = [];
   const decided = new Set<string>();
   for (const entry of entries) {
