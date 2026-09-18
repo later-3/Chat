@@ -74,19 +74,14 @@ export const LONG_AGENT_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSyste
           return result(details);
         }
         case "create": {
-          if (typeof params.id !== "string" || typeof params.name !== "string"
-            || typeof params.nanoclawAgentGroupId !== "string") {
-            throw new Error("create需要id、name和nanoclawAgentGroupId");
+          if (typeof params.id !== "string" || typeof params.name !== "string") {
+            throw new Error("create需要id和name");
           }
-          const registry = await storage.readLongAgentRegistry(context.chatHome);
-          const instance = registry.instances[0];
-          if (instance === undefined) throw new Error("没有可用的NanoClaw实例");
           const agent = await lifecycle.createLongAgent({
             id: params.id,
             name: params.name,
             ...(typeof params.description === "string" ? { description: params.description } : {}),
-            instanceId: instance.id,
-            nanoclawAgentGroupId: params.nanoclawAgentGroupId,
+            ...(typeof params.nanoclawAgentGroupId === "string" ? { nanoclawAgentGroupId: params.nanoclawAgentGroupId } : {}),
             chatHome: context.chatHome,
           });
           const details = { id: agent.id, defaultProjectId: agent.defaultProjectId, status: agent.status };

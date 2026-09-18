@@ -32,6 +32,12 @@ Chat会在启动和读取Project列表时保证Daily Project存在：工作目�
 
 ### Long Agent注册与配置管理（当前实现）
 
+新环境在 Web 侧栏打开“长期同事”，点击“启用并创建默认助手”创建 Nexus，无需先创建或选择 Project。之后点“＋”新增同事，填写名称与可选简介，ID 自动预填且可修改。Backend 自动创建 NanoClaw Group、独立配置目录与 Agent home；点击同事即可进入它自己的日常会话。模型与认证沿用 Chat 配置；Telegram/微信等 Channel 可稍后连接。
+
+启用是显式创建动作，不新增全局开关：读取列表或重启不会强制生成助手，不会恢复已归档同事。重复启用返回已有同事。NanoClaw Host 必须已按[部署指南](./deployment.md)以 `chat-pi` 启动并与 Backend 使用相同服务认证。无 Registry 时首次连接默认使用 `http://127.0.0.1:3000/webhook/chat-backend`、实例 `local`；自定义端口可通过 Backend 的 `CHAT_NANOCLAW_GATEWAY_URL` 指定。已有 Registry 继续使用其实例配置，不被环境变量覆盖。
+
+创建中断时按相同 ID、名称、简介重试。Backend 在 `runtime/long-agent-provisioning/<id>.json` 原子保存请求标识，NanoClaw 幂等补齐同一 Group；未完成的操作可能保留未绑定的 Group 与初始化文件，不会作为成功创建返回。不要手工删创建记录或连续更换 ID。显式删除后再创建同名 ID 使用新的 Group，不继承旧助手的私有记忆。
+
 Chat使用`<CHAT_HOME>/long-agents.json`登记长期Agent及其NanoClaw本机实例。该文件已降级为**索引**（身份、NanoClaw绑定、状态与 Channel 绑定）；每个 Agent 的能力定义位于独立配置根`<CHAT_HOME>/long-agents/<longAgentId>/definition.json`，资源目录（`skills/`、`prompts/`、`extensions/`）位于同一根下。存量内联 definition 会在首次读取时幂等迁移（备份与标记位于`runtime/migrations/long-agent-definition-split/`）。每个 Agent 只有一个根：`long-agents/<longAgentId>/{workspace,sessions,memory,skills,...}`，其 home 项目的 projectId 就是 `longAgentId`，日常主 Session 按本地日期轮换。公共共享空间为 `longagentshare`（原共享 `daily` 归一而来，不默认打开）；普通会话必须属于用户自己的项目。`defaultProjectId`决定IM首次来信缺少更具体归属时在哪个Project建立Chat Session。Agent Memory 仍由 NanoClaw Agent Group 承载，迁入 Chat Home 是后续切片（S5b）。剩余差距见[实施状态](./architecture/chat-long-agent-roadmap.md)。
 
 ```json
@@ -113,7 +119,8 @@ Long Agent配置入口位于“长期同事”面板的同事条目中。入口�
 | `GET /api/long-agents/:id/config` | 读取Personal LongAgent定义与可见的Channel Gateway摘要 | 返回`revision`；Channel adapter/gateway只读，不返回Gateway地址、Credential或Token |
 | `PUT /api/long-agents/:id/config` | 替换可编辑配置 | 请求必须带`expectedRevision`；过期revision返回`409`，保存采用串行化原子替换 |
 | `GET /api/long-agents/:id/inspection` | 按与执行完全相同的Pi装配路径解析该Agent的生效Skill、Tool与Prompt | 只读；默认使用`defaultProjectId`，可用`?projectId=`检查其他已登记Project上下文；Skill带`owner`归属分类（personal/project/plugin/agent/injected） |
-| `POST /api/long-agents` | 创建 Long Agent：一次性配齐独立配置根、默认定义与专属 Daily Project | NanoClaw Agent Group 必须先存在；失败整体回滚；写入审计 |
+| `POST /api/long-agents/enable` | 空对象请求：首次创建 Nexus；已有同事时返回已有记录 | 不恢复已归档身份；Host 不可用时返回可重试错误 |
+| `POST /api/long-agents` | `id/name` 与可选 `description` 创建同事，自动配齐 Group、配置根和 home | 创建请求持久化以支持失败重试；显式 `nanoclawAgentGroupId/instanceId` 继续支持绑定已有 Group；写入审计 |
 | `POST /api/long-agents/:id/archive` | 归档（停新工作、保留数据）或恢复（`?restore=true`） | 幂等；归档同时置`enabled=false` |
 | `DELETE /api/long-agents/:id` | 两阶段删除 | 必须先归档；不删除业务 Project 历史，Daily Workspace 文件保留在磁盘 |
 

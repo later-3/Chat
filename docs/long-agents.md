@@ -10,9 +10,11 @@ Long Agent 是 Chat 中长期陪伴用户工作的助手。每个 Agent 有自�
 
 ## 2. 现在可以做什么
 
+首次使用从 Web 侧栏“长期同事”点击“启用并创建默认助手”，系统准备 Nexus；无已选 Project 也可以操作。后续用“＋”新增同事，不需要手填 NanoClaw Group ID。启动 Host、配置 Chat 模型后，点击同事即可对话。启用前提、错误重试及 HTTP 合同见[系统配置](./configuration.md#long-agent注册与配置管理当前实现)。
+
 当前已有 Chat Web 与 NanoClaw 文本对话、Telegram/微信接入路径、Long Agent 的部分配置管理、Agent 身份和 Standing Instructions 注入、Markdown Agent Memory 管理、Chat Personal/Project Memory、Workflow 调用，以及 Project 管理 Skill 和 6 个 Tool。
 
-当前仍使用共享 daily 和 Project × Agent 的唯一主 Session。独立 Daily、按日轮换、统一历史查询、Social、完整定时执行、Docker 工具环境及完整资源自我管理尚未实现。旧界面或旧配置不能代表新目标已经生效。
+当前已支持独立 Agent home 与日常主 Session 按日轮换；换日上下文交接、完整定时执行、Docker 工具环境及完整资源自我管理仍有实施差距，逐项以[实施状态](./architecture/chat-long-agent-roadmap.md)为准。旧界面或旧配置不能代表新目标已经生效。
 
 ## 3. 应该如何使用
 
@@ -34,7 +36,7 @@ Long Agent 是 Chat 中长期陪伴用户工作的助手。每个 Agent 有自�
 
 ## 4. 配置在哪里、改动影响什么
 
-每个 Agent 的能力定义位于独立配置根 `<CHAT_HOME>/long-agents/<longAgentId>/definition.json`，`long-agents.json` 只保留身份、绑定与状态索引；每个 Agent 拥有独立 Daily Project（`daily-<longAgentId>`）与按日轮换的日常主 Session。NanoClaw Group 和 Memory 通过管理 API 维护；具体路径、JSON 与 API 见系统配置。生命周期（创建/归档/恢复/删除）由后端服务统一执行，页面与 `long_agent_manage` Tool 同源。
+每个 Agent 的能力定义位于独立配置根 `<CHAT_HOME>/long-agents/<longAgentId>/definition.json`，`long-agents.json` 只保留身份、绑定与状态索引；每个 Agent 拥有独立 home Project（projectId 即 `longAgentId`）与按日轮换的日常主 Session。NanoClaw Group 和 Memory 通过管理 API 维护；具体路径、JSON 与 API 见系统配置。生命周期（创建/归档/恢复/删除）由后端服务统一执行，页面与 `long_agent_manage` Tool 同源。
 
 目标为每个 Agent 提供独立的 `<CHAT_HOME>/long-agents/<longAgentId>/` 配置与资源根、独立 Daily Project 与 Workspace；身份、配置、Session、Memory、任务和日志按 Agent 全量隔离，共享资源只能放在明确规定的共享位置，且写入该 Agent 配置后才生效。管理实体、隔离与生命周期合同见[管理实体与隔离架构](./architecture/chat-long-agent-management.md)，目录布局说明见[定义与配置模型](./architecture/chat-long-agent-capability-model.md#5-独立空间与共享空间)。当前不能据此手工创建文件来启用尚未实现的能力。
 

@@ -17,7 +17,7 @@ description: 管理 Chat 长期同事（Long Agent）的生命周期：查看、
 ## 操作规则
 
 - **list / get**：随时可用。创建或修改前先 get 目标，确认当前状态。
-- **create**：需要 id（小写字母/数字/连字符）、name、nanoclawAgentGroupId。创建一次性配齐独立配置目录与专属日常 Project（`daily-<id>`）。NanoClaw Agent Group 必须先在 NanoClaw 侧存在，否则创建失败；Channel 绑定可之后补。创建前向用户确认名称与用途。
+- **create**：需要 id（小写字母/数字/连字符）、name。创建会配齐独立配置目录、专属日常 Project（ID 即 Agent ID）和 NanoClaw Agent Group；已有 Group 的迁移可显式提供 nanoclawAgentGroupId。Host 必须已启动并配置服务认证，Channel 绑定可之后补。名称与用途按用户请求确定；创建失败保留相同 ID、名称与描述重试，不连续换 ID。
 - **archive / unarchive**：归档停止新工作并保留全部数据，可恢复；恢复后继续工作。
 - **delete**：两阶段——必须先归档。删除会移除登记、配置目录与头像资产；不删除该 Agent 参与过的业务 Project 历史，Daily Workspace 文件保留在磁盘。删除不可逆，执行前必须向用户明确确认。
 

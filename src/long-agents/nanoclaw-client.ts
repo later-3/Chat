@@ -315,6 +315,17 @@ export async function getNanoClawAgentGroup(
   );
 }
 
+export async function provisionNanoClawAgentGroup(
+  instance: LongAgentInstanceConfig,
+  requestId: string,
+  name: string,
+): Promise<NanoClawAgentGroupSnapshot> {
+  return parseAgentGroupEnvelope(await requestGateway(instance, "v1/agent-groups/provision", {
+    method: "POST",
+    body: JSON.stringify({ schemaVersion: 1, requestId, name }),
+  }), `ag-${requestId}`);
+}
+
 export async function updateNanoClawAgentGroup(input: {
   readonly instance: LongAgentInstanceConfig;
   readonly agentGroupId: string;

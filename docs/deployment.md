@@ -233,6 +233,10 @@ macOS常驻运行使用[生产LaunchAgent模板](../deploy/macos/com.later.chat.
 
 ### NanoClaw Long Agent常驻服务
 
+完成本节 Host 安装和服务认证后，在 Chat Web 的“长期同事”点击“启用并创建默认助手”。Backend 会创建 Nexus 及其 NanoClaw Group，后续通过同一页面“＋”创建更多同事；不需要运维人员逐个建 Group 或复制目录。多个同事共用一个 Host。仅 Web 对话不要求先绑定 IM 渠道，但需要 Chat 已配置可用模型。
+
+首次启用默认连接 `http://127.0.0.1:3000/webhook/chat-backend`、实例 ID `local`。Host 使用其他端口时，部署者在 Backend 私有环境设置 `CHAT_NANOCLAW_GATEWAY_URL`；已有 `long-agents.json` 中的实例配置优先。Web 启用按钮管理助手身份，不负责安装或启动系统服务。Host 尚未启动、认证不匹配或版本缺少创建接口时，页面报错并允许完成准备后重试。
+
 在父仓库固定的`nanoclaw/`目录完成一次性Channel Gateway初始化。Token只从Chat私有Bot Registry渲染到NanoClaw的`0600` `.env`，不能提交；模型与Agent凭据由Chat Pi管理，不进入NanoClaw、OneCLI或Agent容器。`chat-pi`模式不安装OneCLI、不执行NanoClaw Provider认证，也不构建Agent镜像：
 
 ```bash
