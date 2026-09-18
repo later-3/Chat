@@ -31,8 +31,17 @@ test("debug launch contracts use dedicated ports, browser profile, and independe
   // Workflow VM scripts use the source module name, not the on-disk bundle URL.
   // Both the relative V8 URL and the debugger's resolved path need their maps.
   for (const name of ["Debug Backend", "Debug Backend + Web"]) {
-    const locations = launch.configurations.find(config => config.name === name).resolveSourceMapLocations
+    const config = launch.configurations.find(config => config.name === name);
+    const locations = config.resolveSourceMapLocations
       .map(pattern => pattern.replace("${workspaceFolder}", resolve(".")));
+    // Nitro loads the server in a Worker before lazily importing the Step bundle.
+    // Both emitted locations must be discoverable AND allowed to resolve maps.
+    const outFiles = config.outFiles.map(pattern => pattern.replace("${workspaceFolder}", resolve(".")));
+    for (const emitted of [".data/debug/output/server/index.mjs", "node_modules/.nitro-debug/workflow/steps.mjs"]) {
+      const path = resolve(emitted);
+      assert.ok(outFiles.some(pattern => matchesGlob(path, pattern)), `${name} must discover ${path}`);
+      assert.ok(locations.some(pattern => matchesGlob(path, pattern)), `${name} must resolve ${path}`);
+    }
     for (const source of ["src/workflows/minimal-pi-coding-agent/workflow.ts",
       "./src/workflows/minimal-pi-coding-agent/workflow",
       "src/workflows/minimal-pi-coding-agent/workflow",

@@ -24,6 +24,7 @@
 - [Long Agent 切换 Provider 的认证与工具合同](./long-agent-provider-validation.md)
 
 - [调试构建目录重入 Workflow 源码扫描](./debug-build-directory-isolation.md)
+- [Nitro Step 断点映射目录遗漏](./debug-step-source-map-locations.md)
 - [停机检查遗漏监听地址](./stop-service-port-verification.md)
 
 - [朋友圈被侧栏约束与缺失翻译](./social-feed-surface-and-translations.md)

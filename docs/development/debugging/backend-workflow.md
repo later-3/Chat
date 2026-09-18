@@ -25,10 +25,12 @@
 
 先在直接执行 Workflow 的 `step.ts` 函数体内（例如 `const stepStartedAt = Date.now()`）下断点，再从普通 Workflow 会话选择直接执行并发送消息。类型声明、import 和 `"use workflow"`/`"use step"` 指令行不适合作为执行断点；长期同事入口不会触发这个 Step。只用 `pnpm debug:start` 启动并不自动连接 VS Code 调试器，要用 F5 或显式附着。
 
+Nitro Worker 实际加载 `.data/debug/output/server/index.mjs`，随后按需加载 `node_modules/.nitro-debug/workflow/steps.mjs`。两个目录都必须进入 Backend 的 `outFiles` 和 `resolveSourceMapLocations`；只配置 `.nitro-debug` 会漏掉启动时已加载的服务端源码映射，出现 `step.ts` 灰色断点。故障证据与回归见[断点映射目录遗漏](../../development-experiences/debug-step-source-map-locations.md)。
+
 先检查这 4 层，不要直接怀疑模型：
 
 1. **启动的模块是否正确。** 普通Web走Workflow；长期同事和渠道走Long Agent，不会进入直接执行Workflow的Step。
-2. **实际子进程是否附着。** VS Code Call Stack 中选择 Nitro/Workflow 子进程。当前源码会经过独立 Step bundle，只有启动器被调试并不够。
+2. **实际执行线程是否附着。** VS Code Call Stack 中检查 Backend 下的 Nitro Worker。当前源码会经过独立 Step bundle，只有启动器被调试并不够。
 3. **开发产物是否可加载。** 专用目录是 `node_modules/.nitro-debug/workflow`；产品Workflow发现范围固定为`src/workflows`，Step可达依赖仍正常打包。Source Map需指回`src`；Pi dist需指回Pi src。不要在正常`node_modules/.nitro`的旧文件中找本次断点。
 4. **Runtime是否真正执行。** 用 `pnpm debug:smoke` 验证完整链；常规门禁 `pnpm test:dev` 验证 Nitro CLI 开发路径。仅 Node import、类型检查、健康HTTP或生产构建通过都不足以证明开发Step可执行。
 

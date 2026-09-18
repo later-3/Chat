@@ -26,10 +26,12 @@
         "../../../src/*": "${workspaceFolder}/src/*"
       },
       "outFiles": [
+        "${workspaceFolder}/.data/debug/output/server/**/*.mjs",
         "${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs",
         "${workspaceFolder}/pi/packages/**/dist/**/*.js"
       ],
       "resolveSourceMapLocations": [
+        "${workspaceFolder}/.data/debug/output/server/**/*.mjs",
         "${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs",
         "${workspaceFolder}/src/workflows/**",
         "./src/workflows/**",
@@ -60,10 +62,12 @@
         "../../../src/*": "${workspaceFolder}/src/*"
       },
       "outFiles": [
+        "${workspaceFolder}/.data/debug/output/server/**/*.mjs",
         "${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs",
         "${workspaceFolder}/pi/packages/**/dist/**/*.js"
       ],
       "resolveSourceMapLocations": [
+        "${workspaceFolder}/.data/debug/output/server/**/*.mjs",
         "${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs",
         "${workspaceFolder}/src/workflows/**",
         "./src/workflows/**",
