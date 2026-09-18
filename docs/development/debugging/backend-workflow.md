@@ -21,6 +21,10 @@
 
 ## 编译成功但 Step 断点不命中
 
+`src/workflows` 下的 TS 可以设置源码断点，但有两种执行形态：普通模块和 `"use step"` 通过 Node 加载；`"use workflow"` 函数在 Workflow VM 中执行。后者向调试器报告的脚本名来自 Workflow ID 中的模块路径，例如 `./src/workflows/minimal-pi-coding-agent/workflow`，没有 `.ts` 后缀，也不是磁盘上的 `.mjs`。根 F5 的两个 Backend 配置必须同时允许生成 bundle 和这个 VM 脚本路径的 source map；只允许 `.nitro-debug/**/*.mjs` 或只加 `src/workflows/**/*.ts` 都会漏掉 Workflow VM。更新配置后停止并重新 F5，已有调试会话不会重新读取 launch.json。
+
+先在直接执行 Workflow 的 `step.ts` 函数体内（例如 `const stepStartedAt = Date.now()`）下断点，再从普通 Workflow 会话选择直接执行并发送消息。类型声明、import 和 `"use workflow"`/`"use step"` 指令行不适合作为执行断点；长期同事入口不会触发这个 Step。只用 `pnpm debug:start` 启动并不自动连接 VS Code 调试器，要用 F5 或显式附着。
+
 先检查这 4 层，不要直接怀疑模型：
 
 1. **启动的模块是否正确。** 普通Web走Workflow；长期同事和渠道走Long Agent，不会进入直接执行Workflow的Step。

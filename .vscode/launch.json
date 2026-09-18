@@ -31,6 +31,9 @@
       ],
       "resolveSourceMapLocations": [
         "${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs",
+        "${workspaceFolder}/src/workflows/**",
+        "./src/workflows/**",
+        "src/workflows/**",
         "${workspaceFolder}/pi/packages/**/dist/**/*.js"
       ]
     },
@@ -62,6 +65,9 @@
       ],
       "resolveSourceMapLocations": [
         "${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs",
+        "${workspaceFolder}/src/workflows/**",
+        "./src/workflows/**",
+        "src/workflows/**",
         "${workspaceFolder}/pi/packages/**/dist/**/*.js"
       ],
       "serverReadyAction": {

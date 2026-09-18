@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, matchesGlob, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
@@ -28,6 +28,21 @@ test("debug launch contracts use dedicated ports, browser profile, and independe
   assert.equal(browser.webRoot, "${workspaceFolder}/frontend");
   const backend = launch.configurations.find(config => config.name === "Debug Backend");
   assert.ok(backend.outFiles.includes("${workspaceFolder}/node_modules/.nitro-debug/**/*.mjs"));
+  // Workflow VM scripts use the source module name, not the on-disk bundle URL.
+  // Both the relative V8 URL and the debugger's resolved path need their maps.
+  for (const name of ["Debug Backend", "Debug Backend + Web"]) {
+    const locations = launch.configurations.find(config => config.name === name).resolveSourceMapLocations
+      .map(pattern => pattern.replace("${workspaceFolder}", resolve(".")));
+    for (const source of ["src/workflows/minimal-pi-coding-agent/workflow.ts",
+      "./src/workflows/minimal-pi-coding-agent/workflow",
+      "src/workflows/minimal-pi-coding-agent/workflow",
+      resolve("src/workflows/minimal-pi-coding-agent/workflow"),
+      resolve("src/workflows/minimal-pi-coding-agent/workflow.ts"),
+      resolve("node_modules/.nitro-debug/workflow/steps.mjs")]) {
+      assert.ok(locations.some(pattern => matchesGlob(source, pattern)), `${name} must resolve ${source}`);
+    }
+    assert.ok(!locations.some(pattern => matchesGlob(resolve("node_modules/unrelated/src/index.ts"), pattern)));
+  }
   const tui = launch.configurations.find(config => config.name === "Debug TUI");
   assert.equal(tui.console, "integratedTerminal");
   assert.equal(tui.autoAttachChildProcesses, true);
