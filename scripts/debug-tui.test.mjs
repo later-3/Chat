@@ -9,34 +9,32 @@ import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { prepareTuiProject } from "./debug-tui.mjs";
 
-test("TUI preparation waits for Backend, authenticates, and registers the server project", async t => {
+test("TUI preparation waits for Backend, and registers the server project", async t => {
   const requests = [];
-  let healthChecks = 0, loginStatus = 200, projectId = "debug-lab";
+  let healthChecks = 0, projectStatus = 200, projectId = "debug-lab";
   const server = createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
     requests.push({ path: request.url, cookie: request.headers.cookie, body: body ? JSON.parse(body) : undefined });
     if (request.url === "/api/health") { response.writeHead(++healthChecks === 1 ? 503 : 200); response.end(); }
-    else if (request.url === "/api/auth/session") {
-      response.writeHead(loginStatus, { "Set-Cookie": "chat-session=test; HttpOnly; Path=/" }); response.end();
-    } else if (request.url === "/api/projects/open") {
+    else if (request.url === "/api/projects/open") {
+      response.statusCode = projectStatus;
       response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify({ projectId }));
     } else { response.writeHead(404); response.end(); }
   });
   server.listen(0, "127.0.0.1"); await once(server, "listening");
   t.after(() => new Promise(resolve => server.close(resolve)));
-  const args = { url: `http://127.0.0.1:${server.address().port}`, username: "fixture", password: "fixture-only",
+  const args = { url: `http://127.0.0.1:${server.address().port}`,
     projectPath: "/isolated/workspaces/debug-lab", signal: new AbortController().signal, timeoutMs: 2000 };
   await prepareTuiProject(args);
   assert.equal(healthChecks, 2);
-  assert.deepEqual(requests.find(request => request.path === "/api/auth/session").body, { username: "fixture", password: "fixture-only" });
+  assert.ok(!requests.some(request => request.path === "/api/auth/session"));
   const opened = requests.find(request => request.path === "/api/projects/open");
-  assert.equal(opened.cookie, "chat-session=test");
+  assert.equal(opened.cookie, undefined);
   assert.deepEqual(opened.body, { path: args.projectPath });
-  loginStatus = 401; requests.length = 0;
-  await assert.rejects(prepareTuiProject(args), /login failed \(401\)/);
-  assert.ok(!requests.some(request => request.path === "/api/projects/open"));
-  loginStatus = 200; projectId = "unexpected";
+  projectStatus = 503; requests.length = 0;
+  await assert.rejects(prepareTuiProject(args), /could not open Debug Lab \(503\)/);
+  projectStatus = 200; projectId = "unexpected";
   await assert.rejects(prepareTuiProject(args), /identity differs/);
   const cancellation = new AbortController(); cancellation.abort(); requests.length = 0;
   await assert.rejects(prepareTuiProject({ ...args, signal: cancellation.signal }), { name: "AbortError" });

@@ -1,5 +1,12 @@
+import { readLegacyFriendSessions } from "./migrations/agent-home-normalization.js";
+import { readWritableFriendSessionIds } from "./session-owner.js";
+import { readSessionFriendExecution } from "./long-agents/turn-feedback.js";
+import { resolveChatHome } from "./chat-home.js";
+import { projectLongAgentActivity } from "./long-agents/session-activity.js";
+import { isChatSessionOperationBusy } from "./session-operation-lock.js";
 import { dirname, resolve } from "node:path";
 import { readSessionWorkflowActivity } from "./session-workflow-activity.js";
+import { readChatSessionRunOutcome } from "./workflows/session-run-registry.js";
 import {
   buildContextEntries,
   buildSessionContext,
@@ -78,7 +85,7 @@ export interface ChatSessionListItem {
   projectKey: string;
   transient: false;
   sessionSource: "chat";
-  readOnly: false;
+  readOnly: boolean;
   owner: ChatSessionOwner;
   projectId?: string;
 }
@@ -90,6 +97,8 @@ async function toListItems(
   activePlanningBySessionId: ReadonlyMap<string, PlanningExecutionRunRecord> = new Map(),
 ): Promise<ChatSessionListItem[]> {
   const owners = await readChatSessionOwnerIndex(projectId, chatHome);
+  const writableFriends = await readWritableFriendSessionIds(chatHome);
+  const migrated = await readLegacyFriendSessions(resolveChatHome(chatHome));
   const idByPath = new Map(infos.map((info) => [resolve(info.path), info.id]));
   return Promise.all(infos.map(async (info) => {
     const relation = collectChatSubsessionRelation(
@@ -124,7 +133,8 @@ async function toListItems(
       projectKey: projectId ?? info.cwd,
       transient: false,
       sessionSource: "chat",
-      readOnly: false,
+      readOnly: (chatSessionOwner(owners, info.id).type === "long-agent" && !writableFriends.has(info.id))
+        || migrated.some((entry) => entry.sessionId === info.id && entry.targetProjectId === projectId && entry.sourceProjectId !== entry.targetProjectId),
       owner: chatSessionOwner(owners, info.id),
       projectId,
     };
@@ -170,8 +180,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Pi保存的ToolCall使用`id/name/arguments`，Pi Web前端使用另一组字段名。 */
+/** 将原生 Pi 消息投影到两个 Web 入口共用的展示合同；不改写 Session。 */
 export function normalizeMessageForFrontend(message: unknown): unknown {
+  if (isRecord(message) && (message.role === "compactionSummary" || message.role === "branchSummary")
+    && typeof message.summary === "string") {
+    return {
+      role: "custom",
+      customType: message.role === "compactionSummary" ? "compaction" : "branch-summary",
+      content: message.summary,
+      display: true,
+      ...(typeof message.timestamp === "number" ? { timestamp: message.timestamp } : {}),
+      details: message.role === "compactionSummary"
+        ? { tokensBefore: message.tokensBefore }
+        : { fromId: message.fromId },
+    };
+  }
   if (!isRecord(message) || message.role !== "assistant" || !Array.isArray(message.content)) {
     return message;
   }
@@ -334,6 +357,7 @@ export function projectSessionContext(
   const context = buildSessionContext(entries, leafId);
   const messages: unknown[] = [];
   const entryIds: string[] = [];
+  const entryTimes: (number | null)[] = [];
   const stageByEntryId = new Map(
     collectChatWorkflowStageMarkers(contextEntries).map((stage) => [stage.entryId, stage]),
   );
@@ -380,6 +404,7 @@ export function projectSessionContext(
         timestamp: Date.parse(reviewDecision.decidedAt),
       });
       entryIds.push(reviewDecision.entryId);
+      entryTimes.push(Date.parse(reviewDecision.decidedAt));
     }
     for (const message of sessionEntryToContextMessages(entry)) {
       if (isRecord(message) && message.role === "custom" && message.display === false) continue;
@@ -396,11 +421,14 @@ export function projectSessionContext(
         options,
       ));
       entryIds.push(entry.id);
+      const recordedAt = Date.parse(entry.timestamp);
+      entryTimes.push(Number.isFinite(recordedAt) ? recordedAt : null);
     }
   }
   return {
     messages,
     entryIds,
+    entryTimes,
     thinkingLevel: context.thinkingLevel,
     model: context.model,
   };
@@ -412,7 +440,10 @@ export async function requireChatSession(
   projectId?: string,
   chatHome?: string,
 ): Promise<ChatSessionListItem> {
-  const project = await resolveSessionProject(projectId, chatHome);
+  // Resolve only an exact migration receipt, never search another Project after an error.
+  const legacy = projectId === undefined ? undefined : (await readLegacyFriendSessions(resolveChatHome(chatHome)))
+    .find((entry) => entry.sourceProjectId === projectId && entry.sessionId === sessionId);
+  const project = await resolveSessionProject(legacy?.targetProjectId ?? projectId, chatHome);
   const active = await requireActiveChatSessionFile(project, sessionId);
   try {
     const [session] = await toListItems([active], project.projectId, chatHome);
@@ -501,14 +532,17 @@ export async function readChatSession(
   const pendingPlanReview = collectPendingPlanReview(entries);
   let activePlanningExecution;
   let activeWorkflowRun;
+  let workflowOutcome;
   let workflowCallProjection;
   if (info.projectId !== undefined) {
     const project = await resolveProjectContext(info.projectId, chatHome);
     activeWorkflowRun = await readSessionWorkflowActivity(project, manager.getSessionId());
+    if (activeWorkflowRun === undefined) workflowOutcome = await readChatSessionRunOutcome(project.projectDataDir, manager.getSessionId());
     workflowCallProjection = await collectChatWorkflowCallProjection({
       rootSessionId: manager.getSessionId(),
       rootEntries: entries,
       sessionDir: project.sessionDir,
+      chatHome: project.chatHome,
     });
     const record = await findActivePlanningExecutionRun(
       project.projectDataDir,
@@ -536,12 +570,14 @@ export async function readChatSession(
     session: info,
     sessionId: manager.getSessionId(),
     filePath: info.path,
+    ...(info.owner.type === "long-agent" ? { friendExecution: await readSessionFriendExecution(resolveChatHome(chatHome), info.owner.longAgentId, sessionId), longAgentActivity: projectLongAgentActivity(entries, info.projectId !== undefined && isChatSessionOperationBusy(info.projectId, manager.getSessionId())) } : {}),
     totalActiveMs: 0,
     tree: manager.getTree(),
     leafId: selectedLeafId ?? null,
     context: {
       messages: context.messages,
       entryIds: context.entryIds,
+      entryTimes: context.entryTimes,
       thinkingLevel: context.thinkingLevel,
       model: context.model,
     },
@@ -553,5 +589,6 @@ export async function readChatSession(
     promptResourceProposals: collectChatPromptResourceProposals(entries),
     ...(activePlanningExecution === undefined ? {} : { activePlanningExecution }),
     ...(activeWorkflowRun === undefined ? {} : { activeWorkflowRun }),
+    ...(workflowOutcome === undefined ? {} : { workflowOutcome }),
   };
 }

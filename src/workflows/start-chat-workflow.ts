@@ -1,3 +1,4 @@
+import { chatSessionOwner, readChatSessionOwnerIndex } from "../session-owner.js";
 import { randomUUID } from "node:crypto";
 import { start } from "workflow/api";
 import type { ChatWorkflowHttpInput } from "../run-request.js";
@@ -22,6 +23,8 @@ export async function startChatWorkflow(
     : await resolveProjectContext(input.projectId, input.chatHome);
   if (project !== undefined && input.sessionId !== undefined) {
     await requireActiveChatSessionFile(project, input.sessionId);
+    const owner = chatSessionOwner(await readChatSessionOwnerIndex(project.projectId, input.chatHome), input.sessionId);
+    if (owner.type !== "ordinary") throw new Error("Friend会话不能通过普通Workflow入口继续；请进入Friend今天的会话");
   }
   const run = await start(definition.run, [chatWorkflowInput]);
   if (project !== undefined && input.sessionId !== undefined) {

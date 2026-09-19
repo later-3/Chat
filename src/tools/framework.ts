@@ -19,7 +19,10 @@ export interface ChatToolRuntimeContext {
   readonly purpose: "execution" | "inspection";
   readonly authorizedToolAddresses?: readonly string[];
   readonly authorizedToolNames?: readonly string[];
+  /** Session/audit storage owner, never the mutable work target. */
   readonly projectId: string;
+  /** undefined: legacy Workflow target = projectId; null: no user project. */
+  readonly collaborationProjectId?: string | null;
   readonly chatHome: string;
   readonly cwd: string;
   readonly sessionManager: SessionManager;

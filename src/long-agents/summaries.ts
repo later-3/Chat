@@ -1,4 +1,6 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { atomicWriteJson, atomicWriteText, withFileLock } from "../persistence/versioned-file.js";
+import { readLongAgentState } from "./storage.js";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ensureChatHome } from "../chat-home.js";
 import { longAgentConfigRoot } from "./storage.js";
@@ -13,6 +15,7 @@ export interface LongAgentSummary {
   readonly handoff: string;
   readonly socialPost: string | null;
   readonly updatedAt: string;
+  readonly source?: { readonly sessionId: string; readonly cutoff: string; readonly entryId: string; readonly revision: string };
 }
 
 export class LongAgentSummaryError extends Error {}
@@ -86,6 +89,7 @@ function parseJson(content: string, path: string): LongAgentSummary {
   if (typeof value !== "object" || value === null) throw new LongAgentSummaryError(`总结必须是对象: ${path}`);
   const record = value as Record<string, unknown>;
   return {
+    ...(record.source === undefined ? {} : { source: parseSummarySource(record.source) }),
     date: assertDate(record.date),
     did: assertLines(record.did, "did"),
     reflections: assertLines(record.reflections, "reflections"),
@@ -104,11 +108,13 @@ export async function writeLongAgentSummary(input: {
   readonly reflections?: unknown;
   readonly handoff?: unknown;
   readonly socialPost?: unknown;
+  readonly source?: LongAgentSummary["source"];
 }): Promise<LongAgentSummary> {
   const date = assertDate(input.date);
   const dir = await rootFor(input.chatHome, input.longAgentId);
   const summary: LongAgentSummary = {
     date,
+    ...(input.source === undefined ? {} : { source: input.source }),
     did: assertLines(input.did, "did"),
     reflections: assertLines(input.reflections, "reflections"),
     handoff: assertText(input.handoff, "handoff"),
@@ -117,8 +123,10 @@ export async function writeLongAgentSummary(input: {
       : assertText(input.socialPost, "socialPost"),
     updatedAt: new Date().toISOString(),
   };
-  await writeFile(resolve(dir, `${date}.json`), `${JSON.stringify(summary, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await writeFile(resolve(dir, `${date}.md`), toMarkdown(summary), { encoding: "utf8", mode: 0o600 });
+  await withFileLock(resolve(dir, date), async () => {
+    await atomicWriteJson(resolve(dir, `${date}.json`), summary);
+    await atomicWriteText(resolve(dir, `${date}.md`), toMarkdown(summary));
+  });
   return summary;
 }
 
@@ -146,7 +154,7 @@ export async function listLongAgentSummaries(input: {
   readonly limit?: number;
 }): Promise<LongAgentSummary[]> {
   const dir = await rootFor(input.chatHome, input.longAgentId);
-  const files = (await readdir(dir).catch(() => [] as string[])).filter((file) => file.endsWith(".json"));
+  const files = (await readdir(dir)).filter((file) => file.endsWith(".json"));
   const dates = files.map((file) => file.slice(0, -".json".length)).filter((date) => DATE_PATTERN.test(date));
   const filtered = dates
     .filter((date) => (input.from === undefined || date >= input.from) && (input.to === undefined || date <= input.to))
@@ -206,7 +214,9 @@ export async function buildLongAgentHandoff(input: {
     to: previousDate(today),
     limit: days,
   });
-  if (summaries.length === 0) return null;
+  const unfinished = (await readLongAgentState(input.chatHome)).dailySessions.filter((day) => day.longAgentId === input.longAgentId && day.date < today && day.summary.status !== "completed");
+  const pending = unfinished.map((day) => `交接未就绪：${day.date}，Session ${day.sessionId}，状态 ${day.summary.status}${day.summary.error === null ? "" : `：${day.summary.error}`}`);
+  if (summaries.length === 0 && pending.length === 0) return null;
   const blocks = summaries.map((summary) => [
     `### ${summary.date}`,
     "做了什么：",
@@ -218,7 +228,15 @@ export async function buildLongAgentHandoff(input: {
   return [
     `<recent_daily_summaries days="${String(summaries.length)}">`,
     "以下是此前几天的每日总结与交接上下文（程序注入，不是用户本轮说的话）：",
+    ...pending,
     ...blocks,
     "</recent_daily_summaries>",
   ].join("\n");
+}
+
+function parseSummarySource(value: unknown): NonNullable<LongAgentSummary["source"]> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("总结来源无效");
+  const source = value as Record<string, unknown>;
+  for (const key of ["sessionId", "cutoff", "entryId", "revision"]) if (typeof source[key] !== "string" || !source[key]) throw new Error("总结来源字段无效");
+  return source as unknown as NonNullable<LongAgentSummary["source"]>;
 }

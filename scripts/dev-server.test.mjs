@@ -92,6 +92,10 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
   let releaseRestartModelRequest;
   let markRestartReady;
   const restartReady = new Promise((resolve) => { markRestartReady = resolve; });
+  let markStatusCancelReady;
+  const statusCancelReady = new Promise(resolve => { markStatusCancelReady = resolve; });
+  let markStatusCancelClosed;
+  const statusCancelClosed = new Promise(resolve => { markStatusCancelClosed = resolve; });
   let releaseUiCancelParent;
   let markUiCancelParentReady;
   const uiCancelParentReady = new Promise((resolve) => { markUiCancelParentReady = resolve; });
@@ -127,6 +131,13 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
         [...modelRequest.messages].reverse().find((message) => message.role === "tool")?.content ?? "",
       );
       const latestToolCallId = latestToolText.match(/callId=([^\\s"\\]+)/)?.[1];
+      if (latestMessageText.includes("STATUS_CANCEL_PARENT")) {
+        response.writeHead(200, { "Content-Type": "text/event-stream" });
+        response.flushHeaders();
+        response.once("close", () => markStatusCancelClosed());
+        markStatusCancelReady();
+        return;
+      }
       let responseText;
       if (systemText.includes("Planner Orchestrator Workflow中的Coordinator")
         && !modelRequest.messages.some((message) => message.role === "tool")) {
@@ -454,10 +465,6 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
           // Nitro dev进程同时监听内部watcher端口；Queue自动探测可能选中错误端口导致消息悬挂，
           // 必须显式指向本测试保留的HTTP端口。
           WORKFLOW_LOCAL_BASE_URL: baseUrl,
-          CHAT_WEB_AUTH_ENABLED: "1",
-          CHAT_WEB_AUTH_USERNAME: "test-user",
-          CHAT_WEB_AUTH_PASSWORD: "123456",
-          CHAT_WEB_AUTH_SESSION_SECRET: "dev-server-test-session-secret-at-least-32-characters",
           CHAT_PUBLIC_URL: "https://chat.example.test",
           MEM0_TELEMETRY: "false",
         },
@@ -480,28 +487,16 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     devServer = startDevServer();
     assert.equal(await waitForDevServer(devServer), true, output);
 
-    const login = await fetch(`${baseUrl}/api/auth/session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Forwarded-Proto": "https" },
-      body: JSON.stringify({ username: "test-user", password: "123456", persistent: true }),
-    });
-    assert.equal(login.status, 200, await login.text());
-    const cookie = login.headers.get("set-cookie")?.split(";", 1)[0];
-    assert.ok(cookie);
-    const authenticatedFetch = (pathname, init = {}) => {
-      const headers = new Headers(init.headers);
-      headers.set("Cookie", cookie);
-      return fetch(`${baseUrl}${pathname}`, { ...init, headers });
-    };
+    const serverFetch = (pathname, init = {}) => fetch(`${baseUrl}${pathname}`, init);
 
-    const opened = await authenticatedFetch("/api/projects/open", {
+    const opened = await serverFetch("/api/projects/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: canonicalWorkspace }),
     });
     assert.equal(opened.status, 200, await opened.text());
 
-    const start = await authenticatedFetch("/runs", {
+    const start = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -515,7 +510,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(start.status, 202, JSON.stringify(started));
     assert.equal(typeof started.sessionId, "string");
     assert.equal(started.isNewSession, true);
-    const acceptedSessionsResponse = await authenticatedFetch("/api/sessions?projectId=dev-e2e-project");
+    const acceptedSessionsResponse = await serverFetch("/api/sessions?projectId=dev-e2e-project");
     const acceptedSessions = await acceptedSessionsResponse.json();
     assert.equal(acceptedSessionsResponse.status, 200, JSON.stringify(acceptedSessions));
     assert.ok(acceptedSessions.sessions.some((session) => session.id === started.sessionId));
@@ -530,7 +525,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const waitForReview = async (revision) => {
       const deadline = Date.now() + 15_000;
       while (Date.now() < deadline) {
-        const response = await authenticatedFetch(statusPath());
+        const response = await serverFetch(statusPath());
         const status = await response.json();
         assert.equal(response.status, 200, JSON.stringify(status));
         if (status.status === "failed" || status.status === "cancelled") {
@@ -544,7 +539,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       assert.fail(`plan revision ${revision} did not reach review\n${output}`);
     };
     const submitReview = async (review, decision) => {
-      const response = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
+      const response = await serverFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -566,7 +561,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(firstReview.plan, "PLAN_V1");
     assert.equal(firstReview.readiness, "needs_clarification");
     assert.deepEqual(firstReview.blockingQuestions, ["Should the execution include an explicit rollback step?"]);
-    const overlappingRun = await authenticatedFetch("/runs", {
+    const overlappingRun = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -580,7 +575,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(overlappingRun.status, 400);
     assert.match(await overlappingRun.text(), /等待计划v1审核/);
     assert.equal(modelRequests.length, 1);
-    const blockedApproval = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
+    const blockedApproval = await serverFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -609,7 +604,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const runDeadline = Date.now() + 15_000;
     let status;
     while (Date.now() < runDeadline) {
-      const response = await authenticatedFetch(statusPath());
+      const response = await serverFetch(statusPath());
       status = await response.json();
       assert.equal(response.status, 200, JSON.stringify(status));
       if (["completed", "failed", "cancelled"].includes(status.status)) break;
@@ -640,7 +635,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       /ERR_IMPORT_ATTRIBUTE_MISSING|找不到.*Skill资源|\[Workflow\] Error/,
     );
 
-    const cancelStartResponse = await authenticatedFetch("/runs", {
+    const cancelStartResponse = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -655,7 +650,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(cancelStartResponse.status, 202, JSON.stringify(cancelStarted));
     assert.equal(cancelStarted.sessionId, status.result.sessionId);
     assert.equal(cancelStarted.isNewSession, false);
-    const planningOverlap = await authenticatedFetch("/runs", {
+    const planningOverlap = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -676,7 +671,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const cancelReviewDeadline = Date.now() + 15_000;
     let cancelReviewStatus;
     while (Date.now() < cancelReviewDeadline) {
-      const response = await authenticatedFetch(cancelStatusPath);
+      const response = await serverFetch(cancelStatusPath);
       cancelReviewStatus = await response.json();
       if (cancelReviewStatus.phase === "waiting_review") break;
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -684,12 +679,12 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(cancelReviewStatus?.phase, "waiting_review", `${JSON.stringify(cancelReviewStatus)}\n${output}`);
     assert.equal(modelRequests.length, 4);
 
-    const cancelledResponse = await authenticatedFetch(cancelStatusPath, { method: "DELETE" });
+    const cancelledResponse = await serverFetch(cancelStatusPath, { method: "DELETE" });
     assert.equal(cancelledResponse.status, 200, await cancelledResponse.text());
     const cancelledDeadline = Date.now() + 5_000;
     let cancelled;
     while (Date.now() < cancelledDeadline) {
-      const response = await authenticatedFetch(cancelStatusPath);
+      const response = await serverFetch(cancelStatusPath);
       cancelled = await response.json();
       if (cancelled.status === "cancelled") break;
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -697,7 +692,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(cancelled?.status, "cancelled", JSON.stringify(cancelled));
     assert.equal(modelRequests.length, 4, "cancelling during review must not call the executor");
 
-    const continuedResponse = await authenticatedFetch("/runs", {
+    const continuedResponse = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -715,7 +710,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const continueDeadline = Date.now() + 10_000;
     let continued;
     while (Date.now() < continueDeadline) {
-      const response = await authenticatedFetch(`/runs/${encodeURIComponent(continuedStarted.runId)}`);
+      const response = await serverFetch(`/runs/${encodeURIComponent(continuedStarted.runId)}`);
       continued = await response.json();
       if (["completed", "failed", "cancelled"].includes(continued.status)) break;
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -724,7 +719,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(continued.result.sessionId, status.result.sessionId);
     assert.equal(modelRequests.length, 5);
 
-    const directMemoryStartResponse = await authenticatedFetch("/runs", {
+    const directMemoryStartResponse = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -739,7 +734,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const directMemoryDeadline = Date.now() + 15_000;
     let directMemoryStatus;
     while (Date.now() < directMemoryDeadline) {
-      const response = await authenticatedFetch(`/runs/${encodeURIComponent(directMemoryStarted.runId)}`);
+      const response = await serverFetch(`/runs/${encodeURIComponent(directMemoryStarted.runId)}`);
       directMemoryStatus = await response.json();
       assert.equal(response.status, 200, JSON.stringify(directMemoryStatus));
       if (["completed", "failed", "cancelled"].includes(directMemoryStatus.status)) break;
@@ -752,7 +747,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     );
     assert.equal(directMemoryStatus.result.text, "DIRECT_MEMORY_PARENT_OK");
 
-    const directMemoryParentResponse = await authenticatedFetch(
+    const directMemoryParentResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(directMemoryStarted.sessionId)}?projectId=dev-e2e-project`,
     );
     const directMemoryParent = await directMemoryParentResponse.json();
@@ -761,7 +756,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(directMemoryParent.workflowCalls[0].child.workflowId, "memory");
     assert.equal(directMemoryParent.workflowCalls[0].status, "completed");
     assert.equal(typeof directMemoryParent.workflowCalls[0].durationMs, "number");
-    const directMemoryChildResponse = await authenticatedFetch(
+    const directMemoryChildResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(directMemoryParent.workflowCalls[0].child.sessionId)}?projectId=dev-e2e-project`,
     );
     const directMemoryChild = await directMemoryChildResponse.json();
@@ -810,7 +805,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.deepEqual(directMemoryChildRequest?.tools ?? [], []);
     assert.doesNotMatch(JSON.stringify(directMemoryChildRequest?.messages ?? []), /<skill name=\\?"memory/);
 
-    const directReviewStartResponse = await authenticatedFetch("/runs", {
+    const directReviewStartResponse = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -827,7 +822,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     let childReviewSession;
     let childReviewSessionsPage;
     while (Date.now() < childReviewDeadline) {
-      const response = await authenticatedFetch("/api/sessions?projectId=dev-e2e-project");
+      const response = await serverFetch("/api/sessions?projectId=dev-e2e-project");
       childReviewSessionsPage = await response.json();
       assert.equal(response.status, 200, JSON.stringify(childReviewSessionsPage));
       childReviewSession = childReviewSessionsPage.sessions.find((session) => (
@@ -840,7 +835,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.ok(childReviewSession, `reviewed Child Session was not discoverable\n${output}`);
     assert.equal(childReviewSession.attention.workflowId, "planning-execution");
 
-    const childReviewDetailResponse = await authenticatedFetch(
+    const childReviewDetailResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(childReviewSession.id)}?projectId=dev-e2e-project`,
     );
     const childReviewDetail = await childReviewDetailResponse.json();
@@ -850,7 +845,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(childReviewDetail.activePlanningExecution?.review?.plan, "CHILD_REVIEW_PLAN_READY");
     const childReviewRun = childReviewDetail.activePlanningExecution;
     const childReview = childReviewRun.review;
-    const childReviewApproval = await authenticatedFetch(
+    const childReviewApproval = await serverFetch(
       `/runs/${encodeURIComponent(childReviewRun.runId)}/review`,
       {
         method: "POST",
@@ -872,7 +867,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const directReviewDeadline = Date.now() + 20_000;
     let directReviewStatus;
     while (Date.now() < directReviewDeadline) {
-      const response = await authenticatedFetch(`/runs/${encodeURIComponent(directReviewStarted.runId)}`);
+      const response = await serverFetch(`/runs/${encodeURIComponent(directReviewStarted.runId)}`);
       directReviewStatus = await response.json();
       assert.equal(response.status, 200, JSON.stringify(directReviewStatus));
       if (["completed", "failed", "cancelled"].includes(directReviewStatus.status)) break;
@@ -881,7 +876,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(directReviewStatus?.status, "completed", `${JSON.stringify(directReviewStatus)}\n${output}`);
     assert.equal(directReviewStatus.result.text, "DIRECT_REVIEW_PARENT_OK");
 
-    const directReviewParentResponse = await authenticatedFetch(
+    const directReviewParentResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(directReviewStarted.sessionId)}?projectId=dev-e2e-project`,
     );
     const directReviewParent = await directReviewParentResponse.json();
@@ -891,7 +886,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(directReviewParent.workflowCalls[0].status, "completed");
     assert.match(JSON.stringify(directReviewParent.context.messages), /CHILD_REVIEW_EXECUTED/);
 
-    const completedChildResponse = await authenticatedFetch(
+    const completedChildResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(childReviewSession.id)}?projectId=dev-e2e-project`,
     );
     const completedChild = await completedChildResponse.json();
@@ -906,7 +901,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       ["pi-coding-agent", "planner"],
     );
 
-    const completedChildSessionsResponse = await authenticatedFetch(
+    const completedChildSessionsResponse = await serverFetch(
       "/api/sessions?projectId=dev-e2e-project",
     );
     const completedChildSessions = await completedChildSessionsResponse.json();
@@ -917,7 +912,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(completedChildSummary?.parentSessionId, directReviewStarted.sessionId);
     assert.equal(completedChildSummary?.attention, undefined);
 
-    const directSelfStartResponse = await authenticatedFetch("/runs", {
+    const directSelfStartResponse = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -932,7 +927,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const directSelfDeadline = Date.now() + 15_000;
     let directSelfStatus;
     while (Date.now() < directSelfDeadline) {
-      const response = await authenticatedFetch(`/runs/${encodeURIComponent(directSelfStarted.runId)}`);
+      const response = await serverFetch(`/runs/${encodeURIComponent(directSelfStarted.runId)}`);
       directSelfStatus = await response.json();
       assert.equal(response.status, 200, JSON.stringify(directSelfStatus));
       if (["completed", "failed", "cancelled"].includes(directSelfStatus.status)) break;
@@ -945,7 +940,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     );
     assert.equal(directSelfStatus.result.text, "DIRECT_SELF_PARENT_OK");
 
-    const directSelfParentResponse = await authenticatedFetch(
+    const directSelfParentResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(directSelfStarted.sessionId)}?projectId=dev-e2e-project`,
     );
     const directSelfParent = await directSelfParentResponse.json();
@@ -956,7 +951,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.notEqual(directSelfParent.workflowCalls[0].child.sessionId, directSelfStarted.sessionId);
     assert.equal(typeof directSelfParent.workflowCalls[0].child.runId, "string");
 
-    const directWaitStartResponse = await authenticatedFetch("/runs", {
+    const directWaitStartResponse = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -971,7 +966,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const directWaitDeadline = Date.now() + 15_000;
     let directWaitStatus;
     while (Date.now() < directWaitDeadline) {
-      const response = await authenticatedFetch(`/runs/${encodeURIComponent(directWaitStarted.runId)}`);
+      const response = await serverFetch(`/runs/${encodeURIComponent(directWaitStarted.runId)}`);
       directWaitStatus = await response.json();
       assert.equal(response.status, 200, JSON.stringify(directWaitStatus));
       if (["completed", "failed", "cancelled"].includes(directWaitStatus.status)) break;
@@ -979,7 +974,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     }
     assert.equal(directWaitStatus?.status, "completed", `${JSON.stringify(directWaitStatus)}\n${output}`);
     assert.equal(directWaitStatus.result.text, "DIRECT_WAIT_PARENT_OK");
-    const directWaitParentResponse = await authenticatedFetch(
+    const directWaitParentResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(directWaitStarted.sessionId)}?projectId=dev-e2e-project`,
     );
     const directWaitParent = await directWaitParentResponse.json();
@@ -990,7 +985,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       JSON.stringify(request.messages).includes('\\"action\\":\\"wait\\"')
     )), true);
 
-    const directCancelStartResponse = await authenticatedFetch("/runs", {
+    const directCancelStartResponse = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1005,7 +1000,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const directCancelDeadline = Date.now() + 15_000;
     let directCancelStatus;
     while (Date.now() < directCancelDeadline) {
-      const response = await authenticatedFetch(`/runs/${encodeURIComponent(directCancelStarted.runId)}`);
+      const response = await serverFetch(`/runs/${encodeURIComponent(directCancelStarted.runId)}`);
       directCancelStatus = await response.json();
       assert.equal(response.status, 200, JSON.stringify(directCancelStatus));
       if (["completed", "failed", "cancelled"].includes(directCancelStatus.status)) break;
@@ -1017,7 +1012,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       `${JSON.stringify(directCancelStatus)}\n${output}`,
     );
     assert.equal(directCancelStatus.result.text, "DIRECT_CANCEL_PARENT_OK");
-    const directCancelParentResponse = await authenticatedFetch(
+    const directCancelParentResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(directCancelStarted.sessionId)}?projectId=dev-e2e-project`,
     );
     const directCancelParent = await directCancelParentResponse.json();
@@ -1030,7 +1025,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       JSON.stringify(request.messages).includes('\\"action\\":\\"cancel\\"')
     )), true);
 
-    const uiCancelStartResponse = await authenticatedFetch("/runs", {
+    const uiCancelStartResponse = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1047,7 +1042,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       new Promise((_, reject) => setTimeout(() => reject(new Error("UI cancellation did not reach watch boundary")), 15_000)),
     ]);
     const watchPath = `/api/sessions/${encodeURIComponent(uiCancelStarted.sessionId)}/workflow-calls?projectId=dev-e2e-project`;
-    const activeWatchResponse = await authenticatedFetch(watchPath);
+    const activeWatchResponse = await serverFetch(watchPath);
     const activeWatch = await activeWatchResponse.json();
     assert.equal(activeWatchResponse.status, 200, JSON.stringify(activeWatch));
     assert.equal(activeWatch.workflowCallStatistics.capacity.active, 1);
@@ -1056,13 +1051,13 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(activeWatch.workflowCallTree[0].call.status, "running");
     const watchedCall = activeWatch.workflowCallTree[0].call;
 
-    const wrongOwnerCancelResponse = await authenticatedFetch(
+    const wrongOwnerCancelResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(watchedCall.child.sessionId)}/workflow-calls/${encodeURIComponent(watchedCall.callId)}?projectId=dev-e2e-project`,
       { method: "DELETE" },
     );
     assert.equal(wrongOwnerCancelResponse.status, 409);
 
-    const watchCancelResponse = await authenticatedFetch(
+    const watchCancelResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(watchedCall.parent.sessionId)}/workflow-calls/${encodeURIComponent(watchedCall.callId)}?projectId=dev-e2e-project`,
       { method: "DELETE" },
     );
@@ -1071,7 +1066,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(watchCancelled.result.status, "cancelled");
     assert.equal(watchCancelled.result.callId, watchedCall.callId);
 
-    const terminalWatchResponse = await authenticatedFetch(watchPath);
+    const terminalWatchResponse = await serverFetch(watchPath);
     const terminalWatch = await terminalWatchResponse.json();
     assert.equal(terminalWatchResponse.status, 200, JSON.stringify(terminalWatch));
     assert.equal(terminalWatch.workflowCallStatistics.capacity.active, 0);
@@ -1081,7 +1076,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const uiCancelDeadline = Date.now() + 15_000;
     let uiCancelStatus;
     while (Date.now() < uiCancelDeadline) {
-      const response = await authenticatedFetch(`/runs/${encodeURIComponent(uiCancelStarted.runId)}`);
+      const response = await serverFetch(`/runs/${encodeURIComponent(uiCancelStarted.runId)}`);
       uiCancelStatus = await response.json();
       if (["completed", "failed", "cancelled"].includes(uiCancelStatus.status)) break;
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -1089,7 +1084,22 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(uiCancelStatus?.status, "completed", `${JSON.stringify(uiCancelStatus)}\n${output}`);
     assert.equal(uiCancelStatus.result.text, "DIRECT_UI_CANCEL_PARENT_OK");
 
-    const directRestartStartResponse = await authenticatedFetch("/runs", {
+    const statusCancelResponse = await serverFetch("/runs", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "dev-e2e-project", cwd: canonicalWorkspace,
+        prompt: "STATUS_CANCEL_PARENT: Hold the model request until explicit cancellation.", workflow: "minimal-pi-coding-agent" }),
+    });
+    const statusCancelRun = await statusCancelResponse.json();
+    assert.equal(statusCancelResponse.status, 202);
+    await Promise.race([statusCancelReady, new Promise((_, reject) => setTimeout(() => reject(Error("cancel model not reached")), 10_000))]);
+    const statusCancelled = await serverFetch(`/runs/${statusCancelRun.runId}`, { method: "DELETE" });
+    assert.equal(statusCancelled.status, 200, await statusCancelled.text());
+    await Promise.race([statusCancelClosed, new Promise((_, reject) => setTimeout(() => reject(Error("cancel did not abort Pi model request")), 5000))]);
+    const cancelledSession = await (await serverFetch(`/api/sessions/${statusCancelRun.sessionId}?projectId=dev-e2e-project`)).json();
+    assert.equal(cancelledSession.activeWorkflowRun, undefined);
+    assert.equal(cancelledSession.workflowOutcome.status, "cancelled");
+
+    const directRestartStartResponse = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1108,7 +1118,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const preCrashCallDeadline = Date.now() + 5_000;
     let preCrashParent;
     while (Date.now() < preCrashCallDeadline) {
-      const response = await authenticatedFetch(
+      const response = await serverFetch(
         `/api/sessions/${encodeURIComponent(directRestartStarted.sessionId)}?projectId=dev-e2e-project`,
       );
       preCrashParent = await response.json();
@@ -1124,12 +1134,15 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     devServer = startDevServer();
     assert.equal(await waitForDevServer(devServer), true, output);
 
-    const interruptedParentResponse = await authenticatedFetch(
-      `/runs/${encodeURIComponent(directRestartStarted.runId)}`,
-      { method: "DELETE" },
-    );
-    assert.equal(interruptedParentResponse.status, 200, await interruptedParentResponse.text());
-    const continuationResponse = await authenticatedFetch("/runs", {
+    const interruptedParentResponse = await serverFetch(`/runs/${encodeURIComponent(directRestartStarted.runId)}`);
+    const interruptedParent = await interruptedParentResponse.json();
+    assert.equal(interruptedParentResponse.status, 200);
+    assert.equal(interruptedParent.status, "failed", JSON.stringify(interruptedParent));
+    assert.match(interruptedParent.error, /重启或热重建中断/);
+    const interruptedSession = await (await serverFetch(`/api/sessions/${directRestartStarted.sessionId}?projectId=dev-e2e-project`)).json();
+    assert.equal(interruptedSession.activeWorkflowRun, undefined);
+    assert.equal(interruptedSession.workflowOutcome.status, "failed");
+    const continuationResponse = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1145,7 +1158,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const directRestartDeadline = Date.now() + 30_000;
     let directRestartStatus;
     while (Date.now() < directRestartDeadline) {
-      const response = await authenticatedFetch(`/runs/${encodeURIComponent(continuation.runId)}`);
+      const response = await serverFetch(`/runs/${encodeURIComponent(continuation.runId)}`);
       directRestartStatus = await response.json();
       assert.equal(response.status, 200, JSON.stringify(directRestartStatus));
       if (["completed", "failed", "cancelled"].includes(directRestartStatus.status)) break;
@@ -1157,7 +1170,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       `${JSON.stringify(directRestartStatus)}\n${output}`,
     );
     assert.equal(directRestartStatus.result.text, "DIRECT_RESTART_PARENT_OK");
-    const directRestartParentResponse = await authenticatedFetch(
+    const directRestartParentResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(directRestartStarted.sessionId)}?projectId=dev-e2e-project`,
     );
     const directRestartParent = await directRestartParentResponse.json();
@@ -1172,7 +1185,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       && JSON.stringify(request.messages).includes("DIRECT_CALL_RESTART")
     )), true);
 
-    const orchestrationStartResponse = await authenticatedFetch("/runs", {
+    const orchestrationStartResponse = await serverFetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1192,7 +1205,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const orchestrationReviewDeadline = Date.now() + 15_000;
     let orchestrationReview;
     while (Date.now() < orchestrationReviewDeadline) {
-      const response = await authenticatedFetch(orchestrationStatusPath);
+      const response = await serverFetch(orchestrationStatusPath);
       const current = await response.json();
       assert.equal(response.status, 200, JSON.stringify(current));
       if (current.phase === "waiting_review") {
@@ -1207,14 +1220,14 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(orchestrationReview?.workflowId, "planner-orchestrator");
     assert.equal(orchestrationReview?.readiness, "ready_for_review");
     assert.match(orchestrationReview?.plan ?? "", /ORCH_CHILD_5/);
-    const sessionsBeforeApprovalResponse = await authenticatedFetch("/api/sessions?projectId=dev-e2e-project");
+    const sessionsBeforeApprovalResponse = await serverFetch("/api/sessions?projectId=dev-e2e-project");
     const sessionsBeforeApproval = await sessionsBeforeApprovalResponse.json();
     assert.equal(
       sessionsBeforeApproval.sessions.filter((session) => session.parentSessionId === orchestrationStarted.sessionId).length,
       0,
       "no child Session may exist before human approval",
     );
-    const orchestrationApproval = await authenticatedFetch(
+    const orchestrationApproval = await serverFetch(
       `/runs/${encodeURIComponent(orchestrationStarted.runId)}/review`,
       {
         method: "POST",
@@ -1236,7 +1249,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     const orchestrationDeadline = Date.now() + 30_000;
     let orchestrationStatus;
     while (Date.now() < orchestrationDeadline) {
-      const response = await authenticatedFetch(orchestrationStatusPath);
+      const response = await serverFetch(orchestrationStatusPath);
       orchestrationStatus = await response.json();
       assert.equal(response.status, 200, JSON.stringify(orchestrationStatus));
       if (["completed", "failed", "cancelled"].includes(orchestrationStatus.status)) break;
@@ -1249,7 +1262,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     );
     assert.equal(orchestrationStatus.result.text, "ORCHESTRATION_5_OK");
 
-    const parentSessionResponse = await authenticatedFetch(
+    const parentSessionResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(orchestrationStarted.sessionId)}?projectId=dev-e2e-project`,
     );
     const parentSession = await parentSessionResponse.json();
@@ -1274,7 +1287,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.deepEqual(parentSession.workflowCallTree.map((node) => node.depth), [1, 1, 1, 1, 1]);
     assert.equal(parentSession.workflowCallTree.every((node) => node.parentCallId === undefined), true);
 
-    const orchestrationWatchResponse = await authenticatedFetch(
+    const orchestrationWatchResponse = await serverFetch(
       `/api/sessions/${encodeURIComponent(orchestrationStarted.sessionId)}/workflow-calls?projectId=dev-e2e-project`,
     );
     const orchestrationWatch = await orchestrationWatchResponse.json();
@@ -1284,9 +1297,9 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       workflowCallTree: parentSession.workflowCallTree,
     });
 
-    await exercisePlannerConversation(authenticatedFetch, { projectId: "dev-e2e-project", workspace, chatHome });
+    await exercisePlannerConversation(serverFetch, { projectId: "dev-e2e-project", workspace, chatHome });
 
-    const orchestrationEventsResponse = await authenticatedFetch(
+    const orchestrationEventsResponse = await serverFetch(
       `/runs/${encodeURIComponent(orchestrationStarted.runId)}/events?startIndex=0`,
     );
     assert.equal(orchestrationEventsResponse.status, 200);
@@ -1306,7 +1319,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
       && !JSON.stringify(event.event.partialResult).includes("Execute approved independent package")
     )), true);
 
-    const sessionsAfterApprovalResponse = await authenticatedFetch("/api/sessions?projectId=dev-e2e-project");
+    const sessionsAfterApprovalResponse = await serverFetch("/api/sessions?projectId=dev-e2e-project");
     const sessionsAfterApproval = await sessionsAfterApprovalResponse.json();
     const childSessions = sessionsAfterApproval.sessions.filter(
       (session) => session.parentSessionId === orchestrationStarted.sessionId,
@@ -1322,8 +1335,8 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(childRequests.every((request) => (request.tools ?? []).length === 0), true);
     assert.match(output, /\[workflow-coordinator\] tool started name=workflow_call/);
     assert.doesNotMatch(output, /Workflow不允许由Agent调用|Workflow不能直接调用自身/);
-    await exerciseProjectManagementRun(authenticatedFetch, { chatHome, projectId: "dev-e2e-project", workspace: canonicalWorkspace });
-    await exerciseWorkflowTui({ baseUrl, cookie, projectId: "dev-e2e-project" });
+    await exerciseProjectManagementRun(serverFetch, { chatHome, projectId: "dev-e2e-project", workspace: canonicalWorkspace });
+    await exerciseWorkflowTui({ baseUrl,  projectId: "dev-e2e-project" });
   } finally {
     await stopProcess(devServer);
     if (modelServer?.listening) {

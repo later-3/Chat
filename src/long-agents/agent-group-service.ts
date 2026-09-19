@@ -566,6 +566,9 @@ export function buildAgentGroupContextInstructions(document: LongAgentAgentGroup
   function promptText(value: string, maxCodePoints: number, field: string): string {
     const codePoints = [...value];
     if (codePoints.length <= maxCodePoints) return value;
+    if (field === "standingInstructions" || field === "system/definition.md") {
+      throw new Error(`Agent必需身份区域 ${field} 超过 ${maxCodePoints} 字符，拒绝截断执行`);
+    }
     return [
       codePoints.slice(0, maxCodePoints).join(""),
       `<truncation_notice field="${field}" original_code_points="${String(codePoints.length)}" included_code_points="${String(maxCodePoints)}">Use agent_memory_read to inspect the complete Markdown file when needed.</truncation_notice>`,

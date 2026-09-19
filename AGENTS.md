@@ -4,11 +4,11 @@
 
 - Agent开发Chat前读取`.chat/skills/chat-architecture/SKILL.md`；按`docs/development/agent-contribution.md`先分析场景和机制，再进入架构/技术方案与实施。跨模块核对`docs/architecture/chat-module-contracts.md`，诊断与交接见`docs/development/diagnostics.md`；具体红线例外须有理由、替代保障和明确架构审核，不能先旁路再补文档。
 - `docs/README.md`是项目文档索引。开始任务时按修改范围读取对应模块文档，不要求无差别读取全部文档。
-- 修改模型、Workflow、Agent、Project配置、目录、Schema、继承顺序或配置API前，必须完整阅读`docs/configuration.md`。
-- 修改Backend、通用编码约束或测试时，分别阅读`docs/development/backend.md`、`docs/development/coding-standards.md`和`docs/testing.md`。
+- 修改模型、Workflow、Agent、Project配置、目录、Schema、继承顺序或配置API前，必须完整阅读`docs/configuration/README.md`。
+- 修改Backend、通用编码约束或测试时，分别阅读`docs/development/backend.md`、`docs/development/coding-standards.md`和`docs/development/testing.md`。
 - 修改Frontend时，同时遵守`frontend/AGENTS.md`及其文档索引；修改架构敏感机制时从`docs/architecture/README.md`选择相关文档。
-- Long Agent定义、配置、连续性、Docker和主动工作设计从`docs/long-agents.md`及`docs/architecture/chat-long-agent-capability-model.md`进入；新增场景按`docs/architecture/chat-long-agent-mechanism-contract.md`归类和评审扩展，实现差距见`docs/architecture/chat-long-agent-roadmap.md`。目标设计不能写成已发布能力，具体实现合同仍需审核。
-- Long Agent详细设计与实施前须核对`docs/architecture/chat-long-agent-engineering-baseline.md`中的原生接入证据、Skill生效合同、Session扩展、约束与测试门槛、场景依赖及待确认决策；状态为建议的部分先完成评审，不能当作已实现事实。
+- Long Agent定义、配置、连续性、Docker和主动工作设计从`docs/modules/long-agents/README.md`及`docs/modules/long-agents/chat-long-agent-capability-model.md`进入；新增场景按`docs/modules/long-agents/chat-long-agent-mechanism-contract.md`归类和评审扩展，实现差距见`docs/modules/long-agents/chat-long-agent-roadmap.md`。目标设计不能写成已发布能力，具体实现合同仍需审核。
+- Long Agent详细设计与实施前须核对`docs/modules/long-agents/chat-long-agent-engineering-baseline.md`中的原生接入证据、Skill生效合同、Session扩展、约束与测试门槛、场景依赖及待确认决策；状态为建议的部分先完成评审，不能当作已实现事实。
 - README和AGENTS只保存导航与强制边界。完整用法和模块规范保存在独立文档中，不在多个入口复制。
 - 用户可观察行为、配置格式、目录、API、开发约束或验证命令发生变化时，必须在同一变更中更新对应文档和测试。若实现与文档冲突，先判断实现缺陷或规范变化，不能只改文档来合理化意外行为。
 
@@ -23,7 +23,7 @@ IM → NanoClaw Channel → Backend → LongAgent┘
 ```
 
 - Workflow组织一次执行需要的Node、Agent、Stage和资源，不是第二套Agent运行时。
-- Chat TUI是复用Pi显示组件的HTTP客户端；命令、Session共享与运行时边界见`docs/architecture/chat-workflow-tui.md`。
+- Chat TUI是复用Pi显示组件的HTTP客户端；命令、Session共享与运行时边界见`docs/modules/tui/chat-workflow-tui.md`。
 - Agent能力由Model、Thinking Level、System Prompt、自定义Prompt、Skill、Tool、Extension、Plugin和Session上下文组成。
 - 规则与经验是Agent自定义Prompt资源；Memory是独立持久化能力。不要把它们实现成与Agent平行的新执行系统。
 - Pi SessionManager、ResourceLoader和AgentSession是底层事实源。Chat只增加产品配置、Project作用域、Workflow组织和前后端管理。
@@ -40,7 +40,7 @@ IM → NanoClaw Channel → Backend → LongAgent┘
 ## Project与数据边界
 
 - 用户级事实位于`~/.chat`，测试和部署只能通过`CHAT_HOME`覆盖，业务代码不能用`process.cwd()`推断Chat Home。
-- Chat采用Project-first模型：所有Chat Session、Workflow Run、长期Agent会话、主动任务和定时任务都必须属于一个Project。普通Chat保留系统管理的`daily`默认Project；Long Agent目标中各自拥有独立Daily Project，其日常主Session按日轮换，业务Project允许多个主题Session。当前共享Daily/唯一主Session的迁移差距见Long Agent实施状态；已绑定Project失败时不得静默回退Daily。
+- Chat 保留固定的 Session 存储归属。Friend 最新目标为每日唯一直接交流 Session，其 Home 是内部 Agent 容器，不是用户项目；本轮协作项目独立解析、授权并冻结，切项目不迁移 Session。普通项目会话与显式 Workflow 子会话保留自身合同；当前差距见 Long Agent 实施状态，已绑定目标失败不得静默回退。公共装配与生命周期规范见 `docs/architecture/chat-context-resource-model.md` §15 和 `docs/modules/long-agents/chat-long-agent-architecture.md` §4。
 - 每个Project在源码根目录使用`.chat/project.json`和`.chat/config.json`声明身份与配置；Session、Memory和Prompt资源按稳定`projectId`保存到`~/.chat/projects/<projectId>`。
 - Daily Project使用Chat Home中的稳定Managed Workspace作为Project根，但进入`ChatProjectContext`后与其他Project共用同一套配置、Session、Memory、资源和权限合同，不能增加Daily专用运行旁路。
 - Agent上下文通过公共装配读取已授权的Personal、当前Project及Long Agent自身资源；Pi Context文件（`AGENTS.override.md`、`AGENTS.md`或`CLAUDE.md`变体）不自动继承父目录或子目录。Long Agent独立根的接入属于已确认目标，不能以此声称当前运行时已支持。
@@ -96,11 +96,11 @@ git -C frontend diff --check
 针对性测试应覆盖真实业务场景和边界，不能只断言实现细节。测试通过不代表架构正确，提交前还要核对文档、配置、Frontend契约和生产装配路径是否一致。
 
 - 修改`src/workflows/**`、Workflow SDK、Builder Patch、Agent装配或Workflow可达资源时，必须分别检查Builder单层转换、Nitro开发Step bundle、生产构建和真实Runtime；不能用某个相邻链路通过代替用户实际启动链。除Node装载开发Step产物外，还必须运行`pnpm test:dev`，通过Frontend的Run合同验证Workflow、Agent节点、Pi SDK和本地假模型进入`completed`。
-- 开发故障中可复用的结论应归档到`docs/development-experiences/`并形成`experience` Prompt资源；每个案例至少增加一条自动化回归门禁。
+- 开发故障中可复用的结论应归档到`docs/development/experiences/`并形成`experience` Prompt资源；每个案例至少增加一条自动化回归门禁。
 
 ## Git与部署
 
 - `frontend/`、`pi/`和`nanoclaw/`是固定Commit的Submodule；父仓库记录的Commit才是部署事实。
 - 只暂存当前任务明确修改的文件，不使用`git add .`或`git add -A`。
 - 未经用户明确要求，不提交、不推送、不部署。
-- 用户要求部署时，先完成`pnpm verify`，再按`docs/deployment.md`使用现有单一Chat生产进程，部署后验证本机和公网健康。
+- 用户要求部署时，先完成`pnpm verify`，再按`docs/operations/README.md`使用现有单一Chat生产进程，部署后验证本机和公网健康。

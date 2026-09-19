@@ -24,7 +24,6 @@ let server;
 let embeddingServer;
 let baseUrl;
 let serverOutput = "";
-let authenticatedCookiePromise;
 let promptResourceId;
 let projectSkillPath;
 const embeddingDimension = 64;
@@ -127,28 +126,8 @@ function encodeFilePath(filePath) {
   return filePath.replace(/\\/g, "/").split("/").filter(Boolean).map(encodeURIComponent).join("/");
 }
 
-async function authenticatedCookie() {
-  authenticatedCookiePromise ??= (async () => {
-    const response = await fetch(`${baseUrl}/api/auth/session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Forwarded-Proto": "https" },
-      body: JSON.stringify({ username: "test-user", password: "123456", persistent: true }),
-    });
-    assert.equal(response.status, 200);
-    const setCookie = response.headers.get("set-cookie");
-    assert.ok(setCookie);
-    assert.match(setCookie, /HttpOnly/i);
-    assert.match(setCookie, /Secure/i);
-    assert.match(setCookie, /SameSite=Lax/i);
-    return setCookie.split(";", 1)[0];
-  })();
-  return authenticatedCookiePromise;
-}
-
-async function authenticatedFetch(pathname, init = {}) {
-  const headers = new Headers(init.headers);
-  headers.set("Cookie", await authenticatedCookie());
-  return fetch(`${baseUrl}${pathname}`, { ...init, headers });
+async function serverFetch(pathname, init = {}) {
+  return fetch(`${baseUrl}${pathname}`, init);
 }
 
 before(async () => {
@@ -306,10 +285,6 @@ before(async () => {
       WORKFLOW_LOCAL_DATA_DIR: path.join(chatHome, "runtime", "workflow-data"),
       CHAT_HOME: chatHome,
       CHAT_PUBLIC_URL: "https://chat.example.test",
-      CHAT_WEB_AUTH_ENABLED: "1",
-      CHAT_WEB_AUTH_USERNAME: "test-user",
-      CHAT_WEB_AUTH_PASSWORD: "123456",
-      CHAT_WEB_AUTH_SESSION_SECRET: "built-server-test-session-secret-at-least-32-characters",
       CHAT_CHANNEL_GATEWAY_TOKEN: "built-server-channel-token-at-least-32-characters",
       CHAT_MEMORY_EMBEDDER_PROVIDER: "openai",
       CHAT_MEMORY_EMBEDDER_BASE_URL: embeddingBaseUrl,
@@ -343,7 +318,7 @@ before(async () => {
       }
     });
   });
-  const opened = await authenticatedFetch("/api/projects/open", {
+  const opened = await serverFetch("/api/projects/open", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: workspace }),
@@ -367,11 +342,7 @@ after(async () => {
 });
 
 test("the production server serves the embedded frontend", async () => {
-  const redirectResponse = await fetch(`${baseUrl}/`, { redirect: "manual" });
-  assert.equal(redirectResponse.status, 307);
-  assert.equal(redirectResponse.headers.get("location"), "/login?next=%2F");
-
-  const response = await authenticatedFetch("/");
+  const response = await serverFetch("/");
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /text\/html/);
   const html = await response.text();
@@ -386,22 +357,14 @@ test("the production server serves the embedded frontend", async () => {
   assert.equal((await fetch(`${baseUrl}/sw.js`)).status, 200);
 });
 
-test("health is public while Chat product APIs require login", async () => {
-  const healthResponse = await fetch(`${baseUrl}/api/health`);
-  assert.equal(healthResponse.status, 200);
-  assert.deepEqual(await healthResponse.json(), { ok: true, service: "chat" });
-
-  const unauthorized = await fetch(`${baseUrl}/api/sessions`);
-  assert.equal(unauthorized.status, 401);
-  assert.equal(unauthorized.headers.get("x-chat-auth-required"), "1");
-  assert.deepEqual(await unauthorized.json(), { error: "Authentication required" });
-
-  const unauthorizedMemory = await fetch(`${baseUrl}/api/memories`);
-  assert.equal(unauthorizedMemory.status, 401);
-
-  const loginPage = await fetch(`${baseUrl}/login`);
-  assert.equal(loginPage.status, 200);
-  assert.match(await loginPage.text(), /登录到 Chat/);
+test("product entry is direct and removed login routes return 404", async () => {
+  assert.equal((await serverFetch("/api/health")).status, 200);
+  assert.equal((await serverFetch(`/api/sessions?projectId=${projectId}`)).status, 200);
+  for (const pathname of ["/login", "/api/auth/session"]) {
+    const response = await serverFetch(pathname, { redirect: "manual" });
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get("location"), null);
+  }
 });
 
 test("Channel ingress uses machine authentication instead of the browser session", async () => {
@@ -435,7 +398,7 @@ test("Channel ingress uses machine authentication instead of the browser session
   });
   assert.equal(unauthenticated.status, 401);
 
-  const browserOnly = await authenticatedFetch("/api/internal/channel/v1/events", {
+  const browserOnly = await serverFetch("/api/internal/channel/v1/events", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -455,7 +418,7 @@ test("Channel ingress uses machine authentication instead of the browser session
 });
 
 test("memory management API persists, searches, updates, rebuilds, and deletes", async () => {
-  const createResponse = await authenticatedFetch("/api/memories", {
+  const createResponse = await serverFetch("/api/memories", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -471,17 +434,17 @@ test("memory management API persists, searches, updates, rebuilds, and deletes",
   assert.equal(created.indexStatus, "indexed");
   assert.ok(created.mem0Id);
 
-  const listResponse = await authenticatedFetch("/api/memories?kind=decision");
+  const listResponse = await serverFetch("/api/memories?kind=decision");
   assert.equal(listResponse.status, 200);
   const list = await listResponse.json();
   assert.equal(list.total, 1);
   assert.equal(list.items[0].id, created.id);
 
-  const detailResponse = await authenticatedFetch(`/api/memories/${created.id}`);
+  const detailResponse = await serverFetch(`/api/memories/${created.id}`);
   assert.equal(detailResponse.status, 200);
   assert.equal((await detailResponse.json()).memory.text, created.text);
 
-  const searchResponse = await authenticatedFetch("/api/memories/search", {
+  const searchResponse = await serverFetch("/api/memories/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query: "MEMORY_HTTP_ALPHA", topK: 1 }),
@@ -490,7 +453,7 @@ test("memory management API persists, searches, updates, rebuilds, and deletes",
   assert.equal((await searchResponse.json()).results[0].memory.id, created.id);
 
   const updatedText = "Later 选择 MEMORY_HTTP_BETA 作为 Chat 的长期记忆方案。";
-  const updateResponse = await authenticatedFetch(`/api/memories/${created.id}`, {
+  const updateResponse = await serverFetch(`/api/memories/${created.id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ target: { type: "personal" }, text: updatedText }),
@@ -501,7 +464,7 @@ test("memory management API persists, searches, updates, rebuilds, and deletes",
   assert.equal(updated.version, 2);
   assert.equal(updated.indexStatus, "indexed");
 
-  const rebuildResponse = await authenticatedFetch("/api/memories/rebuild", {
+  const rebuildResponse = await serverFetch("/api/memories/rebuild", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ target: { type: "personal" } }),
@@ -514,7 +477,7 @@ test("memory management API persists, searches, updates, rebuilds, and deletes",
     failures: [],
   });
 
-  const rebuiltSearchResponse = await authenticatedFetch("/api/memories/search", {
+  const rebuiltSearchResponse = await serverFetch("/api/memories/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query: "MEMORY_HTTP_BETA", topK: 1 }),
@@ -522,7 +485,7 @@ test("memory management API persists, searches, updates, rebuilds, and deletes",
   assert.equal(rebuiltSearchResponse.status, 200);
   assert.equal((await rebuiltSearchResponse.json()).results[0].memory.id, created.id);
 
-  const healthResponse = await authenticatedFetch("/api/memories/health");
+  const healthResponse = await serverFetch("/api/memories/health");
   assert.equal(healthResponse.status, 200);
   assert.deepEqual(await healthResponse.json(), {
     records: 1,
@@ -532,36 +495,20 @@ test("memory management API persists, searches, updates, rebuilds, and deletes",
     pendingDeletions: 0,
   });
 
-  const deleteResponse = await authenticatedFetch(`/api/memories/${created.id}`, { method: "DELETE" });
+  const deleteResponse = await serverFetch(`/api/memories/${created.id}`, { method: "DELETE" });
   assert.equal(deleteResponse.status, 200);
   assert.deepEqual(await deleteResponse.json(), {
     id: created.id,
     deleted: true,
     indexCleanup: "completed",
   });
-  assert.equal((await (await authenticatedFetch("/api/memories")).json()).total, 0);
+  assert.equal((await (await serverFetch("/api/memories")).json()).total, 0);
   assert.equal(fs.existsSync(path.join(chatHome, "memory", "personal", "catalog.db")), true);
   assert.equal(fs.existsSync(path.join(chatHome, "memory", "personal", "vector-store.db")), true);
 });
 
-test("the configured account creates a signed HttpOnly session", async () => {
-  const rejected = await fetch(`${baseUrl}/api/auth/session`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "test-user", password: "wrong", persistent: true }),
-  });
-  assert.equal(rejected.status, 401);
-
-  const cookie = await authenticatedCookie();
-  const sessionResponse = await fetch(`${baseUrl}/api/auth/session`, {
-    headers: { Cookie: cookie },
-  });
-  assert.equal(sessionResponse.status, 200);
-  const session = await sessionResponse.json();
-  assert.equal(session.authenticated, true);
-  assert.equal(session.username, "test-user");
-
-  const devicesResponse = await authenticatedFetch("/api/devices");
+test("device directory is available without a product login", async () => {
+  const devicesResponse = await serverFetch("/api/devices");
   assert.equal(devicesResponse.status, 200);
   assert.deepEqual(await devicesResponse.json(), {
     version: 1,
@@ -582,7 +529,7 @@ test("the production Project API treats each explicitly opened nested directory 
   fs.mkdirSync(child, { recursive: true });
 
   const open = async (directory) => {
-    const response = await authenticatedFetch("/api/projects/open", {
+    const response = await serverFetch("/api/projects/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: directory }),
@@ -599,12 +546,12 @@ test("the production Project API treats each explicitly opened nested directory 
   assert.equal(fs.existsSync(path.join(parent, ".chat", "project.json")), true);
   assert.equal(fs.existsSync(path.join(child, ".chat", "project.json")), true);
 
-  const homeResponse = await authenticatedFetch("/api/home");
+  const homeResponse = await serverFetch("/api/home");
   assert.equal(homeResponse.status, 200);
   const home = await homeResponse.json();
   assert.deepEqual(Object.keys(home), ["home"]);
 
-  const forgedIdentity = await authenticatedFetch("/api/projects/open", {
+  const forgedIdentity = await serverFetch("/api/projects/open", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: child, id: "chat" }),
@@ -613,7 +560,7 @@ test("the production Project API treats each explicitly opened nested directory 
 });
 
 test("session list and detail come from the isolated Chat session directory", async () => {
-  const listResponse = await authenticatedFetch(`/api/sessions?projectId=${projectId}`);
+  const listResponse = await serverFetch(`/api/sessions?projectId=${projectId}`);
   assert.equal(listResponse.status, 200);
   assert.match(listResponse.headers.get("cache-control") ?? "", /no-store/);
   const list = await listResponse.json();
@@ -626,7 +573,7 @@ test("session list and detail come from the isolated Chat session directory", as
   };
   assert.deepEqual(list.sessions.find((session) => session.id === longAgentSessionId).owner, longAgentOwner);
 
-  const detailResponse = await authenticatedFetch(`/api/sessions/${encodeURIComponent(sessionId)}?projectId=${projectId}&deferThinking=1&deferMedia=1`);
+  const detailResponse = await serverFetch(`/api/sessions/${encodeURIComponent(sessionId)}?projectId=${projectId}&deferThinking=1&deferMedia=1`);
   assert.equal(detailResponse.status, 200);
   const detail = await detailResponse.json();
   assert.deepEqual(detail.context.messages.map((message) => message.role), ["user", "assistant"]);
@@ -635,14 +582,14 @@ test("session list and detail come from the isolated Chat session directory", as
   assert.deepEqual(detail.workflowCallStatistics.capacity, { active: 0, limit: 8 });
   assert.deepEqual(detail.session.owner, { type: "ordinary" });
 
-  const longAgentDetailResponse = await authenticatedFetch(
+  const longAgentDetailResponse = await serverFetch(
     `/api/sessions/${encodeURIComponent(longAgentSessionId)}?projectId=${projectId}`,
   );
   assert.equal(longAgentDetailResponse.status, 200);
   const longAgentDetail = await longAgentDetailResponse.json();
   assert.deepEqual(longAgentDetail.session.owner, longAgentOwner);
 
-  const workflowCallsResponse = await authenticatedFetch(
+  const workflowCallsResponse = await serverFetch(
     `/api/sessions/${encodeURIComponent(sessionId)}/workflow-calls?projectId=${projectId}`,
   );
   assert.equal(workflowCallsResponse.status, 200, await workflowCallsResponse.clone().text());
@@ -651,14 +598,14 @@ test("session list and detail come from the isolated Chat session directory", as
   assert.deepEqual(workflowCalls.workflowCallTree, []);
   assert.deepEqual(workflowCalls.workflowCallStatistics, detail.workflowCallStatistics);
 
-  const unknownCallResponse = await authenticatedFetch(
+  const unknownCallResponse = await serverFetch(
     `/api/sessions/${encodeURIComponent(sessionId)}/workflow-calls/missing-call?projectId=${projectId}`,
     { method: "DELETE" },
   );
   assert.equal(unknownCallResponse.status, 409);
   assert.match(await unknownCallResponse.text(), /不存在Workflow调用/);
 
-  const renameResponse = await authenticatedFetch(`/api/sessions/${encodeURIComponent(sessionId)}?projectId=${projectId}`, {
+  const renameResponse = await serverFetch(`/api/sessions/${encodeURIComponent(sessionId)}?projectId=${projectId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: "Built Session" }),
@@ -676,7 +623,7 @@ test("session APIs fail ownership resolution closed without exposing runtime pat
       `/api/sessions?projectId=${projectId}`,
       `/api/sessions/${encodeURIComponent(sessionId)}?projectId=${projectId}`,
     ]) {
-      const response = await authenticatedFetch(requestPath);
+      const response = await serverFetch(requestPath);
       const body = await response.text();
       assert.equal(response.status, 500, body);
       assert.match(body, /无法读取Session归属状态/);
@@ -722,7 +669,7 @@ test("historical tool-result images are deferred and served from the same Projec
   });
   manager.flush();
 
-  const detailResponse = await authenticatedFetch(
+  const detailResponse = await serverFetch(
     `/api/sessions/${encodeURIComponent(manager.getSessionId())}?projectId=${projectId}&deferMedia=1`,
   );
   assert.equal(detailResponse.status, 200, await detailResponse.clone().text());
@@ -731,7 +678,7 @@ test("historical tool-result images are deferred and served from the same Projec
   const image = toolResult?.content.find((block) => block.type === "image");
   assert.match(image?.source?.url ?? "", /tool-result-image\?blockIndex=1&projectId=built-project$/);
 
-  const imageResponse = await authenticatedFetch(image.source.url);
+  const imageResponse = await serverFetch(image.source.url);
   assert.equal(imageResponse.status, 200, await imageResponse.clone().text());
   assert.equal(imageResponse.headers.get("content-type"), "image/png");
   assert.equal(imageResponse.headers.get("x-content-type-options"), "nosniff");
@@ -739,19 +686,19 @@ test("historical tool-result images are deferred and served from the same Projec
 });
 
 test("the bounded file index supports client preload and server-ranked search", async () => {
-  const indexResponse = await authenticatedFetch(`/api/file-index?cwd=${encodeURIComponent(workspace)}`);
+  const indexResponse = await serverFetch(`/api/file-index?cwd=${encodeURIComponent(workspace)}`);
   assert.equal(indexResponse.status, 200, await indexResponse.clone().text());
   const index = await indexResponse.json();
   assert.equal(index.files.includes("fixture.md"), true);
   assert.equal(index.truncated, false);
 
-  const searchResponse = await authenticatedFetch(
+  const searchResponse = await serverFetch(
     `/api/file-index?cwd=${encodeURIComponent(workspace)}&q=fixture`,
   );
   assert.equal(searchResponse.status, 200, await searchResponse.clone().text());
   assert.equal((await searchResponse.json()).matches[0].path, "fixture.md");
 
-  const outsideResponse = await authenticatedFetch(
+  const outsideResponse = await serverFetch(
     `/api/file-index?cwd=${encodeURIComponent(runtimeRoot)}&q=fixture`,
   );
   assert.equal(outsideResponse.status, 403);
@@ -765,7 +712,7 @@ test("Session removal API moves, lists, restores, configures, and permanently de
   const removableSessionId = manager.getSessionId();
   const originalFile = manager.getSessionFile();
 
-  const removeResponse = await authenticatedFetch(
+  const removeResponse = await serverFetch(
     `/api/sessions/${encodeURIComponent(removableSessionId)}/remove?projectId=${projectId}`,
     { method: "POST" },
   );
@@ -776,18 +723,18 @@ test("Session removal API moves, lists, restores, configures, and permanently de
   assert.equal(fs.existsSync(originalFile), false);
   assert.equal(fs.existsSync(path.join(sessionDir, "removed", path.basename(originalFile))), true);
 
-  const removedDetail = await authenticatedFetch(
+  const removedDetail = await serverFetch(
     `/api/sessions/${encodeURIComponent(removableSessionId)}?projectId=${projectId}`,
   );
   assert.equal(removedDetail.status, 410, await removedDetail.clone().text());
 
-  const activeAfterRemove = await (await authenticatedFetch(`/api/sessions?projectId=${projectId}`)).json();
+  const activeAfterRemove = await (await serverFetch(`/api/sessions?projectId=${projectId}`)).json();
   assert.equal(activeAfterRemove.sessions.some((session) => session.id === removableSessionId), false);
-  const removedList = await (await authenticatedFetch(`/api/sessions/removed?projectId=${projectId}`)).json();
+  const removedList = await (await serverFetch(`/api/sessions/removed?projectId=${projectId}`)).json();
   assert.equal(removedList.sessions.some((session) => session.id === removableSessionId), true);
   assert.equal(removedList.retentionDays, 30);
 
-  const settingsResponse = await authenticatedFetch(`/api/sessions/removed/settings?projectId=${projectId}`, {
+  const settingsResponse = await serverFetch(`/api/sessions/removed/settings?projectId=${projectId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ removedRetentionDays: 14 }),
@@ -795,36 +742,36 @@ test("Session removal API moves, lists, restores, configures, and permanently de
   assert.equal(settingsResponse.status, 200, await settingsResponse.clone().text());
   assert.deepEqual(await settingsResponse.json(), { removedRetentionDays: 14 });
 
-  const restoreResponse = await authenticatedFetch(
+  const restoreResponse = await serverFetch(
     `/api/sessions/removed/${encodeURIComponent(removableSessionId)}/restore?projectId=${projectId}`,
     { method: "POST" },
   );
   assert.equal(restoreResponse.status, 200, await restoreResponse.clone().text());
   assert.equal(fs.existsSync(originalFile), true);
 
-  assert.equal((await authenticatedFetch(
+  assert.equal((await serverFetch(
     `/api/sessions/${encodeURIComponent(removableSessionId)}/remove?projectId=${projectId}`,
     { method: "POST" },
   )).status, 200);
-  const purgeResponse = await authenticatedFetch(
+  const purgeResponse = await serverFetch(
     `/api/sessions/removed/${encodeURIComponent(removableSessionId)}?projectId=${projectId}`,
     { method: "DELETE" },
   );
   assert.equal(purgeResponse.status, 200, await purgeResponse.clone().text());
   assert.equal((await purgeResponse.json()).state, "purged");
   assert.equal(fs.existsSync(path.join(sessionDir, "removed", path.basename(originalFile))), false);
-  const purgedDetail = await authenticatedFetch(
+  const purgedDetail = await serverFetch(
     `/api/sessions/${encodeURIComponent(removableSessionId)}?projectId=${projectId}`,
   );
   assert.equal(purgedDetail.status, 410, await purgedDetail.clone().text());
 });
 
 test("the frontend and backend share one validated .chat root configuration", async () => {
-  const initialResponse = await authenticatedFetch("/api/chat-config");
+  const initialResponse = await serverFetch("/api/chat-config");
   assert.equal(initialResponse.status, 200);
   assert.equal((await initialResponse.json()).defaultWorkflowId, "minimal-pi-coding-agent");
 
-  const updateResponse = await authenticatedFetch("/api/chat-config", {
+  const updateResponse = await serverFetch("/api/chat-config", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -839,7 +786,7 @@ test("the frontend and backend share one validated .chat root configuration", as
 });
 
 test("the model editor reads and writes only Chat Home's models configuration", async () => {
-  const readResponse = await authenticatedFetch("/api/models-config");
+  const readResponse = await serverFetch("/api/models-config");
   const initial = await readResponse.json();
   assert.equal(readResponse.status, 200, JSON.stringify(initial));
   assert.deepEqual(initial.source, {
@@ -848,7 +795,7 @@ test("the model editor reads and writes only Chat Home's models configuration", 
   });
   assert.equal(initial.config.providers["built-runtime"].models[0].id, "built-runtime-model");
 
-  const writeResponse = await authenticatedFetch("/api/models-config", {
+  const writeResponse = await serverFetch("/api/models-config", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(initial.config),
@@ -860,7 +807,7 @@ test("the model editor reads and writes only Chat Home's models configuration", 
 });
 
 test("Workflow containers and their Agents come from the backend registry", async () => {
-  const response = await authenticatedFetch("/api/workflows");
+  const response = await serverFetch("/api/workflows");
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.deepEqual(body.workflows.map((workflow) => workflow.id), [
@@ -895,7 +842,7 @@ test("Workflow containers and their Agents come from the backend registry", asyn
 });
 
 test("Tool catalog and Project Agent Tool policy use the production Pi assembly path", async () => {
-  const catalogResponse = await authenticatedFetch(`/api/tools?projectId=${projectId}`);
+  const catalogResponse = await serverFetch(`/api/tools?projectId=${projectId}`);
   const catalog = await catalogResponse.json();
   assert.equal(catalogResponse.status, 200, JSON.stringify(catalog));
   assert.deepEqual(
@@ -933,7 +880,7 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
       && consumer.enabled
   )), true);
 
-  const saveResponse = await authenticatedFetch(
+  const saveResponse = await serverFetch(
     "/api/workflows/planning-execution/agents/planner/tool-config",
     {
       method: "PUT",
@@ -958,7 +905,7 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
     addresses: ["system:tool/memory_search"],
   });
 
-  const inspectionResponse = await authenticatedFetch(
+  const inspectionResponse = await serverFetch(
     "/api/workflows/planning-execution/agents/planner/resolve",
     {
       method: "POST",
@@ -974,7 +921,7 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
   );
   assert.equal(inspection.agent.durableConfig.tools.mode, "explicit");
 
-  const clearResponse = await authenticatedFetch(
+  const clearResponse = await serverFetch(
     `/api/workflows/planning-execution/agents/planner/tool-config?projectId=${projectId}`,
     { method: "DELETE" },
   );
@@ -983,7 +930,7 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
 });
 
 test("the built server executes a real local Workflow Run through transformed modules", async () => {
-  const startResponse = await authenticatedFetch("/runs", {
+  const startResponse = await serverFetch("/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1008,7 +955,7 @@ test("the built server executes a real local Workflow Run through transformed mo
   assert.equal(typeof started.runId, "string");
   assert.equal(typeof started.sessionId, "string");
   assert.equal(started.isNewSession, true);
-  const acceptedSessionsResponse = await authenticatedFetch(`/api/sessions?projectId=${projectId}`);
+  const acceptedSessionsResponse = await serverFetch(`/api/sessions?projectId=${projectId}`);
   const acceptedSessions = await acceptedSessionsResponse.json();
   assert.equal(acceptedSessionsResponse.status, 200, JSON.stringify(acceptedSessions));
   assert.ok(acceptedSessions.sessions.some((session) => session.id === started.sessionId));
@@ -1016,7 +963,7 @@ test("the built server executes a real local Workflow Run through transformed mo
   const deadline = Date.now() + 10_000;
   let status;
   do {
-    const response = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}`);
+    const response = await serverFetch(`/runs/${encodeURIComponent(started.runId)}`);
     const body = await response.json();
     assert.equal(response.status, 200, JSON.stringify(body));
     status = body;
@@ -1030,7 +977,7 @@ test("the built server executes a real local Workflow Run through transformed mo
 });
 
 test("the built planning Workflow survives review and resumes the same Session", async () => {
-  const blockingResponse = await authenticatedFetch("/run", {
+  const blockingResponse = await serverFetch("/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1043,7 +990,7 @@ test("the built planning Workflow survives review and resumes the same Session",
   assert.equal(blockingResponse.status, 400);
   assert.match(await blockingResponse.text(), /POST \/runs/);
 
-  const startResponse = await authenticatedFetch("/runs", {
+  const startResponse = await serverFetch("/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1067,7 +1014,7 @@ test("the built planning Workflow survives review and resumes the same Session",
   const reviewDeadline = Date.now() + 10_000;
   let reviewStatus;
   do {
-    const response = await authenticatedFetch(statusPath);
+    const response = await serverFetch(statusPath);
     reviewStatus = await response.json();
     assert.equal(response.status, 200, JSON.stringify(reviewStatus));
     if (reviewStatus.phase === "waiting_review") break;
@@ -1079,7 +1026,7 @@ test("the built planning Workflow survives review and resumes the same Session",
   assert.equal(reviewStatus.review.readiness, "ready_for_review");
   assert.deepEqual(reviewStatus.review.blockingQuestions, []);
 
-  const waitingSessionResponse = await authenticatedFetch(
+  const waitingSessionResponse = await serverFetch(
     `/api/sessions/${encodeURIComponent(reviewStatus.review.sessionId)}?projectId=${projectId}`,
   );
   const waitingSession = await waitingSessionResponse.json();
@@ -1088,7 +1035,7 @@ test("the built planning Workflow survives review and resumes the same Session",
   assert.equal(waitingSession.activePlanningExecution.review.reviewId, reviewStatus.review.reviewId);
   assert.deepEqual(waitingSession.context.messages.map((message) => message.role), ["user", "assistant"]);
 
-  const staleApproval = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
+  const staleApproval = await serverFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1104,7 +1051,7 @@ test("the built planning Workflow survives review and resumes the same Session",
   });
   assert.equal(staleApproval.status, 409);
 
-  const approval = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
+  const approval = await serverFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1123,7 +1070,7 @@ test("the built planning Workflow survives review and resumes the same Session",
   const completionDeadline = Date.now() + 10_000;
   let completed;
   do {
-    const response = await authenticatedFetch(statusPath);
+    const response = await serverFetch(statusPath);
     completed = await response.json();
     assert.equal(response.status, 200, JSON.stringify(completed));
     if (["completed", "failed", "cancelled"].includes(completed.status)) break;
@@ -1133,7 +1080,7 @@ test("the built planning Workflow survives review and resumes the same Session",
   assert.equal(completed.result.sessionId, reviewStatus.review.sessionId);
   assert.equal(completed.result.text, "Workflow runtime smoke completed.");
 
-  const completedSessionResponse = await authenticatedFetch(
+  const completedSessionResponse = await serverFetch(
     `/api/sessions/${encodeURIComponent(reviewStatus.review.sessionId)}?projectId=${projectId}`,
   );
   const completedSession = await completedSessionResponse.json();
@@ -1146,7 +1093,7 @@ test("the built planning Workflow survives review and resumes the same Session",
     { type: "text", text: "已通过执行计划 v1，开始执行。" },
   ]);
 
-  const replayedApproval = await authenticatedFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
+  const replayedApproval = await serverFetch(`/runs/${encodeURIComponent(started.runId)}/review`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1166,7 +1113,7 @@ test("the built planning Workflow survives review and resumes the same Session",
 });
 
 test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async () => {
-  const response = await authenticatedFetch(
+  const response = await serverFetch(
     "/api/workflows/memory/agents/memory-agent/resolve",
     {
       method: "POST",
@@ -1193,7 +1140,7 @@ test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async
   assert.equal(memorySearch.address, "system:tool/memory_search");
   assert.equal(memorySearch.risk, "read-only");
 
-  const catalogResponse = await authenticatedFetch(
+  const catalogResponse = await serverFetch(
     `/api/workflows/memory/agents/memory-agent/catalog?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`,
   );
   const catalog = await catalogResponse.json();
@@ -1212,7 +1159,7 @@ test("Memory Agent inspection exposes its Workflow-owned tools and Skill", async
 });
 
 test("Rule Curator inspection uses the unified Agent path with its Skill and Tools", async () => {
-  const response = await authenticatedFetch(
+  const response = await serverFetch(
     "/api/workflows/rule-management/agents/rule-curator-agent/resolve",
     {
       method: "POST",
@@ -1247,7 +1194,7 @@ test("Rule Curator inspection uses the unified Agent path with its Skill and Too
 });
 
 test("Workflow Coordinator inspection exposes only its private delegation Skill and Tool", async () => {
-  const response = await authenticatedFetch(
+  const response = await serverFetch(
     "/api/workflows/planner-orchestrator/agents/coordinator/resolve",
     {
       method: "POST",
@@ -1267,7 +1214,7 @@ test("Workflow Coordinator inspection exposes only its private delegation Skill 
 });
 
 test("Direct Agent keeps Pi defaults and receives workflow_call from the system Tool registry", async () => {
-  const response = await authenticatedFetch(
+  const response = await serverFetch(
     "/api/workflows/minimal-pi-coding-agent/agents/pi-coding-agent/resolve",
     {
       method: "POST",
@@ -1287,41 +1234,41 @@ test("Direct Agent keeps Pi defaults and receives workflow_call from the system 
 });
 
 test("Pi resources are served by Chat from the managed Agent directory", async () => {
-  const skillsResponse = await authenticatedFetch(`/api/skills?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
+  const skillsResponse = await serverFetch(`/api/skills?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
   assert.equal(skillsResponse.status, 200);
   const skills = await skillsResponse.json();
   const skill = skills.skills.find((item) => item.name === "built-review");
   assert.ok(skill);
 
-  const toggleResponse = await authenticatedFetch("/api/skills", {
+  const toggleResponse = await serverFetch("/api/skills", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ projectId, cwd: workspace, filePath: skill.filePath, disableModelInvocation: true }),
   });
   assert.equal(toggleResponse.status, 200);
 
-  const extensionsResponse = await authenticatedFetch(`/api/extensions?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
+  const extensionsResponse = await serverFetch(`/api/extensions?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
   assert.equal(extensionsResponse.status, 200);
   assert.ok((await extensionsResponse.json()).extensions.some((extension) => extension.name === "built-extension"));
 
-  const pluginsResponse = await authenticatedFetch(`/api/plugins?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
+  const pluginsResponse = await serverFetch(`/api/plugins?projectId=${projectId}&cwd=${encodeURIComponent(workspace)}`);
   assert.equal(pluginsResponse.status, 200);
   assert.deepEqual((await pluginsResponse.json()).packages, []);
 });
 
 test("Prompt resource production API is read-only and target-aware", async () => {
-  const draftResponse = await authenticatedFetch(`/api/prompt-resources/drafts?projectId=${projectId}`);
+  const draftResponse = await serverFetch(`/api/prompt-resources/drafts?projectId=${projectId}`);
   assert.equal(draftResponse.status, 200);
   assert.deepEqual((await draftResponse.json()).drafts, []);
 
-  const mutationResponse = await authenticatedFetch(`/api/prompt-resources/drafts?projectId=${projectId}`, {
+  const mutationResponse = await serverFetch(`/api/prompt-resources/drafts?projectId=${projectId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "rule" }),
   });
   assert.ok([404, 405].includes(mutationResponse.status));
 
-  const listResponse = await authenticatedFetch(
+  const listResponse = await serverFetch(
     `/api/prompt-resources?projectId=${projectId}&target=project&targetProjectId=${projectId}&q=production-test&status=all`,
   );
   assert.equal(listResponse.status, 200);
@@ -1329,13 +1276,13 @@ test("Prompt resource production API is read-only and target-aware", async () =>
   assert.deepEqual(listed.map((item) => item.id), [promptResourceId]);
   assert.deepEqual(listed[0].target, { type: "project", projectId });
 
-  const historyResponse = await authenticatedFetch(
+  const historyResponse = await serverFetch(
     `/api/prompt-resources/${encodeURIComponent(promptResourceId)}/history?projectId=${projectId}&target=project&targetProjectId=${projectId}`,
   );
   assert.equal(historyResponse.status, 200);
   assert.deepEqual((await historyResponse.json()).revisions.map((item) => item.revision), [1]);
 
-  const builtInResponse = await authenticatedFetch(
+  const builtInResponse = await serverFetch(
     `/api/prompt-resources?projectId=${projectId}&target=personal&kind=experience&q=22.19.0&status=all`,
   );
   assert.equal(builtInResponse.status, 200);
@@ -1345,7 +1292,7 @@ test("Prompt resource production API is read-only and target-aware", async () =>
   assert.equal(builtIns[0].kind, "experience");
   assert.deepEqual(builtIns[0].target, { type: "personal" });
 
-  const builtInRuleResponse = await authenticatedFetch(
+  const builtInRuleResponse = await serverFetch(
     `/api/prompt-resources?projectId=${projectId}&target=personal&kind=rule&q=Agent%E8%83%BD%E5%8A%9B%E5%AE%8C%E5%A4%87%E6%80%A7&status=all`,
   );
   assert.equal(builtInRuleResponse.status, 200);
@@ -1357,7 +1304,7 @@ test("Prompt resource production API is read-only and target-aware", async () =>
 });
 
 test("full history exports the managed Chat Session as standalone HTML", async () => {
-  const inlineResponse = await authenticatedFetch(
+  const inlineResponse = await serverFetch(
     `/api/sessions/${encodeURIComponent(sessionId)}/export?inline=1&projectId=${projectId}`,
   );
   assert.equal(inlineResponse.status, 200);
@@ -1371,23 +1318,23 @@ test("full history exports the managed Chat Session as standalone HTML", async (
   assert.match(html, /id="chat-workflow-history-styles"/);
   assert.match(html, /createChatWorkflowGroup/);
 
-  const missingResponse = await authenticatedFetch("/api/sessions/not-a-chat-session/export?inline=1");
+  const missingResponse = await serverFetch("/api/sessions/not-a-chat-session/export?inline=1");
   assert.equal(missingResponse.status, 404);
 });
 
 test("file list, metadata, and text reads use the Pi Web-compatible contract", async () => {
   const encodedWorkspace = encodeFilePath(workspace);
-  const listResponse = await authenticatedFetch(`/api/files/${encodedWorkspace}?type=list`);
+  const listResponse = await serverFetch(`/api/files/${encodedWorkspace}?type=list`);
   assert.equal(listResponse.status, 200);
   const list = await listResponse.json();
   assert.equal(list.entries.some((entry) => entry.name === "fixture.md"), true);
 
   const encodedFile = `${encodedWorkspace}/fixture.md`;
-  const metaResponse = await authenticatedFetch(`/api/files/${encodedFile}?type=meta`);
+  const metaResponse = await serverFetch(`/api/files/${encodedFile}?type=meta`);
   assert.equal(metaResponse.status, 200);
   assert.equal((await metaResponse.json()).language, "markdown");
 
-  const readResponse = await authenticatedFetch(`/api/files/${encodedFile}?type=read`);
+  const readResponse = await serverFetch(`/api/files/${encodedFile}?type=read`);
   assert.equal(readResponse.status, 200);
   assert.deepEqual(await readResponse.json(), {
     content: "# Built server fixture\n",
@@ -1398,21 +1345,69 @@ test("file list, metadata, and text reads use the Pi Web-compatible contract", a
 
 test("file access outside Chat-authorized roots is rejected", async () => {
   if (process.platform === "win32") return;
-  const response = await authenticatedFetch("/api/files/etc/passwd?type=read");
+  const response = await serverFetch("/api/files/etc/passwd?type=read");
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: "Access denied" });
 });
 
 
 test("built Project Skill and all six tools execute through a real Workflow and Pi", async () => {
-  await exerciseProjectManagementRun(authenticatedFetch, { chatHome, projectId, workspace });
+  await exerciseProjectManagementRun(serverFetch, { chatHome, projectId, workspace });
 });
 
 test("shipped Workflow TUI shares Web Sessions, review, Fork and cancellation on the built server", async () => {
-  await exerciseWorkflowTui({ baseUrl, cookie: await authenticatedCookie(), projectId });
+  await exerciseWorkflowTui({ baseUrl, projectId });
 });
 
 
 test("reviewed Workflows support repeated conversations and bounded format repair without rewriting history", async () => {
-  await exercisePlannerConversation(authenticatedFetch, { projectId, workspace, chatHome });
+  await exercisePlannerConversation(serverFetch, { projectId, workspace, chatHome });
+});
+
+test("fresh installation serves Web and model setup before Provider credentials are configured", async t => {
+  const freshRoot = fs.mkdtempSync(path.join(os.tmpdir(), "chat-fresh-install-"));
+  const freshHome = path.join(freshRoot, "home");
+  fs.mkdirSync(path.join(freshHome, "agent"), { recursive: true });
+  fs.copyFileSync(path.join(projectRoot, "deploy/settings.json.example"), path.join(freshHome, "agent/settings.json"));
+  const port = await reservePort();
+  const fresh = spawn(process.execPath, [serverEntry], {
+    cwd: freshRoot,
+    env: {
+      PATH: process.env.PATH,
+      HOME: freshHome,
+      HOST: "127.0.0.1", PORT: String(port), CHAT_HOME: freshHome,
+      WORKFLOW_TARGET_WORLD: "local",
+      WORKFLOW_LOCAL_DATA_DIR: path.join(freshHome, "runtime/workflow-data"),
+      CHAT_CHANNEL_GATEWAY_TOKEN: "fresh-install-fixture-channel-service-token",
+      MEM0_TELEMETRY: "false", PI_OFFLINE: "1",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  fresh.stdout.on("data", chunk => { output += chunk; });
+  fresh.stderr.on("data", chunk => { output += chunk; });
+  t.after(async () => {
+    if (fresh.exitCode === null) {
+      const stopped = new Promise(resolve => fresh.once("exit", resolve));
+      fresh.kill("SIGINT");
+      const timeout = setTimeout(() => fresh.kill("SIGKILL"), 5000);
+      await stopped;
+      clearTimeout(timeout);
+    }
+    fs.rmSync(freshRoot, { recursive: true, force: true });
+  });
+  const url = `http://127.0.0.1:${port}`;
+  let ready = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      const response = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(500) });
+      ready = response.ok && (await response.json()).service === "chat";
+    } catch { /* The server has not bound its socket yet. */ }
+    if (ready || fresh.exitCode !== null) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.ok(ready, output);
+  assert.equal((await fetch(url)).status, 200);
+  assert.equal((await fetch(`${url}/api/models-config`)).status, 200);
+  assert.equal(fs.existsSync(path.join(freshHome, "agent/auth.json")), false, "installation must not invent Provider credentials");
 });

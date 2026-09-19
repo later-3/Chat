@@ -5,14 +5,20 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const entrypoints = [
-  "AGENTS.md", "CLAUDE.md", ".chat/skills/chat-architecture/SKILL.md",
+  "AGENTS.md", "CLAUDE.md", "README.md", ".chat/skills/chat-architecture/SKILL.md", ".chat/skills/chat-deployment/SKILL.md",
   "docs/README.md", "docs/architecture/README.md", "docs/development/README.md",
   "docs/development/agent-contribution.md", "docs/development/diagnostics.md",
   "docs/development/local-debugging.md", "docs/architecture/chat-module-contracts.md",
 ];
-for (const name of await readdir(resolve(root, "docs/development/debugging"))) {
-  if (name.endsWith(".md")) entrypoints.push(`docs/development/debugging/${name}`);
+async function collectDocuments(directory) {
+  for (const entry of await readdir(resolve(root, directory), { withFileTypes: true })) {
+    const name = `${directory}/${entry.name}`;
+    if (entry.isDirectory()) await collectDocuments(name);
+    else if (entry.isFile() && name.endsWith(".md") && !entrypoints.includes(name)) entrypoints.push(name);
+  }
 }
+await collectDocuments("docs");
+await collectDocuments("frontend/docs");
 let checked = 0;
 const errors = [];
 for (const name of entrypoints) {
@@ -23,6 +29,8 @@ for (const name of entrypoints) {
   for (const match of prose.matchAll(/\[[^\]\n]*\]\(([^)\n]+)\)/g)) {
     const target = match[1].split("#")[0];
     if (!target || /^[a-z][a-z\d+.-]*:/i.test(target)) continue;
+    // Historical screenshot artifacts live outside Git and are not deployment inputs.
+    if (target.startsWith("/Users/") || target.startsWith("/tmp/")) continue;
     try {
       await stat(resolve(dirname(file), decodeURIComponent(target)));
       checked += 1;

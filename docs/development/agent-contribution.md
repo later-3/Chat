@@ -6,11 +6,11 @@
 
 1. 从当前 Project 根的 `AGENTS.md` 恢复边界；开发 Chat 时读取本仓库的 [chat-architecture Skill](../../.chat/skills/chat-architecture/SKILL.md)。只按任务选读，不遍历全部文档或用户目录。
 2. [架构索引](../architecture/README.md)回答系统为何这样划分；[模块合同](../architecture/chat-module-contracts.md)回答谁拥有状态、谁调用谁、变更怎样传播。
-3. [开发索引](./README.md)回答代码放哪里、用哪个入口、怎样测试；[配置文档](../configuration.md)回答持久配置、资源、模型及继承。现状以实现和验证为证，目标以明确的决策状态为证。
+3. [开发索引](./README.md)回答代码放哪里、用哪个入口、怎样测试；[配置文档](../configuration/README.md)回答持久配置、资源、模型及继承。现状以实现和验证为证，目标以明确的决策状态为证。
 
 Chat 的 Project Skill 正文只有 `.chat/skills/chat-architecture/SKILL.md` 一份。根 `AGENTS.md` 提供直接阅读入口，`CLAUDE.md` 只指向同一入口；支持 `.agents/skills` 的 CLI 可使用仓库内的相对链接。执行 `pnpm check:architecture` 可检查导航和别名是否完好。不能把文件存在、CLI 目录识别、模型实际阅读混为一件事。
 
-Chat Web/Long Agent 是否得到该 Skill，仍取决于当前 Project、授权和 `inherit/explicit` 资源选择；不能为了开发便利绕过 explicit。开发 Chat 的 Agent 应选择 Chat Project 并装配该 Skill，或按根入口直接读取它。检查实际 Skill 目录、来源和装配结果，不用“我知道架构”作证明。公共 Long Agent 自我管理 Skill 的发布与动态发现仍是[实施基线 §4](../architecture/chat-long-agent-engineering-baseline.md)中的待实施能力；修改这份开发 Skill 不等于安装了它。
+Chat Web/Long Agent 是否得到该 Skill，仍取决于当前 Project、授权和 `inherit/explicit` 资源选择；不能为了开发便利绕过 explicit。开发 Chat 的 Agent 应选择 Chat Project 并装配该 Skill，或按根入口直接读取它。检查实际 Skill 目录、来源和装配结果，不用“我知道架构”作证明。公共 Long Agent 自我管理 Skill 的发布与动态发现仍是[实施基线 §4](../modules/long-agents/chat-long-agent-engineering-baseline.md)中的待实施能力；修改这份开发 Skill 不等于安装了它。
 
 ## 从场景到交付
 
@@ -30,13 +30,13 @@ Chat Web/Long Agent 是否得到该 Skill，仍取决于当前 Project、授权�
 
 ## 红线与例外
 
-红线由 [AGENTS.md](../../AGENTS.md)、[Agent 第一性原理](../architecture/chat-agent-first-principles.md)和[实施基线 C1–C10](../architecture/chat-long-agent-engineering-baseline.md)维护，不在每个 Skill 复制：唯一 Pi 装配入口、真实 Project/身份、唯一可写配置事实源、窄跨系统合同、可恢复持久化及服务端权威等。
+红线由 [AGENTS.md](../../AGENTS.md)、[Agent 第一性原理](../architecture/chat-agent-first-principles.md)和[实施基线 C1–C10](../modules/long-agents/chat-long-agent-engineering-baseline.md)维护，不在每个 Skill 复制：唯一 Pi 装配入口、真实 Project/身份、唯一可写配置事实源、窄跨系统合同、可恢复持久化及服务端权威等。
 
 遇到确实无法满足的新场景，先记录：现有红线保护什么、复用方案为什么不成立、拟改变的边界、对消费者/历史数据的影响、替代保障、迁移/回滚及验收。由用户审核架构变更后，同步修改权威约束与测试，再实施；不能在代码中先加旁路，事后把文档改成“符合架构”。改变算法、布局或模块内实现不自动构成红线例外。
 
 ## 记录和交接
 
-沿用项目现有任务记录和 Session，不新建第二套任务引擎。有跨会话或跨 Agent 交接需要时，将下列短记录放入该 Project 已有管理位置；Chat 的架构审核记录放在 `docs/architecture/reviews/`，复用故障案例放在 `docs/development-experiences/`。
+沿用项目现有任务记录和 Session，不新建第二套任务引擎。有跨会话或跨 Agent 交接需要时，将下列短记录放入该 Project 已有管理位置；Chat 的架构审核记录放在 `docs/history/reviews/`，复用故障案例放在 `docs/development/experiences/`。
 
 ```text
 目标与状态：讨论 / 已认可机制 / 待设计 / 实施中 / 已验证

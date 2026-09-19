@@ -16,18 +16,18 @@ Do not reproduce large parts of the architecture documents in prompts, plans, or
 Start with the Project root `AGENTS.md`, then `docs/architecture/README.md`. Read only the documents selected by the task:
 
 - Development process, handoff and justified architecture exceptions: `docs/development/agent-contribution.md`.
-- Whole-system start/stop, service ownership, readiness, draining and recovery: `docs/architecture/chat-system-lifecycle.md`. Existing dev scripts still manage only Web/Backend; distinguish target lifecycle from current behavior.
+- Whole-system start/stop, service ownership, readiness, draining and recovery: `docs/architecture/chat-system-lifecycle.md`. Normal dev manages Web/Backend; isolated debug can include Nano/TUI, and Linux chatctl separates installation from component startup. Cross-component draining remains a target.
 - Module ownership, API changes, resource refresh and long connections: `docs/architecture/chat-module-contracts.md`.
-- Workflow TUI, native Pi UI reuse, Web/TUI Session sharing and terminal commands: `docs/architecture/chat-workflow-tui.md`; startup/breakpoints: `docs/development/debugging/workflow-tui.md`.
+- Workflow TUI, native Pi UI reuse, Web/TUI Session sharing and terminal commands: `docs/modules/tui/chat-workflow-tui.md`; startup/breakpoints: `docs/development/debugging/workflow-tui.md`.
 - User feedback, logs, persistence and regression evidence: `docs/development/diagnostics.md`.
-- Long Agent Skill discovery/effective versions, native capabilities, testing and implementation order: `docs/architecture/chat-long-agent-engineering-baseline.md`, especially §4 for resources and §9 for accepted decisions.
-- Long Agent definition/configuration and independent resources: `docs/long-agents.md` and `docs/architecture/chat-long-agent-capability-model.md`.
-- Concurrent work, same-Session ordering and shared writes: `docs/architecture/chat-long-agent-mechanism-contract.md` §3.2; concrete simulation: `docs/architecture/chat-long-agent-interaction-simulations.md` §4.3. Current lock evidence: `src/long-agents/runtime.ts`, not a claim that the target collaboration contract is implemented.
-- Long Agent Sessions, history, schedules, Docker and Social: `docs/architecture/chat-long-agent-architecture.md`; acceptance scenarios: `docs/architecture/chat-long-agent-scenarios.md`.
-- Long Agent current support/migration: `docs/architecture/chat-long-agent-roadmap.md`. Its approved target differs from the legacy `primarySessionId`, shared Daily and Docker-free implementation. Interaction mechanisms are consolidated in `docs/architecture/chat-long-agent-mechanism-contract.md`; detailed interfaces remain to be designed.
+- Long Agent Skill discovery/effective versions, native capabilities, testing and implementation order: `docs/modules/long-agents/chat-long-agent-engineering-baseline.md`, especially §4 for resources and §9 for accepted decisions.
+- Long Agent definition/configuration and independent resources: `docs/modules/long-agents/README.md` and `docs/modules/long-agents/chat-long-agent-capability-model.md`.
+- Concurrent work, same-Session ordering and shared writes: `docs/modules/long-agents/chat-long-agent-mechanism-contract.md` §3.2; concrete simulation: `docs/modules/long-agents/chat-long-agent-interaction-simulations.md` §4.3. Current lock evidence: `src/long-agents/runtime.ts`, not a claim that the target collaboration contract is implemented.
+- Long Agent Sessions, history, schedules, Docker and Social: `docs/modules/long-agents/chat-long-agent-architecture.md`; acceptance scenarios: `docs/modules/long-agents/chat-long-agent-scenarios.md`.
+- Long Agent current support/migration: `docs/modules/long-agents/chat-long-agent-roadmap.md`. The 2026-09-19 target uses one daily direct-conversation Session per Friend, with per-turn collaboration context; older per-business-Project Friend Session targets are superseded. See Context §15 and Long Agent architecture §4 for the P1 contract; P2 shared assembly and per-turn work context are implemented; Consult the phase plan for delivered scope and pending migration evidence; do not infer implementation status from target design. Interaction mechanisms are consolidated in `docs/modules/long-agents/chat-long-agent-mechanism-contract.md`; detailed interfaces remain to be designed.
 - New capabilities or changes to Agent responsibilities: `docs/architecture/chat-agent-first-principles.md`.
-- Project identity, ownership, Target, resource scope, or cross-Project behavior: `docs/architecture/chat-context-resource-model.md` and `docs/architecture/chat-project-framework.md`.
-- Workflow, Agent, Stage, Tool, Skill, Prompt, or assembly changes: `docs/architecture/chat-workflow-framework.md` and `docs/architecture/chat-detailed-design.md`.
+- Project identity, ownership, Target, resource scope, or cross-Project behavior: `docs/architecture/chat-context-resource-model.md` and `docs/modules/projects/chat-project-framework.md`.
+- Workflow, Agent, Stage, Tool, Skill, Prompt, or assembly changes: `docs/modules/workflows/chat-workflow-framework.md` and `docs/modules/workflows/chat-detailed-design.md`.
 - Questions about what the product currently does: `docs/architecture/chat-current-architecture.md`, confirmed against implementation and tests.
 - Pi contracts or upstream behavior: use the Pi analysis documents named by `docs/architecture/README.md`, then inspect the relevant public Pi interfaces or source.
 
@@ -48,7 +48,7 @@ Check the management catalog separately from runtime assembly: discovery, select
 
 This repository Skill is development navigation. Editing it or architecture documents does not install the target public Long Agent management Skill into a running Agent; publishing, discovery and resource access require separate implementation and verification.
 
-A new Skill entry can reuse Catalog rendering; a new API enum may require consumer/parser changes. Notifications invalidate read models; they do not replace durable state. Same-Agent work can be concurrent, while writes to the same Session or shared resource require the documented ordering/conflict rules.
+A new Skill entry can reuse Catalog rendering; a new API enum may require consumer/parser changes. Notifications invalidate read models; they do not replace durable state. Friend direct conversation uses one Session per day with ordered writes. Different Friends and explicit Workflow child work may run concurrently; shared writes still follow the documented conflict rules.
 
 ## Complete with evidence
 
@@ -56,4 +56,4 @@ Keep the implementation on the existing shared path, update the authoritative do
 
 Report the architecture sources consulted, the owner and scope decisions made, and the observable verification result. Update this Skill only when its routing or working method changes—not whenever an architecture detail changes.
 
-Run `pnpm check:architecture` to verify local navigation and the single-source CLI alias. This is structural validation, not proof that an Agent loaded the Skill or that the architecture works. Use a short read-only scenario answer test plus the relevant runtime gates. Keep review evidence in `docs/architecture/reviews/`; do not copy private conversations into Git.
+Run `pnpm check:architecture` to verify local navigation and the single-source CLI alias. This is structural validation, not proof that an Agent loaded the Skill or that the architecture works. Use a short read-only scenario answer test plus the relevant runtime gates. Keep review evidence in `docs/history/reviews/`; do not copy private conversations into Git.

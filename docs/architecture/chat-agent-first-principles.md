@@ -11,7 +11,7 @@
 本文描述的是必须长期保持的设计原则，不等同于“当前代码已经全部实现”。
 当前实现事实由[Chat当前架构与源码分析](./chat-current-architecture.md)说明；
 具体需求和落地方式分别由[Chat需求分析](./chat-requirements.md)和
-[Chat Workflow详细设计](./chat-detailed-design.md)说明。
+[Chat Workflow详细设计](../modules/workflows/chat-detailed-design.md)说明。
 
 如果具体设计与本文冲突，不能通过增加条件分支绕过去。必须先说明冲突、影响和替代方案，经过架构评审后再修改本文或具体设计。
 
@@ -50,7 +50,7 @@ Chat同时支持Workflow Agent与Long Agent。两者共享“模型、Prompt、C
 3. Long Agent可以调用Chat Workflow；被调用Workflow仍使用统一Pi装配和独立运行证据。
 4. Long Agent不能成为绕过Project、Session、资源Target或授权边界的全局隐式状态。
 
-完整定义见[Long Agent定义与配置模型](./chat-long-agent-capability-model.md)，运行机制见[Long Agent架构](./chat-long-agent-architecture.md)。2026-09-07 已确认独立Agent配置根与Daily、Daily按日主Session、业务项目多Session、历史连续性和Docker工具环境；共享认知、自主工作与协作按[机制与扩展合同](./chat-long-agent-mechanism-contract.md)收口，具体实现合同待审核，当前实现差距见[实施状态](./chat-long-agent-roadmap.md)。
+完整定义见[Long Agent定义与配置模型](../modules/long-agents/chat-long-agent-capability-model.md)，运行机制见[Long Agent架构](../modules/long-agents/chat-long-agent-architecture.md)。2026-09-07 已确认独立Agent配置根与Daily、Daily按日主Session、业务项目多Session、历史连续性和Docker工具环境；共享认知、自主工作与协作按[机制与扩展合同](../modules/long-agents/chat-long-agent-mechanism-contract.md)收口，具体实现合同待审核，当前实现差距见[实施状态](../modules/long-agents/chat-long-agent-roadmap.md)。
 
 ## 3. Chat只增加Workflow协作层
 
@@ -188,7 +188,7 @@ Session是连续状态，不是新的业务中心。它至少保存：
 
 AgentSession不是Chat Session。每次对话可以重新创建AgentSession，同时恢复同一个Chat Session的有效历史。
 
-Session持久化必须遵循[Chat Session架构](./chat-session-architecture.md)：用户、Assistant和Tool Result都是Pi原生MessageEntry；Workflow、Stage、Agent和审核控制状态只能作为正交元数据存在。CustomEntry不能替代真实话语。
+Session持久化必须遵循[Chat Session架构](../modules/sessions/chat-session-architecture.md)：用户、Assistant和Tool Result都是Pi原生MessageEntry；Workflow、Stage、Agent和审核控制状态只能作为正交元数据存在。CustomEntry不能替代真实话语。
 
 ## 6. Workflow配置生命周期
 

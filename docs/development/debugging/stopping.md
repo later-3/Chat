@@ -1,6 +1,40 @@
 # 分别关闭正常与调试 Chat
 
-在目标Chat checkout根目录执行。命令必须显式选择一个范围；不带参数只显示帮助。关闭浏览器或VS Code窗口不等于关闭后台服务。
+Linux/WSL 新安装的生产实例优先使用 `sudo /opt/chat/deploy/chatctl stop`，恢复用 `chatctl start`；可选 `--only backend|nanoclaw`。它不安装依赖、不修改自启动，见[运行手册](../../operations/running.md)。以下 `chat:stop` 继续用于按当前 checkout 识别既有服务及普通开发/隔离调试进程。
+
+
+在目标 Chat checkout 根目录执行。`chat-stop.mjs` 必须显式选择一个范围，不带参数只显示帮助；`debug-stop.mjs` 不带参数则停止整套专用调试环境。关闭浏览器或 VS Code 窗口不等于关闭后台服务。
+
+## 常用命令与等价脚本
+
+当前 F5 完整环境全部停止，直接执行 `pnpm debug:stop`。无论模块来自 `Run ...`、`Debug ...`，还是后来新增的独立调试会话，都按同一套调试归属记录关闭，保留配置、Workspace、Session 和 Memory。
+
+| 要停止什么 | pnpm 命令 | 等价脚本 |
+|---|---|---|
+| 专用调试环境：Backend、Web、NanoClaw、TUI、本地模型 | `pnpm debug:stop` | `node scripts/debug-stop.mjs` |
+| 上述调试环境 + 当前仓库普通 `dev:all` | `pnpm chat:stop -- --debug` | `node scripts/chat-stop.mjs --debug` |
+| 当前仓库已安装的正式 Backend + NanoClaw 服务 | `pnpm chat:stop -- --normal` | `node scripts/chat-stop.mjs --normal` |
+| 只停止调试 Backend | `pnpm debug:stop -- backend` | `node scripts/debug-stop.mjs backend` |
+
+开发、调试、正式服务都要停时，依次执行两个范围；当前没有 `--all` 参数：
+
+```bash
+pnpm chat:stop -- --debug
+pnpm chat:stop -- --normal
+```
+
+不用 pnpm 时，等价命令为：
+
+```bash
+node scripts/chat-stop.mjs --debug
+node scripts/chat-stop.mjs --normal
+```
+
+只检查、不停止，在相应命令末尾加 `--check`，例如 `pnpm debug:stop -- --check` 或 `node scripts/chat-stop.mjs --normal --check`。正常服务未安装会明确报错，不能用该报错推断调试服务没有关闭；分别查看两个命令的结果。
+
+浏览器由 VS Code 的 Frontend→Browser 关联管理，停止脚本不扫描或强杀 Chrome；若页面窗口仍保留，手动关闭即可，它不代表 Backend 仍在运行。正式服务范围也不包括共享代理、Tunnel、Docker 等其他程序，完整边界见下方范围表。
+
+### 启动脚本提供的停止入口
 
 ```bash
 scripts/dev-start.sh stop release          # 关闭当前仓库正常 Backend + NanoClaw
@@ -29,7 +63,17 @@ Pi在Backend中执行，生产Frontend是静态文件，两者都没有独立的
 
 仅停止专用调试、保留普通`dev:all`时，继续使用`pnpm debug:stop`；加`-- --check`只检查，加`-- backend`仅停止Backend角色。单模块停止不能解释为整个系统已关闭。`pnpm debug:stop -- tui` 校验并关闭TUI角色，无需检查监听端口；若该TUI属于 `debug:start --tui`，父启动器收到退出后也会停止它自己的整套服务。
 
-独立 `dev:tui`、安装后的 `chat tui` 没有调试归属记录，在其原终端 `/quit` 退出；这不取消后端Run。独立 `debug:tui` 同样只退出客户端；`debug:start --tui` 中 `/quit` 则结束该次整套栈。F5 compound的Stop会停止关联服务，均可能中断在途工作。
+独立 `dev:tui`、安装后的 `chat tui` 没有调试归属记录，在其原终端 `/quit` 退出；这不取消后端Run。独立 `debug:tui` 同样只退出客户端；`debug:start --tui` 中 `/quit` 则结束该次整套栈。
+
+## VS Code 停止按钮与组合的区别
+
+| 启动入口 | 停止一个会话后的行为 |
+|---|---|
+| `Run Chat (full environment)` / `Debug Backend (full environment)` | `stopAll: false`，只停止当前模块；其他模块继续运行，已停止模块也不会自动切回 Run 模式 |
+| 原有 `Debug Chat`、`Debug Chat TUI`、`Debug Chat Web + TUI + NanoClaw` 等全调试快捷组合 | `stopAll: true`，停止其中一个会话会停止整组 |
+| 单独启动的 `Run ...` / `Debug ...` | 只停止该会话及其关联子进程；Frontend 的关联浏览器也会关闭，`Debug Backend + Web` 还会关闭关联 Web |
+
+同一窗口里可能同时有多个独立会话，工具栏的停止按钮只针对当前选中的会话及上述关联范围。要一次关闭全部专用调试模块，使用 `pnpm debug:stop`，或菜单“终端 → 运行任务”中的 `Chat Debug: stop owned debug processes`。需要继续使用某个已停模块时，按[环境手册](./environment.md#操作示例后端与-nanoclaw-同时调试)从命令面板选择它的 Run / Debug 入口重新启动。所有进程停止操作都可能中断在途工作。
 
 ## 如何读取输出
 

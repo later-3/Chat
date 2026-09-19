@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { projectAgentSessionEvent } from "../../src/workflows/chat-run-events.ts";
 
+test("turn boundaries, retries and compression reach the frontend without changing Pi lifecycle", () => {
+  for (const event of [
+    { type: "turn_start" },
+    { type: "auto_retry_start", attempt: 1, maxAttempts: 3, delayMs: 1000, errorMessage: "busy" },
+    { type: "compaction_start", reason: "threshold" },
+  ]) assert.deepEqual(projectAgentSessionEvent(event), event);
+});
+
 test("projects message deltas without repeating the full partial message", () => {
   const event = projectAgentSessionEvent({
     type: "message_update",

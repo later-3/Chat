@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ChatApi, serverUrl } from "../cli/src/api.ts";
-import { readCookie, saveCookie } from "../cli/src/credentials.ts";
 import { parseTranscript } from "../cli/src/contract.ts";
 import { ChatTerminalView } from "../cli/src/tui.ts";
 import { VirtualTerminal } from "../pi/packages/tui/test/virtual-terminal.ts";
@@ -15,16 +14,11 @@ import { syncBuiltinESMExports } from "node:module";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-test("CLI authenticates, decodes split NDJSON, rejects redirects and expires credentials", async (t) => {
+test("CLI connects directly, decodes split NDJSON and rejects redirects", async (t) => {
   const seen = [];
   const server = createServer(async (req, res) => {
     seen.push({ url: req.url, cookie: req.headers.cookie });
-    if (req.url === "/api/auth/session") {
-      let body = ""; for await (const chunk of req) body += chunk;
-      assert.equal(JSON.parse(body).password, "fixture");
-      res.writeHead(200, { "Content-Type": "application/json", "Set-Cookie": "chat-session=fixture; HttpOnly" });
-      res.end(JSON.stringify({ ok: true, expiresAt: new Date(Date.now() + 60000).toISOString() }));
-    } else if (req.url.startsWith("/runs/")) {
+    if (req.url.startsWith("/runs/")) {
       res.writeHead(200, { "Content-Type": "application/x-ndjson" });
       const bytes = Buffer.from('{"text":"中文"}\n{"last":true}');
       res.write(bytes.subarray(0, 11)); setTimeout(() => res.end(bytes.subarray(11)), 5);
@@ -35,24 +29,13 @@ test("CLI authenticates, decodes split NDJSON, rejects redirects and expires cre
   t.after(() => { server.closeAllConnections(); server.close(); });
   const url = `http://127.0.0.1:${server.address().port}`;
   const api = new ChatApi(url);
-  const credentials = await api.login("test", "fixture");
   const events = []; await api.events("run", new AbortController().signal, (event) => events.push(event));
   assert.deepEqual(events, [{ text: "中文" }, { last: true }]);
-  assert.equal(seen.at(-1).cookie, "chat-session=fixture");
+  assert.equal(seen.at(-1).cookie, undefined);
   await assert.rejects(api.json("/redirect")); assert.ok(!seen.some((r) => r.url === "/leak"));
-  await assert.rejects(api.json("/expired"), /chat login/);
+  await assert.rejects(api.json("/expired"), /401/);
   for (const invalid of ["http://remote.example", "https://user:secret@host", "https://host/path", "file:///tmp/a"]) assert.throws(() => serverUrl(invalid));
-  const home = await mkdtemp(join(tmpdir(), "chat-cli-credentials-"));
-  const original = process.env.CHAT_CLI_HOME; process.env.CHAT_CLI_HOME = home;
-  t.after(async () => { if (original === undefined) delete process.env.CHAT_CLI_HOME; else process.env.CHAT_CLI_HOME = original; await rm(home, { recursive: true, force: true }); });
-  await saveCookie(url, credentials); assert.equal(await readCookie(url), credentials.cookie);
-  const file = join(home, (await readdir(home))[0]); assert.equal((await stat(file)).mode & 0o777, 0o600);
-  assert.equal(await readCookie("https://another.example"), "");
-  const data = JSON.parse(await readFile(file, "utf8")); data.expiresAt = "invalid"; await writeFile(file, JSON.stringify(data));
-  assert.equal(await readCookie(url), "");
-  await writeFile(file, "broken credential JSON");
-  const logout = spawnSync(process.execPath, ["--import", fileURLToPath(new URL("../scripts/typescript-test-loader.mjs", import.meta.url)), "--experimental-strip-types", fileURLToPath(new URL("../cli/src/main.ts", import.meta.url)), "logout", "--url", url], { encoding: "utf8", env: { ...process.env, CHAT_CLI_HOME: home } });
-  assert.equal(logout.status, 0, logout.stderr); assert.equal(await readCookie(url), "");
+
 });
 
 test("native Pi UI renders Chinese history and handles selectors, editing and terminal resize", async () => {

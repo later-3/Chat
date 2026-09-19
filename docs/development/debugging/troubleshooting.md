@@ -39,7 +39,7 @@ Backend时间包含UTC偏移；Nano控制台常用本地时分秒，日志文件
 | Chat sessionId | `/runs`、Long Agent响应、Session API | 原生对话历史 |
 | runId | `/runs`返回 | Workflow状态、取消、事件流 |
 | workflowInvocationId | Run响应/Session CustomEntry | 串起同一Workflow的阶段与配置 |
-| longAgentId | Registry/长期同事API | 长期身份 |
+| longAgentId | Registry/FriendAPI | 长期身份 |
 | Nano sessionId / agentGroupId | Nano路由/实体 | 渠道坐标与Group身份，不能代替Chat sessionId |
 | eventId / turnId | Nano Outbox/Chat ingress/Turn marker | 重试同一轮；完成事件不重复执行 |
 | deliveryId | Chat→Nano Delivery | 投递去重，典型由稳定Turn生成 |
@@ -51,13 +51,12 @@ Backend时间包含UTC偏移；Nano控制台常用本地时分秒，日志文件
 | 症状 | 先查 | 继续到哪里 |
 |---|---|---|
 | F5提示端口/lock占用 | 归属记录、PID启动时间、端口、并发control操作 | 重试启动或debug:stop；未知归属不按端口强杀 |
-| TUI首屏正常但输入无响应 | 是否与Vite等后台服务共享stdin | 整套启动只让TUI继承stdin；[输入归属案例](../../development-experiences/terminal-stdin-ownership.md) |
+| TUI首屏正常但输入无响应 | 是否与Vite等后台服务共享stdin | 整套启动只让TUI继承stdin；[输入归属案例](../experiences/terminal-stdin-ownership.md) |
 | TUI提示需要交互终端 | stdin/stdout是否TTY、是否pipe/tee | 使用集成终端；F5选择Debug TUI |
 | 页面显示正常环境历史 | 浏览器profile、URL、projectId、Backend agentDir | 停本次调试，修复路径；不要删正常数据 |
-| 页面401/登录循环 | `chat-session` Cookie、profile、签名密钥 | 单独调试profile；不清理正常浏览器 |
-| 点击发送无网络请求 | useAgentSession、owner、输入校验 | Frontend分支/事件处理 |
+| 点击发送无网络请求 | useAgentSession、owner、输入校验；尤其检查路径开头的文字是否被当成命令 | Frontend分支/事件处理；见[路径消息被命令拦截](../experiences/path-prompt-command-interception.md) |
 | `/runs`返回400 | 响应错误、Project、workflow、Agent选择 | 配置/请求parser，不先调模型 |
-| 202后一直running | Step日志、Workflow内部回调、Source Map | 开发产物、队列，再到Pi |
+| 202后一直running | Step日志、Workflow内部回调、Source Map | 先区分仍执行、连接未知和热重建遗留；旧 worker 的 running Step 会通过原生 failed 事件收尾，详见[结束与中断案例](../experiences/workflow-terminal-state.md) |
 | Node模块不能用于Workflow | 报错路径是否生成的steps.mjs | 缓存目录重入；见开发经验 |
 | 模型401/429/连接失败 | 实际provider/model、认证、服务错误 | ModelRuntime与Provider；不要默认无限重试Tool |
 | Skill不生效 | Catalog→selection→reload→Prompt→read | [资源章节](./configuration-resources.md) |
@@ -70,6 +69,12 @@ Backend时间包含UTC偏移；Nano控制台常用本地时分秒，日志文件
 | 改默认模型后旧Session没变 | Session最近选择/显式覆盖 | 重置该Agent或新Session验证 |
 | Nano启动Tripwire失败 | worktree commit、marker、安装/构建/测试 | 受控升级完成后写marker，不删除保护 |
 | “停止”后还看到服务 | 进程是否属于普通dev/生产，或独立启动配置 | 按[关闭手册](./stopping.md)选择--normal或--debug；跨组件业务排空尚未实现 |
+
+## Chat修改自身源码时再次中断
+
+当前 `Run Backend` 和 `Debug Backend` 都通过 Nitro dev 运行；`Run` 仅表示不挂调试器，仍会监听源码并热重建。如果 Web Agent 修改承载本次任务的同一 checkout 下的 Backend 源码，edit 可以成功落盘，但随后的热重建会终止旧 worker 中的 Pi 请求。日志通常为 `tool finished ... ok`、`Server built / workflows rebuilt`、Step `ECONNRESET / socket hang up`。Run 的中断失败说明整个任务未完成，不否定此前工具已成功。
+
+终态恢复负责准确记录这类失败，不会让执行跨 worker 热替换，也不会自动重放已发生的操作。继续自修改前，应让提供 Chat 服务的实例运行于独立 checkout 的固定构建产物，被修改项目使用另一个源码目录；调试源码本身则在任务结束后重启或重建。单纯反复发送“继续”仍可能再次触发相同中断。不要为此关闭失败提示或改写 Run 为 completed。
 
 ## 人工只读检查Nano
 
@@ -99,4 +104,4 @@ pnpm ncl dropped-messages list --json
 
 私有日志可能含用户内容、平台ID、文件路径、Tool输出。分享前删Cookie、Authorization、模型/Bot Token、二维码和私有正文；不要默认上传整份HAR或整个Chat Home。发布到Git的事故记录只保留可复用机制与合成示例。
 
-形成可复用事故时进入`docs/development-experiences`，并通过既有Prompt资源机制形成experience；至少增加一条自动化回归门禁。统一诊断视图、完整actor追踪、日志保留策略仍是待实现产品能力，详见[诊断与记录](../diagnostics.md)。
+形成可复用事故时进入`docs/development/experiences`，并通过既有Prompt资源机制形成experience；至少增加一条自动化回归门禁。统一诊断视图、完整actor追踪、日志保留策略仍是待实现产品能力，详见[诊断与记录](../diagnostics.md)。

@@ -1,6 +1,8 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { localTimestamp } from "../runtime-log.js";
+import { getWorkflowMetadata } from "workflow";
+import { registerWorkflowAgentAbort } from "./execution-registry.js";
 import type { ChatSessionToolResource } from "../tools/framework.js";
 import { appendChatToolExecution } from "../tools/execution-record.js";
 import {
@@ -40,6 +42,12 @@ export function subscribeAgentSessionLog(
   const toolStartedAt = new Map<string, string>();
   const toolResourcesByName = new Map((trace?.toolResources ?? []).map((tool) => [tool.name, tool]));
   const publisher = createChatRunEventPublisher(stage);
+  let unregisterAbort = () => {};
+  try {
+    unregisterAbort = registerWorkflowAgentAbort(getWorkflowMetadata().workflowRunId, () => session.abort());
+  } catch {
+    // Direct unit/inspection calls do not have a Workflow execution context.
+  }
   const unsubscribe = session.subscribe((event) => {
     publisher.publishAgentEvent(event);
     if (event.type === "message_end" && event.message.role === "assistant") {
@@ -97,6 +105,7 @@ export function subscribeAgentSessionLog(
     getLastAssistantText: () => lastAssistantText,
     getLastAssistantMessage: () => lastAssistantMessage,
     finish: async (closeStream) => {
+      unregisterAbort();
       unsubscribe();
       await publisher.finish(closeStream);
     },

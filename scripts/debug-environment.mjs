@@ -68,8 +68,6 @@ export async function prepareDebug() {
   await createOnce(join(debugRoot, "backend.env"), [
     "# Private debug credentials only. Never copy production environment files here.",
     `CHAT_CHANNEL_GATEWAY_TOKEN=${randomBytes(32).toString("hex")}`,
-    "CHAT_WEB_AUTH_USERNAME=chat", "CHAT_WEB_AUTH_PASSWORD=123456",
-    `CHAT_WEB_AUTH_SESSION_SECRET=${randomBytes(32).toString("hex")}`, "",
   ].join("\n"));
   await createOnce(join(debugHome, "agent/settings.json"), JSON.stringify({
     defaultProvider: "debug-local", defaultModel: "debug-model", defaultThinkingLevel: "off",
@@ -90,7 +88,7 @@ export async function prepareDebug() {
     "---", "name: debug-trace", "description: Read this skill when practicing DEBUG_READ_SKILL.", "---",
     "# Debug trace", "This harmless fixture contains DEBUG_SKILL_LOADED. Read it and report that marker.", "",
   ].join("\n"));
-  for (const folder of [debugHome, join(debugRoot, "client"), join(debugRoot, "logs"), join(debugRoot, "empty-env"), join(debugRoot, "nano-home")]) {
+  for (const folder of [debugHome, join(debugRoot, "logs"), join(debugRoot, "empty-env"), join(debugRoot, "nano-home")]) {
     await assertUnredirected(folder);
     await mkdir(folder, { recursive: true, mode: 0o700 });
     if (await realpath(folder) !== folder) throw new Error("Debug directories must not contain symlinks");
@@ -104,9 +102,6 @@ export async function debugEnvironment(role) {
   base.no_proxy = base.NO_PROXY;
   if (role === "tui") return {
     ...base, CHAT_SERVER_URL: `http://127.0.0.1:${ports.backend}`,
-    CHAT_CLI_HOME: join(debugRoot, "client"),
-    CHAT_CLI_USERNAME: privateValues.CHAT_WEB_AUTH_USERNAME,
-    CHAT_CLI_PASSWORD: privateValues.CHAT_WEB_AUTH_PASSWORD,
   };
   if (role === "backend") return {
     ...base, ...privateValues,

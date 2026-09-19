@@ -1,6 +1,6 @@
 # 配置、Tool、Skill、Extension 与 Prompt 调试
 
-精确格式与优先级由[配置文档](../../configuration.md)维护。修改前先确定“我要改变哪个Project、哪个Agent、哪一轮”，否则很容易改对文件但观察错Session。
+精确格式与优先级由[配置文档](../../configuration/README.md)维护。修改前先确定“我要改变哪个Project、哪个Agent、哪一轮”，否则很容易改对文件但观察错Session。
 
 ## CFG-01：修改模型/Thinking却未生效
 
@@ -18,7 +18,7 @@
 | Project Workflow默认选择 | 该Project`.chat/config.json` | 在Chat源码Project改配置，却在Debug Lab观察 |
 | 某Project的某Workflow Agent模型/Thinking | Backend模型配置API；数据在调试Home项目目录 | Personal config.json不支持直接保存这些model字段 |
 | 当前Session或本轮 | 运行界面选择与请求中的调整 | 旧Session选择覆盖新默认；新建Session或重置后再测 |
-| Long Agent模型/能力 | 长期同事配置页的Personal运行策略 | Project Workflow Agent配置不覆盖Long Agent定义 |
+| Long Agent模型/能力 | Friend配置页的Personal运行策略 | Project Workflow Agent配置不覆盖Long Agent定义 |
 | Group长期身份/职责 | Agent Group页，Nano事实 | Chat显示别名不等于Group运行身份 |
 
 保存Long Agent配置时观察`GET/PUT /api/long-agents/:id/config`中的revision/expectedRevision。两个页面同时修改同一revision，第二个应得到409；保留草稿并重读，不能自动覆盖。模型在保存时会验证目录与认证，实际Provider请求失败则是执行期错误。
@@ -86,4 +86,4 @@ Rule/Experience通过Prompt资源引用进入Agent自定义Prompt。在检查结
 
 Memory分两类：Chat Personal/Project使用`memory_*`，Nano Group Markdown使用`agent_memory_*`。读到另一类Memory不是“缓存没刷新”；先核对Tool名称、当前Project/Long Agent和实际来源。Group Memory写入带expectedRevision，409时重读；审计见[日志章节](./troubleshooting.md)。
 
-Nano目录中的Skill并不因为文件存在就自动成为当前Chat Pi Skill。当前资源接入范围和未完成的Long Agent资源同步见[工程基线](../../architecture/chat-long-agent-engineering-baseline.md)，不要复制整棵Nano groups到Chat Home来绕过边界。
+Nano目录中的Skill并不因为文件存在就自动成为当前Chat Pi Skill。当前资源接入范围和未完成的Long Agent资源同步见[工程基线](../../modules/long-agents/chat-long-agent-engineering-baseline.md)，不要复制整棵Nano groups到Chat Home来绕过边界。

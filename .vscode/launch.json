@@ -1,5 +1,6 @@
-// Dedicated debug ports/data. Read docs/development/debugging/README.md first.
-// Repeated launches replace verified owners only; Nano launch also initializes the local lab.
+// Dedicated debug ports/data. Read docs/development/debugging/environment.md first.
+// Full environment keeps modules independent: replace any Run module with its Debug entry.
+// stopAll=false is intentional; use pnpm debug:stop to stop the entire environment.
 {
   "version": "0.2.0",
   "configurations": [
@@ -183,9 +184,143 @@
         "${workspaceFolder}/cli/dist/**/*.js",
         "${workspaceFolder}/pi/packages/**/dist/**/*.js"
       ]
+    },
+    {
+      "name": "Run Local Model",
+      "type": "node",
+      "request": "launch",
+      "noDebug": true,
+      "runtimeExecutable": "node",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": false,
+      "preLaunchTask": "Chat Debug: prepare",
+      "program": "${workspaceFolder}/scripts/debug-launch.mjs",
+      "args": [
+        "model"
+      ],
+      "presentation": {
+        "group": "Run modules"
+      }
+    },
+    {
+      "name": "Run Backend",
+      "type": "node",
+      "request": "launch",
+      "noDebug": true,
+      "runtimeExecutable": "node",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": false,
+      "preLaunchTask": "Chat Debug: prepare",
+      "program": "${workspaceFolder}/scripts/debug-launch.mjs",
+      "args": [
+        "backend"
+      ],
+      "presentation": {
+        "group": "Run modules"
+      }
+    },
+    {
+      "name": "Run Frontend Server",
+      "type": "node",
+      "request": "launch",
+      "noDebug": true,
+      "runtimeExecutable": "node",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": false,
+      "preLaunchTask": "Chat Debug: prepare",
+      "program": "${workspaceFolder}/scripts/debug-launch.mjs",
+      "args": [
+        "frontend"
+      ],
+      "presentation": {
+        "group": "Run modules"
+      },
+      "serverReadyAction": {
+        "pattern": "http://127\\.0\\.0\\.1:35145",
+        "action": "startDebugging",
+        "name": "Run Browser",
+        "killOnServerStop": true
+      }
+    },
+    {
+      "name": "Run NanoClaw",
+      "type": "node",
+      "request": "launch",
+      "noDebug": true,
+      "runtimeExecutable": "node",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": false,
+      "preLaunchTask": "Chat Debug: prepare",
+      "program": "${workspaceFolder}/scripts/debug-launch.mjs",
+      "args": [
+        "nanoclaw"
+      ],
+      "presentation": {
+        "group": "Run modules"
+      }
+    },
+    {
+      "name": "Run TUI",
+      "type": "node",
+      "request": "launch",
+      "noDebug": true,
+      "runtimeExecutable": "node",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": false,
+      "preLaunchTask": "Chat Debug: prepare",
+      "program": "${workspaceFolder}/scripts/debug-launch.mjs",
+      "args": [
+        "tui"
+      ],
+      "presentation": {
+        "group": "Run modules"
+      }
+    },
+    {
+      "name": "Run Browser",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:35145",
+      "webRoot": "${workspaceFolder}/frontend",
+      "userDataDir": "${workspaceFolder}/.data/debug/browser",
+      "runtimeArgs": [
+        "--no-first-run"
+      ],
+      "sourceMaps": true,
+      "noDebug": true,
+      "presentation": {
+        "group": "Run modules"
+      }
     }
   ],
   "compounds": [
+    {
+      "name": "Debug Backend (full environment)",
+      "configurations": [
+        "Run Local Model",
+        "Debug Backend",
+        "Run Frontend Server",
+        "Run TUI",
+        "Run NanoClaw"
+      ],
+      "stopAll": false
+    },
+    {
+      "name": "Run Chat (full environment)",
+      "configurations": [
+        "Run Local Model",
+        "Run Backend",
+        "Run Frontend Server",
+        "Run TUI",
+        "Run NanoClaw"
+      ],
+      "stopAll": false
+    },
     {
       "name": "Debug Chat",
       "configurations": [

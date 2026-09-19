@@ -3,8 +3,8 @@
   "id": "project-create",
   "name": "project_create",
   "label": "Project create",
-  "description": "创建学习、旅行等托管Chat Project，无需用户提供目录。同一逻辑请求重试必须复用requestId；不会切换当前Session。",
-  "implementationVersion": 1,
+  "description": "按用户原名创建托管Chat Project，工作目录使用该名称（支持中文，无project前缀）；同名目录冲突时追加序号，显示名不变。内部id自动生成，可选指定但不作为显示名。名称须是有效单级目录名。同一逻辑请求重试复用requestId；不会切换当前Session。",
+  "implementationVersion": 2,
   "risk": "write",
   "permissions": [
     "project:create"

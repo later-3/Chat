@@ -13,7 +13,10 @@ import { resolveWorkflowAgentDefinition } from "./agent-config-loader.js";
 import type { PrepareChatWorkflowAgentSession } from "./registry.js";
 import { describeResourceVersion, qualifiedResourceAddress } from "../resources/version.js";
 import { readAgentDurableConfig } from "./agent-model-config.js";
-import { ensureLongAgentResourceDirs, longAgentConfigRoot } from "../long-agents/storage.js";
+import { longAgentConfigRoot, readLongAgentRegistry } from "../long-agents/storage.js";
+import { prepareLongAgentAssembly } from "../long-agents/assembly.js";
+import { createChatPiAgentSession } from "../agents/pi-agent-session.js";
+import { ensureAgentHomeProject } from "../projects/registry.js";
 
 const MAX_VISIBLE_RESOURCE_BYTES = 1_000_000;
 
@@ -65,6 +68,7 @@ interface AgentInspectionOptions {
   readonly stageId?: string;
   /** 检查 Long Agent 时传入：接入其自有资源目录并按 agent 归属分类（S4）。 */
   readonly longAgentId?: string;
+  readonly contextProjectId?: string | null;
   readonly prepareAgentSession?: PrepareChatWorkflowAgentSession;
 }
 
@@ -96,12 +100,20 @@ type CreatedInspectionSession = Awaited<ReturnType<typeof createWorkflowAgentSes
 
 /** Resolves and creates the same Pi AgentSession used by Workflow execution, without sending a Prompt. */
 export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
-  const projectContext = options.projectId === undefined
+  const friend = options.longAgentId === undefined ? undefined : (await readLongAgentRegistry(options.chatHome)).agents.find((agent) => agent.id === options.longAgentId);
+  if (options.longAgentId !== undefined && friend === undefined) throw new Error("找不到Long Agent");
+  const projectContext = friend !== undefined ? await ensureAgentHomeProject(friend.id, friend.name, options.chatHome) : options.projectId === undefined
     ? undefined
     : await resolveProjectContext(options.projectId, options.chatHome);
   const home = projectContext === undefined ? await ensureChatHome(options.chatHome) : undefined;
-  const cwd = projectContext?.cwd ?? options.cwd;
-  const agent = await resolveWorkflowAgentDefinition({
+  const prepared = friend === undefined ? undefined : await prepareLongAgentAssembly({
+    agent: friend, chatHome: projectContext!.chatHome, projectId: options.contextProjectId ?? null,
+    turnId: `inspection:${friend.id}`,
+  });
+  const collaboration = prepared?.invocation.projectId == null ? undefined : await resolveProjectContext(prepared.invocation.projectId, options.chatHome);
+  const resourceProject = prepared === undefined ? projectContext : collaboration;
+  const cwd = prepared?.invocation.ownWorkspace === undefined ? projectContext?.cwd ?? options.cwd : collaboration?.cwd ?? prepared.invocation.ownWorkspace;
+  const agent = prepared === undefined ? await resolveWorkflowAgentDefinition({
     defaultAgent: options.defaultAgent,
     cwd,
     ...(projectContext === undefined ? {} : { chatHome: projectContext.chatHome }),
@@ -115,7 +127,7 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
         }
       : {}),
     ...(options.selection === undefined ? {} : { selection: options.selection }),
-  });
+  }) : { ...prepared.agent, sources: [] };
   const durableConfig = projectContext === undefined || options.workflowId === undefined
     ? undefined
     : await readAgentDurableConfig(
@@ -143,31 +155,21 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
   const longAgentSkillsDir = options.longAgentId === undefined
     ? undefined
     : resolve(longAgentConfigRoot(chatHomeRoot, options.longAgentId), "skills");
-  if (longAgentSkillsDir !== undefined && options.longAgentId !== undefined) {
-    await ensureLongAgentResourceDirs(chatHomeRoot, options.longAgentId);
-  }
-  const mergedExtensions = longAgentSkillsDir === undefined
-    ? sessionExtensions
-    : {
-        ...sessionExtensions,
-        additionalSkillPaths: [
-          ...(sessionExtensions?.additionalSkillPaths ?? []),
-          longAgentSkillsDir,
-        ],
-      };
-  const created = await createWorkflowAgentSession({
+  const created = await (prepared === undefined ? createWorkflowAgentSession : createChatPiAgentSession)({
     chatSession: {
       ...(projectContext === undefined ? {} : { projectId: projectContext.projectId, projectContext }),
-      cwd,
+      cwd: projectContext?.cwd ?? cwd,
       agentDir,
       sessionDir: projectContext?.sessionDir ?? home!.runtimeDir,
       manager: sessionManager,
     },
     sessionManager,
     agent,
-    ...(mergedExtensions ?? {}),
+    ...(sessionExtensions ?? {}),
+    ...(prepared === undefined ? {} : { invocation: prepared.invocation }),
     toolContext: {
       purpose: "inspection",
+      ...(friend === undefined ? {} : { longAgentId: friend.id, longAgentTurnId: `inspection:${friend.id}` }),
       workflowId,
       workflowInvocationId: `inspection:${workflowId}:${agentId}`,
       stageId: options.stageId ?? agentId,
@@ -180,8 +182,8 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
     const skillRoots = {
       agentDir,
       cwd,
-      ...(projectContext === undefined ? {} : { projectConfigDir: projectContext.projectConfigDir }),
-      ...(longAgentSkillsDir === undefined ? {} : { longAgentSkillsDir }),
+      ...((prepared === undefined ? projectContext : collaboration) === undefined ? {} : { projectConfigDir: (prepared === undefined ? projectContext : collaboration)!.projectConfigDir }),
+      ...(longAgentSkillsDir === undefined ? {} : { longAgentSkillsDir: created.assemblySnapshot === undefined ? longAgentSkillsDir : resolve(created.assemblySnapshot.ownResourceRoot, "skills") }),
     };
     const skillResult = resourceLoader.getSkills();
     const skills = await Promise.all(skillResult.skills.map(async (skill) => ({
@@ -196,7 +198,7 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
         kind: "skill",
         id: skill.name,
         scope: skill.sourceInfo.scope,
-        ...(projectContext === undefined ? {} : { projectId: projectContext.projectId }),
+        ...(resourceProject === undefined ? {} : { projectId: resourceProject.projectId }),
         workflowId,
         agentId,
       }),
@@ -212,7 +214,7 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
         kind: "extension",
         id: basename(extension.resolvedPath),
         scope: extension.sourceInfo.scope,
-        ...(projectContext === undefined ? {} : { projectId: projectContext.projectId }),
+        ...(resourceProject === undefined ? {} : { projectId: resourceProject.projectId }),
         workflowId,
         agentId,
       }),
@@ -230,7 +232,7 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
         kind: "prompt",
         id: prompt.name,
         scope: prompt.sourceInfo.scope,
-        ...(projectContext === undefined ? {} : { projectId: projectContext.projectId }),
+        ...(resourceProject === undefined ? {} : { projectId: resourceProject.projectId }),
         workflowId,
         agentId,
       }),
@@ -276,8 +278,8 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
         effectiveThinkingLevel: session.thinkingLevel,
         // The definition never set a model/thinking level but the session still
         // resolved one from the Chat settings chain, so the source is Chat default.
-        modelSource: agent.modelSource ?? (session.model === undefined ? null : "chat-default"),
-        thinkingSource: agent.thinkingSource ?? (session.thinkingLevel === undefined ? null : "chat-default"),
+        modelSource: (friend?.definition.model === undefined ? agent.modelSource : "config-file") ?? (session.model === undefined ? null : "chat-default"),
+        thinkingSource: (friend?.definition.thinkingLevel === undefined ? agent.thinkingSource : "config-file") ?? (session.thinkingLevel === undefined ? null : "chat-default"),
         durableConfig: durableConfig ?? null,
       },
       prompt: {
@@ -314,7 +316,7 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
             kind: "tool",
             id: tool.name,
             scope: tool.sourceInfo.scope,
-            ...(projectContext === undefined ? {} : { projectId: projectContext.projectId }),
+            ...(resourceProject === undefined ? {} : { projectId: resourceProject.projectId }),
             workflowId,
             agentId,
           }),

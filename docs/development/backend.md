@@ -1,6 +1,6 @@
 # Backend 开发
 
-本文面向 Chat Backend 贡献者和协助开发的外部 AI，说明服务端代码的位置、开发方式和必须保持的边界。配置文件的具体位置与写法见 [Chat 系统配置](../configuration.md)；跨模块设计见 [Chat 当前架构](../architecture/chat-current-architecture.md)。
+本文面向 Chat Backend 贡献者和协助开发的外部 AI，说明服务端代码的位置、开发方式和必须保持的边界。配置文件的具体位置与写法见 [Chat 系统配置](../configuration/README.md)；跨模块设计见 [Chat 当前架构](../architecture/chat-current-architecture.md)。
 
 ## Backend 的职责
 
@@ -83,7 +83,7 @@ HTTP → ProjectContext → Workflow Registry → Workflow → Agent 装配 → 
 - 所有 Workflow Agent 都通过公共 `createWorkflowAgentSession()` 装配；执行与配置检查复用同一路径。
 - Model、Prompt、Tool、Skill、Extension、Plugin 和 Session 上下文最终交给 Pi `ResourceLoader`、`AgentSession` 与 `SessionManager`。
 - Tool 使用 Pi `ToolDefinition`，由 Extension 注册或通过公共 SDK Custom Tool 路径注入；不要新增重复的 Tool 类型或旁路注册表。
-- 修改 `pi/` 前阅读并遵守 [`pi/AGENTS.md`](../../pi/AGENTS.md)。修改 Workflow 框架时先阅读 [Chat Workflow 开发框架](../architecture/chat-workflow-framework.md)。
+- 修改 `pi/` 前阅读并遵守 [`pi/AGENTS.md`](../../pi/AGENTS.md)。修改 Workflow 框架时先阅读 [Chat Workflow 开发框架](../modules/workflows/chat-workflow-framework.md)。
 
 ## 错误处理
 
@@ -109,14 +109,14 @@ git diff --check
 git -C frontend diff --check
 ```
 
-`pnpm verify`包含 Backend 与 Frontend 测试、类型检查、生产构建、Built Server 和 Nitro 开发运行链验证。Workflow、Step bundle 或 Agent 装配改动还有额外场景要求，见 [测试指南](../testing.md)。
+`pnpm verify`包含 Backend 与 Frontend 测试、类型检查、生产构建、Built Server 和 Nitro 开发运行链验证。Workflow、Step bundle 或 Agent 装配改动还有额外场景要求，见 [测试指南](./testing.md)。
 
 ## 继续阅读
 
 - [开发文档索引](./README.md)：按修改范围选择模块文档。
 - [编码规范](./coding-standards.md)：TypeScript、模块、错误、安全与持久化约束。
-- [Chat 系统配置](../configuration.md)：模型、Workflow、Agent 与 Project 配置的用户用法。
+- [Chat 系统配置](../configuration/README.md)：模型、Workflow、Agent 与 Project 配置的用户用法。
 - [Chat 当前架构](../architecture/chat-current-architecture.md)：当前执行链和事实源。
-- [Chat Workflow 开发框架](../architecture/chat-workflow-framework.md)：新增或修改 Workflow 的完整合同。
-- [测试指南](../testing.md)：测试分层、命令和 Fixture。
+- [Chat Workflow 开发框架](../modules/workflows/chat-workflow-framework.md)：新增或修改 Workflow 的完整合同。
+- [测试指南](./testing.md)：测试分层、命令和 Fixture。
 - [根 `AGENTS.md`](../../AGENTS.md)：项目级强制规则与文档同步要求。

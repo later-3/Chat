@@ -275,3 +275,18 @@ test("workflow_call describe exposes exact selectable capability names", async (
   assert.match(result.content[0].text, /review: 审查代码/);
   assert.equal(result.details.status, "described");
 });
+
+test("Friend workflow_call separates collaboration target from parent storage and rejects absent target", async () => {
+  let captured;
+  const adapter = runtime({ start: async (input) => { captured = input; throw new Error("captured target"); } });
+  const input = { action: "start", workflowId: "minimal-pi-coding-agent", prompt: "work in collaboration project",
+    agents: [{ agentId: "pi-coding-agent", tools: [], skills: [] }] };
+  const tool = createWorkflowCallTool({ ...context(), collaborationProjectId: "work-project" }, adapter);
+  await assert.rejects(tool.execute("work", input), /captured target/);
+  assert.equal(captured.projectId, "work-project");
+  assert.equal(captured.parentProjectId, "project-1");
+  const absent = createWorkflowCallTool({ ...context(), collaborationProjectId: null }, adapter);
+  captured = undefined;
+  await assert.rejects(absent.execute("absent", input), /Project/);
+  assert.equal(captured, undefined);
+});

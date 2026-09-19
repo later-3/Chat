@@ -1,6 +1,6 @@
 # Pi Agent 源码与断点练习
 
-Pi 在 Chat Backend 进程体系内运行，不单独启动另一个 Pi CLI 来代替 Chat 执行。首先读 [Pi Agent设计与源码分析](../../architecture/pi-agent-design.md)，需要更细接口时读 [SDK文档](../../../pi/packages/coding-agent/docs/sdk.md) 与对应源码。
+Pi 在 Chat Backend 进程体系内运行，不单独启动另一个 Pi CLI 来代替 Chat 执行。首先读 [Pi Agent设计与源码分析](../../modules/pi/pi-agent-design.md)，需要更细接口时读 [SDK文档](../../../pi/packages/coding-agent/docs/sdk.md) 与对应源码。
 
 ## PI-01：模型 → read → ToolResult → 模型
 

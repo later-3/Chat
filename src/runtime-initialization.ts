@@ -46,11 +46,9 @@ export function ensureChatRuntimeInitialized(options: {
         ensureRuleLibrarySkill(paths.runtimeDir, { refresh: true }),
         purgeExpiredRemovedSessionsAcrossProjects(paths.root),
       ]);
-      // 归一迁移（幂等，带备份与完成标记）：Agent 日常项目并入自己的根、
-      // 共享 daily 改名为 longagentshare、Agent 历史会话迁回各自 Agent。
-      const { migrateAgentHomeNormalization, sweepLegacyAgentProjectDirs } = await import("./migrations/agent-home-normalization.js");
+      // 无损建立 Agent Home；保留旧项目/历史/渠道来源，不创建空的每日 Session。
+      const { migrateAgentHomeNormalization } = await import("./migrations/agent-home-normalization.js");
       await migrateAgentHomeNormalization(paths.root);
-      await sweepLegacyAgentProjectDirs(paths.root);
       // 启动时确保每个 Agent 的配置根与资源目录就绪。
       const { readLongAgentRegistry, ensureLongAgentResourceDirs } = await import("./long-agents/storage.js");
       const { reconcileDefaultLongAgentTools } = await import("./long-agents/definition-defaults.js");
@@ -68,6 +66,8 @@ export function ensureChatRuntimeInitialized(options: {
           console.warn(`预置Long Agent任务失败（${agent.id}）: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
+      const { startLongAgentDailyMaintenance } = await import("./long-agents/daily-maintenance.js");
+      startLongAgentDailyMaintenance(paths.root);
       startLongAgentSync(paths.root);
     })
     .catch((error: unknown) => {

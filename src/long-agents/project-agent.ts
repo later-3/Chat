@@ -1,104 +1,125 @@
-import { openChatSession, reserveChatSession } from "../chat-session.js";
-import { agentHomeProjectId, resolveProjectContext } from "../projects/registry.js";
-import { updateLongAgentState } from "./storage.js";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { openChatSession } from "../chat-session.js";
+import { ensureAgentHomeProject, resolveProjectContext } from "../projects/registry.js";
+import { readLongAgentState, updateLongAgentRegistry, updateLongAgentState } from "./storage.js";
+import { agentDate, validateTimeZone } from "./calendar.js";
+import type { DailySession } from "./daily-state.js";
 import type { LongAgentConfig, ProjectLongAgent } from "./types.js";
-
-/** 本地日历日期（YYYY-MM-DD）；Agent 时区配置是后续项。 */
-function localDate(now = new Date()): string {
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 
 export function projectLongAgentId(projectId: string, longAgentId: string): string {
   return `project-long-agent:${projectId}:${longAgentId}`;
 }
-
-export async function ensureProjectLongAgent(input: {
-  readonly chatHome: string;
-  readonly projectId: string;
-  readonly agent: LongAgentConfig;
-  readonly requestedSessionId?: string;
-}): Promise<{ readonly projectAgent: ProjectLongAgent; readonly isNewSession: boolean }> {
-  await resolveProjectContext(input.projectId, input.chatHome);
-  return updateLongAgentState<{
-    readonly projectAgent: ProjectLongAgent;
-    readonly isNewSession: boolean;
-  }>(input.chatHome, async (state) => {
-    const existing = state.projectAgents.find((candidate) => candidate.projectId === input.projectId
-      && candidate.longAgentId === input.agent.id);
-    // S5：Agent 独立 Daily Project 的日常主 Session 按日轮换；历史 Session 原位保留。
-    if (existing !== undefined && input.projectId === agentHomeProjectId(input.agent.id)) {
-      const today = localDate();
-      if (existing.sessionDate === today) {
-        // 当天复用。
-      } else {
-        const reserved = await reserveChatSession(
-          { projectId: input.projectId, chatHome: input.chatHome },
-          `${input.agent.name} · ${today}`,
-        );
-        const rotated: ProjectLongAgent = {
-          ...existing,
-          primarySessionId: reserved.manager.getSessionId(),
-          sessionDate: today,
-          status: "active",
-          updatedAt: new Date().toISOString(),
-        };
-        return {
-          state: {
-            ...state,
-            projectAgents: state.projectAgents.map((candidate) => (
-              candidate.id === rotated.id ? rotated : candidate
-            )),
-          },
-          result: { projectAgent: rotated, isNewSession: true },
-        };
-      }
-    }
-    if (existing !== undefined) {
-      if (input.requestedSessionId !== undefined && input.requestedSessionId !== existing.primarySessionId) {
-        throw new Error(
-          `Long Agent ${input.agent.name}在Project ${input.projectId}已有专属Session ${existing.primarySessionId}；普通Session不能被隐式接管`,
-        );
-      }
-      await openChatSession({
-        projectId: existing.projectId,
-        chatHome: input.chatHome,
-        sessionId: existing.primarySessionId,
-      });
-      const active = existing.status === "active"
-        ? existing
-        : { ...existing, status: "active" as const, updatedAt: new Date().toISOString() };
-      return {
-        state: active === existing
-          ? state
-          : { ...state, projectAgents: state.projectAgents.map((candidate) => candidate.id === active.id ? active : candidate) },
-        result: { projectAgent: active, isNewSession: false },
-      };
-    }
-    if (input.requestedSessionId !== undefined) {
-      throw new Error(`Long Agent ${input.agent.name}尚未在Project ${input.projectId}启动，不能接管已有普通Session`);
-    }
-    const isDaily = input.projectId === agentHomeProjectId(input.agent.id);
-    const reserved = await reserveChatSession(
-      { projectId: input.projectId, chatHome: input.chatHome },
-      isDaily ? `${input.agent.name} · ${localDate()}` : `${input.agent.name} · 专属会话`,
-    );
-    const now = new Date().toISOString();
-    const projectAgent: ProjectLongAgent = {
-      id: projectLongAgentId(input.projectId, input.agent.id),
-      projectId: input.projectId,
-      longAgentId: input.agent.id,
-      primarySessionId: reserved.manager.getSessionId(),
-      status: "active",
-      ...(isDaily ? { sessionDate: localDate() } : {}),
-      createdAt: now,
-      updatedAt: now,
-    };
-    return {
-      state: { ...state, projectAgents: [...state.projectAgents, projectAgent] },
-      result: { projectAgent, isNewSession: true },
-    };
+export async function ensureAgentCalendar(agent: LongAgentConfig, chatHome: string): Promise<LongAgentConfig & { timeZone: string }> {
+  if (agent.timeZone !== undefined) return { ...agent, timeZone: validateTimeZone(agent.timeZone) };
+  return updateLongAgentRegistry(chatHome, (registry) => {
+    const current = registry.agents.find((entry) => entry.id === agent.id);
+    if (current === undefined) throw new Error("Friend已不存在");
+    const updated = { ...current, timeZone: current.timeZone ?? validateTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone) };
+    return { registry: { ...registry, agents: registry.agents.map((entry) => entry.id === agent.id ? updated : entry) }, result: updated };
   });
+}
+
+/** Compatibility input projectId is validated; every new direct conversation belongs to Agent Home. */
+export async function ensureProjectLongAgent(input: {
+  readonly chatHome: string; readonly projectId: string; readonly agent: LongAgentConfig;
+  readonly requestedSessionId?: string; readonly now?: Date;
+}): Promise<{ readonly projectAgent: ProjectLongAgent; readonly isNewSession: boolean; readonly day: DailySession }> {
+  await resolveProjectContext(input.projectId, input.chatHome);
+  const agent = await ensureAgentCalendar(input.agent, input.chatHome);
+  const own = await ensureAgentHomeProject(agent.id, agent.name, input.chatHome);
+  const now = input.now ?? new Date();
+  const today = agentDate(agent.timeZone, now);
+  return updateLongAgentState(input.chatHome, async (state) => {
+    const existing = state.projectAgents.find((candidate) => candidate.projectId === own.projectId && candidate.longAgentId === agent.id);
+    const dailySessions = [...state.dailySessions];
+    if (existing?.sessionDate !== undefined && !dailySessions.some((entry) => entry.longAgentId === agent.id && entry.date === existing.sessionDate)) {
+      await openChatSession({ projectId: own.projectId, chatHome: input.chatHome, sessionId: existing.primarySessionId });
+      dailySessions.push({ longAgentId: agent.id, date: existing.sessionDate, timeZone: agent.timeZone, sessionId: existing.primarySessionId, createdAt: existing.createdAt,
+        summary: { status: "pending", attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } });
+    }
+    let day = dailySessions.find((candidate) => candidate.longAgentId === agent.id && candidate.date === today);
+    let isNewSession = false;
+    if (day === undefined) {
+      // Recover a native day marker left by a crash before the index commit.
+      const candidates = (await SessionManager.listAll(own.sessionDir)).filter((info) => {
+        const entries = SessionManager.open(info.path, own.sessionDir).getEntries();
+        return entries.some((entry) => entry.type === "custom" && entry.customType === "chat.long-agent-day.v1"
+          && typeof entry.data === "object" && entry.data !== null && "longAgentId" in entry.data && entry.data.longAgentId === agent.id
+          && "date" in entry.data && entry.data.date === today);
+      });
+      if (candidates.length > 1) throw new Error("同一Friend日期存在多个原生Session，须修复索引，不能合并历史");
+      const sessionId = candidates[0]?.id;
+      if (input.requestedSessionId !== undefined && input.requestedSessionId !== sessionId) throw new Error("该Session不是Friend今天的会话；历史保持只读，请在今天继续，普通Session不能被接管");
+      const session = await openChatSession({ projectId: own.projectId, chatHome: input.chatHome, ...(sessionId === undefined ? {} : { sessionId }) });
+      if (sessionId === undefined) session.manager.appendSessionInfo(`${agent.name} · ${today}`);
+      isNewSession = sessionId === undefined;
+      day = { longAgentId: agent.id, date: today, timeZone: agent.timeZone, sessionId: session.manager.getSessionId(), createdAt: now.toISOString(),
+        summary: { status: "pending", attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } };
+      session.manager.appendCustomEntry("chat.long-agent-day.v1", { schemaVersion: 1, longAgentId: agent.id, date: today, timeZone: agent.timeZone });
+      session.manager.flush();
+      dailySessions.push(day);
+    }
+    if (input.requestedSessionId !== undefined && input.requestedSessionId !== day.sessionId) {
+      throw new Error("该Session不是Friend今天的会话；历史保持只读，请通过开始聊天在今天继续，普通Session不能被接管");
+    }
+    await openChatSession({ projectId: own.projectId, chatHome: input.chatHome, sessionId: day.sessionId });
+    const stamp = now.toISOString();
+    const projectAgent: ProjectLongAgent = { id: projectLongAgentId(own.projectId, agent.id), projectId: own.projectId, longAgentId: agent.id,
+      primarySessionId: day.sessionId, sessionDate: today, status: "active", createdAt: existing?.createdAt ?? stamp, updatedAt: stamp };
+    return { state: { ...state,
+      projectAgents: [...state.projectAgents.filter((entry) => entry.id !== projectAgent.id), projectAgent],
+      dailySessions,
+    }, result: { projectAgent, isNewSession, day } };
+  });
+}
+
+/** Resolve an already accepted day without ever rotating it at execution time. */
+export async function openAcceptedDay(chatHome: string, longAgentId: string, sessionId: string): Promise<ProjectLongAgent> {
+  const state = await readLongAgentState(chatHome);
+  const day = state.dailySessions.find((item) => item.longAgentId === longAgentId && item.sessionId === sessionId);
+  if (day === undefined) throw new Error("已接受请求的每日Session记录缺失");
+  return { id: projectLongAgentId(longAgentId, longAgentId), projectId: longAgentId, longAgentId, primarySessionId: sessionId,
+    sessionDate: day.date, status: "active", createdAt: day.createdAt, updatedAt: day.createdAt };
+}
+
+/** Startup recovery indexes existing Home days only; it never allocates an idle day's Session. */
+export async function recoverFriendCalendar(chatHome: string, agent: LongAgentConfig & { timeZone: string }): Promise<void> {
+  const own = await ensureAgentHomeProject(agent.id, agent.name, chatHome);
+  await updateLongAgentState(chatHome, async (state) => {
+    const days = [...state.dailySessions];
+    const add = (date: string, timeZone: string, sessionId: string, createdAt: string) => {
+      const existing = days.find((entry) => entry.longAgentId === agent.id && entry.date === date);
+      if (existing !== undefined) {
+        if (existing.sessionId !== sessionId) throw new Error("同一Friend日期存在多个Session，请修复索引，不能合并历史");
+        return;
+      }
+      days.push({ longAgentId: agent.id, date, timeZone, sessionId, createdAt,
+        summary: { status: "pending", attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } });
+    };
+    const legacy = state.projectAgents.find((entry) => entry.projectId === own.projectId && entry.longAgentId === agent.id);
+    if (legacy?.sessionDate !== undefined) add(legacy.sessionDate, agent.timeZone, legacy.primarySessionId, legacy.createdAt);
+    for (const info of await SessionManager.listAll(own.sessionDir)) {
+      for (const entry of SessionManager.open(info.path, own.sessionDir).getEntries()) {
+        if (entry.type !== "custom" || entry.customType !== "chat.long-agent-day.v1") continue;
+        const data = entry.data;
+        if (typeof data !== "object" || data === null || !("longAgentId" in data) || data.longAgentId !== agent.id
+          || !("date" in data) || typeof data.date !== "string" || !("timeZone" in data)) throw new Error("原生日历标记无效");
+        add(data.date, validateTimeZone(data.timeZone), info.id, entry.timestamp);
+      }
+    }
+    return { state: { ...state, dailySessions: days }, result: undefined };
+  });
+}
+
+/** A timer alone is not daily activity. Do not allocate a Session just to summarize nothing. */
+export async function hasFriendDailyActivity(chatHome: string, agent: LongAgentConfig): Promise<boolean> {
+  const calendar = await ensureAgentCalendar(agent, chatHome);
+  const today = agentDate(calendar.timeZone);
+  const state = await readLongAgentState(chatHome);
+  const day = state.dailySessions.find((entry) => entry.longAgentId === agent.id && entry.date === today);
+  const sessionId = day?.sessionId ?? state.projectAgents.find((entry) => entry.projectId === agent.id && entry.longAgentId === agent.id && entry.sessionDate === today)?.primarySessionId;
+  if (sessionId === undefined) return false;
+  if (state.turns.some((turn) => turn.sessionId === sessionId && !turn.summaryDraft && turn.status !== "cancelled")) return true;
+  const session = await openChatSession({ projectId: agent.id, chatHome, sessionId });
+  return session.manager.getEntries().some((entry) => entry.type === "message" && entry.message.role === "user");
 }

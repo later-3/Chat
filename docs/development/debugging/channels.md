@@ -17,7 +17,7 @@ Nano仓库有[文档索引](../../../nanoclaw/docs/README.md)、[架构草稿](.
 3. 读取Group资源，补齐`memory/index.md`、`memory/system/index.md`、`memory/system/definition.md`；已有Memory不覆盖。
 4. 调试`long-agents.json`缺失时生成debug实例和debug-agent映射，inbox使用真实CLI记录ID。已有Registry保留，包括过去的telegram/debug-offline占位inbox；若其映射与本实验冲突则报错。
 
-终端出现`[debug] lab ready`后再刷新长期同事页面。需要重试只运行`pnpm debug:bootstrap`，不要重新create Group。ncl是操作者本地初始化工具，Chat业务仍只调用窄HTTP API，不依赖CLI Socket或Nano数据库。
+终端出现`[debug] lab ready`后再刷新Friend页面。需要重试只运行`pnpm debug:bootstrap`，不要重新create Group。ncl是操作者本地初始化工具，Chat业务仍只调用窄HTTP API，不依赖CLI Socket或Nano数据库。
 
 查看结果（在调试Nano工作区）：
 
@@ -28,7 +28,7 @@ pnpm ncl messaging-groups list --json
 pnpm ncl wirings list --json
 ```
 
-刷新Chat长期同事列表并发送DEBUG_HELLO，或在Chat根目录执行`pnpm debug:smoke -- --long-agent`。模型应为debug-local/debug-model。真实平台接入时再按下一节创建对应User/Messaging Group/Wiring；Registry精确格式仍见[配置文档](../../configuration.md)。
+刷新ChatFriend列表并发送DEBUG_HELLO，或在Chat根目录执行`pnpm debug:smoke -- --long-agent`。模型应为debug-local/debug-model。真实平台接入时再按下一节创建对应User/Messaging Group/Wiring；Registry精确格式仍见[配置文档](../../configuration/README.md)。
 
 ## CLI-01：先用本地终端验证完整渠道链
 
@@ -110,6 +110,6 @@ Nano断点全部放在调试worktree的对应文件；Backend断点放Chat原源
 - **重复同一eventId**：通过已有合同测试验证duplicate和冲突处理；不要手工重发真实外部动作。
 - **有Pi回复但平台无回复**：先看Delivery持久化/Adapter错误和Ack，不能重新运行模型来修投递。
 
-当前Nano定时任务等直接写Mailbox的生产者尚未全部进入统一Chat执行事件；触发被拒绝时应定位到未接入合同，不改成原生容器执行。详情见 [chat-pi driver当前覆盖](../../../nanoclaw/docs/chat-pi-execution-driver.md)。
+当前源码通过 `task-forwarder.ts#forwardDueChatPiTasks` 将不带 pre-task script 的到期任务转为 `kind: schedule` 事件，Backend `bridge.ts#syncInstance` 在独立分支执行，且不自动走普通入站的 Delivery/Ack。带脚本任务会跳过并记录日志；其他唤醒来源仍需核对是否有可恢复事件，不能把 driver 的 `wake` 返回值当成所有生产者都已接通。文件与字段见[源码地图](./code-map.md)，更广的驱动合同见 [chat-pi driver当前覆盖](../../../nanoclaw/docs/chat-pi-execution-driver.md)。
 
 完成真实TG/WX验收后，在自己的私有记录保存测试时间、两侧Commit、脱敏ID、最后成功节点和结果；不要把测试账号、Token、二维码或正文存入公开手册。

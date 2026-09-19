@@ -318,11 +318,11 @@ test("Long Agent Agent Group and Memory browser APIs expose safe strict projecti
   assert.equal(audit.includes(nanoGatewayPrivateValue), false);
 });
 
-test("Agent Group prompt context applies independent Unicode-safe budgets without truncating API snapshots", async () => {
+test("required identity fails over budget; optional core index uses Unicode-safe truncation", async () => {
   const standing = `${"😀".repeat(32_000)}TAIL-STANDING`;
   const index = `${"知".repeat(16_000)}TAIL-INDEX`;
   const definition = `${"忆".repeat(16_000)}TAIL-DEFINITION`;
-  const context = buildAgentGroupContextInstructions({
+  const document = {
     schemaVersion: 1,
     stale: false,
     fetchedAt: "2026-09-06T01:02:03.000Z",
@@ -338,13 +338,16 @@ test("Agent Group prompt context applies independent Unicode-safe budgets withou
         updatedAt: "2026-09-06T01:02:03.000Z", revision: REVISION_C,
       },
     },
-  });
+  };
+  assert.throws(() => buildAgentGroupContextInstructions(document), /拒绝截断/);
+  document.group.standingInstructions = "STANDING";
+  assert.throws(() => buildAgentGroupContextInstructions(document), /拒绝截断/);
+  document.coreMemory.definition.content = "DEFINITION";
+  const context = buildAgentGroupContextInstructions(document);
   assert.equal(context.includes("TAIL-STANDING"), false);
   assert.equal(context.includes("TAIL-INDEX"), false);
   assert.equal(context.includes("TAIL-DEFINITION"), false);
-  assert.match(context, /field="standingInstructions" original_code_points="32013"/);
   assert.match(context, /field="index.md" original_code_points="16010"/);
-  assert.match(context, /field="system\/definition.md" original_code_points="16015"/);
   assert.equal(context.includes("\ud83d\n"), false, "emoji must not be split into an invalid surrogate");
 });
 

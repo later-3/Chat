@@ -1,6 +1,6 @@
 # 模块边界、变更传播与连接
 
-这是跨模块的导航和合同检查入口。具体 Schema 留在各模块及[配置文档](../configuration.md)。下表的“当前”来自本仓库源码；“目标”是后续设计约束，不表示已实现通用通知系统。
+这是跨模块的导航和合同检查入口。具体 Schema 留在各模块及[配置文档](../configuration/README.md)。下表的“当前”来自本仓库源码；“目标”是后续设计约束，不表示已实现通用通知系统。
 
 ## 分层与所有权
 
@@ -18,7 +18,7 @@ IM → NanoClaw ──认证 Event / Management HTTP──↔ Chat Backend
 | 模块 | 拥有的事实与职责 | 消费者使用的边界 |
 |---|---|---|
 | Frontend | 草稿、导航、临时交互状态；展示和校验 Backend 响应 | `frontend/lib/*-browser.ts`；不拥有配置或 Session 的另一份事实 |
-| Workflow CLI | 终端交互、服务地址绑定的登录 Cookie；复用 Pi 原生显示组件 | 同一 Run API 与 v1 transcript/fork 投影；不装配 Agent、不写服务端 Session，见 [TUI 合同](./chat-workflow-tui.md) |
+| Workflow CLI | 终端交互、目标服务地址；复用 Pi 原生显示组件 | 同一 Run API 与 v1 transcript/fork 投影；不装配 Agent、不写服务端 Session，见 [TUI 合同](../modules/tui/chat-workflow-tui.md) |
 | Chat 配置、Project、资源服务 | Chat Home、稳定 Project 身份、配置解析、Catalog、授权及资源选择 | HTTP 与受控 Tool 使用同一服务；模型配置来自 Chat，不读 `~/.pi` |
 | Workflow / Long Agent 生命周期 | 一次 Workflow 执行；长期身份关联、入站事件、执行关联与恢复 | 分别包装公共 Pi 装配；不再实现 Agent Loop |
 | 公共 Agent 装配 | 把已解析的模型、Prompt、Skill、Tool、Extension 和 Session 装入 Pi | `src/agents/pi-agent-session.ts`；检查和运行遵守同一解析合同 |
@@ -26,7 +26,7 @@ IM → NanoClaw ──认证 Event / Management HTTP──↔ Chat Backend
 | NanoClaw | Group、Workspace、Agent Markdown Memory、Channel、Inbox、调度触发、Delivery/Ack | 认证的版本化 Event 与 Management/Resource API；Chat 不读 Nano 数据库 |
 | Memory | Chat Personal/Project Catalog+Mem0；Nano Group Markdown 各自持久化 | 两种作用域明确的接口/Tool；不能复制一份冒充另一类 Memory |
 
-Long Agent 独立配置根、每人 Daily、跨 Session 历史、资源包版本和工具执行 Docker 是[已确认目标](./chat-long-agent-mechanism-contract.md)。当前旧配置分属 Chat 与 Nano；迁移前不能用“唯一事实源”的目标描述掩盖现有分工，也不能继续新增双写字段。
+Long Agent 独立配置根、每人 Daily、跨 Session 历史、资源包版本和工具执行 Docker 是[已确认目标](../modules/long-agents/chat-long-agent-mechanism-contract.md)。当前旧配置分属 Chat 与 Nano；迁移前不能用“唯一事实源”的目标描述掩盖现有分工，也不能继续新增双写字段。
 
 Frontend和TUI是并列客户端，互不承载对方的执行；TUI当前仅接普通Workflow。TUI无监听端口，Pi UI组件在终端进程中渲染，Pi AgentSession在Backend执行链中运行。NanoClaw是独立Host，通过Long Agent生命周期接入Backend，普通Web/TUI Workflow不依赖它。启动与停止只管理明确归属的进程，参见[调试环境](../development/debugging/environment.md)。
 
@@ -56,7 +56,11 @@ Workflow 通过 `POST /runs` 得到稳定 Run 引用，再由 `GET /runs/:runId/
 
 页面通过 `resumeChatWorkflowRun()` 重新附着，恢复入口使用 `startIndex=-1`；Run 状态与 Pi Session 重新读取用于恢复事实。不能声称浏览器已持有逐条 ACK 游标或断线后完整重放所有 UI 增量。取消浏览器读取与取消服务端执行是不同操作，显式取消使用 Run API。当前 Long Agent Web 消息则等待本轮完成后重读原生 Session，不能把 Workflow 流当成已经覆盖 Long Agent 的全局通知通道。
 
-Nano 入站在 Chat 返回 `202` 前耐久保存；出站通过 Gateway Delivery/Ack 关联。连接断开、推送超时和 Agent 执行失败必须分别定位。重试使用稳定事件/执行/投递标识，不靠正文去重。[集成基线](./chat-nanoclaw-pi-integration.md)维护精确职责。
+Web 状态行消费同一条 Pi 事件投影（含 `turn_start`、重试与压缩），并使用已有 Run 轮询的最近确认时间。Run 终态优先于事件流关闭，完成后有界排空并重读 Session；可选 `workflowOutcome` 从最后一轮 Run 恢复 completed/failed/cancelled 与错误说明，不新增前端持久账本。取消 API 同时调用本实例按 Runtime runId 登记的 Pi `abort()`；该表仅保存取消句柄，不拥有执行状态。
+
+当前单实例 Local World 中，Backend 新 worker 在处理首个请求前检查原生 Run/Step：仅将开始于本 worker 之前、且仍为 running 的旧 Step 所属 Run，通过 World 的原子 `run_failed` 事件收尾。原因记录为 `CHAT_LOCAL_EXECUTION_INTERRUPTED`，不自动重放 Agent/Tool。新 worker 的慢执行/断点暂停、queued Step 和没有运行 Step 的持久审核均不据此判失败；非 Local World 不执行此恢复策略。Session、Web/TUI 与子调用随后读取同一 Runtime 终态。该保障依赖 Local World 的单实例数据目录边界，不能用于共享目录的多个 Backend。
+
+Nano 入站在 Chat 返回 `202` 前耐久保存；出站通过 Gateway Delivery/Ack 关联。连接断开、推送超时和 Agent 执行失败必须分别定位。重试使用稳定事件/执行/投递标识，不靠正文去重。[集成基线](../modules/long-agents/chat-nanoclaw-pi-integration.md)维护精确职责。
 
 ## 系统生命周期
 
@@ -64,4 +68,89 @@ Nano 入站在 Chat 返回 `202` 前耐久保存；出站通过 Gateway Delivery
 
 ## 修改合同的审核证据
 
-每次跨模块变更列出：事实拥有者、实际消费者、读写接口、作用域/身份、版本与生效点、失败/并发/重连、持久化及兼容迁移。验证至少包含生产者响应→浏览器解析、检查→装配、触发→Run→Session 中本次受影响的完整链。详见[工作方法](../development/agent-contribution.md)、[测试指南](../testing.md)及[诊断记录](../development/diagnostics.md)。
+每次跨模块变更列出：事实拥有者、实际消费者、读写接口、作用域/身份、版本与生效点、失败/并发/重连、持久化及兼容迁移。验证至少包含生产者响应→浏览器解析、检查→装配、触发→Run→Session 中本次受影响的完整链。详见[工作方法](../development/agent-contribution.md)、[测试指南](../development/testing.md)及[诊断记录](../development/diagnostics.md)。
+
+### Chat Web：Long Agent 运行状态读取
+
+`GET /api/sessions/:sessionId?projectId=...` 对 Long Agent Session 增加 `longAgentActivity`：`schemaVersion: 1`，`status: idle | running | completed | failed | cancelled | interrupted`，`turnId/startedAt/error: string | null`。状态由原生 `chat.long_agent_turn` 记录与当前 Backend 的 Session 操作锁投影，前端不持久化另一套执行事实。存在当前操作锁即为 running；仅遗留 running 记录而无当前操作则为 interrupted，不假称任务仍在运行或已经完成。历史分支查询不改变此 Session 的当前执行状态。
+
+Web 通过同一 Session 响应的 `friendExecution` 恢复稳定执行引用，使用下文 P4 订阅合同；`longAgentActivity` 继续提供原生历史兼容读投影。空闲轮询用于发现其他入口的新请求，活跃文字与工具增量来自过程流。导航只断开观察，不撤销 Backend 已接受的工作；用户点击“停止”才调用执行取消。浏览器待核实输入只保存未确认的草稿，不替代服务端耐久队列。
+
+
+### Chat Web：同事状态读投影
+
+`GET /api/long-agents/presence` 为只读合同，返回 `{schemaVersion:1, observedAt:ISO8601, agents:[{id,status:ready|working|disabled}]}`，禁止缓存。提供方 `src/long-agents/presence.ts` 读取原有 Registry 与 Session 操作锁；Long Agent 生命周期在取得现有锁时附带 `longAgentId`，释放时清理，队列中的工作及跨日旧 Session 均保留归属。没有独立运行表、心跳进程或新的执行器。锁的语义是处理中（包括排队），不是模型正在生成 Token。
+
+工作中优先于停用：停用不冒充撤销已接受的执行。无工作且启用表示就绪，只说明后端已确认配置状态，不能证明下一次模型调用成功。单轮失败仍属于该 Session 的轮次结果，不永久改写 Agent 可用性。NanoClaw 通道连接由原列表合同单独展示，不能因 IM 离线把 Web Agent 标为不可用。此投影沿用单 Backend 实例边界，不用于共享 Chat Home 的多进程汇总。
+
+消费者 `lib/long-agent-presence.ts` 校验版本、时间、身份唯一性和枚举；轮询失败/超时/隐藏转为未知，重新可见时重读。不支持没有明确记录的离开或待用户确认状态。读投影不落盘，不替代 Pi Session 终态及权限事实。
+
+### Chat Web：轮次统计的时间来源
+
+原生 `compactionSummary` / `branchSummary` 经公共读模型转换为已有 `custom` 消息（compaction / branch-summary），保留摘要和元数据；Pi 原记录不变。Session 详情及 context 响应的 `context.entryTimes` 是与 `messages/entryIds` 同长度的只读数组，元素为原生 Pi Entry 的入库 Unix 毫秒或 null。分支、压缩与审核插入沿用 `projectSessionContext` 的选择结果，不能把其他分支时间混入；不新增时间数据库或执行状态。Frontend 检查长度/数值，旧服务缺字段时不展示耗时。结尾用量从可见轮次的模型 usage 和工具调用身份汇总，用时为输入至末条回复/工具结果入库的跨度，包含等待，不冒充 CPU/模型推理净时长。
+
+## 统一请求、执行反馈与入口适配（P1–P4）
+
+公共装配输入见 [Context §15](./chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)。Frontend/TUI/Nano 只能提交意图，Backend 负责解析身份、目标和每日 Session；不引入另一套模型 Runtime。
+
+### 请求接受与来源
+
+Friend Web 先接受并返回执行引用，再订阅事件。请求包含 schemaVersion、requestId、消息/附件、明确的 contextProjectId（项目 ID 或 null）；旧 projectId/sessionId 作为兼容定位输入，不能授权改变归属。服务端派生 actor、longAgentId、SessionRef、turnId、acceptedAt、日内序号、源渠道及受控回复目的地；校验正文/附件和模型能力，不保留“IM 支持图片但 Web 无条件禁用”的人为差异。
+
+Nano 保持既有认证 Event/Delivery/Ack API，由薄适配把事件映射到同一接受服务。去重键是可信来源＋requestId/eventId，重复且内容一致返回同一引用，冲突返回 409。耐久接受前失败可重试；接受后页面不通过重新 POST 猜测进度，按稳定引用查询。已接受正文保存在现有耐久 pending envelope，执行时幂等写入原生消息，完成后按保留策略清理 envelope；它不是永久的第二份聊天历史。
+
+执行失败、需要人工核实的中断、投递失败分别表达。重启后仅有 running 但无可恢复执行句柄时标记 interrupted；不能承诺任意外部工具 exactly-once，也不能自动重放结果未知的写操作。已提交终态和已保存原生回复可恢复，Nano Delivery 失败只重试投递。
+
+### 公共反馈与恢复
+
+统一的是 Pi payload、消费器和状态/渲染核心。Friend Agent envelope 带 schemaVersion、执行身份、单次执行递增 seq、时间及 event；status/reset 传递耐久状态与显示快照。Workflow 保留原生 Runtime 流协议和 stage/review 附加信息，不强造 Friend Workflow Stage，也不为格式一致改写 Workflow 的运行事实。
+
+运行状态为 queued/running/waiting/completed/failed/cancelled/interrupted；浏览器连接状态另列 connected/reconnecting/detached，不能覆盖后端终态。公开响应必须运行时校验；未知版本提示升级，不按成功解析。
+
+Frontend 共用聊天 reducer/render 和订阅恢复接口，各适配器只提供接受、读取状态、订阅和操作能力。现有 Workflow Runtime 流保留其运行事实；Friend 在现有生命周期中发同构事件，不另外启动 Workflow 来包裹 Friend。
+
+重连先取原生 Session＋执行快照及其事件边界，再从该边界接流；用 executionId/seq/entryId/toolCallId 去重，快照替换当前未完成投影而非重复 append。无法补齐增量时明确 reset 后重读，不能拼接两个不同快照。流结束不等于完成；terminal 必须在持久终态确认后发出，随后核对原生历史。重启可保留中断前原生消息，但不承诺尚未落盘的每个 Token 都可重放。
+
+### 操作能力与一致性
+
+- 页面离开/停止等待仅断开观察，后台继续；显式取消按执行引用调用实际 Pi abort 和子 Workflow 取消路径，持久终态后反馈。已结束的取消幂等。
+- 后续消息作为下一独立请求耐久接受，各自冻结项目和回复目的地；取消当前轮不隐式删除已接受后续消息，队列支持明确取消。
+- 引导使用 Pi 原生 steer，仅当前活跃 Agent、同一可信发起者/回复目的地、同一冻结项目及权限可用；跨项目或跨来源引导拒绝并提供后续消息路径，不能半途替换装配。Workflow 人工审核/确定性阶段不能冒充可引导 Agent。
+- 请求接受、排队、引导生效和模型完成是不同状态；追加原生用户记录与请求 ID 幂等关联。接受了引导但运行先结束时转为明确排队后续，不能悄悄丢消息。
+- 模型图片能力、取消/引导/压缩等 capability 由 Backend 投影；共用控件按能力呈现并解释原因。P4 的实际差异见下方能力表；不能以永久隐藏全部控件代替实现，新增入口须核对实际执行能力。
+
+精确路由与序列化以以下 P4 合同及前后端 Parser 为准；上面的来源、顺序和恢复原则同时适用于两个入口。
+
+### Friend P3 接受与日历投影
+
+P3 已在现有 Long Agent 状态中实现耐久接受信封、顺序 Worker、原生 Session 执行和日终恢复；Web messages 请求增加可选 requestId，成功响应仍为整轮结果。Friend 配置增加可选 timeZone；每日状态 GET/POST 的精确字段、操作、迁移与私聊边界以 [Long Agent §4.2.1](../modules/long-agents/chat-long-agent-architecture.md#421-p3-实现合同2026-09-19) 为单一合同。P4 的 Web 接受与订阅接入同一队列，不能由前端另维护队列事实。
+
+
+### Friend P4 实时与控制合同
+
+| API | 行为 |
+|---|---|
+| `POST /api/long-agents/:id/turns` | 严格解析 `{schemaVersion:1,requestId,sessionId?,contextProjectId,text,images?}`；校验并耐久接受后返回 HTTP 202 与执行引用 |
+| `GET /api/long-agents/:id/turns/:turnId` | `{execution,snapshot}`；归属不匹配拒绝；snapshot 含 seq/messages/partial/phase |
+| `GET .../turns/:turnId/events?after=N` | NDJSON Agent event/status/reset；只在耐久终态确认后关闭 |
+| `DELETE .../turns/:turnId` | queued 取消或活跃 Pi abort；已结束幂等；装配中没有句柄时明确拒绝，不假报取消 |
+| `POST .../turns/:turnId/steer` | `{requestId,text,contextProjectId}`；耐久接受、原生 Pi steer 或降为 follow-up；返回 delivery 和执行引用 |
+| `GET /api/long-agents/:id/capabilities` | schema 1、longAgentId、images/manualCompaction/followUp；图片由有效模型解析，接受时再次校验 |
+
+执行引用为 schema 1：kind=friend、id、longAgentId、存储 projectId、sessionId、协作 contextProjectId、status、error、acceptedAt、capabilities。Session 详情通过可选 friendExecution 提供同一结构。原 `/messages` 同步 API 保留兼容，当前 Web 不再使用。
+
+`src/agents/session-events.ts` 是唯一 Pi 显示投影；`live-turn.ts` 只保留当前进程 Pi 句柄、瞬时显示状态和最近 256 条事件，不是耐久事件数据库。快照与 seq 同步捕获；过期游标返回 reset。前端按执行身份与 seq 去重，丢段重取快照，15 秒无流数据则重连；只执行 GET，不自动重发 POST。流关闭不能推导 completed。最后重读原生 Pi 历史；重启未落盘 Token 允许丢失，原生已落盘消息及中断结果保留。
+
+引导用原生 `sendCustomMessage(deliverAs:steer)`，可展示的 `chat.friend-steering.v1` 保存请求 ID、父轮 ID 和冻结项目。只有 Web 来源且项目相同时可用。已进入原生队列的引导不能单独撤回，可以停止父轮；未被消费的耐久请求作为后续消息执行。Worker 用原生 CustomMessage 身份确认已消费，不靠文字去重，也不把已消费引导再次 prompt。父轮异常时已消费引导标 interrupted，保留历史供核实。
+
+| 能力 | 普通 Workflow Session | Friend |
+|---|---|---|
+| 文字/工具/自动重试/自动压缩显示 | 共用 Pi 事件、reducer、组件 | 同左 |
+| 完成/失败/取消/恢复 | Workflow Run 为事实源，原生 Session 为历史 | 耐久 Turn 为事实源，同一原生历史投影 |
+| 显式停止 | 取消 Run 及子执行 | Pi abort；原有 workflow_call signal 取消子 Run |
+| 引导、后续消息 | 当前 Workflow 未提供运行中追加合同；保留草稿，结束后发送 | 同项目原生 steer、耐久 follow-up；新项目只能 follow-up |
+| 图片 | 现有 Workflow 接受合同 | 有效 Friend 模型能力；后端再次校验 |
+| 手动压缩 | 既有入口尚未提供执行合同 | capability=false；自动压缩照常展示 |
+| 阶段、人工审核 | 保留 Workflow 附加信息 | 不制造假 Workflow Stage |
+
+普通 Workflow 原来显示但调用后仅报“不支持”的引导/后续按钮不再伪装可用；输入草稿仍保留。没有删除已实现的执行能力。P5 已完成旧数据副本迁移与本地全链验收；Nano 真实外部收发仍待验收，不能以本地验证替代，见[P5 记录](../history/reviews/2026-09-20-agent-unification-p5.md)。

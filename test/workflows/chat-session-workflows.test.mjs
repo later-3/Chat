@@ -802,7 +802,7 @@ test("Pi auto-compaction remains part of the same Chat Session", { concurrency: 
   const faux = registerFauxProvider({
     api: "chat-compaction-faux",
     provider: "chat-compaction-faux",
-    models: [{ id: "tiny", contextWindow: 10_000, maxTokens: 1_000 }],
+    models: [{ id: "tiny", contextWindow: 30_000, maxTokens: 1_000 }],
   });
   t.after(() => {
     faux.unregister();
@@ -845,7 +845,7 @@ test("Pi auto-compaction remains part of the same Chat Session", { concurrency: 
     projectId: project.projectId,
     chatHome,
     cwd: workspace,
-    prompt: "long request ".repeat(40),
+    prompt: "long request ".repeat(8000),
     workflowInvocationId: "compaction-invocation-1",
   });
   assert.equal(first.text, firstResponse);

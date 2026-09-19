@@ -1,18 +1,22 @@
+import { registerLiveTurn } from "./live-turn.js";
+import { projectSessionContext } from "../session-read-model.js";
+import type { WorkflowAgentDefinition } from "../workflows/agent-config.js";
+import type { LongAgentConfig } from "./types.js";
+import type { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import type { AcceptedTurn } from "./daily-state.js";
+import { executeQueuedLongAgentTurn, installAcceptedAssembly } from "./turn-queue.js";
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { prepareLongAgentAssembly } from "./assembly.js";
+import { readAssemblySnapshot } from "../agents/assembly-context.js";
 import type { AssistantMessage, ImageContent, UserMessage } from "@earendil-works/pi-ai";
 import { createChatPiAgentSession } from "../agents/pi-agent-session.js";
-import { buildReplyFormatInstruction, localDate } from "./reply-template.js";
-import { buildLongAgentHandoff } from "./summaries.js";
-import { ensureLongAgentResourceDirs, longAgentConfigRoot } from "./storage.js";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
 import { resolveProjectContext } from "../projects/registry.js";
 import { chatSessionOperationKey, withChatSessionOperationLock } from "../session-operation-lock.js";
-import type { WorkflowAgentDefinition } from "../workflows/agent-config.js";
 import { assertModelSupportsImages } from "../workflows/image-input.js";
 import { readLongAgentRegistry } from "./storage.js";
-import { ensureProjectLongAgent } from "./project-agent.js";
+import { openAcceptedDay } from "./project-agent.js";
 import {
   appendChatLongAgentTurn,
   collectChatLongAgentTurnMarkers,
@@ -20,12 +24,9 @@ import {
   latestChatLongAgentTurn,
   type ChatLongAgentTurnSource,
 } from "./session-turn.js";
-import type { LongAgentConfig } from "./types.js";
 import {
   agentGroupContextRevisionOf,
-  buildAgentGroupContextInstructions,
   readFrozenLongAgentAgentGroup,
-  readLongAgentAgentGroup,
 } from "./agent-group-service.js";
 
 const CHAT_WEB_CHANNEL = "chat-web";
@@ -44,8 +45,10 @@ export interface ExecuteLongAgentTurnInput {
   readonly inboundEventId?: string;
   readonly source?: ChatLongAgentTurnSource;
   readonly channelType?: string | null;
-  /** 用户在顶栏选择的上下文项目（B1）：只作为提示词上下文注入，不改变会话归属。 */
+  /** 本轮协作目标；null/省略均无项目，渠道适配器须显式提供绑定目标。 */
   readonly contextProjectId?: string | null;
+  /** Trusted Nano daily-summary trigger; read-only draft, never final coverage. */
+  readonly summaryDraft?: boolean;
 }
 
 export interface ExecuteLongAgentTurnResult {
@@ -82,14 +85,6 @@ export function createLongAgentDefinition(agent: LongAgentConfig): WorkflowAgent
   return agent.definition;
 }
 
-async function resolveProjectName(projectId: string, chatHome: string): Promise<string> {
-  try {
-    return (await resolveProjectContext(projectId, chatHome)).name;
-  } catch {
-    return projectId;
-  }
-}
-
 function assistantText(message: AssistantMessage | undefined): string {
   if (message === undefined) return "";
   return message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n").trim();
@@ -120,31 +115,26 @@ function assistantBetween(
   return undefined;
 }
 
-/** Runs one Long Agent turn through Chat's shared Pi assembly and native Session persistence. */
-export async function executeLongAgentTurn(
+/** All entry points use durable acceptance before the native runtime. */
+export const executeLongAgentTurn = executeQueuedLongAgentTurn;
+
+/** Internal worker: the accepted day is immutable, including after midnight. */
+export async function executeAcceptedLongAgentTurn(
   input: ExecuteLongAgentTurnInput,
+  accepted: AcceptedTurn,
+  preparedResourceLoader?: DefaultResourceLoader,
 ): Promise<ExecuteLongAgentTurnResult> {
   const chatHome = resolveChatHome(input.chatHome);
   const images = input.images === undefined || input.images.length === 0 ? undefined : input.images;
   const text = parseText(input.text, images !== undefined);
-  // B1：上下文项目只作为提示词上下文，不改变会话归属。
-  let contextProject: { readonly projectId: string; readonly name: string } | null = null;
-  if (input.contextProjectId !== undefined && input.contextProjectId !== null) {
-    const context = await resolveProjectContext(input.contextProjectId, chatHome);
-    contextProject = { projectId: context.projectId, name: context.name };
-  }
   const turnId = nonEmpty(input.turnId, "turnId") ?? randomUUID();
   const inboundEventId = nonEmpty(input.inboundEventId, "inboundEventId") ?? null;
   const registry = await readLongAgentRegistry(chatHome);
-  const agent = registry.agents.find((candidate) => candidate.enabled && candidate.id === input.longAgentId);
+  const agent = registry.agents.find((candidate) => (candidate.enabled || accepted.status === "completed") && candidate.id === input.longAgentId);
   if (agent === undefined) throw new Error(`找不到可用LongAgent: ${input.longAgentId}`);
   await resolveProjectContext(input.projectId, chatHome);
-  const { projectAgent, isNewSession } = await ensureProjectLongAgent({
-    chatHome,
-    projectId: input.projectId,
-    agent,
-    ...(input.sessionId === undefined ? {} : { requestedSessionId: input.sessionId }),
-  });
+  const projectAgent = await openAcceptedDay(chatHome, agent.id, accepted.sessionId);
+  const isNewSession = accepted.isNewSession;
   const source = input.source ?? "chat-web";
   const channelType = input.channelType === undefined
     ? (source === "chat-web" ? CHAT_WEB_CHANNEL : null)
@@ -158,6 +148,7 @@ export async function executeLongAgentTurn(
         chatHome,
         sessionId: projectAgent.primarySessionId,
       });
+      if (accepted.status !== "completed") installAcceptedAssembly(chatSession.manager, accepted);
       const entriesBeforeRun = chatSession.manager.getBranch();
       const previous = latestChatLongAgentTurn(entriesBeforeRun, turnId);
       const turnMarkers = collectChatLongAgentTurnMarkers(entriesBeforeRun)
@@ -178,6 +169,7 @@ export async function executeLongAgentTurn(
           : assistantBetween(entriesBeforeRun, started.entryId, previous.entryId);
       } else if (previous?.status === "running") {
         recoveredAssistant = assistantBetween(entriesBeforeRun, previous.entryId);
+        if (recoveredAssistant?.stopReason !== "stop") recoveredAssistant = undefined;
         if (recoveredAssistant === undefined) {
           const messages = chatSession.manager.buildSessionContext().messages;
           const role = messages.at(-1)?.role;
@@ -214,9 +206,7 @@ export async function executeLongAgentTurn(
         };
       }
 
-      const groupContext = started?.agentGroupContext === null || started?.agentGroupContext === undefined
-        ? await readLongAgentAgentGroup(agent.id, chatHome)
-        : await readFrozenLongAgentAgentGroup(agent.id, started.agentGroupContext, chatHome);
+      const groupContext = await readFrozenLongAgentAgentGroup(agent.id, accepted.groupContext, chatHome);
       const agentGroupContext = agentGroupContextRevisionOf(groupContext);
       if (resumeEntryId !== undefined) {
         chatSession.manager.branch(resumeEntryId);
@@ -242,38 +232,16 @@ export async function executeLongAgentTurn(
       let created: Awaited<ReturnType<typeof createChatPiAgentSession>> | undefined;
       let lastAssistant = recoveredAssistant;
       try {
-        // Agent Group context is a per-turn snapshot, not Session data. Refresh
-        // before Pi assembly so Web and Channel execute with the same Nano-owned
-        // identity and OKF core memory. A valid cache is explicitly marked stale.
-        const definition = createLongAgentDefinition(agent);
-        // B2：模板是给 Agent 的格式要求（不是程序事后拼接），因此注入自定义区域。
-        // A3：换日交接——新一天的首个 turn 注入最近几天的总结与交接上下文（程序注入，不调用模型）。
-        const handoff = isNewSession
-          ? await buildLongAgentHandoff({ chatHome, longAgentId: agent.id })
-          : null;
-        const replyFormatInstruction = buildReplyFormatInstruction(agent.responseTemplate, {
-          project: contextProject?.name ?? await resolveProjectName(projectAgent.projectId, chatHome),
-          agentName: agent.name,
-          date: localDate(),
+        const frozen = readAssemblySnapshot(chatSession.manager, turnId);
+        const prepared = await prepareLongAgentAssembly({
+          agent, chatHome, turnId, groupContext, today: accepted.date,
+          projectId: frozen === undefined ? input.contextProjectId ?? null : frozen.projectId,
         });
-        await ensureLongAgentResourceDirs(chatHome, agent.id);
         created = await createChatPiAgentSession({
           chatSession,
           sessionManager: chatSession.manager,
-          // S4：Agent 自有 Skill 目录默认接入装配；其他层级仍由 resources 策略控制。
-          additionalSkillPaths: [resolve(longAgentConfigRoot(chatHome, agent.id), "skills")],
-          agent: {
-            ...definition,
-            customInstructions: [
-              ...definition.customInstructions,
-              { text: buildAgentGroupContextInstructions(groupContext) },
-              ...(contextProject === null
-                ? []
-                : [{ text: `当前上下文项目：${contextProject.name}（${contextProject.projectId}）。这只说明用户在哪个项目里和你协作；你的工作归属与任务范围仍以会话和职责为准。` }]),
-              ...(replyFormatInstruction === null ? [] : [{ text: replyFormatInstruction }]),
-              ...(handoff === null ? [] : [{ text: handoff }]),
-            ],
-          },
+          ...prepared,
+          ...(preparedResourceLoader === undefined ? {} : { preparedResourceLoader }),
           toolContext: {
             purpose: "execution",
             agentId: agent.id,
@@ -292,7 +260,9 @@ export async function executeLongAgentTurn(
             capabilityNotice = error instanceof Error ? error.message : String(error);
           }
         }
+        const feedback = registerLiveTurn(chatHome, accepted, created.session, projectSessionContext(chatSession.manager.getEntries(), chatSession.manager.getLeafId()).messages);
         const unsubscribe = created.session.subscribe((event) => {
+          feedback.publish(event);
           if (event.type === "message_end" && event.message.role === "assistant") {
             lastAssistant = event.message;
           }
@@ -300,7 +270,9 @@ export async function executeLongAgentTurn(
         try {
           if (recoveredAssistant === undefined) {
             if (resumePending) await created.session.resumePendingTurn();
-            else if (capabilityNotice === undefined) {
+            else if (accepted.summaryDraft) {
+              await created.session.sendCustomMessage({ customType: "chat.daily-summary-draft.v1", display: false, content: `内部日终草稿（尚未覆盖全天；正式总结由日历收尾生成）。只读整理当前历史，不调用工具或对外发送：\n${text}` }, { triggerTurn: true });
+            } else if (capabilityNotice === undefined) {
               await created.session.prompt(
                 text,
                 images === undefined ? undefined : { images: [...images] },
@@ -309,7 +281,9 @@ export async function executeLongAgentTurn(
           }
         } finally {
           unsubscribe();
+          feedback.close();
         }
+        if (feedback.cancelled) throw new FriendCancelledError();
         if (capabilityNotice !== undefined && resolvedModel !== undefined) {
           // Channel users never see the Web UI: answer in-channel with a
           // friendly model-capability explanation instead of a failed Turn.
@@ -366,7 +340,7 @@ export async function executeLongAgentTurn(
           };
         }
         if (lastAssistant === undefined) throw new Error("Pi Long Agent没有返回Assistant消息");
-        if (lastAssistant.stopReason === "error") {
+        if (lastAssistant.stopReason === "error" || lastAssistant.stopReason === "aborted") {
           throw new Error(lastAssistant.errorMessage ?? "Pi Long Agent执行失败");
         }
         const responseText = assistantText(lastAssistant);
@@ -408,7 +382,7 @@ export async function executeLongAgentTurn(
           channelType,
           inboundEventId,
           agentGroupContext,
-          status: "failed",
+          status: error instanceof FriendCancelledError ? "cancelled" : "failed",
           startedAt,
           completedAt: new Date().toISOString(),
           error: message,
@@ -419,5 +393,8 @@ export async function executeLongAgentTurn(
         created?.session.dispose();
       }
     },
+    { longAgentId: agent.id },
   );
 }
+
+export class FriendCancelledError extends Error { constructor() { super("本轮已取消；已有消息和工具结果已保留"); } }

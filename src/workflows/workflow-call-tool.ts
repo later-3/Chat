@@ -23,6 +23,7 @@ import { MAX_ACTIVE_CHAT_WORKFLOW_CALLS_PER_PARENT } from "./workflow-call-capac
 export interface WorkflowCallToolContext {
   readonly purpose: "execution" | "inspection";
   readonly projectId?: string;
+  readonly collaborationProjectId?: string | null;
   readonly chatHome?: string;
   readonly cwd: string;
   readonly sessionManager: SessionManager;
@@ -208,6 +209,7 @@ export function createWorkflowCallTool(
         { type: "toolCall", id: toolCallId, name: "workflow_call", arguments: params },
       );
       if (context.purpose !== "execution") throw new Error("Agent检查期间不能调用Workflow");
+      const targetProjectId = context.collaborationProjectId === undefined ? context.projectId : context.collaborationProjectId;
       const controlInput = {
         parentSessionManager: context.sessionManager,
         ...(signal === undefined ? {} : { signal }),
@@ -219,11 +221,11 @@ export function createWorkflowCallTool(
         },
       };
       if (params.action === "describe") {
-        if (context.projectId === undefined || context.chatHome === undefined) {
+        if (targetProjectId == null || context.chatHome === undefined) {
           throw new Error("Workflow调用缺少Project运行上下文");
         }
         const description = await runtime.describe({
-          projectId: context.projectId,
+          projectId: targetProjectId,
           chatHome: context.chatHome,
           cwd: context.cwd,
           targetWorkflowId: params.workflowId,
@@ -235,14 +237,15 @@ export function createWorkflowCallTool(
       }
       let result: ChatWorkflowCallResult;
       if (params.action === "start") {
-        if (context.projectId === undefined || context.chatHome === undefined) {
+        if (targetProjectId == null || context.chatHome === undefined) {
           throw new Error("Workflow调用缺少Project运行上下文");
         }
         result = await runtime.start({
           ...controlInput,
-          projectId: context.projectId,
+          projectId: targetProjectId,
           chatHome: context.chatHome,
           cwd: context.cwd,
+          ...(context.projectId === undefined || context.projectId === targetProjectId ? {} : { parentProjectId: context.projectId }),
           parentWorkflowId,
           parentWorkflowInvocationId,
           parentStageId,

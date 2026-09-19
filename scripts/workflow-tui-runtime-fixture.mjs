@@ -8,8 +8,8 @@ const { ChatApi } = await import(new URL("api.js", clientBase).href);
 const { WorkflowTerminal } = await import(new URL("controller.js", clientBase).href);
 
 // Exercise the shipped client against both real server modes; models remain local test fixtures.
-export async function exerciseWorkflowTui({ baseUrl, cookie, projectId }) {
-  const api = new ChatApi(baseUrl, cookie);
+export async function exerciseWorkflowTui({ baseUrl,  projectId }) {
+  const api = new ChatApi(baseUrl);
   const notices = [];
   let draft = "";
   const view = { history() {}, status() {}, notice: (s) => notices.push(s), draft: (s) => { draft = s; }, select: async () => undefined, event() {} };

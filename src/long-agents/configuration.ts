@@ -1,9 +1,11 @@
+import { ensureAgentCalendar } from "./project-agent.js";
+import { validateTimeZone } from "./calendar.js";
+import { personalAgentSettings, resolvePersonalAgentDefinition } from "../agents/assembly-context.js";
 import { join } from "node:path";
 import {
   createCodingTools,
   createReadOnlyTools,
   ModelRuntime,
-  SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { appendChatAuditEvent } from "../audit-log.js";
 import { ensureChatHome, resolveChatHome } from "../chat-home.js";
@@ -57,6 +59,7 @@ export interface LongAgentConfigurationDocument {
     readonly avatar: PublicLongAgentAvatar;
     readonly enabled: boolean;
     readonly defaultProjectId: string;
+    readonly timeZone?: string;
     /** 回复模板；null 表示使用默认（project 尾注）。 */
     readonly responseTemplate: string | null;
     readonly effective: LongAgentEffectiveConfig;
@@ -153,6 +156,7 @@ function documentOf(agent: LongAgentConfig, instance: LongAgentInstanceConfig): 
       avatar: publicLongAgentAvatar(agent.avatar),
       enabled: agent.enabled,
       defaultProjectId: agent.defaultProjectId,
+      ...(agent.timeZone === undefined ? {} : { timeZone: agent.timeZone }),
       responseTemplate: agent.responseTemplate ?? null,
       effective: {
         model: null,
@@ -192,49 +196,21 @@ export async function resolveEffectiveConfiguration(
   document: LongAgentConfigurationDocument,
   chatHome = resolveChatHome(),
 ): Promise<LongAgentConfigurationDocument> {
-  const root = resolveChatHome(chatHome);
+  const home = await ensureChatHome(chatHome);
   const definition = document.agent.definition;
-  const explicitModel = definition.model;
-  const explicitThinking = definition.thinkingLevel;
-  if (explicitModel !== null && explicitModel !== undefined) {
-    return {
-      ...document,
-      agent: {
-        ...document.agent,
-        effective: {
-          model: { provider: explicitModel.provider, modelId: explicitModel.modelId },
-          thinkingLevel: explicitThinking ?? null,
-          modelSource: "explicit",
-          thinkingSource: explicitThinking === null || explicitThinking === undefined ? null : "explicit",
-        },
+  const effective = resolvePersonalAgentDefinition(parseWorkflowAgentDefinition({ ...definition, model: definition.model ?? undefined, thinkingLevel: definition.thinkingLevel ?? undefined }), personalAgentSettings(home.agentDir));
+  return {
+    ...document,
+    agent: {
+      ...document.agent,
+      effective: {
+        model: effective.model ?? null,
+        thinkingLevel: effective.thinkingLevel ?? null,
+        modelSource: definition.model ? "explicit" : effective.model ? "chat-default" : null,
+        thinkingSource: definition.thinkingLevel ? "explicit" : "chat-default",
       },
-    };
-  }
-  try {
-    const project = await resolveProjectContext(document.agent.defaultProjectId, root);
-    const settings = SettingsManager.create(project.cwd, project.agentDir);
-    const defaultProvider = settings.getDefaultProvider();
-    const defaultModel = settings.getDefaultModel();
-    const defaultThinking = settings.getDefaultThinkingLevel();
-    return {
-      ...document,
-      agent: {
-        ...document.agent,
-        effective: {
-          model: defaultProvider !== undefined && defaultModel !== undefined
-            ? { provider: defaultProvider, modelId: defaultModel }
-            : null,
-          thinkingLevel: defaultThinking ?? null,
-          modelSource: defaultProvider !== undefined && defaultModel !== undefined ? "chat-default" : null,
-          thinkingSource: defaultThinking === undefined ? null : "chat-default",
-        },
-      },
-    };
-  } catch {
-    // The default chain is display-only; an unreadable settings file must not
-    // break reading the Agent's own definition.
-    return document;
-  }
+    },
+  };
 }
 
 export async function readLongAgentConfiguration(
@@ -246,7 +222,7 @@ export async function readLongAgentConfiguration(
   const registry = await readLongAgentRegistry(chatHome);
   const agent = registry.agents.find((candidate) => candidate.id === id);
   if (agent === undefined) throw new LongAgentConfigurationNotFoundError(`找不到Long Agent: ${id}`);
-  return resolveEffectiveConfiguration(documentOf(agent, findInstance(registry.instances, agent.instanceId)), chatHome);
+  return resolveEffectiveConfiguration(documentOf(await ensureAgentCalendar(agent, chatHome), findInstance(registry.instances, agent.instanceId)), chatHome);
 }
 
 interface ParsedUpdate {
@@ -256,6 +232,7 @@ interface ParsedUpdate {
   readonly avatar?: { readonly kind: "auto" } | { readonly kind: "emoji"; readonly emoji: string };
   readonly enabled: boolean;
   readonly defaultProjectId: string;
+  readonly timeZone?: string;
   /** null 表示恢复默认模板；undefined 表示不改。 */
   readonly responseTemplate?: string | null;
   readonly definition: WorkflowAgentDefinition;
@@ -279,19 +256,28 @@ function parseAvatarUpdate(value: unknown): ParsedUpdate["avatar"] {
   throw new LongAgentConfigurationInvalidError("avatar.kind必须是auto或emoji");
 }
 
+function parseTimeZone(value: unknown): string {
+  try { return validateTimeZone(value); }
+  catch (cause) { throw new LongAgentConfigurationInvalidError("timeZone必须是有效的IANA时区", { cause }); }
+}
+
 function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
   if (!isRecord(value) || value.schemaVersion !== 1) {
     throw new LongAgentConfigurationInvalidError("Long Agent配置必须使用schemaVersion 1");
   }
   exactFields(value, [
-    "schemaVersion", "expectedRevision", "name", "description", "avatar", "enabled", "defaultProjectId", "definition",
+    "schemaVersion", "expectedRevision", "name", "description", "avatar", "enabled", "defaultProjectId", "definition", "responseTemplate", "timeZone",
   ], "Long Agent配置");
   const expectedRevision = readNonEmptyString(value.expectedRevision, "expectedRevision");
   if (!/^[a-f0-9]{64}$/.test(expectedRevision)) {
     throw new LongAgentConfigurationInvalidError("expectedRevision格式无效");
   }
   const name = readNonEmptyString(value.name, "name");
-  const description = readNonEmptyString(value.description, "description");
+  if (typeof value.description !== "string" || value.description.length > 500) {
+    throw new LongAgentConfigurationInvalidError("description必须是不超过500字符的字符串，可以为空");
+  }
+  const description = value.description.trim();
+  const definitionDescription = description || "Chat Long Agent";
   if (typeof value.enabled !== "boolean") {
     throw new LongAgentConfigurationInvalidError("enabled必须是布尔值");
   }
@@ -300,14 +286,18 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
   if (!isRecord(value.definition)) throw new LongAgentConfigurationInvalidError("definition必须是对象");
   let definition: WorkflowAgentDefinition;
   try {
-    definition = parseWorkflowAgentDefinition(value.definition);
+    definition = parseWorkflowAgentDefinition({
+      ...value.definition,
+      // The display bio is optional; Pi's capability definition needs a description.
+      description: value.definition.description === "" ? definitionDescription : value.definition.description,
+    });
   } catch (error) {
     throw new LongAgentConfigurationInvalidError(
       error instanceof Error ? error.message : "definition无效",
       { cause: error },
     );
   }
-  if (definition.id !== longAgentId || definition.name !== name || definition.description !== description) {
+  if (definition.id !== longAgentId || definition.name !== name || definition.description !== definitionDescription) {
     throw new LongAgentConfigurationInvalidError("definition的id、name和description必须与Long Agent身份一致");
   }
   return {
@@ -317,6 +307,7 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
     ...(avatar === undefined ? {} : { avatar }),
     enabled: value.enabled,
     defaultProjectId,
+    ...(value.timeZone === undefined ? {} : { timeZone: parseTimeZone(value.timeZone) }),
     ...(value.responseTemplate === undefined
       ? {}
       : { responseTemplate: value.responseTemplate === null
@@ -404,18 +395,17 @@ export async function updateLongAgentConfiguration(
     if (revisionOf(previous) !== update.expectedRevision) {
       throw new LongAgentConfigurationConflictError("Long Agent配置已被其他操作更新，请重新加载后再保存");
     }
+    const { responseTemplate: previousResponseTemplate, ...previousBase } = previous;
+    const responseTemplate = update.responseTemplate === undefined ? previousResponseTemplate : update.responseTemplate;
     const next: LongAgentConfig = {
-      ...previous,
+      ...previousBase,
       name: update.name,
       description: update.description,
       ...(update.avatar === undefined ? {} : { avatar: update.avatar }),
       enabled: update.enabled,
       defaultProjectId: update.defaultProjectId,
-      ...(update.responseTemplate === undefined
-        ? {}
-        : update.responseTemplate === null
-          ? {}
-          : { responseTemplate: update.responseTemplate }),
+      ...(update.timeZone === undefined ? {} : { timeZone: update.timeZone }),
+      ...(responseTemplate === undefined || responseTemplate === null ? {} : { responseTemplate }),
       // 工具集与当前默认一致 → 仍由默认托管（后续新增默认能力会补齐）；用户自定义过 → 退出托管。
       toolsManagedByDefault: toolsMatchDefault({ ...previous, definition: update.definition }),
       definition: update.definition,

@@ -20,6 +20,7 @@ export const projectReadSchema = Type.Object({
 export const projectCreateSchema = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 120 }),
   description: Type.Optional(Type.String({ maxLength: 4000 })),
+  id: Type.Optional(projectId),
   requestId,
 }, strict);
 export const projectOpenSchema = Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096 }), requestId }, strict);

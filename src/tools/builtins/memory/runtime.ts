@@ -23,11 +23,13 @@ export function bindMemoryToolRuntime(
 }
 
 export function defaultProjectTarget(context: MemoryToolRuntimeContext): MemoryTarget {
-  return { type: "project", projectId: context.projectId };
+  const projectId = context.collaborationProjectId === undefined ? context.projectId : context.collaborationProjectId;
+  if (projectId === null) throw new Error("当前没有协作项目，请为Project Memory明确指定目标");
+  return { type: "project", projectId };
 }
 
 export function visibleTargets(context: MemoryToolRuntimeContext): readonly MemoryTarget[] {
-  return [{ type: "personal" }, defaultProjectTarget(context)];
+  return [{ type: "personal" }, ...(context.collaborationProjectId === null ? [] : [defaultProjectTarget(context)])];
 }
 
 export function memoryToolSource(

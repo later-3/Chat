@@ -129,7 +129,13 @@ test("compaction-aware messages stay aligned with entry ids", () => {
   const context = projectSessionContext(entries);
   assert.deepEqual(context.entryIds, ["cmp", "u2", "u3"]);
   assert.equal(context.messages.length, context.entryIds.length);
-  assert.equal(context.messages[0].role, "compactionSummary");
+  assert.deepEqual(context.entryTimes, context.entryIds.map(id => Date.parse(entries.find(entry => entry.id === id).timestamp)));
+  assert.equal(context.messages[0].role, "custom");
+  assert.equal(context.messages[0].customType, "compaction");
+  assert.equal(context.messages[0].content, "old exchange summary");
+  assert.equal(context.messages[0].details.tokensBefore, 123);
+  assert.equal(context.messages[0].display, true);
+  assert.equal(entries[3].type, "compaction", "projection never rewrites the native record");
 });
 
 test("a selected branch does not include a later compaction on another branch", () => {
@@ -150,7 +156,7 @@ test("a selected branch does not include a later compaction on another branch", 
   ];
   const context = projectSessionContext(entries, "alternate");
   assert.deepEqual(context.entryIds, ["u1", "a1", "alternate"]);
-  assert.equal(context.messages.some((message) => message.role === "compactionSummary"), false);
+  assert.equal(context.messages.some((message) => message.role === "custom" && message.customType === "compaction"), false);
   assert.deepEqual(projectSessionContext(entries, null).entryIds, []);
 });
 

@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { getRun } from "workflow/api";
+import { getWorld } from "workflow/runtime";
+import { WorkflowRunNotFoundError } from "workflow/errors";
 
 export interface ChatSessionRunBinding {
   readonly schemaVersion: 1;
@@ -88,6 +90,20 @@ async function listBindings(projectDataDir: string): Promise<ChatSessionRunBindi
 
 function isTerminalRunStatus(status: string): boolean {
   return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+/** Restore the last terminal outcome from the Runtime, including after a reload. */
+export async function readChatSessionRunOutcome(projectDataDir: string, sessionId: string) {
+  const latest = (await listBindings(projectDataDir)).filter(binding => binding.sessionId === sessionId)
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
+  if (latest === undefined) return undefined;
+  const run = await getWorld().runs.get(latest.runId, { resolveData: "none" }).catch((error: unknown) => {
+    if (WorkflowRunNotFoundError.is(error)) return undefined;
+    throw error;
+  });
+  if (run === undefined) return undefined;
+  if (run.status !== "completed" && run.status !== "failed" && run.status !== "cancelled") return undefined;
+  return { runId: latest.runId, status: run.status, ...(run.status === "failed" ? { error: run.error?.message ?? "Workflow执行失败" } : {}) };
 }
 
 /** Checks durable Chat bindings while Workflow Runtime remains the status source. */

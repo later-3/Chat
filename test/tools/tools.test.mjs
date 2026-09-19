@@ -341,6 +341,47 @@ test("Workflow Agent catalog keeps listing every system Tool after a durable Too
   );
 });
 
+test("Workflow Agent catalog marks every Skill choice with a valid owner", async (t) => {
+  const { chatHome, workspace } = fixture(t);
+  const previousHome = process.env.CHAT_HOME;
+  process.env.CHAT_HOME = chatHome;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousHome;
+  });
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    id: "skill-catalog-owner-project",
+    name: "Skill Catalog Owner Project",
+  });
+  // Project-scoped Skill so the catalog list is non-empty and exercises ownership classification.
+  fs.mkdirSync(path.join(project.projectConfigDir, "skills", "project-skill"), { recursive: true });
+  fs.writeFileSync(
+    path.join(project.projectConfigDir, "skills", "project-skill", "SKILL.md"),
+    "---\nname: project-skill\ndescription: A test project skill\n---\n# Project Skill\n",
+  );
+
+  const router = createRouter();
+  router.get("/api/workflows/:workflowId/agents/:agentId/catalog", catalogHandler);
+  const response = await router.fetch(new Request(
+    `http://chat.test/api/workflows/planning-execution/agents/planner/catalog?projectId=${encodeURIComponent(project.projectId)}`,
+  ));
+  assert.equal(response.status, 200);
+  const catalog = await response.json();
+  assert.ok(Array.isArray(catalog.skills));
+  assert.ok(catalog.skills.length > 0, "catalog must list at least the Project Skill");
+  for (const skill of catalog.skills) {
+    assert.ok(
+      ["personal", "project", "plugin", "agent", "injected"].includes(skill.owner),
+      `every catalog Skill needs a valid owner, got ${JSON.stringify(skill.owner)}`,
+    );
+  }
+  const projectSkill = catalog.skills.find((skill) => skill.name === "project-skill");
+  assert.ok(projectSkill);
+  assert.equal(projectSkill.owner, "project");
+});
+
 test("workflow_call is available to any Agent only when its system Tool address is selected", async (t) => {
   const { chatHome, workspace } = fixture(t);
   const project = await openProject({
@@ -374,4 +415,19 @@ test("workflow_call is available to any Agent only when its system Tool address 
   assert.equal(workflowCall?.address, "system:tool/workflow_call");
   assert.equal(workflowCall?.sourceInfo.source, "chat-system");
   assert.equal(workflowCall?.risk, "write");
+});
+
+test("optional Project extension directory does not produce a catalog failure; explicit missing paths still do", async (t) => {
+  const { chatHome, workspace } = fixture(t);
+  const project = await openProject({ path: workspace, chatHome, id: "optional-extensions", name: "Optional extensions" });
+  const empty = await listChatTools(project.projectId, chatHome);
+  assert.equal(empty.diagnostics.length, 0);
+  assert.ok(empty.tools.some(tool => tool.name === "memory_search"));
+  await updateAgentDurableConfig(project.projectDataDir, "planning-execution", PLANNER_AGENT.id, {
+    resources: { mode: "explicit", skillPaths: [], pluginSources: [], extensionPaths: [path.join(workspace, "missing-explicit.ts")] },
+  });
+  const explicit = await inspectWorkflowAgent({ projectId: project.projectId, chatHome, cwd: project.cwd,
+    defaultAgent: PLANNER_AGENT, workflowId: "planning-execution", agentId: PLANNER_AGENT.id, stageId: "plan" });
+  assert.ok(explicit.diagnostics.some(item => item.message.includes("missing-explicit.ts")));
+
 });

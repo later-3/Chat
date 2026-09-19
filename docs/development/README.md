@@ -4,6 +4,7 @@
 
 | 修改内容 | 开发文档 |
 |---|---|
+| 公共 Agent 装配、Friend 每日 Session 与统一交互改造（待审核） | [分阶段开发计划](./agent-unification-plan.md) |
 | Agent参与开发、架构审核与交接 | [贡献工作方法](./agent-contribution.md) |
 | 端到端调试、源码学习与问题定位 | [调试与开发说明书](./debugging/README.md) |
 | VSCode调试和一键启动 | [本地开发与调试](./local-debugging.md) |
@@ -12,11 +13,11 @@
 | 父仓库 TypeScript 与通用工程代码 | [编码规范](./coding-standards.md) |
 | Frontend 页面、状态和浏览器合同 | [Frontend 开发](../../frontend/docs/development.md) |
 | UI、交互、响应式和无障碍 | [Frontend UI/UX 规范](../../frontend/docs/ui-ux-guidelines.md) |
-| Workflow、Node、Agent 或 Tool 装配 | [Workflow 开发框架](../architecture/chat-workflow-framework.md) |
-| 测试选择、Fixture 和完整验证 | [测试指南](../testing.md) |
-| CI 环境与阻断检查 | [CI 说明](../ci.md) |
-| Pi 或 Frontend Submodule | [Submodule 维护](../managed-submodules.md) |
-| 生产安装、更新和回滚 | [部署指南](../deployment.md) |
+| Workflow、Node、Agent 或 Tool 装配 | [Workflow 开发框架](../modules/workflows/chat-workflow-framework.md) |
+| 测试选择、Fixture 和完整验证 | [测试指南](./testing.md) |
+| CI 环境与阻断检查 | [CI 说明](./ci.md) |
+| Pi 或 Frontend Submodule | [Submodule 维护](./submodules.md) |
+| 生产安装、更新和回滚 | [部署指南](../operations/README.md) |
 
 开始修改前还要遵守目标目录中的`AGENTS.md`。模块文档说明正常开发方式，架构文档解释跨模块设计，`AGENTS.md`只提供强制入口和不可违反的工作边界。
 

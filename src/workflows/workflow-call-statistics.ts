@@ -1,3 +1,4 @@
+import { resolveProjectContext } from "../projects/registry.js";
 import { dirname } from "node:path";
 import {
   SessionManager,
@@ -129,6 +130,7 @@ export async function collectChatWorkflowCallProjection(input: {
   readonly rootSessionId: string;
   readonly rootEntries: readonly SessionEntry[];
   readonly sessionDir: string;
+  readonly chatHome?: string;
 }): Promise<ChatWorkflowCallProjection> {
   const infos = await SessionManager.listAll(input.sessionDir);
   const infoById = new Map(infos.map((info) => [info.id, info]));
@@ -150,7 +152,14 @@ export async function collectChatWorkflowCallProjection(input: {
       );
       callsBySessionId.set(sessionId, calls);
     }
-    for (const call of calls) queue.push(call.child.sessionId);
+    for (const call of calls) {
+      if (call.child.projectId !== undefined && input.chatHome !== undefined && !infoById.has(call.child.sessionId)) {
+        const project = await resolveProjectContext(call.child.projectId, input.chatHome);
+        const child = (await SessionManager.listAll(project.sessionDir)).find((info) => info.id === call.child.sessionId);
+        if (child !== undefined) infoById.set(child.id, child);
+      }
+      queue.push(call.child.sessionId);
+    }
   }
   return projectChatWorkflowCallTree(input.rootSessionId, callsBySessionId);
 }
@@ -160,6 +169,7 @@ export async function collectChatWorkflowCallStatistics(input: {
   readonly rootSessionId: string;
   readonly rootEntries: readonly SessionEntry[];
   readonly sessionDir: string;
+  readonly chatHome?: string;
 }): Promise<ChatWorkflowCallStatistics> {
   return (await collectChatWorkflowCallProjection(input)).workflowCallStatistics;
 }

@@ -3,7 +3,7 @@ import type { SessionManager } from "@earendil-works/pi-coding-agent";
 export const CHAT_LONG_AGENT_TURN_CUSTOM_TYPE = "chat.long_agent_turn";
 export const CHAT_LONG_AGENT_TURN_SCHEMA_VERSION = 2;
 
-export type ChatLongAgentTurnStatus = "running" | "completed" | "failed";
+export type ChatLongAgentTurnStatus = "running" | "completed" | "failed" | "cancelled";
 export type ChatLongAgentTurnSource = "chat-web" | "channel" | "scheduled";
 
 export interface ChatLongAgentTurnAgentGroupContext {
@@ -48,7 +48,7 @@ function nullableNonEmpty(value: unknown): value is string | null {
 }
 
 function isStatus(value: unknown): value is ChatLongAgentTurnStatus {
-  return value === "running" || value === "completed" || value === "failed";
+  return value === "running" || value === "completed" || value === "failed" || value === "cancelled";
 }
 
 function isSource(value: unknown): value is ChatLongAgentTurnSource {

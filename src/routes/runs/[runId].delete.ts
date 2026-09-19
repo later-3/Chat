@@ -1,5 +1,6 @@
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { getRun } from "workflow/api";
+import { abortWorkflowAgents } from "../../workflows/execution-registry.js";
 import { localTimestamp } from "../../runtime-log.js";
 import { resolveProjectContext } from "../../projects/registry.js";
 import {
@@ -14,6 +15,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     await getRun(runId).cancel();
+    await abortWorkflowAgents(runId);
     const query = getQuery(event);
     const projectId = typeof query.projectId === "string" ? query.projectId : undefined;
     const workflowInvocationId = typeof query.workflowInvocationId === "string"

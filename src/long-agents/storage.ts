@@ -1,5 +1,6 @@
+import { withFileLock } from "../persistence/versioned-file.js";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { ensureChatHome, getChatHomePaths, resolveChatHome } from "../chat-home.js";
 import {
@@ -39,6 +40,24 @@ async function atomicWriteJson(path: string, value: unknown): Promise<void> {
     await unlink(temporaryPath).catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     });
+  }
+}
+
+/** Publish an immutable backup without an incomplete JSON file becoming visible. */
+async function writeJsonOnce(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    try { await link(temporaryPath, path); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  } finally { await unlink(temporaryPath).catch((error: unknown) => { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }); }
+}
+async function optionalJson(path: string): Promise<unknown | undefined> {
+  try { return await readJson(path); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
   }
 }
 
@@ -92,40 +111,34 @@ async function readLongAgentDefinitionFile(
  * 一次性迁移：把 long-agents.json 内联的 definition 拆分到 long-agents/<id>/definition.json，
  * Registry 降级为索引。带备份与完成标记，可重入；失败时不写标记，下次读取重试。
  */
-async function migrateDefinitionSplit(root: string, raw: unknown): Promise<void> {
+async function migrateDefinitionSplit(root: string): Promise<void> {
   const migrationDir = longAgentMigrationDir(root);
   const markerPath = resolve(migrationDir, "done.json");
-  const marker = await readFile(markerPath, "utf8").catch(() => undefined);
-  if (marker !== undefined) return;
-  if (!isRecord(raw) || !Array.isArray(raw.agents)) {
-    await atomicWriteJson(markerPath, { doneAt: new Date().toISOString(), migratedAgents: [] });
-    return;
-  }
-  const withInline = raw.agents.filter(
-    (agent): agent is Record<string, unknown> => isRecord(agent) && agent.definition !== undefined,
-  );
-  const migratedAgents: string[] = [];
-  for (const agent of withInline) {
-    const id = typeof agent.id === "string" ? agent.id : undefined;
-    if (id === undefined) throw new Error("long-agents.json包含缺少id的Agent，无法迁移");
-    // 先验证再落盘；无效定义让迁移失败并可重试，不写完成标记。
-    const definition = parseWorkflowAgentDefinition(agent.definition);
-    await atomicWriteJson(longAgentDefinitionPath(root, id), definition);
-    migratedAgents.push(id);
-  }
-  if (migratedAgents.length > 0) {
-    await atomicWriteJson(resolve(migrationDir, "long-agents.json.bak"), raw);
-    const stripped = {
-      ...raw,
-      agents: raw.agents.map((agent) => {
+  await withFileLock(markerPath, async () => {
+    if (await optionalJson(markerPath) !== undefined) return;
+    const raw = await readJson(getChatHomePaths(root).longAgentRegistryPath);
+    const parsed = parseLongAgentRegistry(raw);
+    if (!isRecord(raw) || !Array.isArray(raw.agents)) throw new Error("无效Long Agent索引");
+    const inline = parsed.agents.filter((agent) => (raw.agents as unknown[]).some((entry) => isRecord(entry) && entry.id === agent.id && entry.definition !== undefined));
+    // Validate every conflict before changing the index. A partial prior split is safe to retry.
+    for (const agent of inline) {
+      const current = await optionalJson(longAgentDefinitionPath(root, agent.id));
+      if (current !== undefined && JSON.stringify(parseWorkflowAgentDefinition(current)) !== JSON.stringify(agent.definition)) {
+        throw new Error(`Long Agent ${agent.id}定义迁移冲突；内联与独立文件均已保留，请检查后重试`);
+      }
+    }
+    if (inline.length > 0) {
+      await writeJsonOnce(resolve(migrationDir, "long-agents.json.bak"), raw);
+      for (const agent of inline) await writeJsonOnce(longAgentDefinitionPath(root, agent.id), agent.definition);
+      const stripped = { ...raw, agents: raw.agents.map((agent) => {
         if (!isRecord(agent)) return agent;
         const { definition: _definition, ...rest } = agent;
         return rest;
-      }),
-    };
-    await atomicWriteJson(getChatHomePaths(root).longAgentRegistryPath, stripped);
-  }
-  await atomicWriteJson(markerPath, { doneAt: new Date().toISOString(), migratedAgents });
+      }) };
+      await atomicWriteJson(getChatHomePaths(root).longAgentRegistryPath, stripped);
+    }
+    await atomicWriteJson(markerPath, { doneAt: new Date().toISOString(), migratedAgents: inline.map((agent) => agent.id) });
+  });
 }
 
 /** 拆分写入：definition 进 long-agents/<id>/definition.json，Registry 只保留索引字段。 */
@@ -155,7 +168,7 @@ export async function readLongAgentRegistry(chatHome = resolveChatHome()): Promi
     }
     throw error;
   }
-  await migrateDefinitionSplit(paths.root, raw);
+  await migrateDefinitionSplit(paths.root);
   const parsed = parseLongAgentRegistry(await readJson(paths.longAgentRegistryPath));
   const agents = await Promise.all(parsed.agents.map(async (agent) => {
     const definition = await readLongAgentDefinitionFile(paths.root, agent);
@@ -172,10 +185,15 @@ async function readLongAgentStateValue(chatHome: string): Promise<{
   try {
     const raw = await readJson(paths.longAgentStatePath);
     const state = parseLongAgentState(raw);
+    if (isRecord(raw) && raw.schemaVersion !== 4) {
+      const backup = resolve(paths.root, "runtime/migrations/long-agent-daily-v4/source.json");
+      await writeJsonOnce(backup, raw);
+    }
+    if (isRecord(raw) && raw.schemaVersion === 4) await completeDailyMigration(paths.root);
     return {
       state,
       migrated: typeof raw === "object" && raw !== null
-        && "schemaVersion" in raw && raw.schemaVersion !== 3,
+        && "schemaVersion" in raw && raw.schemaVersion !== 4,
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -183,6 +201,12 @@ async function readLongAgentStateValue(chatHome: string): Promise<{
     }
     throw error;
   }
+}
+
+async function completeDailyMigration(root: string): Promise<void> {
+  const dir = resolve(root, "runtime/migrations/long-agent-daily-v4");
+  if (await optionalJson(resolve(dir, "source.json")) === undefined) return;
+  await writeJsonOnce(resolve(dir, "complete.json"), { schemaVersion: 1, completedAt: new Date().toISOString(), targetSchema: 4 });
 }
 
 const stateWrites = new Map<string, Promise<void>>();
@@ -234,9 +258,11 @@ export async function updateLongAgentState<T>(
   const previous = stateWrites.get(root) ?? Promise.resolve();
   let result: T | undefined;
   const current = previous.catch(() => undefined).then(async () => {
-    const changed = await update((await readLongAgentStateValue(root)).state);
+    const currentState = await readLongAgentStateValue(root);
+    const changed = await update(currentState.state);
     const parsed = parseLongAgentState(changed.state);
     await atomicWriteJson(getChatHomePaths(root).longAgentStatePath, parsed);
+    await completeDailyMigration(root);
     result = changed.result;
   });
   stateWrites.set(root, current);

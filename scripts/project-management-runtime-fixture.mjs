@@ -66,7 +66,9 @@ export async function exerciseProjectManagementRun(fetchApi, { chatHome, project
   const created = list.find((p) => p.cachedName === "学习道德经 E2E" || p.name === "学习道德经 E2E");
   assert.ok(created, JSON.stringify(projects));
   assert.notEqual(created.projectId, projectId);
-  const config = JSON.parse(fs.readFileSync(path.join(chatHome, "workspaces", created.projectId, ".chat/config.json")));
+  assert.equal(path.basename(created.path), "学习道德经 E2E");
+  assert.match(created.projectId, /^[a-f0-9]{32}$/);
+  const config = JSON.parse(fs.readFileSync(path.join(created.path, ".chat/config.json")));
   assert.equal(config.defaultWorkflowId, "memory");
   const detail = await (await fetchApi(`/api/sessions/${started.sessionId}?projectId=${projectId}`)).json();
   const toolResults = detail.context.messages.filter((m) => m.role === "toolResult" && m.toolName.startsWith("project_"));

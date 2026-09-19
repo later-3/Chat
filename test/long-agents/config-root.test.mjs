@@ -130,71 +130,7 @@ test("definition file identity must match the registry entry", async (t) => {
   await assert.rejects(readLongAgentRegistry(chatHome), /身份不一致/);
 });
 
-test("agent-home normalization merges Agent daily projects, renames the share space, and repatriates history", async (t) => {
-  const { chatHome } = fixture(t);
-  // 归一前形态：共享 daily + per-agent daily 项目与目录。
-  const { ensureLongAgentShareProject } = await import("../../src/projects/registry.ts");
-  await ensureLongAgentShareProject(chatHome);
-  await writeLongAgentRegistryWithHomes({
-    schemaVersion: 1,
-    instances: [INSTANCE],
-    agents: [{ ...agentEntry(), defaultProjectId: "daily-nexus" }],
-  }, chatHome);
-  const { ensureProjectDataLayout, readProjectRegistry } = await import("../../src/projects/registry.ts");
-  const legacyData = await ensureProjectDataLayout("daily-nexus", chatHome);
-  const legacyWorkspace = path.join(chatHome, "workspaces", "daily-nexus");
-  fs.mkdirSync(legacyWorkspace, { recursive: true });
-  fs.writeFileSync(path.join(legacyWorkspace, "notes.md"), "agent workspace note");
-  // 一条属于 nexus 的历史会话与一条普通会话。
-  const sessionDir = legacyData.sessionDir;
-  const agentSession = path.join(sessionDir, "2026-09-01T00:00:00-000Z_01a00000-0000-7000-8000-000000000001.jsonl");
-  fs.writeFileSync(agentSession, [
-    JSON.stringify({ type: "session", id: "01a00000-0000-7000-8000-000000000001" }),
-    JSON.stringify({ type: "custom", data: { longAgentId: "nexus", turnId: "t1" } }),
-  ].join("\n"));
-  const shareSessionDir = path.join(chatHome, "projects", "daily", "sessions");
-  fs.mkdirSync(shareSessionDir, { recursive: true });
-  const plainSession = path.join(shareSessionDir, "2026-09-01T00:00:00-000Z_01a00000-0000-7000-8000-000000000002.jsonl");
-  fs.writeFileSync(plainSession, JSON.stringify({ type: "session" }));
-  // 共享 daily 的目录与一条旧 catalog 记忆。
-  const shareData = path.join(chatHome, "projects", "daily");
-  fs.mkdirSync(path.join(shareData, "memory"), { recursive: true });
-  fs.mkdirSync(path.join(chatHome, "workspaces", "daily"), { recursive: true });
-  fs.writeFileSync(path.join(chatHome, "workspaces", "daily", ".keep"), "");
-
-  const { migrateAgentHomeNormalization } = await import("../../src/migrations/agent-home-normalization.ts");
-  const result = await migrateAgentHomeNormalization(chatHome);
-  assert.ok(result);
-  assert.deepEqual(result.migratedAgents, ["nexus"]);
-
-  // Agent 根：workspace + 会话都归到 long-agents/nexus 下。
-  const agentRoot = path.join(chatHome, "long-agents", "nexus");
-  assert.equal(fs.existsSync(path.join(agentRoot, "workspace", "notes.md")), true);
-  assert.equal(fs.existsSync(path.join(agentRoot, "sessions", path.basename(agentSession))), true);
-  assert.equal(fs.existsSync(path.join(chatHome, "workspaces", "daily-nexus")), false);
-  assert.equal(fs.existsSync(path.join(chatHome, "projects", "daily-nexus")), false);
-
-  // 共享空间改名；普通会话留在共享空间，Agent 历史迁回 Agent。
-  assert.equal(fs.existsSync(path.join(chatHome, "workspaces", "longagentshare")), true);
-  assert.equal(fs.existsSync(path.join(chatHome, "projects", "longagentshare", "sessions", path.basename(plainSession))), true);
-
-  // Registry：per-agent daily 登记被移除，home 以 kind=agent 登记；共享空间为 kind=share。
-  const registry = await readProjectRegistry(chatHome);
-  assert.equal(registry.projects.some((entry) => entry.projectId === "daily-nexus"), false);
-  assert.equal(registry.projects.some((entry) => entry.projectId === "daily"), false);
-  assert.equal(registry.projects.find((entry) => entry.projectId === "nexus")?.kind, "agent");
-  assert.equal(registry.projects.find((entry) => entry.projectId === "longagentshare")?.kind, "share");
-
-  // Long Agent registry：defaultProjectId 归一为 agent id。
-  const { readLongAgentRegistry } = await import("../../src/long-agents/storage.ts");
-  assert.equal((await readLongAgentRegistry(chatHome)).agents[0].defaultProjectId, "nexus");
-
-  // 幂等：第二次调用返回 null，且不破坏结果。
-  assert.equal(await migrateAgentHomeNormalization(chatHome), null);
-  assert.equal(fs.existsSync(path.join(agentRoot, "workspace", "notes.md")), true);
-});
-
-test("agent home main Session rotates by local date; business bindings stay stable (S5a)", async (t) => {
+test("Friend daily Session uses a persisted zone and business projects share the same day (P3)", async (t) => {
   const { chatHome } = fixture(t);
   const { ensureLongAgentShareProject } = await import("../../src/projects/registry.ts");
   await ensureLongAgentShareProject(chatHome);
@@ -212,25 +148,22 @@ test("agent home main Session rotates by local date; business bindings stay stab
   assert.equal(second.isNewSession, false);
   assert.equal(second.projectAgent.primarySessionId, first.projectAgent.primarySessionId);
 
-  // 跨日：把绑定日期改成昨天，下次进入轮换到新 Session。
-  await updateLongAgentState(chatHome, (state) => ({
-    state: { ...state, projectAgents: state.projectAgents.map((binding) => ({ ...binding, sessionDate: "2000-01-01" })) },
-    result: undefined,
-  }));
-  const rotated = await ensureProjectLongAgent({ chatHome, projectId: "nexus", agent });
+  const tomorrow = new Date(Date.now() + 86_400_000);
+  const rotated = await ensureProjectLongAgent({ chatHome, projectId: "nexus", agent, now: tomorrow });
   assert.equal(rotated.isNewSession, true);
   assert.notEqual(rotated.projectAgent.primarySessionId, first.projectAgent.primarySessionId);
   assert.equal((await readLongAgentState(chatHome)).projectAgents.length, 1);
 
-  // 业务项目不轮换。
+  // 业务项目只能改变工作上下文，不创建另一条Friend主会话。
   const { openProject } = await import("../../src/projects/registry.ts");
   const businessRoot = path.join(chatHome, "..", "business");
   fs.mkdirSync(businessRoot, { recursive: true });
   const businessProject = await openProject({ path: businessRoot, chatHome, id: "business", name: "Business" });
-  const business = await ensureProjectLongAgent({ chatHome, projectId: businessProject.projectId, agent });
-  const businessAgain = await ensureProjectLongAgent({ chatHome, projectId: businessProject.projectId, agent });
+  const business = await ensureProjectLongAgent({ chatHome, projectId: businessProject.projectId, agent, now: tomorrow });
+  const businessAgain = await ensureProjectLongAgent({ chatHome, projectId: businessProject.projectId, agent, now: tomorrow });
   assert.equal(businessAgain.projectAgent.primarySessionId, business.projectAgent.primarySessionId);
-  assert.equal(businessAgain.projectAgent.sessionDate, undefined);
+  assert.equal(businessAgain.projectAgent.primarySessionId, rotated.day.sessionId);
+  assert.equal((await readLongAgentState(chatHome)).dailySessions.length, 2);
 });
 
 test("starting an Agent from the share space routes to its own home Project", async (t) => {

@@ -23,26 +23,26 @@
 
 `src/workflows` 下的 TS 可以设置源码断点，但有两种执行形态：普通模块和 `"use step"` 通过 Node 加载；`"use workflow"` 函数在 Workflow VM 中执行。后者向调试器报告的脚本名来自 Workflow ID 中的模块路径，例如 `./src/workflows/minimal-pi-coding-agent/workflow`，没有 `.ts` 后缀，也不是磁盘上的 `.mjs`。根 F5 的两个 Backend 配置必须同时允许生成 bundle 和这个 VM 脚本路径的 source map；只允许 `.nitro-debug/**/*.mjs` 或只加 `src/workflows/**/*.ts` 都会漏掉 Workflow VM。更新配置后停止并重新 F5，已有调试会话不会重新读取 launch.json。
 
-先在直接执行 Workflow 的 `step.ts` 函数体内（例如 `const stepStartedAt = Date.now()`）下断点，再从普通 Workflow 会话选择直接执行并发送消息。类型声明、import 和 `"use workflow"`/`"use step"` 指令行不适合作为执行断点；长期同事入口不会触发这个 Step。只用 `pnpm debug:start` 启动并不自动连接 VS Code 调试器，要用 F5 或显式附着。
+先在直接执行 Workflow 的 `step.ts` 函数体内（例如 `const stepStartedAt = Date.now()`）下断点，再从普通 Workflow 会话选择直接执行并发送消息。类型声明、import 和 `"use workflow"`/`"use step"` 指令行不适合作为执行断点；Friend入口不会触发这个 Step。只用 `pnpm debug:start` 启动并不自动连接 VS Code 调试器，要用 F5 或显式附着。
 
-Nitro Worker 实际加载 `.data/debug/output/server/index.mjs`，随后按需加载 `node_modules/.nitro-debug/workflow/steps.mjs`。两个目录都必须进入 Backend 的 `outFiles` 和 `resolveSourceMapLocations`；只配置 `.nitro-debug` 会漏掉启动时已加载的服务端源码映射，出现 `step.ts` 灰色断点。故障证据与回归见[断点映射目录遗漏](../../development-experiences/debug-step-source-map-locations.md)。
+Nitro Worker 实际加载 `.data/debug/output/server/index.mjs`，随后按需加载 `node_modules/.nitro-debug/workflow/steps.mjs`。两个目录都必须进入 Backend 的 `outFiles` 和 `resolveSourceMapLocations`；只配置 `.nitro-debug` 会漏掉启动时已加载的服务端源码映射，出现 `step.ts` 灰色断点。故障证据与回归见[断点映射目录遗漏](../experiences/debug-step-source-map-locations.md)。
 
 先检查这 4 层，不要直接怀疑模型：
 
-1. **启动的模块是否正确。** 普通Web走Workflow；长期同事和渠道走Long Agent，不会进入直接执行Workflow的Step。
+1. **启动的模块是否正确。** 普通Web走Workflow；Friend和渠道走Long Agent，不会进入直接执行Workflow的Step。
 2. **实际执行线程是否附着。** VS Code Call Stack 中检查 Backend 下的 Nitro Worker。当前源码会经过独立 Step bundle，只有启动器被调试并不够。
 3. **开发产物是否可加载。** 专用目录是 `node_modules/.nitro-debug/workflow`；产品Workflow发现范围固定为`src/workflows`，Step可达依赖仍正常打包。Source Map需指回`src`；Pi dist需指回Pi src。不要在正常`node_modules/.nitro`的旧文件中找本次断点。
 4. **Runtime是否真正执行。** 用 `pnpm debug:smoke` 验证完整链；常规门禁 `pnpm test:dev` 验证 Nitro CLI 开发路径。仅 Node import、类型检查、健康HTTP或生产构建通过都不足以证明开发Step可执行。
 
 调试 Nitro 使用与 CLI 相同的公开 builder/dev-server API，禁用根 `.env` 自动读取。业务源代码由 builder 监听；修改 `nitro.config.ts` 后显式停止并重新F5。不要另写Agent执行循环来“方便调试”。
 
-曾经发生的两类故障：[开发Step外置JSON](../../development-experiences/workflow-builder-json-import-attribute.md)、[隔离缓存被重复扫描](../../development-experiences/debug-build-directory-isolation.md)。`Node.js modules are not available in workflow functions` 也可能是产物重入，不等于所有报错的Pi模块都需要改写。
+曾经发生的两类故障：[开发Step外置JSON](../experiences/workflow-builder-json-import-attribute.md)、[隔离缓存被重复扫描](../experiences/debug-build-directory-isolation.md)。`Node.js modules are not available in workflow functions` 也可能是产物重入，不等于所有报错的Pi模块都需要改写。
 
 ## WF-02：规划、审批与子 Workflow
 
 学习基础链后再打开 `planning-execution`。该流程包括 Planner 交互、等待用户审核、批准后执行或委派；不能用假模型固定 `DEBUG_OK` 当作有效规划输出。
 
-用自动化 Fixture 演练先运行 `pnpm test:dev`，它覆盖 Planner conversation、真实 Workflow调用与取消/恢复等已有场景；源码入口在 [规划执行目录](../../../src/workflows/planning-execution)、[Workflow调用框架](../../architecture/chat-subworkflow-design.md)。真实手工规划需显式配置有能力的开发模型。
+用自动化 Fixture 演练先运行 `pnpm test:dev`，它覆盖 Planner conversation、真实 Workflow调用与取消/恢复等已有场景；源码入口在 [规划执行目录](../../../src/workflows/planning-execution)、[Workflow调用框架](../../modules/workflows/chat-subworkflow-design.md)。真实手工规划需显式配置有能力的开发模型。
 
 手工断点路线：Planner Node输出 → review-state中的planRevision/phase → `POST /runs/:id/review` → 批准的revision → Executor/Coordinator → `workflow_call` 的start/wait/cancel → 子Run/子Session → 父Run聚合。观察父子workflowInvocationId、callId，不要把子Run的完成当作父Run已完成。
 
@@ -54,4 +54,4 @@ Nitro Worker 实际加载 `.data/debug/output/server/index.mjs`，随后按需�
 
 查路由遵循 `src/routes` 的 Method 文件约定；Project解析在 [projects/request](../../../src/projects/request.ts)，Session操作锁在 [session-operation-lock](../../../src/session-operation-lock.ts)。响应字段变更同时检查 `frontend/lib` 的运行时parser。并发实验使用两个调试请求针对同一Session，观察现有锁/活跃Run检查；不要将不同Session可以并行推断为同Session可任意并行写。
 
-开发前阅读 [Backend规范](../backend.md)、[测试指南](../../testing.md)。涉及Workflow/装配修改时，完成Builder单层、开发Step bundle、生产构建与真实Runtime四类验证。
+开发前阅读 [Backend规范](../backend.md)、[测试指南](../testing.md)。涉及Workflow/装配修改时，完成Builder单层、开发Step bundle、生产构建与真实Runtime四类验证。

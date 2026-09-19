@@ -4,11 +4,11 @@
 
 本文受[Chat Agent第一性原理与架构约束](./chat-agent-first-principles.md)约束，并以三份源码事实为输入：
 
-1. [Pi Agent设计与源码分析](./pi-agent-design.md)：Pi原生能力、接口和持久化边界。
-2. [Pi Web架构与源码分析](./pi-web-design.md)：原网页产品如何消费Pi能力。
+1. [Pi Agent设计与源码分析](../modules/pi/pi-agent-design.md)：Pi原生能力、接口和持久化边界。
+2. [Pi Web架构与源码分析](../modules/pi/pi-web-design.md)：原网页产品如何消费Pi能力。
 3. [Chat当前架构与源码分析](./chat-current-architecture.md)：当前Workflow、Session和浏览器调用链。
 
-Project目标结构另见[Chat Project架构设计](./chat-project-framework.md)。该设计参考Pi的用户级/项目级配置、资源和Session分区，再加入Chat的稳定Project身份、Workflow和Memory场景。
+Project目标结构另见[Chat Project架构设计](../modules/projects/chat-project-framework.md)。该设计参考Pi的用户级/项目级配置、资源和Session分区，再加入Chat的稳定Project身份、Workflow和Memory场景。
 
 本文定义Chat需要解决什么，不提前规定最终配置文件字段。
 
@@ -251,7 +251,7 @@ Daily Project必须：
 5. 长期Agent调用Workflow时，Workflow继承当前Project与父Session关系；跨Project调用必须显式创建目标Project Session并保留来源。
 6. 同一个长期Agent可以共享自己的Agent Memory，但不能据此把不同Project Session的完整对话历史隐式合并。
 
-2026-09-07已确认：每个Long Agent拥有独立Daily Project，日常主Session按日轮换；业务Project按主题组织多个Session并可跨日。Web/IM引用同一工作历史，Agent通过活动索引、历史查询和Memory保持连续性。定义与配置见[能力模型](./chat-long-agent-capability-model.md)，运行机制见[Long Agent架构](./chat-long-agent-architecture.md)，四个场景见[验收要求](./chat-long-agent-scenarios.md)。多Agent及用户共同会话的交互协议尚待讨论；以下历史差距分析不能替代最新[实施状态](./chat-long-agent-roadmap.md)。
+2026-09-07已确认：每个Long Agent拥有独立Daily Project，日常主Session按日轮换；业务Project按主题组织多个Session并可跨日。Web/IM引用同一工作历史，Agent通过活动索引、历史查询和Memory保持连续性。定义与配置见[能力模型](../modules/long-agents/chat-long-agent-capability-model.md)，运行机制见[Long Agent架构](../modules/long-agents/chat-long-agent-architecture.md)，四个场景见[验收要求](../modules/long-agents/chat-long-agent-scenarios.md)。多Agent及用户共同会话的交互协议尚待讨论；以下历史差距分析不能替代最新[实施状态](../modules/long-agents/chat-long-agent-roadmap.md)。
 
 ## 5. Chat全局、Project配置和Pi资源是什么关系
 
@@ -475,7 +475,7 @@ workflows/<workflow-id>/
 
 即使两个Workflow都使用Pi Coding Agent，也先各自在自己的目录中拥有明确配置。允许使用Chat/Pi公共基础设施和公共资源，但不为了复用提前打散Workflow目录，也不在Workflow内复制Session、HTTP服务或Pi Runtime。
 
-目录、两种Node、`workflow.json`、`agent.json`、`.chat/config.json`和前后端接口的规范定义见[Chat Workflow开发框架](./chat-workflow-framework.md)。该文档是后续Agent新增Workflow时的直接开发入口。
+目录、两种Node、`workflow.json`、`agent.json`、`.chat/config.json`和前后端接口的规范定义见[Chat Workflow开发框架](../modules/workflows/chat-workflow-framework.md)。该文档是后续Agent新增Workflow时的直接开发入口。
 
 ### 11.4 Agent自定义提示词区域
 

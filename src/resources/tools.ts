@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { projectExtensionPaths } from "./project-extension-paths.js";
 import {
   DefaultResourceLoader,
   SettingsManager,
@@ -34,7 +34,7 @@ export async function listChatTools(projectId: string, chatHome?: string) {
     noSkills: true,
     noPromptTemplates: true,
     noThemes: true,
-    additionalProjectExtensionPaths: [resolve(project.projectConfigDir, "extensions")],
+    additionalProjectExtensionPaths: await projectExtensionPaths(project.projectConfigDir),
   });
   await resourceLoader.reload();
   const extensionResult = resourceLoader.getExtensions();

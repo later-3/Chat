@@ -20,5 +20,6 @@ export async function readChatWorkflowCallProjection(
     rootSessionId: session.manager.getSessionId(),
     rootEntries: session.manager.getEntries(),
     sessionDir: session.sessionDir,
+    chatHome: session.projectContext!.chatHome,
   });
 }

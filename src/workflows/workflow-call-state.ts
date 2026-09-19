@@ -15,6 +15,7 @@ export type ChatWorkflowCallStatus =
   | "cancelled";
 
 export interface ChatWorkflowCallEndpoint {
+  readonly projectId?: string;
   readonly sessionId: string;
   readonly workflowId: string;
   readonly workflowInvocationId: string;
@@ -78,7 +79,9 @@ function parseEndpoint(value: unknown): ChatWorkflowCallEndpoint | undefined {
     || !isNonEmptyString(value.workflowId) || !isNonEmptyString(value.workflowInvocationId)) {
     return undefined;
   }
+  if (value.projectId !== undefined && !isNonEmptyString(value.projectId)) return undefined;
   return {
+    ...(value.projectId === undefined ? {} : { projectId: value.projectId }),
     sessionId: value.sessionId,
     workflowId: value.workflowId,
     workflowInvocationId: value.workflowInvocationId,

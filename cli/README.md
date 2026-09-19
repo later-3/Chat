@@ -4,7 +4,6 @@
 
 ```bash
 npm install -g ./later-chat-cli-0.3.1.tgz
-chat login --url https://chat.example.com
 chat tui --url https://chat.example.com --project my-project
 ```
 
@@ -12,6 +11,6 @@ chat tui --url https://chat.example.com --project my-project
 
 所有模型、配置、执行和历史属于目标 Chat Backend。Web 与 TUI 共用同一 Session；客户端不运行 Agent，不需要模型密钥。目标 Backend 必须支持 Workflow TUI v1 transcript/fork 合同。
 
-默认地址 `http://127.0.0.1:43110`，可用 `CHAT_SERVER_URL` 覆盖；远程地址要求 HTTPS。凭据默认位于 `~/.chat-client`，可用 `CHAT_CLI_HOME` 覆盖。`chat logout` 删除所选服务器的本机凭据。`--theme light` 使用亮色主题。
+默认地址 `http://127.0.0.1:43110`，可用 `CHAT_SERVER_URL` 覆盖；远程地址要求 HTTPS。`--theme light` 使用亮色主题。
 
 本期支持普通 Workflow 与文字输入，不接入 NanoClaw / Long Agent、本机附件上传或 Pi 本地运行命令。Fork 将所选输入文字恢复成草稿，图片需要在 Web 重新附加。包采用 tarball 分发，尚未发布到 npm。

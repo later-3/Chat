@@ -1,6 +1,6 @@
 # Chat Web 与 Frontend 场景调试
 
-前置：按[环境章节](./environment.md)启动 `Debug Chat`，使用 F5 打开的独立 Chrome，登录后打开 `.data/debug/chat-home/workspaces/debug-lab`。初始使用 `debug-local/debug-model`，Workflow 选“直接执行”对应的 `minimal-pi-coding-agent`。
+前置：按[环境章节](./environment.md)启动 `Debug Chat`，使用 F5 打开的独立 Chrome，直接打开 `.data/debug/chat-home/workspaces/debug-lab`。初始使用 `debug-local/debug-model`，Workflow 选“直接执行”对应的 `minimal-pi-coding-agent`。
 
 ## WEB-01：从点击发送到最终回复
 
@@ -11,7 +11,7 @@
 5. 放行 Backend，记录返回的 runId、workflowInvocationId、sessionId。再按[Backend章节](./backend-workflow.md)进入 Step/Pi。
 6. 最后应显示 `DEBUG_OK`，`GET /runs/:id` 为 completed。刷新页面或重新打开此 Session，结果仍在。
 
-**判断：** 没有 POST → 页面事件/输入校验；请求到错端口 → 启动配置/代理；401 → 当前调试登录；400 → 请求合同/Project/配置；已202但未进入Step → Workflow开发产物/队列；Pi完成但页面没更新 → 事件流/parser/React状态。
+**判断：** 没有 POST → 页面事件/输入校验；请求到错端口 → 启动配置/代理；401 → 核对目标服务与认证类型；400 → 请求合同/Project/配置；已202但未进入Step → Workflow开发产物/队列；Pi完成但页面没更新 → 事件流/parser/React状态。
 
 注意实际发起请求和终态更新都可能很快。先在 Frontend 暂停，再把断点补到对应 Backend 路径，避免一次性暂停所有 Worker 后误判超时。
 
@@ -23,7 +23,7 @@
 
 | 层次 | 观察对象 | 正常情况 |
 |---|---|---|
-| Network | HTTP状态、Content-Type、响应内容 | 事件流可读，未被代理替换成HTML登录页 |
+| Network | HTTP状态、Content-Type、响应内容 | 事件流可读，未被代理替换成HTML页面 |
 | Parser | 单行JSON与事件类型 | 严格解析，非法响应显式报错 |
 | Hook | 当前Session/Run引用 | 事件应用到发起执行的Session，切换会话不串内容 |
 | 持久层 | Run状态、重新GET Session | 刷新能恢复历史，不靠草稿或消息正文补历史 |
@@ -32,17 +32,17 @@
 
 在调试专用浏览器中使用 Network Offline 可模拟断线；恢复后检查请求重附着和Session重读。取消浏览器 stream 不代表取消后端执行，点“停止执行”应检查是否调用 `DELETE /runs/:id`。相关合同测试：[chat-workflow-contract.test](../../../frontend/lib/chat-workflow-contract.test.mjs)。
 
-## LA-01：Web 长期同事入口
+## LA-01：Web Friend入口
 
-先按[渠道章节](./channels.md)准备 Nano Group 与 Chat Registry，启动 `Debug Chat + NanoClaw`。在当前 Project 切换“长期同事”，点击 Debug Agent。
+先按[渠道章节](./channels.md)准备 Nano Group 与 Chat Registry，启动 `Debug Chat + NanoClaw`。在当前 Project 切换“Friend”，点击 Debug Agent。
 
 1. 观察 `POST /api/long-agents/:id/start`，它应创建或打开该 Project 的专属主 Session。
 2. 检查 Session 返回 `owner: { type: "long-agent", ... }`，发送时 `useAgentSession` 应走 `sendLongAgentMessage()`，不再调用普通 `/runs`。
 3. 在 [long-agents-browser](../../../frontend/lib/long-agents-browser.ts)、[messages路由](../../../src/routes/api/long-agents/%5BlongAgentId%5D/messages.post.ts)、[executeLongAgentTurn](../../../src/long-agents/runtime.ts) 暂停。
 4. 输入 `DEBUG_HELLO`，确认同一个 Project/Long Agent/Session 到达公共 Pi 装配。当前请求等待本轮完成，然后重读原生 Session；它不是普通 Workflow 的 NDJSON 全局流。
-5. 刷新后仍显示长期同事归属，普通 Session 的输入区与长期同事入口不互相替换。
+5. 刷新后仍显示Friend归属，普通 Session 的输入区与Friend入口不互相替换。
 
-若配置页能看到同事，但发送失败，应分别检查 Personal enabled、Project active、默认Project、Gateway鉴权/Group存在、模型认证。当前每个 ProjectLongAgent 只有一个 primarySessionId；不要用目标中的多主题Session或独立Daily解释现有行为。
+若配置页能看到同事，但发送失败，应分别检查 Personal enabled、Project active、默认Project、Gateway鉴权/Group存在、模型认证。当前每个 ProjectLongAgent 保留一个 primarySessionId；Agent 自己的 Daily Project 在 `ensureProjectLongAgent()` 中按宿主本地日期轮换，历史 Session 保留，其他 Project 复用专属主会话。顶栏的 contextProjectId 不改变 Session 归属。精确断点与数据字段见[源码地图](./code-map.md)。
 
 ## Frontend 代码修改练习
 

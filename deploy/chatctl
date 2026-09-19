@@ -11,9 +11,12 @@ CHAT_RUNTIME_ROOT="${CHAT_RUNTIME_ROOT:-/var/lib/chat/runtime}"
 CHAT_RUN_USER="${CHAT_RUN_USER:-chat}"
 CHAT_ENV_FILE="${CHAT_ENV_FILE:-/etc/chat/chat.env}"
 CHAT_SERVICE="${CHAT_SERVICE:-chat}"
+CHAT_SYSTEMD_DIR="${CHAT_SYSTEMD_DIR:-/etc/systemd/system}"
 CHAT_KEEP_RELEASES="${CHAT_KEEP_RELEASES:-3}"
 NODE_VERSION="22.19.0"
 PNPM_VERSION="10.13.1"
+WITH_NANOCLAW=0
+COMPONENT=all
 
 log() { printf '[chatctl] %s\n' "$*" >&2; }
 fail() { log "ERROR: $*"; exit 1; }
@@ -23,13 +26,21 @@ usage() {
 Usage: chatctl <command> [options]
 
 Commands:
-  install          Prepare a new host or idempotently deploy the selected ref
-  update           Deploy the latest selected ref without changing user data
+  install          Install dependencies, configuration and a release; DO NOT start
+  update           Build a selected release while stopped; DO NOT start
+  start            Start installed services (no download, install or build)
+  stop             Stop installed services; preserve data and boot policy
+  restart          Restart installed services
+  status           Show installed services and local health
+  enable           Enable services at Linux boot (does not start them)
+  disable          Disable boot startup (does not stop them)
   doctor           Validate configuration, Agent assembly, service, and health
   rollback         Switch back to the previously active release
   validate-config  Validate the production environment file without starting Chat
 
 Options:
+  --with-nanoclaw   Also prepare the optional Friend Host (install/update only)
+  --only MODULE    backend or nanoclaw (service commands; default: all installed)
   --ref REF        Branch, tag, or commit (default: main)
   --repo URL       Chat Git repository
   --env-file PATH  Production environment file (default: /etc/chat/chat.env)
@@ -39,8 +50,11 @@ EOF
 command_name="${1:-}"
 [[ -n "$command_name" ]] || { usage; exit 2; }
 shift
+[[ "$command_name" != --help && "$command_name" != -h ]] || command_name=help
 while (($# > 0)); do
   case "$1" in
+    --with-nanoclaw) WITH_NANOCLAW=1; shift ;;
+    --only) [[ $# -ge 2 ]] || fail "--only requires backend or nanoclaw"; COMPONENT="$2"; shift 2 ;;
     --ref) [[ $# -ge 2 ]] || fail "--ref requires a value"; CHAT_DEPLOY_REF="$2"; shift 2 ;;
     --repo) [[ $# -ge 2 ]] || fail "--repo requires a value"; CHAT_REPO_URL="$2"; shift 2 ;;
     --env-file) [[ $# -ge 2 ]] || fail "--env-file requires a value"; CHAT_ENV_FILE="$2"; shift 2 ;;
@@ -48,10 +62,13 @@ while (($# > 0)); do
     *) fail "unknown option: $1" ;;
   esac
 done
+[[ "$COMPONENT" == all || "$COMPONENT" == backend || "$COMPONENT" == nanoclaw ]] || fail "invalid --only module"
+if ((WITH_NANOCLAW)) && [[ "$command_name" != install && "$command_name" != update ]]; then fail "--with-nanoclaw is for install/update"; fi
+if [[ "$COMPONENT" != all && ! "$command_name" =~ ^(start|stop|restart|status|enable|disable)$ ]]; then fail "--only is for service commands"; fi
 
 validate_fixed_paths() {
   local value
-  for value in "$CHAT_ROOT" "$CHAT_RUNTIME_ROOT" "$CHAT_ENV_FILE"; do
+  for value in "$CHAT_ROOT" "$CHAT_RUNTIME_ROOT" "$CHAT_ENV_FILE" "$CHAT_SYSTEMD_DIR"; do
     safe_absolute_path "$value" || fail "deployment paths must be normalized safe absolute paths"
   done
   safe_managed_directory "$CHAT_ROOT" || fail "CHAT_ROOT is too broad"
@@ -113,16 +130,12 @@ env_value() {
 
 validate_config() {
   [[ -f "$CHAT_ENV_FILE" ]] || fail "missing environment file: $CHAT_ENV_FILE"
-  local host port target chat_home workflow_dir auth_enabled username password session_secret channel_gateway_token
+  local host port target chat_home workflow_dir channel_gateway_token
   host="$(env_value HOST "$CHAT_ENV_FILE")"
   port="$(env_value PORT "$CHAT_ENV_FILE")"
   target="$(env_value WORKFLOW_TARGET_WORLD "$CHAT_ENV_FILE")"
   chat_home="$(env_value CHAT_HOME "$CHAT_ENV_FILE")"
   workflow_dir="$(env_value WORKFLOW_LOCAL_DATA_DIR "$CHAT_ENV_FILE")"
-  auth_enabled="$(env_value CHAT_WEB_AUTH_ENABLED "$CHAT_ENV_FILE")"
-  username="$(env_value CHAT_WEB_AUTH_USERNAME "$CHAT_ENV_FILE")"
-  password="$(env_value CHAT_WEB_AUTH_PASSWORD "$CHAT_ENV_FILE")"
-  session_secret="$(env_value CHAT_WEB_AUTH_SESSION_SECRET "$CHAT_ENV_FILE")"
   channel_gateway_token="$(env_value CHAT_CHANNEL_GATEWAY_TOKEN "$CHAT_ENV_FILE")"
 
   [[ "$host" == "127.0.0.1" ]] || fail "HOST must be 127.0.0.1 for the production service"
@@ -132,12 +145,6 @@ validate_config() {
     || fail "CHAT_HOME must be a normalized safe absolute path"
   safe_absolute_path "$workflow_dir" && path_is_within "$workflow_dir" "$chat_home" \
     || fail "WORKFLOW_LOCAL_DATA_DIR must be inside CHAT_HOME"
-  [[ "$auth_enabled" =~ ^(1|true|yes|on)$ ]] || fail "production Web authentication must be enabled"
-  [[ -n "$username" ]] || fail "CHAT_WEB_AUTH_USERNAME is required"
-  [[ ${#password} -ge 12 ]] || fail "CHAT_WEB_AUTH_PASSWORD must contain at least 12 characters"
-  [[ "$password" != "123456" && "$password" != *"REQUIRED"* ]] || fail "replace the example Web password"
-  [[ ${#session_secret} -ge 32 ]] || fail "CHAT_WEB_AUTH_SESSION_SECRET must contain at least 32 characters"
-  [[ "$session_secret" != *"GENERATED_BY_CHATCTL"* ]] || fail "replace the example session secret"
   [[ ${#channel_gateway_token} -ge 32 ]] || fail "CHAT_CHANNEL_GATEWAY_TOKEN must contain at least 32 characters"
   [[ "$channel_gateway_token" != *"replace-with"* ]] || fail "replace the example Channel Gateway token"
   log "configuration is valid (secret values were not printed)"
@@ -146,7 +153,8 @@ validate_config() {
 require_linux_root() {
   [[ "$(uname -s)" == "Linux" ]] || fail "this deployment path supports Linux only"
   ((EUID == 0)) || fail "run this command with sudo"
-  command -v systemctl >/dev/null || fail "systemd is required"
+  command -v systemctl >/dev/null && [[ -d /run/systemd/system ]] \
+    || fail "a running systemd is required; on WSL2 enable [boot] systemd=true in /etc/wsl.conf, then restart the distro"
   validate_fixed_paths
 }
 
@@ -160,11 +168,11 @@ install_build_dependencies() {
   if command -v apt-get >/dev/null; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y ca-certificates curl git openssh-client xz-utils build-essential python3 pkg-config util-linux
+    apt-get install -y ca-certificates curl git openssh-client xz-utils build-essential python3 pkg-config util-linux lsof
   elif command -v dnf >/dev/null; then
-    dnf install -y ca-certificates curl git openssh-clients xz gcc gcc-c++ make python3 pkgconf-pkg-config util-linux
+    dnf install -y ca-certificates curl git openssh-clients xz gcc gcc-c++ make python3 pkgconf-pkg-config util-linux lsof lsof
   elif command -v yum >/dev/null; then
-    yum install -y ca-certificates curl git openssh-clients xz gcc gcc-c++ make python3 pkgconfig util-linux
+    yum install -y ca-certificates curl git openssh-clients xz gcc gcc-c++ make python3 pkgconfig util-linux lsof
   else
     fail "supported package manager not found (expected apt-get, dnf, or yum)"
   fi
@@ -218,7 +226,7 @@ ensure_node_toolchain() {
   COREPACK_BIN="$toolchain_root/node/bin/corepack"
   PNPM_BIN="$toolchain_root/node/bin/pnpm"
   [[ "$($NODE_BIN --version)" == "v$NODE_VERSION" ]] || fail "managed Node version is invalid"
-  "$COREPACK_BIN" enable pnpm
+  env PATH="$install_root/bin:$PATH" "$COREPACK_BIN" enable pnpm
   install -d -o "$CHAT_RUN_USER" -g "$CHAT_RUN_GROUP" -m 0750 "$CHAT_RUN_HOME/.cache/chat-corepack"
   run_as_chat "$COREPACK_BIN" prepare "pnpm@$PNPM_VERSION" --activate
   [[ "$(run_as_chat "$PNPM_BIN" --version)" == "$PNPM_VERSION" ]] || fail "managed pnpm version is invalid"
@@ -273,10 +281,11 @@ prepare_dependencies() {
 }
 
 generate_user_configuration() {
-  local generated=0 chat_home workflow_dir secret channel_gateway_token temporary
+  local generated=0 chat_home workflow_dir channel_gateway_token temporary
   chat_home="$CHAT_RUN_HOME/.chat"
   workflow_dir="$chat_home/runtime/workflow-data"
   if [[ -f "$CHAT_ENV_FILE" ]]; then
+    validate_config
     local configured_home configured_workflow
     configured_home="$(env_value CHAT_HOME "$CHAT_ENV_FILE")"
     configured_workflow="$(env_value WORKFLOW_LOCAL_DATA_DIR "$CHAT_ENV_FILE")"
@@ -289,13 +298,12 @@ generate_user_configuration() {
   require_unredirected_path "$workflow_dir"
   install -d -o "$CHAT_RUN_USER" -g "$CHAT_RUN_GROUP" -m 0700 "$chat_home/agent" "$workflow_dir"
   if [[ ! -f "$CHAT_ENV_FILE" ]]; then
-    secret="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
     channel_gateway_token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
     temporary="$(mktemp)"
     sed \
+      -e "s|^CHAT_PUBLIC_URL=.*|CHAT_PUBLIC_URL=http://127.0.0.1:43110|" \
       -e "s|^CHAT_HOME=.*|CHAT_HOME=$chat_home|" \
       -e "s|^WORKFLOW_LOCAL_DATA_DIR=.*|WORKFLOW_LOCAL_DATA_DIR=$workflow_dir|" \
-      -e "s|^CHAT_WEB_AUTH_SESSION_SECRET=.*|CHAT_WEB_AUTH_SESSION_SECRET=$secret|" \
       -e "s|^CHAT_CHANNEL_GATEWAY_TOKEN=.*|CHAT_CHANNEL_GATEWAY_TOKEN=$channel_gateway_token|" \
       "$CHAT_ROOT/deploy/chat.env.example" >"$temporary"
     install -o root -g "$CHAT_RUN_GROUP" -m 0640 "$temporary" "$CHAT_ENV_FILE"
@@ -309,8 +317,8 @@ generate_user_configuration() {
   fi
   if ((generated)); then
     log "user configuration templates were generated"
-    log "edit $CHAT_ENV_FILE and $chat_home/agent/settings.json, configure Provider credentials, then run install again"
-    exit 2
+    log "configure a model in Chat Web after start, or edit $chat_home/agent/settings.json and Provider credentials before using Agents"
+    # Installation is complete without model credentials; the local UI can configure them.
   fi
 }
 
@@ -374,10 +382,10 @@ install_systemd_unit() {
     -e "s|__RUNTIME_ROOT__|$(sed_replacement "$CHAT_RUNTIME_ROOT")|g" \
     "$CHAT_ROOT/deploy/systemd/chat.service" >"$unit_temp"
   grep -q '__[A-Z_]*__' "$unit_temp" && fail "systemd template contains an unresolved placeholder"
-  install -o root -g root -m 0644 "$unit_temp" "/etc/systemd/system/$CHAT_SERVICE.service"
+  install -o root -g root -m 0644 "$unit_temp" "$CHAT_SYSTEMD_DIR/$CHAT_SERVICE.service"
   rm -f -- "$unit_temp"
   systemctl daemon-reload
-  systemctl enable "$CHAT_SERVICE.service" >/dev/null
+  # Boot policy is explicit: chatctl enable/disable, independent of install/start.
 }
 
 atomic_link() {
@@ -403,7 +411,7 @@ prune_old_releases() {
 
 wait_for_health() {
   local attempt response
-  for attempt in $(seq 1 30); do
+  for attempt in $(seq 1 "${1:-30}"); do
     response="$(curl --fail --silent --max-time 2 \
       "http://127.0.0.1:$CONFIGURED_PORT/api/health" 2>/dev/null || true)"
     if systemctl is-active --quiet "$CHAT_SERVICE.service" \
@@ -415,43 +423,59 @@ wait_for_health() {
   return 1
 }
 
-activate_release() {
-  local old_release=""
-  if [[ -L "$CHAT_RUNTIME_ROOT/current" ]]; then
-    old_release="$(readlink -f "$CHAT_RUNTIME_ROOT/current")"
-    [[ "$old_release" == "$CHAT_RUNTIME_ROOT/releases/"* ]] || fail "current release points outside the release directory"
-  fi
-  install_systemd_unit
-  atomic_link "$NEW_RELEASE" "$CHAT_RUNTIME_ROOT/current"
-  local service_started=0
-  if systemctl is-active --quiet "$CHAT_SERVICE.service"; then
-    systemctl restart "$CHAT_SERVICE.service" && service_started=1
-  else
-    systemctl start "$CHAT_SERVICE.service" && service_started=1
-  fi
-  if ((service_started)) && wait_for_health; then
-    [[ -z "$old_release" ]] || atomic_link "$old_release" "$CHAT_RUNTIME_ROOT/previous"
-    prune_old_releases
-    log "release activated: $(basename "$NEW_RELEASE")"
-    return 0
-  fi
+validate_service_owner() {
+  local unit="$1" expected_cwd="$CHAT_ROOT" actual_cwd actual_user
+  [[ "$unit" != "nanoclaw-$CHAT_SERVICE" ]] || expected_cwd="$CHAT_ROOT/nanoclaw"
+  [[ -f "$CHAT_SYSTEMD_DIR/$unit.service" ]] || return 0
+  actual_cwd="$(systemctl show --property=WorkingDirectory --value "$unit.service")"
+  actual_user="$(systemctl show --property=User --value "$unit.service")"
+  [[ "$actual_cwd" == "$expected_cwd" && "$actual_user" == "$CHAT_RUN_USER" ]] \
+    || fail "$unit.service belongs to another checkout/user; it was not changed"
+}
 
-  log "new release failed health validation; restoring the previous release"
-  if [[ -n "$old_release" ]]; then
-    atomic_link "$old_release" "$CHAT_RUNTIME_ROOT/current"
-    systemctl restart "$CHAT_SERVICE.service" || true
-    wait_for_health || true
-  else
-    rm -f -- "$CHAT_RUNTIME_ROOT/current"
-    systemctl stop "$CHAT_SERVICE.service" || true
+# Both hosts consume files from the stable checkout. Do not update those files under running services.
+require_services_stopped() {
+  local unit
+  for unit in "$CHAT_SERVICE" "nanoclaw-$CHAT_SERVICE"; do
+    validate_service_owner "$unit"
+    case "$(systemctl show --property=ActiveState --value "$unit.service" 2>/dev/null)" in
+      active|activating|deactivating|reloading) fail "stop $unit.service before install/update" ;;
+    esac
+  done
+  if [[ -d "$CHAT_ROOT/nanoclaw" ]] && lsof -t +d "$CHAT_ROOT/nanoclaw" >/dev/null 2>&1; then
+    fail "a process uses the NanoClaw checkout; stop its existing service before installation"
   fi
-  fail "deployment failed; the new release was not left active"
+}
+
+prepare_nanoclaw() {
+  run_in_source "$PNPM_BIN" --dir nanoclaw install --frozen-lockfile
+  run_in_source "$PNPM_BIN" --dir nanoclaw format:check
+  run_in_source "$PNPM_BIN" --dir nanoclaw typecheck
+  run_in_source "$PNPM_BIN" --dir nanoclaw build
+  run_in_source "$PNPM_BIN" --dir nanoclaw exec vitest run --maxWorkers=2 --testTimeout=30000
+  # Native upgrade receipt is written only after NanoClaw's own gates pass.
+  run_in_source "$PNPM_BIN" --dir nanoclaw exec tsx scripts/upgrade-state.ts set
+  run_as_chat "$NODE_BIN" "$CHAT_ROOT/deploy/nanoclaw-config.mjs" prepare "$CHAT_ROOT/nanoclaw" "$CHAT_ENV_FILE"
+  local unit_temp
+  unit_temp="$(mktemp)"
+  sed \
+    -e "s|__NODE_DIR__|$(dirname "$NODE_BIN")|g" \
+    -e "s|__CHAT_SERVICE__|$CHAT_SERVICE|g" \
+    -e "s|__CHAT_USER__|$CHAT_RUN_USER|g" \
+    -e "s|__CHAT_GROUP__|$CHAT_RUN_GROUP|g" \
+    -e "s|__CHAT_ROOT__|$CHAT_ROOT|g" \
+    -e "s|__RUN_HOME__|$CHAT_RUN_HOME|g" \
+    -e "s|__NODE__|$NODE_BIN|g" \
+    "$CHAT_ROOT/deploy/systemd/chat-nanoclaw.service" >"$unit_temp"
+  install -o root -g root -m 0644 "$unit_temp" "$CHAT_SYSTEMD_DIR/nanoclaw-$CHAT_SERVICE.service"
+  rm -f -- "$unit_temp"
 }
 
 deploy_selected_ref() {
   require_linux_root
-  install_build_dependencies
   acquire_deployment_lock
+  install_build_dependencies
+  require_services_stopped
   ensure_run_user
   ensure_node_toolchain
   checkout_source
@@ -460,9 +484,89 @@ deploy_selected_ref() {
   validate_config
   load_configured_paths
   ensure_configured_directories
-  run_deployment_doctor
+  # Model authentication is user input, not an installation dependency.
   build_release
-  activate_release
+  if ((WITH_NANOCLAW)) || [[ -f "$CHAT_SYSTEMD_DIR/nanoclaw-$CHAT_SERVICE.service" ]]; then
+    prepare_nanoclaw
+  fi
+  install_systemd_unit
+  if [[ -L "$CHAT_RUNTIME_ROOT/current" ]]; then
+    local current
+    current="$(readlink -f "$CHAT_RUNTIME_ROOT/current")"
+    [[ "$current" == "$CHAT_RUNTIME_ROOT/releases/"* ]] || fail "current release is outside managed releases"
+    atomic_link "$current" "$CHAT_RUNTIME_ROOT/previous"
+  fi
+  atomic_link "$NEW_RELEASE" "$CHAT_RUNTIME_ROOT/current"
+  prune_old_releases
+  log "installed $(basename "$NEW_RELEASE"); services remain stopped"
+  log "next: chatctl start; optional boot startup: chatctl enable"
+}
+
+load_installed_environment() {
+  id "$CHAT_RUN_USER" >/dev/null 2>&1 || fail "run chatctl install first"
+  CHAT_RUN_GROUP="$(id -gn "$CHAT_RUN_USER")"
+  CHAT_RUN_HOME="$(getent passwd "$CHAT_RUN_USER" | awk -F: '{print $6}')"
+  NODE_BIN="$CHAT_RUNTIME_ROOT/toolchains/node/bin/node"
+  [[ -x "$NODE_BIN" ]] || fail "managed Node is missing; run install"
+  validate_config
+  load_configured_paths
+}
+
+nano_health() {
+  systemctl is-active --quiet "nanoclaw-$CHAT_SERVICE.service" || return 1
+  run_as_chat "$NODE_BIN" "$CHAT_ROOT/deploy/nanoclaw-config.mjs" health "$CHAT_ROOT/nanoclaw" "$CHAT_ENV_FILE"
+}
+
+service_command() {
+  require_linux_root
+  acquire_deployment_lock
+  local units=() unit nano_installed=0 started=() failed=0 i
+  [[ ! -f "$CHAT_SYSTEMD_DIR/nanoclaw-$CHAT_SERVICE.service" ]] || nano_installed=1
+  if [[ "$COMPONENT" == nanoclaw ]] && ((!nano_installed)); then fail "NanoClaw is not installed; use install --with-nanoclaw"; fi
+  [[ "$COMPONENT" == nanoclaw ]] || units+=("$CHAT_SERVICE")
+  if ((nano_installed)) && [[ "$COMPONENT" != backend ]]; then units+=("nanoclaw-$CHAT_SERVICE"); fi
+  for unit in "${units[@]}"; do validate_service_owner "$unit"; done
+  # Stop and disable remain usable even when an environment file is broken.
+  if [[ "$command_name" == stop || "$command_name" == restart ]]; then
+    for ((i=${#units[@]}-1; i>=0; i--)); do systemctl stop "${units[i]}.service"; done
+    [[ "$command_name" != stop ]] || { log "stopped selected services; data and boot policy preserved"; return; }
+  fi
+  if [[ "$command_name" == enable || "$command_name" == disable ]]; then
+    for unit in "${units[@]}"; do systemctl "$command_name" "$unit.service"; done
+    return
+  fi
+  if [[ "$command_name" == status ]]; then
+    for unit in "${units[@]}"; do
+      systemctl show "$unit.service" --property=Id,LoadState,ActiveState,SubState,UnitFileState --no-pager
+    done
+    load_installed_environment
+    if [[ "$COMPONENT" != nanoclaw ]]; then
+      if wait_for_health 1; then log "Backend health: ok"; else log "Backend health: unavailable"; failed=1; fi
+    fi
+    if ((nano_installed)) && [[ "$COMPONENT" != backend ]]; then nano_health || failed=1; fi
+    return "$failed"
+  fi
+  load_installed_environment
+  [[ -f "$CHAT_RUNTIME_ROOT/current/server/index.mjs" ]] || fail "no installed release; run install"
+  for unit in "${units[@]}"; do
+    if [[ "$unit" == "nanoclaw-$CHAT_SERVICE" ]]; then
+      wait_for_health || { failed=1; break; }
+    fi
+    if ! systemctl is-active --quiet "$unit.service"; then
+      started+=("$unit")
+      systemctl start "$unit.service" || { failed=1; break; }
+    fi
+    if [[ "$unit" == "$CHAT_SERVICE" ]]; then
+      wait_for_health || { failed=1; break; }
+    else
+      nano_health || { failed=1; break; }
+    fi
+  done
+  if ((failed)); then
+    for ((i=${#started[@]}-1; i>=0; i--)); do systemctl stop "${started[i]}.service" || true; done
+    fail "startup failed; stopped only services started by this command; inspect journalctl"
+  fi
+  log "selected services ready; Chat: http://127.0.0.1:$CONFIGURED_PORT (model credentials configured separately)"
 }
 
 doctor() {
@@ -489,6 +593,7 @@ doctor() {
   run_deployment_doctor
   systemctl is-active --quiet "$CHAT_SERVICE.service" || fail "Chat systemd service is not active"
   wait_for_health || fail "Chat local health check failed"
+  if [[ -f "$CHAT_SYSTEMD_DIR/nanoclaw-$CHAT_SERVICE.service" ]]; then nano_health; fi
   log "doctor passed"
 }
 
@@ -496,6 +601,8 @@ rollback() {
   require_linux_root
   acquire_deployment_lock
   local current previous
+  require_services_stopped
+  [[ ! -f "$CHAT_SYSTEMD_DIR/nanoclaw-$CHAT_SERVICE.service" ]] || fail "paired NanoClaw rollback requires update --ref <previous Chat commit> to verify both pinned versions"
   validate_config
   load_configured_paths
   [[ -L "$CHAT_RUNTIME_ROOT/current" && -L "$CHAT_RUNTIME_ROOT/previous" ]] \
@@ -508,19 +615,15 @@ rollback() {
     || fail "current or previous release is incomplete"
   atomic_link "$previous" "$CHAT_RUNTIME_ROOT/current"
   atomic_link "$current" "$CHAT_RUNTIME_ROOT/previous"
-  local restart_succeeded=0
-  systemctl restart "$CHAT_SERVICE.service" && restart_succeeded=1
-  if ((!restart_succeeded)) || ! wait_for_health; then
-    atomic_link "$current" "$CHAT_RUNTIME_ROOT/current"
-    atomic_link "$previous" "$CHAT_RUNTIME_ROOT/previous"
-    systemctl restart "$CHAT_SERVICE.service" || true
-    fail "rollback target failed health validation; restored the original release"
-  fi
-  log "rollback completed: $(basename "$previous")"
+  log "rollback selected: $(basename "$previous"); services remain stopped; run chatctl start"
+
 }
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return; fi
 
 case "$command_name" in
   install|update) deploy_selected_ref ;;
+  start|stop|restart|status|enable|disable) service_command ;;
   doctor) doctor ;;
   rollback) rollback ;;
   validate-config) validate_fixed_paths; validate_config ;;

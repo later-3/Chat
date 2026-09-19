@@ -42,7 +42,7 @@ test("server and Cloudflare examples expose only the intended Chat origin", () =
   const cloudCloudflared = read("deploy/cloudflared/cloud-relay.example.yml");
   const nginx = read("deploy/nginx/chat.conf");
   const environment = read("deploy/chat.env.example");
-  const deployment = read("docs/deployment.md");
+  const deployment = ["README", "installation", "running"].map(name => read(`docs/operations/${name}.md`)).join("\n");
   const chatctl = read("deploy/chatctl");
   const deviceDirectoryExample = JSON.parse(read("deploy/devices.json.example"));
   const packageJson = JSON.parse(read("package.json"));
@@ -54,17 +54,14 @@ test("server and Cloudflare examples expose only the intended Chat origin", () =
   assert.match(cloudCloudflared, /service: http:\/\/127\.0\.0\.1:33052/);
   assert.match(nginx, /listen 127\.0\.0\.1:33052/);
   assert.match(nginx, /server 127\.0\.0\.1:33051/);
-  assert.match(environment, /CHAT_WEB_AUTH_USERNAME=chat/);
   assert.match(environment, /CHAT_PUBLIC_URL=https:\/\/chat\.example\.com/);
-  assert.doesNotMatch(environment, /^CHAT_WEB_AUTH_PASSWORD=123456$/m);
-  assert.match(environment, /^CHAT_WEB_AUTH_PASSWORD=__REQUIRED_STRONG_PASSWORD__$/m);
   assert.match(environment, /^CHAT_CHANNEL_GATEWAY_TOKEN=replace-with-at-least-32-random-characters$/m);
   assert.match(environment, /CHAT_HOME=\/home\/chat\/\.chat/);
   assert.match(environment, /WORKFLOW_LOCAL_DATA_DIR=\/home\/chat\/\.chat\/runtime\/workflow-data/);
   assert.doesNotMatch(deployment, /codex\/pi-web-frontend-in-chat/);
   assert.match(deployment, /不能从其他机器复制/);
-  assert.match(deployment, /\.chat\/agent\/models\.json/);
-  assert.match(deployment, /\.chat\/agent\/auth\.json/);
+  assert.match(deployment, /models\.json/);
+  assert.match(deployment, /auth\.json/);
   for (const command of ["install", "update", "doctor", "rollback", "validate-config"]) {
     assert.match(chatctl, new RegExp(`\\b${command}\\b`));
   }
@@ -82,7 +79,7 @@ test("server and Cloudflare examples expose only the intended Chat origin", () =
 
 test("GitHub CI verifies the pinned public Submodules through the release gate", () => {
   const ci = read(".github/workflows/ci.yml");
-  const documentation = read("docs/ci.md");
+  const documentation = read("docs/development/ci.md");
   const gitmodules = read(".gitmodules");
   const chatctl = read("deploy/chatctl");
   const commands = [
@@ -128,12 +125,11 @@ test("Workflow sources stay parseable by the Node.js version pinned for deployme
   }
 });
 
-test("chatctl validates production authentication without echoing credentials", (t) => {
+test("chatctl validates service credentials and data boundaries without echoing credentials", (t) => {
   const tempDirectory = mkdtempSync(join(tmpdir(), "chat-deployment-config-"));
   t.after(() => rmSync(tempDirectory, { recursive: true, force: true }));
 
-  const strongPassword = "deployment-test-password-2026";
-  const sessionSecret = "deployment-test-session-secret-at-least-32-characters";
+  const channelToken = "deployment-test-channel-token-at-least-32-characters";
   const strongEnvironmentPath = join(tempDirectory, "strong.env");
   const weakEnvironmentPath = join(tempDirectory, "weak.env");
   const traversalEnvironmentPath = join(tempDirectory, "traversal.env");
@@ -151,16 +147,11 @@ test("chatctl validates production authentication without echoing credentials", 
     `CHAT_HOME=${chatHome}`,
     `WORKFLOW_LOCAL_DATA_DIR=${join(chatHome, "runtime", "workflow-data")}`,
     "CHAT_PUBLIC_URL=https://chat.example.test",
-    "CHAT_WEB_AUTH_ENABLED=1",
-    "CHAT_WEB_AUTH_USERNAME=test-user",
-    `CHAT_WEB_AUTH_PASSWORD=${strongPassword}`,
-    "CHAT_WEB_AUTH_SESSION_DAYS=30",
-    `CHAT_WEB_AUTH_SESSION_SECRET=${sessionSecret}`,
     "CHAT_CHANNEL_GATEWAY_TOKEN=deployment-test-channel-token-at-least-32-characters",
     "",
   ].join("\n");
   writeFileSync(strongEnvironmentPath, baseEnvironment, { mode: 0o600 });
-  writeFileSync(weakEnvironmentPath, baseEnvironment.replace(strongPassword, "123456"), { mode: 0o600 });
+  writeFileSync(weakEnvironmentPath, baseEnvironment.replace(channelToken, "short"), { mode: 0o600 });
   writeFileSync(
     traversalEnvironmentPath,
     baseEnvironment.replace(`CHAT_HOME=${chatHome}`, `CHAT_HOME=${chatHome}/../../etc`),
@@ -184,7 +175,7 @@ test("chatctl validates production authentication without echoing credentials", 
   assert.equal(strongResult.status, 0, strongResult.stderr || strongResult.stdout);
 
   const weakResult = runValidateConfig(weakEnvironmentPath);
-  assert.notEqual(weakResult.status, 0, "the public default password must be rejected");
+  assert.notEqual(weakResult.status, 0, "weak service tokens must be rejected");
 
   assert.notEqual(runValidateConfig(traversalEnvironmentPath).status, 0, "path traversal must be rejected");
   assert.notEqual(
@@ -199,8 +190,7 @@ test("chatctl validates production authentication without echoing credentials", 
     weakResult.stdout,
     weakResult.stderr,
   ].join("\n");
-  assert.doesNotMatch(combinedOutput, new RegExp(strongPassword));
-  assert.doesNotMatch(combinedOutput, new RegExp(sessionSecret));
+  assert.doesNotMatch(combinedOutput, new RegExp(channelToken));
 });
 
 test("deployment doctor is offline and assembles an in-memory AgentSession", () => {

@@ -29,6 +29,8 @@ export interface ChatSession {
 export interface ReserveChatSessionOptions {
   /** Establishes Pi-native Session lineage without copying any parent entries. */
   readonly parentSessionManager?: SessionManager;
+  /** Backend-authorized parent storage, required for cross-project delegation. */
+  readonly parentProjectId?: string;
 }
 
 /**
@@ -51,9 +53,15 @@ export async function reserveChatSession(
     if (!parent.isPersisted() || parentFile === undefined) {
       throw new Error("父Session必须已经持久化才能创建Child Session");
     }
-    if (resolve(parent.getCwd()) !== session.cwd
+    if (options.parentProjectId !== undefined) {
+      const parentProject = await resolveProjectContext(options.parentProjectId, session.projectContext!.chatHome);
+      const info = await requireActiveChatSessionFile(parentProject, parent.getSessionId());
+      if (resolve(info.path) !== resolve(parentFile) || parent.getCwd() !== parentProject.cwd) {
+        throw new Error("父Session与已授权存储项目不一致");
+      }
+    } else if (resolve(parent.getCwd()) !== session.cwd
       || resolve(parent.getSessionDir()) !== resolve(session.sessionDir)) {
-      throw new Error("父子Session必须属于同一个Project和工作目录");
+      throw new Error("跨Project子Session需要明确的父Project身份");
     }
     session.manager.newSession({ parentSession: parentFile });
   }

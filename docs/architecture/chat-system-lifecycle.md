@@ -20,7 +20,7 @@
 
 每次操作先解析目标实例，再操作组件。沿用已登记的安装位置、Chat Home、服务标识及Nano实例关联，不从端口或进程名猜身份，也不另建一套Agent配置库。
 
-统一解析结果至少能说明：环境与实例标识、Chat Home、Nano运行数据根、Backend/Gateway端点、启用组件、服务或进程归属、启动方式、停止期限和自启动策略。字段归属、Schema和存放位置由详细方案在[Chat配置系统](../configuration.md)内确定；定义只有一个可写来源，PID/就绪/执行数是运行事实，不混进产品配置。
+统一解析结果至少能说明：环境与实例标识、Chat Home、Nano运行数据根、Backend/Gateway端点、启用组件、服务或进程归属、启动方式、停止期限和自启动策略。字段归属、Schema和存放位置由详细方案在[Chat配置系统](../configuration/README.md)内确定；定义只有一个可写来源，PID/就绪/执行数是运行事实，不混进产品配置。
 
 约束：
 
@@ -83,16 +83,16 @@ Web未来可以提供同义操作，但页面关闭/断线不能取消停止操�
 | 当前实现 | 差距及复用方式 |
 |---|---|
 | [dev-start.sh](../../scripts/dev-start.sh)管理普通Nitro/Vite，`tui`子命令连接已有Backend；[专用F5](../development/debugging/environment.md)可组合隔离Backend/Vite/假模型/TUI/Nano工作区，`debug:start --tui`管理前台终端与自有服务 | 仍不是完整Chat生命周期；独立TUI退出只断开，整套调试停止会中断服务，未实现业务排空 |
-| [debug-start](../../scripts/debug-start.mjs)与[debug-stop](../../scripts/debug-stop.mjs)管理隔离调试栈，模块启动器记录PID启动时间/进程组，支持重复替换、可验证孤儿回收与Lab初始化 | 仅实现调试进程归属/就绪，不声称业务排空、生产服务统一编排或任意孤儿均能安全回收；未知占用失败关闭 |
-| [chatctl](../../deploy/chatctl)管理Linux Chat发布/健康，Nano Setup独立管理Host | 复用服务安装与升级，不复制；补同实例操作、状态聚合与所有权 |
-| [chat-stop](../../scripts/chat-stop.mjs)分别关闭正常服务与开发/调试，VS Code提供同一操作任务 | 已实现服务/进程停止、归属预检与结果检查；不改变自启动，未实现业务排空。审核见[关闭入口审核](./reviews/2026-09-08-stop-normal-and-debug.md) |
+| [debug-start](../../scripts/debug-start.mjs)与[debug-stop](../../scripts/debug-stop.mjs)管理隔离调试栈，模块启动器记录PID启动时间/进程组，支持重复替换、可验证孤儿回收与Lab初始化 | 仅实现调试进程归属/就绪，不声称业务排空或任意孤儿均能安全回收；未知占用失败关闭 |
+| [chatctl](../../deploy/chatctl)分开安装/更新与启停，Linux/WSL systemd 可选管理 Nano Host，检查认证健康与实例归属 | 已实现组件级启停与失败回收；跨组件业务排空、持久控制操作尚未实现 |
+| [chat-stop](../../scripts/chat-stop.mjs)分别关闭正常服务与开发/调试，VS Code提供同一操作任务 | 已实现服务/进程停止、归属预检与结果检查；不改变自启动，未实现业务排空。审核见[关闭入口审核](../history/reviews/2026-09-08-stop-normal-and-debug.md) |
 | [Chat systemd模板](../../deploy/systemd/chat.service)、[launchd模板](../../deploy/macos/com.later.chat.production.plist.in)及[Nano服务生成](../../nanoclaw/setup/service.ts)已有重启策略 | 现有chat-stop按实际系统/用户管理范围关闭；重新拉起及业务排空协调仍未实现，不能假设直接加同一个target即可解决 |
 | [Nano shutdown](../../nanoclaw/src/index.ts)会停模块、投递、通道并关闭数据库 | 尚无跨Chat在途执行收尾协议，不能当成整套graceful stop已经具备 |
 | [Long Agent执行](../../src/long-agents/runtime.ts)使用公共Pi入口并释放Session | 当前未证明整机停止时全部在途轮次都被正确取消/记录；应在生命周期接缝验证 |
 
 ## 9. 实施与验收顺序
 
-先设计实例归属和启停合同，再贯通一套开发环境，随后复用到服务模式；同步配置/API与状态展示，最后验证异常恢复。此项是[Long Agent工程基线](./chat-long-agent-engineering-baseline.md)B0/B1的横向前置能力，不另起一套庞大的路线图。每阶段都要有可观察的完整小场景。
+先设计实例归属和启停合同，再贯通一套开发环境，随后复用到服务模式；同步配置/API与状态展示，最后验证异常恢复。此项是[Long Agent工程基线](../modules/long-agents/chat-long-agent-engineering-baseline.md)B0/B1的横向前置能力，不另起一套庞大的路线图。每阶段都要有可观察的完整小场景。
 
 | 验收场景 | 必须证明 |
 |---|---|
@@ -106,4 +106,4 @@ Web未来可以提供同义操作，但页面关闭/断线不能取消停止操�
 
 测试使用隔离Chat Home/Nano数据、假模型与假Channel，控制收尾期限及故障注入。进程/服务模式分别验收；只验证Shell退出或单一健康端口不能算完成。真实账号消息验收与生产切换仍走部署授权，不在自动测试中操作用户生产服务。
 
-2026-09-08最初文档轮验证：导航链接、Skill格式及diff检查通过；一次有界只读Agent问答正确识别开发/生产隔离、KeepAlive停止、投递收尾与幂等恢复。问答指出跨组件确认接缝需明确，已补入§6。随后实现了§8的进程/服务停止适配，验证见[关闭入口审核](./reviews/2026-09-08-stop-normal-and-debug.md)；业务收尾控制API与跨组件真实运行验收仍待实施。
+2026-09-08最初文档轮验证：导航链接、Skill格式及diff检查通过；一次有界只读Agent问答正确识别开发/生产隔离、KeepAlive停止、投递收尾与幂等恢复。问答指出跨组件确认接缝需明确，已补入§6。随后实现了§8的进程/服务停止适配，验证见[关闭入口审核](../history/reviews/2026-09-08-stop-normal-and-debug.md)；业务收尾控制API与跨组件真实运行验收仍待实施。

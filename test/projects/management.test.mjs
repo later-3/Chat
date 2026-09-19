@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -43,7 +44,9 @@ test("create a Chinese learning project, replay safely and expose it after reope
   assert.equal(replay.status, "existing");
   assert.equal(replay.project.projectId, created.project.projectId);
   const project = await resolveProjectContext(created.project.projectId, context.chatHome);
-  assert.equal(project.cwd, fs.realpathSync(path.join(context.chatHome, "workspaces", project.projectId)));
+  assert.equal(project.cwd, fs.realpathSync(path.join(context.chatHome, "workspaces", request.name)));
+  assert.equal(project.name, request.name);
+  assert.match(project.projectId, /^[a-f0-9]{32}$/);
   assert.deepEqual(JSON.parse(fs.readFileSync(project.projectConfigPath)), { schemaVersion: 1 });
   assert.equal(context.projectId, "longagentshare");
   assert.notEqual(context.cwd, project.cwd);
@@ -53,6 +56,9 @@ test("create a Chinese learning project, replay safely and expose it after reope
   assert.equal(list.items[0].projectId, project.projectId);
   const second = await ok("project_create", { ...request, requestId: "learn-2" });
   assert.notEqual(second.project.projectId, project.projectId);
+  const secondContext = await resolveProjectContext(second.project.projectId, context.chatHome);
+  assert.equal(path.basename(secondContext.cwd), "学习道德经 (2)");
+  assert.equal(secondContext.name, request.name);
   const audit = fs.readFileSync(path.join(context.chatHome, "logs/audit.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
   const event = audit.find((e) => e.action === "project.create");
   assert.equal(event.source.projectId, "longagentshare");
@@ -66,6 +72,58 @@ test("reject changed idempotency input, extra source identities and blank names"
   assert.equal((await call("project_create", { name: "读书", requestId: "travel" })).details.code, "IDEMPOTENCY_CONFLICT");
   assert.equal((await call("project_create", { name: "旅游", requestId: "extra", sessionId: "forged" })).isError, true);
   assert.equal((await call("project_create", { name: "  ", requestId: "blank" })).isError, true);
+});
+
+test("named workspaces reject traversal and preserve occupied directories and concurrent names", async (t) => {
+  const { ok, call, context } = await fixture(t);
+  for (const name of ["../escape", ".", "..", "a/b", "a\\b", "bad\nname", "结".repeat(81)]) {
+    assert.equal((await call("project_create", { name, requestId: `invalid-${name}` })).isError, true);
+  }
+  const occupied = path.join(context.chatHome, "workspaces", "思考");
+  fs.mkdirSync(occupied); fs.writeFileSync(path.join(occupied, "notes.md"), "keep");
+  const results = await Promise.all([1, 2].map(i => ok("project_create", { name: "思考", requestId: `parallel-${i}` })));
+  const contexts = await Promise.all(results.map(r => resolveProjectContext(r.project.projectId, context.chatHome)));
+  assert.deepEqual(contexts.map(c => path.basename(c.cwd)).sort(), ["思考 (2)", "思考 (3)"]);
+  assert.ok(contexts.every(c => c.name === "思考"));
+  assert.equal(fs.readFileSync(path.join(occupied, "notes.md"), "utf8"), "keep");
+  const outside = path.join(context.chatHome, "outside"); fs.mkdirSync(outside);
+  fs.symlinkSync(outside, path.join(context.chatHome, "workspaces", "shortcut"));
+  const linked = await ok("project_create", { name: "shortcut", requestId: "symlink" });
+  assert.equal(path.basename((await resolveProjectContext(linked.project.projectId, context.chatHome)).cwd), "shortcut (2)");
+  assert.deepEqual(fs.readdirSync(outside), []);
+});
+
+test("explicit IDs are internal identity, never a display name or workspace, and cannot be reused", async (t) => {
+  const { ok, call, context } = await fixture(t);
+  const input = { name: "思考", id: "thinking", requestId: "explicit" };
+  const result = await ok("project_create", input);
+  assert.equal(result.project.name, "思考");
+  assert.equal(result.project.projectId, "thinking");
+  assert.equal(path.basename((await resolveProjectContext("thinking", context.chatHome)).cwd), "思考");
+  assert.equal((await ok("project_create", input)).status, "existing");
+  assert.equal((await call("project_create", { ...input, requestId: "duplicate-id" })).details.code, "IDENTITY_CONFLICT");
+  assert.equal((await call("project_create", { ...input, id: "different" })).details.code, "IDEMPOTENCY_CONFLICT");
+  for (const id of ["daily", "longagentshare"]) assert.equal((await call("project_create", { ...input, id, requestId: id })).isError, true);
+});
+
+test("legacy receipts retain identity and directory; pending names remain reserved before mkdir", async (t) => {
+  const { ok, context } = await fixture(t);
+  const markers = path.join(context.chatHome, "runtime/project-operations"); fs.mkdirSync(markers, { recursive: true });
+  const legacy = { name: "旧项目", description: "legacy", requestId: "legacy" };
+  const key = createHash("sha256").update(JSON.stringify([context.sessionId, legacy.requestId])).digest("hex");
+  const projectId = "project-legacy";
+  fs.writeFileSync(path.join(markers, `${key}.json`), JSON.stringify({ schemaVersion: 1, projectId, status: "pending", fingerprint: createHash("sha256").update(JSON.stringify([legacy.name, legacy.description])).digest("hex") }));
+  const replay = await ok("project_create", legacy);
+  assert.equal(replay.project.projectId, projectId);
+  assert.equal(path.basename((await resolveProjectContext(projectId, context.chatHome)).cwd), projectId);
+  const input = { name: "思考", requestId: "pending" };
+  const pendingKey = createHash("sha256").update(JSON.stringify([context.sessionId, input.requestId])).digest("hex");
+  fs.writeFileSync(path.join(markers, `${pendingKey}.json`), JSON.stringify({ schemaVersion: 1, projectId: "pending-id", workspaceName: "思考", status: "pending", fingerprint: createHash("sha256").update(JSON.stringify([input.name, "", null])).digest("hex") }));
+  const other = await ok("project_create", { name: "思考", requestId: "other" });
+  assert.equal(path.basename((await resolveProjectContext(other.project.projectId, context.chatHome)).cwd), "思考 (2)");
+  const resumed = await ok("project_create", input);
+  assert.equal(resumed.project.projectId, "pending-id");
+  assert.equal(path.basename((await resolveProjectContext("pending-id", context.chatHome)).cwd), "思考");
 });
 
 test("pending creation survives interruption before registration with the same ID", async (t) => {

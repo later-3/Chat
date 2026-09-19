@@ -143,7 +143,7 @@ async function readAgentConfig(path: string, complete: boolean, allowedRoots: Se
   return { path: file.path, config: parseRawAgentConfig(value, complete) };
 }
 
-async function resolveResourcePaths(
+export async function resolveResourcePaths(
   resources: WorkflowAgentResources,
   fromPath: string,
   allowedRoots: Set<string>,

@@ -20,8 +20,8 @@ export default defineEventHandler(async (event) => {
     const query = getQuery(event);
     const projectId = typeof query.projectId === "string" && query.projectId.trim() !== ""
       ? query.projectId
-      : agent.defaultProjectId;
-    const project = await resolveProjectContext(projectId);
+      : null;
+    const project = await resolveProjectContext(agent.id);
 
     return await inspectWorkflowAgent({
       projectId: project.projectId,
@@ -30,6 +30,7 @@ export default defineEventHandler(async (event) => {
       defaultAgent: createLongAgentDefinition(agent),
       agentId: agent.id,
       longAgentId: agent.id,
+      contextProjectId: projectId === agent.id ? null : projectId,
     });
   } catch (error) {
     if (error !== null && typeof error === "object" && "statusCode" in error) throw error;

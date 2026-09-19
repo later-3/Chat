@@ -304,7 +304,7 @@ export async function callChatWorkflow(
     updatedAt: startedAt,
     elapsedMs: 0,
   });
-  const releaseCapacity = reserveChatWorkflowCallCapacity(input.projectId, input.parentSessionManager);
+  const releaseCapacity = reserveChatWorkflowCallCapacity(input.parentProjectId ?? input.projectId, input.parentSessionManager);
   let agentConfigs: Awaited<ReturnType<typeof resolveWorkflowCallAgentConfigs>>;
   let childSession: Awaited<ReturnType<typeof reserveChatSession>>;
   try {
@@ -318,7 +318,7 @@ export async function callChatWorkflow(
       projectId: input.projectId,
       chatHome: input.chatHome,
       cwd: input.cwd,
-    }, input.prompt, { parentSessionManager: input.parentSessionManager });
+    }, input.prompt, { parentSessionManager: input.parentSessionManager, ...(input.parentProjectId === undefined ? {} : { parentProjectId: input.parentProjectId }) });
   } catch (error) {
     releaseCapacity();
     throw error;
@@ -329,6 +329,7 @@ export async function callChatWorkflow(
     callId,
     toolCallId: input.toolCallId,
     parent: {
+      projectId: input.parentProjectId ?? input.projectId,
       sessionId: input.parentSessionManager.getSessionId(),
       workflowId: input.parentWorkflowId,
       workflowInvocationId: input.parentWorkflowInvocationId,
@@ -336,6 +337,7 @@ export async function callChatWorkflow(
       agentId: input.parentAgentId,
     },
     child: {
+      projectId: input.projectId,
       sessionId: childSessionId,
       workflowId: target.id,
       workflowInvocationId,

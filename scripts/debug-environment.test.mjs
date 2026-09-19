@@ -15,7 +15,7 @@ test("debug launch contracts use dedicated ports, browser profile, and independe
   const launch = JSON.parse((await readFile(".vscode/launch.json", "utf8")).replace(/^\s*\/\/.*$/gm, ""));
   const names = new Set(launch.configurations.map(config => config.name));
   for (const compound of launch.compounds) {
-    assert.equal(compound.stopAll, true);
+    assert.equal(compound.stopAll, !compound.name.endsWith("(full environment)"));
     for (const name of compound.configurations) assert.ok(names.has(name));
   }
   for (const config of launch.configurations) {
@@ -63,6 +63,24 @@ test("debug launch contracts use dedicated ports, browser profile, and independe
   const fullStack = launch.compounds.find(compound => compound.name === "Debug Chat Web + TUI + NanoClaw");
   assert.ok(fullStack, "F5 must offer Web, TUI and NanoClaw together");
   assert.deepEqual(fullStack.configurations, ["Debug Local Model", "Debug Backend + Web", "Debug TUI", "Debug NanoClaw"]);
+  // Keep all functionality running while any subset of modules is debugged.
+  for (const name of ["Run Chat (full environment)", "Debug Backend (full environment)"]) {
+    const environment = launch.compounds.find(compound => compound.name === name);
+    const modules = environment.configurations.map(name => launch.configurations.find(config => config.name === name));
+    assert.deepEqual(modules.map(config => config.args[0]).sort(), ["backend", "frontend", "model", "nanoclaw", "tui"]);
+    for (const config of modules) {
+      const debugBackend = name.startsWith("Debug Backend") && config.args[0] === "backend";
+      assert.equal(config.noDebug === true, !debugBackend);
+      assert.equal(config.autoAttachChildProcesses, debugBackend);
+      // Backend replacement must not terminate the Web or terminal clients.
+      if (config.args[0] === "backend") assert.equal(config.serverReadyAction, undefined);
+    }
+  }
+  const runWeb = launch.configurations.find(config => config.name === "Run Frontend Server");
+  const runBrowser = launch.configurations.find(config => config.name === runWeb.serverReadyAction.name);
+  assert.equal(runBrowser.noDebug, true);
+  assert.equal(runBrowser.userDataDir, browser.userDataDir);
+  assert.equal(runWeb.serverReadyAction.killOnServerStop, true);
   const tasks = JSON.parse(await readFile(".vscode/tasks.json", "utf8"));
   for (const config of launch.configurations) {
     if (config.preLaunchTask) assert.ok(tasks.tasks.some(task => task.label === config.preLaunchTask));
@@ -78,7 +96,7 @@ test("debug environment drops production configuration while preserving debugger
   const env = cleanEnvironment({ PATH: "/bin", HOME: "/home/test", NODE_OPTIONS: "--require /debugger.js",
     VSCODE_INSPECTOR_OPTIONS: "debug", CHAT_HOME: "/production", CHAT_CHANNEL_GATEWAY_TOKEN: "secret",
     OPENAI_API_KEY: "secret", TELEGRAM_BOT_TOKEN: "secret", WEBHOOK_PORT: "3000", PORT: "43110",
-    CHAT_SERVER_URL: "https://production.example", CHAT_CLI_HOME: "/production-client", CHAT_CLI_PASSWORD: "secret" });
+    CHAT_SERVER_URL: "https://production.example" });
   assert.deepEqual(Object.keys(env).sort(), ["HOME", "NODE_OPTIONS", "PATH", "VSCODE_INSPECTOR_OPTIONS"].sort());
 });
 
@@ -115,17 +133,8 @@ test("preparation preserves private edits, pins backend isolation, and refuses r
   assert.equal(env.WORKFLOW_LOCAL_DATA_DIR, join(debug.debugHome, "runtime/workflow-data"));
   const tui = await debug.debugEnvironment("tui");
   assert.equal(tui.CHAT_SERVER_URL, "http://127.0.0.1:45112");
-  assert.equal(tui.CHAT_CLI_HOME, join(debug.debugRoot, "client"));
-  assert.equal(tui.CHAT_CLI_USERNAME, "chat");
-  assert.equal(tui.CHAT_CLI_PASSWORD, "123456");
   assert.equal(tui.CHAT_HOME, undefined);
   assert.equal(tui.CHAT_CHANNEL_GATEWAY_TOKEN, undefined);
-  await rm(join(debug.debugRoot, "client"), { recursive: true });
-  const externalClient = join(root, "external-client");
-  await mkdir(externalClient);
-  await symlink(externalClient, join(debug.debugRoot, "client"));
-  await assert.rejects(debug.prepareDebug(), /symlinks/);
-  await rm(join(debug.debugRoot, "client"));
   await rm(settings);
   const outside = join(root, "private-settings.json");
   await writeFile(outside, "unchanged");

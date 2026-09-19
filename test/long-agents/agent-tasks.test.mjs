@@ -49,9 +49,11 @@ test("default tasks are created once with the daily-summary and morning-outreach
   assert.match(outreach.prompt, /channel_send/);
   assert.match(outreach.prompt, /不要问候语/);
   assert.match(outreach.prompt, /保持安静/);
-  // 日终总结必须包含反思与记忆维护。
+  // 23:30 是只读草稿；正式日终交接由Backend收尾，不能隐式写Memory。
   const summary = created.find((task) => task.name === "daily-summary");
-  assert.match(summary.prompt, /memory_record/);
+  assert.match(summary.prompt, /只读总结草稿/);
+  assert.match(summary.prompt, /不调用工具、不写Memory/);
+  assert.doesNotMatch(summary.prompt, /memory_record/);
   assert.match(summary.prompt, /下次怎么改/);
 });
 

@@ -8,13 +8,13 @@
 
 | 信息 | 权威位置/来源 | 使用方式与限制 |
 |---|---|---|
-| 对话、Tool 调用和结果 | Project 下的 Pi Session；路径由 [Session 架构](../architecture/chat-session-architecture.md)与配置服务解析 | 保存原生消息，不把 UI 事件或摘要当原始对话 |
+| 对话、Tool 调用和结果 | Project 下的 Pi Session；路径由 [Session 架构](../modules/sessions/chat-session-architecture.md)与配置服务解析 | 保存原生消息，不把 UI 事件或摘要当原始对话 |
 | Workflow 状态和阶段 | Workflow Run、关联 Session CustomEntry、Run 事件流 | 刷新/重连读耐久状态，流用于过程展示 |
 | 配置/资源变更审计 | `<CHAT_HOME>/logs/audit.jsonl`，`src/audit-log.ts` | 当前为追加 JSONL，进程内串行；`actor` 固定 `local-user`，不能声称已有完整多 Agent 审计身份 |
 | Backend 运行错误 | 控制台/启动服务捕获的日志；`src/runtime-log.ts`负责时间格式 | 当前没有统一全链 Trace/日志索引服务 |
 | Nano 入站、投递、回执 | Nano 自己维护的事实，经认证 API/受控诊断访问 | Chat 不直接读数据库；Nano ACK 不等于模型执行成功 |
 | 本地开发启动 | `.data/dev-logs/<启动标识>/` | 后端、前端分文件，不进 Git；不是业务持久状态 |
-| 可复用事故 | `docs/development-experiences/`及相应 experience Prompt 资源 | 案例需来源、原因、修复和自动回归门禁 |
+| 可复用事故 | `docs/development/experiences/`及相应 experience Prompt 资源 | 案例需来源、原因、修复和自动回归门禁 |
 
 模型 Credential、Cookie、服务 Token 和用户私有对话不进入 Git、前端静态文件或公开故障案例。业务状态写入仍须原子替换/明确冲突保护；追加文件的进程内队列不等于跨进程锁。新增写入路径必须说明唯一写入者、崩溃恢复和重试策略。
 
@@ -31,6 +31,6 @@
 
 ## 轻量记录原则
 
-一条运行记录回答“谁、在哪个作用域、何时、做什么、结果、关联来源”；进度摘要回答“完成什么、卡在哪里、下一步”。来源保留稳定引用，避免重复全文。Daily 日记和共享进度是授权的摘要读模型，不能作为所有事实的唯一备份；跨天/跨 Project 回忆通过索引和显式查询恢复。对应目标见[Long Agent 架构](../architecture/chat-long-agent-architecture.md)。
+一条运行记录回答“谁、在哪个作用域、何时、做什么、结果、关联来源”；进度摘要回答“完成什么、卡在哪里、下一步”。来源保留稳定引用，避免重复全文。Daily 日记和共享进度是授权的摘要读模型，不能作为所有事实的唯一备份；跨天/跨 Project 回忆通过索引和显式查询恢复。对应目标见[Long Agent 架构](../modules/long-agents/chat-long-agent-architecture.md)。
 
 审核记录用[贡献工作方法](./agent-contribution.md)的短模板；验证结果写明执行日期、范围、命令和未验证项。记录失败时必须可见并能恢复，不能返回假成功；涉及外部投递或审计强依赖的失败如何阻断，应由相应操作合同明确，而非一律吞掉或一律终止。

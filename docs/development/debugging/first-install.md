@@ -1,61 +1,50 @@
-# 新环境初始化与部署Agent交付
+# 新源码环境：准备与交付
 
-本页给负责搭建新环境的Agent和接手运行的人使用。生产入口以[部署文档](../../deployment.md)为准，调试以[环境章节](./environment.md)为准。安装依赖、启动Host和创建可工作的长期Agent是不同阶段；不能只看到健康接口就交付“全部初始化完成”。
+生产机器从 [Linux / WSL2 安装](../../operations/installation.md)进入。本页只准备开发与调试，不安装或重启生产系统服务。
 
-## 哪些内容自动创建
+## 一次性准备
 
-| 内容 | 创建时机与拥有者 | 重复执行的行为 |
-|---|---|---|
-| Linux生产chat.env、随机签名/服务Token、模型settings模板 | `chatctl install`缺失时生成，首次等待用户配置 | 保留已有文件；用户密码、模型与账号不能猜测 |
-| macOS生产chat.env和服务模板 | 部署Agent按部署文档在目标用户下准备 | 保留私有值，服务模板必须填写真实路径 |
-| Chat Home基础目录、Daily Project、内置管理Skill | Chat运行时初始化 | 复用稳定身份；内置受管Skill可按版本刷新，用户资源不是空模板覆盖对象 |
-| Project/Session/Workflow/Memory数据 | 对应服务首次访问或执行时按需建立 | 原生持久化恢复；初始化不恢复另一台机器的历史 |
-| Nano `.env`及服务定义 | 部署Agent准备模式、服务认证与渠道账号，原生service步骤安装 | 更新服务定义不应重新生成密钥、清空数据 |
-| Nano数据库、迁移和CLI Socket | Host启动 | 运行迁移、重新建Socket，保留实体与消息 |
-| Nano Group记录及Workspace、plugins目录 | `ncl groups create`调用原生初始化 | 先list查已有Group，再决定create，不能每次开机创建新ID |
-| Group Standing Instructions | 明确填写职责/通过Group管理接口保存 | 不应在普通重启时覆盖；没填职责不等于安装失败 |
-| Group Memory的3个基础Markdown文件 | 首次读取Group Profile/Memory资源时由Nano Gateway补齐 | 仅创建缺失文件，已有正文保留 |
-| Group↔Messaging Group Wiring、用户成员权限 | 部署Agent依据实际Bot/用户/渠道创建 | 先查询复用真实ID；不自动授权陌生联系人 |
-| 生产`long-agents.json` | 部署Agent按配置合同登记实例、Group、inbox与Project | 不由chatctl/Host猜测；重启不重建映射 |
-| Telegram Token、微信登录凭据、模型认证 | 用户提供或交互登录 | 不复制调试凭据或其他机器身份来冒充已完成登录 |
-| 调试Lab上述基础Group/CLI Wiring/Memory/Registry | Nano调试启动器自动初始化 | 原生接口复用已有实体，保留Memory和已编辑Registry；冲突明确报错 |
-
-Nano的Workspace位于其稳定checkout的`groups/<folder>`，不是Chat Project源码。Chat Personal/Project Memory与Nano Group Memory分别维护。空白安装会生成结构，不会凭空生成长期记忆内容、真实项目或历史Session；迁移历史需另走停机备份与恢复。
-
-## 部署Agent必须完成的6项交付
-
-1. **确认目标环境和版本。** 记录OS/架构、运行用户、稳定源码根、4个仓库Commit；按父仓库固定版本准备依赖。生产路径不能是临时debug worktree。
-2. **准备私有配置。** 填写实际端口、Chat Home、Provider/模型、网页登录、Nano chat-pi及双方服务Token。缺少密码、模型凭据、Bot或扫码时列出等待项，不能假称部署完成。
-3. **启动并完成实体初始化。** Nano先完成service/Host启动，用目标工作区`pnpm ncl groups list --json`查询；没有目标Group才create。根据实际渠道建立User、成员、Messaging Group和Wiring，并将返回的真实ID写入生产Registry。参考[配置文档](../../configuration.md)和[渠道场景](./channels.md)，不复制debug-agent或示例ID进生产。
-4. **触发资源初始化并检查。** 在已登录Chat中打开长期同事的Group/Memory页面，对应`GET /api/long-agents/:id/agent-group`与`agent-memory`；Gateway会初始化缺失的核心Memory。确认Workspace存在、Memory可读、职责内容和所属Group正确。不要让Chat直接读取Nano数据库或手写其ACK。
-5. **执行启动/重启验收。** 检查实际端口所有者、服务状态和日志；至少2次启动/重启后Group ID、Registry、Memory和一个Session仍保持。正常退出不删除数据，启动失败必须说明剩余进程。部署授权不等于无限制按端口杀其他服务。
-6. **交付运行入口。** 留下目标机器准确的start/restart/stop命令、服务名、数据目录和日志位置；完成一次Web及所需真实渠道收发。仅本地CLI通过时应标注“平台账号尚未验收”。
-
-## 生产重复拉起：交给实际服务管理器
-
-Linux由系统级Chat service和运行用户的Nano user service管理；先由安装输出取得带checkout标识的Nano Unit名称，再以相同用户操作：
+在 Linux/WSL 的 Linux 终端中，使用 Node ≥22.19.0、Corepack 和仓库锁定的 pnpm。先安装 Git、curl、lsof、Python、make、C/C++ 编译工具及 pkg-config；Ubuntu 可用：
 
 ```bash
-sudo systemctl start chat.service                # 已运行时不重复创建Chat
-systemctl --user start '<安装输出的Nano Unit>'
-# 需要替换已有进程时，用实际服务管理器重启：
-sudo systemctl restart chat.service
-systemctl --user restart '<安装输出的Nano Unit>'
+sudo apt-get update
+sudo apt-get install -y git curl ca-certificates lsof build-essential python3 pkg-config
+# Node 另按目标环境安装；不要使用 Windows 的 Node/npm。
+node --version
+corepack enable
+corepack prepare pnpm@10.13.1 --activate
+git clone --recurse-submodules https://github.com/later-3/Chat.git
+cd Chat
+pnpm pi:prepare
+pnpm install --frozen-lockfile
+pnpm debug:prepare
+# 需要 Friend/Nano 模块才执行；会安装并运行 Nano 自身验证。
+pnpm debug:prepare:nanoclaw
 ```
 
-以上示例假设安装时沿用默认Chat服务名；自定义名用安装记录替换。不要在root的user manager操作另一个用户的Nano服务。macOS使用已安装的准确LaunchAgent label执行`launchctl kickstart`；显式重启才加`-k`。现在可用`pnpm chat:stop -- --normal`让实际管理器卸载/停止正常Backend与Nano，追加`--check`只检查；开发/调试使用`--debug`。macOS已bootout后需bootstrap恢复，准确命令见[关闭手册](./stopping.md)；当前整套业务排空仍是[生命周期待实现合同](../../architecture/chat-system-lifecycle.md)。
+无需在这里配置真实模型密钥：debug:prepare 生成隔离的本地假模型、项目与服务 Token。已有私有文件不覆盖。Nano 准备创建 `.data/debug/nanoclaw` 工作区，不复制生产 `.env`、数据库、Group 或渠道账号。
 
-启动前用`lsof -nP -iTCP:<实际端口> -sTCP:LISTEN`核对占用；已有正确服务用start/restart管理。若端口属于旧的本实例手工进程，先核对用户、启动命令、cwd和服务归属，再TERM并等待释放；超时只KILL已确认属于该实例的PID/进程组。若属于其他实例，报告冲突并协调其端口或服务，不能为了把检查变绿误杀它。生产端口来自私有配置，不照抄本手册调试端口。
+日常启动不重复执行依赖安装。调试 worktree 已存在时，prepare 不偷偷更新 Commit；升级流程见[环境说明](./environment.md#nanoclaw-独立工作区)。
 
-## 调试重复拉起：直接使用统一脚本
-
-首次准备完成后：
+## 启动、检查、停止
 
 ```bash
 pnpm debug:start -- --nanoclaw
+# 另一终端：
 pnpm debug:smoke -- --long-agent
 pnpm debug:stop
-# 再运行同一个start；或者stop之后切换VS Code的Debug Chat + NanoClaw
 ```
 
-`debug:start`和F5各模块共用归属检查、端口检查和清理逻辑；重复启动替换已确认的旧调试进程，未知占用报错。出现`lab ready`表示Group/Workspace/Memory/Registry已经初始化；随后smoke验证实际执行。新环境的Agent应完成这条检查再交给用户，而不让用户首次F5时逐项猜缺失配置。
+不需要 Nano 时使用 `pnpm debug:start` / `pnpm debug:smoke`。TUI 要交互终端，用 `--tui` 加入整套，或 `pnpm debug:tui` 独立连接已有调试 Backend。F5 的单模块/任意组合与具体点击步骤只在[环境与 VS Code](./environment.md)维护。
+
+Nano 启动器通过原生接口复用/初始化 Debug Agent、CLI Wiring、Memory 和缺失 Registry。`lab ready` 表示练习环境初始化完成，不表示真实 Telegram/微信已登录；平台验证使用独立测试账号。真实 Friend 的创建由 Web → Backend → Nano 管理 API 完成，不手写生产 Registry 或把 debug-agent 复制到生产。
+
+## 交付检查
+
+1. 记录四仓库版本、OS/架构、Node/pnpm；确认端口、数据、日志与生产隔离。
+2. 至少完成两次启动/停止；身份和已写入的调试 Session/Memory 保留，未知端口占用不被误杀。
+3. smoke 必须覆盖真正完成的 Run 和 Session 重读，端口存活不代表 Pi/Workflow 执行成功。
+4. GUI 断点命中单独验收；自动测试的 Source Map 检查不能替代 VS Code 实际暂停。
+5. 明确模型与渠道的验证范围：本地假模型无费用，不证明真实模型质量或 IM 收发。
+
+详细故障定位见[排障](./troubleshooting.md)；生产运行与开机自启见[运行手册](../../operations/running.md)。

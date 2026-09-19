@@ -47,6 +47,7 @@ export interface DescribeChatWorkflowInput {
 
 /** Complete trusted input assembled by Chat around the model-authored Tool arguments. */
 export interface CallChatWorkflowInput extends ChatWorkflowCallParentInput {
+  readonly parentProjectId?: string;
   readonly projectId: string;
   readonly chatHome: string;
   readonly cwd: string;

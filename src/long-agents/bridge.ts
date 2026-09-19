@@ -1,3 +1,5 @@
+import { acceptLongAgentTurn } from "./turn-queue.js";
+import { resolveProjectContext } from "../projects/registry.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
@@ -17,10 +19,11 @@ import {
   checkNanoClawGateway,
   persistNanoClawDelivery,
 } from "./nanoclaw-client.js";
-import { ensureProjectLongAgent } from "./project-agent.js";
+import { ensureProjectLongAgent, openAcceptedDay, hasFriendDailyActivity } from "./project-agent.js";
 import { publicLongAgentAvatar } from "./configuration.js";
 import { executeLongAgentTurn } from "./runtime.js";
 import { readLongAgentRegistry, readLongAgentState, updateLongAgentState } from "./storage.js";
+import { parseNanoClawIntegrationEvent } from "./types.js";
 import type {
   LongAgentAddress,
   LongAgentConfig,
@@ -138,7 +141,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function eventPayloadHash(event: NanoClawIntegrationEvent): string {
-  return createHash("sha256").update(JSON.stringify(event)).digest("hex");
+  return createHash("sha256").update(JSON.stringify(parseNanoClawIntegrationEvent(event))).digest("hex");
 }
 
 function instanceFor(registry: LongAgentRegistry, id: string): LongAgentInstanceConfig {
@@ -173,19 +176,24 @@ function findBinding(
   agent: LongAgentConfig,
   event: NanoClawIntegrationEvent,
 ): LongAgentConversationBinding | undefined {
+  const source = eventSource(event);
+  if (source === null) return undefined;
   if (event.chatSessionId !== null) {
     const projectAgent = state.projectAgents.find((candidate) => candidate.primarySessionId === event.chatSessionId
       && candidate.longAgentId === agent.id);
     const direct = projectAgent === undefined
       ? undefined
-      : state.bindings.find((binding) => binding.projectLongAgentId === projectAgent.id);
+      : state.bindings.find((binding) => binding.projectLongAgentId === projectAgent.id
+        && binding.nanoclawInstanceId === agent.instanceId
+        && binding.nanoclawAgentGroupId === agent.nanoclawAgentGroupId
+        && sameAddress(binding.source, source)
+        && binding.primaryMessagingGroupId === event.messagingGroupId);
     if (direct !== undefined) return direct;
   }
   const byNanoSession = state.bindings.find((binding) => binding.nanoclawInstanceId === agent.instanceId
+    && binding.nanoclawAgentGroupId === agent.nanoclawAgentGroupId
     && binding.nanoclawSessionId === event.nanoSessionId);
-  if (byNanoSession !== undefined) return byNanoSession;
-  const source = eventSource(event);
-  if (source === null) return undefined;
+  if (byNanoSession !== undefined && sameAddress(byNanoSession.source, source) && byNanoSession.primaryMessagingGroupId === event.messagingGroupId) return byNanoSession;
   const projectAgentIds = new Set(state.projectAgents
     .filter((candidate) => candidate.longAgentId === agent.id)
     .map((candidate) => candidate.id));
@@ -207,19 +215,37 @@ async function ensureEventBinding(
   agent: LongAgentConfig,
   event: NanoClawIntegrationEvent,
 ): Promise<{ readonly binding: LongAgentConversationBinding; readonly projectAgent: ProjectLongAgent } | undefined> {
+  if (event.direction === "in" && event.isGroup) throw new Error("群聊不能接入Friend私有每日会话");
+  const stateBefore = await readLongAgentState(chatHome);
+  const accepted = stateBefore.turns.find((turn) => turn.inboundEventId === event.eventId && turn.longAgentId === agent.id);
+  if (accepted !== undefined) {
+    const binding = findBinding(stateBefore, agent, event);
+    if (binding === undefined) throw new Error("已接受请求的渠道绑定缺失，拒绝改投其他目的地");
+    return { binding, projectAgent: await openAcceptedDay(chatHome, agent.id, accepted.sessionId) };
+  }
+  if (event.direction === "in" && event.kind !== "schedule") {
+    const previous = findBinding(stateBefore, agent, event);
+    const configured = agent.inbox !== undefined && event.source !== null && sameAddress(agent.inbox, event.source) && agent.inbox.messagingGroupId === event.messagingGroupId;
+    const authorizedBinding = previous !== undefined && event.source !== null && sameAddress(previous.source, event.source) && previous.primaryMessagingGroupId === event.messagingGroupId;
+    if (!configured && !authorizedBinding) throw new Error("该私聊未绑定当前Friend，不能共享每日历史");
+  }
+  const existingBefore = findBinding(stateBefore, agent, event);
+  const defaultContext = existingBefore === undefined ? await resolveProjectContext(agent.defaultProjectId, chatHome) : null;
   const ensured = event.direction === "in" && event.source !== null && !event.isGroup
     ? await ensureProjectLongAgent({
         chatHome,
-        projectId: agent.defaultProjectId,
+        projectId: agent.id,
         agent,
       })
     : undefined;
   return updateLongAgentState(chatHome, async (state) => {
     const existing = findBinding(state, agent, event);
     if (existing !== undefined) {
-      const updated = existing.nanoclawSessionId === event.nanoSessionId
-        ? existing
-        : { ...existing, nanoclawSessionId: event.nanoSessionId, updatedAt: new Date().toISOString() };
+      const oldProject = state.projectAgents.find((entry) => entry.id === existing.projectLongAgentId);
+      const contextProjectId = existing.contextProjectId !== undefined ? existing.contextProjectId
+        : oldProject?.projectId !== undefined && (await resolveProjectContext(oldProject.projectId, chatHome)).kind === "project" ? oldProject.projectId : null;
+      const updated = { ...existing, contextProjectId, projectLongAgentId: ensured?.projectAgent.id ?? existing.projectLongAgentId,
+        nanoclawSessionId: event.nanoSessionId, updatedAt: new Date().toISOString() };
       return {
         state: updated === existing ? state : withUpdatedBinding(state, updated),
         result: {
@@ -236,6 +262,7 @@ async function ensureEventBinding(
     const binding: LongAgentConversationBinding = {
       id: randomUUID(),
       projectLongAgentId: ensured.projectAgent.id,
+      contextProjectId: defaultContext?.kind === "project" ? defaultContext.projectId : null,
       nanoclawInstanceId: agent.instanceId,
       nanoclawAgentGroupId: agent.nanoclawAgentGroupId,
       nanoclawSessionId: event.nanoSessionId,
@@ -340,14 +367,17 @@ async function syncInstance(
   for (const pending of pendingEvents) {
     const event = pending.event;
     try {
-      const agent = agentForEvent(registry, instance.id, event);
+      const accepted = (await readLongAgentState(chatHome)).turns.find((turn) => turn.requestId === event.eventId && turn.inboundEventId === event.eventId);
+      const agent = accepted?.status === "completed"
+        ? registry.agents.find((agent) => agent.id === accepted.longAgentId && agent.instanceId === instance.id && agent.nanoclawAgentGroupId === event.agentGroupId)
+        : agentForEvent(registry, instance.id, event);
       if (agent === undefined) throw new Error(`NanoClaw事件没有可用Long Agent映射: ${event.agentGroupId}`);
 
       // 定时任务（kind: schedule）：没有对话来源，直接落在该 Agent 自己的 home 项目当日会话。
       // 与容器时代的隔离运行一致：不自动回投，需要对外时由 Agent 用 channel_send 投递；
       // 任务行已由 NanoClaw 转发器标记完成，因此这里既不需要 delivery 也不需要 inbound ack。
       if (event.kind === "schedule") {
-        const home = await ensureProjectLongAgent({
+        const home = accepted !== undefined ? { projectAgent: await openAcceptedDay(chatHome, agent.id, accepted.sessionId) } : await ensureProjectLongAgent({
           chatHome,
           projectId: agent.defaultProjectId,
           agent,
@@ -355,13 +385,15 @@ async function syncInstance(
         await executeLongAgentTurn({
           longAgentId: agent.id,
           projectId: home.projectAgent.projectId,
+          contextProjectId: accepted === undefined ? ((await resolveProjectContext(agent.defaultProjectId, chatHome)).kind === "project" ? agent.defaultProjectId : null) : accepted.contextProjectId,
           sessionId: home.projectAgent.primarySessionId,
           text: event.text,
           chatHome,
           turnId: event.eventId,
           inboundEventId: event.eventId,
           source: "scheduled",
-          channelType: agent.inbox?.channelType ?? null,
+          summaryDraft: event.taskId === "daily-summary" || event.taskId?.startsWith("daily-summary-") === true,
+          channelType: accepted === undefined ? agent.inbox?.channelType ?? null : accepted.channelType,
         });
         executed += 1;
         await updateLongAgentState(chatHome, (state) => ({
@@ -389,6 +421,7 @@ async function syncInstance(
         const result = await executeLongAgentTurn({
           longAgentId: agent.id,
           projectId: resolved.projectAgent.projectId,
+          contextProjectId: accepted === undefined ? resolved.binding.contextProjectId ?? null : accepted.contextProjectId,
           sessionId: resolved.projectAgent.primarySessionId,
           text: event.text,
           ...(event.images === undefined ? {} : { images: event.images }),
@@ -401,8 +434,8 @@ async function syncInstance(
         const deliveryId = `chat-pi:${result.turnId}`;
         const files = await collectTurnDeliveryImages(
           chatHome,
-          resolved.projectAgent.projectId,
-          resolved.projectAgent.primarySessionId,
+          agent.id,
+          result.sessionId,
           result.turnId,
         );
         await persistNanoClawDelivery({
@@ -410,7 +443,7 @@ async function syncInstance(
           agentGroupId: agent.nanoclawAgentGroupId,
           nanoSessionId: event.nanoSessionId,
           messageId: deliveryId,
-          chatSessionId: resolved.projectAgent.primarySessionId,
+          chatSessionId: result.sessionId,
           destination,
           text: result.text,
           ...(files.length === 0 ? {} : { files }),
@@ -476,7 +509,7 @@ async function performLongAgentSync(
 ): Promise<LongAgentSyncResult[]> {
   const registry = await readLongAgentRegistry(chatHome);
   const state = await readLongAgentState(chatHome);
-  const activeInstanceIds = new Set(registry.agents.filter((agent) => agent.enabled).map((agent) => agent.instanceId));
+  const activeInstanceIds = new Set(registry.agents.filter((agent) => agent.enabled || state.turns.some((turn) => turn.longAgentId === agent.id && turn.status === "completed" && state.pendingEvents.some((pending) => pending.event.eventId === turn.inboundEventId))).map((agent) => agent.instanceId));
   const results: LongAgentSyncResult[] = [];
   for (const instance of registry.instances.filter((candidate) => activeInstanceIds.has(candidate.id))) {
     try {
@@ -520,6 +553,28 @@ export async function acceptLongAgentEvents(input: {
       throw new Error(`NanoClaw路由未映射到Chat Long Agent: ${event.agentGroupId}`);
     }
   }
+  const before = await readLongAgentState(chatHome);
+  const newlyAccepted = new Set<string>();
+  const idleSummaries = new Set<string>();
+  for (const event of input.events) {
+    const old = before.pendingEvents.find((item) => item.event.eventId === event.eventId);
+    const done = before.processedEvents.find((item) => item.eventId === event.eventId);
+    if ((old !== undefined && eventPayloadHash(old.event) !== eventPayloadHash(event)) || (done !== undefined && done.payloadHash !== eventPayloadHash(event))) throw new LongAgentEventConflictError("NanoClaw事件幂等冲突");
+    if (old !== undefined || done !== undefined || event.direction !== "in") continue;
+    const agent = agentForEvent(registry, input.instanceId, event)!;
+    if (event.kind === "schedule" && (event.taskId === "daily-summary" || event.taskId?.startsWith("daily-summary-") === true)
+      && !await hasFriendDailyActivity(chatHome, agent)) { idleSummaries.add(event.eventId); continue; }
+    const bound = event.kind === "schedule" ? undefined : await ensureEventBinding(chatHome, agent, event);
+    if (event.kind !== "schedule" && bound === undefined) throw new Error("私有渠道尚未绑定，不能接受执行");
+    const target = event.kind === "schedule" ? await resolveProjectContext(agent.defaultProjectId, chatHome) : undefined;
+    const accepted = await acceptLongAgentTurn({ longAgentId: agent.id, projectId: agent.id, text: event.text,
+      ...(event.images === undefined ? {} : { images: event.images }), chatHome, turnId: event.eventId,
+      inboundEventId: event.eventId, source: event.kind === "schedule" ? "scheduled" : "channel",
+      summaryDraft: event.kind === "schedule" && (event.taskId === "daily-summary" || event.taskId?.startsWith("daily-summary-") === true),
+      channelType: event.kind === "schedule" ? agent.inbox?.channelType ?? null : event.source?.channelType ?? null,
+      contextProjectId: target === undefined ? bound?.binding.contextProjectId ?? null : target.kind === "project" ? target.projectId : null }, { event, attempts: 0, nextAttemptAt: new Date().toISOString(), lastError: null });
+    if (accepted.newAcceptance) newlyAccepted.add(event.eventId);
+  }
   const results = await updateLongAgentState(chatHome, (state) => {
     const byId = new Map(state.pendingEvents.map((pending) => [pending.event.eventId, pending]));
     const processedById = new Map(state.processedEvents.map((processed) => [processed.eventId, processed]));
@@ -527,7 +582,7 @@ export async function acceptLongAgentEvents(input: {
     for (const event of input.events) {
       const existing = byId.get(event.eventId);
       const processed = processedById.get(event.eventId);
-      if (existing !== undefined && JSON.stringify(existing.event) !== JSON.stringify(event)) {
+      if (existing !== undefined && eventPayloadHash(existing.event) !== eventPayloadHash(event)) {
         throw new LongAgentEventConflictError(`NanoClaw事件幂等冲突: ${event.eventId}`);
       }
       if (processed !== undefined && processed.payloadHash !== eventPayloadHash(event)) {
@@ -535,9 +590,14 @@ export async function acceptLongAgentEvents(input: {
       }
       results.push({
         eventId: event.eventId,
-        status: existing === undefined && processed === undefined ? "accepted" : "duplicate",
+        status: newlyAccepted.has(event.eventId) || (existing === undefined && processed === undefined) ? "accepted" : "duplicate",
       });
       if (processed !== undefined) continue;
+      if (idleSummaries.has(event.eventId)) {
+        processedById.set(event.eventId, { eventId: event.eventId, payloadHash: eventPayloadHash(event), processedAt: new Date().toISOString() });
+        byId.delete(event.eventId);
+        continue;
+      }
       byId.set(event.eventId, existing ?? {
         event,
         attempts: 0,
@@ -545,7 +605,7 @@ export async function acceptLongAgentEvents(input: {
         lastError: null,
       });
     }
-    return { state: { ...state, pendingEvents: [...byId.values()] }, result: results };
+    return { state: { ...state, pendingEvents: [...byId.values()], processedEvents: [...processedById.values()].slice(-10_000) }, result: results };
   });
   void syncLongAgentEvents(chatHome).catch((error: unknown) => {
     console.error(`LongAgent Channel事件执行失败: ${error instanceof Error ? error.message : String(error)}`);

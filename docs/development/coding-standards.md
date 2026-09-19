@@ -52,7 +52,7 @@ Frontend -> Backend API -> Workflow -> Agent装配 -> Pi公开接口
 
 ## 完成修改
 
-先运行与改动最接近的检查，再按[测试指南](../testing.md)完成所需集成验证。父仓库交付前通常执行：
+先运行与改动最接近的检查，再按[测试指南](./testing.md)完成所需集成验证。父仓库交付前通常执行：
 
 ```bash
 pnpm verify

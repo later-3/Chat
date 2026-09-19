@@ -4,10 +4,11 @@ import { getAllowedFileRoots, isExistingFilePathAllowed } from "../../../../../.
 import { listPiExtensions } from "../../../../../../resources/extensions.js";
 import { listPiPlugins } from "../../../../../../resources/plugins.js";
 import { listPiSkills } from "../../../../../../resources/skills.js";
-import { inspectWorkflowAgent } from "../../../../../../workflows/agent-inspection.js";
+import { classifyChatSkillOwner, inspectWorkflowAgent } from "../../../../../../workflows/agent-inspection.js";
 import { getChatWorkflowDefinition } from "../../../../../../workflows/registry.js";
 import { resolveProjectContext } from "../../../../../../projects/registry.js";
 import { listChatSystemTools } from "../../../../../../tools/registry.js";
+import { ensureChatHome } from "../../../../../../chat-home.js";
 
 /** Keeps Workflow-private Skills inspection-only while returning Personal and Project Skill choices. */
 export default defineEventHandler(async (event) => {
@@ -38,6 +39,15 @@ export default defineEventHandler(async (event) => {
   if (!isExistingFilePathAllowed(cwd, await getAllowedFileRoots())) {
     throw createError({ statusCode: 403, statusMessage: "Access denied" });
   }
+
+  // Catalog覆盖inspection.skills时保持同一owner分类契约（personal/project/plugin/agent/injected），
+  // 与inspectWorkflowAgent使用相同roots，否则Frontend严格结构校验会拒绝响应。
+  const chatHome = await ensureChatHome();
+  const skillRoots = {
+    agentDir: project?.agentDir ?? chatHome.agentDir,
+    cwd,
+    ...(project === undefined ? {} : { projectConfigDir: project.projectConfigDir }),
+  };
 
   try {
     const systemToolAddresses = listChatSystemTools().map((tool) => tool.address);
@@ -103,7 +113,10 @@ export default defineEventHandler(async (event) => {
       }));
     return {
       ...inspection,
-      skills: availableSkills.skills,
+      skills: availableSkills.skills.map((skill) => ({
+        ...skill,
+        owner: classifyChatSkillOwner(skill, skillRoots),
+      })),
       extensions: [...extensionsByPath.values()],
       plugins,
       diagnostics: [

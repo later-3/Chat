@@ -1,3 +1,5 @@
+import { validateTimeZone } from "./calendar.js";
+import { parseDailySession, parseAcceptedTurn, type DailySession, type AcceptedTurn } from "./daily-state.js";
 import { createHash } from "node:crypto";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { PROJECT_ID_PATTERN } from "../projects/types.js";
@@ -9,7 +11,7 @@ import {
 } from "../workflows/agent-config.js";
 
 export const LONG_AGENT_SCHEMA_VERSION = 1;
-export const LONG_AGENT_STATE_SCHEMA_VERSION = 3;
+export const LONG_AGENT_STATE_SCHEMA_VERSION = 4;
 export const LONG_AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 
 export interface LongAgentAddress {
@@ -32,6 +34,7 @@ export type LongAgentAvatar =
   | { readonly kind: "image"; readonly file: string; readonly revision: number };
 
 export interface LongAgentConfig {
+  readonly timeZone?: string;
   readonly id: string;
   /** Chat UI display alias. NanoClaw Agent Group owns the runtime identity name. */
   readonly name: string;
@@ -62,7 +65,8 @@ export interface LongAgentConfig {
 export function longAgentConfigRevision(agent: LongAgentConfig): string {
   // toolsManagedByDefault 是托管标记，不是用户配置内容：不参与 revision，
   // 否则保存/补齐这个标记本身会干扰乐观并发控制。
-  const { toolsManagedByDefault: _managed, ...config } = agent;
+  // Match the canonical field order used by Registry persistence, including optional fields.
+  const { toolsManagedByDefault: _managed, ...config } = parseAgent(agent);
   return createHash("sha256").update(JSON.stringify(config)).digest("hex");
 }
 
@@ -73,6 +77,7 @@ export interface LongAgentRegistry {
 }
 
 export interface LongAgentConversationBinding {
+  readonly contextProjectId?: string | null;
   readonly id: string;
   readonly projectLongAgentId: string;
   readonly nanoclawInstanceId: string;
@@ -97,7 +102,9 @@ export interface ProjectLongAgent {
 }
 
 export interface LongAgentState {
-  readonly schemaVersion: 3;
+  readonly schemaVersion: 4;
+  readonly dailySessions: readonly DailySession[];
+  readonly turns: readonly AcceptedTurn[];
   readonly projectAgents: readonly ProjectLongAgent[];
   readonly bindings: readonly LongAgentConversationBinding[];
   /** Durable HTTP ingress queue. Events leave this list only after Delivery/Ack completes. */
@@ -236,7 +243,7 @@ function parseAgent(value: unknown): LongAgentConfig {
   if (!isRecord(value)) throw new Error("LongAgent agent必须是对象");
   exactFields(
     value,
-    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "inbox", "status", "toolsManagedByDefault", "responseTemplate", "definition"],
+    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "inbox", "status", "toolsManagedByDefault", "responseTemplate", "definition", "timeZone"],
     "LongAgent agent",
   );
   if (value.inbox !== undefined) {
@@ -253,6 +260,9 @@ function parseAgent(value: unknown): LongAgentConfig {
   const id = parseId(value.id, "agent.id");
   const name = requiredString(value.name, "agent.name");
   const description = typeof value.description === "string" ? value.description.trim() : "";
+  if (value.responseTemplate !== undefined && (typeof value.responseTemplate !== "string" || value.responseTemplate.length > 2_000)) {
+    throw new Error("agent.responseTemplate必须是不超过2000字符的字符串");
+  }
   const defaultDefinition = buildDefaultLongAgentDefinition(id, name, description);
   const definition = value.definition === undefined
     ? parseWorkflowAgentDefinition(defaultDefinition)
@@ -264,6 +274,8 @@ function parseAgent(value: unknown): LongAgentConfig {
     id,
     name,
     description,
+    ...(typeof value.responseTemplate === "string" ? { responseTemplate: value.responseTemplate } : {}),
+    ...(value.timeZone === undefined ? {} : { timeZone: validateTimeZone(value.timeZone) }),
     avatar: parseAgentAvatar(value.avatar),
     enabled: value.enabled,
     instanceId: parseId(value.instanceId, "agent.instanceId"),
@@ -368,7 +380,7 @@ export function parseLongAgentRegistry(value: unknown): LongAgentRegistry {
 }
 
 export function emptyLongAgentState(): LongAgentState {
-  return { schemaVersion: 3, projectAgents: [], bindings: [], pendingEvents: [], processedEvents: [] };
+  return { schemaVersion: 4, dailySessions: [], turns: [], projectAgents: [], bindings: [], pendingEvents: [], processedEvents: [] };
 }
 
 function parseTimestamp(value: unknown, field: string): string {
@@ -381,10 +393,11 @@ function parseBinding(value: unknown): LongAgentConversationBinding {
   if (!isRecord(value)) throw new Error("LongAgent binding必须是对象");
   exactFields(value, [
     "id", "projectLongAgentId", "nanoclawInstanceId", "nanoclawAgentGroupId",
-    "nanoclawSessionId", "primaryMessagingGroupId", "source",
+    "nanoclawSessionId", "primaryMessagingGroupId", "source", "contextProjectId",
     "createdAt", "updatedAt",
   ], "LongAgent binding");
   return {
+    ...(value.contextProjectId === undefined ? {} : { contextProjectId: nullableString(value.contextProjectId, "binding.contextProjectId") }),
     id: requiredString(value.id, "binding.id"),
     projectLongAgentId: requiredString(value.projectLongAgentId, "binding.projectLongAgentId"),
     nanoclawInstanceId: parseId(value.nanoclawInstanceId, "binding.nanoclawInstanceId"),
@@ -468,6 +481,7 @@ function parseLegacyBinding(value: unknown): LegacyLongAgentBinding {
   const projectId = requiredString(value.projectId, "binding.projectId");
   if (!PROJECT_ID_PATTERN.test(projectId)) throw new Error(`binding.projectId格式无效: ${projectId}`);
   return {
+    ...(value.contextProjectId === undefined ? {} : { contextProjectId: nullableString(value.contextProjectId, "binding.contextProjectId") }),
     id: requiredString(value.id, "binding.id"),
     projectId,
     chatSessionId: requiredString(value.chatSessionId, "binding.chatSessionId"),
@@ -551,10 +565,11 @@ export function parseLongAgentState(value: unknown): LongAgentState {
       processedEvents: [],
     });
   }
+  if (isRecord(value) && value.schemaVersion === 3) return parseLongAgentState({ ...value, schemaVersion: 4, dailySessions: [], turns: [] });
   if (!isRecord(value) || value.schemaVersion !== LONG_AGENT_STATE_SCHEMA_VERSION) {
     throw new Error(`LongAgent State必须使用schemaVersion ${LONG_AGENT_STATE_SCHEMA_VERSION}`);
   }
-  exactFields(value, ["schemaVersion", "projectAgents", "bindings", "pendingEvents", "processedEvents"], "LongAgent State");
+  exactFields(value, ["schemaVersion", "projectAgents", "bindings", "pendingEvents", "processedEvents", "dailySessions", "turns"], "LongAgent State");
   if (!Array.isArray(value.projectAgents) || !Array.isArray(value.bindings)
     || !Array.isArray(value.pendingEvents) || !Array.isArray(value.processedEvents)) {
     throw new Error("LongAgent State projectAgents、bindings、pendingEvents和processedEvents必须是数组");
@@ -599,7 +614,16 @@ export function parseLongAgentState(value: unknown): LongAgentState {
     if (eventIds.has(processed.eventId)) throw new Error(`LongAgent processed event重复: ${processed.eventId}`);
     eventIds.add(processed.eventId);
   }
-  return { schemaVersion: 3, projectAgents, bindings, pendingEvents, processedEvents };
+  if (!Array.isArray(value.dailySessions) || !Array.isArray(value.turns)) throw new Error("缺少每日生命周期记录");
+  const dailySessions = value.dailySessions.map(parseDailySession);
+  const turns = value.turns.map(parseAcceptedTurn);
+  const days = new Set<string>(); const turnIds = new Set<string>(); const sequences = new Set<number>();
+  for (const day of dailySessions) { const key = `${day.longAgentId}/${day.date}`; if (days.has(key)) throw new Error("每日Session重复"); days.add(key); }
+  for (const turn of turns) {
+    if (turnIds.has(turn.turnId) || sequences.has(turn.sequence) || !dailySessions.some((day) => day.longAgentId === turn.longAgentId && day.date === turn.date && day.sessionId === turn.sessionId)) throw new Error("请求归属或序号无效");
+    turnIds.add(turn.turnId); sequences.add(turn.sequence);
+  }
+  return { schemaVersion: 4, projectAgents, bindings, pendingEvents, processedEvents, dailySessions, turns };
 }
 
 export function parseNanoClawIntegrationEvent(value: unknown): NanoClawIntegrationEvent {

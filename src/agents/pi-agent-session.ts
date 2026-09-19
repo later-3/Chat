@@ -1,4 +1,8 @@
+import { freezeAssemblyResources, freezeAssemblyTools, validateFrozenAssemblyResources } from "./assembly-resources.js";
+import { resolveChatAssemblyContext, freezeWorkflowProjectContext, projectContextInstructions, collaborationInstructions, persistAssemblySnapshot, type ChatAgentInvocation, type ChatAssemblySnapshot } from "./assembly-context.js";
+import { scopedFileTools } from "./scoped-file-tools.js";
 import { join, resolve } from "node:path";
+import { projectExtensionPaths } from "../resources/project-extension-paths.js";
 import type {
   AgentContextTransform,
   AgentSession,
@@ -19,7 +23,6 @@ import type {
   ResolvedChatTool,
 } from "../tools/framework.js";
 import { resolveChatSystemTools } from "../tools/registry.js";
-import { loadChatAgentContextFiles } from "../workflows/agent-context-files.js";
 import type { WorkflowAgentDefinition } from "../workflows/agent-config.js";
 
 /**
@@ -35,6 +38,9 @@ export interface CreateChatPiAgentSessionOptions {
   readonly sessionManager: SessionManager;
   /** 本轮已解析的有效能力；不要在公共装配内重新读取另一份 Agent 选择。 */
   readonly agent: ChatPiAgentDefinition;
+  readonly invocation?: ChatAgentInvocation;
+  /** Trusted, already loaded resources retained by the acceptance worker for this exact turn. */
+  readonly preparedResourceLoader?: DefaultResourceLoader;
   readonly additionalSkillPaths?: readonly string[];
   readonly customTools?: readonly ToolDefinition[];
   readonly transformContext?: AgentContextTransform;
@@ -56,6 +62,7 @@ export interface CreatedChatPiAgentSession {
   readonly chatTools: readonly ResolvedChatTool[];
   readonly toolResources: readonly ChatSessionToolResource[];
   readonly modelFallbackMessage?: string;
+  readonly assemblySnapshot?: ChatAssemblySnapshot;
 }
 
 /** Wraps Chat-owned additions in one visible section of Pi's System Prompt. */
@@ -84,23 +91,43 @@ export function buildChatAgentCustomInstructions(
 export async function createChatPiAgentSession(
   options: CreateChatPiAgentSessionOptions,
 ): Promise<CreatedChatPiAgentSession> {
-  const { agent, chatSession } = options;
-  const settingsManager = SettingsManager.create(chatSession.cwd, chatSession.agentDir);
-  const projectResourceDir = chatSession.projectContext?.projectConfigDir;
-  const customInstructions = buildChatAgentCustomInstructions(agent.customInstructions);
-  const replacementSystemPrompt = agent.systemPrompt.mode === "replace"
-    ? agent.systemPrompt.text
-    : undefined;
-  const contextFiles = await loadChatAgentContextFiles({
-    agentDir: chatSession.agentDir,
-    projectRoot: chatSession.projectContext?.projectRoot ?? chatSession.cwd,
+  const { chatSession } = options;
+  const assembly = options.invocation === undefined ? undefined : await resolveChatAssemblyContext({
+    chatSession, sessionManager: options.sessionManager, agent: options.agent, invocation: options.invocation,
   });
-  const resourceLoader = new DefaultResourceLoader({
-    cwd: chatSession.cwd,
+  const agent = assembly?.snapshot.agent ?? options.agent;
+  const cwd = assembly?.snapshot.cwd ?? chatSession.cwd;
+  const workProject = assembly === undefined ? chatSession.projectContext : assembly.project ?? undefined;
+  const settingsManager = assembly?.settingsManager ?? SettingsManager.create(cwd, chatSession.agentDir);
+  const projectResourceDir = workProject?.projectConfigDir;
+  const replacementSystemPrompt = agent.systemPrompt.mode === "replace" ? agent.systemPrompt.text : undefined;
+  const workflowKey = options.toolContext?.purpose === "execution" && options.toolContext.workflowInvocationId !== undefined
+    ? `workflow:${options.toolContext.workflowInvocationId}:${options.toolContext.stageId ?? "agent"}:${agent.id}` : undefined;
+  const assemblyKey = assembly?.snapshot.turnId ?? workflowKey;
+  const workflowContext = assembly === undefined ? await freezeWorkflowProjectContext({
+    manager: options.sessionManager, key: workflowKey, projectId: workProject?.projectId,
+    agentDir: chatSession.agentDir, projectRoot: workProject?.projectRoot ?? cwd,
+    ...(workProject === undefined ? {} : { project: {
+      projectId: workProject.projectId, name: workProject.name, description: workProject.description,
+      projectRoot: workProject.projectRoot, cwd,
+    } }),
+  }) : undefined;
+  const contextFiles = assembly?.snapshot.contextFiles ?? workflowContext?.files ?? [];
+  const customInstructions = buildChatAgentCustomInstructions([
+    ...agent.customInstructions,
+    ...(workflowContext?.project === undefined ? [] : [{ text: projectContextInstructions(workflowContext.project) }]),
+    ...(assembly === undefined ? [] : [{ text: collaborationInstructions(assembly.snapshot) }]),
+  ]);
+  const pinnedExtensions = options.preparedResourceLoader === undefined ? await validateFrozenAssemblyResources(options.sessionManager, assemblyKey) : undefined;
+  const resourceLoader = options.preparedResourceLoader ?? new DefaultResourceLoader({
+    cwd,
     agentDir: chatSession.agentDir,
     settingsManager,
     noContextFiles: true,
-    agentsFilesOverride: () => ({ agentsFiles: contextFiles }),
+    agentsFilesOverride: () => ({ agentsFiles: contextFiles.map((file) => ({
+      ...file,
+      content: assembly === undefined ? file.content : `<chat_context scope="${file.path.startsWith(`${assembly.snapshot.ownWorkspace}/`) ? "agent" : workProject !== undefined && file.path.startsWith(`${workProject.cwd}/`) ? "project" : "personal"}">\n${file.content}\n</chat_context>`,
+    })) }),
     ...(agent.resources.mode === "inherit"
       ? {}
       : {
@@ -113,19 +140,25 @@ export async function createChatPiAgentSession(
             ...agent.resources.pluginSources,
           ],
         }),
-    ...(agent.resources.mode === "inherit" && projectResourceDir !== undefined
-      ? {
-          additionalProjectExtensionPaths: [resolve(projectResourceDir, "extensions")],
-          additionalPromptTemplatePaths: [resolve(projectResourceDir, "prompts")],
-        }
-      : {}),
+    ...(agent.resources.mode !== "inherit" ? {} : {
+      additionalProjectExtensionPaths: [
+        ...(projectResourceDir === undefined ? [] : await projectExtensionPaths(projectResourceDir)),
+        ...(assembly === undefined ? [] : await projectExtensionPaths(assembly.snapshot.ownResourceRoot)),
+      ],
+      additionalPromptTemplatePaths: [
+        ...(projectResourceDir === undefined ? [] : [resolve(projectResourceDir, "prompts")]),
+        ...(assembly === undefined ? [] : [resolve(assembly.snapshot.ownResourceRoot, "prompts")]),
+      ],
+    }),
     additionalSkillPaths: [
       ...(agent.resources.mode === "inherit" && projectResourceDir !== undefined
         ? [resolve(projectResourceDir, "skills")]
         : []),
       ...(agent.resources.mode === "inherit" ? [] : agent.resources.skillPaths),
       ...(options.additionalSkillPaths ?? []),
+      ...(assembly === undefined || agent.resources.mode !== "inherit" ? [] : [resolve(assembly.snapshot.ownResourceRoot, "skills")]),
     ],
+    ...(pinnedExtensions === undefined ? {} : { noExtensions: true, additionalExtensionPaths: pinnedExtensions, additionalProjectExtensionPaths: [] }),
     ...(replacementSystemPrompt === undefined
       ? {}
       : { systemPromptOverride: () => replacementSystemPrompt }),
@@ -133,7 +166,10 @@ export async function createChatPiAgentSession(
       ? {}
       : { appendSystemPromptOverride: (base) => [...base, customInstructions] }),
   });
-  await resourceLoader.reload();
+  if (options.preparedResourceLoader === undefined) await resourceLoader.reload();
+  if (assembly !== undefined && resourceLoader.getExtensions().errors.length > 0) {
+    throw new Error(`Friend扩展装配失败: ${resourceLoader.getExtensions().errors.map((error) => error.error).join("; ")}`);
+  }
 
   const toolAddresses = agent.tools.mode === "none" ? [] : agent.tools.addresses ?? [];
   let chatTools: ResolvedChatTool[] = [];
@@ -149,13 +185,27 @@ export async function createChatPiAgentSession(
       authorizedToolAddresses,
       authorizedToolNames,
       projectId: chatSession.projectContext.projectId,
+      collaborationProjectId: assembly === undefined ? chatSession.projectContext.projectId : assembly.snapshot.projectId,
       chatHome: chatSession.projectContext.chatHome,
-      cwd: chatSession.cwd,
+      cwd,
       sessionManager: options.sessionManager,
       sessionId: options.sessionManager.getSessionId(),
     });
   }
+  const frozenFiles = new Map<string, string>(contextFiles.map((file) => [file.path, file.content]));
+  if (assemblyKey !== undefined) {
+    const resources = await freezeAssemblyResources({ loader: resourceLoader, manager: options.sessionManager,
+      turnId: assemblyKey, persist: options.toolContext?.purpose === "execution", useLoadedSnapshot: options.preparedResourceLoader !== undefined });
+    for (const [path, content] of resources) frozenFiles.set(path, content);
+  }
+  const defaultTools = settingsManager.getDefaultTools() ?? ["read", "bash", "edit", "write"];
+  const fileScopeRoot = assembly?.snapshot.ownWorkspace ?? workProject?.projectRoot;
+  const guardedTools = fileScopeRoot === undefined || agent.tools.mode === "none" ? [] : scopedFileTools({
+    cwd, ownWorkspace: fileScopeRoot, frozenFiles,
+    resourceRoots: resourceLoader.getSkills().skills.map((skill) => skill.baseDir),
+  }).filter((tool) => agent.tools.mode !== "pi-default" || defaultTools.includes(tool.name));
   const customTools = [
+    ...guardedTools,
     ...(options.customTools ?? []),
     ...chatTools.map((tool) => tool.definition),
   ];
@@ -181,8 +231,11 @@ export async function createChatPiAgentSession(
     }
   }
 
+  if (assembly !== undefined && options.toolContext?.purpose === "execution") {
+    persistAssemblySnapshot(options.sessionManager, assembly.snapshot);
+  }
   const created = await createAgentSession({
-    cwd: chatSession.cwd,
+    cwd,
     agentDir: chatSession.agentDir,
     sessionManager: options.sessionManager,
     settingsManager,
@@ -203,6 +256,21 @@ export async function createChatPiAgentSession(
       ? {}
       : { transformContext: options.transformContext }),
   });
+
+  // UTF-8 bytes are a conservative upper bound, not a provider-specific token count.
+  // Reserve Pi's runtime/output allowance; history compaction cannot shrink system rules.
+  if (created.session.model !== undefined && created.session.model.contextWindow > 0) {
+    const active = new Set(created.session.getActiveToolNames());
+    const schemaBytes = Buffer.byteLength(JSON.stringify(created.session.getAllTools().filter((tool) => active.has(tool.name))
+      .map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters }))));
+    const promptBytes = Buffer.byteLength(created.session.systemPrompt);
+    const reserve = settingsManager.getCompactionReserveTokens();
+    const budget = Math.max(0, created.session.model.contextWindow - reserve);
+    if (promptBytes + schemaBytes > budget) {
+      created.session.dispose();
+      throw new Error(`Agent必需区域超过安全输入预算（${created.session.model.provider}/${created.session.model.id}，窗口 ${created.session.model.contextWindow}，预留 ${reserve}）：系统提示 ${promptBytes} UTF-8字节，工具Schema ${schemaBytes} 字节，可用 ${budget}；规则文件：${contextFiles.map((file) => `${file.path} (${Buffer.byteLength(file.content)} 字节)`).join(", ")}。请精简配置；不会静默截断规则。`);
+    }
+  }
 
   if (agent.tools.mode === "explicit") {
     const available = new Set(created.session.getAllTools().map((tool) => tool.name));
@@ -229,11 +297,22 @@ export async function createChatPiAgentSession(
         kind: "tool",
         id: tool.name,
         scope: tool.sourceInfo.scope,
-        ...(chatSession.projectContext === undefined ? {} : { projectId: chatSession.projectContext.projectId }),
+        ...(workProject === undefined ? {} : { projectId: workProject.projectId }),
       }),
       ...(fileVersion?.contentHash === undefined ? {} : { version: fileVersion.contentHash }),
     };
   }));
+  if (assemblyKey !== undefined) {
+    try {
+      freezeAssemblyTools(options.sessionManager, assemblyKey, created.session.getAllTools()
+        .filter((tool) => authorizedToolNames.includes(tool.name))
+        .map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters,
+          resource: toolResources.find((resource) => resource.name === tool.name) })), options.toolContext?.purpose === "execution");
+    } catch (error) {
+      created.session.dispose();
+      throw error;
+    }
+  }
 
   const context = options.sessionManager.buildSessionContext();
   if (
@@ -248,5 +327,5 @@ export async function createChatPiAgentSession(
   if (context.thinkingLevel !== created.session.thinkingLevel) {
     options.sessionManager.appendThinkingLevelChange(created.session.thinkingLevel);
   }
-  return { ...created, resourceLoader, chatTools, toolResources };
+  return { ...created, resourceLoader, chatTools, toolResources, ...(assembly === undefined ? {} : { assemblySnapshot: assembly.snapshot }) };
 }

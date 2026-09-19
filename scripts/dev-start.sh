@@ -51,7 +51,6 @@ fi
 if [ "${1:-}" = "tui" ]; then
   shift
   export CHAT_SERVER_URL="${CHAT_SERVER_URL:-http://127.0.0.1:43112}"
-  export CHAT_CLI_HOME="${CHAT_CLI_HOME:-$ROOT/.data/dev/client}"
   exec node --import "$ROOT/scripts/typescript-test-loader.mjs" --experimental-strip-types "$ROOT/cli/src/main.ts" tui "$@"
 fi
 

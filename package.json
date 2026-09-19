@@ -9,7 +9,7 @@
   },
   "scripts": {
     "tui": "node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types cli/src/main.ts tui",
-    "build:cli": "tsc -p cli/tsconfig.json",
+    "build:cli": "node scripts/build-cli.mjs",
     "pack:cli": "pnpm build:cli && node scripts/pack-cli.mjs",
     "dev": "HOST=127.0.0.1 PORT=43112 WORKFLOW_TARGET_WORLD=local WORKFLOW_LOCAL_DATA_DIR=${CHAT_HOME:-$HOME/.chat}/runtime/workflow-data nitro dev",
     "dev:frontend": "node scripts/run-frontend.mjs dev",
@@ -30,7 +30,7 @@
     "verify": "pnpm check:architecture && pnpm test:tooling && pnpm test && pnpm typecheck && pnpm build && pnpm test:built && pnpm test:dev",
     "dev:all": "bash scripts/dev-start.sh",
     "check:architecture": "node scripts/check-architecture.mjs",
-    "test:tooling": "node --test scripts/dev-start.test.mjs scripts/debug-environment.test.mjs scripts/chat-stop.test.mjs scripts/debug-tui.test.mjs",
+    "test:tooling": "node --test scripts/dev-start.test.mjs scripts/debug-environment.test.mjs scripts/chat-stop.test.mjs scripts/debug-tui.test.mjs scripts/chatctl.test.mjs",
     "debug:prepare": "node scripts/debug-environment.mjs prepare",
     "debug:prepare:nanoclaw": "node scripts/debug-environment.mjs prepare-nanoclaw",
     "debug:backend": "node scripts/debug-launch.mjs backend",

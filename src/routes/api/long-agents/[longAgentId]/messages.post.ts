@@ -21,19 +21,24 @@ export default defineEventHandler(async (event) => {
   if (body.sessionId !== undefined && (typeof body.sessionId !== "string" || body.sessionId.trim() === "")) {
     throw createError({ statusCode: 400, statusMessage: "sessionId必须是非空字符串" });
   }
+  if (body.contextProjectId !== undefined && body.contextProjectId !== null
+    && (typeof body.contextProjectId !== "string" || body.contextProjectId.trim() === "")) {
+    throw createError({ statusCode: 400, statusMessage: "contextProjectId必须是项目ID或null" });
+  }
+  if (body.requestId !== undefined && (typeof body.requestId !== "string" || !body.requestId.trim() || body.requestId.length > 256)) throw createError({ statusCode: 400, statusMessage: "requestId无效" });
+  if (Object.keys(body).some((key) => !["projectId", "sessionId", "text", "contextProjectId", "requestId"].includes(key))) throw createError({ statusCode: 400, statusMessage: "未知消息字段" });
   try {
     return await executeLongAgentTurn({
+      ...(typeof body.requestId === "string" ? { turnId: body.requestId } : {}),
       longAgentId,
       projectId: body.projectId,
       ...(typeof body.sessionId === "string" ? { sessionId: body.sessionId } : {}),
       text: body.text,
-      ...(typeof body.contextProjectId === "string" && body.contextProjectId.trim() !== ""
-        ? { contextProjectId: body.contextProjectId }
-        : {}),
+      contextProjectId: typeof body.contextProjectId === "string" ? body.contextProjectId : null,
     });
   } catch (error) {
     throw createError({
-      statusCode: 400,
+      statusCode: error instanceof Error && "statusCode" in error && error.statusCode === 409 ? 409 : 400,
       statusMessage: error instanceof Error ? error.message : String(error),
     });
   }

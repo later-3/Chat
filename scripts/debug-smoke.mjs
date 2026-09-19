@@ -1,23 +1,13 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseEnv } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
-import { debugHome, debugRoot, ports } from "./debug-environment.mjs";
+import { debugHome, ports } from "./debug-environment.mjs";
 
 // Exercise the actual Vite proxy + browser HTTP contract. No production URL is accepted.
 const base = `http://127.0.0.1:${ports.frontend}`;
-const credentials = parseEnv(await readFile(join(debugRoot, "backend.env"), "utf8"));
-const login = await fetch(`${base}/api/auth/session`, {
-  method: "POST", headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ username: credentials.CHAT_WEB_AUTH_USERNAME, password: credentials.CHAT_WEB_AUTH_PASSWORD }),
-});
-assert.equal(login.status, 200, "Debug login failed");
-const cookie = login.headers.get("set-cookie")?.split(";")[0];
-assert.ok(cookie, "Debug login did not return a cookie");
 async function request(path, body) {
   const response = await fetch(`${base}${path}`, {
-    headers: { Cookie: cookie, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }),
   });
   const result = await response.json();

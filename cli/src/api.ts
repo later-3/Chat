@@ -1,4 +1,4 @@
-import { record, string } from "./contract.js";
+import { record } from "./contract.js";
 
 export function serverUrl(value: string): string {
   const url = new URL(value);
@@ -13,12 +13,10 @@ export class HttpError extends Error {
 }
 export class ChatApi {
   readonly url: string;
-  cookie: string;
-  constructor(url: string, cookie = "") { this.url = serverUrl(url); this.cookie = cookie; }
+  constructor(url: string) { this.url = serverUrl(url); }
   async response(path: string, init: RequestInit = {}): Promise<Response> {
     if (!path.startsWith("/") || path.startsWith("//")) throw new Error("无效API路径");
     const headers = new Headers(init.headers);
-    if (this.cookie) headers.set("Cookie", this.cookie);
     if (init.body !== undefined) headers.set("Content-Type", "application/json");
     const response = await fetch(`${this.url}${path}`, {
       ...init, headers, redirect: "error", signal: init.signal ?? AbortSignal.timeout(30_000),
@@ -31,20 +29,11 @@ export class ChatApi {
         if (typeof item.statusMessage === "string") detail = item.statusMessage;
         else if (typeof item.error === "string") detail = item.error;
       }
-      throw new HttpError(response.status, response.status === 401 ? "登录已过期，请执行 chat login" : detail);
+      throw new HttpError(response.status, detail);
     }
     return response;
   }
   async json(path: string, init: RequestInit = {}): Promise<unknown> { return (await this.response(path, init)).json(); }
-  async login(username: string, password: string): Promise<{ cookie: string; expiresAt: string }> {
-    const response = await this.response("/api/auth/session", { method: "POST", body: JSON.stringify({ username, password, persistent: true }) });
-    const body = record(await response.json());
-    if (body.ok !== true) throw new Error("登录响应无效");
-    const cookie = response.headers.getSetCookie().find((value) => value.startsWith("chat-session="))?.split(";")[0];
-    if (!cookie) throw new Error("服务器没有返回登录Cookie");
-    this.cookie = cookie;
-    return { cookie, expiresAt: string(body.expiresAt) };
-  }
   async events(runId: string, signal: AbortSignal, receive: (value: unknown) => void): Promise<void> {
     const response = await this.response(`/runs/${encodeURIComponent(runId)}/events?startIndex=-1`, { signal });
     if (!response.headers.get("content-type")?.includes("application/x-ndjson") || !response.body) throw new Error("Run事件流格式无效");

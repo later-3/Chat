@@ -51,3 +51,16 @@ export function endSessionExecution(sessionId: string, workflowInvocationId: str
 export function getSessionExecution(sessionId: string): SessionExecutionRecord | undefined {
   return registry.executing.get(sessionId);
 }
+
+// Same-process cancellation handles only; the Workflow World still owns status.
+const abortKey = Symbol.for("chat.workflowAgentAborts");
+const aborts = ((globalThis as Record<PropertyKey, unknown>)[abortKey] ??= new Map()) as Map<string, Set<() => Promise<void>>>;
+export function registerWorkflowAgentAbort(runId: string, abort: () => Promise<void>): () => void {
+  const handlers = aborts.get(runId) ?? new Set<() => Promise<void>>();
+  handlers.add(abort);
+  aborts.set(runId, handlers);
+  return () => { handlers.delete(abort); if (handlers.size === 0) aborts.delete(runId); };
+}
+export async function abortWorkflowAgents(runId: string): Promise<void> {
+  await Promise.all([...(aborts.get(runId) ?? [])].map(abort => abort()));
+}

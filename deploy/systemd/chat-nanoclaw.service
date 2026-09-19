@@ -1,0 +1,22 @@
+[Unit]
+Description=Chat NanoClaw Friend Host and Channel Gateway
+After=network-online.target __CHAT_SERVICE__.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__CHAT_USER__
+Group=__CHAT_GROUP__
+WorkingDirectory=__CHAT_ROOT__/nanoclaw
+Environment=HOME=__RUN_HOME__
+Environment=PATH=__NODE_DIR__:/usr/local/bin:/usr/bin:/bin
+ExecStart=__NODE__ --env-file=__CHAT_ROOT__/nanoclaw/.env __CHAT_ROOT__/nanoclaw/dist/index.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
