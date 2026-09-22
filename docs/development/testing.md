@@ -164,6 +164,8 @@ CI 的职责、环境版本和 Submodule 边界见 [Chat CI](./ci.md)。
 
 ## 安装与服务控制回归
 
+`pnpm test:tooling` 同时运行 `scripts/chat-start.test.mjs`：服务归属/端口/产物/配置预检、Backend→Nano 顺序、重复启动不换 PID、只回收新启动服务、控制锁和 Linux chatctl 参数转发。在 macOS 创建临时双 LaunchAgent，真实启动/健康及网页资源检查/再次启动/停止，另验证“健康 200、首页 500/重定向/资源缺失/资源返回 HTML”必须失败；Linux 同样验证调用公共 Web 检查。Nano HTTP 为带认证的隔离替身；不启动用户正式服务，也不把它视为真实渠道验收。
+
 `pnpm test:tooling` 包含 `scripts/chatctl.test.mjs`：在临时目录替换系统服务适配边界，执行实际 shell 安装/启停控制逻辑，检查安装不启动、重复 start、逆序停止、模块选择和失败回收；Node 测试通过本地 HTTP 验证 Nano 认证和实例 ID，环境准备验证已有私有值保留与冲突拒绝。不会对宿主执行 sudo、systemctl 或包管理安装。
 
 这些测试不替代空白 Linux/WSL 的包下载、systemd 真机验收。装机验收需另记录平台版本、四个仓库 Commit、安装/两次启停、认证健康、数据保留与模型/渠道的真实使用范围。
@@ -196,3 +198,8 @@ P1 只修改合同与实验测试，无产品执行代码变更；运行上述�
 `test/long-agents/turn-feedback.test.mjs` 通过 HTTP 接受、原生 Pi 和可控模型验证 202 与执行解耦、真实增量、256 事件窗口 reset、去重/冲突/归属、取消后后续消息、同项目原生引导、跨项目拒绝、模型错误与图片能力。`frontend/lib/friend-execution.test.mjs` 验证相同消费器的断序补读、重复忽略、未知版本/错误身份拒绝、无响应超时、观察终止和终态。P3 生命周期用例继续覆盖重启、跨日和原生压缩恢复。
 
 真实浏览器必须对照普通 Session 与 Friend：首 Token/工具/完成、刷新与断网不重发、取消、引导、切项目后的后续消息、明暗主题与长内容滚动。假模型边界测试和真实供应商测试分别记录，不能互相冒充。用户现有服务运行时，在隔离源码副本执行 `pnpm verify`，禁止覆盖其正在使用的 `.output`。本次证据见[P4 审计](../history/reviews/2026-09-19-agent-unification-p4.md)。
+
+
+## LA0 原生独立会话接缝
+
+`test/long-agents/la0-session-seams.test.mjs` 使用公共工厂、本地 HTTP 假模型与真实 Pi 持久化，验证同身份独立 Session 并发、原生工具/压缩后的公开 Entry 引用、旧写入器风险、同锁重开及丢回执去重。已知风险用例是可行性基线，不是生产修复验收；LA1 必须增加真实入口回归并替换对应风险断言。LA0 没有新增群/任务 UI，不能报告真实浏览器群聊通过。阶段边界与证据见[LA0 审计](../history/reviews/2026-09-20-long-agent-la0.md)。

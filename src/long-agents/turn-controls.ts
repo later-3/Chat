@@ -1,3 +1,4 @@
+import { updateLongAgentState } from "./storage.js";
 import { openChatSession } from "../chat-session.js";
 import { getLiveTurn } from "./live-turn.js";
 import { findFriendTurn, friendExecution } from "./turn-feedback.js";
@@ -6,6 +7,24 @@ import { withFileLock } from "../persistence/versioned-file.js";
 import type { AcceptedTurn } from "./daily-state.js";
 
 export const FRIEND_STEERING = "chat.friend-steering.v1";
+
+export async function cancelFriendTurn(home: string, agent: string, id: string) {
+  await updateLongAgentState(home, state => {
+    const target = state.turns.find(t => t.longAgentId === agent && t.turnId === id);
+    if (!target) throw new Error("找不到执行请求");
+    if (target.status === "queued" && state.turns.some(t => getLiveTurn(home, t.turnId)?.steering.has(id)))
+      throw new Error("引导已进入原生队列，请取消当前执行");
+    return { state: { ...state, turns: state.turns.map(turn => {
+      if (turn !== target || !["queued", "running"].includes(turn.status)) return turn;
+      if (turn.status === "running") return { ...turn, cancelRequested: true };
+      const { text: _text, images: _images, seed: _seed, ...receipt } = turn;
+      return { ...receipt, status: "cancelled" as const, settledAt: new Date().toISOString(), cancelRequested: true };
+    }) }, result: undefined };
+  });
+  const live = getLiveTurn(home, id);
+  if (live) { live.cancelled = true; await live.session.abort(); }
+  return friendExecution(home, await findFriendTurn(home, agent, id));
+}
 
 /** Native custom messages carry the request identity through steering, without text-based deduplication. */
 export async function steerFriendTurn(

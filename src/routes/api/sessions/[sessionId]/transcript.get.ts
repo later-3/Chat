@@ -18,6 +18,8 @@ export default defineEventHandler(async (event) => {
       ...(typeof query.cursor === "string" ? { cursor: query.cursor } : {}),
       ...(typeof query.leafId === "string" ? { leafId: query.leafId } : {}),
       ...(typeof query.limit === "string" ? { limit: Number(query.limit) } : {}),
+      // Owner-facing TUI/history entry: the local user keeps access to group participation history.
+      requester: { kind: "owner" },
     });
   } catch (error) {
     if (error instanceof SessionLifecycleError) throw toSessionLifecycleHttpError(error);

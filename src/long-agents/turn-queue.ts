@@ -1,6 +1,8 @@
+import { agentDate } from "./calendar.js";
 import { settleConsumedSteering } from "./turn-controls.js";
 import { getLiveTurn } from "./live-turn.js";
 import { createHash, randomUUID } from "node:crypto";
+import { readLongAgentInteractionProject } from "./interaction-project.js";
 import { SessionManager, type DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
@@ -29,12 +31,74 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
   if (!requestId.trim() || requestId.length > 256) throw new Error("requestId必须为1–256个字符");
   if (typeof input.text !== "string" || (!input.text.trim() && !input.images?.length) || input.text.length > 100_000) throw new Error("消息必须包含有效正文或图片，正文最多100000字符");
   const source = input.source ?? "chat-web";
-  const payloadHash = createHash("sha256").update(JSON.stringify({ text: input.text, images: input.images ?? [], contextProjectId: input.contextProjectId ?? null,
-    longAgentId: input.longAgentId, source, summaryDraft: input.summaryDraft ?? false, channelType: input.channelType ?? null, inboundEventId: input.inboundEventId ?? null })).digest("hex");
   return withFileLock(`${home}/runtime/friend-accept`, async () => {
+    // Resolve and freeze the collaboration target inside the accept lock. For the owner-facing private
+    // chat the association is authoritative; a declared revision that no longer matches is a conflict,
+    // and a per-turn projectId may not silently override the persisted association.
     const prior = (await readLongAgentState(home)).turns.find((turn) => turn.longAgentId === input.longAgentId && turn.source === source && turn.requestId === requestId);
+    let contextProjectId = input.contextProjectId ?? null;
+    let interactionRevision: number | null = null;
+    let work: Awaited<ReturnType<typeof readLongAgentState>>["works"][number] | undefined;
     if (prior !== undefined) {
-      if (prior.payloadHash !== payloadHash) throw new LongAgentRequestConflict("同一requestId包含不同消息或项目，不能重复接受");
+      // A retry identifies the already accepted input and its frozen target, never today's selection.
+      contextProjectId = prior.contextProjectId;
+      interactionRevision = prior.interactionRevision ?? null;
+    } else if (source === "chat-web") {
+      work = input.sessionId === undefined ? undefined
+        : (await readLongAgentState(home)).works.find((entry) => entry.sessionId === input.sessionId && entry.longAgentId === input.longAgentId);
+      if (work !== undefined) {
+        // A work session continues its own frozen target; this is server-derived, not client-claimed.
+        if (input.contextProjectId !== undefined && (input.contextProjectId ?? null) !== work.contextProjectId)
+          throw new LongAgentRequestConflict("后台工作的项目已固定，请在原项目继续或创建新工作");
+        contextProjectId = work.contextProjectId;
+      } else if (input.interactionRevision !== undefined) {
+        // Ordinary private chat: the association is authoritative and a stale/divergent request conflicts.
+        const association = await readLongAgentInteractionProject(home, input.longAgentId);
+        if (association.revision !== input.interactionRevision)
+          throw new LongAgentRequestConflict("项目关联已变化，请刷新后重新发送");
+        if (association.effective.availability === "unavailable")
+          throw new LongAgentRequestConflict(`关联项目不可用：${association.effective.reason ?? "请重新选择"}`);
+        if (input.contextProjectId !== undefined && (input.contextProjectId ?? null) !== association.effective.projectId)
+          throw new LongAgentRequestConflict("请求携带的项目与 Friend 关联不一致，请刷新后重试");
+        contextProjectId = association.effective.projectId;
+        interactionRevision = association.revision;
+      } else if (input.requireInteractionRevision === true) {
+        // The owner-facing private-chat entry must not bypass the persisted association.
+        throw new LongAgentRequestConflict("私聊消息必须携带 Friend 项目关联 revision");
+      }
+    }
+    // The digest is versioned: a retry of an already accepted request must match the digest of the
+    // format that recorded it (older records predate the requested/frozen split), while any changed
+    // text/project/revision still fails every candidate and is rejected.
+    // JSON.stringify is key-order sensitive, so each historical format keeps its exact field order.
+    const digest = (body: Record<string, unknown>) => createHash("sha256").update(JSON.stringify(body)).digest("hex");
+    // v1 used the requested project; v2 used the resolved association when a revision was supplied.
+    const requestedContextProjectId = input.contextProjectId ?? null;
+    const requestedInteractionRevision = input.interactionRevision ?? null;
+    const v1 = digest({ text: input.text, images: input.images ?? [], contextProjectId: requestedContextProjectId,
+      longAgentId: input.longAgentId, source, summaryDraft: input.summaryDraft ?? false,
+      channelType: input.channelType ?? null, inboundEventId: input.inboundEventId ?? null });
+    const legacyV2Project = input.contextProjectId === undefined && input.interactionRevision !== undefined
+      ? contextProjectId : requestedContextProjectId;
+    const v2 = digest({ text: input.text, images: input.images ?? [], contextProjectId: legacyV2Project,
+      longAgentId: input.longAgentId, source, summaryDraft: input.summaryDraft ?? false,
+      channelType: input.channelType ?? null, inboundEventId: input.inboundEventId ?? null,
+      interactionRevision: requestedInteractionRevision });
+    const payloadHashV3 = digest({ text: input.text, images: input.images ?? [], requestedContextProjectId: input.contextProjectId ?? null,
+      requestedInteractionRevision: input.interactionRevision ?? null, frozenContextProjectId: contextProjectId,
+      frozenInteractionRevision: interactionRevision, longAgentId: input.longAgentId, source, summaryDraft: input.summaryDraft ?? false,
+      channelType: input.channelType ?? null, inboundEventId: input.inboundEventId ?? null });
+    // An explicit format is authoritative. Unversioned records may match historical formats, but
+    // v1 cannot attest to a revision that did not exist when that request was accepted.
+    const v1Candidates = input.interactionRevision === undefined && (prior?.interactionRevision ?? null) === null ? [v1] : [];
+    const payloadHashCandidates = prior?.payloadHashVersion === 3 ? [payloadHashV3]
+      : prior?.payloadHashVersion === 2 ? [v2]
+      : prior?.payloadHashVersion === 1 ? v1Candidates
+      : [...v1Candidates, v2, payloadHashV3];
+    const payloadHash = payloadHashV3;
+    if (prior !== undefined) {
+      if (prior.workId !== undefined && prior.sessionId !== input.sessionId) throw new LongAgentRequestConflict("后台工作请求不能改投其他会话");
+      if (!payloadHashCandidates.includes(prior.payloadHash)) throw new LongAgentRequestConflict("同一requestId包含不同消息或项目，不能重复接受");
       return { ...prior, newAcceptance: false };
     }
     const agent = (await readLongAgentRegistry(home)).agents.find((candidate) => candidate.id === input.longAgentId && candidate.enabled && candidate.status !== "archived");
@@ -42,7 +106,10 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     if (input.summaryDraft && !await hasFriendDailyActivity(home, agent)) throw new Error("今日没有可整理活动，不创建空会话");
     const calendar = await ensureAgentCalendar(agent, home);
     const acceptedAt = new Date();
-    const located = await ensureProjectLongAgent({ chatHome: home, projectId: input.projectId, agent, now: acceptedAt,
+    if (work && work.contextProjectId !== contextProjectId) throw new Error("后台工作的项目已固定，请在原项目继续或创建新工作");
+    const located = work ? { isNewSession: !(await readLongAgentState(home)).turns.some(t => t.workId === work.id),
+      day: { sessionId: work.sessionId, date: agentDate(calendar.timeZone), summary: { status: "pending" } } }
+      : await ensureProjectLongAgent({ chatHome: home, projectId: input.projectId, agent, now: acceptedAt,
       ...(source !== "chat-web" || input.sessionId === undefined ? {} : { requestedSessionId: input.sessionId }) });
     if (located.day.summary.status === "running") throw new Error("该日期正在收尾，请稍后重试；原历史保留");
     const chatSession = await openChatSession({ projectId: agent.id, chatHome: home, sessionId: located.day.sessionId });
@@ -50,7 +117,7 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     // The temporary Session is solely an assembly preview; only its custom snapshots are retained.
     const turnId = `${source}:${agent.id}:${requestId}`;
     const group = await readLongAgentAgentGroup(agent.id, home);
-    const prepared = await prepareLongAgentAssembly({ agent, chatHome: home, projectId: input.contextProjectId ?? null, turnId, groupContext: group, today: located.day.date });
+    const prepared = await prepareLongAgentAssembly({ agent, chatHome: home, projectId: contextProjectId, turnId, groupContext: group, today: located.day.date });
     const created = await createChatPiAgentSession({ chatSession, sessionManager: memory, ...prepared,
       ...(input.summaryDraft ? { agent: { ...prepared.agent, tools: { mode: "none" as const }, resources: { mode: "explicit" as const, skillPaths: [], extensionPaths: [], pluginSources: [] } } } : {}),
       toolContext: { purpose: "execution", agentId: agent.id, longAgentId: agent.id, longAgentTurnId: turnId } });
@@ -65,9 +132,13 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
           return { customType: entry.customType, data: entry.customType === CHAT_ASSEMBLY_CONTEXT ? { ...body, revision: assemblyRevision(body) } : entry.data }; });
       const turn = await updateLongAgentState(home, (state) => {
         if (state.dailySessions.some((day) => day.sessionId === located.day.sessionId && day.summary.status === "running")) throw new Error("该日期正在收尾，请稍后重试；原历史保留");
-        const turn: AcceptedTurn = { turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
+        if (work) {
+          const active = new Set(state.turns.filter(t => t.longAgentId === agent.id && t.workId && ["queued", "running"].includes(t.status)).map(t => t.workId));
+          if (!active.has(work.id) && active.size >= 4) throw new Error("此Friend已有4项后台工作，请等待完成或取消后重试");
+        }
+        const turn: AcceptedTurn = { ...(work ? { workId: work.id } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
           channelType: input.channelType ?? (source === "chat-web" ? "chat-web" : null), inboundEventId: input.inboundEventId ?? null,
-          contextProjectId: input.contextProjectId ?? null, sessionId: located.day.sessionId, date: located.day.date, timeZone: calendar.timeZone,
+          contextProjectId, interactionRevision, payloadHashVersion: 3, sessionId: located.day.sessionId, date: located.day.date, timeZone: calendar.timeZone,
           acceptedAt: acceptedAt.toISOString(), sequence: state.turns.reduce((max, item) => Math.max(max, item.sequence), 0) + 1,
           status: "queued", error: null, text: input.text as string, ...(input.images === undefined ? {} : { images: input.images }), seed,
           groupContext: agentGroupContextRevisionOf(group) };
@@ -92,26 +163,32 @@ export function installAcceptedAssembly(manager: SessionManager, turn: AcceptedT
 }
 
 export async function updateTurnStatus(home: string, turnId: string, status: AcceptedTurn["status"], error: string | null = null): Promise<void> {
+  const terminal = status === "completed" || status === "failed" || status === "interrupted" || status === "cancelled";
+  const settledAt = terminal ? new Date().toISOString() : null;
   await updateLongAgentState(home, (state) => ({ state: { ...state, turns: state.turns.map((turn) => {
     if (turn.turnId !== turnId) return turn;
     if (status === "completed" || status === "cancelled") {
       const { text: _text, images: _images, seed: _seed, ...receipt } = turn;
-      return { ...receipt, status, error };
+      return { ...receipt, status, settledAt, error };
     }
-    return { ...turn, status, error };
+    return { ...turn, status, settledAt, error };
   }) }, result: undefined }));
 }
 
-/** One ordered worker per Friend, using the existing native Session runtime. Different Friends remain concurrent. */
-export function drainLongAgentTurns(home: string, longAgentId: string): Promise<void> {
-  const queueKey = key(home, longAgentId);
+/** Each native Session has one ordered worker; one identity may have independent work in parallel. */
+export function drainLongAgentTurns(home: string, longAgentId: string, sessionId?: string): Promise<void> {
+  if (sessionId === undefined) return readLongAgentState(home).then(async state => {
+    const sessions = new Set(state.turns.filter(t => t.longAgentId === longAgentId && ["queued", "running"].includes(t.status)).map(t => t.sessionId));
+    await Promise.all([...sessions].map(id => drainLongAgentTurns(home, longAgentId, id)));
+  });
+  const queueKey = key(home, `${longAgentId}/${sessionId}`);
   const existing = drains.get(queueKey); if (existing !== undefined) return existing;
   const run = (async () => {
     const { executeAcceptedLongAgentTurn } = await import("./runtime.js");
     const { recoverLongAgentTurns } = await import("./daily-maintenance.js");
-    await recoverLongAgentTurns(home, longAgentId);
+    await recoverLongAgentTurns(home, sessionId);
     while (true) {
-      const turn = (await readLongAgentState(home)).turns.filter((item) => item.longAgentId === longAgentId && item.status === "queued").sort((a, b) => a.sequence - b.sequence)[0];
+      const turn = (await readLongAgentState(home)).turns.filter((item) => item.longAgentId === longAgentId && item.sessionId === sessionId && item.status === "queued").sort((a, b) => a.sequence - b.sequence)[0];
       if (turn === undefined) return;
       if (await settleConsumedSteering(home, turn)) continue;
       const claimed = await updateLongAgentState(home, (state) => {
@@ -126,7 +203,11 @@ export function drainLongAgentTurns(home: string, longAgentId: string): Promise<
           ...(turn.inboundEventId === null ? {} : { inboundEventId: turn.inboundEventId }), contextProjectId: turn.contextProjectId }, turn, loaders.get(key(home, turn.turnId)));
         await updateTurnStatus(home, turn.turnId, "completed");
       } catch (error) { await updateTurnStatus(home, turn.turnId, error instanceof FriendCancelledError ? "cancelled" : "failed", error instanceof Error ? error.message : String(error)); }
-      finally { loaders.delete(key(home, turn.turnId)); }
+      finally {
+        loaders.delete(key(home, turn.turnId));
+        // Return delivery waits for the origin lock independently; never hold up this worker.
+        void import("./work.js").then(m => m.deliverFriendWorkReturns(home)).catch(error => console.error("后台工作结果待返回", error));
+      }
     }
   })().finally(() => { if (drains.get(queueKey) === run) drains.delete(queueKey); });
   drains.set(queueKey, run); return run;
@@ -140,7 +221,7 @@ export async function executeQueuedLongAgentTurn(input: ExecuteLongAgentTurnInpu
   const accepted = await acceptLongAgentTurn(input);
   let turn: AcceptedTurn = accepted;
   while (turn.status === "queued" || turn.status === "running") {
-    await drainLongAgentTurns(home, input.longAgentId);
+    await drainLongAgentTurns(home, input.longAgentId, turn.sessionId);
     turn = (await readLongAgentState(home)).turns.find((item) => item.turnId === accepted.turnId)!;
     if (turn.status === "running" && !isFriendWorkerActive(home, input.longAgentId)) {
       const { recoverLongAgentTurns } = await import("./daily-maintenance.js");
@@ -153,7 +234,10 @@ export async function executeQueuedLongAgentTurn(input: ExecuteLongAgentTurnInpu
   return executeAcceptedLongAgentTurn({ ...input, projectId: input.longAgentId, sessionId: turn.sessionId, turnId: turn.turnId }, turn);
 }
 
-export function isFriendWorkerActive(home: string, longAgentId: string): boolean { return drains.has(key(home, longAgentId)); }
+export function isFriendWorkerActive(home: string, longAgentId: string, sessionId?: string): boolean {
+  return sessionId === undefined ? [...drains.keys()].some(id => id.startsWith(key(home, `${longAgentId}/`)))
+    : drains.has(key(home, `${longAgentId}/${sessionId}`));
+}
 
 export async function controlQueuedRequest(home: string, longAgentId: string, turnId: string, action: "cancel" | "retry"): Promise<void> {
   await updateLongAgentState(home, (state) => {
@@ -165,10 +249,10 @@ export async function controlQueuedRequest(home: string, longAgentId: string, tu
     return { state: { ...state, dailySessions: action !== "retry" ? state.dailySessions : state.dailySessions.map((day) => day.sessionId === turn.sessionId
       ? { ...day, summary: { status: "pending" as const, attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } } : day), turns: state.turns.map((item) => {
       if (item.turnId !== turnId) return item;
-      if (action === "retry") return { ...item, status: "queued" as const, error: null };
+      if (action === "retry") return { ...item, cancelRequested: false, status: "queued" as const, settledAt: null, error: null };
       const { text: _text, images: _images, seed: _seed, ...receipt } = item;
       loaders.delete(key(home, turnId));
-      return { ...receipt, status: "cancelled" as const, error: null };
+      return { ...receipt, status: "cancelled" as const, settledAt: new Date().toISOString(), error: null };
     }) }, result: undefined };
   });
   if (action === "retry") await drainLongAgentTurns(home, longAgentId);

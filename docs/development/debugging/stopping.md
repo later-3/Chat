@@ -5,6 +5,8 @@ Linux/WSL 新安装的生产实例优先使用 `sudo /opt/chat/deploy/chatctl st
 
 在目标 Chat checkout 根目录执行。`chat-stop.mjs` 必须显式选择一个范围，不带参数只显示帮助；`debug-stop.mjs` 不带参数则停止整套专用调试环境。关闭浏览器或 VS Code 窗口不等于关闭后台服务。
 
+正式服务的统一启动为 `pnpm chat:start`（等价 `node scripts/chat-start.mjs`）；Mac 与本页的正常停止共用归属检查和控制锁，Linux 转发 chatctl。启动不安装、不构建；见[运行手册](../../operations/running.md)。
+
 ## 常用命令与等价脚本
 
 当前 F5 完整环境全部停止，直接执行 `pnpm debug:stop`。无论模块来自 `Run ...`、`Debug ...`，还是后来新增的独立调试会话，都按同一套调试归属记录关闭，保留配置、Workspace、Session 和 Memory。
@@ -87,7 +89,7 @@ Pi在Backend中执行，生产Frontend是静态文件，两者都没有独立的
 
 ## 服务管理与再次启动
 
-macOS：以安装LaunchAgent的登录用户运行，不加sudo。脚本扫描该用户`~/Library/LaunchAgents/*.plist`，校验工作目录、程序入口及**已加载定义**，先关闭Nano，再关闭Backend。使用`launchctl bootout gui/<uid>/<label>`，避免直接kill后KeepAlive复活。plist不删除，自启动策略不变；下次登录可能再次启动。立即恢复时按输出的`launchctl bootstrap gui/<uid> "/准确路径/service.plist"`，先Backend后Nano。已bootout的服务不能只用`kickstart`恢复。
+macOS：以安装LaunchAgent的登录用户运行，不加sudo。脚本扫描该用户`~/Library/LaunchAgents/*.plist`，校验工作目录、程序入口及**已加载定义**，先关闭Nano，再关闭Backend。使用`launchctl bootout gui/<uid>/<label>`，避免直接kill后KeepAlive复活。plist不删除，自启动策略不变；下次登录可能再次启动。立即恢复可执行`pnpm chat:start`，自动先Backend后Nano；也可按输出的`launchctl bootstrap gui/<uid> "/准确路径/service.plist"`手动恢复。已bootout的服务不能只用`kickstart`恢复。
 
 Linux：支持[部署模板](../../../deploy/systemd/chat.service)的系统级Chat，以及同一运行用户的用户级Nano或系统级Nano。自动核对unit的WorkingDirectory/ExecStart；Nano用户级管理器从Chat服务User解析，sudo运行时通过该用户的runtime bus操作。系统级stop通常需管理员权限：
 

@@ -140,10 +140,10 @@ test('P5 definition split refuses conflicting files and serializes concurrent re
 
 test('P5 state v3 upgrade repairs a missing completion receipt after interruption without replacing the backup', async t => {
   const f = await fixture(t);
-  const { dailySessions, turns, ...old } = await readLongAgentState(f.home);
+  const { dailySessions, turns, works, ...old } = await readLongAgentState(f.home);
   const stateFile = path.join(f.home, 'runtime/long-agent-state.json');
   fs.writeFileSync(stateFile, JSON.stringify({ ...old, schemaVersion: 3 }));
-  const upgraded = await readLongAgentState(f.home); assert.equal(upgraded.schemaVersion, 4);
+  const upgraded = await readLongAgentState(f.home); assert.equal(upgraded.schemaVersion, 5);
   const dir = path.join(f.home, 'runtime/migrations/long-agent-daily-v4');
   const backup = fs.readFileSync(path.join(dir, 'source.json'));
   fs.unlinkSync(path.join(dir, 'complete.json'));

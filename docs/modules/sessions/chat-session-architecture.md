@@ -221,3 +221,50 @@ Project 参与者不因能读项目而自动获得 Friend 混合多个项目的�
 Workflow Call 的 parent/child 端点增加可选 `projectId`。旧记录省略时沿用原同项目关系；跨项目子会话创建先验证 parentProjectId 与真实父 Session 归属，保持 Pi 原生 parentSession。树读模型和前端解析保留两端 Project，统计按已记录目标加载子 Session，不从父 cwd 猜测。Memory 写入来源仍为父存储 Session，默认写入目标取协作 Project。
 
 P5 归属查询同时读取当前主会话、全部 dailySessions 和经过校验的历史迁移记录。旧 Friend 历史返回原 owner 与 `readOnly: true`，不能变成普通 Workflow 会话；普通 Workflow 启动入口再次校验归属。旧链接携带的 projectId 由 Backend 按精确 Session 映射解析，未知项目或 Session 不回退。新迁移不移动或复制 JSONL；只为已执行 v1 迁移的历史保留当前位置别名。
+
+## 11. LA0：独立工作与群聊的原生 Session 合同
+
+2026-09-20 目标合同；LA0 证明原生接缝，生产接入分别属于 LA1/LA5。每日唯一性只约束默认直接交流，不限制任务/群参与上下文。对象与生命周期以[Long Agent 机制 §9](../long-agents/chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)为准。
+
+### 11.1 存储与模型输入
+
+```text
+Friend A（一个身份）
+  ├─ 直接交流：Home / 今日 Session
+  ├─ 后台任务：Task 归属 Project / 独立 Session
+  ├─ 群 X：X 归属 Project / A 的参与 Session
+  └─ 群 Y：Y 归属 Project / A 的参与 Session
+
+群 X 公共 Session（不运行共享的 Agent Loop）
+  ├─ 人类原生 user 消息 + 可信作者关联
+  ├─ A 的 publication → A 参与 Session 的原生 assistant Entry
+  └─ B 的 publication → B 参与 Session 的原生 assistant Entry
+```
+
+公共根负责排序和已发布消息引用；每位 Friend 在自己的参与 Session 中保留输入、原生 assistant/toolCall/toolResult、压缩及重试。公共根不是另一份文本日志，也不是把多名 Agent 当同一个 assistant 轮流驱动。前端通过 Backend 受权投影渲染原生消息引用，不能自行读参与者完整 Session 或凭姓名推断作者。
+
+元数据只保留 conversation/participant/turn/run、source Session/Entry、replyTo、配置/授权 revision、输入截止点与状态。群外消息进入参与 Session 时采用有来源的原生 custom_message，保留原作者和公共 Entry 引用；Pi 映射成模型支持的角色，但 Chat 的真实发送者不丢失、不冒充真人。派生输入不是第二份群消息事实，必须能追溯公开原件和输入 revision。
+
+`CustomEntry` 本身不会进入模型上下文。公共根引用需要显式受权投影才能展示/喂给参与者，不能期望 Pi 自动解析跨文件引用。普通/Friend 的共用历史/流式读取层增加该解析能力，各入口只增加可信来源及工作关联；不另写群聊渲染器来掩盖消息合同差异。
+
+### 11.2 发布与恢复
+
+发布按执行者原生输出定位，只选择明确公开的文本块，默认不公开 thinking、工具参数/结果或私有草稿。一次 publication 固定 source Entry 与内容摘要/所选块，发布后修订产生新版本，不跟随参与 Session 当前 leaf 漂移。摘要用于校验，不保存正文副本。
+
+两条 Session 文件不能假装一次事务：先保证子原生 Entry 落盘，再在公共根已有锁内重开、按稳定 publicationId 幂等追加引用，最后更新可重建的消费/投递索引。子落盘但根未提交可重试；根已提交但回执丢失不得重复发布。未提交的流式草稿以 runId 区分，终态前不算公共历史或其他 Agent 的输入。
+
+读取验证成员/受众 revision、源 Session 绑定、Entry 类型及摘要。无授权不返回正文；源被删除、损坏或校验失败显示不可用引用，禁止回退为读取整个私有 Session。原始消息只能由所属生命周期管理，引用中不公开磁盘路径。永久删除前必须处理公开引用的保留/墓碑策略。
+
+原生 compaction 不删除 Entry；公开引用按 Entry ID 解析，因此不依赖当前模型上下文是否保留原文。参与者压缩保留公开消息截止点和来源，不能重新消费全部群历史。Fork 的历史引用仅为历史，不得重发、重算预算或复活旧任务；新分支执行另有工作标识。既有每日 Session 不因新增这些类型而被改写、拼接或改属。
+
+### 11.3 独立任务返回
+
+子工作使用 Pi 原生谱系和 Chat 稳定 origin 关联；来源会话与执行归属可跨 Project，两个端点分别授权。等待返回期间不保留父写入器。完成事件先耐久保存，再按目的 Session 锁重开最新 leaf、验证版本、去重写入最小结果引用；模型消费通过明确的后续轮次，不能伪造已经结束的 Tool Result。
+
+锁内重开只是单 Backend 的写入保障，不是跨文件事务或任务恢复服务。LA1 已用等待窗口写入器替换 `workflow-call.ts` 的异步 settle 路径，后台返回重新获取 Session 锁并重开；具体合同见 [Workflow 返回](../workflows/chat-subworkflow-design.md#la1-实际返回路径)。LA0 的测试原型不作为生产辅助函数复用。
+
+接缝门禁：`test/long-agents/la0-session-seams.test.mjs`。它通过公共工厂、真实 Pi 工具、压缩、文件重开验证独立执行与引用可行，复现旧 manager 分支风险，并验证锁内重开及持久去重。它不证明成员 ACL、群输入裁剪、生产公共投影或后台调度已经实现。
+
+### LA1 已实现的后台 Session
+
+明确后台工作绑定纳入 Session owner 与可写投影，存储于 Friend Home；普通 Workflow 启动接口不得接管它。日常列表只含每日主聊，独立工作从 Friend 工作列表进入。复用现有详情、Pi 历史、压缩及 turns/events 实时合同，不添加第二套 transcript。工作句柄与结果引用、v5 迁移、跨日/取消/恢复边界以 [Long Agent 实现合同](../long-agents/chat-long-agent-architecture.md#la1独立后台工作实现合同)为准，群公共 Session 尚待 LA5。

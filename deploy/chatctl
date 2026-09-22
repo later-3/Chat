@@ -416,7 +416,8 @@ wait_for_health() {
       "http://127.0.0.1:$CONFIGURED_PORT/api/health" 2>/dev/null || true)"
     if systemctl is-active --quiet "$CHAT_SERVICE.service" \
       && [[ "$response" == '{"ok":true,"service":"chat"}' ]]; then
-      return 0
+      run_as_chat "$NODE_BIN" "$CHAT_ROOT/scripts/chat-web-health.mjs" "http://127.0.0.1:$CONFIGURED_PORT"
+      return $?
     fi
     sleep 1
   done
@@ -541,7 +542,7 @@ service_command() {
     done
     load_installed_environment
     if [[ "$COMPONENT" != nanoclaw ]]; then
-      if wait_for_health 1; then log "Backend health: ok"; else log "Backend health: unavailable"; failed=1; fi
+      if wait_for_health 1; then log "Backend + Chat Web health: ok"; else log "Backend / Chat Web health: unavailable"; failed=1; fi
     fi
     if ((nano_installed)) && [[ "$COMPONENT" != backend ]]; then nano_health || failed=1; fi
     return "$failed"

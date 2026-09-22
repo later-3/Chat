@@ -43,6 +43,9 @@ export async function readChatSessionOwnerIndex(
     for (const day of state.dailySessions) {
       if (day.longAgentId === projectId) add(day.sessionId, day.longAgentId, projectLongAgentId(projectId, day.longAgentId));
     }
+    for (const work of state.works) {
+      if (work.longAgentId === projectId) add(work.sessionId, work.longAgentId, work.id);
+    }
     return owners;
   } catch (cause) {
     throw new SessionOwnerResolutionError(cause);
@@ -59,5 +62,5 @@ export function chatSessionOwner(
 /** Only today's native Friend Session accepts direct conversation; legacy history never does. */
 export async function readWritableFriendSessionIds(chatHome?: string): Promise<ReadonlySet<string>> {
   const state = await readLongAgentState(chatHome);
-  return new Set(state.dailySessions.filter((day) => day.date === agentDate(day.timeZone)).map((day) => day.sessionId));
+  return new Set([...state.dailySessions.filter((day) => day.date === agentDate(day.timeZone)).map((day) => day.sessionId), ...state.works.map(work => work.sessionId)]);
 }

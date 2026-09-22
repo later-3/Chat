@@ -217,3 +217,19 @@ Child Workflow等待审核时，父`workflow_call`仍是`running`而不是新增
 ## Friend 跨项目委派（P2）
 
 Friend 的 `workflow_call` 以本轮协作 Project 作为子 Workflow 目标，`parentProjectId` 单独校验父 Home Session。原生 parentSession 谱系保留，父/子端点可各带 projectId；旧记录缺省仍按同项目解析。默认目标为空时 describe/start 明确失败，wait/cancel 继续按父 Session 的既有 callId 关系操作。树统计及前端解析不得把子项目替换成父 Home。完整上下文合同见 [公共装配 §15](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)。
+
+## LA0：Friend 执行绑定与后台返回（目标）
+
+2026-09-20：当前 `workflow_call` 运行目标 Workflow 的 Agent 定义，不自动继承父 Friend 身份；仅创建 Subsession 不能兑现“该 Friend 独立做任务”。LA1 必须让明确声明的 Friend 执行位经统一 Resolver 绑定可信 longAgentId、定义 revision、工作授权和独立 Session，再调用公共 Pi 装配；普通 Workflow Agent 继续现有合同，禁止全局改变所有 Node 身份。
+
+Workflow 管理工作步骤、等待、分工与终止；Friend 生命周期管理身份和自己的独立执行上下文。Task Run 关联 Workflow Run，不复制其执行状态。节点/工具不能自行拼装另一套模型上下文。多参与者对话映射与来源见[Session §11](../sessions/chat-session-architecture.md#11-la0独立工作与群聊的原生-session-合同)。
+
+现有子调用保持 attached 父取消传播；显式 detached Task 才允许主聊回合结束后继续。等待窗口返回句柄不等于已获得 detached 语义。重新查询/取消校验真实父子/任务关联，不以“最后一个会话”作回复目标。
+
+LA0 时 `settleRun → appendTerminalState` 在异步等待后使用旧 parent manager（LA1 已替换，见下节）。LA0 原生测试证明这可能把最新 leaf 指回旧分支；不得因原始 JSONL 未丢行就宣称历史正确。LA1 要把完成返回接入持久收据及同 Session 锁内重开/去重，且避免在父仍持锁时等待需要同锁的子返回。父取消、跨日、结束/删除、attempt/revision 已过期均按[机制 §9](../long-agents/chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)处理。LA0 不改变现有 Workflow Runtime 或取消行为。
+
+### LA1 实际返回路径
+
+`workflow-call-writer.ts` 负责父写入器的等待窗口：同步等待未结束时使用当前持锁的 manager；窗口返回/抛错即 release。后续 settle 仅保留文件/Session/Project 标识，取得原 Session 操作锁，确认文件仍存在后重开并按 callId 去重，拒绝重新创建被删除的父文件。Workflow Run 的耐久终态仍是恢复事实；Backend 重启后既有 `wait(callId)` 可重新消费，不启动第二个子 Run。持久化失败不能被误记为模型执行失败。
+
+Friend 独立工作的入口为 `friend_work`，其绑定、定义冻结和队列由已有 Long Agent 生命周期负责，详见 [LA1 合同](../long-agents/chat-long-agent-architecture.md#la1独立后台工作实现合同)。它是显式 detached；普通 `workflow_call` 继续 attached，不因返回 running 句柄而改变取消传播。

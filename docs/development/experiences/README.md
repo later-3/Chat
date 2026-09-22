@@ -12,6 +12,10 @@
 
 当前案例：
 
+- [异步返回与原生 Session 写入权](./asynchronous-session-writer.md)
+
+- [进程健康不等于 Web 就绪](./web-readiness-build-parity.md)
+
 - [Session 迁移保留原件与归属](./session-migration-provenance.md)
 
 - [原生压缩摘要与公共聊天恢复](./native-summary-web-projection.md)

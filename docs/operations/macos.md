@@ -7,6 +7,22 @@ macOS常驻运行使用[生产LaunchAgent模板](../../deploy/macos/com.later.ch
 
 ## 运行与停止
 
+日常启动、模块选择、预检和停止统一见[运行手册](./running.md#正式启动统一入口)，无需记住 Nano 的哈希服务名。这里仅保留 Mac 安装、更新构建和 launchd 排障。
+
+正式 Web 与 Backend 是同一个进程。日志中的 Backend 包含 Web；网页访问脚本打印的地址，不另起 Vite。
+
+**启动不安装、不构建、不更新代码。** 已有服务使用当前 `.output`，源码更新后需在没有重要在途任务时分别执行：
+
+```bash
+pnpm chat:stop -- --normal
+pnpm build
+pnpm chat:start
+```
+
+如果 `/api/health` 正常而首页 500，并且日志出现已删除模块（例如旧登录路由）的 `ERR_MODULE_NOT_FOUND`，说明运行进程与磁盘产物可能错位。重复 start 会保留旧进程，不能替代上述更新步骤。禁止在正式进程运行时覆盖它使用的 `.output`。
+
+原生 launchctl 命令仍可用于排障：
+
 ```bash
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.later.chat.production.plist
 launchctl kickstart -k gui/$(id -u)/com.later.chat.production

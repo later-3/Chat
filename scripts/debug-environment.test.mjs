@@ -227,7 +227,9 @@ test("Stop reaps an owned grandchild even after its parent exits, and preserves 
     await new Promise(accept => unrelated.close(accept));
     await rm(root, { recursive: true, force: true });
   });
-  for (let attempt = 0; attempt < 100; attempt++) {
+  // Full `pnpm verify` runs this alongside real launchd fixtures; node startup
+  // can exceed 10s under that load while the test budget allows 25s.
+  for (let attempt = 0; attempt < 200; attempt++) {
     try { grandchild = Number(await readFile(join(root, "ready"), "utf8")); break; }
     catch (error) { if (error.code !== "ENOENT") throw error; await delay(100); }
   }

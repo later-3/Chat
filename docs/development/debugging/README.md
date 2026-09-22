@@ -4,7 +4,9 @@
 
 **现在就要下断点：先看[源码、函数与数据结构地图](./code-map.md)。** 它按普通 Chat、公共 Pi 装配、长期 Agent、NanoClaw、定时任务/朋友圈排列，包含文件链接、函数名、观察变量和 ID 含义；首次启动再配合[环境与 VS Code](./environment.md)。
 
-启动与停止快速导航：[完整环境只调部分模块](./environment.md#功能都可用只调试选中的模块)、[命令面板逐步操作](./environment.md#操作示例后端与-nanoclaw-同时调试)、[launch.json 组合原理](./environment.md#launchjson-如何组合运行与调试)、[全部停止命令与等价脚本](./stopping.md#常用命令与等价脚本)。
+启动脚本如何选择见[场景对照](../../operations/running.md)。本手册只展开隔离调试与断点。
+
+调试快速导航：[完整环境只调部分模块](./environment.md#功能都可用只调试选中的模块)、[命令面板逐步操作](./environment.md#操作示例后端与-nanoclaw-同时调试)、[launch.json 组合原理](./environment.md#launchjson-如何组合运行与调试)、[全部停止命令与等价脚本](./stopping.md#常用命令与等价脚本)。
 
 ## 阅读路线
 

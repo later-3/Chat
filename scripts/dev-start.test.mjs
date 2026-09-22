@@ -17,8 +17,9 @@ async function freePort() {
   return port;
 }
 
-async function until(predicate, description) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+async function until(predicate, description, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     if (await predicate()) return;
     await delay(100);
   }
@@ -75,9 +76,11 @@ async function fixture(t, extraEnv = {}) {
   return { child, exited, directory, backend, output: () => output };
 }
 
-test("launcher passes frontend versions and backend address, then cleans up both process trees", { timeout: 25000 }, async t => {
+test("launcher passes frontend versions and backend address, then cleans up both process trees", { timeout: 45000 }, async t => {
   const f = await fixture(t);
-  await until(() => f.output().includes("Chat 开发环境已启动:"), "launcher did not become ready");
+  // Parallel lifecycle suites launch real OS processes; measure readiness rather than a 10s scheduling assumption.
+  await until(() => f.output().includes("Chat 开发环境已启动:"), "launcher did not become ready", 30_000)
+    .catch(error => { throw new Error(`${error.message}\n${f.output()}`, { cause: error }); });
   const states = await Promise.all(["backend", "frontend"].map(async name => JSON.parse(await readFile(join(f.directory, `${name}.json`), "utf8"))));
   const frontendPackage = JSON.parse(await readFile("frontend/package.json", "utf8"));
   const piPackage = JSON.parse(await readFile("pi/packages/coding-agent/package.json", "utf8"));

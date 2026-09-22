@@ -562,6 +562,13 @@ export async function acceptLongAgentEvents(input: {
     if ((old !== undefined && eventPayloadHash(old.event) !== eventPayloadHash(event)) || (done !== undefined && done.payloadHash !== eventPayloadHash(event))) throw new LongAgentEventConflictError("NanoClaw事件幂等冲突");
     if (old !== undefined || done !== undefined || event.direction !== "in") continue;
     const agent = agentForEvent(registry, input.instanceId, event)!;
+    if (event.kind === "schedule") {
+      const { readTaskState } = await import("./tasks/storage.js");
+      if ((await readTaskState(chatHome, agent.id)).migration === "complete") {
+        // Old transport retries are acknowledged without invoking the daily model again.
+        idleSummaries.add(event.eventId); continue;
+      }
+    }
     if (event.kind === "schedule" && (event.taskId === "daily-summary" || event.taskId?.startsWith("daily-summary-") === true)
       && !await hasFriendDailyActivity(chatHome, agent)) { idleSummaries.add(event.eventId); continue; }
     const bound = event.kind === "schedule" ? undefined : await ensureEventBinding(chatHome, agent, event);

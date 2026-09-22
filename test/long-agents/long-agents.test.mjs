@@ -300,7 +300,7 @@ test("legacy per-session bindings migrate to one Project Long Agent primary sess
   }));
 
   const state = await readLongAgentState(chatHome);
-  assert.equal(state.schemaVersion, 4);
+  assert.equal(state.schemaVersion, 5);
   assert.deepEqual(state.projectAgents, [{
     id: "project-long-agent:nexus:nexus",
     projectId: "nexus",
@@ -313,7 +313,7 @@ test("legacy per-session bindings migrate to one Project Long Agent primary sess
   assert.equal(state.bindings.length, 1);
   assert.equal(state.bindings[0].projectLongAgentId, state.projectAgents[0].id);
   assert.equal(state.bindings[0].nanoclawSessionId, "nano-session-1");
-  assert.equal(JSON.parse(fs.readFileSync(path.join(chatHome, "runtime", "long-agent-state.json"), "utf8")).schemaVersion, 4);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(chatHome, "runtime", "long-agent-state.json"), "utf8")).schemaVersion, 5);
 });
 
 test("LongAgent default definition grants every registered Chat system Tool", async (t) => {
@@ -868,9 +868,15 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     const projection = await inspected.json();
     assert.match(projection.prompt.final, new RegExp(`CURRENT_RULE_${name}`));
     assert.match(projection.prompt.final, /Nexus Nano/);
+    const { setLongAgentInteractionProject, readLongAgentInteractionProject } = await import("../../src/long-agents/interaction-project.ts");
+    const current = await readLongAgentInteractionProject(chatHome, "nexus");
+    if (current.effective.projectId !== name) {
+      await setLongAgentInteractionProject({ chatHome, longAgentId: "nexus", projectId: name, expectedRevision: current.revision });
+    }
+    const association = await readLongAgentInteractionProject(chatHome, "nexus");
     const response = await router.fetch(new Request("http://chat.test/api/long-agents/nexus/messages", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: "nexus", sessionId: first.sessionId, contextProjectId: name, text: `Work on ${name}` }),
+      body: JSON.stringify({ projectId: "nexus", sessionId: first.sessionId, contextProjectId: name, interactionRevision: association.revision, text: `Work on ${name}` }),
     }));
     assert.equal(response.status, 200);
     assert.equal((await response.json()).sessionId, first.sessionId);

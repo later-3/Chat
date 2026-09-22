@@ -1,6 +1,6 @@
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { createLongAgent, LongAgentLifecycleError } from "../../long-agents/lifecycle.js";
-import { NanoClawGatewayError } from "../../long-agents/nanoclaw-client.js";
+import { projectFriendCreationError } from "../../long-agents/http-error.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -33,15 +33,9 @@ export default defineEventHandler(async (event) => {
       },
     };
   } catch (error) {
-    if (error instanceof NanoClawGatewayError) {
-      throw createError({ statusCode: 503, statusMessage: "创建助手需要可用且已更新的 NanoClaw Host，请检查连接与服务认证后重试" });
-    }
     if (error instanceof LongAgentLifecycleError) {
       throw createError({ statusCode: error.statusCode, statusMessage: error.message });
     }
-    throw createError({
-      statusCode: 500,
-      statusMessage: "创建助手失败，请检查服务日志后重试",
-    });
+    throw createError(projectFriendCreationError(error));
   }
 });

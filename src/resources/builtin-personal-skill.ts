@@ -4,21 +4,19 @@ import { useStorage } from "nitro/storage";
 import { ensureChatHome } from "../chat-home.js";
 import { assertFileWithin, atomicWriteText, contentRevision, fileRevision, withFileLock } from "../persistence/versioned-file.js";
 
-const SKILL_NAME = "task-scheduling";
-
-async function source(): Promise<string> {
-  try { return await readFile(new URL(`./builtin-skills/${SKILL_NAME}/SKILL.md`, import.meta.url), "utf8"); }
+async function source(name: string): Promise<string> {
+  try { return await readFile(new URL(`./builtin-skills/${name}/SKILL.md`, import.meta.url), "utf8"); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  const value = await useStorage("assets:builtin-skills").getItem<string>(`${SKILL_NAME}/SKILL.md`);
-  if (typeof value !== "string" || !value.startsWith("---")) throw new Error("找不到定时任务Skill发布资源");
+  const value = await useStorage("assets:builtin-skills").getItem<string>(`${name}/SKILL.md`);
+  if (typeof value !== "string" || !value.startsWith("---")) throw new Error(`找不到${name}Skill发布资源`);
   return value;
 }
 
 /** Install as an ordinary Personal Skill. Only update a previously installed, unmodified copy. */
-export async function ensureTaskSchedulingSkill(chatHome: string) {
+export async function ensureBuiltinPersonalSkill(chatHome: string, name: string) {
   const home = await ensureChatHome(chatHome);
-  const path = resolve(home.agentDir, "skills", SKILL_NAME, "SKILL.md");
-  const receipt = resolve(home.runtimeDir, "builtin-skills", `${SKILL_NAME}.sha256`);
+  const path = resolve(home.agentDir, "skills", name, "SKILL.md");
+  const receipt = resolve(home.runtimeDir, "builtin-skills", `${name}.sha256`);
   return withFileLock(path, async () => {
     await assertFileWithin(path, home.agentDir);
     await assertFileWithin(receipt, home.root);
@@ -27,7 +25,7 @@ export async function ensureTaskSchedulingSkill(chatHome: string) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
       throw error;
     });
-    const content = await source();
+    const content = await source(name);
     const version = contentRevision(content);
     if (current !== "absent" && current !== installed && current !== version) {
       return { path, status: "user-owned" as const };
@@ -36,4 +34,13 @@ export async function ensureTaskSchedulingSkill(chatHome: string) {
     await atomicWriteText(receipt, version);
     return { path, status: "installed" as const };
   });
+}
+export async function ensureTaskSchedulingSkill(chatHome: string) {
+  return ensureBuiltinPersonalSkill(chatHome, "task-scheduling");
+}
+export async function ensureDutyManagementSkill(chatHome: string) {
+  return ensureBuiltinPersonalSkill(chatHome, "duty-management");
+}
+export async function ensureDeliverablesSkill(chatHome: string) {
+  return ensureBuiltinPersonalSkill(chatHome, "deliverables");
 }

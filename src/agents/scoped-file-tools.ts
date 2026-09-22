@@ -5,6 +5,7 @@ import {
   createFindToolDefinition, createGrepToolDefinition, createLsToolDefinition,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { withFileLock } from "../persistence/versioned-file.js";
 import { isFilePathAllowed } from "../files/path-security.js";
 
 /** Resolve missing write paths through the nearest existing ancestor; never follow a dangling symlink. */
@@ -73,7 +74,17 @@ export function scopedFileTools(input: {
       return tool.execute(id, params, signal, onUpdate, context);
     },
   });
-  return [read, defineTool(write), defineTool(edit),
+  const serializeWrite = (tool: ToolDefinition): ToolDefinition => ({ ...tool,
+    execute: async (id, params, signal, onUpdate, context) => {
+      if (typeof params !== "object" || params === null || !("path" in params) || typeof params.path !== "string") throw new Error("缺少文件路径");
+      const target = await check(params.path, true);
+      return withFileLock(target, async () => {
+        signal?.throwIfAborted();
+        return tool.execute(id, params, signal, onUpdate, context);
+      });
+    },
+  });
+  return [read, serializeWrite(defineTool(write)), serializeWrite(defineTool(edit)),
     guardSearch(defineTool(createLsToolDefinition(input.cwd))),
     guardSearch(defineTool(createFindToolDefinition(input.cwd))),
     guardSearch(defineTool(createGrepToolDefinition(input.cwd)))];

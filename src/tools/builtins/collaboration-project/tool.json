@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "collaboration-project",
+  "name": "collaboration_project",
+  "label": "Collaboration project",
+  "description": "读取或修改你（当前 Friend）自己的私聊协作项目关联：read 返回当前关联与可用性，set 用 expectedRevision 设置项目，clear 用 expectedRevision 显式清空。身份取自可信执行上下文，不能修改其他 Friend，也不能在群参与上下文中使用。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": [
+    "long-agent:interaction-project"
+  ]
+}

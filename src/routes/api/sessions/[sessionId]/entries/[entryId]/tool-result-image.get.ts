@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   const projectId = typeof query.projectId === "string" ? query.projectId : undefined;
 
   try {
-    const image = await readChatToolResultImage(sessionId, entryId, blockIndex, projectId);
+    const image = await readChatToolResultImage(sessionId, entryId, blockIndex, projectId, undefined, { kind: "owner" });
     if (image.status === "not-found") {
       throw createError({ statusCode: 404, statusMessage: "找不到Tool结果图片" });
     }

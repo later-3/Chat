@@ -1,3 +1,4 @@
+import { FRIEND_WORK_TOOL_PROVIDER } from "./builtins/friend-work/index.js";
 import { PROJECT_SEARCH_TOOL_PROVIDER } from "./builtins/project-search/index.js";
 import { PROJECT_READ_TOOL_PROVIDER } from "./builtins/project-read/index.js";
 import { PROJECT_CREATE_TOOL_PROVIDER } from "./builtins/project-create/index.js";
@@ -14,10 +15,15 @@ import { AGENT_MEMORY_WRITE_TOOL_PROVIDER } from "./builtins/agent-memory-write/
 import { LONG_AGENT_MANAGE_TOOL_PROVIDER } from "./builtins/long-agent-manage/index.js";
 import { CHANNEL_SEND_TOOL_PROVIDER } from "./builtins/channel-send/index.js";
 import { TASK_MANAGE_TOOL_PROVIDER } from "./builtins/task-manage/index.js";
+import { DUTY_MANAGE_TOOL_PROVIDER } from "./builtins/duty-manage/index.js";
+import { ARTIFACT_MANAGE_TOOL_PROVIDER } from "./builtins/artifact-manage/index.js";
 import { SUMMARY_MANAGE_TOOL_PROVIDER } from "./builtins/summary-manage/index.js";
 import { SOCIAL_MANAGE_TOOL_PROVIDER } from "./builtins/social-manage/index.js";
+import { CONVERSATION_MANAGE_TOOL_PROVIDER } from "./builtins/conversation-manage/index.js";
+import { COLLABORATION_PROJECT_TOOL_PROVIDER } from "./builtins/collaboration-project/index.js";
 
 export const CHAT_SYSTEM_TOOL_PROVIDERS = [
+  FRIEND_WORK_TOOL_PROVIDER,
   MEMORY_SEARCH_TOOL_PROVIDER,
   MEMORY_RECORD_TOOL_PROVIDER,
   WORKFLOW_CALL_TOOL_PROVIDER,
@@ -33,8 +39,12 @@ export const CHAT_SYSTEM_TOOL_PROVIDERS = [
   LONG_AGENT_MANAGE_TOOL_PROVIDER,
   CHANNEL_SEND_TOOL_PROVIDER,
   TASK_MANAGE_TOOL_PROVIDER,
+  DUTY_MANAGE_TOOL_PROVIDER,
+  ARTIFACT_MANAGE_TOOL_PROVIDER,
   SUMMARY_MANAGE_TOOL_PROVIDER,
   SOCIAL_MANAGE_TOOL_PROVIDER,
+  CONVERSATION_MANAGE_TOOL_PROVIDER,
+  COLLABORATION_PROJECT_TOOL_PROVIDER,
 ] as const;
 
 const providersByAddress = new Map(CHAT_SYSTEM_TOOL_PROVIDERS.map((provider) => [provider.address, provider]));

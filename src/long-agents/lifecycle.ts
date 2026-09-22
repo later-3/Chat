@@ -1,14 +1,14 @@
 import { appendChatAuditEvent } from "../audit-log.js";
 import { resolveChatHome } from "../chat-home.js";
 import { agentHomeProjectId, ensureAgentHomeProject, readProjectRegistry } from "../projects/registry.js";
-import { checkNanoClawGateway, getNanoClawAgentGroup, provisionNanoClawAgentGroup } from "./nanoclaw-client.js";
+import { requireNanoClawGateway, getNanoClawAgentGroup, provisionNanoClawAgentGroup } from "./nanoclaw-client.js";
+import { getChatChannelGatewayToken } from "./channel-service-auth.js";
 import { removeLongAgentAvatarAssets } from "./avatars.js";
 import { readFile, realpath, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { assertFileWithin, atomicWriteJson, withFileLock } from "../persistence/versioned-file.js";
 import { resolve } from "node:path";
 import { getChatHomePaths } from "../chat-home.js";
-import { ensureDefaultLongAgentTasks } from "./agent-tasks.js";
 import { parseWorkflowAgentDefinition } from "../workflows/agent-config.js";
 import { ensureLongAgentResourceDirs, longAgentConfigRoot, readLongAgentRegistry, updateLongAgentRegistry } from "./storage.js";
 import {
@@ -61,6 +61,7 @@ export async function createLongAgent(input: CreateLongAgentInput): Promise<Long
   }
   const name = input.name.trim();
   if (name === "" || name.length > 200 || input.id.length > 80) throw new LongAgentLifecycleError(400, "名称必须为1–200个字符，ID不能超过80个字符");
+  if ((input.description?.trim().length ?? 0) > 500) throw new LongAgentLifecycleError(400, "简介不能超过500个字符");
   const homeProject = (await readProjectRegistry(chatHome)).projects.find((project) => project.projectId === input.id);
   if (homeProject !== undefined && (homeProject.kind !== "agent"
     || resolve(homeProject.path) !== resolve(longAgentConfigRoot(await realpath(chatHome), input.id), "workspace"))) {
@@ -104,23 +105,6 @@ export async function createLongAgent(input: CreateLongAgentInput): Promise<Long
     };
   });
 
-  try {
-    // 预置两个日常任务（日终总结 / 晨间联系）。这一步是尽力而为：任务接口暂时不可用
-    // 不应让 Agent 创建失败——启动时的幂等补齐会重试。
-    const instance = findInstanceOrThrow(await readLongAgentRegistry(chatHome), created.instanceId);
-    try {
-      await ensureDefaultLongAgentTasks({ instance, agentGroupId: created.nanoclawAgentGroupId });
-    } catch (error) {
-      console.warn(`预置Long Agent任务失败（${created.id}）: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  } catch (error) {
-    await updateLongAgentRegistry(chatHome, (registry) => ({
-      registry: { ...registry, agents: registry.agents.filter((agent) => agent.id !== created.id) },
-      result: undefined,
-    }));
-    throw error;
-  }
-
   await appendChatAuditEvent({
     action: "long-agent.create",
     target: { type: "long-agent", longAgentId: created.id },
@@ -141,6 +125,9 @@ async function provisionLongAgent(input: CreateLongAgentInput & { readonly chatH
   const receiptPath = resolve(input.chatHome, "runtime", "long-agent-provisioning", `${input.id}.json`);
   // Serialize first-use instance registration and Agent provisioning; regular reads remain available.
   return withFileLock(resolve(input.chatHome, "runtime", "long-agent-provisioning"), async () => {
+    try { getChatChannelGatewayToken(); } catch {
+      throw new LongAgentLifecycleError(503, "Friend服务认证尚未配置。请为Backend与NanoClaw配置相同的服务凭据后重试；创建输入已保留。");
+    }
     let registry = await readLongAgentRegistry(input.chatHome);
     await assertFileWithin(receiptPath, input.chatHome);
     if (registry.instances.length === 0) {
@@ -148,9 +135,7 @@ async function provisionLongAgent(input: CreateLongAgentInput & { readonly chatH
         id: "local", name: "Local NanoClaw", executionMode: "chat-pi",
         gatewayBaseUrl: process.env.CHAT_NANOCLAW_GATEWAY_URL ?? "http://127.0.0.1:3000/webhook/chat-backend",
       }] });
-      if (!await checkNanoClawGateway(candidate.instances[0]!)) {
-        throw new LongAgentLifecycleError(503, "长期同事服务尚未就绪：请先启动 NanoClaw chat-pi Host，并配置双方相同的服务认证。完成后重试。");
-      }
+      await requireNanoClawGateway(candidate.instances[0]!);
       await updateLongAgentRegistry(input.chatHome, (latest) => ({
         registry: latest.instances.length === 0 ? { ...latest, instances: candidate.instances } : latest,
         result: undefined,

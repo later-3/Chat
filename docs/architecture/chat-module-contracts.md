@@ -54,7 +54,7 @@ Frontend和TUI是并列客户端，互不承载对方的执行；TUI当前仅接
 
 Workflow 通过 `POST /runs` 得到稳定 Run 引用，再由 `GET /runs/:runId/events?startIndex=...` 读取 `application/x-ndjson`。它是 HTTP 流，不是 WebSocket 或 SSE。来源：[事件路由](../../src/routes/runs/%5BrunId%5D/events.get.ts)、[事件发布](../../src/workflows/chat-run-events.ts)、[浏览器消费](../../frontend/lib/chat-workflow-browser.ts)。
 
-页面通过 `resumeChatWorkflowRun()` 重新附着，恢复入口使用 `startIndex=-1`；Run 状态与 Pi Session 重新读取用于恢复事实。不能声称浏览器已持有逐条 ACK 游标或断线后完整重放所有 UI 增量。取消浏览器读取与取消服务端执行是不同操作，显式取消使用 Run API。当前 Long Agent Web 消息则等待本轮完成后重读原生 Session，不能把 Workflow 流当成已经覆盖 Long Agent 的全局通知通道。
+页面通过 `resumeChatWorkflowRun()` 重新附着，恢复入口使用 `startIndex=-1`；Run 状态与 Pi Session 重新读取用于恢复事实。不能声称浏览器已持有逐条 ACK 游标或断线后完整重放所有 UI 增量。取消浏览器读取与取消服务端执行是不同操作，显式取消使用 Run API。Long Agent Web 的 P4 turns 入口已在耐久接受后订阅公共 Pi 增量，旧 messages 入口仍同步兼容；精确范围见下文 Friend P4 合同，不能把单轮事件流当成全局通知通道。
 
 Web 状态行消费同一条 Pi 事件投影（含 `turn_start`、重试与压缩），并使用已有 Run 轮询的最近确认时间。Run 终态优先于事件流关闭，完成后有界排空并重读 Session；可选 `workflowOutcome` 从最后一轮 Run 恢复 completed/failed/cancelled 与错误说明，不新增前端持久账本。取消 API 同时调用本实例按 Runtime runId 登记的 Pi `abort()`；该表仅保存取消句柄，不拥有执行状态。
 
@@ -154,3 +154,18 @@ P3 已在现有 Long Agent 状态中实现耐久接受信封、顺序 Worker、�
 | 阶段、人工审核 | 保留 Workflow 附加信息 | 不制造假 Workflow Stage |
 
 普通 Workflow 原来显示但调用后仅报“不支持”的引导/后续按钮不再伪装可用；输入草稿仍保留。没有删除已实现的执行能力。P5 已完成旧数据副本迁移与本地全链验收；Nano 真实外部收发仍待验收，不能以本地验证替代，见[P5 记录](../history/reviews/2026-09-20-agent-unification-p5.md)。
+
+
+### LA0 后续工作与会话边界
+
+Friend 任务/群聊目标沿用本文件的模块分工，详见[机制 §9](../modules/long-agents/chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)与[Session §11](../modules/sessions/chat-session-architecture.md#11-la0独立工作与群聊的原生-session-合同)。Chat 拥有任务定义、执行绑定、原生历史及受权投影；Nano 拥有触发投影、耐久传输及 Delivery。LA0 不新增 HTTP/Tool Schema、不修改现有状态版本；LA1/LA2/LA5 新增字段须同时升级生产者、运行时校验和所有消费者，不借兼容字段透传未经验证的群/任务身份。
+
+## LA1 后台工作边界
+
+Frontend 的 `FriendWorkPanel` 通过 v1 work API 管理执行入口，正文和实时状态继续由共用 Session/turns/events 投影。`friend_work` 与 HTTP 调用同一 `work.ts` 服务；归属、固定项目、状态迁移、结果交付由 Long Agent 生命周期负责，公共装配和 Pi 不变。Schema 与取消/恢复合同见 [LA1](../modules/long-agents/chat-long-agent-architecture.md#la1独立后台工作实现合同)。Frontend 只持有未确认提交草稿；不能把轮询缓存或导航项目写成运行事实。
+
+LA2 的 Task API v2、Nano 调度投影 v1、可信触发 202 和旧任务所有权迁移已进入实现，合同与兼容性统一见 [Friend 任务](../modules/long-agents/tasks.md)。执行仍引用 LA1 work/turn，不另建模型运行时。
+
+LA4 的产物闭环（产物身份与幂等、内容冻结与提交校验、笔记落盘/站内发布状态、受众与来源、恢复）实现在 `src/long-agents/artifacts/`，配置经任务的 `deliverable` 字段，同源入口为 `/api/long-agents/:id/artifacts` 与 `artifact_manage` Tool，合同见 [Friend 产物闭环](../modules/long-agents/deliverables.md)。产物不新增调度器：发生与执行仍来自 LA2/LA1。
+
+LA3 的职责领域（目标代号与并发版本分离、锁内 CAS、报告绑定、进度与证据、推进前置检查、回执与预算计量）实现于 `src/long-agents/duties/`，同源入口为 `/api/long-agents/:id/duties` 与 `duty_manage` Tool，合同见 [Friend 长期职责](../modules/long-agents/duties.md)。职责不复制执行状态机：推进仍由 LA2 任务/发生记录与 LA1 work/turn 承载。

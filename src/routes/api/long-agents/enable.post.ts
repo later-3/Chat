@@ -1,5 +1,6 @@
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { enableLongAgents, LongAgentLifecycleError } from "../../../long-agents/lifecycle.js";
+import { projectFriendCreationError } from "../../../long-agents/http-error.js";
 
 export default defineEventHandler(async (event) => {
   const body: unknown = await readBody(event);
@@ -14,6 +15,6 @@ export default defineEventHandler(async (event) => {
     if (error instanceof LongAgentLifecycleError) {
       throw createError({ statusCode: error.statusCode, statusMessage: error.message });
     }
-    throw createError({ statusCode: 503, statusMessage: "启用助手失败，请确认 NanoClaw Host 已更新、启动并完成服务认证后重试" });
+    throw createError(projectFriendCreationError(error));
   }
 });

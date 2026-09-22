@@ -185,15 +185,16 @@ async function readLongAgentStateValue(chatHome: string): Promise<{
   try {
     const raw = await readJson(paths.longAgentStatePath);
     const state = parseLongAgentState(raw);
-    if (isRecord(raw) && raw.schemaVersion !== 4) {
-      const backup = resolve(paths.root, "runtime/migrations/long-agent-daily-v4/source.json");
+    if (isRecord(raw) && raw.schemaVersion !== 5) {
+      const backup = resolve(paths.root, "runtime/migrations/long-agent-work-v5/source.json");
       await writeJsonOnce(backup, raw);
+      if (Number(raw.schemaVersion) < 4) await writeJsonOnce(resolve(paths.root, "runtime/migrations/long-agent-daily-v4/source.json"), raw);
     }
-    if (isRecord(raw) && raw.schemaVersion === 4) await completeDailyMigration(paths.root);
+    if (isRecord(raw) && raw.schemaVersion === 5) await completeDailyMigration(paths.root);
     return {
       state,
       migrated: typeof raw === "object" && raw !== null
-        && "schemaVersion" in raw && raw.schemaVersion !== 4,
+        && "schemaVersion" in raw && raw.schemaVersion !== 5,
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -204,9 +205,11 @@ async function readLongAgentStateValue(chatHome: string): Promise<{
 }
 
 async function completeDailyMigration(root: string): Promise<void> {
-  const dir = resolve(root, "runtime/migrations/long-agent-daily-v4");
-  if (await optionalJson(resolve(dir, "source.json")) === undefined) return;
-  await writeJsonOnce(resolve(dir, "complete.json"), { schemaVersion: 1, completedAt: new Date().toISOString(), targetSchema: 4 });
+  for (const [name, targetSchema] of [["long-agent-daily-v4", 4], ["long-agent-work-v5", 5]] as const) {
+    const dir = resolve(root, "runtime/migrations", name);
+    if (await optionalJson(resolve(dir, "source.json")) !== undefined)
+      await writeJsonOnce(resolve(dir, "complete.json"), { schemaVersion: 1, completedAt: new Date().toISOString(), targetSchema });
+  }
 }
 
 const stateWrites = new Map<string, Promise<void>>();

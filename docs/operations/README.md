@@ -1,11 +1,11 @@
 # 部署与运行
 
-**安装部署、日常拉起、源码调试是三件事。** 本目录只维护安装和运维；调试入口见[开发调试](../development/debugging/README.md)。
+**安装部署、日常拉起、源码调试是三件事。** [运行手册](./running.md)集中说明各类启动入口，平台与调试文档只维护各自细节；调试入口见[开发调试](../development/debugging/README.md)。
 
 | 目的 | 入口 |
 |---|---|
 | 新 Linux / WSL2 电脑从零安装 | [安装指南](./installation.md) |
-| 启动、停止、重启、开机自启、更新、回退、诊断 | [运行手册](./running.md) |
+| 选择脚本、启动/停止、正式服务维护 | [运行手册](./running.md) |
 | Friend 旧数据迁移、升级冲突、回退 | [Friend 升级](./friend-migration.md) |
 | 现有 macOS 常驻服务 | [macOS](./macos.md) |
 | SSH、域名与可选代理 | [网络访问](./network.md) |
@@ -24,7 +24,7 @@
 |---|---|
 | Linux x86_64 / aarch64，运行中的 systemd | `deploy/chatctl`；apt-get / dnf / yum 系统依赖 |
 | WSL2 Linux，已启用 systemd | 同一脚本；Windows 浏览器访问 localhost；Windows/WSL 的启动和关机另由宿主管理 |
-| macOS | 现有 launchd 模板与原生 Nano Setup |
+| macOS | 安装沿用 launchd 模板与原生 Nano Setup；统一启动 `pnpm chat:start` |
 | Windows 原生 / WSL1 / 无 systemd 的生产环境 | 当前没有对应生产脚本；不要把开发前台启动当成常驻部署 |
 
 Docker 不是基础依赖。Nano 固定为 `chat-pi`，Chat 不启动 Nano 原生模型/Agent 容器 Runtime；未来隔离工具环境与当前安装无关。

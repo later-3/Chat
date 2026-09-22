@@ -2,6 +2,7 @@
 
 完整规范集中在 [调试手册](./debugging/README.md)，本页只导航。
 
+- 先区分正式使用、源码热更新与隔离调试：[启动场景与脚本](../operations/running.md)。
 - 新源码与依赖：[首次准备](./debugging/first-install.md)。
 - 只调 Backend、组合调试、VS Code 命令面板操作：[环境与 F5](./debugging/environment.md)。
 - Web / Pi / Workflow / TUI / Nano 断点：[源码地图](./debugging/code-map.md)。

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "conversation-manage",
+  "name": "conversation_manage",
+  "label": "Conversation manage",
+  "description": "查看自己参与的朋友群：list 列出自己是成员的群（标题、成员、生命周期、策略、预算），read 读取指定群中自己有权看到的公共消息与讨论/任务状态，propose 生成一份待用户确认的变更建议（不会自行应用）。不会读取其他群、私有 Session 或未授权的数据。",
+  "implementationVersion": 1,
+  "risk": "read-only",
+  "permissions": [
+    "long-agent:conversation"
+  ]
+}

@@ -20,9 +20,7 @@
 
 单模块入口保留模块依赖：TUI 要连接已运行的 Backend；Nano 启动器初始化练习 Group/Memory 时也需要调试 Backend。纯 TUI 整套调试、不启动 Web 可用 F5 `Debug Chat TUI`。命令行组合里的 TUI 必须在交互终端运行；退出它会结束本次整套栈，单独 `debug:tui` 退出则只关闭客户端。
 
-普通开发 Web 用 `pnpm dev:all`，另一个终端用 `pnpm dev:tui` 连接；它们使用普通 dev 实例，不能直接与上表隔离 debug 模块混搭。正常服务的 TUI 用 `pnpm tui --url <Backend地址>`（或安装后的 `chat tui`），无需 Nano；当前 TUI 只接普通 Workflow。Nano 的本地 `ncl`/渠道 CLI 与 Chat TUI 是不同入口。
-
-停止专用调试用 `pnpm debug:stop`；从 CLI 切换到 F5 前先停止旧调试栈。生产 Linux/WSL 的 chatctl 统一调用其 systemd 服务，macOS 沿用 launchd；准备与运行方式见[部署指南](../../operations/README.md)，上表不操作生产服务。
+普通 dev、正式服务与 TUI 的选择统一见[启动场景与脚本](../../operations/running.md)。本表只管理隔离 debug，不能与普通 dev 直接混搭。CLI 切换到 F5 前先用 `pnpm debug:stop` 收回旧调试栈。
 
 ## ENV-01：让正常使用与调试并存
 

@@ -15,7 +15,7 @@ import { resolveChatHome } from "../chat-home.js";
 import { resolveProjectContext } from "../projects/registry.js";
 import { chatSessionOperationKey, withChatSessionOperationLock } from "../session-operation-lock.js";
 import { assertModelSupportsImages } from "../workflows/image-input.js";
-import { readLongAgentRegistry } from "./storage.js";
+import { readLongAgentState, readLongAgentRegistry } from "./storage.js";
 import { openAcceptedDay } from "./project-agent.js";
 import {
   appendChatLongAgentTurn,
@@ -47,6 +47,18 @@ export interface ExecuteLongAgentTurnInput {
   readonly channelType?: string | null;
   /** 本轮协作目标；null/省略均无项目，渠道适配器须显式提供绑定目标。 */
   readonly contextProjectId?: string | null;
+  /**
+   * Revision of the Friend's collaboration-project association that the caller last read. Declared by
+   * the owner-facing private-chat entry: acceptance then resolves and freezes the project from the
+   * association (never from an arbitrary per-turn projectId) and rejects a stale revision.
+   */
+  readonly interactionRevision?: number;
+  /**
+   * Set by the owner-facing HTTP private-chat entries: an ordinary private turn must then carry
+   * `interactionRevision` and may not fall back to a bare `contextProjectId`. Internal callers and
+   * accepted-turn recovery keep the legacy seam; a server-derived work-session target is exempt.
+   */
+  readonly requireInteractionRevision?: boolean;
   /** Trusted Nano daily-summary trigger; read-only draft, never final coverage. */
   readonly summaryDraft?: boolean;
 }
@@ -130,10 +142,14 @@ export async function executeAcceptedLongAgentTurn(
   const turnId = nonEmpty(input.turnId, "turnId") ?? randomUUID();
   const inboundEventId = nonEmpty(input.inboundEventId, "inboundEventId") ?? null;
   const registry = await readLongAgentRegistry(chatHome);
-  const agent = registry.agents.find((candidate) => (candidate.enabled || accepted.status === "completed") && candidate.id === input.longAgentId);
+  const agent = registry.agents.find((candidate) => ((candidate.enabled && candidate.status !== "archived") || accepted.status === "completed") && candidate.id === input.longAgentId);
   if (agent === undefined) throw new Error(`找不到可用LongAgent: ${input.longAgentId}`);
   await resolveProjectContext(input.projectId, chatHome);
-  const projectAgent = await openAcceptedDay(chatHome, agent.id, accepted.sessionId);
+  const work = accepted.workId === undefined ? undefined : (await readLongAgentState(chatHome)).works.find(w =>
+    w.id === accepted.workId && w.longAgentId === agent.id && w.sessionId === accepted.sessionId);
+  if (accepted.workId !== undefined && !work) throw new Error("后台工作执行绑定无效");
+  const projectAgent = work ? { id: work.id, projectId: agent.id, primarySessionId: work.sessionId }
+    : await openAcceptedDay(chatHome, agent.id, accepted.sessionId);
   const isNewSession = accepted.isNewSession;
   const source = input.source ?? "chat-web";
   const channelType = input.channelType === undefined
@@ -268,6 +284,8 @@ export async function executeAcceptedLongAgentTurn(
           }
         });
         try {
+          if ((await readLongAgentState(chatHome)).turns.find(t => t.turnId === accepted.turnId)?.cancelRequested || feedback.cancelled)
+            throw new FriendCancelledError();
           if (recoveredAssistant === undefined) {
             if (resumePending) await created.session.resumePendingTurn();
             else if (accepted.summaryDraft) {

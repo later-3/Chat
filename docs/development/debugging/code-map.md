@@ -138,7 +138,7 @@ Ack 与投递是不同操作；不能看到 Ack 就判断平台用户已读。Ch
 
 | 路径 | 文件 + 函数 | 当前源码的行为 |
 |---|---|---|
-| 预置任务 | [agent-tasks.ts](../../../src/long-agents/agent-tasks.ts)：`ensureDefaultLongAgentTasks`、`DEFAULT_LONG_AGENT_TASKS` | 通过 Nano Management API 检查/补齐任务。源码目前定义 23:30 总结和 08:00 晨间联系；这是默认定义，不等于当前私有实例的任务清单 |
+| 任务管理 | [tasks/service.ts](../../../src/long-agents/tasks/service.ts)：`manageFriendTask`、`acceptTaskTrigger` | LA2 定义/修订/发生记录由 Chat 持久化，Nano 保存调度投影。完整合同见 [Friend 任务](../../modules/long-agents/tasks.md)；新建 Friend 不再预置隐藏任务 |
 | 到期 → Event | [Nano task-forwarder.ts](../../../nanoclaw/src/modules/chat-integration/task-forwarder.ts)：`startChatPiTaskForwarder`、`forwardDueChatPiTasks` | 启动立即扫描，随后每 60 秒扫描一次到期 pending 任务；生成 `kind: schedule`、`taskId` 事件。带 pre-task script 的任务跳过并记日志 |
 | Event → Agent | [bridge.ts](../../../src/long-agents/bridge.ts)：`syncInstance` 的 `event.kind === "schedule"` 分支 | 使用 Agent 默认 Project 的主会话执行，`source: scheduled`；此分支没有普通渠道的自动 Delivery/Ack |
 | Agent → 发帖 | [social-manage/index.ts](../../../src/tools/builtins/social-manage/index.ts)：`SOCIAL_MANAGE_TOOL_PROVIDER` 的 `execute` | `operation: post/read/comment`；要求可信 Long Agent 执行身份，写入后追加审计 |

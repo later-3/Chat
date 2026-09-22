@@ -1,4 +1,5 @@
 import { freezeAssemblyResources, freezeAssemblyTools, validateFrozenAssemblyResources } from "./assembly-resources.js";
+import { applyScopeToCapabilities } from "../long-agents/scope.js";
 import { resolveChatAssemblyContext, freezeWorkflowProjectContext, projectContextInstructions, collaborationInstructions, persistAssemblySnapshot, type ChatAgentInvocation, type ChatAssemblySnapshot } from "./assembly-context.js";
 import { scopedFileTools } from "./scoped-file-tools.js";
 import { join, resolve } from "node:path";
@@ -6,6 +7,7 @@ import { projectExtensionPaths } from "../resources/project-extension-paths.js";
 import type {
   AgentContextTransform,
   AgentSession,
+  CreateAgentSessionOptions,
   SessionManager,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -44,6 +46,12 @@ export interface CreateChatPiAgentSessionOptions {
   readonly additionalSkillPaths?: readonly string[];
   readonly customTools?: readonly ToolDefinition[];
   readonly transformContext?: AgentContextTransform;
+  /**
+   * Fail-closed gate invoked by the public Pi assembly immediately before each provider request
+   * (including tool continuations). Chat uses it for the frozen root-budget admission, so every real
+   * model call — not just the first one in a prompt — is checked and counted at the request boundary.
+   */
+  readonly providerRequestGate?: NonNullable<CreateAgentSessionOptions["providerRequestGate"]>;
   readonly toolContext?: Omit<
     ChatToolRuntimeContext,
     "projectId" | "chatHome" | "cwd" | "sessionManager" | "sessionId"
@@ -96,6 +104,8 @@ export async function createChatPiAgentSession(
     chatSession, sessionManager: options.sessionManager, agent: options.agent, invocation: options.invocation,
   });
   const agent = assembly?.snapshot.agent ?? options.agent;
+  const scope = assembly?.snapshot.scope ?? null;
+  const scopeGrants = scope === null ? null : scope.allowedTools;
   const cwd = assembly?.snapshot.cwd ?? chatSession.cwd;
   const workProject = assembly === undefined ? chatSession.projectContext : assembly.project ?? undefined;
   const settingsManager = assembly?.settingsManager ?? SettingsManager.create(cwd, chatSession.agentDir);
@@ -112,7 +122,13 @@ export async function createChatPiAgentSession(
       projectRoot: workProject.projectRoot, cwd,
     } }),
   }) : undefined;
-  const contextFiles = assembly?.snapshot.contextFiles ?? workflowContext?.files ?? [];
+  const declaredContextFiles = assembly?.snapshot.contextFiles ?? workflowContext?.files ?? [];
+  // A conversation turn only reads the Friend's own identity files; Personal files of any other
+  // origin are excluded before the resource loader can read them.
+  const contextFiles = scope === null || scope.include.personalContextFiles
+    ? declaredContextFiles
+    : declaredContextFiles.filter((file) =>
+        assembly !== undefined && file.path.startsWith(`${assembly.snapshot.ownWorkspace}/`));
   const customInstructions = buildChatAgentCustomInstructions([
     ...agent.customInstructions,
     ...(workflowContext?.project === undefined ? [] : [{ text: projectContextInstructions(workflowContext.project) }]),
@@ -128,7 +144,9 @@ export async function createChatPiAgentSession(
       ...file,
       content: assembly === undefined ? file.content : `<chat_context scope="${file.path.startsWith(`${assembly.snapshot.ownWorkspace}/`) ? "agent" : workProject !== undefined && file.path.startsWith(`${workProject.cwd}/`) ? "project" : "personal"}">\n${file.content}\n</chat_context>`,
     })) }),
-    ...(agent.resources.mode === "inherit"
+    ...(scope !== null && !scope.include.personalPromptResources
+      ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true }
+      : agent.resources.mode === "inherit"
       ? {}
       : {
           noExtensions: true,
@@ -140,7 +158,7 @@ export async function createChatPiAgentSession(
             ...agent.resources.pluginSources,
           ],
         }),
-    ...(agent.resources.mode !== "inherit" ? {} : {
+    ...(scope !== null && !scope.include.personalPromptResources ? {} : agent.resources.mode !== "inherit" ? {} : {
       additionalProjectExtensionPaths: [
         ...(projectResourceDir === undefined ? [] : await projectExtensionPaths(projectResourceDir)),
         ...(assembly === undefined ? [] : await projectExtensionPaths(assembly.snapshot.ownResourceRoot)),
@@ -151,12 +169,12 @@ export async function createChatPiAgentSession(
       ],
     }),
     additionalSkillPaths: [
-      ...(agent.resources.mode === "inherit" && projectResourceDir !== undefined
+      ...(scope !== null && !scope.include.personalPromptResources ? [] : agent.resources.mode === "inherit" && projectResourceDir !== undefined
         ? [resolve(projectResourceDir, "skills")]
         : []),
-      ...(agent.resources.mode === "inherit" ? [] : agent.resources.skillPaths),
-      ...(options.additionalSkillPaths ?? []),
-      ...(assembly === undefined || agent.resources.mode !== "inherit" ? [] : [resolve(assembly.snapshot.ownResourceRoot, "skills")]),
+      ...(scope !== null && !scope.include.personalPromptResources ? [] : agent.resources.mode === "inherit" ? [] : agent.resources.skillPaths),
+      ...(scope !== null && !scope.include.personalPromptResources ? [] : options.additionalSkillPaths ?? []),
+      ...(assembly === undefined || agent.resources.mode !== "inherit" || (scope !== null && !scope.include.personalPromptResources) ? [] : [resolve(assembly.snapshot.ownResourceRoot, "skills")]),
     ],
     ...(pinnedExtensions === undefined ? {} : { noExtensions: true, additionalExtensionPaths: pinnedExtensions, additionalProjectExtensionPaths: [] }),
     ...(replacementSystemPrompt === undefined
@@ -172,6 +190,15 @@ export async function createChatPiAgentSession(
   }
 
   const toolAddresses = agent.tools.mode === "none" ? [] : agent.tools.addresses ?? [];
+  const scopeCandidates = (() => {
+    if (scopeGrants === null || assembly === undefined) return null;
+    const nativeTools = agent.tools.mode === "none"
+      ? []
+      : agent.tools.mode === "explicit"
+        ? [...agent.tools.names]
+        : settingsManager.getDefaultTools() ?? ["read", "bash", "edit", "write"];
+    return { nativeTools: [...new Set([...nativeTools, "read", "write", "edit", "ls", "find", "grep"])], toolAddresses };
+  })();
   let chatTools: ResolvedChatTool[] = [];
   // Filled from Pi after assembly, before any Tool can execute.
   const authorizedToolAddresses: string[] = [];
@@ -200,14 +227,22 @@ export async function createChatPiAgentSession(
   }
   const defaultTools = settingsManager.getDefaultTools() ?? ["read", "bash", "edit", "write"];
   const fileScopeRoot = assembly?.snapshot.ownWorkspace ?? workProject?.projectRoot;
+  const applied = scopeCandidates === null ? null : applyScopeToCapabilities(scope, {
+    systemTools: chatTools.map((tool) => ({ address: tool.address, name: tool.manifest.name })),
+    nativeTools: scopeCandidates.nativeTools,
+    extensionTools: [],
+  });
+  const activeChatTools = applied === null ? chatTools : chatTools.filter((tool) => applied.systemToolNames.includes(tool.manifest.name));
   const guardedTools = fileScopeRoot === undefined || agent.tools.mode === "none" ? [] : scopedFileTools({
     cwd, ownWorkspace: fileScopeRoot, frozenFiles,
     resourceRoots: resourceLoader.getSkills().skills.map((skill) => skill.baseDir),
   }).filter((tool) => agent.tools.mode !== "pi-default" || defaultTools.includes(tool.name));
+  const scopedGuarded = applied === null ? guardedTools : guardedTools.filter((tool) => applied.nativeTools.includes(tool.name));
+  const scopedInjected = applied === null ? options.customTools ?? [] : (options.customTools ?? []).filter((tool) => applied.nativeTools.includes(tool.name) || applied.extensionTools.includes(tool.name));
   const customTools = [
-    ...guardedTools,
-    ...(options.customTools ?? []),
-    ...chatTools.map((tool) => tool.definition),
+    ...scopedGuarded,
+    ...scopedInjected,
+    ...activeChatTools.map((tool) => tool.definition),
   ];
   const customToolNames = new Set<string>();
   for (const tool of customTools) {
@@ -244,7 +279,15 @@ export async function createChatPiAgentSession(
     ...(modelRuntime === undefined ? {} : { modelRuntime }),
     ...(model === undefined ? {} : { model }),
     ...(agent.thinkingLevel === undefined ? {} : { thinkingLevel: agent.thinkingLevel }),
-    ...(agent.tools.mode === "none"
+    ...(options.providerRequestGate === undefined ? {} : { providerRequestGate: options.providerRequestGate }),
+    ...(applied !== null
+      ? (() => {
+          const allowedNames = [...new Set([...applied.nativeTools, ...applied.systemToolNames, ...applied.extensionTools])];
+          return allowedNames.length === 0
+            ? { noTools: "all" as const }
+            : { tools: allowedNames, ...(agent.tools.mode === "explicit" ? { excludeTools: [...agent.tools.exclude] } : {}) };
+        })()
+      : agent.tools.mode === "none"
       ? { noTools: "all" as const }
       : agent.tools.mode === "explicit"
         ? {
@@ -274,13 +317,23 @@ export async function createChatPiAgentSession(
 
   if (agent.tools.mode === "explicit") {
     const available = new Set(created.session.getAllTools().map((tool) => tool.name));
-    const unknown = [...agent.tools.names, ...agent.tools.exclude].filter((name) => !available.has(name));
+    // Tools the authorization scope excluded are an intersection, not a configuration error.
+    const requiredNames = applied === null ? [...agent.tools.names] : agent.tools.names.filter((name) => applied.nativeTools.includes(name) || applied.systemToolNames.includes(name));
+    const unknown = [...requiredNames, ...agent.tools.exclude].filter((name) => !available.has(name));
     if (unknown.length > 0) {
       created.session.dispose();
       throw new Error(`Agent配置包含不存在的Tool: ${[...new Set(unknown)].join(", ")}`);
     }
   }
 
+  if (applied !== null) {
+    const allowedNames = new Set([...applied.nativeTools, ...applied.systemToolNames, ...applied.extensionTools]);
+    const leaked = created.session.getActiveToolNames().filter((name) => !allowedNames.has(name));
+    if (leaked.length > 0) {
+      created.session.dispose();
+      throw new Error(`授权作用域未允许的Tool被注册，已中止本轮：${[...new Set(leaked)].join(", ")}`);
+    }
+  }
   authorizedToolNames.push(...created.session.getActiveToolNames());
   authorizedToolAddresses.push(...chatTools.filter((tool) => authorizedToolNames.includes(tool.manifest.name)).map((tool) => tool.address));
 

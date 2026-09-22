@@ -1,6 +1,6 @@
 # Chat：Pi Web前端与Pi Agent Workflow
 
-新电脑使用：[Linux / WSL2 从零安装](./docs/operations/installation.md) → [单独拉起与维护](./docs/operations/running.md)。开发者使用[调试手册](./docs/development/debugging/README.md)。安装不会自动启动服务。
+启动先看[场景与脚本对照](./docs/operations/running.md)：区分正式使用、源码热更新和隔离调试。新机器见[Linux / WSL2 安装](./docs/operations/installation.md)，断点与 F5 见[调试手册](./docs/development/debugging/README.md)。
 
 
 Chat允许用户在同一个连续Session中逐轮选择Workflow。独立的[Workflow TUI](./docs/modules/tui/README.md)复用Pi终端显示组件，通过同一Backend与Web共享Project、Run和原生Session。浏览器中的Pi Web派生前端把Prompt、Workflow和Agent配置选择提交给Chat，Chat启动对应的Vercel Workflow，并把Agent执行过程、Assistant回复和Pi Session展示在前端。

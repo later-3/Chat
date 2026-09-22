@@ -4,7 +4,10 @@
 
 | 修改内容 | 开发文档 |
 |---|---|
-| 公共 Agent 装配、Friend 每日 Session 与统一交互改造（待审核） | [分阶段开发计划](./agent-unification-plan.md) |
+| 公共 Agent 装配、Friend 每日 Session 与统一交互改造（P1–P5） | [分阶段开发计划](./agent-unification-plan.md) |
+| Friend 独立任务、长期职责、定时任务、动态与群聊（LA0–LA6） | [功能开发计划与阶段验收](./long-agent-functionality-plan.md) |
+| LA5 群聊、多 Friend 协作实施交接（本地范围已验收） | [LA5 任务书](./long-agent-la5-taskbook.md) |
+| LA6 Friend 项目关联、真实渠道与24h联合验收（待审核） | [LA6 任务书](./long-agent-la6-taskbook.md) |
 | Agent参与开发、架构审核与交接 | [贡献工作方法](./agent-contribution.md) |
 | 端到端调试、源码学习与问题定位 | [调试与开发说明书](./debugging/README.md) |
 | VSCode调试和一键启动 | [本地开发与调试](./local-debugging.md) |

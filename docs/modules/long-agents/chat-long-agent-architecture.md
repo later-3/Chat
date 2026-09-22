@@ -36,7 +36,7 @@ Chat 统一管理产品配置、Project、会话选择、Pi 执行和前端合�
 | Project | 工作数据、上下文、资源和授权边界 | 长期 |
 | Agent Home 容器（旧称 Daily Project） | 专属空间和每日 Session 的内部存储归属，不是用户项目 | 长期稳定，不按日新建 |
 | Agent/Project 协作关系 | 参与权限和各轮次工作目标 | 不内嵌第二份 Agent Definition，不另建 Friend 项目会话 |
-| Chat Session | 原生交流历史，固定存储归属 | Friend 每日唯一；普通项目会话按用户创建规则延续 |
+| Chat Session | 原生交流历史，固定存储归属 | Friend 直接交流每日唯一；独立任务/群参与目标见 LA0 合同；普通项目会话按用户创建规则延续 |
 | Pi AgentSession | 一次 Turn 或执行阶段的运行对象 | 临时，可恢复持久 Session |
 | 长期职责 | Agent 持续承担的工作范围及自主安排约束，关联明确 Project | 长期；一项工作完成不终止职责 |
 | Task | 一项具体工作定义及触发策略，可关联长期职责 | 一次性、周期或事件驱动 |
@@ -58,9 +58,11 @@ Friend 的直接交流始终使用自己的每日 Session。业务项目通过�
 
 ### 4.2 每日唯一性、日期与排队（P1 实施决策）
 
+2026-09-20 LA0 补充：以下描述现有每日入口。目标将独立任务/群参与分离到各自 Session，“每日唯一”仅适用于直接交流；不能继续将新后台任务默认送入日常主会话。目标合同见[机制 §9](./chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)，LA1 已扩展明确后台工作绑定；每日唯一性只约束直接交流，工作按独立 Session 排队。
+
 - 唯一键为 `(longAgentId, localDate)`，不含业务 projectId、Channel 或浏览器 ID。日期由 Backend 耐久接受时间及 Agent 的持久 IANA timeZone 计算，不相信客户端时间；迟到渠道消息保留原发送时间，但新接受请求进入接受日。
 - 老配置首次迁移时把 Backend 的有效 IANA 时区持久固定，并在检查中展示；以后不随服务器时区漂移。改时区从下一轮接受生效，历史不改；遇到同一日期复用原 Session，不能因时区更名再建一个。同一执行保存其 timeZone revision。
-- 同日所有需要 Friend 模型的直接消息、任务触发和内部维护进入同一原生 Session，有序执行；接收与模型执行分离，使用现有 Long Agent 耐久待处理记录扩展请求序号/状态，不新增通用任务引擎。多个 Friend 可并行；独立 Workflow 委派仍按自身合同并行。
+- 同日直接消息和内部维护进入每日原生 Session，有序执行；LA2 任务触发通过 LA1 独立工作 Session 执行（[任务合同](./tasks.md)）；接收与模型执行分离，使用现有 Long Agent 耐久待处理记录扩展请求序号/状态，不新增通用任务引擎。多个 Friend 可并行；独立 Workflow 委派仍按自身合同并行。
 - 本轮接受时选定日期/项目/资源；午夜不迁移已接受或执行中的轮次。旧日队列仍写旧 Session，新日任务使用新 Session，缺少最终交接时携带“旧日仍在执行”的可查引用；不得假称昨日已全部总结。
 - Backend 恢复 Worker 启动时、每 60 秒及接受消息前检查换日和待总结记录；空闲日不制造空 Session。首条新日工作按唯一键创建；已关闭日期的新消息不会回写旧日，显式旧链接保持历史阅读，并明确提供“在今天继续”。
 - 新日初始化按唯一键幂等，不因先打开页面或进程重建丢失交接。交接 readiness/revision 独立记录，每轮从记录恢复；后来完成的旧日总结从下一轮进入，不改已接受轮次。
@@ -123,11 +125,11 @@ Agent Memory 保存该 Agent 的长期事实与协作知识；Personal Memory �
 
 内部整理使用非人类来源的原生 custom_message 触发、公共 Agent 装配及原生 assistant 输出；只读总结用途关闭业务写工具，不悄悄增加 Agent 未选能力。Backend 校验结构后原子写入现有总结库并保存原 Entry 引用；记录不是复制成第二套聊天。状态为 pending/running/completed/failed，并以 `(agentId,date,cutoff)` 幂等；语义总结完成不自动发布 Social、发送消息或晋升 Memory。
 
-P3 由 `daily-maintenance.ts` 在旧日所有已接受请求终态后执行正式总结；schema 1 隐藏 custom_message `chat.daily-summary.v1` 标明日期和 cutoff，工具、Skill 与 Extension 关闭。总结 JSON 保存 source 的 sessionId/cutoff/entryId/revision；JSON 原子提交后派生 Markdown，派生写入失败可从已提交 JSON 修复，不再调用模型。原生回复已落盘但总结未提交时复用同 cutoff 的完整回复。23:30 任务通过 `chat.daily-summary-draft.v1` 只读草稿触发，不写正式日终总结；当日没有实际活动时只持久标记定时事件已处理，不创建空 Session、不调用模型。预置任务文本同步为草稿要求；已有用户维护的任务不覆盖，执行入口仍按该维护用途禁用工具。
+P3 由 `daily-maintenance.ts` 在旧日所有已接受请求终态后执行正式总结；schema 1 隐藏 custom_message `chat.daily-summary.v1` 标明日期和 cutoff，工具、Skill 与 Extension 关闭。总结 JSON 保存 source 的 sessionId/cutoff/entryId/revision；JSON 原子提交后派生 Markdown，派生写入失败可从已提交 JSON 修复，不再调用模型。原生回复已落盘但总结未提交时复用同 cutoff 的完整回复。23:30 任务通过 `chat.daily-summary-draft.v1` 只读草稿触发，不写正式日终总结；当日没有实际活动时只持久标记定时事件已处理，不创建空 Session、不调用模型。LA2 不再新建这两项隐藏任务；旧已接受事件继续走草稿收尾，迁移后的任务按明确说明在独立工作 Session 执行，具体见任务合同。
 
 每个截止点初次尝试后最多自动重试 2 次（1 分钟、5 分钟），认证/权限/格式错误不盲重试；失败可显式重试。进程中断按原执行记录核实是否已写出结果，再恢复或标记不确定，不重复不明外部副作用。失败不阻止新日聊天，注入“交接未就绪”和旧历史/任务入口，不伪造总结；旧日完成后下一轮采用新 revision。未变化的日期不调用模型，无数据的空闲日不生成假总结。
 
-Social 以“Agent + 日期”为卡片身份，提供时间流与日历、全部 Agent 或单 Agent 视图。当天没有 Daily 聊天但做了项目工作，也可有卡片。无总结时显示实际活动和缺失状态，不伪造回顾。
+日常活动卡片按“Agent + 日期”聚合，提供时间流与日历、全部 Agent 或单 Agent 视图；Social 帖子使用独立 postId，同日允许多条，不能将日卡身份当成发帖唯一性。当天没有 Daily 聊天但做了项目工作，也可有卡片。无总结时显示实际活动和缺失状态，不伪造回顾。
 
 卡片链接到原 Session、Run、文档和 Memory 变更。Agent 管理自己的日记，其他 Agent 可发现并读取面向它们开放的卡片内容；共享卡片不同时开放完整 Daily、原 Session 或私有 Memory。可见更新支持按订阅触发查看或交流，具体事件处理见共享认知设计。内部 Social 不等同于向微信等外部 Channel 自动发布。
 
@@ -145,7 +147,7 @@ Social 以“Agent + 日期”为卡片身份，提供时间流与日历、全�
 
 需要表达的字段领域：名称/目标、负责人、Project、可选职责关联、一次性/周期/事件触发及过滤条件、时区、输入、可选前置检查、Session 策略、能力或 Workflow 引用、通知目的地、通知条件、重试/补跑/重叠策略、预算和启停状态。字段名称与 HTTP/Tool Schema 待详细设计。自由活动不必为满足 Task 的目标字段而制造交付任务。
 
-Friend 自身需要模型的任务进入接受日唯一 Session；没有模型的确定性检查不创建 Session。显式委派 Workflow 的子 Session 属于 Workflow，不接管 Friend 主交流。旧策略中的“指定业务 Session/每次独立 Friend Session”不作为本轮实现输入。任务仍持有工作项目和来源，不能隐式跟随用户页面。
+现有 Nano 定时消息仍进入接受日唯一 Session；LA1 显式后台工作进入独立 Session；没有模型的确定性检查不创建 Session。显式委派 Workflow 的子 Session 属于 Workflow，不接管 Friend 主交流。旧策略中的“指定业务 Session/每次独立 Friend Session”不作为本轮实现输入。任务仍持有工作项目和来源，不能隐式跟随用户页面。
 
 ### 7.2 一次运行
 
@@ -221,3 +223,19 @@ Frontend 只消费 Backend：Agent 详情、配置编辑、有效 Prompt、资�
 已确认需要独立Agent、可追溯协作与并发；参与者、工作和对话关系分别表达，具体边界见机制合同K5。学习、旅游、开发和日常场景用于验证行为，不按行业建立协作系统。复用workflow_call是底层实现参考；不预先创建第二套协作Runtime。
 
 单次委派、Agent 双向交互、多个 Agent 与用户共同参与是不同场景。是否全部用新 Session、是否需要共同会话、参与者与 Pi 消息角色如何映射、谁在何时发言，以及 A2A 兼容是否有实际价值，将另行评审。当前场景中的协调者和工作会话只是演练，不锁定最终拓扑。
+
+## LA1：独立后台工作实现合同
+
+入口为 Friend 侧栏“后台工作”和 `friend_work` Tool，两者调用 `src/long-agents/work.ts`。仅本人日常 Session 可发起自己的工作，不允许伪造另一个 Friend 或递归派生。创建需完整任务说明，不复制主聊历史。后台沿已有 Long Agent Resolver、接受快照与公共 Pi 工厂执行，不创建同名临时 Agent，也不改变普通 Workflow Agent。复杂阶段仍可由现有 `workflow_call` 组织；周期定义/Occurrence/长期职责属于 LA2–LA3。
+
+- `FriendWork` 是执行绑定，保存在 `long-agent-state.json` v5 的 `works`。ID 由 Friend 与 requestId 决定，同键异载荷拒绝；保存原生工作 Session、origin Session/Entry、标题与固定协作 Project。原生 `chat.friend-work.v1` CustomEntry 用于绑定恢复；Pi header 保留 parentSession。
+- LA1 工作存储 Project 固定为该 Friend Home，和日常历史一样属于本人私有范围；业务 Project 仅为冻结的工作目标，不把它误作 Home。工作下一轮可重新装配能力，但不能改投另一个项目；新项目另开工作。
+- 运行状态仍来自既有 `AcceptedTurn`（新增可选 workId），不复制第二套 Run 状态。接受时冻结定义、资源和项目，按原生 Session 串行；不同工作与主聊并行。每 Friend 当前最多 4 条活跃后台 Session，主聊不占此容量；此值为 LA1 固定上限，预算/配置管理后续接入。
+- Web 复用原 turns、events、Session 详情与聊天组件。侧栏每 3 秒刷新工作状态；打开后走相同的流式事件。取消只针对对应执行，queued 直接取消，running 持久化 cancelRequested 并中止 Pi；装配窗口在调用模型前检查。已发生的外部动作不回滚。
+- 终态 AcceptedTurn 是耐久返回源。`chat.friend-work-return.v1` 隐藏原生 CustomMessage 只写状态/来源引用，不复制答案，不伪造旧 Tool Result，不自动唤醒主聊。交付先取得来源 Session 锁并重开，按 turnId 去重，只接受当前最新尝试；旧日已关闭或来源删除时保留工作结果入口，不重开旧日。刷新不重执行模型。
+- 重启延续 queued；无法证明完成的 running 标 interrupted，保留历史并由用户检查后发新消息，禁止自动重放未知工具副作用。新尝试结果不能引用旧尝试答案。
+- `write/edit` 在规范化目标路径上短时互斥，edit 的读取、匹配、写入在同一锁内；既有 Memory/配置服务保留自己的冲突控制。此保障限单 Backend 与受控文件工具，Bash、任意扩展和外部进程不受文件锁约束；涉及它们的同文件并行写应使用独立工作副本，不能宣称已有 OS 沙箱或跨进程事务。
+
+HTTP v1：`GET/POST /api/long-agents/:id/work`。POST 为 `{schemaVersion:1,requestId,originSessionId,contextProjectId,title,text}`，202 返回 `{schemaVersion:1,work,execution}`；GET 返回 `{schemaVersion:1,works:[{work,execution}]}`，未完成接受的绑定 execution 为 null。取消和过程订阅使用现有 turns API。`friend_work` 支持 start/list/get/cancel，身份与来源由可信工具上下文提供；cancel 需 workId 与 expectedTurnId，防止过期操作取消后续执行。
+
+创建失败或网络丢回执时，页面保留原请求在本标签页 sessionStorage，提供明确“确认上次提交”入口；不会自动重发、生成新 ID 或把未确认当作运行成功。工作输入和实际结果始终由 Backend/原生 Pi 保存。来源、日常列表和工作列表分离，日历不把后台工作当作当天主聊。

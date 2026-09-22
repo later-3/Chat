@@ -134,6 +134,19 @@ const PLANNER_READINESS_CONTRACT_EXPERIENCE_V1 = [
 export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
   {
     schemaVersion: 1,
+    id: "web-readiness-build-parity",
+    revisions: [{
+      schemaVersion: 1, id: "web-readiness-build-parity", revision: 1, kind: "experience",
+      title: "进程健康不等于 Web 就绪",
+      purpose: "避免旧进程引用被替换的构建文件，健康接口成功却宣称网页可用。",
+      content: "正式 Chat Web 由 Backend 提供。运行中的 Node 会保留旧路由表，覆盖其 .output 后，动态导入可能指向已删除文件，导致首页 500 而 /api/health 仍成功。构建验证必须隔离于正式产物；更新按停止、构建、启动执行。幂等 start 不隐式重启旧进程；启动就绪同时检查健康 JSON、HTML 应用入口及同源 JS/CSS 状态与 MIME，重定向和 HTML 资源回退不能视为成功。检查失败保留原先运行服务，只回收本次新启动服务。门禁为 scripts/chat-start.test.mjs 的真实 HTTP/launchd 场景和 chatctl.test.mjs 的 Linux 公共 Web 检查；HTTP 资源通过仍不代替浏览器交互与真实模型/渠道验收。",
+      tags: ["development", "deployment", "frontend", "readiness"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/web-readiness-build-parity.md", capturedAt: "2026-09-20T00:00:00.000+08:00" }],
+      author: { type: "user" }, createdAt: "2026-09-20T00:00:00.000+08:00",
+    }],
+  },
+  {
+    schemaVersion: 1,
     id: "session-migration-provenance",
     revisions: [{
       schemaVersion: 1, id: "session-migration-provenance", revision: 1, kind: "experience",
@@ -388,6 +401,18 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       tags: ["development", "tui", "debugging"], status: "active",
       sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/terminal-stdin-ownership.md", capturedAt: "2026-09-18T00:00:00.000Z" }],
       author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-18T00:00:00.000Z",
+    }],
+  },
+  {
+    schemaVersion: 1, id: "asynchronous-session-writer",
+    revisions: [{
+      schemaVersion: 1, id: "asynchronous-session-writer", revision: 1, kind: "experience",
+      title: "异步返回必须释放旧 SessionManager",
+      purpose: "防止后台任务返回将当前原生会话分支指回旧 leaf。",
+      content: "异步等待不能长期保存父 SessionManager 的写入权。当前工具等待窗口结束即释放；迟到回调取得同一 Session 操作锁后重新打开文件，验证稳定归属并按返回ID去重。只对旧 manager 加锁仍会遗漏等待期间的新消息。原生结果和耐久执行状态先落盘，通知重试不调用模型；已删除来源不复建，旧日结果保留独立入口。回归必须让父聊继续追加，再返回两次并重开检查当前 branch，而不是只数JSONL行。",
+      tags: ["development", "session", "workflow", "concurrency"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/asynchronous-session-writer.md", capturedAt: "2026-09-20T00:00:00.000Z" }],
+      author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-20T00:00:00.000Z",
     }],
   },
 ] as const satisfies readonly PromptResourceDocument[];

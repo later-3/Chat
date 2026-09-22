@@ -12,7 +12,7 @@ export async function readFriendDays(home: string, longAgentId: string) {
   const state = await readLongAgentState(home);
   return { schemaVersion: 1 as const, longAgentId, timeZone: agent.timeZone, today: agentDate(agent.timeZone),
     days: state.dailySessions.filter((day) => day.longAgentId === longAgentId).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60),
-    requests: state.turns.filter((turn) => turn.longAgentId === longAgentId).slice(-100).map((turn) => ({
+    requests: state.turns.filter((turn) => turn.longAgentId === longAgentId && turn.workId === undefined).slice(-100).map((turn) => ({
       turnId: turn.turnId, requestId: turn.requestId, sessionId: turn.sessionId, date: turn.date, acceptedAt: turn.acceptedAt,
       sequence: turn.sequence, source: turn.source, contextProjectId: turn.contextProjectId, status: turn.status, error: turn.error,
     })) };

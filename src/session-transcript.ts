@@ -33,10 +33,19 @@ export function transcriptEntry(entry: SessionEntry) {
   return { ...base, type: "notice" as const, label: "" };
 }
 
-export async function readSessionTranscript(input: {
-  projectId: string; sessionId: string; cursor?: string; leafId?: string; limit?: number;
-}, chatHome?: string) {
+export async function readSessionTranscript(
+  input: {
+    projectId: string; sessionId: string; cursor?: string; leafId?: string; limit?: number;
+    requester?: import("./long-agents/conversations/access.js").SessionRequester | null;
+  },
+  chatHome?: string,
+) {
   const project = await resolveProjectContext(input.projectId, chatHome);
+  const { assertChatSessionReadable } = await import("./session-read-model.js");
+  await assertChatSessionReadable({
+    sessionId: input.sessionId, projectId: project.projectId, ...(chatHome === undefined ? {} : { chatHome }),
+    requester: input.requester ?? null,
+  });
   const info = await requireChatSession(input.sessionId, project.projectId, chatHome);
   if (info.owner.type !== "ordinary") throw new SessionInputError("本期TUI只支持普通Workflow Session");
   const manager = SessionManager.open(info.path, project.sessionDir);

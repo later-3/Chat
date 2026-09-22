@@ -20,13 +20,14 @@ export default defineEventHandler(async (event) => {
     const v = body as Record<string, unknown>;
     if (
       Object.keys(v).some(
-        (k) => !["schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId"].includes(k),
+        (k) => !["schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId", "interactionRevision"].includes(k),
       ) ||
       v.schemaVersion !== 1 ||
       typeof v.requestId !== "string" ||
       !v.requestId.trim() ||
       (v.sessionId !== undefined && (typeof v.sessionId !== "string" || !v.sessionId)) ||
-      !(v.contextProjectId === null || (typeof v.contextProjectId === "string" && v.contextProjectId.trim()))
+      (v.contextProjectId !== undefined && !(v.contextProjectId === null || (typeof v.contextProjectId === "string" && v.contextProjectId.trim()))) ||
+      (v.interactionRevision !== undefined && (!Number.isSafeInteger(v.interactionRevision) || Number(v.interactionRevision) < 0))
     )
       throw new Error("无效Friend消息合同");
     const home = resolveChatHome();
@@ -34,10 +35,12 @@ export default defineEventHandler(async (event) => {
     const accepted = await acceptLongAgentTurn({
       chatHome: home,
       longAgentId,
+      requireInteractionRevision: true,
       projectId: longAgentId,
       turnId: v.requestId,
       text: v.text,
-      contextProjectId: v.contextProjectId as string | null,
+      ...(v.contextProjectId === undefined ? {} : { contextProjectId: v.contextProjectId as string | null }),
+      ...(v.interactionRevision === undefined ? {} : { interactionRevision: Number(v.interactionRevision) }),
       ...(v.sessionId === undefined ? {} : { sessionId: v.sessionId as string }),
       ...(images === undefined ? {} : { images }),
     });

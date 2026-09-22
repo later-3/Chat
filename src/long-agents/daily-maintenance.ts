@@ -89,9 +89,9 @@ async function summarizeDay(home: string, agent: LongAgentConfig, day: DailySess
 }
 
 /** Recover only proven completion. Unknown interrupted writes never auto-replay. */
-export async function recoverLongAgentTurns(home: string, workerOwnsAgent?: string): Promise<void> {
+export async function recoverLongAgentTurns(home: string, workerOwnsSession?: string): Promise<void> {
   for (const turn of (await readLongAgentState(home)).turns) {
-    if (turn.status !== "running" || (isFriendWorkerActive(home, turn.longAgentId) && workerOwnsAgent !== turn.longAgentId)) continue;
+    if (turn.status !== "running" || (isFriendWorkerActive(home, turn.longAgentId, turn.sessionId) && workerOwnsSession !== turn.sessionId)) continue;
     const session = await openChatSession({ projectId: turn.longAgentId, sessionId: turn.sessionId, chatHome: home });
     const entries = session.manager.getBranch();
     const marker = latestChatLongAgentTurn(entries, turn.turnId);
@@ -117,11 +117,13 @@ export function maintainLongAgentDays(chatHome = resolveChatHome(), now = new Da
   const home = resolveChatHome(chatHome); const existing = checks.get(home); if (existing !== undefined) return existing;
   const running = (async () => {
     await recoverLongAgentTurns(home);
+    void import("./tasks/service.js").then(m => m.reconcileFriendTasks(home)).catch(error => console.error("任务管理恢复失败", error));
+    void import("./work.js").then(m => m.deliverFriendWorkReturns(home)).catch(error => console.error("后台工作结果待返回", error));
     const registry = await readLongAgentRegistry(home);
     await Promise.all(registry.agents.filter((agent) => agent.enabled && agent.status !== "archived").map(async (entry) => {
       const agent = await ensureAgentCalendar(entry, home);
       await recoverFriendCalendar(home, agent);
-      await drainLongAgentTurns(home, agent.id);
+      void drainLongAgentTurns(home, agent.id).catch(error => console.error("Friend队列恢复失败", error));
       const state = await readLongAgentState(home);
       for (const day of state.dailySessions.filter((day) => day.longAgentId === agent.id && day.date < agentDate(agent.timeZone, now))) {
         if (state.turns.some((turn) => turn.sessionId === day.sessionId && (turn.status === "queued" || turn.status === "running"))) continue;

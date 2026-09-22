@@ -73,6 +73,8 @@ export const SOCIAL_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemToo
       if (operation === "read") {
         const posts = await listLongAgentFeed({
           chatHome: context.chatHome,
+          // The viewer comes from the trusted execution identity, never from model input.
+          viewerLongAgentId: agent.id,
           ...(typeof record.from === "string" ? { from: record.from } : {}),
           ...(typeof record.to === "string" ? { to: record.to } : {}),
           ...(typeof record.limit === "number" ? { limit: record.limit } : {}),

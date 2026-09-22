@@ -11,10 +11,11 @@ export default defineEventHandler(async (event) => {
   try {
     const query = getQuery(event);
     const projectId = typeof query.projectId === "string" ? query.projectId : undefined;
+    // Owner-facing UI read: the local user keeps access to group history.
     return await readChatSession(sessionId, undefined, {
       deferThinking: "deferThinking" in query,
       deferToolResultImages: "deferMedia" in query,
-    }, projectId);
+    }, projectId, undefined, { kind: "owner" });
   } catch (error) {
     if (error instanceof SessionOwnerResolutionError) {
       throw createError({ statusCode: 500, statusMessage: error.message });

@@ -85,8 +85,9 @@ Web未来可以提供同义操作，但页面关闭/断线不能取消停止操�
 | [dev-start.sh](../../scripts/dev-start.sh)管理普通Nitro/Vite，`tui`子命令连接已有Backend；[专用F5](../development/debugging/environment.md)可组合隔离Backend/Vite/假模型/TUI/Nano工作区，`debug:start --tui`管理前台终端与自有服务 | 仍不是完整Chat生命周期；独立TUI退出只断开，整套调试停止会中断服务，未实现业务排空 |
 | [debug-start](../../scripts/debug-start.mjs)与[debug-stop](../../scripts/debug-stop.mjs)管理隔离调试栈，模块启动器记录PID启动时间/进程组，支持重复替换、可验证孤儿回收与Lab初始化 | 仅实现调试进程归属/就绪，不声称业务排空或任意孤儿均能安全回收；未知占用失败关闭 |
 | [chatctl](../../deploy/chatctl)分开安装/更新与启停，Linux/WSL systemd 可选管理 Nano Host，检查认证健康与实例归属 | 已实现组件级启停与失败回收；跨组件业务排空、持久控制操作尚未实现 |
+| [chat-start](../../scripts/chat-start.mjs)统一启动正式环境，Mac 与 [chat-stop](../../scripts/chat-stop.mjs)共享服务归属检查和控制锁；Linux 转发 chatctl | 已实现 Mac Backend→Nano 就绪、重复启动、模块选择与失败逆序回收；不安装/构建，不证明模型或外部渠道已可用 |
 | [chat-stop](../../scripts/chat-stop.mjs)分别关闭正常服务与开发/调试，VS Code提供同一操作任务 | 已实现服务/进程停止、归属预检与结果检查；不改变自启动，未实现业务排空。审核见[关闭入口审核](../history/reviews/2026-09-08-stop-normal-and-debug.md) |
-| [Chat systemd模板](../../deploy/systemd/chat.service)、[launchd模板](../../deploy/macos/com.later.chat.production.plist.in)及[Nano服务生成](../../nanoclaw/setup/service.ts)已有重启策略 | 现有chat-stop按实际系统/用户管理范围关闭；重新拉起及业务排空协调仍未实现，不能假设直接加同一个target即可解决 |
+| [Chat systemd模板](../../deploy/systemd/chat.service)、[launchd模板](../../deploy/macos/com.later.chat.production.plist.in)及[Nano服务生成](../../nanoclaw/setup/service.ts)已有重启策略 | 现有chat-stop按实际系统/用户管理范围关闭；统一重新拉起已由chat-start实现，业务排空协调仍未实现，不能假设直接加同一个target即可解决 |
 | [Nano shutdown](../../nanoclaw/src/index.ts)会停模块、投递、通道并关闭数据库 | 尚无跨Chat在途执行收尾协议，不能当成整套graceful stop已经具备 |
 | [Long Agent执行](../../src/long-agents/runtime.ts)使用公共Pi入口并释放Session | 当前未证明整机停止时全部在途轮次都被正确取消/记录；应在生命周期接缝验证 |
 

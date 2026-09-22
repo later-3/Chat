@@ -1,3 +1,4 @@
+import { createWorkflowCallWriter } from "./workflow-call-writer.js";
 import { randomUUID } from "node:crypto";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import { getRun } from "workflow/api";
@@ -198,27 +199,28 @@ function runningResult(call: ChatWorkflowCall, waitTimeoutMs: number): ChatWorkf
 }
 
 async function settleRun(
-  manager: SessionManager,
+  writer: ReturnType<typeof createWorkflowCallWriter>,
   base: CallBase,
   runId: string,
 ): Promise<ChatWorkflowCallCompletedResult | ChatWorkflowCallCancelledResult> {
   const run = getRun<ChatWorkflowResult>(runId);
+  let result: ChatWorkflowResult;
   try {
-    const result = await run.returnValue;
-    const terminal = appendTerminalState(manager, base, "completed", runId, new Date().toISOString());
-    return completedResult(terminal, result);
+    result = await run.returnValue;
   } catch (error) {
     const status = await run.status.catch(() => "failed");
-    const terminal = appendTerminalState(
+    const terminal = await writer.write(manager => appendTerminalState(
       manager,
       base,
       status === "cancelled" ? "cancelled" : "failed",
       runId,
       new Date().toISOString(),
-    );
+    ));
     if (terminal.status === "cancelled") return cancelledResult(terminal);
     throw error;
   }
+  const terminal = await writer.write(manager => appendTerminalState(manager, base, "completed", runId, new Date().toISOString()));
+  return completedResult(terminal, result);
 }
 
 function cancelOnParentAbort(
@@ -263,10 +265,11 @@ async function waitForSettlement(
     updatedAt,
     elapsedMs: Math.max(0, Date.parse(updatedAt) - Date.parse(call.startedAt)),
   });
-  const settlement = settleRun(input.parentSessionManager, callBase(call), call.child.runId);
+  const writer = createWorkflowCallWriter(input.parentSessionManager, call.parent.projectId);
+  const settlement = settleRun(writer, callBase(call), call.child.runId);
   const removeAbortListener = cancelOnParentAbort(input.signal, () => run.cancel());
   void settlement.finally(removeAbortListener).catch(() => undefined);
-  const result = await waitWithinWindow(settlement, waitTimeoutMs);
+  const result = await waitWithinWindow(settlement, waitTimeoutMs).finally(() => writer.release());
   return result === WAIT_TIMED_OUT
     ? runningResult(requireOwnedCall(input.parentSessionManager, call.callId), waitTimeoutMs)
     : result;
@@ -437,10 +440,11 @@ export async function callChatWorkflow(
       }
     }
 
-    const settlement = settleRun(input.parentSessionManager, callBase(runningCall), runId);
+    const writer = createWorkflowCallWriter(input.parentSessionManager, runningCall.parent.projectId);
+    const settlement = settleRun(writer, callBase(runningCall), runId);
     const removeAbortListener = cancelOnParentAbort(input.signal, () => started.run.cancel());
     void settlement.finally(removeAbortListener).catch(() => undefined);
-    const result = await waitWithinWindow(settlement, waitTimeoutMs);
+    const result = await waitWithinWindow(settlement, waitTimeoutMs).finally(() => writer.release());
     return result === WAIT_TIMED_OUT
       ? runningResult(requireOwnedCall(input.parentSessionManager, callId), waitTimeoutMs)
       : result;

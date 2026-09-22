@@ -2,6 +2,8 @@
 
 2026-09-19 P1 范围修订：每 Friend 每日唯一直接交流 Session，业务项目逐轮装配；下文旧的按业务项目拆分/独立整理 Session 及其并发假设不再作为本轮实现依据，统一以[生命周期合同](./chat-long-agent-architecture.md#4-project-first-与会话选择)和[开发计划](../../development/agent-unification-plan.md)为准。其余长期能力不因本轮合同自动成为已实现。
 
+2026-09-20 LA0 补充：后台任务和群参与各自使用独立 Session，不改变直接交流每日唯一性。新实施合同见[机制 §9](./chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)及[Session §11](../sessions/chat-session-architecture.md#11-la0独立工作与群聊的原生-session-合同)，场景依赖/阶段门槛以[LA0–LA6 计划](../../development/long-agent-functionality-plan.md)为准；本基线的原生接入、资源和代码质量红线继续有效。
+
 ## 1. 文档地位
 
 2026-09-07：在[机制收口](./chat-long-agent-mechanism-contract.md)之后，用户要求先核实NanoClaw与Chat现有结构，明确代码质量、测试、场景覆盖及实施依赖，再准备工程管理与详细设计。用户已认可本基线并要求落盘；它是已确认的设计阶段输入，不是已下发业务实现任务书，也不代表授权迁移或部署。

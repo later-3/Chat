@@ -10,13 +10,14 @@
 | Workspace / Project | Home 与协作项目分离，每条消息冻结规则和工具目标 | 自然语言切换入口绑定服务尚未交付，不把模型说“已切换”当成程序状态 |
 | Pi 装配 | Workflow/Friend 复用 createChatPiAgentSession | explicit 策略不会偷偷增加资源；重启无法恢复旧资源版本时明确失败 |
 | 每日会话 | 每 Friend、IANA 日期一条直接交流 Session，换日总结/交接 | 不支持同一 Friend 同时写多个直接交流 Session；显式 Workflow 子任务另行隔离 |
+| 独立后台工作（LA1） | 同 Friend 独立 Session、按 Session 排队、持久句柄与冻结项目、侧栏和 friend_work Tool | 当前固定最多 4 条活跃后台 Session；任务周期已由 LA2 接入；职责与群聊仍属 LA3–LA5 |
 | 实时展示 | 普通/Friend 共用事件消费、消息、工具与终态 | Workflow 暂无引导/后续队列；Friend 按实际能力提供 |
 | Channel | 耐久 Event、私聊授权、同日排序、Delivery/Ack 重试 | 真实外部收发验收须单独记录；不支持群聊接入私有每日历史 |
 | 调度 | 既有 Nano schedule 事件接入 Chat Pi，默认日常任务可管理 | 完整主动工作、订阅和任务产品仍未交付 |
 | Memory | Chat Personal/Project Catalog 与 Nano OKF Agent Memory | 物理根统一迁移（旧 S5b）仍未实施，不自动互相复制 |
 | 历史升级 | 旧数据、渠道上下文、归属、精确链接与可重试标记 | v1 已删除且没有备份的数据不能凭空恢复 |
 | Docker | chat-pi 不依赖原生 Agent 容器 | 受控工具/脚本/MCP Docker 环境仍待设计实施 |
-| Social / 多 Agent | 既有动态阅读与单 Agent 管理 | 群聊、多人共享、跨 Agent 参与和动态写入不在此次 P1–P5 内 |
+| Social / 多 Agent | 既有动态阅读、post/comment 写入原语与单 Agent 管理 | 群聊、跨 Agent 参与及任务驱动的幂等发布尚未交付 |
 
 ## 2. 已取代的旧设计
 
@@ -34,7 +35,7 @@
 
 ## 4. 后续能力的实施前提
 
-下面是保留的未来方向，并非本轮已授权开发：
+2026-09-20 用户认可 LA0–LA6 分阶段方向，当前完成范围为 LA0 合同与接缝验证；后续实施按阶段推进。计划及每阶段场景、验证、自检见[Friend 功能计划](../../development/long-agent-functionality-plan.md)，证据见[LA0 审计](../../history/reviews/2026-09-20-long-agent-la0.md)。这些合同不代表下列目标已经上线：
 
 1. Agent 身份与资源的完整单源管理、公共自我管理 Skill 的发布和生效证据。
 2. 统一可见项目概览、活动查询、受授权的历史发现与共享认知。
@@ -46,3 +47,5 @@
 ## 5. 验收与交接
 
 现行生命周期规范见[Long Agent 架构](./chat-long-agent-architecture.md)，配置见[能力模型](./chat-long-agent-capability-model.md)，协议接缝见[Nano/Pi 集成](./chat-nanoclaw-pi-integration.md)。P1–P5 的 S01–S12 是本轮验收范围；更广的[长期场景](./chat-long-agent-scenarios.md)仍需后续合同与实施，不能一起宣称完成。
+
+LA2 已实现任务定义、修订、一次性/周期/可信事件触发、独立执行历史及旧 Nano 任务单所有者迁移，具体合同见 [Friend 任务](./tasks.md)，验证范围见 [LA2 验收](../../history/reviews/2026-09-20-long-agent-la2.md)。

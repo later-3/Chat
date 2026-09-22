@@ -3,8 +3,8 @@
   "id": "task-manage",
   "name": "task_manage",
   "label": "Task manage",
-  "description": "管理自己的定时任务：list 查看、get 读取、create 创建（cron + 触发指令）、update 修改、pause/resume 暂停恢复、delete 删除、run 立即执行一次。只会操作当前 Long Agent 自己的任务；写操作会记录审计。",
-  "implementationVersion": 1,
+  "description": "管理自己的任务定义与执行：list读取任务及revision，create/update配置一次性、cron或可信事件触发，pause/resume暂停恢复，cancel取消未来安排，run手动运行一次，cancel-run停止指定执行。修改须使用当前expectedRevision；任务上下文固定为当前协作项目。暂停或取消安排不终止在途执行。",
+  "implementationVersion": 2,
   "risk": "write",
   "permissions": [
     "long-agent:task"

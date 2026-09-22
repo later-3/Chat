@@ -460,6 +460,47 @@ export type ChatToolResultImageRead =
   | { readonly status: "unsupported" }
   | { readonly status: "invalid-or-oversized" };
 
+/**
+ * Shared read-entry guard for a resolved Session file. A Session without a group participation
+ * binding is unaffected; a group participation Session is refused unless the caller declared a
+ * reader that is still authorized, so revocation, re-joining or guessing another participant's
+ * Session ID cannot bypass the group projection through a generic entry (detail, context, export,
+ * transcript, attachment/tool-result media).
+ */
+async function assertSessionFileReadable(input: {
+  chatHome?: string;
+  sessionPath: string;
+  sessionId: string;
+  requester: import("./long-agents/conversations/access.js").SessionRequester | null;
+}): Promise<void> {
+  const { participationBindingOf, assertParticipantSessionReadable } = await import("./long-agents/conversations/access.js");
+  const binding = participationBindingOf(SessionManager.open(input.sessionPath, dirname(input.sessionPath)).getEntries());
+  if (binding === null) return;
+  if (input.requester === null) throw new Error("群参与 Session 需要明确的读取身份：普通读取入口不能绕过群授权");
+  await assertParticipantSessionReadable({
+    chatHome: input.chatHome ?? resolveChatHome(),
+    storageProjectId: binding.storageProjectId,
+    sessionId: input.sessionId,
+    requester: input.requester,
+  });
+}
+
+/** Exported so owner-facing entry points (export/transcript) apply the same guard before reading. */
+export async function assertChatSessionReadable(input: {
+  sessionId: string;
+  projectId?: string;
+  chatHome?: string;
+  requester: import("./long-agents/conversations/access.js").SessionRequester | null;
+}): Promise<void> {
+  const info = await requireChatSession(input.sessionId, input.projectId, input.chatHome);
+  await assertSessionFileReadable({
+    ...(input.chatHome === undefined ? {} : { chatHome: input.chatHome }),
+    sessionPath: info.path,
+    sessionId: input.sessionId,
+    requester: input.requester,
+  });
+}
+
 /** Reads one image only from a concrete tool-result entry in an active Chat Session. */
 export async function readChatToolResultImage(
   sessionId: string,
@@ -467,8 +508,10 @@ export async function readChatToolResultImage(
   blockIndex: number,
   projectId?: string,
   chatHome?: string,
+  requester: import("./long-agents/conversations/access.js").SessionRequester | null = null,
 ): Promise<ChatToolResultImageRead> {
   const info = await requireChatSession(sessionId, projectId, chatHome);
+  await assertSessionFileReadable({ ...(chatHome === undefined ? {} : { chatHome }), sessionPath: info.path, sessionId, requester });
   let manager: SessionManager;
   try {
     manager = SessionManager.open(info.path, dirname(info.path));
@@ -501,8 +544,15 @@ export async function readChatSession(
   options: SessionProjectionOptions = {},
   projectId?: string,
   chatHome?: string,
+  /**
+   * Who is reading. Owner-facing HTTP routes pass `{ kind: "owner" }`; Agent/other callers must
+   * declare the Friend they act as. A group participation Session is refused unless the requester is
+   * still authorized for it, so ordinary detail/history entries cannot bypass the group projection.
+   */
+  requester: import("./long-agents/conversations/access.js").SessionRequester | null = null,
 ) {
   const info = await requireChatSession(sessionId, projectId, chatHome);
+  await assertSessionFileReadable({ ...(chatHome === undefined ? {} : { chatHome }), sessionPath: info.path, sessionId, requester });
   let manager: SessionManager;
   let entries: SessionEntry[];
   try {

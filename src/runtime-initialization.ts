@@ -1,5 +1,5 @@
 import { ensureChannelMessagingSkill } from "./resources/channel-messaging-skill.js";
-import { ensureTaskSchedulingSkill } from "./resources/task-scheduling-skill.js";
+import { ensureDeliverablesSkill, ensureDutyManagementSkill, ensureTaskSchedulingSkill } from "./resources/builtin-personal-skill.js";
 import { ensureLongAgentManagementSkill } from "./resources/long-agent-management-skill.js";
 import { ensureProjectManagementSkill } from "./resources/project-management-skill.js";
 import { resolve } from "node:path";
@@ -41,6 +41,8 @@ export function ensureChatRuntimeInitialized(options: {
         ensureLongAgentManagementSkill(paths.root),
         ensureChannelMessagingSkill(paths.root),
         ensureTaskSchedulingSkill(paths.root),
+        ensureDutyManagementSkill(paths.root),
+        ensureDeliverablesSkill(paths.root),
         ensureMemorySkill(paths.runtimeDir, { refresh: true }),
         ensureWorkflowDelegationSkill(paths.runtimeDir, { refresh: true }),
         ensureRuleLibrarySkill(paths.runtimeDir, { refresh: true }),
@@ -53,22 +55,18 @@ export function ensureChatRuntimeInitialized(options: {
       const { readLongAgentRegistry, ensureLongAgentResourceDirs } = await import("./long-agents/storage.js");
       const { reconcileDefaultLongAgentTools } = await import("./long-agents/definition-defaults.js");
       await reconcileDefaultLongAgentTools(paths.root);
-      const { ensureDefaultLongAgentTasks } = await import("./long-agents/agent-tasks.js");
-      const longAgentRegistry = await readLongAgentRegistry(paths.root);
-      for (const agent of longAgentRegistry.agents) {
+      for (const agent of (await readLongAgentRegistry(paths.root)).agents) {
         await ensureLongAgentResourceDirs(paths.root, agent.id);
-        // 预置的两个日常任务（幂等）。NanoClaw 不可用时只记录，不阻塞 Chat 启动。
-        const instance = longAgentRegistry.instances.find((candidate) => candidate.id === agent.instanceId);
-        if (instance === undefined || !agent.enabled) continue;
-        try {
-          await ensureDefaultLongAgentTasks({ instance, agentGroupId: agent.nanoclawAgentGroupId });
-        } catch (error) {
-          console.warn(`预置Long Agent任务失败（${agent.id}）: ${error instanceof Error ? error.message : String(error)}`);
-        }
       }
       const { startLongAgentDailyMaintenance } = await import("./long-agents/daily-maintenance.js");
       startLongAgentDailyMaintenance(paths.root);
       startLongAgentSync(paths.root);
+      // Group state: a `running` speech that lost its terminal state becomes `interrupted` and is
+      // never replayed; queued attempts/tasks are safe to resume in the background.
+      const { recoverConversationsOnStartup } = await import("./long-agents/conversations/recovery.js");
+      await recoverConversationsOnStartup(paths.root).catch((error: unknown) => {
+        console.error("群状态启动恢复失败", error instanceof Error ? error.message : String(error));
+      });
     })
     .catch((error: unknown) => {
       initializations.delete(key);

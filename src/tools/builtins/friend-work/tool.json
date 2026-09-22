@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "friend-work",
+  "name": "friend_work",
+  "label": "Friend background work",
+  "description": "让自己在独立会话中后台工作，主聊天仍可继续。start 提交完整任务说明并立即返回句柄（不复制主聊历史）；list/get 查看自己的工作和结果；cancel 取消指定执行。不会创建新的Friend，不是周期任务。后台工作不能递归启动后台工作。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": ["long-agent:work"]
+}

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "duty-manage",
+  "name": "duty_manage",
+  "label": "Duty manage",
+  "description": "管理自己的长期职责与进度：list读取职责、进度与revision（返回的revision是后续修改的expectedRevision），create/update配置目标、资料、成果要求、推进节奏与预算，pause/resume暂停恢复，end结束职责（不可恢复，历史保留），advance立即推进一次，cancel-advance停止单次推进，report提交推进进度与证据。update/pause/resume/end/report 都必须带上读取到的 expectedRevision：在职责推进的后台工作中report会绑定该次推进，在日常主聊中report是对进度的管理纠错（同样要求真实证据、持久化下一步与当前 revision）。相同推进的重复报告内容必须一致；冲突时先重新 list 再提交。",
+  "implementationVersion": 3,
+  "risk": "write",
+  "permissions": [
+    "long-agent:task"
+  ]
+}

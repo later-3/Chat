@@ -4,17 +4,7 @@
 
 ## 开发启动
 
-先按开发文档启动 Backend，再从仓库运行：
-
-```bash
-pnpm dev:all                 # 终端一：Backend + Web
-pnpm dev:tui                 # 终端二：连接开发Backend
-pnpm dev:tui --project my-project
-# 通用入口仍可连接任意实例
-pnpm tui --url http://127.0.0.1:43112
-```
-
-`dev:tui`默认连接 `43112`；不启动后端。隔离假模型调试用 `pnpm debug:start --tui`，F5配置与断点见[TUI调试](../../development/debugging/workflow-tui.md)。通用 `pnpm tui` 和安装后的 `chat tui` 仍使用下文的默认地址。
+先按[启动场景](../../operations/running.md)启动对应 Backend，再从另一个交互终端执行 `pnpm dev:tui`（普通开发，默认 `43112`）或 `pnpm tui --url <Backend地址> --project <Project ID>`。客户端不启动后端；隔离调试与 F5 见[TUI 调试](../../development/debugging/workflow-tui.md)。通用 `pnpm tui` 和安装后的 `chat tui` 使用下文默认地址。
 
 客户端直接连接 Backend，无需产品登录。`--project` 是后端登记的稳定 Project ID；省略时采用后端最近打开的可用普通 Project（与现有普通 Workflow 入口一致），状态栏显示实际 ID。终端当前目录不会改变后端 Project。
 

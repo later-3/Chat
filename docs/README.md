@@ -15,9 +15,12 @@
 
 ## 按任务进入
 
+- 选择启动脚本：[正式使用 / 源码热更新 / 隔离调试对照](./operations/running.md)。
+
 - 新电脑安装：[Linux / WSL2 安装](./operations/installation.md) → [拉起与维护](./operations/running.md)。
 - 开发调试：[首次准备](./development/debugging/first-install.md) → [环境与 F5](./development/debugging/environment.md)。
 - 修改前端：[对象与交互](./modules/web/chat-web.md) → [Frontend 开发](../frontend/docs/development.md) / [UI 规范](../frontend/docs/ui-ux-guidelines.md)。
+- Friend 后台工作、长期职责、定时任务与群聊：[LA0–LA6 计划与验收](./development/long-agent-functionality-plan.md)。
 - 修改运行机制：[模块合同](./architecture/chat-module-contracts.md) → 所属模块文档。
 
 ## 归档规则

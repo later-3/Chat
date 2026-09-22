@@ -10,6 +10,7 @@ export default defineEventHandler(async (event) => {
     return {
       schemaVersion: 1,
       posts: await listLongAgentFeed({
+        viewerLongAgentId: longAgentId,
         ...(typeof query.from === "string" ? { from: query.from } : {}),
         ...(typeof query.to === "string" ? { to: query.to } : {}),
         ...(typeof query.only === "string" && query.only === "self" ? { longAgentId } : {}),

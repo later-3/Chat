@@ -51,3 +51,7 @@
 - `built-server.test.mjs`验证生产Registry投影和Coordinator Resolve只暴露`workflow-delegation + workflow_call`。
 - `pnpm test:dev`使用本地假模型：Planner生成5个独立包，批准前0个子Session，Coordinator同轮发出5个Tool Call，5个完整子Workflow进入独立Session并全部完成。
 - `workflow-call-state.test.mjs`断言关系状态只保存ID和终态，不复制任务或结果正文。
+
+## 2026-09-20 LA1 同类回归
+
+新增 `friend_work` Provider 静态导入 Long Agent 工作服务，形成 `Tool Registry → work → 生命周期/公共装配 → Tool Registry` 初始化环。生产构建和 30 项 Built Server 通过，但 `pnpm test:dev` 的 Nitro worker 报 `init_agent_definition is not a function`，未能启动。按既有管理 Tool 的方式在 execute 内加载工作服务，保持 Registry 初始化只注册定义；修复后必须再次跑开发 Runtime，不仅重跑 Tool 单测。相关原生工具入口门禁为 `test/long-agents/background-work.test.mjs`，开发链门禁仍为 `pnpm test:dev`。现有 `workflow-runtime-artifact-validation` experience 继续承载分层验收要求。

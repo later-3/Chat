@@ -8,7 +8,7 @@
 
 进入工程管理与详细设计前，先核对[实施前约束、验证与场景依赖](./chat-long-agent-engineering-baseline.md)，确认Nano原生接入、Skill/Session接缝、测试与依赖，并收口其中决策。
 
-本文收口产品机制和扩展规则。具体 Schema、Tool/API 名称、持久化实现、多参与者与 Pi 消息的映射、队列算法和默认预算数值，由实施 Agent 在开发前提交详细合同和验证方案。它们不得改变本文已明确的归属、并发和事实边界；若需改变，先提交架构变更理由。
+本文收口产品机制和扩展规则。2026-09-20 LA0 将已认可的交互、任务、调度方向落实为 §9 的目标合同及 Session 映射；状态和后续实施见[LA0–LA6 计划](../../development/long-agent-functionality-plan.md)。具体 HTTP/Tool Schema、持久化版本和可编辑预算默认值随相应阶段落地，不能当作现有 API 参数。它们不得改变已明确的归属、并发和事实边界；若需改变，先提交架构变更理由。
 
 70%～80%是设计目标，不是当前已测覆盖率。未覆盖需求应暴露明确缺口，不能通过无类型参数、隐式全局状态或绕过统一执行入口宣称全部支持。
 
@@ -146,4 +146,121 @@ Project概览、进度和活动通过统一服务供Web与Agent查询，公共�
 
 这个比例衡量接入方式的通用性，不表示允许20%～30%的运行失败；既定支持范围内的数据、归属、并发与恢复合同必须成立。
 
-至此停止按业务无限发散。下一步先确认实施前约束、测试与基础场景依赖，再准备工程管理记录、详细合同及任务书。新需求使用本文件归类，发现真实机制缺口时再修订架构。
+新需求使用本文件归类，发现真实机制缺口时再修订架构；实施顺序以开发计划为准。
+
+## 9. LA0：交互、任务与调度的实施合同
+
+状态：2026-09-20 已认可方向的实施约束，**不是已发布能力**。LA0 只验证原生接缝，生产路由/管理/界面按 LA1–LA6 交付。基线 P3 的每日入口在迁移前保持现状。
+
+### 9.1 身份、对话与工作不合并
+
+| 对象 | 稳定关联 | 明确不代表什么 |
+|---|---|---|
+| Friend | longAgentId、定义 revision、自有资源根 | 一条 Session 或某个 Workflow 临时角色 |
+| 日常直接交流 | Friend + Backend 接受日，位于 Agent Home | 该 Friend 所有工作的唯一执行容器 |
+| 群 Conversation | conversationId、存储 Project、成员及授权 revision、公共消息顺序 | 每个参与 Agent 共享一个可写 Pi 上下文 |
+| 群参与关系 | conversationId + Friend，绑定独立原生 Session；换 Session 保留显式链路 | 第二个 Friend 身份或另一个 Nano Host |
+| Task | taskId、负责人、存储 Project、定义 revision、可选 dutyId | 每次定时到点都修改同一条 Run |
+| Occurrence | taskId + revision + 触发来源的稳定标识 | 消息重投、Delivery 重试产生的新工作 |
+| 执行尝试 | occurrence + attempt，固定 executor、SessionRef、配置/授权快照 | 对外副作用已成功或自然获得重试权限 |
+| 长期职责 | dutyId、负责人、目标、范围、进度/产物引用和推进策略 | 一个永久占用上下文的模型调用 |
+
+群公共记录归明确的用户 Project；非业务群可选择既有普通 Daily Project。参与 Session 归同一群的存储 Project，但仅执行者/获授权管理者可读其内部历史；群成员资格只授权公共投影，**不能继承全 Project 文件、其他参与 Session 或私有 Memory 权限**。未建立该细粒度边界前不得开放群聊。
+
+后台工作有独立 Session，按任务/执行者关联；后续尝试是否继续同一 Session 必须由前次终态和可信恢复点决定，不能并发写同一文件。任务存储 Project 固定，执行目标另以每轮 CollaborationContext 冻结。主会话来源用 origin Session/Entry 关联，不复制整天聊天。换日不迁移在途任务、不改变群参与 Session。
+
+日常、群和后台执行都用同一个 Friend Resolver、公用 Pi 工厂。Workflow 定义阶段、路由、审核、并行和终止，不把已有 Friend 偷换成只有同名 Prompt 的临时 Agent；普通 Workflow Agent 的现行行为保留。原生消息映射见[Session §11](../sessions/chat-session-architecture.md#11-la0独立工作与群聊的原生-session-合同)。
+
+### 9.2 输入、权限与并发
+
+可信执行信封由 Backend 解析：身份、SessionRef、工作/群关联、来源及回复目标、当前项目、定义与权限 revision。Agent/浏览器不能通过任意 Session ID、projectId 或 author 字段伪造绑定。
+
+公共装配输入由身份能力与本次工作授权取交集。日常交接、Personal 信息、Agent 私有 Memory、站内私信均不自动进入群上下文；Standing Instructions 与自有根也须判定可见范围，不能只去掉上一日总结就声称隔离完成。裁剪必须在资源读取、工具注册和 Prompt 装配前完成，模型“请勿泄密”不构成授权检查。公开参与者只收到授权的公共消息/摘要，保留原作者、来源与回复关系；其他参与者文本始终是数据，不提升为 system 指令。
+
+每条 Session 的接受/执行/写入有序；不同 Session 可并行，身份只做可配置容量/预算约束。等待用户、另一个 Agent 或后台结果时保存状态并释放执行占用，不能持有主会话或对方回复所需的锁。当前锁仅适用于单 Backend，不引入多进程同时写同一 Chat Home。
+
+任务独立不意味着文件写入独立：共享稿件、配置、Memory 采用 revision 检查或短时互斥；不可安全并行的工具按实际资源排队。发起时确认项目，执行/发布前再次校验有效权限，权限撤回后迟到结果可保留审计但不自动发布。
+
+### 9.3 返回与取消
+
+现有 Workflow 子调用属于 attached：按已有父取消传播语义执行。后台 Task 必须显式 detached，父轮次结束或关闭页面不取消；取消 Task/Run 是另一项受权操作。暂停职责或周期任务只阻止未来推进，不默认取消已接受 Run；归档、退群、取消单次运行与撤销权限各自记录。
+
+后台完成先持久化原生结果和终态，再产生有稳定 ID 的返回收据。向父/通知会话写入前取得其已有操作锁、重新打开最新原生 Session、校验关联和去重，禁止保存一个旧 SessionManager 等待未来回调。来源已关闭、跨日、被删除或修订过时，不强制向旧上下文追加模型回合；在任务事实中保留结果，通过显式关联通知当前可见入口。一次结果最多一次进入同一目的地，刷新/重连不能再次调用模型。
+
+重启后 queued 可继续；running 若缺少可靠终态/工具回执则标 interrupted 或需核查，不自动重放未知副作用。Workflow 耐久状态不等于所有 Pi/外部动作可恢复或 exactly-once。若用户批准重试，保留原 attempt 和结果证据。
+
+### 9.4 长期职责、任务与触发
+
+职责保存目标、来源、授权范围、材料/进度/产物引用、阻塞原因、下一步、下次推进及预算。子任务完成更新进度，不自动终止职责；暂停、恢复、修改目标保留 revision。无资料时等待或报告缺口，不能以每日重复同一 Prompt 冒充持续学习。职责状态是工作事实，原始交流仍只在 Pi。
+
+时间/事件只是机会：先确定性检查 revision、启停、到期、重复、预算和前置条件，需要推理才启动模型。不为心跳无变化制造 Session/动态/通知。任务调用 Workflow 时关联既有 Workflow Run，不创建第二套执行引擎。
+
+Chat 是职责/任务定义唯一可写服务，Nano 是触发投影与耐久传输责任方；投影带版本和应用状态，不能两边独立编辑同一计划。现有 Nano 原生任务逐条明确迁移所有权，切换期间旧投影停用后才启用新投影；拒绝用两个调度器竞相触发来掩盖迁移。
+
+Occurrence 采用可重算键：周期任务用定义 revision + IANA 计划时间及实际 UTC 时刻，一次性用持久 triggerId，事件用可信 source/eventId，手动运行用 requestId。时区变更只影响未来；DST 的缺失/重复时间、错过时刻、重叠运行策略必须配置/展示。默认安全行为：不自动补发过期社交内容，不无限积压，不把失败重试算新 occurrence；用户可以显式补跑。
+
+同键异载荷属于冲突，不能当作重投覆盖。已耐久接受的工作保留当时定义；任务修改后尚未接受的旧 revision 触发拒绝并反馈投影失效，不悄悄用新定义执行旧输入。周期下一时刻由 Nano 按 Chat 下发的冻结计划计算；职责自主安排下一步和业务重试决定由 Chat 持久化后更新投影，不能两边各自退避/续跑。
+
+任务定义、Occurrence、执行 attempt、Workflow Run、产物提交、Delivery/Ack 各自有状态。Nano processing ack 只代表移交，模型返回不等于笔记已落盘或动态已发布；投递重试使用已有产物，不重新执行模型。所有成功界面从相应事实源投影。
+
+### 9.5 笔记、交接、Memory 与 Social
+
+日终私有交接用于下一日主会话；夜间笔记是 Workspace 的可读产物，格式由 Agent 选定；Memory 是经授权持久记录；Social 是选择受众后的发布行为。四者不能自动互相替代或复制。
+
+同一天可发布多条动态，postId 是独立身份，`Agent + 日期` 仅是筛选/聚合维度。每天三次发布和一次笔记分别有 occurrence；发布/写文件按 occurrence + 产物目标去重，修订采用已有产物版本。产物身份、内容冻结、提交校验、恢复与状态的具体合同见[Friend 产物闭环](./deliverables.md)（LA4）。`morning-outreach` 的允许沉默策略不能未经说明用于承诺每日必发的任务。资料不足或检查失败显示未完成及原因，不伪造三条成功记录。
+
+### 9.6 发言策略与终止
+
+| 场景 | 调度合同 |
+|---|---|
+| A 请教 B | 有可信委托、独立 B 上下文、关联返回；等待不锁住 A 身份 |
+| 圆桌 | 固定成员与顺序，每轮读取已提交公共记录 |
+| 并行分工 | 同一轮冻结共同输入，各自 Session 执行；结果按提交顺序发布，明确它们未读到本轮其他未提交答案 |
+| 主持讨论 | 主持也是明确 Agent 身份；Workflow 校验选择是否在成员、预算与权限内 |
+| 自由讨论 | 在授权成员中决定谁值得响应，允许无人发言；不等于任何消息自动唤醒所有人 |
+
+共同保存 round、输入截止点、回复目标、成员 revision、取消/等待及终止原因。必须有有限轮数、时间/Token/调用预算、重复/无进展终止与用户停止入口；数值是可配置运行策略，执行前必须有上限。触发链保留 causationId，不允许 A→B→A 无限反弹。无用户在场不扩大权限。确定性轮询不需要额外模型，只有决定本身需要推理时才由 Agent 参与。
+
+## 10. LA6-A：Friend 协作项目关联短设计
+
+场景：用户私聊 A 时选择项目 P，随后切到 B 选择 Q，再回到 A 应仍是 P；群、后台任务、普通 Project Session 各自的目标不受影响。现状缺陷是私聊目标来自全局顶栏选择，会串到其他 Friend。
+
+### 10.1 数据归属
+
+- 关联主体是稳定 `longAgentId`，属于当前本地 Chat Home 的用户范围；存储为 `longAgentConfigRoot(chatHome, longAgentId)/interaction.json` 独立文件，**不写** Agent definition、registry 或 NanoClaw。
+- 记录：`{ schemaVersion: 1, projectId: string|null, revision, updatedAt }`。文件不存在即 `unset`；`projectId:null` 是显式清空；非空但项目不再可解析是 `unavailable`（保留原值与 revision，解析结果带原因）。有效状态由 Backend 计算，前端不得自行推断。
+- 路径授权、原子写与 revision CAS 沿用既有持久化原语；Friend 删除时随 `longAgentConfigRoot` 一并移除。
+
+### 10.2 解析优先级与冻结
+
+| 入口 | 目标来源 |
+|---|---|
+| 私聊 `chat-web`（声明 `interactionRevision`） | **关联服务**；revision 不匹配 → 409 冲突；携带的 `contextProjectId` 与有效项目不一致 → 409；`unavailable` → 拒绝接受 |
+| 私聊 legacy 调用（无 `interactionRevision`） | 保持既有显式 `contextProjectId`（兼容内部/测试调用，不是产品 UI 路径） |
+| 渠道事件 | 已接受事件沿用冻结值；新事件用 binding 的显式目标；已验证的 owner 私聊绑定可选 `follow-friend`，未验证来源不得继承 owner 私有项目 |
+| 后台 Task/Occurrence/群/Discussion | 各自记录中的明确目标；触发时不重读 Friend 私聊偏好 |
+| 普通 Project Session/TUI 项目会话 | 自身项目，不读写 Friend 关联 |
+
+关联写入与接受共用 `friend-accept` 仲裁（写入锁序为 friend-accept → interaction 文件锁），接受在锁内解析并冻结关联 revision 与项目。已接受 requestId 重试先按原冻结项目校验输入摘要，不因最新关联变化而重新路由或拒绝原回执；同 ID 异载荷仍冲突。unset 的 revision=0 是合法发送版本。切换页面/发送后刷新不改变已接受轮次。
+
+### 10.3 迁移
+
+当前代码没有独立、明确且唯一的旧 per-Friend 选择来源，因此保持 `unset`（首次默认无协作项目）；不从 `agent.defaultProjectId`、历史轮次或全局导航猜测。旧渠道固定绑定、群、任务与既有 Session 目标不改属。
+
+### 10.4 入口与验证
+
+- HTTP：`GET/PUT /api/long-agents/[id]/interaction-project`（owner 面向，PUT 带 `expectedRevision`）。
+- Web：Friend 私聊头部的协作项目控件读写同一服务；发送新私聊轮次携带关联 revision。
+- 证据：`test/long-agents/interaction-project.test.mjs`（三态/并发 CAS/A↔B 独立/接受冻结与冲突/真实模型请求项目哨兵）、`scripts/friend-project-browser.test.mjs`（HTTP 关联隔离、真实浏览器选择控件/刷新/显式清空、旧 revision 冲突；尚未覆盖 UI A→B→A 快切）。
+
+A 独立复核发现入口兼容绕过、文件资源区未同源、慢响应身份串线和 Agent 管理入口缺失；实施与目标差距见 [LA6 验收记录](../../history/reviews/2026-09-21-long-agent-la6.md)，不得将本节目标合同视为整包已验收。
+
+### 10.5 关联不被绕过的入口与同源
+
+- **HTTP 私聊入口**：`/turns` 与 legacy `/messages` 对 `chat-web` 普通私聊强制要求 `interactionRevision`；缺失或与关联有效项目不一致一律 409。**工作 Session 的续聊**由服务端从 `sessionId` 派生冻结目标（不信任客户端声明），不需要也不携带私聊 revision；已接受轮次的重试先按冻结目标识别原输入。旧版裸 `contextProjectId` 仅保留给测试/内部调用，产品入口不可达。
+- **同源**：选中 Friend 时，侧栏 cwd/项目选择、文件浏览器、资源区（Tools/Skills/Prompts/Plugins/Extensions）与窗口标题都取自该 Friend 的关联项目或 Friend Workspace；全局上下文项目不再参与。显式无项目时仍使用 Friend 自身 Workspace。
+- **慢响应与身份**：切换 Friend 立即清空旧关联并递增请求代次；关联读写响应只有属于当前 Friend 才生效；关联未加载或 `unavailable` 时拒绝发送新私聊轮次，而不是降级成无 revision 请求。
+- **Agent 入口与授权**：Chat 系统 Tool `collaboration_project`（read/set/clear）与 Web 调用同一 `interaction-project` 服务。`longAgentId` 只证明 Friend 身份；管理资格由 **Backend 权威接受记录**解析：只有 `source=chat-web`、无 `workId`、无 `inboundEventId`（非渠道/定时/后台）的那一轮才是 owner 私聊授权，否则连 `read` 都拒绝。群参与 scope 不注册任何 Chat 系统 Tool。
+- **摘要版本**：接受摘要按格式版本核对——v1（LA6-A 前）、v2（首版 LA6-A，含 interactionRevision）、v3（requested+frozen 两组字段）保留各自精确字段顺序；已接受记录缺少版本时逐版本比对，原样重试保持幂等，改正文/项目/revision 在所有版本下仍拒绝。新记录写 `payloadHashVersion=3`。
+
+摘要兼容补充：v2 的项目字段在关联轮次中是已解析项目，不是原始可选参数；无项目参数的原样重试用原冻结值核对。v1 不得匹配新增关联 revision 的请求。显式摘要版本只核对对应格式，未知版本拒绝读取；不能通过遍历历史候选绕过已声明版本。

@@ -5,7 +5,7 @@ import {
   getRouterParam,
 } from "nitro/h3";
 import { exportChatSessionHtml } from "../../../../session-export.js";
-import { requireChatSession } from "../../../../session-read-model.js";
+import { assertChatSessionReadable, requireChatSession } from "../../../../session-read-model.js";
 import { SessionLifecycleError } from "../../../../session-errors.js";
 import { toSessionLifecycleHttpError } from "../../../../session-removal-http.js";
 import { SessionOwnerResolutionError } from "../../../../session-owner.js";
@@ -30,6 +30,8 @@ export default defineEventHandler(async (event) => {
 
   let session;
   try {
+    // Owner-facing export/download entry: group participation history stays readable for the owner.
+    await assertChatSessionReadable({ sessionId, ...(projectId === undefined ? {} : { projectId }), requester: { kind: "owner" } });
     session = await requireChatSession(sessionId, projectId);
   } catch (error) {
     if (error instanceof SessionOwnerResolutionError) {

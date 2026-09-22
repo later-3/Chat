@@ -28,6 +28,7 @@ test("Chat system Tool manifests are stable, qualified, and risk classified", ()
     risk: tool.manifest.risk,
     permissions: tool.manifest.permissions,
   })), [
+    { address: "system:tool/friend_work", name: "friend_work", risk: "write", permissions: ["long-agent:work"] },
     {
       address: "system:tool/memory_search",
       name: "memory_search",
@@ -119,6 +120,18 @@ test("Chat system Tool manifests are stable, qualified, and risk classified", ()
       permissions: ["long-agent:task"],
     },
     {
+      address: "system:tool/duty_manage",
+      name: "duty_manage",
+      risk: "write",
+      permissions: ["long-agent:task"],
+    },
+    {
+      address: "system:tool/artifact_manage",
+      name: "artifact_manage",
+      risk: "write",
+      permissions: ["long-agent:artifact"],
+    },
+    {
       address: "system:tool/summary_manage",
       name: "summary_manage",
       risk: "write",
@@ -129,6 +142,18 @@ test("Chat system Tool manifests are stable, qualified, and risk classified", ()
       name: "social_manage",
       risk: "write",
       permissions: ["long-agent:social"],
+    },
+    {
+      address: "system:tool/conversation_manage",
+      name: "conversation_manage",
+      risk: "read-only",
+      permissions: ["long-agent:conversation"],
+    },
+    {
+      address: "system:tool/collaboration_project",
+      name: "collaboration_project",
+      risk: "write",
+      permissions: ["long-agent:interaction-project"],
     },
   ]);
   const memorySearch = listChatSystemTools().find((tool) => tool.manifest.name === "memory_search");

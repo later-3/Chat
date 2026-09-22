@@ -9,6 +9,7 @@ import { resolveProjectContext } from "../projects/registry.js";
 import type { ChatProjectContext } from "../projects/types.js";
 import { loadChatAgentContextFiles, type ChatAgentContextFile } from "../workflows/agent-context-files.js";
 import { parseWorkflowAgentDefinition, type WorkflowAgentDefinition } from "../workflows/agent-config.js";
+import { LongAgentScopeError, parseLongAgentScope, verifyLongAgentScope, type LongAgentScope } from "../long-agents/scope.js";
 
 export const CHAT_ASSEMBLY_CONTEXT = "chat.agent-assembly.v1";
 export const CHAT_COLLABORATION_HISTORY = "chat.collaboration-context.v1";
@@ -19,10 +20,23 @@ export interface ChatAgentInvocation {
   readonly ownWorkspace: string;
   readonly ownResourceRoot: string;
   readonly projectId: string | null;
+  /**
+   * Backend-resolved authorization scope for this turn. Resolved from the trusted Session/
+   * Participation binding and the current authorization revision — never from the browser, the model
+   * or a client-supplied object. The factory re-verifies it against the trusted turn identity.
+   */
+  readonly scope?: LongAgentScope;
+  /**
+   * Grants commitment recomputed by the Backend from the trusted record (conversation/definition),
+   * never from `scope` itself. Required for conversation scopes: it proves the grants the turn will
+   * use are the ones the authorized record currently holds.
+   */
+  readonly scopeGrantsDigest?: string;
 }
 
 export interface ChatAssemblySnapshot {
-  readonly schemaVersion: 1;
+  /** 2 adds the frozen authorization scope; 1 is still read for sessions created before LA5. */
+  readonly schemaVersion: 1 | 2;
   readonly turnId: string;
   readonly sessionId: string;
   readonly storageProjectId: string;
@@ -35,6 +49,8 @@ export interface ChatAssemblySnapshot {
   readonly cwd: string;
   readonly agent: WorkflowAgentDefinition;
   readonly contextFiles: readonly ChatAgentContextFile[];
+  /** null on schemaVersion 1 snapshots and on turns without an explicit scope (direct/background). */
+  readonly scope: LongAgentScope | null;
   readonly revision: string;
 }
 
@@ -135,7 +151,8 @@ export function readAssemblySnapshot(manager: SessionManager, turnId: string): C
     if (!record(value)) throw new Error("Agent装配快照损坏");
     if (value.turnId !== turnId) continue;
     const { revision, ...body } = value;
-    if (body.schemaVersion !== 1 || revision !== assemblyRevision(body)
+    if ((body.schemaVersion !== 1 && body.schemaVersion !== 2) || revision !== assemblyRevision(body)
+      || (body.schemaVersion === 1) !== (body.scope === undefined)
       || ![body.turnId, body.sessionId, body.storageProjectId, body.ownWorkspace, body.ownResourceRoot, body.cwd].every((v) => typeof v === "string" && v !== "")
       || ![body.projectId, body.projectRoot, body.projectName].every((v) => v === null || typeof v === "string")
       || (body.projectDescription !== undefined && typeof body.projectDescription !== "string")
@@ -144,7 +161,8 @@ export function readAssemblySnapshot(manager: SessionManager, turnId: string): C
       throw new Error("Agent装配快照版本、内容或校验和无效");
     }
     parseWorkflowAgentDefinition(body.agent);
-    return value as unknown as ChatAssemblySnapshot;
+    const scope = body.scope === undefined || body.scope === null ? null : parseLongAgentScope(body.scope);
+    return { ...(value as unknown as ChatAssemblySnapshot), scope };
   }
   return undefined;
 }
@@ -174,7 +192,37 @@ export async function resolveChatAssemblyContext(input: {
       || saved.ownResourceRoot !== ownResourceRoot || saved.cwd !== cwd || saved.projectRoot !== (project?.projectRoot ?? null)) {
       throw new Error("Agent装配快照的身份或已授权路径发生变化，不能恢复本轮");
     }
+    // A frozen scope is only reusable when it still matches the trusted turn identity.
+    if (saved.scope !== null) {
+      try {
+        verifyLongAgentScope(saved.scope, {
+          grantsDigest: input.invocation.scopeGrantsDigest ?? "",
+          longAgentId: input.agent.id, sessionId: saved.sessionId, storageProjectId: saved.storageProjectId,
+          collaborationProjectId: saved.projectId,
+          conversationId: saved.scope.authorization.conversationId,
+          participationEpoch: saved.scope.authorization.participationEpoch,
+          authorizationRevision: saved.scope.authorization.authorizationRevision,
+        });
+      } catch (error) {
+        throw new Error(`Agent装配快照的作用域与可信执行绑定不一致，不能恢复本轮：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     return { snapshot: saved, project, settingsManager };
+  }
+  const scope = input.invocation.scope ?? null;
+  if (scope !== null && (input.invocation.scopeGrantsDigest ?? "") === "")
+    throw new Error("带作用域的执行必须提供由可信记录计算的授权承诺");
+  if (scope !== null) {
+    try {
+      verifyLongAgentScope(scope, {
+        grantsDigest: String(input.invocation.scopeGrantsDigest),
+        longAgentId: input.agent.id, sessionId: sessionManager.getSessionId(), storageProjectId: storage.projectId,
+        collaborationProjectId: projectId,
+      });
+    } catch (error) {
+      if (error instanceof LongAgentScopeError) throw new Error(`本轮授权作用域与可信执行绑定不一致：${error.message}`);
+      throw error;
+    }
   }
   const contextFiles = await loadChatAgentContextFiles({
     agentDir: chatSession.agentDir, ownRoot: ownWorkspace,
@@ -185,9 +233,9 @@ export async function resolveChatAssemblyContext(input: {
     join(ownResourceRoot, "definition.json"), new Set([ownResourceRoot, cwd, await realpath(chatSession.agentDir)])) };
   if (agent.model === undefined) throw new Error("Friend需要在自身定义或Personal设置中配置模型");
   const body = {
-    schemaVersion: 1 as const, turnId: invocation.turnId, sessionId: sessionManager.getSessionId(),
+    schemaVersion: 2 as const, turnId: invocation.turnId, sessionId: sessionManager.getSessionId(),
     storageProjectId: storage.projectId, projectId, projectRoot: project?.projectRoot ?? null,
-    projectName: project?.name ?? null, projectDescription: project?.description ?? "", ownWorkspace, ownResourceRoot, cwd, agent, contextFiles,
+    projectName: project?.name ?? null, projectDescription: project?.description ?? "", ownWorkspace, ownResourceRoot, cwd, agent, contextFiles, scope,
   };
   return { snapshot: { ...body, revision: assemblyRevision(body) }, project, settingsManager };
 }

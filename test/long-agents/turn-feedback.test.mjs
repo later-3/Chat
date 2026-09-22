@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createRouter } from "nitro/h3";
 import { fixture } from "./daily-fixture.mjs";
+import { readLongAgentInteractionProject } from "../../src/long-agents/interaction-project.ts";
 import { readLongAgentState } from "../../src/long-agents/storage.ts";
 import { drainLongAgentTurns, acceptLongAgentTurn } from "../../src/long-agents/turn-queue.ts";
 import { readFriendFeedback } from "../../src/long-agents/turn-feedback.ts";
@@ -35,14 +36,25 @@ async function setup(t) {
   router.get(base + "/:turnId", status);
   router.get(base + "/:turnId/events", events);
   router.delete(base + "/:turnId", cancel);
-  const post = (body) =>
-    router.fetch(
+  const post = async (body) => {
+    // The owner-facing private-chat entry carries the Friend's association revision (LA6 A).
+    const requested = { schemaVersion: 1, contextProjectId: "a", ...body };
+    const current = await readLongAgentInteractionProject(f.home, "friend");
+    if (current.effective.projectId !== (requested.contextProjectId ?? null)) {
+      const { setLongAgentInteractionProject } = await import("../../src/long-agents/interaction-project.ts");
+      await setLongAgentInteractionProject({
+        chatHome: f.home, longAgentId: "friend", projectId: requested.contextProjectId ?? null, expectedRevision: current.revision,
+      });
+    }
+    const state = await readLongAgentInteractionProject(f.home, "friend");
+    return router.fetch(
       new Request("http://chat.test/api/long-agents/friend/turns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ schemaVersion: 1, contextProjectId: "a", ...body }),
+        body: JSON.stringify({ ...requested, interactionRevision: state.revision }),
       }),
     );
+  };
   const url = (id) => "http://chat.test/api/long-agents/friend/turns/" + encodeURIComponent(id);
   return { ...f, router, post, url };
 }

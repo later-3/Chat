@@ -1,3 +1,4 @@
+import { checkChatWeb } from "./chat-web-health.mjs";
 import { respondPlannerConversation, exercisePlannerConversation } from "./planner-conversation-fixture.mjs";
 import { respondProjectManagement, exerciseProjectManagementRun } from "./project-management-runtime-fixture.mjs";
 import { exerciseWorkflowTui } from "./workflow-tui-runtime-fixture.mjs";
@@ -342,6 +343,7 @@ after(async () => {
 });
 
 test("the production server serves the embedded frontend", async () => {
+  await checkChatWeb(baseUrl);
   const response = await serverFetch("/");
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /text\/html/);
@@ -848,6 +850,7 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
   assert.deepEqual(
     catalog.tools.filter((tool) => tool.sourceInfo.scope === "system").map((tool) => tool.address),
     [
+      "system:tool/friend_work",
       "system:tool/memory_search",
       "system:tool/memory_record",
       "system:tool/workflow_call",
@@ -863,8 +866,12 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
     "system:tool/long_agent_manage",
     "system:tool/channel_send",
     "system:tool/task_manage",
+    "system:tool/duty_manage",
+    "system:tool/artifact_manage",
     "system:tool/summary_manage",
     "system:tool/social_manage",
+    "system:tool/conversation_manage",
+    "system:tool/collaboration_project",
     ],
   );
   const projectTool = catalog.tools.find((tool) => tool.name === "built_project_lookup");

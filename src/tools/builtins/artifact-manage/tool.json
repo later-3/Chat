@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "artifact-manage",
+  "name": "artifact_manage",
+  "label": "Artifact manage",
+  "description": "提交与查询本次产物（笔记/站内动态）：list 查看已有产物与状态；submit 提交本次发生的产物（笔记需给相对路径与正文，动态给正文；受众与槽位来自用户配置的任务，不能更改）；resubmit 补交已有产物；revise 修订笔记内容；notify 补发完成通知。产物由服务端按 发生+任务+槽位 去重，重复提交不会产生第二条动态或第二篇笔记。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": [
+    "long-agent:artifact"
+  ]
+}

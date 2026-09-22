@@ -123,3 +123,18 @@ test("service control refuses another owner's unit and stop does not need valid 
   const stopped = f.run("stop", { setup: 'load_installed_environment() { fail "configuration broken"; }' });
   assert.equal(stopped.status, 0, stopped.stderr);
 });
+
+test("Linux start checks Web after Backend health and preserves a running broken instance", t => {
+  const f = fixture(t); writeFileSync(join(f.state, "chat"), "");
+  const source = readFileSync(join(root, "deploy/chatctl"), "utf8");
+  const health = source.slice(source.indexOf("wait_for_health() {"), source.indexOf("\nvalidate_service_owner()"));
+  const result = f.run("start", { setup: `${health}
+    curl() { printf '%s' '{"ok":true,"service":"chat"}'; }
+    run_as_chat() { printf '%s\\n' "$*" >> "$TEST_LOG"; return 1; }
+    NODE_BIN=/fixture/node
+  ` });
+  assert.notEqual(result.status, 0);
+  assert.match(result.calls, /chat-web-health.mjs\s+http:\/\/127.0.0.1:43110/);
+  assert.doesNotMatch(result.calls, /^stop chat.service$/m);
+  assert.equal(existsSync(join(f.state, "chat")), true);
+});
