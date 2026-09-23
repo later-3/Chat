@@ -666,16 +666,23 @@ export async function updateTopicNodeStatus(input: {
   status: "active" | "archived";
   expectedRevision: unknown;
 }): Promise<TopicNodeRecord> {
-  return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
-    const node = state.nodes.find((candidate) => candidate.nodeId === input.nodeId);
-    if (node === undefined) throw new TopicError(404, `找不到主题节点：${input.nodeId}`);
-    if (node.status === "removed") throw new TopicError(409, "节点已移除，不能改回可用状态");
-    assertRevision(state, input.expectedRevision);
-    node.status = input.status;
-    node.updatedAt = new Date().toISOString();
-    state.revision += 1;
-    return { ...node };
-  });
+  // Status changes take the TARGET SESSION's operation lock before the graph lock (session -> graph, the
+  // same order as creation and relay), so archiving and a relayed append are mutually exclusive and a
+  // node cannot be archived between a relay's status re-check and its append.
+  const current = await readTopicGraph(input.chatHome, input.longAgentId);
+  const node = current.nodes.find((candidate) => candidate.nodeId === input.nodeId);
+  if (node === undefined) throw new TopicError(404, `找不到主题节点：${input.nodeId}`);
+  return withChatSessionOperationLock(chatSessionOperationKey(input.longAgentId, node.sessionId), async () =>
+    changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
+      const target = state.nodes.find((candidate) => candidate.nodeId === input.nodeId);
+      if (target === undefined) throw new TopicError(404, `找不到主题节点：${input.nodeId}`);
+      if (target.status === "removed") throw new TopicError(409, "节点已移除，不能改回可用状态");
+      assertRevision(state, input.expectedRevision);
+      target.status = input.status;
+      target.updatedAt = new Date().toISOString();
+      state.revision += 1;
+      return { ...target };
+    }));
 }
 
 export function findTopicNodeBySession(graph: TopicGraphState, sessionId: string): TopicNodeRecord | null {
@@ -1054,15 +1061,16 @@ export async function withTopicGraphRevision<T>(
 /**
  * Relay: hand content to one node of the same Long Agent's tree, as a REAL user message.
  *
- * Durable protocol (all under the node session's operation lock, key is `(nodeId, requestId)`):
- *   1. a `chat.topic-relay` marker with `status: "pending"` freezes the request and the text digest;
- *   2. the relayed text is appended as a real user message (`appendChatUserMessage`) — the entry a
- *      node round can later settle and fork from;
- *   3. a second marker with `status: "complete"` records the user entry id.
- * A crash between any two steps is recoverable: a retry finds the pending marker, adopts the user
- * message that follows it when its text matches, and only then completes the request, so the message is
- * never appended twice. Node status and authorization are re-checked INSIDE the lock, next to the
- * append, so a node archived while relay was queued cannot receive a message.
+ * ONE native user message is appended, carrying its own durable request association in a Chat-owned
+ * field (`message.chatTopicRelay`), which Pi round-trips verbatim (`parseSessionEntryLine` is a plain
+ * JSON.parse). That gives three properties at once: there is no "message written but association
+ * missing" window; recovery matches the association EXACTLY instead of guessing from the text (an
+ * unrelated user message with the same text is never claimed); and the entry is a real user message,
+ * so a later node round can settle and fork from it.
+ *
+ * The append happens inside the node session's operation lock with the node status and authorization
+ * re-checked next to it, and status changes take the same lock (see updateTopicNodeStatus), so an
+ * archived node can never receive a relayed message.
  */
 export async function relayTopicNodeMessage(input: {
   readonly chatHome: string;
@@ -1091,49 +1099,34 @@ export async function relayTopicNodeMessage(input: {
     // Re-check next to the append: an archived node must not receive a relayed message.
     requireRelayable(await readTopicGraph(input.chatHome, input.longAgentId));
     const session = await openChatSession({ chatHome: input.chatHome, projectId: input.longAgentId, sessionId: node.sessionId });
-    // The markers are internal `custom` entries: they are durable in the transcript but never enter the
-    // model context (a `custom_message` would be converted into a user message).
-    const relayMarkers = (): { id: string; details: Record<string, unknown> }[] => session.manager.getBranch()
-      .filter((entry) => {
-        const value = entry as { type?: string; customType?: string };
-        return value.type === "custom" && value.customType === TOPIC_RELAY_CUSTOM_TYPE;
-      })
-      .map((entry) => ({ id: (entry as { id: string }).id,
-        details: ((entry as unknown as { data?: unknown }).data ?? {}) as Record<string, unknown> }))
-      .filter((marker) => marker.details.requestId === requestId);
-    const conflict = (details: Record<string, unknown>): never => {
-      throw new TopicError(409, `该 requestId 已用于不同的代传内容或节点：${requestId}`);
-    };
-    const completed = relayMarkers().find((marker) => marker.details.status === "complete");
-    if (completed !== undefined) {
-      if (completed.details.textDigest !== textDigest || completed.details.targetNodeId !== nodeId) conflict(completed.details);
-      return { nodeId, sessionId: node.sessionId, entryId: String(completed.details.userEntryId), created: false };
-    }
-    const pending = relayMarkers().find((marker) => marker.details.status === "pending");
-    if (pending !== undefined) {
-      if (pending.details.textDigest !== textDigest || pending.details.targetNodeId !== nodeId) conflict(pending.details);
-      // Recovery: the relayed user message may already be durable right after the pending marker.
-      const branch = session.manager.getBranch();
-      const pendingIndex = branch.findIndex((entry) => (entry as { id?: unknown }).id === pending.id);
-      const next = pendingIndex === -1 ? undefined : branch[pendingIndex + 1] as { type?: string; message?: { role?: unknown; content?: unknown } } | undefined;
-      const alreadyWritten = next?.type === "message" && next.message?.role === "user"
-        && `sha256:${createHash("sha256").update(messageTextOf(next.message.content)).digest("hex")}` === textDigest;
-      const userEntryId = alreadyWritten ? (branch[pendingIndex + 1] as { id: string }).id
-        : appendChatUserMessage(session.manager, body);
-      session.manager.appendCustomEntry(TOPIC_RELAY_CUSTOM_TYPE, {
-        requestId, targetNodeId: nodeId, relayedByLongAgentId: input.longAgentId, source: "relay", status: "complete", textDigest, userEntryId,
-      });
-      session.manager.flush();
-      return { nodeId, sessionId: node.sessionId, entryId: userEntryId, created: false };
-    }
-    session.manager.appendCustomEntry(TOPIC_RELAY_CUSTOM_TYPE, {
-      requestId, targetNodeId: nodeId, relayedByLongAgentId: input.longAgentId, source: "relay", status: "pending", textDigest,
+    const existing = session.manager.getBranch().find((entry) => {
+      const message = (entry as { type?: string; message?: unknown }).message;
+      if ((entry as { type?: string }).type !== "message" || !isRecord(message)) return false;
+      return relayAssociationOf(message)?.requestId === requestId;
     });
-    const userEntryId = appendChatUserMessage(session.manager, body);
-    session.manager.appendCustomEntry(TOPIC_RELAY_CUSTOM_TYPE, {
-      requestId, targetNodeId: nodeId, relayedByLongAgentId: input.longAgentId, source: "relay", status: "complete", textDigest, userEntryId,
-    });
+    if (existing !== undefined) {
+      const association = relayAssociationOf((existing as unknown as { message: Record<string, unknown> }).message)!;
+      if (association.targetNodeId !== nodeId || association.textDigest !== textDigest)
+        throw new TopicError(409, `该 requestId 已用于不同的代传内容或节点：${requestId}`);
+      return { nodeId, sessionId: node.sessionId, entryId: (existing as { id: string }).id, created: false };
+    }
+    const entryId = session.manager.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: body }],
+      timestamp: Date.now(),
+      chatTopicRelay: { requestId, targetNodeId: nodeId, relayedByLongAgentId: input.longAgentId, source: "relay", textDigest },
+    } as never);
     session.manager.flush();
-    return { nodeId, sessionId: node.sessionId, entryId: userEntryId, created: true };
+    return { nodeId, sessionId: node.sessionId, entryId, created: true };
   });
+}
+
+/** Reads the Chat-owned relay association off a native user message, if present. */
+export function relayAssociationOf(message: Record<string, unknown>): { requestId: string; targetNodeId: string; textDigest: string } | null {
+  const value = message.chatTopicRelay;
+  if (!isRecord(value)) return null;
+  const requestId = typeof value.requestId === "string" ? value.requestId : null;
+  const targetNodeId = typeof value.targetNodeId === "string" ? value.targetNodeId : null;
+  const textDigest = typeof value.textDigest === "string" ? value.textDigest : null;
+  return requestId === null || targetNodeId === null || textDigest === null ? null : { requestId, targetNodeId, textDigest };
 }

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { TOPIC_MANAGE_TOOL_PROVIDER } from "../../src/tools/builtins/topic-manage/index.ts";
-import { ensureChatSessionWithId } from "../../src/chat-session.ts";
+import { ensureChatSessionWithId, openChatSession } from "../../src/chat-session.ts";
 import { ensureAgentHomeProject } from "../../src/projects/registry.ts";
 import { writeSessionMemoryEntry } from "../../src/long-agents/session-memory.ts";
 import { appendChatLongAgentTurn } from "../../src/long-agents/session-turn.ts";
@@ -142,15 +142,18 @@ test("topic_manage: create, supplement, archive and relay go through the domain 
   assert.equal(relayed.created, true);
   const childSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, child.node.sessionId, "子节点");
   const branch = childSession.session.manager.getBranch();
-  const markers = branch.filter((entry) => entry.type === "custom" && entry.customType === "chat.topic-relay");
-  assert.deepEqual(markers.map((entry) => entry.data.status), ["pending", "complete"]);
-  assert.equal(markers[1].data.userEntryId, relayed.userEntryId, "the complete marker records the user entry");
-  assert.equal(markers[1].data.relayedByLongAgentId, "friend");
+  assert.equal(branch.filter((entry) => entry.customType === "chat.topic-relay").length, 0, "no separate marker entry is needed");
   const relayUserEntry = branch.find((entry) => entry.id === relayed.userEntryId);
   assert.equal(relayUserEntry.type, "message");
   assert.equal(relayUserEntry.message.role, "user", "the relayed text IS a real user message");
   assert.equal(relayUserEntry.message.content[0].text, "请继续定位这个分支");
   assert.equal(convertToLlm(sessionEntryToContextMessages(relayUserEntry))[0].role, "user");
+  // The durable request association rides ON the native entry and survives a reload from disk.
+  const reloaded = await openChatSession({ chatHome: home, projectId: "friend", sessionId: child.node.sessionId });
+  const reloadedEntry = reloaded.manager.getBranch().find((entry) => entry.id === relayed.userEntryId);
+  assert.deepEqual(reloadedEntry.message.chatTopicRelay.requestId, "tm-relay");
+  assert.equal(reloadedEntry.message.chatTopicRelay.targetNodeId, child.node.nodeId);
+  assert.equal(reloadedEntry.message.chatTopicRelay.relayedByLongAgentId, "friend");
   // The relayed user entry can therefore start a settleable round in the node (anchor contract).
   appendTopicRoundMarker(childSession.session.manager, { roundId: "relay-round", userEntryId: relayed.userEntryId, status: "completed" });
   childSession.session.manager.flush();
@@ -261,38 +264,57 @@ test("topic_manage: relay re-checks the node inside the session lock and never d
   const root = await call({ operation: "create_node", topicId: topic.topic.topicId, requestId: "rc-topic", title: "根节点" });
   await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根");
 
-  // Hold the node session lock, queue a relay behind it, then archive the node before releasing.
+  // Archive and relay share the node session lock. When the archive is queued first it wins, and the
+  // relay that was queued behind it re-checks the status inside the lock and refuses.
+  const key = chatSessionOperationKey("friend", root.node.sessionId);
   let release = () => {};
   const gate = new Promise((resolve) => { release = resolve; });
-  const holding = withChatSessionOperationLock(chatSessionOperationKey("friend", root.node.sessionId), async () => { await gate; });
-  const queued = call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay", text: "归档后不应写入" });
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  await call({ operation: "update_node_status", nodeId: root.node.nodeId, status: "archived" });
+  const holding = withChatSessionOperationLock(key, async () => { await gate; });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const archiving = call({ operation: "update_node_status", nodeId: root.node.nodeId, status: "archived" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const queuedRelay = call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay", text: "归档后不应写入" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
   release();
   await holding;
-  await assert.rejects(queued, /已归档|已移除|不能代传/, "a node archived while relay was queued must not receive the message");
+  await archiving;
+  await assert.rejects(queuedRelay, /已归档|已移除|不能代传/, "a node archived before the relay acquired the lock must not receive the message");
 
-  // Recover from an interruption between the marker and the message: the relay completes without a
-  // second copy of the message.
+  // The other order is a plain serialization: the relay lands while the node is still active, then the
+  // archive applies (the message was written before the node became read-only).
   await call({ operation: "update_node_status", nodeId: root.node.nodeId, status: "active" });
-  const relayed = await call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay-2", text: "只写一次" });
-  assert.equal(relayed.created, true);
-  const session = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根");
-  // Simulate the interruption: drop the complete marker, keep the pending marker and the message.
-  const file = session.session.manager.getSessionFile();
-  const lines = fs.readFileSync(file, "utf8").trim().split("\n").map((line) => JSON.parse(line));
-  const pendingIndex = lines.findIndex((entry) => entry.type === "custom" && entry.customType === "chat.topic-relay"
-    && entry.data?.requestId === "rc-relay-2" && entry.data?.status === "pending");
-  const completeIndex = lines.findIndex((entry) => entry.type === "custom" && entry.customType === "chat.topic-relay"
-    && entry.data?.requestId === "rc-relay-2" && entry.data?.status === "complete");
-  assert.equal(pendingIndex >= 0 && completeIndex > pendingIndex, true, "the protocol writes pending before complete");
-  lines.splice(completeIndex, 1);
-  fs.writeFileSync(file, lines.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
-  const resumed = await call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay-2", text: "只写一次" });
-  assert.equal(resumed.userEntryId, relayed.userEntryId, "the retry adopts the message that is already durable");
+  let release2 = () => {};
+  const gate2 = new Promise((resolve) => { release2 = resolve; });
+  const holding2 = withChatSessionOperationLock(key, async () => { await gate2; });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const relayFirst = call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay-1", text: "先代传再归档" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const archivingSecond = call({ operation: "update_node_status", nodeId: root.node.nodeId, status: "archived" });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  release2();
+  await holding2;
+  const relayedFirst = await relayFirst;
+  assert.equal(relayedFirst.created, true);
+  assert.equal((await archivingSecond).node.status, "archived");
+  await call({ operation: "update_node_status", nodeId: root.node.nodeId, status: "active" });
+
+  // The relayed message is a native user message carrying the durable request association.
+  const relayed = relayedFirst;
+  // An unrelated user message with the SAME text must never be claimed as a relay. The association is
+  // matched exactly, and a replay returns the same entry instead of writing a second message.
+  const session2 = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根");
+  appendChatUserMessage(session2.session.manager, "只写一次");
+  session2.session.manager.flush();
+  const second = await call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay-2", text: "只写一次" });
+  assert.equal(second.created, true);
+  assert.notEqual(second.userEntryId, relayed.userEntryId, "the pre-existing unrelated message is not adopted");
+  const third = await call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay-2", text: "只写一次" });
+  assert.equal(third.created, false);
+  assert.equal(third.userEntryId, second.userEntryId);
   const after = (await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根"))
-    .session.manager.getBranch().filter((entry) => entry.type === "message" && entry.message?.role === "user");
-  assert.equal(after.length, 1, "the interrupted relay never duplicates the user message");
+    .session.manager.getBranch().filter((entry) => entry.type === "message" && entry.message?.role === "user"
+      && entry.message?.chatTopicRelay?.requestId === "rc-relay-2");
+  assert.equal(after.length, 1, "exactly one relayed message exists for the request");
 });
 
 test("topic_manage: a partial multi-source write is completed from the frozen request, and a changed request conflicts", async (t) => {
