@@ -462,7 +462,7 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
     ? null
     : text(input.requestFingerprint, "requestFingerprint", 200);
   const digest = nodeCreationDigest({ topicId, sessionId, title, createdBy: input.createdBy, frozenProjectContext, initialMemoryRefs, parents, requestFingerprint });
-  return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
+  return changeTopicGraph(input.chatHome, input.longAgentId, async (state) => {
     const nodeId = topicNodeIdOf(topicId, sessionId);
     // The request id is the retry identity for the whole four-step creation (session reservation,
     // summary, initial memory, graph registration): a retry with the same id returns the same node,
@@ -497,6 +497,12 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
     }
     assertRevision(state, input.expectedRevision);
     const now = input.now ?? new Date().toISOString();
+    // Sources are validated inside the locked mutation AFTER the idempotency checks, so an identical
+    // replay of an already registered node never re-checks availability (its sources may be gone).
+    await requireTopicSources({ chatHome: input.chatHome, sources: [
+      ...initialMemoryRefs.map((ref) => ref.source),
+      ...parents.flatMap((parent) => parent.memoryRefs),
+    ] });
     const edges: TopicEdgeRecord[] = [];
     for (const parent of parents) {
       if (edges.some((edge) => edge.parentNodeId === parent.parentNodeId))
@@ -559,13 +565,14 @@ export async function addTopicNodeParent(input: ParentEdgeSpec & {
   readonly now?: string;
 }): Promise<{ edge: TopicEdgeRecord; graph: TopicGraphState; created: boolean }> {
   const childNodeId = identity(input.childNodeId, "childNodeId", NODE_ID_PATTERN);
-  return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
+  return changeTopicGraph(input.chatHome, input.longAgentId, async (state) => {
     const child = state.nodes.find((node) => node.nodeId === childNodeId);
     if (child === undefined) throw new TopicError(404, `找不到子节点：${childNodeId}`);
     if (child.status !== "active") throw new TopicError(409, "节点已归档或移除，不能接受新的整合");
     const normalized = normalizeParentSpecs([input])[0]!;
     const existing = state.edges.find((edge) => edge.parentNodeId === normalized.parentNodeId && edge.childNodeId === childNodeId);
     if (existing !== undefined) return { edge: { ...existing }, graph: snapshot(state), created: false };
+    await requireTopicSources({ chatHome: input.chatHome, sources: normalized.memoryRefs });
     assertRevision(state, input.expectedRevision);
     const now = input.now ?? new Date().toISOString();
     const edge = parseParentEdge(normalized, state, childNodeId, child.topicId, now);
@@ -776,6 +783,25 @@ async function requireTopicMemorySource(input: {
   const entry = memory.entries.find((candidate) => candidate.entryId === source.entryId);
   if (entry === undefined) throw new TopicError(404, `来源会话记忆条目不存在：${source.entryId}`);
   if (entry.status !== "active") throw new TopicError(409, `来源会话记忆条目已被推翻：${source.entryId}`);
+  // An archived topic node is read-only provenance: it may not feed new integration (taskbook 3#9).
+  const graph = await readTopicGraph(input.chatHome, source.storageProjectId);
+  const node = graph.nodes.find((candidate) => candidate.sessionId === source.sessionId);
+  if (node !== undefined && node.status !== "active")
+    throw new TopicError(409, `来源主题节点已归档或移除，不能作为整合来源：${node.nodeId}`);
+}
+
+/** Every recorded source address is resolved through the same gate, whatever carried it here. */
+async function requireTopicSources(input: {
+  chatHome: string;
+  sources: readonly TopicMemorySource[];
+}): Promise<void> {
+  const seen = new Set<string>();
+  for (const source of input.sources) {
+    const key = JSON.stringify([source.storageProjectId, source.sessionId, source.entryId]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    await requireTopicMemorySource({ chatHome: input.chatHome, source });
+  }
 }
 
 /** Canonical fingerprint of the orchestration inputs; folded into the node creation digest. */

@@ -10,6 +10,7 @@ import { readSessionMemory, writeSessionMemoryEntry } from "../../src/long-agent
 import { ensureAgentHomeProject, openProject } from "../../src/projects/registry.ts";
 import { purgeRemovedChatSession, removeChatSession, restoreRemovedChatSession } from "../../src/session-removal.ts";
 import {
+  addTopicNodeParent,
   createTopic,
   createTopicNode,
   readTopicGraph,
@@ -17,6 +18,7 @@ import {
   topicNodeSessionIdOf,
   topicRootSessionIdOf,
   topicIdOf,
+  updateTopicNodeStatus,
   createTopicNodeWithSession,
   TOPIC_INTEGRATION_SUMMARY_CUSTOM_TYPE,
 } from "../../src/long-agents/topics.ts";
@@ -334,4 +336,73 @@ test("P2 creation: review counter-examples for the orchestration contract", asyn
     /来源会话已移除/,
   );
 
+});
+
+test("P2 creation: every recorded source is validated at the graph write entry", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "rs-topic", expectedRevision: 0 })).topic;
+  const root = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "rs-topic", expectedRevision: 1 });
+  const sourceSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, topic.rootSessionId, "根");
+  const sourceMemory = await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: topic.rootSessionId,
+    operation: "write", purpose: "finding", author: "agent", content: "真实来源", expectedRevision: 0 });
+  const realSource = { storageProjectId: "friend", sessionId: topic.rootSessionId, entryId: sourceMemory.entries.at(-1).entryId };
+  const bogusSource = { storageProjectId: "friend", sessionId: "missing-session", entryId: "smem-9999-missing" };
+
+  // A parent edge's memoryRefs is validated: a fake reference never reaches the graph.
+  await assert.rejects(
+    createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "假引用", createdBy: "agent", requestId: "rs-bad-edge",
+      expectedRevision: 2, parents: [{ parentNodeId: root.node.nodeId, memoryRefs: [bogusSource] }] }),
+    /来源会话记忆不存在或不可读/,
+  );
+  const afterBadEdge = await readTopicGraph(home, "friend");
+  assert.equal(afterBadEdge.edges.some((edge) => edge.memoryRefs.some((ref) => ref.sessionId === "missing-session")), false);
+  assert.equal(afterBadEdge.nodes.some((node) => node.createdByRequestId === "rs-bad-edge"), false);
+
+  // The bootstrap ref's source is validated too.
+  await assert.rejects(
+    createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "假初始来源", createdBy: "agent", requestId: "rs-bad-initial",
+      expectedRevision: 2, initialMemoryRefs: [{ entryId: "smem-0001-x", source: bogusSource }],
+      parents: [{ parentNodeId: root.node.nodeId }] }),
+    /来源会话记忆不存在或不可读/,
+  );
+
+  // Supplementary integration validates its memoryRefs as well.
+  const child = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "子节点", createdBy: "agent", requestId: "rs-child",
+    expectedRevision: 2, parents: [{ parentNodeId: root.node.nodeId, memoryRefs: [realSource] }] });
+  assert.equal(child.graph.edges[0].memoryRefs.length, 1);
+  const third = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "第三个", createdBy: "agent", requestId: "rs-third",
+    expectedRevision: child.graph.revision, parents: [{ parentNodeId: root.node.nodeId }] });
+  // A supplementary edge validates its own memoryRefs (the existing-edge early return is skipped here
+  // because these two nodes are not connected yet).
+  await assert.rejects(
+    addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: child.node.nodeId, parentNodeId: third.node.nodeId, memoryRefs: [bogusSource], expectedRevision: third.graph.revision }),
+    /来源会话记忆不存在或不可读/,
+  );
+  assert.equal(
+    (await addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: child.node.nodeId, parentNodeId: third.node.nodeId, memoryRefs: [realSource], expectedRevision: third.graph.revision })).created,
+    true,
+  );
+  // An archived source node cannot feed new integration, but an already registered replay is unaffected.
+  const archivedNode = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "将归档", createdBy: "agent", requestId: "rs-archived",
+    expectedRevision: (await readTopicGraph(home, "friend")).revision, parents: [{ parentNodeId: root.node.nodeId, memoryRefs: [realSource] }] });
+  await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, archivedNode.node.sessionId, "将归档");
+  const archivedMemory = await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: archivedNode.node.sessionId,
+    operation: "write", purpose: "finding", author: "agent", content: "归档前的结论", expectedRevision: 0 });
+  const archivedSource = { storageProjectId: "friend", sessionId: archivedNode.node.sessionId, entryId: archivedMemory.entries.at(-1).entryId };
+  const usableRequest = {
+    chatHome: home, longAgentId: "friend", topicId: topic.topicId, requestId: "rs-use-archived", title: "用到归档来源",
+    createdBy: "agent", source: archivedSource, initialMemory: { content: "背景", originEntryId: null },
+    parents: [{ parentNodeId: root.node.nodeId, memoryRefs: [archivedSource] }],
+  };
+  const usable = await createTopicNodeWithSession(usableRequest);
+  assert.equal(usable.created, true);
+  await updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: archivedNode.node.nodeId, status: "archived", expectedRevision: (await readTopicGraph(home, "friend")).revision });
+  // An archived source node cannot feed NEW integration ...
+  await assert.rejects(
+    createTopicNodeWithSession({ ...usableRequest, requestId: "rs-new-from-archived" }),
+    /来源主题节点已归档或移除/,
+  );
+  // ... but the already registered request still replays without re-checking its source.
+  assert.equal((await createTopicNodeWithSession(usableRequest)).created, false);
 });

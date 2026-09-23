@@ -3,6 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { ensureChatSessionWithId } from "../../src/chat-session.ts";
+import { ensureAgentHomeProject } from "../../src/projects/registry.ts";
+import { readSessionMemory, writeSessionMemoryEntry } from "../../src/long-agents/session-memory.ts";
 import {
   addTopicNodeParent,
   authorizeTopicSession,
@@ -16,17 +19,31 @@ import {
   updateTopicNodeStatus,
 } from "../../src/long-agents/topics.ts";
 
-function fixture(t, agent = "friend") {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "chat-topics-"));
+/**
+ * Every recorded source is validated at the graph write entry, so the fixture provides REAL session
+ * memory entries. `source(sessionId)` maps to that session's real `smem-*` address.
+ */
+async function fixture(t, agent = "friend") {
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-topics-")));
   fs.mkdirSync(path.join(home, "long-agents", agent), { recursive: true });
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  return home;
+  await ensureAgentHomeProject(agent, "Friend", home);
+  const memoryEntries = {};
+  for (const sessionId of ["s-src", "s-root"]) {
+    await ensureChatSessionWithId({ chatHome: home, projectId: agent }, sessionId, sessionId);
+    const written = await writeSessionMemoryEntry({ chatHome: home, longAgentId: agent, sessionId,
+      operation: "write", purpose: "finding", author: "agent", content: `来源 ${sessionId}`, expectedRevision: 0 });
+    memoryEntries[sessionId] = written.entries.at(-1).entryId;
+  }
+  return { home, memoryEntries };
 }
 
-const source = (sessionId, entryId) => ({ storageProjectId: "friend", sessionId, entryId });
+let sourceEntries = {};
+const source = (sessionId) => ({ storageProjectId: "friend", sessionId, entryId: sourceEntries[sessionId] });
 
 test("P2 topics: topic creation is request-idempotent and revision-guarded", async (t) => {
-  const home = fixture(t);
+  const { home: home, memoryEntries: entriesForhome } = await fixture(t);
+  sourceEntries = { ...sourceEntries, ...entriesForhome };
   const first = await createTopic({ chatHome: home, longAgentId: "friend", title: "定位问题", purpose: "定位线上 NPE", requestId: "topic-req-1", expectedRevision: 0 });
   assert.equal(first.created, true);
   assert.equal(first.topic.ownerLongAgentId, "friend");
@@ -44,23 +61,24 @@ test("P2 topics: topic creation is request-idempotent and revision-guarded", asy
 });
 
 test("P2 topics: nodes record anchors, provenance and multi-parent edges, and refuse cycles", async (t) => {
-  const home = fixture(t);
+  const { home: home, memoryEntries: entriesForhome } = await fixture(t);
+  sourceEntries = { ...sourceEntries, ...entriesForhome };
   const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "r-topic", expectedRevision: 0 })).topic;
   const root = await createTopicNode({
     chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点",
     createdBy: "agent", frozenProjectContext: "a", requestId: "r-topic", expectedRevision: 1,
-    initialMemoryRefs: [{ entryId: "smem-1", source: source("s-src", "smem-1") }],
+    initialMemoryRefs: [{ entryId: "smem-1", source: source("s-src") }],
   });
   assert.equal(root.created, true);
-  assert.deepEqual(root.node.initialMemoryRefs, [{ entryId: "smem-1", source: source("s-src", "smem-1") }]);
+  assert.deepEqual(root.node.initialMemoryRefs, [{ entryId: "smem-1", source: source("s-src") }]);
   const child = await createTopicNode({
     chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "子节点",
     createdBy: "user", requestId: "r-child", expectedRevision: 2,
-    initialMemoryRefs: [{ entryId: "smem-2", source: source("s-root", "smem-1") }],
-    parents: [{ parentNodeId: root.node.nodeId, anchorEntryId: "entry-20", anchorSequence: 20, memoryRefs: [source("s-root", "smem-1")] }],
+    initialMemoryRefs: [{ entryId: "smem-2", source: source("s-root") }],
+    parents: [{ parentNodeId: root.node.nodeId, anchorEntryId: "entry-20", anchorSequence: 20, memoryRefs: [source("s-root")] }],
   });
   assert.equal(child.graph.edges.length, 1);
-  assert.deepEqual(child.graph.edges[0].memoryRefs, [source("s-root", "smem-1")]);
+  assert.deepEqual(child.graph.edges[0].memoryRefs, [source("s-root")]);
   assert.equal(child.graph.edges[0].anchorSequence, 20);
   // Multi-parent is legal.
   const other = await createTopicNode({
@@ -91,7 +109,7 @@ test("P2 topics: nodes record anchors, provenance and multi-parent edges, and re
   );
   // Replaying the identical creation of the root is the idempotent path, not an error.
   assert.equal(
-    (await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "r-topic", expectedRevision: supplementary.graph.revision, frozenProjectContext: "a", initialMemoryRefs: [{ entryId: "smem-1", source: source("s-src", "smem-1") }] })).created,
+    (await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "r-topic", expectedRevision: supplementary.graph.revision, frozenProjectContext: "a", initialMemoryRefs: [{ entryId: "smem-1", source: source("s-src") }] })).created,
     false,
   );
   // The same request id with different creation content is a conflict, not a silent reuse. (A session
@@ -109,7 +127,8 @@ test("P2 topics: nodes record anchors, provenance and multi-parent edges, and re
 });
 
 test("P2 topics: removing a session marks the node removed and keeps its edges", async (t) => {
-  const home = fixture(t);
+  const { home: home, memoryEntries: entriesForhome } = await fixture(t);
+  sourceEntries = { ...sourceEntries, ...entriesForhome };
   const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "r1", expectedRevision: 0 })).topic;
   const root = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "root", createdBy: "agent", requestId: "r1", expectedRevision: 1 });
   const child = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "child", createdBy: "agent", requestId: "r3", expectedRevision: 2, parents: [{ parentNodeId: root.node.nodeId }] });
@@ -128,7 +147,8 @@ test("P2 topics: removing a session marks the node removed and keeps its edges",
 });
 
 test("P2 topics: the shared authorization decides read/relay/write for every entry", async (t) => {
-  const home = fixture(t, "owner");
+  const { home: home, memoryEntries: entriesForhome } = await fixture(t, "owner");
+  sourceEntries = { ...sourceEntries, ...entriesForhome };
   const topic = (await createTopic({ chatHome: home, longAgentId: "owner", title: "T", purpose: "P", requestId: "r1", expectedRevision: 0 })).topic;
   const root = await createTopicNode({ chatHome: home, longAgentId: "owner", topicId: topic.topicId, title: "root", createdBy: "agent", requestId: "r1", expectedRevision: 1 });
   const child = await createTopicNode({ chatHome: home, longAgentId: "owner", topicId: topic.topicId, title: "child", createdBy: "agent", requestId: "r3", expectedRevision: 2, parents: [{ parentNodeId: root.node.nodeId }] });
@@ -155,7 +175,8 @@ test("P2 topics: the shared authorization decides read/relay/write for every ent
 });
 
 test("P2 topics: graph constraints the first round missed (review counter-examples)", async (t) => {
-  const home = fixture(t);
+  const { home: home, memoryEntries: entriesForhome } = await fixture(t);
+  sourceEntries = { ...sourceEntries, ...entriesForhome };
   const a = (await createTopic({ chatHome: home, longAgentId: "friend", title: "A", purpose: "PA", requestId: "rA", expectedRevision: 0 })).topic;
   const b = (await createTopic({ chatHome: home, longAgentId: "friend", title: "B", purpose: "PB", requestId: "rB", expectedRevision: 1 })).topic;
   const rootA = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, title: "rootA", createdBy: "agent", requestId: "rA", expectedRevision: 2 });
