@@ -61,7 +61,7 @@ Long Agent 作为**上下文策展人**创建并管理主题会话树：用户�
 
 ### 3.2 主题图（topics）与节点
 
-- **归属与存储**：`<agent home>/topics.json`，Long Agent 拥有，版本化 + revision CAS。结构：`{ topics: [{ topicId, title, purpose, status, createdAt, rootSessionId }], nodes: [{ nodeId, topicId, sessionId, title, status, frozenProjectContext, createdAt, createdBy }], edges: [{ edgeId, parentNodeId, childNodeId, anchorEntryId, anchorSequence, memoryRefs: [{ fromSessionId, entryId }], createdAt }] }`。
+- **归属与存储**：`<agent home>/topics.json`，Long Agent 拥有，版本化 + revision CAS。结构：`{ topics: [{ topicId, title, purpose, status, createdAt, rootSessionId }], nodes: [{ nodeId, topicId, sessionId, title, status, frozenProjectContext, createdAt, createdBy, initialMemoryRefs: [{ entryId, source: { storageProjectId, sessionId, entryId } }] }], edges: [{ edgeId, parentNodeId, childNodeId, anchorEntryId, anchorSequence, memoryRefs: [{ storageProjectId, sessionId, entryId }], createdAt }] }`。**来源地址统一为 `{storageProjectId, sessionId, entryId}`**（边上的 `memoryRefs` 与节点上的 `initialMemoryRefs.source` 同形）。**根节点的初始记忆溯源记在图记录的 `nodes[].initialMemoryRefs`**（根没有入边，边的 `memoryRefs` 覆盖不到）；不要声称 P1 记忆条目自带该字段——P1 条目只有指向轮次的 `originEntryId`。
 - **不用 Pi 血缘指针**：Pi 的 `parentSession` 是单亲且与多亲 DAG 语义冲突；主题图的边完全由 Chat 拥有。主题会话是**普通 Pi 会话**（`openChatSession` 于 agent home），Pi 侧零改动。
 - **防环（已按检视 05 修正）**：加边 `parent → child` 时只做两项检查——`parent !== child`，且图中不存在 `child → … → parent` 的既有路径。**不再用“memoryRefs 命中祖先即拒绝”**（那会拒绝正常的父记忆继承）。`memoryRefs` 单独校验：来源条目存在、来源会话可读（读权限见 §3.6）。创建与补边（R4）执行同一检查。
 

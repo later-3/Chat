@@ -1,0 +1,83 @@
+# 主题模式 P2 任务书：主题图与「会话记忆」workflow（后端能力）
+
+状态：**草稿，待用户审核**。日期：2026-09-23。前置：P1（会话记忆底座）已独立复核通过，见 [P1 实施记录](../history/reviews/2026-09-22-topic-mode-p1.md)。合同见[主题模式任务书](./topic-mode-taskbook.md)，阶段计划见[开发计划](./topic-mode-plan.md) §2。
+
+## 1. 本阶段目标：交付后端能力
+
+**P2 只交付后端能力，用 API + 本地假模型证明。前端可见性归 P3（主题图视图/节点交互/记忆面板），真实模型完整故事归 P4。** 完成后后端具备：
+
+1. **每轮 = `work → remember`**：节点会话里跑一轮普通 agent 产出结果，紧接着由 `remember` agent 把该轮（本轮产出与思考 + 用户发言）沉淀为会话记忆条目；
+2. **Long Agent 能只读跨 Agent/跨树的记忆与全文**（带来源地址），据此**整合并创建**主题/节点，能**代传**，能更新节点状态；
+3. **节点创建**产出：agent home 新会话 + 整合摘要（进入模型上下文）+ 初始会话记忆条目（带来源引用）+ 图登记，四步共用同一 `requestId`（幂等可重试）；
+4. **节点会话 API**（读消息/发轮次/事件流）；识别为主题的会话在**所有入口**——节点 API、记忆 API、通用 Session 读写、Run 启动——走同一目标解析与授权；非主题会话沿用原合同；
+5. **分叉**：新节点冻结锚点，父节点后续演进不影响它；真成环被拒；多亲合法；
+6. **会话记忆开关**（主题/节点级）可关闭。
+
+**不做**：Form B（跨轮有状态 workflow 绑定）、群会话的记忆、跨设备同步、真实外部平台（LA6 已交付）、前端 UI（P3）。
+
+## 2. 开工前置（先落定再写功能代码）
+
+1. **来源绑定派发链**（P1 未交付）：`sessionMemoryTarget: {storageProjectId, sessionId}` 经 `workflow-call-tool → workflow-call → ChatWorkflowInput → step → createWorkflowAgentSession → ChatToolRuntimeContext` 传递；嵌套继承不重盖；HTTP/模型参数不可自填。
+2. **两条派发链**：外层 `session-memory` 在 agent home 的节点会话内启动、两 step 共用（不经 `workflow_call`，Session 与 run binding 归 agent home）；`work` 调业务 workflow 用既有 `workflow_call` 子会话与 run 归属（`collaborationProjectId === undefined ? projectId : collaborationProjectId`，显式 `null` 不回退）。
+3. **授权范围**：Topic 授权只作用于**已识别为主题节点**的会话；非主题会话继续既有授权。
+4. **锚点与 Skill**：只有整个外层 invocation 完成（`work`+`remember` 均终态）的轮次可分叉；Skill 路径 `src/resources/builtin-skills/session-memory/SKILL.md` 及其装配函数、历史读取签名（`history { afterEntryId?, limit? }`）在本阶段实现并测试。
+
+## 3. 交付物（功能清单，含入口归属）
+
+| # | 交付 | 落点 |
+|---|---|---|
+| 1 | **「会话记忆」workflow**：`work`（干活 agent）→ `remember`（写入 agent），每轮触发；`agentCallable: true`（供其他 workflow 在交接点调用） | `src/workflows/session-memory/{workflow.json,workflow.ts,step.ts,agents/{worker,writer}/…}` + `catalog.ts` |
+| 2 | **主题图**：topics/nodes/edges（边带创建锚点 + memoryRefs）、防环、revision CAS | `src/long-agents/topics.ts` |
+| 3 | **`topic-manage` 工具**（Long Agent 入口）：① 跨 Agent/跨树**只读**读取会话记忆与全文（见 §4 来源地址）；② 建主题/建节点（提交整合产物）；③ 代传；④ 读图/读节点；⑤ 更新节点状态 | `src/tools/builtins/topic-manage/**`（照 `conversation-manage` 模式） |
+| 4 | **节点创建服务**：`reserveChatSession` → 整合摘要 `appendCustomMessageEntry` → 初始 `background` 记忆条目 → 图 CAS 登记；四步同一 `requestId`，重试识别已写产物 | `src/long-agents/topics.ts` + `chat-session.ts` |
+| 5 | **“说一句建题”接线**：从 Long Agent 的建题请求解析该 Friend 的**日常来源会话**，启动整合后台 work（`startFriendWork` 只接受日常来源），返回 work/execution 引用；补充整合走同一 `topic-manage` 领域入口（经用户确认） | `src/long-agents/topics.ts` + `work.ts` 复用 |
+| 6 | **节点会话 API**：读消息 / 发轮次 / 事件流 | `src/routes/api/long-agents/[longAgentId]/topics/**` |
+| 7 | **共享授权**：read（跨树只读）/ relay（自己名下树）/ write（仅本会话记忆）在一处判定；节点 API、记忆 API、**通用 Session 读写与 Run 启动**在识别为主题节点后都走它；非主题会话走原合同 | `topics.ts` 共享函数，被 3/5/6 与 `sessions`/`runs` 路由复用 |
+| 8 | **读侧按需读取**：`session-memory` 工具 + `session-memory` Skill（**不注入 prompt**） | `src/resources/builtin-skills/session-memory/SKILL.md`、现有工具 |
+| 9 | **节点生命周期**：既有 Session 被移除时把对应 node 标记 `removed`、**保留边**供溯源；`archived/removed` 节点拒绝 relay 与整合指向 | `topics.ts` + `session-removal.ts` 挂钩 |
+| 10 | **随附业务 workflow**：问题定位 workflow（供主题会话按需调用，P4 实际使用） | `src/workflows/problem-diagnosis/**` + `catalog.ts` |
+| 11 | **开关**：会话记忆可关闭 —— 不装配读取能力、不跑 `remember` | 节点记录字段 + workflow 判定 |
+
+## 4. 方案要点（关键机制）
+
+- **每轮 = 一次 workflow**：`work` step 在当前节点会话跑普通一轮 agent（连续会话逻辑不变）；`remember` step 用 `transformContext`（`src/workflows/agent-definition.ts`）把上下文**投影为当前轮**（本轮用户 entry + `work` stage 全部条目），前文与旧记忆由它按需读取。`triggerChatWorkflowAgentHandoff` 只作触发（它不传上下文）。
+- **写入目标**：`session-memory` 工具目标来自派发盖章的绑定（P1 已就绪），节点会话内写入落在**当前节点会话**。
+- **跨会话只读 + 来源地址**：`topic-manage` 提供跨 Agent/跨树**只读**操作，返回条目/全文，**每条来源引用为 `{storageProjectId, sessionId, entryId}`**（不是裸 `entryId`）。
+- **溯源落点（唯一位置：图记录）**：来源映射保存在 `topics.json` 的 **`nodes[].initialMemoryRefs: [{ entryId, source: {storageProjectId, sessionId, entryId} }]`** —— 即“本节点初始记忆条目 → 其来源”，因此**根节点**（没有入边、没有 `memoryRefs`）也能回答“这条从哪来”。边的 `memoryRefs` 用**同一地址形状**记录跨节点引用。两处 schema 与主任务书 §3.2 一致；**P1 记忆条目本身不带来源地址**（只有 `originEntryId` 指向轮次），不要把它当作已有字段。
+- **整合产物落两处**：整合摘要（CustomMessage，进入上下文）+ 初始 `background` 条目（带 §4 的来源引用）。
+- **防环**：加边只检查 `parent !== child` 且不存在 `child → … → parent`；`memoryRefs` 只校验来源存在与可读（**不禁止继承父记忆**）。
+- **锚点**：节点读模型给出可分叉锚点（当前分支、用户 entry、invocation、终态），创建时在 Session 锁内核验并冻结，同时冻结记忆 revision；不使用 `forkChatSession()`。
+- **代传**：一条**真实 user message**（持久标记 `source:"relay"` + 代传 Agent），并同步更新读模型与前端解析（前端展示在 P3）。
+- **remember 的可见回复**必须关联工具实际返回的 entry ID 与 revision。
+
+## 5. 测试（功能为主；P2 用 API + 假模型）
+
+| # | 测试 | 断言 |
+|---|---|---|
+| T1 | workflow 两 agent 跑通（假模型） | `work` 产出结果；`remember` 写入条目并引用工具返回的 entry ID/revision |
+| T2 | `remember` 的上下文范围 | 捕获模型实际输入：只含**当前轮**；旧记忆经读取工具可得 |
+| T3 | 节点创建 | 图登记 + 初始记忆 + 摘要进入上下文；**同一 `requestId` 重放幂等**（不产生第二个节点/摘要）；**根节点的初始记忆可回答来源**（entry→来源引用） |
+| T4 | 分叉 | 锚点定格（父继续 5 轮后子的初始上下文不变）；多亲合法；真成环被拒 |
+| T5 | 代传与生命周期 | relay 是真实 user message + 标记可见；越权（他人树）拒绝；**会话被移除后 node `removed` 且边保留**，archived/removed 拒绝 relay |
+| T6 | 权限（含绕行入口） | owner 可读写节点会话；树属 Agent 可代传；跨树只读可；写他人记忆拒绝；**通用 Session 读写与 Run 启动（如 `POST /runs`）对主题节点走同一授权，越权被拒** |
+| T7 | 开关 | 关闭后不装配读取工具、不跑 `remember`，普通对话不受影响 |
+| T8 | 后端端到端（假模型） | 建题请求 → 日常来源解析 → 后台整合 work → 建节点 + 初始记忆 → 节点内一轮（work+remember）→ 分叉 → 第二主题跨树引用父记忆；全程 API 断言 |
+| T9 | 随附业务 workflow | 主题会话内调用问题定位 workflow 返回结果（假模型），run 归属符合 §2 第 2 条 |
+
+退出条件：T1–T9 有证据；`pnpm verify` exit=0；无新增运行时旁路（不新建 Session/调度器/模型循环）。真实模型完整故事与浏览器可见性分别归 P4/P3。
+
+## 6. 检视点
+
+1. 记忆是**按需读取**而不是每轮注入（token 视角）。
+2. `remember` 确实只看到当前轮。
+3. 锚点/防环语义正确；父节点演进不影响已建子节点。
+4. read/relay/write 在**一个共享函数**里判定，且**通用 Session/Run 入口**也复用（无绕行）。
+5. 跨树读取与初始记忆溯源都有 `{storageProjectId, sessionId, entryId}` 地址，根节点可答来源。
+6. 没有新增并行机制。
+
+## 7. 阶段边界
+
+- **P1（已通过）**：会话记忆底座（存储/工具/API/生命周期）。
+- **P2（本任务书）**：后端能力；用 API + 假模型证明。
+- **P3**：前端主题图视图、节点会话交互、记忆面板、整合状态机（依赖本阶段节点 API）。
+- **P4**：真实场景验收（问题定位端到端 + 真实模型 + 证据归档）。
