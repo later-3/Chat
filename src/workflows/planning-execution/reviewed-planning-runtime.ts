@@ -79,6 +79,8 @@ async function runPlannerIteration(input: {
   readonly planRevision: number;
   readonly previousPlan?: string;
   readonly agent: ResolvedWorkflowAgentDefinition;
+  /** Dispatching session whose session memory this agent writes to (never the workflow's own session). */
+  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
 }): Promise<PlanningRevisionStepResult> {
   const stepStartedAt = Date.now();
   const project = requireProjectContext(input.chatSession);
@@ -122,6 +124,7 @@ async function runPlannerIteration(input: {
       workflowInvocationId: input.workflowInvocationId,
       stageId: "plan",
       agentId: input.plannerAgentId,
+      ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
     },
     transformContext: (messages) => injectPlanningRevisionContext(messages, {
       workflowId: input.workflowId,
@@ -267,6 +270,7 @@ export async function runReviewedPlanningStep(
       inputEntryIds: [],
       planRevision: 1,
       agent: plannerAgent,
+      ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
     });
     if (result.userEntryId === undefined) throw new Error("Planning Workflow没有写入原生用户消息");
     return {
@@ -299,6 +303,7 @@ export async function runReviewedPlanningRevisionStep(
     planRevision: input.planRevision,
     previousPlan: input.previousPlan,
     agent: input.agent,
+    ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
   });
 }
 

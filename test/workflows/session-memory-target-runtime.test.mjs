@@ -82,3 +82,55 @@ test("the workflow agent writes session memory to the dispatching session, not i
   const childMemory = await readSessionMemory(chatHome, "friend", childSessionId);
   assert.equal(childMemory.entries.length, 0, "the workflow's own session received nothing");
 });
+
+/**
+ * The shared planning entry (initial planning and post-review replanning) must forward the target too:
+ * it is reached before the durable binding is written, so a missing pass-through would send the
+ * planner's memory write to the workflow's own session.
+ */
+test("the shared planning entry forwards the dispatching session to the planner agent", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const previousChatHome = process.env.CHAT_HOME;
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-workflow-smem-plan-"));
+  const faux = registerFauxProvider({ api: "chat-smem-plan-faux", provider: "chat-smem-plan-faux" });
+  t.after(() => {
+    process.chdir(previousCwd);
+    if (previousChatHome === undefined) delete process.env.CHAT_HOME; else process.env.CHAT_HOME = previousChatHome;
+    faux.unregister();
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  process.chdir(base);
+  const chatHome = path.join(base, ".chat");
+  process.env.CHAT_HOME = chatHome;
+  writeFauxConfiguration(path.join(chatHome, "agent"), faux);
+  await ensureAgentHomeProject("friend", "Friend", chatHome);
+  const workspace = (await resolveProjectContext("friend", chatHome)).cwd;
+
+  const origin = await reserveChatSession({ projectId: "friend", chatHome }, "origin");
+  const originSessionId = origin.manager.getSessionId();
+  const child = await reserveChatSession({ projectId: "friend", chatHome }, "child");
+  const childSessionId = child.manager.getSessionId();
+
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "goal", author: "agent", content: "规划入口写入的目标", expectedRevision: 0 })),
+    fauxAssistantMessage('<!-- chat-planner-output {"schemaVersion":1,"readiness":"ready_for_review","blockingQuestions":[]} -->\n\n# 计划\n1. 第一步'),
+  ]);
+
+  const { runReviewedPlanningStep } = await import("../../src/workflows/planning-execution/reviewed-planning-runtime.ts");
+  const { PLANNER_AGENT } = await import("../../src/workflows/planning-execution/agents/planner/index.ts");
+  await runReviewedPlanningStep({
+    projectId: "friend",
+    chatHome,
+    cwd: workspace,
+    sessionId: childSessionId,
+    prompt: "制定计划",
+    workflowInvocationId: "invocation-plan-smem-1",
+    sessionMemoryTarget: { storageProjectId: "friend", sessionId: originSessionId },
+    agentConfigs: { [PLANNER_AGENT.id]: { tools: { mode: "explicit", names: [], exclude: [], addresses: ["system:tool/session_memory"] } } },
+  }, { workflowId: "planning-execution", agents: [PLANNER_AGENT], plannerAgent: PLANNER_AGENT });
+
+  const originMemory = await readSessionMemory(chatHome, "friend", originSessionId);
+  assert.equal(originMemory.entries.length, 1, "the planner wrote to the dispatching session");
+  assert.equal(originMemory.entries[0].content, "规划入口写入的目标");
+  assert.equal((await readSessionMemory(chatHome, "friend", childSessionId)).entries.length, 0, "the workflow's own session received nothing");
+});

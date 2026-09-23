@@ -69,6 +69,7 @@ export interface PlanningRevisionStepInput {
   readonly feedback: string;
   readonly inputEntryIds: readonly string[];
   readonly agent: ResolvedWorkflowAgentDefinition;
+  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
 }
 
 export interface PlanningRevisionStepResult {
