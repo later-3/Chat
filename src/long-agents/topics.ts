@@ -2,7 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { assertFileWithin, atomicWriteJson, withFileLock } from "../persistence/versioned-file.js";
+import { ensureChatSessionWithId, openChatSession } from "../chat-session.js";
+import { chatSessionOperationKey, withChatSessionOperationLock } from "../session-operation-lock.js";
+import { TopicAnchorError, requireTopicAnchor } from "./topic-anchor.js";
 import { longAgentConfigRoot } from "./storage.js";
+import { readSessionMemory, writeSessionMemoryEntry } from "./session-memory.js";
 
 /**
  * P2 topic graph: the durable record of a Long Agent's theme trees.
@@ -18,6 +22,8 @@ const TOPIC_ID_PATTERN = /^topic-[a-f0-9]{16,64}$/;
 const NODE_ID_PATTERN = /^node-[a-f0-9]{16,64}$/;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/;
 const SESSION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/;
+/** Bounded graph CAS attempts: concurrent node creations bump the revision under their own locks. */
+const TOPIC_GRAPH_CAS_ATTEMPTS = 5;
 
 /** Where one initial memory entry came from: the exact durable address, not a bare entry id. */
 export interface TopicMemorySource {
@@ -670,4 +676,163 @@ export function authorizeTopicSession(input: {
   if (input.capability === "write" && input.graph.longAgentId !== requester)
     return { applicable: true, allowed: false, reason: "只能写自己名下会话的记忆", node, topic };
   return { applicable: true, allowed: true, reason: null, node, topic };
+}
+
+/**
+ * Node-creation orchestration: session -> integration summary -> initial session memory -> graph
+ * registration, all sharing one `requestId`.
+ *
+ * Every step is replayable on its own: the session id is derived, the summary is deduplicated by the
+ * request marker, the initial memory entry is adopted when an identical bootstrap entry already exists,
+ * and the graph registration is request-idempotent (creation digest). The whole flow is serialized on a
+ * request-scoped file lock — NOT on the session operation lock, which `ensureChatSessionWithId` already
+ * takes internally and which is not re-entrant.
+ */
+export const TOPIC_INTEGRATION_SUMMARY_CUSTOM_TYPE = "chat.topic-integration-summary";
+
+export interface CreateTopicNodeWithSessionInput {
+  readonly chatHome: string;
+  readonly longAgentId: string;
+  readonly topicId: unknown;
+  readonly requestId: unknown;
+  readonly title: unknown;
+  readonly createdBy: "user" | "agent";
+  readonly frozenProjectContext?: unknown;
+  /** Integration product text, appended as a CustomMessage so it enters the child's context. */
+  readonly integrationSummary?: unknown;
+  /** Initial session-memory bootstrap entry, distilled from the sources. */
+  readonly initialMemory?: { readonly content: unknown; readonly originEntryId?: unknown } | undefined;
+  /** Provenance of the bootstrap entry; without it no memory entry is written. */
+  readonly source?: TopicMemorySource | null;
+  readonly parents?: readonly CreateTopicNodeParentInput[];
+  readonly now?: string;
+}
+
+export interface TopicNodeCreationResult {
+  readonly node: TopicNodeRecord;
+  readonly sessionId: string;
+  readonly created: boolean;
+  readonly summaryEntryId: string | null;
+  readonly memoryEntryId: string | null;
+  readonly graph: TopicGraphState;
+}
+
+function memoryEntryIdForRevision(state: { revision: number; entries: readonly { entryId: string }[] }): string | null {
+  const prefix = `smem-${String(state.revision).padStart(4, "0")}-`;
+  return state.entries.find((entry) => entry.entryId.startsWith(prefix))?.entryId ?? null;
+}
+
+/** Anchors are verified against the PARENT session while its operation lock is held. */
+async function verifyParentAnchors(input: {
+  chatHome: string;
+  longAgentId: string;
+  graph: TopicGraphState;
+  parents: readonly CreateTopicNodeParentInput[];
+}): Promise<void> {
+  for (const parent of input.parents) {
+    const parentNode = input.graph.nodes.find((node) => node.nodeId === parent.parentNodeId);
+    if (parentNode === undefined) continue; // createTopicNode reports the missing parent
+    await withChatSessionOperationLock(chatSessionOperationKey(input.longAgentId, parentNode.sessionId), async () => {
+      let session;
+      try {
+        session = await openChatSession({ chatHome: input.chatHome, projectId: input.longAgentId, sessionId: parentNode.sessionId });
+      } catch (error) {
+        if (parent.anchorEntryId === undefined || parent.anchorEntryId === null) return;
+        throw error;
+      }
+      try {
+        requireTopicAnchor(session.manager, {
+          anchorEntryId: parent.anchorEntryId ?? null,
+          anchorSequence: parent.anchorSequence ?? null,
+        });
+      } catch (error) {
+        if (error instanceof TopicAnchorError) throw new TopicError(error.statusCode, error.message);
+        throw error;
+      }
+    });
+  }
+}
+
+export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessionInput): Promise<TopicNodeCreationResult> {
+  const chatHome = input.chatHome;
+  const longAgentId = input.longAgentId;
+  const topicId = identity(input.topicId, "topicId", TOPIC_ID_PATTERN);
+  const requestId = text(input.requestId, "requestId", 200);
+  if (!REQUEST_ID_PATTERN.test(requestId)) throw new TopicError(400, "主题requestId格式无效");
+  const title = text(input.title, "title", 200);
+  const sessionId = topicNodeSessionIdOf(topicId, requestId);
+  const parents = input.parents ?? [];
+  const summary = input.integrationSummary === undefined || input.integrationSummary === null
+    ? null
+    : text(input.integrationSummary, "integrationSummary", 20_000);
+  const memory = input.initialMemory === undefined || input.initialMemory === null
+    ? null
+    : { content: text(input.initialMemory.content, "initialMemory.content", 4_000),
+        originEntryId: optionalText(input.initialMemory.originEntryId, "initialMemory.originEntryId", 200) };
+  const source = input.source === undefined || input.source === null ? null : parseMemorySource(input.source, "source");
+  if (memory !== null && source === null) throw new TopicError(400, "初始记忆必须带来源地址");
+  const graphFile = topicGraphFile(chatHome, longAgentId);
+  return withFileLock(`${graphFile}.node-request-${requestId}`, async () => {
+    const current = await readTopicGraph(chatHome, longAgentId);
+    const registered = current.nodes.find((node) => node.createdByRequestId === requestId);
+    if (registered !== undefined) {
+      return { node: registered, sessionId: registered.sessionId, created: false,
+        summaryEntryId: null, memoryEntryId: registered.initialMemoryRefs[0]?.entryId ?? null, graph: current };
+    }
+    await verifyParentAnchors({ chatHome, longAgentId, graph: current, parents });
+    const ensured = await ensureChatSessionWithId({ chatHome, projectId: longAgentId }, sessionId, title);
+    let summaryEntryId: string | null = null;
+    let memoryEntryId: string | null = null;
+    // The session lock is taken AFTER ensureChatSessionWithId released it (the lock is not re-entrant).
+    await withChatSessionOperationLock(chatSessionOperationKey(longAgentId, sessionId), async () => {
+      if (summary !== null) {
+        const existing = ensured.session.manager.getEntries().find((entry) => entry.type === "custom_message"
+          && entry.customType === TOPIC_INTEGRATION_SUMMARY_CUSTOM_TYPE
+          && isRecord(entry.details) && entry.details.requestId === requestId);
+        if (existing !== undefined) summaryEntryId = existing.id;
+        else {
+          summaryEntryId = ensured.session.manager.appendCustomMessageEntry(
+            TOPIC_INTEGRATION_SUMMARY_CUSTOM_TYPE, summary, false, { requestId, topicId, sessionId });
+          ensured.session.manager.flush();
+        }
+      }
+      if (memory !== null && source !== null) {
+        const state = await readSessionMemory(chatHome, longAgentId, sessionId);
+        // Replay detection: the same request always derives the same bootstrap entry, so an identical
+        // background entry is adopted instead of appended (append-only history is untouched otherwise).
+        const adopted = state.entries.find((entry) => entry.purpose === "background" && entry.author === input.createdBy
+          && entry.originEntryId === memory.originEntryId && entry.content === memory.content);
+        if (adopted !== undefined) memoryEntryId = adopted.entryId;
+        else {
+          const written = await writeSessionMemoryEntry({ chatHome, longAgentId, sessionId, operation: "write",
+            purpose: "background", author: input.createdBy, content: memory.content,
+            originEntryId: memory.originEntryId, expectedRevision: state.revision, ...(input.now === undefined ? {} : { now: input.now }) });
+          memoryEntryId = memoryEntryIdForRevision(written);
+          if (memoryEntryId === null) throw new TopicError(500, "初始会话记忆写入未返回条目");
+        }
+      }
+    });
+    const initialMemoryRefs: TopicNodeInitialMemoryRef[] = memoryEntryId === null || source === null
+      ? []
+      : [{ entryId: memoryEntryId, source }];
+    // Registration retries only on a graph revision conflict: the session, summary and memory writes
+    // above are already durable and replayable, so a fresh revision is the whole fix.
+    for (let attempt = 0; ; attempt += 1) {
+      const graph = await readTopicGraph(chatHome, longAgentId);
+      try {
+        const registeredNode = await createTopicNode({
+          chatHome, longAgentId, topicId, title, createdBy: input.createdBy, requestId,
+          expectedRevision: graph.revision, initialMemoryRefs, parents,
+          ...(input.frozenProjectContext === undefined ? {} : { frozenProjectContext: input.frozenProjectContext }),
+          ...(input.now === undefined ? {} : { now: input.now }),
+        });
+        return { node: registeredNode.node, sessionId, created: registeredNode.created,
+          summaryEntryId, memoryEntryId, graph: registeredNode.graph };
+      } catch (error) {
+        const retryable = error instanceof TopicError && error.statusCode === 409 && attempt < TOPIC_GRAPH_CAS_ATTEMPTS
+          && (error.message.includes("revision") || error.message.includes("已修改"));
+        if (!retryable) throw error;
+      }
+    }
+  });
 }

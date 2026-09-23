@@ -53,6 +53,8 @@
   - 根节点：新建主题的根会话 id 由**主题自身** `requestId` 派生，所以 `createTopic` 之前就能创建根会话（不存在“先有鸡还是先有蛋”）。
   - 归档主题仍拒绝新建节点；主题级 `updateTopicStatus` 只影响“能否新建”，不动节点状态。
 - **旧文件容忍**：v1 图中缺少 `createdByRequestDigest` 的节点读作 `createdByRequestDigest: null`（legacy），任何重试对其 **fail-closed** 拒绝（“登记早于创建摘要”）；中间版本写出的 `reservations` 字段读入时直接忽略，因此既有图文件不会加载失败。
+- **节点创建编排（四步一 `requestId`）**：`createTopicNodeWithSession` 在**该 `requestId` 专属文件锁**内按顺序完成 ① 派生会话并 `ensureChatSessionWithId` ② 整合摘要（CustomMessage，`customType: chat.topic-integration-summary`，`details.requestId` 去重）③ 初始 `background` 会话记忆（同一请求重放时按 `purpose+author+originEntryId+content` **采用既有条目**，不追加第二条）④ `createTopicNode` 图登记（登记失败只在**图 revision 冲突**时重读重试，前三步已耐久且可重放）。锁的选择：请求锁用于整段编排；会话锁只在 `ensureChatSessionWithId` 返回之后用于②③（会话锁不可重入）；**不使用会话锁包整段流程**。
+- **settled 锚点核验**（`src/long-agents/topic-anchor.ts`）：可分叉锚点 = **当前分支**上、其 `chat.long_agent_turn` 标记 `status === "completed"` 的轮次，取该轮次的**用户 entry** 为 `anchorEntryId`，`anchorSequence` = 该分支已 settled 轮次的 1-based 序号；`running/failed/cancelled` 轮次与 assistant entry 都不是锚点，同一轮次的后续重试标记**不产生第二个锚点**。核验在**父会话的操作锁内**、写入任何产物**之前**完成（父轮次继续演进只会新增锚点，不会使已核验锚点失效）。`anchorEntryId`/`anchorSequence` 必须同时为空才表示“从起点分叉”。
 - **整合产物落两处**：整合摘要（CustomMessage，进入上下文）+ 初始 `background` 条目（带 §4 的来源引用）。
 - **防环**：加边只检查 `parent !== child` 且不存在 `child → … → parent`；`memoryRefs` 只校验来源存在与可读（**不禁止继承父记忆**）。新建节点没有出边，结构上不可能成环，因此防环真正生效的地点是**补边**（对既有节点追加父边，R4 补充整合），创建与补边共用同一检查。
 - **图约束（首轮检视补齐，均为阻断项）**：
