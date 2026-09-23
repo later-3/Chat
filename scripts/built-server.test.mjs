@@ -871,6 +871,7 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
     "system:tool/summary_manage",
     "system:tool/social_manage",
     "system:tool/conversation_manage",
+    "system:tool/session_memory",
     "system:tool/collaboration_project",
     ],
   );

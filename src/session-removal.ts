@@ -23,6 +23,14 @@ import {
   withChatSessionOperationLock,
 } from "./session-operation-lock.js";
 import { firstSessionUtterance, listActiveSessionFiles } from "./session-files.js";
+import { clearSessionMemoryOrphan, convergeSessionMemoryWithLifecycle, markSessionMemoryOrphan, purgeSessionMemory } from "./long-agents/session-memory.js";
+
+/**
+ * Lifecycle convergence for a session whose removed-index operation was interrupted: the session's
+ * lifecycle location decides the memory orphan flag (removed → orphan, active → clear, purged → delete).
+ * Used as the recovery callback so an interrupted remove/restore/purge never leaves the session memory
+ * in a stale state (review 28/29).
+ */
 
 export type { RemovedSessionRecord } from "./removed-session-index.js";
 
@@ -75,6 +83,8 @@ async function purgeExpiredRecords(
     await writeRemovedSessionIndex(project, prepared);
     const source = removedSessionRecordPath(project, record);
     if (await removedSessionPathExists(source)) await unlink(source);
+    // The memory deletion is irreversible; it happens only after the purge intent is durable (review 29).
+    if (project.kind === "agent") await purgeSessionMemory(project.chatHome, projectId, record.id);
     const sessions = { ...prepared.sessions };
     delete sessions[record.id];
     const completed = completeRemovedSessionIndex(prepared, sessions, {
@@ -157,6 +167,7 @@ export async function removeChatSession(
       const prepared = prepareRemovedSessionIndexOperation(index, "remove", record, now);
       await writeRemovedSessionIndex(project, prepared);
       await rename(session.path, target);
+      if (project.kind === "agent") await markSessionMemoryOrphan(project.chatHome, projectId, sessionId);
       const completed = completeRemovedSessionIndex(prepared, {
         ...prepared.sessions,
         [record.id]: record,
@@ -196,6 +207,8 @@ export async function restoreRemovedChatSession(
       const prepared = prepareRemovedSessionIndexOperation(index, "restore", record, now);
       await writeRemovedSessionIndex(project, prepared);
       await rename(removedSessionRecordPath(project, record), target);
+      // The memory change lands after the durable intent and file move, before completion (review 28).
+      if (project.kind === "agent") await clearSessionMemoryOrphan(project.chatHome, projectId, sessionId);
       const sessions = { ...prepared.sessions };
       delete sessions[sessionId];
       await writeRemovedSessionIndex(project, completeRemovedSessionIndex(prepared, sessions));
@@ -220,7 +233,10 @@ export async function purgeRemovedChatSession(
     withRemovedSessionIndexMutation(project, async () => {
       const index = await readRecoveredRemovedSessionIndex(project);
       const tombstone = index.tombstones[sessionId];
-      if (tombstone !== undefined) return { sessionId, state: "purged", purgedAt: tombstone.purgedAt };
+      if (tombstone !== undefined) {
+        if (project.kind === "agent") await purgeSessionMemory(project.chatHome, projectId, sessionId);
+        return { sessionId, state: "purged", purgedAt: tombstone.purgedAt };
+      }
       const record = index.sessions[sessionId];
       if (record === undefined) {
         throw new SessionLifecycleError("SESSION_NOT_FOUND", `移除区中找不到Session: ${sessionId}`);
@@ -229,6 +245,8 @@ export async function purgeRemovedChatSession(
       await writeRemovedSessionIndex(project, prepared);
       const source = removedSessionRecordPath(project, record);
       if (await removedSessionPathExists(source)) await unlink(source);
+      // The memory deletion is irreversible; it happens only after the purge intent is durable (review 29).
+      if (project.kind === "agent") await purgeSessionMemory(project.chatHome, projectId, sessionId);
       const sessions = { ...prepared.sessions };
       delete sessions[sessionId];
       const purgedAt = now.toISOString();

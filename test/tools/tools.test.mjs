@@ -150,6 +150,12 @@ test("Chat system Tool manifests are stable, qualified, and risk classified", ()
       permissions: ["long-agent:conversation"],
     },
     {
+      address: "system:tool/session_memory",
+      name: "session_memory",
+      risk: "write",
+      permissions: ["long-agent:session-memory"],
+    },
+    {
       address: "system:tool/collaboration_project",
       name: "collaboration_project",
       risk: "write",

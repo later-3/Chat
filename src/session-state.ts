@@ -11,6 +11,9 @@ export async function requireActiveChatSessionFile(
 ): Promise<SessionInfo> {
   if (sessionId.trim() === "") throw new Error("sessionId不能为空");
   const active = (await listActiveSessionFiles(project)).find((candidate) => candidate.id === sessionId);
+  // An active Session short-circuits here without touching the removed-session index; session memory
+  // convergence therefore happens only on index-touching reads, or is healed by a legitimate write to
+  // the (active) session. Do not claim that every state query converges the companion memory.
   if (active !== undefined) return active;
   const inactive = await findInactiveChatSessionState(project, sessionId);
   if (inactive === "removed") {

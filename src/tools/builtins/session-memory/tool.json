@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "session-memory",
+  "name": "session_memory",
+  "label": "Session memory",
+  "description": "读写本会话的会话记忆（session memory）：按目的分类的耐久条目，用于跨会话复用与主题整合。list 读取当前条目与 revision（后续写入要用它作为 expectedRevision）；write 追加一条；supersede 用新条目推翻一条旧条目（旧条目转 superseded，历史保留）；history 分页读取本会话归属的对话条目。内容要写成一句到几句话的独立事实/结论，不要抄原文或写过程性对话；author 按语义来源标 agent（来自 agent 的内容，含其产出与提炼）或 user（来自用户发言，含对其的浓缩）。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": [
+    "long-agent:session-memory"
+  ]
+}

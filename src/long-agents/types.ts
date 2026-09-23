@@ -348,6 +348,7 @@ export function buildDefaultLongAgentDefinition(id: string, name: string, descri
         systemToolAddress("summary_manage"),
         systemToolAddress("social_manage"),
         systemToolAddress("conversation_manage"),
+        systemToolAddress("session_memory"),
         systemToolAddress("collaboration_project"),
       ],
     },

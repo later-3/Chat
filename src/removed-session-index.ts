@@ -11,6 +11,7 @@ import { basename, resolve } from "node:path";
 import type { ChatProjectContext } from "./projects/types.js";
 import { SessionLifecycleError } from "./session-errors.js";
 import { removedSessionDirectory } from "./session-files.js";
+import { convergeSessionMemoryWithLifecycle } from "./long-agents/session-memory.js";
 
 const REMOVED_SESSION_INDEX_SCHEMA_VERSION = 1;
 const REMOVED_SESSION_INDEX_FILE_NAME = "index.json";
@@ -250,12 +251,37 @@ export function removedSessionRecordPath(
   return resolve(removedSessionDirectory(project), record.fileName);
 }
 
+/**
+ * Build the companion-memory convergence for a caller that carries the full Project context. A caller
+ * that only passes `sessionDir` cannot converge session memory, and then an interrupted operation must
+ * NOT be finalized (see recoverPendingOperation) — otherwise the two durables would diverge.
+ */
+function lifecycleConvergence(
+  project: Partial<Pick<ChatProjectContext, "chatHome" | "projectId" | "kind">>,
+): ((pending: { readonly type: "remove" | "restore" | "purge"; readonly record: RemovedSessionRecord }) => Promise<void>) | undefined {
+  // A non-agent Project has no session memory, so there is nothing to converge and recovery may
+  // finalize as before. An agent home carries the companion memory and must converge it. An unknown
+  // kind (a caller that only passes `sessionDir`) cannot decide, so it must not finalize the pending
+  // intent — a later caller with the full Project context converges and completes it.
+  if (project.kind !== undefined && project.kind !== "agent") return async () => {};
+  if (typeof project.chatHome !== "string" || typeof project.projectId !== "string" || project.kind !== "agent") return undefined;
+  const full = project as ChatProjectContext;
+  return async (pending) => {
+    const state = pending.type === "remove" ? "removed" : pending.type === "restore" ? "active" : "purged";
+    await convergeSessionMemoryWithLifecycle(full, pending.record.id, state);
+  };
+}
+
 async function recoverPendingOperation(
   project: Pick<ChatProjectContext, "sessionDir">,
   index: RemovedSessionIndex,
+  onRecovered?: (pending: { readonly type: "remove" | "restore" | "purge"; readonly record: RemovedSessionRecord }) => Promise<void>,
 ): Promise<RemovedSessionIndex> {
   const pending = index.pendingOperation;
   if (pending === undefined) return index;
+  const converge = onRecovered ?? lifecycleConvergence(project as Partial<ChatProjectContext>);
+  // Without a way to converge the companion memory, keep the pending intent for a later caller that can.
+  if (converge === undefined) return index;
   const active = activeSessionRecordPath(project, pending.record);
   const removed = removedSessionRecordPath(project, pending.record);
   const [activeExists, removedExists] = await Promise.all([removedSessionPathExists(active), removedSessionPathExists(removed)]);
@@ -286,6 +312,10 @@ async function recoverPendingOperation(
     delete sessions[pending.record.id];
     tombstones[pending.record.id] = { id: pending.record.id, purgedAt: new Date().toISOString() };
   }
+  // Converge the companion memory FIRST: if it fails, the pending intent stays durable so the next
+  // touch retries the whole operation instead of reporting a completed fact with stale memory
+  // (review 32). The file operations above are idempotent, so a retry is safe.
+  await converge(pending);
   const recovered: RemovedSessionIndex = {
     schemaVersion: REMOVED_SESSION_INDEX_SCHEMA_VERSION,
     revision: index.revision + 1,
@@ -296,11 +326,19 @@ async function recoverPendingOperation(
   return recovered;
 }
 
+/** Raw (non-recovering) index state, for callers/tests that must observe the pending intent. */
+export async function readRemovedSessionIndexState(
+  project: Pick<ChatProjectContext, "sessionDir">,
+): Promise<RemovedSessionIndex> {
+  return readRemovedSessionIndex(project);
+}
+
 /** Must be called from within withRemovedSessionIndexMutation(). */
 export async function readRecoveredRemovedSessionIndex(
   project: Pick<ChatProjectContext, "sessionDir">,
+  onRecovered?: (pending: { readonly type: "remove" | "restore" | "purge"; readonly record: RemovedSessionRecord }) => Promise<void>,
 ): Promise<RemovedSessionIndex> {
-  return recoverPendingOperation(project, await readRemovedSessionIndex(project));
+  return recoverPendingOperation(project, await readRemovedSessionIndex(project), onRecovered);
 }
 
 export function prepareRemovedSessionIndexOperation(

@@ -33,6 +33,12 @@ export interface ChatToolRuntimeContext {
   readonly stageId?: string;
   readonly longAgentId?: string;
   readonly longAgentTurnId?: string;
+  /**
+   * Trusted session-memory target stamped by the dispatching service (never from model parameters).
+   * Absent means "derive from the current agent-home session"; an ordinary project session never
+   * gains agent-home memory access through that fallback.
+   */
+  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
 }
 
 export interface ChatToolProvider {
