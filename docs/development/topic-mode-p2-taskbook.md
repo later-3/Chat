@@ -44,6 +44,7 @@
 - **写入目标**：`session-memory` 工具目标来自派发盖章的绑定（P1 已就绪），节点会话内写入落在**当前节点会话**。
 - **跨会话只读 + 来源地址**：`topic-manage` 提供跨 Agent/跨树**只读**操作，返回条目/全文，**每条来源引用为 `{storageProjectId, sessionId, entryId}`**（不是裸 `entryId`）。
 - **溯源落点（唯一位置：图记录）**：来源映射保存在 `topics.json` 的 **`nodes[].initialMemoryRefs: [{ entryId, source: {storageProjectId, sessionId, entryId} }]`** —— 即“本节点初始记忆条目 → 其来源”，因此**根节点**（没有入边、没有 `memoryRefs`）也能回答“这条从哪来”。边的 `memoryRefs` 用**同一地址形状**记录跨节点引用。两处 schema 与主任务书 §3.2 一致；**P1 记忆条目本身不带来源地址**（只有 `originEntryId` 指向轮次），不要把它当作已有字段。
+- **会话预留（“四步同一 `requestId`”的前提）**：`reserveChatSession` 自行生成 session id 且 `openChatSession` 拒绝未知 id，所以会话 id 必须**先落盘再使用**。`reserveTopicNodeSession` 在**该 `requestId` 专属的文件锁**内完成“读图 → 已有预留则复用 → 否则分配并 CAS 写入 `reservations[]`”，因此：同一 `requestId` 的并发重试只分配**一个**会话；“预留已写、节点未登记”时崩溃后重试**复用同一会话**；归档主题直接拒绝且不分配会话。预留记录与节点登记在**同一次图写入**中完成“登记 + 删除预留”，所以登记后的重试不会再分配第二个会话。节点创建服务在预留前先按 `requestId` 查图，已登记则直接返回。
 - **整合产物落两处**：整合摘要（CustomMessage，进入上下文）+ 初始 `background` 条目（带 §4 的来源引用）。
 - **防环**：加边只检查 `parent !== child` 且不存在 `child → … → parent`；`memoryRefs` 只校验来源存在与可读（**不禁止继承父记忆**）。新建节点没有出边，结构上不可能成环，因此防环真正生效的地点是**补边**（对既有节点追加父边，R4 补充整合），创建与补边共用同一检查。
 - **图约束（首轮检视补齐，均为阻断项）**：
@@ -52,7 +53,7 @@
   3. **整合指向**：`archived/removed` 节点既不能作为整合来源，也不能接受新的整合（§3 表格第 9 行）。
   4. **`requestId` 是创建身份（创建摘要，不是反推）**：登记节点时把**创建请求的不可变摘要**（`createdByRequestDigest`：topic/session/title/创建者/冻结 Project 上下文 + 初始记忆来源 + 完整父边规格——父 ID、`anchorEntryId`、`anchorSequence`、`memoryRefs`；集合顺序不敏感）写进节点记录。`createTopicNode` 先按 `createdByRequestId` 查重：摘要相同返回**同一节点**（不新增节点、不涨 revision），摘要不同（换 `sessionId`/标题/锚点/来源）返回 **409 冲突**；`(topicId, sessionId)` 分支同样按摘要判定。
      **不允许从节点的当前入边反推原请求**：入边可被 R4 补充整合改变，反推会导致“同一 `requestId` 换了锚点却被静默当成成功”和“合法补边后原样重试反而 409”两种错误时序（两条均已有回归测试）。
-  5. **状态不可复活**：`removed` 是终态，普通 `updateTopicNodeStatus` 不能改回 `active`；状态更新同样要求 `expectedRevision`；`archived/removed` 拒绝 relay（读保留，供溯源）。
+  5. **状态不可复活**：`removed` 是终态，普通 `updateTopicNodeStatus` 不能改回 `active`；状态更新同样要求 `expectedRevision`；`archived/removed` 拒绝 relay（读保留，供溯源）。主题级 `updateTopicStatus` 只影响“能否新建节点/预留”，不动节点状态。
 - **锚点**：节点读模型给出可分叉锚点（当前分支、用户 entry、invocation、终态），创建时在 Session 锁内核验并冻结，同时冻结记忆 revision；不使用 `forkChatSession()`。
 - **代传**：一条**真实 user message**（持久标记 `source:"relay"` + 代传 Agent），并同步更新读模型与前端解析（前端展示在 P3）。
 - **remember 的可见回复**必须关联工具实际返回的 entry ID 与 revision。
