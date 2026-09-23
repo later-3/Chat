@@ -52,6 +52,7 @@ export async function runPiCodingAgentPromptStep(
       workflowInvocationId: input.workflowInvocationId,
       stageId: "execute",
       agentId: PI_CODING_AGENT.id,
+      ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
     },
     transformContext: stripLegacyPlanningHandoffs,
   });

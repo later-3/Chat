@@ -79,6 +79,7 @@ export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<C
       workflowInvocationId: input.workflowInvocationId,
       stageId: "manage",
       agentId: RULE_CURATOR_AGENT.id,
+      ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
     },
   });
   const sessionFile = session.sessionFile;

@@ -40,6 +40,7 @@ export interface OrchestrationExecutionStepInput {
   readonly planRevision: number;
   readonly inputEntryIds: readonly string[];
   readonly agent: ResolvedWorkflowAgentDefinition;
+  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
 }
 
 function requireProjectContext(chatSession: ChatSession) {
@@ -145,6 +146,7 @@ export async function runWorkflowDelegationStep(
     workflowInvocationId: input.workflowInvocationId,
     stageId: "delegate",
     agentId: WORKFLOW_COORDINATOR_AGENT.id,
+    ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
   } as const;
   const extensions = await prepareWorkflowCoordinatorSession({
     ...toolContext,

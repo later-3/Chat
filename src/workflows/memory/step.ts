@@ -79,6 +79,7 @@ export async function runMemoryAgentStep(
       workflowInvocationId: input.workflowInvocationId,
       stageId: "manage",
       agentId: MEMORY_AGENT.id,
+      ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
     },
   });
   const sessionFile = session.sessionFile;

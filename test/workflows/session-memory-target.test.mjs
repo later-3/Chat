@@ -58,4 +58,6 @@ test("P2 pre-req: a malformed binding target is rejected instead of being truste
     sessionMemoryTarget: { storageProjectId: "friend" },
   }));
   await assert.rejects(readChatSessionRunBinding(dir, "inv-bad"), /sessionMemoryTarget无效/);
+  // The inheritance path must fail closed too — a corrupt binding is not "no binding".
+  await assert.rejects(inheritSessionMemoryTarget({ projectDataDir: dir, workflowInvocationId: "inv-bad" }), /sessionMemoryTarget无效/);
 });

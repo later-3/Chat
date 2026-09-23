@@ -33,6 +33,7 @@ export async function planningExecutionWorkflow(
       cwd: input.cwd,
       workflowInvocationId: input.workflowInvocationId,
       prompt: input.prompt,
+      ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
     };
     const initial = await runPlanningStep(input);
     let planRevision = 1;

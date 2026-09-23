@@ -117,6 +117,7 @@ export interface PlanningExecutionStepInput {
   readonly planRevision: number;
   readonly inputEntryIds: readonly string[];
   readonly agent: ResolvedWorkflowAgentDefinition;
+  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
 }
 
 function requireProjectContext(chatSession: ChatSession) {
@@ -218,6 +219,7 @@ export async function runPlanningExecutionStep(
       workflowInvocationId: input.workflowInvocationId,
       stageId: "execute",
       agentId: PLANNING_EXECUTION_AGENT.id,
+      ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
     },
     transformContext: stripLegacyPlanningHandoffs,
   });

@@ -37,6 +37,9 @@ export async function inheritSessionMemoryTarget(input: {
 }): Promise<WorkflowSessionMemoryTarget | undefined> {
   if (input.toolContextTarget !== undefined) return input.toolContextTarget;
   if (input.projectDataDir === undefined || input.workflowInvocationId === undefined) return undefined;
-  const binding = await readChatSessionRunBinding(input.projectDataDir, input.workflowInvocationId).catch(() => undefined);
+  // readChatSessionRunBinding already maps "file missing" to undefined; a corrupted binding must
+  // propagate instead of being silently treated as "no target" (the agent would then write memory to
+  // the wrong session). The durable binding is only a fallback — Steps pass the trusted input target.
+  const binding = await readChatSessionRunBinding(input.projectDataDir, input.workflowInvocationId);
   return binding?.sessionMemoryTarget;
 }
