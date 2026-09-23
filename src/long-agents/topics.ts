@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { assertFileWithin, atomicWriteJson, withFileLock } from "../persistence/versioned-file.js";
 import { ensureChatSessionWithId, openChatSession } from "../chat-session.js";
+import { appendChatUserMessage } from "../workflows/session-conversation.js";
 import { chatSessionOperationKey, withChatSessionOperationLock } from "../session-operation-lock.js";
 import { TopicAnchorError, requireTopicAnchor } from "./topic-anchor.js";
 import { longAgentConfigRoot } from "./storage.js";
@@ -785,6 +786,12 @@ export interface TopicNodeCreationResult {
   readonly graph: TopicGraphState;
 }
 
+function messageTextOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.flatMap((block) => (isRecord(block) && block.type === "text" && typeof block.text === "string" ? [block.text] : [])).join("\n");
+}
+
 function memoryEntryIdForRevision(state: { revision: number; entries: readonly { entryId: string }[] }): string | null {
   const prefix = `smem-${String(state.revision).padStart(4, "0")}-`;
   return state.entries.find((entry) => entry.entryId.startsWith(prefix))?.entryId ?? null;
@@ -966,19 +973,23 @@ export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessi
           }
         }
         if (sources.length > 0) {
-          // One entry per distinct bootstrap content; the retry identity is the DURABLE request link on
-          // the entry, never a content match (a request may legitimately reuse a content).
-          for (const content of [...new Set(sources.map((candidate) => candidate.content))]) {
+          // One entry per distinct bootstrap content. The WHOLE request is frozen by its first entry
+          // (writeRequestFingerprint), so an interrupted request is completed with the same content and
+          // a retry that changed the request is a conflict instead of a second, partially mixed write.
+          const contents = [...new Set(sources.map((candidate) => candidate.content))];
+          for (const content of contents) {
             const state = await readSessionMemory(chatHome, longAgentId, sessionId);
             const linked = state.entries.find((entry) => entry.writeRequestId === requestId && entry.content === content);
             if (linked !== undefined) {
               if (linked.purpose !== "background" || linked.author !== input.createdBy
+                || linked.writeRequestFingerprint !== fingerprint
                 || (memory?.originEntryId ?? null) !== linked.originEntryId)
                 throw new TopicError(409, `该 requestId 已写入不同的初始记忆：${requestId}`);
               continue;
             }
             const written = await writeSessionMemoryEntry({ chatHome, longAgentId, sessionId, operation: "write",
               purpose: "background", author: input.createdBy, content, writeRequestId: requestId,
+              writeRequestFingerprint: fingerprint,
               originEntryId: memory?.originEntryId ?? null, expectedRevision: state.revision,
               ...(input.now === undefined ? {} : { now: input.now }) });
             if (memoryEntryIdForRevision(written) === null) throw new TopicError(500, "初始会话记忆写入未返回条目");
@@ -1041,12 +1052,17 @@ export async function withTopicGraphRevision<T>(
 }
 
 /**
- * Relay: hand one node's content to another node of the SAME agent's tree.
+ * Relay: hand content to one node of the same Long Agent's tree, as a REAL user message.
  *
- * The relayed text is written as ONE `custom_message` entry with `display: true`. That single append is
- * what makes relay crash-safe (there is no "message written but marker missing" window) and it enters
- * the model context as a real user message (`role: custom` converts to `role: user`), while `details`
- * carries the durable request association. The write happens inside the node session's operation lock.
+ * Durable protocol (all under the node session's operation lock, key is `(nodeId, requestId)`):
+ *   1. a `chat.topic-relay` marker with `status: "pending"` freezes the request and the text digest;
+ *   2. the relayed text is appended as a real user message (`appendChatUserMessage`) — the entry a
+ *      node round can later settle and fork from;
+ *   3. a second marker with `status: "complete"` records the user entry id.
+ * A crash between any two steps is recoverable: a retry finds the pending marker, adopts the user
+ * message that follows it when its text matches, and only then completes the request, so the message is
+ * never appended twice. Node status and authorization are re-checked INSIDE the lock, next to the
+ * append, so a node archived while relay was queued cannot receive a message.
  */
 export async function relayTopicNodeMessage(input: {
   readonly chatHome: string;
@@ -1063,26 +1079,61 @@ export async function relayTopicNodeMessage(input: {
   const graph = await readTopicGraph(input.chatHome, input.longAgentId);
   const node = graph.nodes.find((candidate) => candidate.nodeId === nodeId);
   if (node === undefined) throw new TopicError(404, `找不到主题节点：${nodeId}`);
-  // Relay targets a live conversation of the caller's OWN tree: the shared authorization decides it.
-  const decision = authorizeTopicSession({ graph, requester: { kind: "agent", longAgentId: input.longAgentId }, sessionId: node.sessionId, capability: "relay" });
-  if (!decision.applicable || !decision.allowed) throw new TopicError(403, decision.reason ?? "只能代传自己名下主题树的节点");
+  const requireRelayable = (current: TopicGraphState): void => {
+    const target = current.nodes.find((candidate) => candidate.nodeId === nodeId);
+    if (target === undefined) throw new TopicError(404, `找不到主题节点：${nodeId}`);
+    const decision = authorizeTopicSession({ graph: current, requester: { kind: "agent", longAgentId: input.longAgentId },
+      sessionId: target.sessionId, capability: "relay" });
+    if (!decision.applicable || !decision.allowed) throw new TopicError(403, decision.reason ?? "只能代传自己名下主题树的节点");
+  };
+  requireRelayable(graph);
   return withChatSessionOperationLock(chatSessionOperationKey(input.longAgentId, node.sessionId), async () => {
+    // Re-check next to the append: an archived node must not receive a relayed message.
+    requireRelayable(await readTopicGraph(input.chatHome, input.longAgentId));
     const session = await openChatSession({ chatHome: input.chatHome, projectId: input.longAgentId, sessionId: node.sessionId });
-    const existing = session.manager.getBranch().find((entry) => {
-      const value = entry as { type?: string; customType?: string; details?: unknown };
-      return value.type === "custom_message" && value.customType === TOPIC_RELAY_CUSTOM_TYPE
-        && isRecord(value.details) && value.details.requestId === requestId;
-    });
-    if (existing !== undefined) {
-      const details = (existing as unknown as { details: Record<string, unknown> }).details;
-      if (details.textDigest !== textDigest || details.targetNodeId !== nodeId)
-        throw new TopicError(409, `该 requestId 已用于不同的代传内容：${requestId}`);
-      return { nodeId, sessionId: node.sessionId, entryId: (existing as { id: string }).id, created: false };
+    // The markers are internal `custom` entries: they are durable in the transcript but never enter the
+    // model context (a `custom_message` would be converted into a user message).
+    const relayMarkers = (): { id: string; details: Record<string, unknown> }[] => session.manager.getBranch()
+      .filter((entry) => {
+        const value = entry as { type?: string; customType?: string };
+        return value.type === "custom" && value.customType === TOPIC_RELAY_CUSTOM_TYPE;
+      })
+      .map((entry) => ({ id: (entry as { id: string }).id,
+        details: ((entry as unknown as { data?: unknown }).data ?? {}) as Record<string, unknown> }))
+      .filter((marker) => marker.details.requestId === requestId);
+    const conflict = (details: Record<string, unknown>): never => {
+      throw new TopicError(409, `该 requestId 已用于不同的代传内容或节点：${requestId}`);
+    };
+    const completed = relayMarkers().find((marker) => marker.details.status === "complete");
+    if (completed !== undefined) {
+      if (completed.details.textDigest !== textDigest || completed.details.targetNodeId !== nodeId) conflict(completed.details);
+      return { nodeId, sessionId: node.sessionId, entryId: String(completed.details.userEntryId), created: false };
     }
-    const entryId = session.manager.appendCustomMessageEntry(TOPIC_RELAY_CUSTOM_TYPE, body, true, {
-      requestId, targetNodeId: nodeId, relayedByLongAgentId: input.longAgentId, source: "relay", textDigest,
+    const pending = relayMarkers().find((marker) => marker.details.status === "pending");
+    if (pending !== undefined) {
+      if (pending.details.textDigest !== textDigest || pending.details.targetNodeId !== nodeId) conflict(pending.details);
+      // Recovery: the relayed user message may already be durable right after the pending marker.
+      const branch = session.manager.getBranch();
+      const pendingIndex = branch.findIndex((entry) => (entry as { id?: unknown }).id === pending.id);
+      const next = pendingIndex === -1 ? undefined : branch[pendingIndex + 1] as { type?: string; message?: { role?: unknown; content?: unknown } } | undefined;
+      const alreadyWritten = next?.type === "message" && next.message?.role === "user"
+        && `sha256:${createHash("sha256").update(messageTextOf(next.message.content)).digest("hex")}` === textDigest;
+      const userEntryId = alreadyWritten ? (branch[pendingIndex + 1] as { id: string }).id
+        : appendChatUserMessage(session.manager, body);
+      session.manager.appendCustomEntry(TOPIC_RELAY_CUSTOM_TYPE, {
+        requestId, targetNodeId: nodeId, relayedByLongAgentId: input.longAgentId, source: "relay", status: "complete", textDigest, userEntryId,
+      });
+      session.manager.flush();
+      return { nodeId, sessionId: node.sessionId, entryId: userEntryId, created: false };
+    }
+    session.manager.appendCustomEntry(TOPIC_RELAY_CUSTOM_TYPE, {
+      requestId, targetNodeId: nodeId, relayedByLongAgentId: input.longAgentId, source: "relay", status: "pending", textDigest,
+    });
+    const userEntryId = appendChatUserMessage(session.manager, body);
+    session.manager.appendCustomEntry(TOPIC_RELAY_CUSTOM_TYPE, {
+      requestId, targetNodeId: nodeId, relayedByLongAgentId: input.longAgentId, source: "relay", status: "complete", textDigest, userEntryId,
     });
     session.manager.flush();
-    return { nodeId, sessionId: node.sessionId, entryId, created: true };
+    return { nodeId, sessionId: node.sessionId, entryId: userEntryId, created: true };
   });
 }

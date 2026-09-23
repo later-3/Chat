@@ -45,6 +45,12 @@ export interface SessionMemoryEntry {
    * guessing identity from content, which would claim unrelated entries.
    */
   readonly writeRequestId: string | null;
+  /**
+   * The fingerprint of the WHOLE request that wrote this entry. The first entry of a multi-entry
+   * request freezes it, so an interrupted request can be completed without silently mixing in content
+   * from a different request that reused the same id.
+   */
+  readonly writeRequestFingerprint: string | null;
   readonly status: SessionMemoryStatus;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -59,6 +65,7 @@ interface MutableSessionMemoryEntry {
   originEntryId: string | null;
   supersedes: string | null;
   writeRequestId: string | null;
+  writeRequestFingerprint: string | null;
   status: SessionMemoryStatus;
   createdAt: string;
   updatedAt: string;
@@ -108,7 +115,7 @@ function parseAuthor(value: unknown): SessionMemoryAuthor {
 
 function parseEntry(value: unknown): SessionMemoryEntry {
   record(value);
-  const keys = ["entryId", "purpose", "author", "content", "originEntryId", "supersedes", "writeRequestId", "status", "createdAt", "updatedAt"];
+  const keys = ["entryId", "purpose", "author", "content", "originEntryId", "supersedes", "writeRequestId", "writeRequestFingerprint", "status", "createdAt", "updatedAt"];
   if (Object.keys(value).some((key) => !keys.includes(key))) throw new SessionMemoryError(500, "会话记忆条目包含未知字段");
   if (value.status !== "active" && value.status !== "superseded") throw new SessionMemoryError(500, "会话记忆条目状态无效");
   return {
@@ -119,6 +126,7 @@ function parseEntry(value: unknown): SessionMemoryEntry {
     originEntryId: optionalText(value.originEntryId, "originEntryId", 200),
     supersedes: optionalText(value.supersedes, "supersedes", 120),
     writeRequestId: optionalText(value.writeRequestId, "writeRequestId", 200),
+    writeRequestFingerprint: optionalText(value.writeRequestFingerprint, "writeRequestFingerprint", 200),
     status: value.status,
     createdAt: text(value.createdAt, "createdAt", 64),
     updatedAt: text(value.updatedAt, "updatedAt", 64),
@@ -193,6 +201,8 @@ export interface WriteSessionMemoryEntryInput {
   readonly supersedes?: unknown;
   /** Durable retry identity for orchestration writers; a retry re-reads and adopts its own entry. */
   readonly writeRequestId?: unknown;
+  /** Freezes the WHOLE request on its first entry (see SessionMemoryEntry.writeRequestFingerprint). */
+  readonly writeRequestFingerprint?: unknown;
   readonly expectedRevision: unknown;
   readonly now?: string;
 }
@@ -217,6 +227,9 @@ export async function writeSessionMemoryEntry(input: WriteSessionMemoryEntryInpu
     throw new SessionMemoryError(400, "write 不接受 supersedes：推翻请使用 supersede 操作");
   const supersedes = input.operation === "supersede" ? text(input.supersedes, "supersedes", 120) : null;
   const writeRequestId = optionalText(input.writeRequestId, "writeRequestId", 200);
+  const writeRequestFingerprint = optionalText(input.writeRequestFingerprint, "writeRequestFingerprint", 200);
+  if (writeRequestFingerprint !== null && writeRequestId === null)
+    throw new SessionMemoryError(400, "写入请求指纹必须与 writeRequestId 一起使用");
   // No idempotency by content: callers that see an uncertain result must re-read (list) and decide —
   // a CAS conflict is the documented outcome for a stale retry (review 26).
   return changeSessionMemory(input.chatHome, input.longAgentId, input.sessionId, async (state) => {
@@ -250,7 +263,14 @@ export async function writeSessionMemoryEntry(input: WriteSessionMemoryEntryInpu
       target.updatedAt = now;
     }
     if (state.entries.length >= SESSION_MEMORY_MAX_ENTRIES) throw new SessionMemoryError(409, "会话记忆条目已达上限");
-    state.entries.push({ entryId, purpose, author, content, originEntryId, supersedes, writeRequestId, status: "active", createdAt: now, updatedAt: now });
+    if (writeRequestId !== null) {
+      // The request is frozen by its FIRST entry: a later entry of the same request id with a different
+      // fingerprint means the caller changed the request instead of retrying it.
+      const frozen = state.entries.find((entry) => entry.writeRequestId === writeRequestId && entry.writeRequestFingerprint !== null);
+      if (frozen !== undefined && frozen.writeRequestFingerprint !== writeRequestFingerprint)
+        throw new SessionMemoryError(409, `该 requestId 已写入不同的请求内容：${writeRequestId}`);
+    }
+    state.entries.push({ entryId, purpose, author, content, originEntryId, supersedes, writeRequestId, writeRequestFingerprint, status: "active", createdAt: now, updatedAt: now });
     state.revision += 1;
     return snapshot(state);
   });

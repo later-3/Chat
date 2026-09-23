@@ -11,7 +11,10 @@ import { appendChatLongAgentTurn } from "../../src/long-agents/session-turn.ts";
 import { appendChatUserMessage } from "../../src/workflows/session-conversation.ts";
 import { sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
 import { convertToLlm } from "@earendil-works/pi-agent-core";
-import { createTopic, createTopicNode } from "../../src/long-agents/topics.ts";
+import { createTopic, createTopicNode, readTopicGraph, topicGraphFile } from "../../src/long-agents/topics.ts";
+import { appendTopicRoundMarker, readTopicSettledAnchors } from "../../src/long-agents/topic-anchor.ts";
+import { chatSessionOperationKey, withChatSessionOperationLock } from "../../src/session-operation-lock.ts";
+import { readSessionMemory, sessionMemoryFile } from "../../src/long-agents/session-memory.ts";
 
 const turnContext = {
   contextRevision: `sha256:${"a".repeat(64)}`, agentGroupId: "group", agentGroupRevision: `sha256:${"b".repeat(64)}`,
@@ -134,26 +137,36 @@ test("topic_manage: create, supplement, archive and relay go through the domain 
   const archived = await call({ operation: "update_node_status", nodeId: supplementalParent.node.nodeId, status: "archived" });
   assert.equal(archived.node.status, "archived");
 
-  // Relay: ONE atomic custom_message append that enters the model context as a user message.
+  // Relay: a REAL user message flanked by durable pending/complete markers.
   const relayed = await call({ operation: "relay", targetNodeId: child.node.nodeId, requestId: "tm-relay", text: "请继续定位这个分支" });
   assert.equal(relayed.created, true);
   const childSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, child.node.sessionId, "子节点");
   const branch = childSession.session.manager.getBranch();
-  const relayEntries = branch.filter((entry) => entry.type === "custom_message" && entry.customType === "chat.topic-relay");
-  assert.equal(relayEntries.length, 1, "relay is a single entry: there is no message/marker interruption window");
-  assert.equal(relayEntries[0].display, true);
-  assert.equal(relayEntries[0].content, "请继续定位这个分支");
-  // It becomes a real user message for the model (role custom -> role user).
-  assert.equal(sessionEntryToContextMessages(relayEntries[0])[0].role, "custom");
-  assert.equal(convertToLlm(sessionEntryToContextMessages(relayEntries[0]))[0].role, "user");
+  const markers = branch.filter((entry) => entry.type === "custom" && entry.customType === "chat.topic-relay");
+  assert.deepEqual(markers.map((entry) => entry.data.status), ["pending", "complete"]);
+  assert.equal(markers[1].data.userEntryId, relayed.userEntryId, "the complete marker records the user entry");
+  assert.equal(markers[1].data.relayedByLongAgentId, "friend");
+  const relayUserEntry = branch.find((entry) => entry.id === relayed.userEntryId);
+  assert.equal(relayUserEntry.type, "message");
+  assert.equal(relayUserEntry.message.role, "user", "the relayed text IS a real user message");
+  assert.equal(relayUserEntry.message.content[0].text, "请继续定位这个分支");
+  assert.equal(convertToLlm(sessionEntryToContextMessages(relayUserEntry))[0].role, "user");
+  // The relayed user entry can therefore start a settleable round in the node (anchor contract).
+  appendTopicRoundMarker(childSession.session.manager, { roundId: "relay-round", userEntryId: relayed.userEntryId, status: "completed" });
+  childSession.session.manager.flush();
+  assert.equal(readTopicSettledAnchors(childSession.session.manager).some((anchor) => anchor.anchorEntryId === relayed.userEntryId), true);
+
   const replayRelay = await call({ operation: "relay", targetNodeId: child.node.nodeId, requestId: "tm-relay", text: "请继续定位这个分支" });
   assert.equal(replayRelay.created, false);
   assert.equal(replayRelay.userEntryId, relayed.userEntryId);
   // Same request id, different relayed text: a conflict, not a silent success.
-  await assert.rejects(call({ operation: "relay", targetNodeId: child.node.nodeId, requestId: "tm-relay", text: "换了内容" }), /已用于不同的代传内容/);
+  await assert.rejects(call({ operation: "relay", targetNodeId: child.node.nodeId, requestId: "tm-relay", text: "换了内容" }), /已用于不同的代传内容或节点/);
   const afterConflicts = (await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, child.node.sessionId, "子节点")).session.manager.getBranch()
-    .filter((entry) => entry.type === "custom_message" && entry.customType === "chat.topic-relay");
-  assert.equal(afterConflicts.length, 1, "no extra relay entry was written");
+    .filter((entry) => entry.type === "message" && entry.message?.role === "user");
+  assert.equal(afterConflicts.length, 1, "no extra relay message was written");
+  // The idempotency key is (nodeId, requestId): the same id on another node is a separate relay.
+  const otherRelay = await call({ operation: "relay", targetNodeId: thirdBranch.node.nodeId, requestId: "tm-relay", text: "请继续定位这个分支" });
+  assert.equal(otherRelay.created, true, "a different target node is a different relay action");
   // A node that does not exist in this agent's own tree cannot be relayed to.
   await assert.rejects(call({ operation: "relay", targetNodeId: "node-00000000000000000000000000000000", requestId: "tm-relay-2", text: "x" }), /找不到主题节点/);
 });
@@ -239,4 +252,104 @@ test("topic_manage: read_fulltext returns custom-message text and pages back thr
   assert.notEqual(longEntry, null, "the long message is reachable");
   assert.equal(longEntry.truncated, true);
   assert.equal(longEntry.text.length, 4_000);
+});
+
+test("topic_manage: relay re-checks the node inside the session lock and never duplicates a message", async (t) => {
+  const home = await fixture(t);
+  const call = tool(home);
+  const topic = await call({ operation: "create_topic", requestId: "rc-topic", title: "并发", purpose: "并发状态" });
+  const root = await call({ operation: "create_node", topicId: topic.topic.topicId, requestId: "rc-topic", title: "根节点" });
+  await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根");
+
+  // Hold the node session lock, queue a relay behind it, then archive the node before releasing.
+  let release = () => {};
+  const gate = new Promise((resolve) => { release = resolve; });
+  const holding = withChatSessionOperationLock(chatSessionOperationKey("friend", root.node.sessionId), async () => { await gate; });
+  const queued = call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay", text: "归档后不应写入" });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  await call({ operation: "update_node_status", nodeId: root.node.nodeId, status: "archived" });
+  release();
+  await holding;
+  await assert.rejects(queued, /已归档|已移除|不能代传/, "a node archived while relay was queued must not receive the message");
+
+  // Recover from an interruption between the marker and the message: the relay completes without a
+  // second copy of the message.
+  await call({ operation: "update_node_status", nodeId: root.node.nodeId, status: "active" });
+  const relayed = await call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay-2", text: "只写一次" });
+  assert.equal(relayed.created, true);
+  const session = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根");
+  // Simulate the interruption: drop the complete marker, keep the pending marker and the message.
+  const file = session.session.manager.getSessionFile();
+  const lines = fs.readFileSync(file, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  const pendingIndex = lines.findIndex((entry) => entry.type === "custom" && entry.customType === "chat.topic-relay"
+    && entry.data?.requestId === "rc-relay-2" && entry.data?.status === "pending");
+  const completeIndex = lines.findIndex((entry) => entry.type === "custom" && entry.customType === "chat.topic-relay"
+    && entry.data?.requestId === "rc-relay-2" && entry.data?.status === "complete");
+  assert.equal(pendingIndex >= 0 && completeIndex > pendingIndex, true, "the protocol writes pending before complete");
+  lines.splice(completeIndex, 1);
+  fs.writeFileSync(file, lines.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+  const resumed = await call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay-2", text: "只写一次" });
+  assert.equal(resumed.userEntryId, relayed.userEntryId, "the retry adopts the message that is already durable");
+  const after = (await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根"))
+    .session.manager.getBranch().filter((entry) => entry.type === "message" && entry.message?.role === "user");
+  assert.equal(after.length, 1, "the interrupted relay never duplicates the user message");
+});
+
+test("topic_manage: a partial multi-source write is completed from the frozen request, and a changed request conflicts", async (t) => {
+  const home = await fixture(t);
+  const call = tool(home);
+  const topic = await call({ operation: "create_topic", requestId: "fm-topic", title: "指纹", purpose: "冻结" });
+  const root = await call({ operation: "create_node", topicId: topic.topic.topicId, requestId: "fm-topic", title: "根节点" });
+  const rootSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根");
+  rootSession.session.manager.flush();
+  const secondSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, "sess-fingerprint-2", "第二来源");
+  secondSession.session.manager.flush();
+  const firstEntry = (await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: root.node.sessionId,
+    operation: "write", purpose: "finding", author: "agent", content: "来源一", expectedRevision: 0 })).entries.at(-1);
+  const secondEntry = (await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: "sess-fingerprint-2",
+    operation: "write", purpose: "finding", author: "agent", content: "来源二", expectedRevision: 0 })).entries.at(-1);
+  const sources = [
+    { storageProjectId: "friend", sessionId: root.node.sessionId, entryId: firstEntry.entryId, content: "背景一" },
+    { storageProjectId: "friend", sessionId: "sess-fingerprint-2", entryId: secondEntry.entryId, content: "背景二" },
+  ];
+  const request = { operation: "create_node", topicId: topic.topic.topicId, requestId: "fm-child", title: "整合节点",
+    integrationSummary: "整合", sources,
+    memoryContent: null,
+    parents: [{ nodeId: root.node.nodeId }] };
+  const child = await call(request);
+  assert.equal(child.created, true);
+  const childSessionId = child.node.sessionId;
+  const memoryFile = sessionMemoryFile(home, "friend", childSessionId);
+  const state = JSON.parse(fs.readFileSync(memoryFile, "utf8"));
+  assert.equal(state.entries.length, 2, "two distinct contents write two bootstrap entries");
+  assert.equal(state.entries.every((entry) => entry.writeRequestId === "fm-child"), true);
+  const fingerprints = new Set(state.entries.map((entry) => entry.writeRequestFingerprint));
+  assert.equal(fingerprints.size, 1, "the whole request is frozen by one fingerprint");
+
+  // Interruption: the graph registration is lost AND only one bootstrap entry survived.
+  const graphFile = topicGraphFile(home, "friend");
+  const graph = JSON.parse(fs.readFileSync(graphFile, "utf8"));
+  graph.nodes = graph.nodes.filter((node) => node.createdByRequestId !== "fm-child");
+  graph.edges = graph.edges.filter((edge) => edge.childNodeId !== child.node.nodeId);
+  fs.writeFileSync(graphFile, JSON.stringify(graph));
+  const partial = JSON.parse(fs.readFileSync(memoryFile, "utf8"));
+  partial.entries = partial.entries.slice(0, 1);
+  partial.revision = 1;
+  fs.writeFileSync(memoryFile, JSON.stringify(partial));
+
+  const resumed = await call(request);
+  assert.equal(resumed.created, true, "the missing node is registered");
+  const completed = JSON.parse(fs.readFileSync(memoryFile, "utf8"));
+  assert.equal(completed.entries.length, 2, "the missing entry is filled in without duplicating the existing one");
+  assert.equal(new Set(completed.entries.map((entry) => entry.content)).size, 2);
+
+  // A CHANGED request that reuses the id must not mix new content into the frozen request.
+  fs.writeFileSync(graphFile, JSON.stringify(graph));
+  await assert.rejects(
+    call({ ...request, memoryContent: null, sources: [{ storageProjectId: "friend", sessionId: root.node.sessionId, entryId: firstEntry.entryId, content: "背景一" }],
+      integrationSummary: "换了整合摘要" }),
+    /已用于不同的节点创建|已写入不同/,
+  );
+  const unchanged = JSON.parse(fs.readFileSync(memoryFile, "utf8"));
+  assert.equal(unchanged.entries.length, 2, "the rejected request wrote nothing");
 });

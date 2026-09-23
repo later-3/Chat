@@ -98,7 +98,8 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
       frozenProjectContext: Type.Optional(Type.String({ description: "create_node：冻结的 Project 上下文（可选）" })),
       sources: Type.Optional(Type.Array(Type.Object({
         storageProjectId: Type.String(), sessionId: Type.String(), entryId: Type.String(),
-      }), { description: "create_node：来源会话记忆地址列表（可多条会话）" })),
+        content: Type.Optional(Type.String({ description: "该来源对应的初始记忆内容（缺省用 memoryContent）" })),
+      }), { description: "create_node：来源会话记忆地址列表（可多条会话），每条可带自己的初始记忆内容" })),
     }),
     async execute(_toolCallId, params) {
       if (context.purpose !== "execution") throw new Error("检查模式不能访问主题");
@@ -212,9 +213,10 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
         const title = text(record.title, "title", 200);
         const sourceRefs = (Array.isArray(record.sources) ? record.sources : (record.source === undefined ? [] : [record.source]))
           .map((candidate) => {
-            const value = candidate as { storageProjectId?: unknown; sessionId?: unknown; entryId?: unknown };
+            const value = candidate as { storageProjectId?: unknown; sessionId?: unknown; entryId?: unknown; content?: unknown };
             return { storageProjectId: text(value.storageProjectId, "source.storageProjectId", 200),
-              sessionId: text(value.sessionId, "source.sessionId", 200), entryId: text(value.entryId, "source.entryId", 200) };
+              sessionId: text(value.sessionId, "source.sessionId", 200), entryId: text(value.entryId, "source.entryId", 200),
+              ...(value.content === undefined || value.content === null ? {} : { content: text(value.content, "source.content", 4_000) }) };
           });
         const frozenProjectContext = optionalText(record.frozenProjectContext, "frozenProjectContext", 200);
         const parentInputs = Array.isArray(record.parents) ? record.parents as readonly Record<string, unknown>[] : [];
@@ -224,7 +226,8 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
           chatHome, longAgentId, topicId, requestId, title, createdBy: "agent",
           ...(integrationSummary === null ? {} : { integrationSummary }),
           ...(memoryContent === null ? {} : { initialMemory: { content: memoryContent, originEntryId: null } }),
-          ...(sourceRefs.length === 0 ? {} : { sources: sourceRefs.map((source) => ({ source })) }),
+          ...(sourceRefs.length === 0 ? {} : { sources: sourceRefs.map(({ content: sourceContent, ...source }) =>
+            (sourceContent === undefined ? { source } : { source, content: sourceContent })) }),
           ...(frozenProjectContext === null ? {} : { frozenProjectContext }),
           parents: parentInputs.map((parent) => {
             const parentNodeId = text(parent.nodeId, "parent.nodeId", 200);
@@ -234,7 +237,7 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
             if (anchorEntryId === null && anchorSequence !== null) throw new Error("父边锚点必须同时提供 anchorEntryId 与 anchorSequence");
             return { parentNodeId,
               ...(anchorEntryId === null ? {} : { anchorEntryId, anchorSequence }),
-              ...(sourceRefs.length === 0 ? {} : { memoryRefs: sourceRefs }) };
+              ...(sourceRefs.length === 0 ? {} : { memoryRefs: sourceRefs.map(({ content: _content, ...source }) => source) }) };
           }),
         });
         return result({ operation, created: created.created, node: created.node, sessionId: created.sessionId,
