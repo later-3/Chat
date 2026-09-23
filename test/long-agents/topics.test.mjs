@@ -88,10 +88,15 @@ test("P2 topics: nodes record anchors, provenance and multi-parent edges, and re
     createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, sessionId: "s-self", title: "自环", createdBy: "agent", requestId: "r-self", expectedRevision: supplementary.graph.revision, parents: [{ parentNodeId: topicNodeIdOf(topic.topicId, "s-self") }] }),
     /不能作为自己的父节点/,
   );
-  // The same (topic, session) retried is the idempotent path, not an error.
+  // Replaying the identical creation of the root is the idempotent path, not an error.
   assert.equal(
-    (await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, sessionId: "s-root", title: "重复", createdBy: "agent", requestId: "r-dup", expectedRevision: supplementary.graph.revision })).created,
+    (await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, sessionId: "s-root", title: "根节点", createdBy: "agent", requestId: "r-root", expectedRevision: supplementary.graph.revision, frozenProjectContext: "a", initialMemoryRefs: [{ entryId: "smem-1", source: source("s-src", "smem-1") }] })).created,
     false,
+  );
+  // Same session with a different creation request is a conflict, not a silent reuse.
+  await assert.rejects(
+    createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, sessionId: "s-root", title: "重复", createdBy: "agent", requestId: "r-dup", expectedRevision: supplementary.graph.revision }),
+    /该 requestId 已用于不同的节点创建|创建请求不同/,
   );
   // A session may belong to only one node across topics.
   const secondTopic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T2", purpose: "P2", requestId: "r-topic-2", rootSessionId: "s-root-2", expectedRevision: supplementary.graph.revision })).topic;
@@ -192,8 +197,22 @@ test("P2 topics: graph constraints the first round missed (review counter-exampl
     /无父节点只能是主题根会话/,
   );
 
+  // Gap 3b: the creation digest is immutable, so a retry after a legitimate supplementary edge and a
+  // changed anchor are judged correctly (the edges of the graph are mutable, the request is not).
+  const before = await readTopicGraph(home, "friend");
+  const replayed = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, sessionId: "s-a-child", title: "childA", createdBy: "agent", requestId: "rA-child", expectedRevision: before.revision, parents: [{ parentNodeId: rootA.node.nodeId }] });
+  assert.equal(replayed.created, false, "the original request still replays after supplementary integration");
+  assert.equal(replayed.graph.revision, before.revision, "a replay writes nothing");
+  const anchored = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, sessionId: "s-a-anchor", title: "锚点变了", createdBy: "agent", requestId: "rA-anchor", expectedRevision: before.revision, parents: [{ parentNodeId: rootA.node.nodeId, anchorEntryId: "entry-old", anchorSequence: 1 }] });
+  assert.equal(anchored.created, true);
+  assert.equal(anchored.graph.edges.find((edge) => edge.childNodeId === anchored.node.nodeId).anchorEntryId, "entry-old");
+  await assert.rejects(
+    createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, sessionId: "s-a-anchor", title: "锚点变了", createdBy: "agent", requestId: "rA-anchor", expectedRevision: anchored.graph.revision, parents: [{ parentNodeId: rootA.node.nodeId, anchorEntryId: "entry-new", anchorSequence: 9 }] }),
+    /该 requestId 已用于不同的节点创建|创建请求不同/,
+  );
+
   // Gap 2: archived nodes refuse relay for the owner and the user, and stay readable.
-  const archived = await updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: childA.node.nodeId, status: "archived", expectedRevision: childA.graph.revision });
+  const archived = await updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: childA.node.nodeId, status: "archived", expectedRevision: (await readTopicGraph(home, "friend")).revision });
   assert.equal(archived.status, "archived");
   const graph = await readTopicGraph(home, "friend");
   const owner = { kind: "agent", longAgentId: "friend" };

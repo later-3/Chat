@@ -53,6 +53,12 @@ export interface TopicNodeRecord {
   readonly frozenProjectContext: string | null;
   readonly createdBy: "user" | "agent";
   readonly createdByRequestId: string;
+  /**
+   * Immutable digest of the creation request (topic/session/title/creator/context, initial memory
+   * sources and the full parent-edge spec). Retry idempotency compares THIS, never the node's current
+   * inbound edges, which are mutable through supplementary integration.
+   */
+  readonly createdByRequestDigest: string;
   readonly initialMemoryRefs: readonly TopicNodeInitialMemoryRef[];
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -158,6 +164,7 @@ function parseNode(value: unknown): TopicNodeRecord {
     frozenProjectContext: optionalText(value.frozenProjectContext, "frozenProjectContext", 200),
     createdBy: value.createdBy,
     createdByRequestId: text(value.createdByRequestId, "createdByRequestId", 200),
+    createdByRequestDigest: text(value.createdByRequestDigest, "createdByRequestDigest", 200),
     initialMemoryRefs,
     createdAt: text(value.createdAt, "createdAt", 64),
     updatedAt: text(value.updatedAt, "updatedAt", 64),
@@ -296,18 +303,64 @@ export async function createTopic(input: {
   });
 }
 
-/** Compare a retried creation against the node already recorded for that request id. */
-function sameNodeRequest(
-  node: TopicNodeRecord,
-  edges: readonly TopicEdgeRecord[],
-  spec: { topicId: string; sessionId: string; title: string; createdBy: "user" | "agent"; frozenProjectContext: string | null; initialMemoryRefs: readonly TopicNodeInitialMemoryRef[]; parents: readonly ParentEdgeSpec[] },
-): boolean {
-  if (node.topicId !== spec.topicId || node.sessionId !== spec.sessionId || node.title !== spec.title
-    || node.createdBy !== spec.createdBy || node.frozenProjectContext !== spec.frozenProjectContext) return false;
-  if (JSON.stringify(node.initialMemoryRefs) !== JSON.stringify(spec.initialMemoryRefs)) return false;
-  const parentIds = edges.map((edge) => edge.parentNodeId).sort();
-  const requestedIds = spec.parents.map((parent) => identity(parent.parentNodeId, "parentNodeId", NODE_ID_PATTERN)).sort();
-  return JSON.stringify(parentIds) === JSON.stringify(requestedIds);
+interface NormalizedParentSpec {
+  readonly parentNodeId: string;
+  readonly anchorEntryId: string | null;
+  readonly anchorSequence: number | null;
+  readonly memoryRefs: readonly TopicMemorySource[];
+}
+
+function normalizeMemoryRefs(value: unknown, label: string): TopicMemorySource[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new TopicError(400, `${label}无效`);
+  return value.map((entry) => parseMemorySource(entry, label));
+}
+
+function normalizeParentSpecs(inputs: readonly ParentEdgeSpec[]): NormalizedParentSpec[] {
+  return inputs.map((parent) => {
+    const anchorSequence = parent.anchorSequence === undefined || parent.anchorSequence === null ? null : Number(parent.anchorSequence);
+    if (anchorSequence !== null && (!Number.isSafeInteger(anchorSequence) || anchorSequence < 0)) throw new TopicError(400, "锚点序号无效");
+    return {
+      parentNodeId: identity(parent.parentNodeId, "parentNodeId", NODE_ID_PATTERN),
+      anchorEntryId: optionalText(parent.anchorEntryId, "anchorEntryId", 200),
+      anchorSequence,
+      memoryRefs: normalizeMemoryRefs(parent.memoryRefs, "边记忆引用"),
+    };
+  });
+}
+
+function sortCanonical<T>(items: readonly T[], key: (item: T) => string): T[] {
+  return [...items].sort((left, right) => (key(left) < key(right) ? -1 : key(left) > key(right) ? 1 : 0));
+}
+
+function canonicalSource(ref: TopicMemorySource): string {
+  return JSON.stringify([ref.storageProjectId, ref.sessionId, ref.entryId]);
+}
+
+function canonicalParent(parent: NormalizedParentSpec): string {
+  return JSON.stringify([
+    parent.parentNodeId, parent.anchorEntryId, parent.anchorSequence,
+    sortCanonical(parent.memoryRefs, canonicalSource).map(canonicalSource),
+  ]);
+}
+
+/** Canonical digest of one creation request; order-insensitive for the ref/parent collections. */
+function nodeCreationDigest(spec: {
+  topicId: string;
+  sessionId: string;
+  title: string;
+  createdBy: "user" | "agent";
+  frozenProjectContext: string | null;
+  initialMemoryRefs: readonly TopicNodeInitialMemoryRef[];
+  parents: readonly NormalizedParentSpec[];
+}): string {
+  const canonical = JSON.stringify([
+    spec.topicId, spec.sessionId, spec.title, spec.createdBy, spec.frozenProjectContext,
+    sortCanonical(spec.initialMemoryRefs, (ref) => `${ref.entryId}|${canonicalSource(ref.source)}`)
+      .map((ref) => [ref.entryId, ref.source.storageProjectId, ref.source.sessionId, ref.source.entryId]),
+    sortCanonical(spec.parents, canonicalParent).map(canonicalParent),
+  ]);
+  return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
 }
 
 /** True when `child` can already reach `parent` (adding parent → child would create a cycle). */
@@ -365,6 +418,8 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
     return { entryId: text(entry.entryId, "initialMemoryRef.entryId", 200), source: parseMemorySource(entry.source, "initialMemoryRef.source") };
   });
   const parentInputs = input.parents ?? [];
+  const parents = normalizeParentSpecs(parentInputs);
+  const digest = nodeCreationDigest({ topicId, sessionId, title, createdBy: input.createdBy, frozenProjectContext, initialMemoryRefs, parents });
   return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
     const nodeId = topicNodeIdOf(topicId, sessionId);
     // The request id is the retry identity for the whole four-step creation (session reservation,
@@ -372,13 +427,15 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
     // and the same id with different inputs is a conflict instead of a second node.
     const byRequest = state.nodes.find((node) => node.createdByRequestId === requestId);
     if (byRequest !== undefined) {
-      const edges = state.edges.filter((edge) => edge.childNodeId === byRequest.nodeId);
-      if (sameNodeRequest(byRequest, edges, { topicId, sessionId, title, createdBy: input.createdBy, frozenProjectContext, initialMemoryRefs, parents: parentInputs }))
-        return { node: { ...byRequest }, graph: snapshot(state), created: false };
+      if (byRequest.createdByRequestDigest === digest) return { node: { ...byRequest }, graph: snapshot(state), created: false };
       throw new TopicError(409, `该 requestId 已用于不同的节点创建：${requestId}`);
     }
     const existing = state.nodes.find((node) => node.nodeId === nodeId);
-    if (existing !== undefined) return { node: { ...existing }, graph: snapshot(state), created: false };
+    if (existing !== undefined) {
+      // Same topic+session but a different creation request (title, anchors, initial sources, ...).
+      if (existing.createdByRequestDigest === digest) return { node: { ...existing }, graph: snapshot(state), created: false };
+      throw new TopicError(409, `会话已属于某个主题节点，且创建请求不同：${sessionId}`);
+    }
     const topic = state.topics.find((candidate) => candidate.topicId === topicId);
     if (topic === undefined) throw new TopicError(404, `找不到主题：${topicId}`);
     if (topic.ownerLongAgentId !== input.longAgentId) throw new TopicError(403, "主题不属于该 Long Agent");
@@ -395,14 +452,14 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
     assertRevision(state, input.expectedRevision);
     const now = input.now ?? new Date().toISOString();
     const edges: TopicEdgeRecord[] = [];
-    for (const parent of parentInputs) {
-      if (edges.some((edge) => edge.parentNodeId === identity(parent.parentNodeId, "parentNodeId", NODE_ID_PATTERN)))
+    for (const parent of parents) {
+      if (edges.some((edge) => edge.parentNodeId === parent.parentNodeId))
         throw new TopicError(409, "同一父节点不能重复");
       edges.push(parseParentEdge(parent, { ...state, edges: [...state.edges, ...edges] } as MutableTopicGraphState, nodeId, topicId, now));
     }
     const node: TopicNodeRecord = {
       nodeId, topicId, sessionId, title, status: "active", frozenProjectContext,
-      createdBy: input.createdBy, createdByRequestId: requestId, initialMemoryRefs,
+      createdBy: input.createdBy, createdByRequestId: requestId, createdByRequestDigest: digest, initialMemoryRefs,
       createdAt: now, updatedAt: now,
     };
     state.nodes.push(node);
@@ -419,9 +476,9 @@ interface ParentEdgeSpec {
   readonly memoryRefs?: unknown;
 }
 
-/** Validate one parent edge spec; `nodeId` is the child that must not already reach the parent. */
-function parseParentEdge(spec: ParentEdgeSpec, state: MutableTopicGraphState, nodeId: string, topicId: string, now: string): TopicEdgeRecord {
-  const parentNodeId = identity(spec.parentNodeId, "parentNodeId", NODE_ID_PATTERN);
+/** Validate one normalized parent edge against the graph; `nodeId` must not already reach the parent. */
+function parseParentEdge(spec: NormalizedParentSpec, state: MutableTopicGraphState, nodeId: string, topicId: string, now: string): TopicEdgeRecord {
+  const { parentNodeId } = spec;
   if (parentNodeId === nodeId) throw new TopicError(409, "节点不能作为自己的父节点");
   const parent = state.nodes.find((node) => node.nodeId === parentNodeId);
   if (parent === undefined) throw new TopicError(404, `找不到父节点：${parentNodeId}`);
@@ -434,16 +491,12 @@ function parseParentEdge(spec: ParentEdgeSpec, state: MutableTopicGraphState, no
     throw new TopicError(409, `该父边已存在：${parentNodeId}`);
   // An edge is refused when the child can already reach the parent: it would close a cycle.
   if (reaches(state.edges, nodeId, parentNodeId)) throw new TopicError(409, `该父节点会形成环：${parentNodeId}`);
-  const anchorSequence = spec.anchorSequence === undefined || spec.anchorSequence === null ? null : Number(spec.anchorSequence);
-  if (anchorSequence !== null && (!Number.isSafeInteger(anchorSequence) || anchorSequence < 0)) throw new TopicError(400, "锚点序号无效");
-  const memoryRefs = spec.memoryRefs === undefined ? [] : spec.memoryRefs;
-  if (!Array.isArray(memoryRefs)) throw new TopicError(400, "边记忆引用无效");
   return {
     edgeId: `tedge-${randomUUID()}`,
     parentNodeId, childNodeId: nodeId,
-    anchorEntryId: optionalText(spec.anchorEntryId, "anchorEntryId", 200),
-    anchorSequence,
-    memoryRefs: memoryRefs.map((entry) => parseMemorySource(entry, "edge.memoryRefs")),
+    anchorEntryId: spec.anchorEntryId,
+    anchorSequence: spec.anchorSequence,
+    memoryRefs: [...spec.memoryRefs],
     createdAt: now,
   };
 }
@@ -464,12 +517,12 @@ export async function addTopicNodeParent(input: ParentEdgeSpec & {
     const child = state.nodes.find((node) => node.nodeId === childNodeId);
     if (child === undefined) throw new TopicError(404, `找不到子节点：${childNodeId}`);
     if (child.status !== "active") throw new TopicError(409, "节点已归档或移除，不能接受新的整合");
-    const parentNodeId = identity(input.parentNodeId, "parentNodeId", NODE_ID_PATTERN);
-    const existing = state.edges.find((edge) => edge.parentNodeId === parentNodeId && edge.childNodeId === childNodeId);
+    const normalized = normalizeParentSpecs([input])[0]!;
+    const existing = state.edges.find((edge) => edge.parentNodeId === normalized.parentNodeId && edge.childNodeId === childNodeId);
     if (existing !== undefined) return { edge: { ...existing }, graph: snapshot(state), created: false };
     assertRevision(state, input.expectedRevision);
     const now = input.now ?? new Date().toISOString();
-    const edge = parseParentEdge(input, state, childNodeId, child.topicId, now);
+    const edge = parseParentEdge(normalized, state, childNodeId, child.topicId, now);
     state.edges.push(edge);
     state.revision += 1;
     return { edge: { ...edge }, graph: snapshot(state), created: true };

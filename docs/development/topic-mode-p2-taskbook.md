@@ -50,7 +50,8 @@
   1. **同树**：边的两端必须属于同一 `topicId`；跨树复用只记录为 `memoryRefs` 来源引用，绝不建图边。
   2. **单根**：一个主题只有一个根；无父节点的登记必须就是该主题的 `rootSessionId`，且同一 `rootSessionId` 不能属于两个主题（否则会话唯一规则会让真正的根永远无法登记）。
   3. **整合指向**：`archived/removed` 节点既不能作为整合来源，也不能接受新的整合（§3 表格第 9 行）。
-  4. **`requestId` 是创建身份**：`createTopicNode` 先按 `createdByRequestId` 查重——同 id 同关键入参返回**同一节点**（不新增节点、不涨 revision），同 id 不同入参（如换了 `sessionId`/标题）返回 **409 冲突**；`(topicId, sessionId)` 查重只覆盖同会话重放。
+  4. **`requestId` 是创建身份（创建摘要，不是反推）**：登记节点时把**创建请求的不可变摘要**（`createdByRequestDigest`：topic/session/title/创建者/冻结 Project 上下文 + 初始记忆来源 + 完整父边规格——父 ID、`anchorEntryId`、`anchorSequence`、`memoryRefs`；集合顺序不敏感）写进节点记录。`createTopicNode` 先按 `createdByRequestId` 查重：摘要相同返回**同一节点**（不新增节点、不涨 revision），摘要不同（换 `sessionId`/标题/锚点/来源）返回 **409 冲突**；`(topicId, sessionId)` 分支同样按摘要判定。
+     **不允许从节点的当前入边反推原请求**：入边可被 R4 补充整合改变，反推会导致“同一 `requestId` 换了锚点却被静默当成成功”和“合法补边后原样重试反而 409”两种错误时序（两条均已有回归测试）。
   5. **状态不可复活**：`removed` 是终态，普通 `updateTopicNodeStatus` 不能改回 `active`；状态更新同样要求 `expectedRevision`；`archived/removed` 拒绝 relay（读保留，供溯源）。
 - **锚点**：节点读模型给出可分叉锚点（当前分支、用户 entry、invocation、终态），创建时在 Session 锁内核验并冻结，同时冻结记忆 revision；不使用 `forkChatSession()`。
 - **代传**：一条**真实 user message**（持久标记 `source:"relay"` + 代传 Agent），并同步更新读模型与前端解析（前端展示在 P3）。
