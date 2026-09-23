@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { ensureChatSessionWithId } from "../../src/chat-session.ts";
 import { ensureAgentHomeProject } from "../../src/projects/registry.ts";
+import { purgeRemovedChatSession, removeChatSession, restoreRemovedChatSession } from "../../src/session-removal.ts";
 import {
   createTopic,
   createTopicNode,
@@ -66,6 +67,46 @@ test("P2 creation: a Chat session can be created for a derived id and reopened i
   assert.equal(second.session.manager.getSessionId(), sessionId);
   const files = fs.readdirSync(second.session.sessionDir).filter((name) => name.includes(sessionId));
   assert.equal(files.length, 1, "exactly one session file exists for the derived id");
+
+  // Concurrent calls for one id must serialize: Pi names the file `<timestamp>_<id>.jsonl`, so two
+  // creations would leave two session files behind.
+  const concurrentId = topicNodeSessionIdOf(topicIdOf("friend", "req-concurrent"), "req-concurrent");
+  const results = await Promise.all(Array.from({ length: 12 }, () => ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, concurrentId)));
+  assert.equal(results.filter((result) => result.created).length, 1, "exactly one concurrent caller creates the session");
+  assert.equal(new Set(results.map((result) => result.session.manager.getSessionId())).size, 1);
+  const concurrentFiles = fs.readdirSync(second.session.sessionDir).filter((name) => name.includes(concurrentId));
+  assert.equal(concurrentFiles.length, 1, "one session file for one id, even under concurrency");
+});
+
+test("P2 creation: a removed or purged session is never re-created by id", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  const sessionId = topicNodeSessionIdOf(topicIdOf("friend", "req-removed"), "req-removed");
+  const created = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, sessionId, "节点会话");
+  const sessionDir = created.session.sessionDir;
+
+  await removeChatSession("friend", sessionId, home);
+  assert.equal(fs.readdirSync(sessionDir).filter((name) => name.includes(sessionId)).length, 0, "the file moved out of the active directory");
+  await assert.rejects(
+    ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, sessionId),
+    (error) => error.code === "SESSION_REMOVED",
+    "re-creating a removed id would bypass the topic node removed state",
+  );
+  assert.equal(fs.readdirSync(sessionDir).filter((name) => name.includes(sessionId)).length, 0, "no session was re-created");
+
+  // The existing restore path still brings it back, and then it is simply reopened.
+  await restoreRemovedChatSession("friend", sessionId, home);
+  const reopened = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, sessionId);
+  assert.equal(reopened.created, false);
+  assert.equal(reopened.session.manager.getSessionId(), sessionId);
+
+  // Purge is terminal for creation too.
+  await removeChatSession("friend", sessionId, home);
+  await purgeRemovedChatSession("friend", sessionId, home);
+  await assert.rejects(
+    ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, sessionId),
+    (error) => error.code === "SESSION_PURGED",
+  );
 });
 
 test("P2 creation: a v1 graph written before these fields existed still loads", async (t) => {

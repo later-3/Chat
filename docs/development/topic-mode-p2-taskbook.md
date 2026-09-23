@@ -48,6 +48,8 @@
   - `topicId = f(owner, requestId)`；`rootSessionId = f(topicId, requestId)`；`nodeSessionId = f(topicId, requestId)`；`nodeId = f(topicId, nodeSessionId)`。
   - `createTopic` **不接受** `rootSessionId`，`createTopicNode` **不接受** `sessionId`：调用方无法把“某个会话”登记成别的请求的节点，也不可能出现“预留的会话被登记成另一个会话”。
   - Chat 侧新增 `ensureChatSessionWithId(input, sessionId, displayName)`：会话文件已存在则重开（`created:false`），否则按该 id 创建（`created:true`）。**重试自行重算出同一 id**，因此“会话已落盘、图登记未完成”没有窗口、也不需要记录找回；登记后重试同样返回同一会话。
+  - 该入口在**会话操作锁**（`chatSessionOperationKey(projectId, sessionId)`）内做“检查—创建—重开”：Pi 的文件名是 `<timestamp>_<id>.jsonl`，同 id 并发创建会留下两个文件，所以检查与创建必须在同一临界区（该锁**不可重入**，编排不要在同一 `projectId+sessionId` 上嵌套持锁）。
+  - 同一把锁内还查**生命周期状态**：`removed` / `purged` 的 id 一律拒绝创建（`SESSION_REMOVED` / `SESSION_PURGED`），恢复只能走既有 `restoreRemovedChatSession`；否则派生 id 会把已移除的会话（以及已标 `removed` 的主题节点）静默复活。
   - 根节点：新建主题的根会话 id 由**主题自身** `requestId` 派生，所以 `createTopic` 之前就能创建根会话（不存在“先有鸡还是先有蛋”）。
   - 归档主题仍拒绝新建节点；主题级 `updateTopicStatus` 只影响“能否新建”，不动节点状态。
 - **旧文件容忍**：v1 图中缺少 `createdByRequestDigest` 的节点读作 `createdByRequestDigest: null`（legacy），任何重试对其 **fail-closed** 拒绝（“登记早于创建摘要”）；中间版本写出的 `reservations` 字段读入时直接忽略，因此既有图文件不会加载失败。

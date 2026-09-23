@@ -8,6 +8,9 @@ import { openProject, resolveProjectContext } from "./projects/registry.js";
 import type { ChatProjectContext } from "./projects/types.js";
 import { requireActiveChatSessionFile } from "./session-state.js";
 import { listActiveSessionFiles } from "./session-files.js";
+import { findInactiveChatSessionState } from "./removed-session-index.js";
+import { SessionLifecycleError } from "./session-errors.js";
+import { chatSessionOperationKey, withChatSessionOperationLock } from "./session-operation-lock.js";
 import { CHAT_WORKFLOW_AGENT_HANDOFF_CUSTOM_TYPE } from "./workflows/session-conversation.js";
 import { LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE } from "./workflows/planning-execution/context.js";
 
@@ -111,7 +114,12 @@ async function resolveChatSessionProject(input: ChatSessionInput): Promise<ChatP
 }
 
 /**
- * Creates or reopens a Chat Session with a CALLER-CHOSEN durable id. Flows whose retry identity must
+ * Creates or reopens a Chat Session with a CALLER-CHOSEN durable id.
+ *
+ * Takes the Session operation lock, so it MUST NOT be called while that lock is already held for the
+ * same Project+Session (the lock is a queue and is not re-entrant): orchestration should reserve and
+ * create the session first, then lock for the follow-up writes, or serialize the whole flow on its own
+ * request-scoped lock. Flows whose retry identity must
  * survive a crash derive the id from their request (a topic node session is `f(topicId, requestId)`),
  * so no id mapping has to be reserved and persisted before the session file exists.
  */
@@ -122,24 +130,32 @@ export async function ensureChatSessionWithId(
 ): Promise<{ session: ChatSession; created: boolean }> {
   if (sessionId.trim() === "") throw new Error("sessionId不能为空");
   const projectContext = await resolveChatSessionProject(input);
-  const { cwd, agentDir, sessionDir } = projectContext;
-  const existing = (await listActiveSessionFiles(projectContext)).find((candidate) => candidate.id === sessionId);
-  if (existing !== undefined) {
-    return {
-      created: false,
-      session: {
-        projectId: projectContext.projectId, projectContext, cwd, agentDir, sessionDir,
-        manager: configureChatSessionManager(SessionManager.open(existing.path, sessionDir)),
-      },
-    };
-  }
-  const manager = configureChatSessionManager(SessionManager.create(cwd, sessionDir, { id: sessionId }));
-  const normalizedDisplayName = initialDisplayName?.replace(/\s+/g, " ").trim();
-  if (normalizedDisplayName !== undefined && normalizedDisplayName !== "") {
-    manager.appendSessionInfo(Array.from(normalizedDisplayName).slice(0, 50).join(""));
-  }
-  manager.flush();
-  return { created: true, session: { projectId: projectContext.projectId, projectContext, cwd, agentDir, sessionDir, manager } };
+  const { cwd, agentDir, sessionDir, projectId } = projectContext;
+  const openSession = (path: string): ChatSession => ({
+    projectId, projectContext, cwd, agentDir, sessionDir,
+    manager: configureChatSessionManager(SessionManager.open(path, sessionDir)),
+  });
+  // The same lock that serializes lifecycle mutations and Workflow starts: "check -> create -> reopen"
+  // must be one critical section, because Pi names the file `<timestamp>_<id>.jsonl` and two concurrent
+  // creations of the same id would otherwise leave two session files behind.
+  return withChatSessionOperationLock(chatSessionOperationKey(projectId, sessionId), async () => {
+    const existing = (await listActiveSessionFiles(projectContext)).find((candidate) => candidate.id === sessionId);
+    if (existing !== undefined) return { created: false, session: openSession(existing.path) };
+    // Removal is a lifecycle state, not an absence: re-creating a removed/purged id would silently
+    // resurrect a session (and a topic node that was marked `removed`). Restoring stays the only path.
+    const inactive = await findInactiveChatSessionState(projectContext, sessionId);
+    if (inactive === "removed")
+      throw new SessionLifecycleError("SESSION_REMOVED", `Session已移除，不能按同一 ID 重建: ${sessionId}`);
+    if (inactive === "purged")
+      throw new SessionLifecycleError("SESSION_PURGED", `Session已被永久删除: ${sessionId}`);
+    const manager = configureChatSessionManager(SessionManager.create(cwd, sessionDir, { id: sessionId }));
+    const normalizedDisplayName = initialDisplayName?.replace(/\s+/g, " ").trim();
+    if (normalizedDisplayName !== undefined && normalizedDisplayName !== "") {
+      manager.appendSessionInfo(Array.from(normalizedDisplayName).slice(0, 50).join(""));
+    }
+    manager.flush();
+    return { created: true, session: { projectId, projectContext, cwd, agentDir, sessionDir, manager } };
+  });
 }
 
 export async function openChatSession(input: ChatSessionInput): Promise<ChatSession> {
