@@ -65,13 +65,14 @@ test("P2 topics: nodes record anchors, provenance and multi-parent edges, and re
   const other = await createTopicNode({
     chatHome: home, longAgentId: "friend", topicId: topic.topicId, sessionId: "s-other", title: "另一支",
     createdBy: "agent", requestId: "r-other", expectedRevision: 3,
+    parents: [{ parentNodeId: root.node.nodeId }],
   });
   const merge = await createTopicNode({
     chatHome: home, longAgentId: "friend", topicId: topic.topicId, sessionId: "s-merge", title: "合并",
     createdBy: "agent", requestId: "r-merge", expectedRevision: 4,
     parents: [{ parentNodeId: child.node.nodeId }, { parentNodeId: other.node.nodeId }],
   });
-  assert.equal(merge.graph.edges.length, 3, "one edge from the child, two from the merge");
+  assert.equal(merge.graph.edges.length, 4, "one per child branch plus the two merge parents");
   // Supplementary integration is where a cycle is actually possible: adding merge → root would close
   // root → child → merge → root, so it must be refused.
   await assert.rejects(
@@ -81,7 +82,7 @@ test("P2 topics: nodes record anchors, provenance and multi-parent edges, and re
   // A legal supplementary edge on an existing node is accepted and idempotent on retry.
   const supplementary = await addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: child.node.nodeId, parentNodeId: other.node.nodeId, anchorSequence: 3, expectedRevision: 5 });
   assert.equal(supplementary.created, true);
-  assert.equal(supplementary.graph.edges.length, 4);
+  assert.equal(supplementary.graph.edges.length, 5);
   assert.equal((await addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: child.node.nodeId, parentNodeId: other.node.nodeId, expectedRevision: 99 })).created, false);
   await assert.rejects(
     createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, sessionId: "s-self", title: "自环", createdBy: "agent", requestId: "r-self", expectedRevision: supplementary.graph.revision, parents: [{ parentNodeId: topicNodeIdOf(topic.topicId, "s-self") }] }),
@@ -110,7 +111,12 @@ test("P2 topics: removing a session marks the node removed and keeps its edges",
   assert.equal(removed.graph.edges.length, 1, "the edge is kept for provenance");
   assert.equal(await markTopicNodeRemoved({ chatHome: home, longAgentId: "friend", sessionId: "s-unknown" }), null);
   // Archiving is a separate lifecycle state.
-  assert.equal((await updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: root.node.nodeId, status: "archived" })).status, "archived");
+  assert.equal((await updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: root.node.nodeId, status: "archived", expectedRevision: removed.graph.revision })).status, "archived");
+  // A removed node is terminal: a normal status update must not resurrect it.
+  await assert.rejects(
+    updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: child.node.nodeId, status: "active", expectedRevision: 7 }),
+    /已移除，不能改回可用状态/,
+  );
   assert.equal(findTopicNodeBySession(await readTopicGraph(home, "friend"), child.node.sessionId)?.status, "removed");
 });
 
@@ -139,4 +145,76 @@ test("P2 topics: the shared authorization decides read/relay/write for every ent
   assert.equal(authorizeTopicSession({ graph, requester: owner, sessionId: "s-child", capability: "read" }).allowed, true, "removed nodes stay readable");
   assert.equal(authorizeTopicSession({ graph, requester: owner, sessionId: "s-child", capability: "relay" }).allowed, false);
   assert.equal(authorizeTopicSession({ graph, requester: { kind: "user" }, sessionId: "s-child", capability: "write" }).allowed, false);
+});
+
+test("P2 topics: graph constraints the first round missed (review counter-examples)", async (t) => {
+  const home = fixture(t);
+  const a = (await createTopic({ chatHome: home, longAgentId: "friend", title: "A", purpose: "PA", requestId: "rA", rootSessionId: "s-a-root", expectedRevision: 0 })).topic;
+  const b = (await createTopic({ chatHome: home, longAgentId: "friend", title: "B", purpose: "PB", requestId: "rB", rootSessionId: "s-b-root", expectedRevision: 1 })).topic;
+  const rootA = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, sessionId: "s-a-root", title: "rootA", createdBy: "agent", requestId: "rA-root", expectedRevision: 2 });
+  const nodeB = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: b.topicId, sessionId: "s-b-root", title: "rootB", createdBy: "agent", requestId: "rB-root", expectedRevision: 3 });
+
+  // Gap 1: an edge must not connect two topic trees.
+  await assert.rejects(
+    addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: nodeB.node.nodeId, parentNodeId: rootA.node.nodeId, expectedRevision: 4 }),
+    /另一个主题，不能跨树建边/,
+  );
+  await assert.rejects(
+    createTopicNode({ chatHome: home, longAgentId: "friend", topicId: b.topicId, sessionId: "s-b-cross", title: "cross", createdBy: "agent", requestId: "rB-cross", expectedRevision: 4, parents: [{ parentNodeId: rootA.node.nodeId }] }),
+    /另一个主题，不能跨树建边/,
+  );
+
+  // Gap 3: the request id is the retry identity, so a retry with another session id conflicts.
+  const retried = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, sessionId: "s-a-root", title: "rootA", createdBy: "agent", requestId: "rA-root", expectedRevision: 4, parents: [] });
+  assert.equal(retried.created, false);
+  assert.equal(retried.node.nodeId, rootA.node.nodeId);
+  await assert.rejects(
+    createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, sessionId: "s-a-other", title: "rootA", createdBy: "agent", requestId: "rA-root", expectedRevision: 4, parents: [] }),
+    /该 requestId 已用于不同的节点创建/,
+  );
+  await assert.rejects(
+    createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, sessionId: "s-a-root", title: "改标题", createdBy: "agent", requestId: "rA-root", expectedRevision: 4, parents: [] }),
+    /该 requestId 已用于不同的节点创建/,
+  );
+
+  // Gap 4: a topic has exactly one root, and the root session belongs to exactly one topic.
+  await assert.rejects(
+    createTopic({ chatHome: home, longAgentId: "friend", title: "C", purpose: "PC", requestId: "rC", rootSessionId: "s-a-root", expectedRevision: 4 }),
+    /该根会话已属于另一个主题/,
+  );
+  await assert.rejects(
+    createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, sessionId: "s-a-stray", title: "无父节点", createdBy: "agent", requestId: "rA-stray", expectedRevision: 4, parents: [] }),
+    /无父节点只能是主题根会话/,
+  );
+  const childA = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, sessionId: "s-a-child", title: "childA", createdBy: "agent", requestId: "rA-child", expectedRevision: 4, parents: [{ parentNodeId: rootA.node.nodeId }] });
+  await assert.rejects(
+    createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, sessionId: "s-a-root2", title: "第二个根", createdBy: "agent", requestId: "rA-root2", expectedRevision: childA.graph.revision, parents: [] }),
+    /无父节点只能是主题根会话/,
+  );
+
+  // Gap 2: archived nodes refuse relay for the owner and the user, and stay readable.
+  const archived = await updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: childA.node.nodeId, status: "archived", expectedRevision: childA.graph.revision });
+  assert.equal(archived.status, "archived");
+  const graph = await readTopicGraph(home, "friend");
+  const owner = { kind: "agent", longAgentId: "friend" };
+  assert.equal(authorizeTopicSession({ graph, requester: owner, sessionId: "s-a-child", capability: "relay" }).allowed, false);
+  assert.equal(authorizeTopicSession({ graph, requester: { kind: "user" }, sessionId: "s-a-child", capability: "relay" }).allowed, false);
+  assert.equal(authorizeTopicSession({ graph, requester: owner, sessionId: "s-a-child", capability: "read" }).allowed, true);
+  // An archived node refuses integration in both directions (taskbook 3#9). Both probes stay inside
+  // topic A so the cross-tree rule cannot mask the archival rule.
+  const leafA = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: a.topicId, sessionId: "s-a-leaf", title: "leafA", createdBy: "agent", requestId: "rA-leaf", expectedRevision: graph.revision, parents: [{ parentNodeId: rootA.node.nodeId }] });
+  await assert.rejects(
+    addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: leafA.node.nodeId, parentNodeId: childA.node.nodeId, expectedRevision: leafA.graph.revision }),
+    /父节点已归档或移除/,
+  );
+  await assert.rejects(
+    addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: childA.node.nodeId, parentNodeId: leafA.node.nodeId, expectedRevision: leafA.graph.revision }),
+    /节点已归档或移除，不能接受新的整合/,
+  );
+  // The owner can archive back, but only with a fresh revision.
+  await assert.rejects(
+    updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: childA.node.nodeId, status: "active", expectedRevision: 0 }),
+    /revision/,
+  );
+  assert.equal((await updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: childA.node.nodeId, status: "active", expectedRevision: (await readTopicGraph(home, "friend")).revision })).status, "active");
 });

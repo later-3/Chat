@@ -283,6 +283,8 @@ export async function createTopic(input: {
     const existing = state.topics.find((topic) => topic.topicId === topicId);
     if (existing !== undefined) return { topic: { ...existing }, graph: snapshot(state), created: false };
     assertRevision(state, input.expectedRevision);
+    if (state.topics.some((candidate) => candidate.rootSessionId === rootSessionId))
+      throw new TopicError(409, `该根会话已属于另一个主题：${rootSessionId}`);
     const now = input.now ?? new Date().toISOString();
     const topic: TopicRecord = {
       topicId, ownerLongAgentId: input.longAgentId, title, purpose, status: "active", rootSessionId,
@@ -292,6 +294,20 @@ export async function createTopic(input: {
     state.revision += 1;
     return { topic: { ...topic }, graph: snapshot(state), created: true };
   });
+}
+
+/** Compare a retried creation against the node already recorded for that request id. */
+function sameNodeRequest(
+  node: TopicNodeRecord,
+  edges: readonly TopicEdgeRecord[],
+  spec: { topicId: string; sessionId: string; title: string; createdBy: "user" | "agent"; frozenProjectContext: string | null; initialMemoryRefs: readonly TopicNodeInitialMemoryRef[]; parents: readonly ParentEdgeSpec[] },
+): boolean {
+  if (node.topicId !== spec.topicId || node.sessionId !== spec.sessionId || node.title !== spec.title
+    || node.createdBy !== spec.createdBy || node.frozenProjectContext !== spec.frozenProjectContext) return false;
+  if (JSON.stringify(node.initialMemoryRefs) !== JSON.stringify(spec.initialMemoryRefs)) return false;
+  const parentIds = edges.map((edge) => edge.parentNodeId).sort();
+  const requestedIds = spec.parents.map((parent) => identity(parent.parentNodeId, "parentNodeId", NODE_ID_PATTERN)).sort();
+  return JSON.stringify(parentIds) === JSON.stringify(requestedIds);
 }
 
 /** True when `child` can already reach `parent` (adding parent → child would create a cycle). */
@@ -351,6 +367,16 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
   const parentInputs = input.parents ?? [];
   return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
     const nodeId = topicNodeIdOf(topicId, sessionId);
+    // The request id is the retry identity for the whole four-step creation (session reservation,
+    // summary, initial memory, graph registration): a retry with the same id returns the same node,
+    // and the same id with different inputs is a conflict instead of a second node.
+    const byRequest = state.nodes.find((node) => node.createdByRequestId === requestId);
+    if (byRequest !== undefined) {
+      const edges = state.edges.filter((edge) => edge.childNodeId === byRequest.nodeId);
+      if (sameNodeRequest(byRequest, edges, { topicId, sessionId, title, createdBy: input.createdBy, frozenProjectContext, initialMemoryRefs, parents: parentInputs }))
+        return { node: { ...byRequest }, graph: snapshot(state), created: false };
+      throw new TopicError(409, `该 requestId 已用于不同的节点创建：${requestId}`);
+    }
     const existing = state.nodes.find((node) => node.nodeId === nodeId);
     if (existing !== undefined) return { node: { ...existing }, graph: snapshot(state), created: false };
     const topic = state.topics.find((candidate) => candidate.topicId === topicId);
@@ -358,13 +384,21 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
     if (topic.ownerLongAgentId !== input.longAgentId) throw new TopicError(403, "主题不属于该 Long Agent");
     if (topic.status !== "active") throw new TopicError(409, "主题已归档，不能新建节点");
     if (state.nodes.some((node) => node.sessionId === sessionId)) throw new TopicError(409, `会话已属于某个主题节点：${sessionId}`);
+    if (parentInputs.length === 0) {
+      // The only parentless node is the topic's declared root; a second root would be unreachable from
+      // `rootSessionId` and could permanently block the real root from registering.
+      if (sessionId !== topic.rootSessionId)
+        throw new TopicError(409, `无父节点只能是主题根会话：${topic.rootSessionId}`);
+      if (state.nodes.some((node) => node.topicId === topicId && !state.edges.some((edge) => edge.childNodeId === node.nodeId)))
+        throw new TopicError(409, "该主题已存在根节点");
+    }
     assertRevision(state, input.expectedRevision);
     const now = input.now ?? new Date().toISOString();
     const edges: TopicEdgeRecord[] = [];
     for (const parent of parentInputs) {
       if (edges.some((edge) => edge.parentNodeId === identity(parent.parentNodeId, "parentNodeId", NODE_ID_PATTERN)))
         throw new TopicError(409, "同一父节点不能重复");
-      edges.push(parseParentEdge(parent, { ...state, edges: [...state.edges, ...edges] } as MutableTopicGraphState, nodeId, now));
+      edges.push(parseParentEdge(parent, { ...state, edges: [...state.edges, ...edges] } as MutableTopicGraphState, nodeId, topicId, now));
     }
     const node: TopicNodeRecord = {
       nodeId, topicId, sessionId, title, status: "active", frozenProjectContext,
@@ -386,10 +420,16 @@ interface ParentEdgeSpec {
 }
 
 /** Validate one parent edge spec; `nodeId` is the child that must not already reach the parent. */
-function parseParentEdge(spec: ParentEdgeSpec, state: MutableTopicGraphState, nodeId: string, now: string): TopicEdgeRecord {
+function parseParentEdge(spec: ParentEdgeSpec, state: MutableTopicGraphState, nodeId: string, topicId: string, now: string): TopicEdgeRecord {
   const parentNodeId = identity(spec.parentNodeId, "parentNodeId", NODE_ID_PATTERN);
   if (parentNodeId === nodeId) throw new TopicError(409, "节点不能作为自己的父节点");
-  if (!state.nodes.some((node) => node.nodeId === parentNodeId)) throw new TopicError(404, `找不到父节点：${parentNodeId}`);
+  const parent = state.nodes.find((node) => node.nodeId === parentNodeId);
+  if (parent === undefined) throw new TopicError(404, `找不到父节点：${parentNodeId}`);
+  // Both ends of an edge must live in the same topic tree; cross-tree reuse is recorded as a memory
+  // source reference, never as a graph edge.
+  if (parent.topicId !== topicId) throw new TopicError(409, "父节点属于另一个主题，不能跨树建边");
+  // An archived/removed node refuses integration in both directions (it is read-only).
+  if (parent.status !== "active") throw new TopicError(409, "父节点已归档或移除，不能作为整合来源");
   if (state.edges.some((edge) => edge.parentNodeId === parentNodeId && edge.childNodeId === nodeId))
     throw new TopicError(409, `该父边已存在：${parentNodeId}`);
   // An edge is refused when the child can already reach the parent: it would close a cycle.
@@ -423,12 +463,13 @@ export async function addTopicNodeParent(input: ParentEdgeSpec & {
   return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
     const child = state.nodes.find((node) => node.nodeId === childNodeId);
     if (child === undefined) throw new TopicError(404, `找不到子节点：${childNodeId}`);
+    if (child.status !== "active") throw new TopicError(409, "节点已归档或移除，不能接受新的整合");
     const parentNodeId = identity(input.parentNodeId, "parentNodeId", NODE_ID_PATTERN);
     const existing = state.edges.find((edge) => edge.parentNodeId === parentNodeId && edge.childNodeId === childNodeId);
     if (existing !== undefined) return { edge: { ...existing }, graph: snapshot(state), created: false };
     assertRevision(state, input.expectedRevision);
     const now = input.now ?? new Date().toISOString();
-    const edge = parseParentEdge(input, state, childNodeId, now);
+    const edge = parseParentEdge(input, state, childNodeId, child.topicId, now);
     state.edges.push(edge);
     state.revision += 1;
     return { edge: { ...edge }, graph: snapshot(state), created: true };
@@ -451,15 +492,19 @@ export async function markTopicNodeRemoved(input: {
   });
 }
 
+/** Owner-facing status change. `removed` is terminal: a normal update must never resurrect it. */
 export async function updateTopicNodeStatus(input: {
   chatHome: string;
   longAgentId: string;
   nodeId: string;
   status: "active" | "archived";
+  expectedRevision: unknown;
 }): Promise<TopicNodeRecord> {
   return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
     const node = state.nodes.find((candidate) => candidate.nodeId === input.nodeId);
     if (node === undefined) throw new TopicError(404, `找不到主题节点：${input.nodeId}`);
+    if (node.status === "removed") throw new TopicError(409, "节点已移除，不能改回可用状态");
+    assertRevision(state, input.expectedRevision);
     node.status = input.status;
     node.updatedAt = new Date().toISOString();
     state.revision += 1;
@@ -510,12 +555,17 @@ export function authorizeTopicSession(input: {
   if (input.requester.kind === "user") {
     if (node.status === "removed" && input.capability !== "read")
       return { applicable: true, allowed: false, reason: "节点已移除，只能读取", node, topic };
+    if (node.status === "archived" && input.capability === "relay")
+      return { applicable: true, allowed: false, reason: "节点已归档，不能代传", node, topic };
     return { applicable: true, allowed: true, reason: null, node, topic };
   }
   const requester = input.requester.longAgentId;
   if (input.capability === "read") return { applicable: true, allowed: true, reason: null, node, topic };
   if (node.status === "removed")
     return { applicable: true, allowed: false, reason: "节点已移除", node, topic };
+  // Relay targets a live conversation; an archived node is read-only for everyone.
+  if (input.capability === "relay" && node.status !== "active")
+    return { applicable: true, allowed: false, reason: "节点已归档，不能代传", node, topic };
   if (input.capability === "relay" && topic.ownerLongAgentId !== requester)
     return { applicable: true, allowed: false, reason: "只能代传自己创建的主题树", node, topic };
   if (input.capability === "write" && input.graph.longAgentId !== requester)
