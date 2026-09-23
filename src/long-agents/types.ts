@@ -350,6 +350,7 @@ export function buildDefaultLongAgentDefinition(id: string, name: string, descri
         systemToolAddress("conversation_manage"),
         systemToolAddress("session_memory"),
         systemToolAddress("collaboration_project"),
+        systemToolAddress("topic_manage"),
       ],
     },
     resources: { mode: "inherit" },

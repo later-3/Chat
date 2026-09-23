@@ -990,3 +990,25 @@ export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessi
     }
   });
 }
+
+/**
+ * Runs a graph mutation that needs the current revision, retrying ONLY on a revision conflict. Callers
+ * that write through a domain primitive (create a topic, add an edge, change a status) do not hold the
+ * graph lock, so a concurrent writer can bump the revision between read and write.
+ */
+export async function withTopicGraphRevision<T>(
+  chatHome: string,
+  longAgentId: string,
+  operation: (expectedRevision: number) => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    const graph = await readTopicGraph(chatHome, longAgentId);
+    try {
+      return await operation(graph.revision);
+    } catch (error) {
+      const retryable = error instanceof TopicError && error.statusCode === 409 && attempt < TOPIC_GRAPH_CAS_ATTEMPTS
+        && (error.message.includes("revision") || error.message.includes("已修改"));
+      if (!retryable) throw error;
+    }
+  }
+}

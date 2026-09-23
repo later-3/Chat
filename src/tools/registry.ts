@@ -21,6 +21,7 @@ import { SUMMARY_MANAGE_TOOL_PROVIDER } from "./builtins/summary-manage/index.js
 import { SOCIAL_MANAGE_TOOL_PROVIDER } from "./builtins/social-manage/index.js";
 import { CONVERSATION_MANAGE_TOOL_PROVIDER } from "./builtins/conversation-manage/index.js";
 import { SESSION_MEMORY_TOOL_PROVIDER } from "./builtins/session-memory/index.js";
+import { TOPIC_MANAGE_TOOL_PROVIDER } from "./builtins/topic-manage/index.js";
 import { COLLABORATION_PROJECT_TOOL_PROVIDER } from "./builtins/collaboration-project/index.js";
 
 export const CHAT_SYSTEM_TOOL_PROVIDERS = [
@@ -46,6 +47,7 @@ export const CHAT_SYSTEM_TOOL_PROVIDERS = [
   SOCIAL_MANAGE_TOOL_PROVIDER,
   CONVERSATION_MANAGE_TOOL_PROVIDER,
   SESSION_MEMORY_TOOL_PROVIDER,
+  TOPIC_MANAGE_TOOL_PROVIDER,
   COLLABORATION_PROJECT_TOOL_PROVIDER,
 ] as const;
 

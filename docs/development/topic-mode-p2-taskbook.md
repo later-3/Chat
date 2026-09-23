@@ -28,7 +28,7 @@
 |---|---|---|
 | 1 | **「会话记忆」workflow**：`work`（干活 agent）→ `remember`（写入 agent），每轮触发；`agentCallable: true`（供其他 workflow 在交接点调用） | `src/workflows/session-memory/{workflow.json,workflow.ts,step.ts,agents/{worker,writer}/…}` + `catalog.ts` |
 | 2 | **主题图**：topics/nodes/edges（边带创建锚点 + memoryRefs）、防环、revision CAS | `src/long-agents/topics.ts` |
-| 3 | **`topic-manage` 工具**（Long Agent 入口）：① 跨 Agent/跨树**只读**读取会话记忆与全文（见 §4 来源地址）；② 建主题/建节点（提交整合产物）；③ 代传；④ 读图/读节点；⑤ 更新节点状态 | `src/tools/builtins/topic-manage/**`（照 `conversation-manage` 模式） |
+| 3 | **`topic-manage` 工具（已实现）**（Long Agent 入口）：① 跨 Agent/跨树**只读**读取会话记忆与全文（见 §4 来源地址）；② 建主题/建节点（提交整合产物）；③ 代传；④ 读图/读节点；⑤ 更新节点状态 | `src/tools/builtins/topic-manage/**`（照 `conversation-manage` 模式） |
 | 4 | **节点创建服务**：`reserveChatSession` → 整合摘要 `appendCustomMessageEntry` → 初始 `background` 记忆条目 → 图 CAS 登记；四步同一 `requestId`，重试识别已写产物 | `src/long-agents/topics.ts` + `chat-session.ts` |
 | 5 | **“说一句建题”接线**：从 Long Agent 的建题请求解析该 Friend 的**日常来源会话**，启动整合后台 work（`startFriendWork` 只接受日常来源），返回 work/execution 引用；补充整合走同一 `topic-manage` 领域入口（经用户确认） | `src/long-agents/topics.ts` + `work.ts` 复用 |
 | 6 | **节点会话 API**：读消息 / 发轮次 / 事件流 | `src/routes/api/long-agents/[longAgentId]/topics/**` |
@@ -59,6 +59,7 @@
   1. `chat.long_agent_turn` 标记 `status === "completed"` 的 Long Agent 轮次（取该轮次前的最后一条用户 entry）；
   2. **`chat.topic-round` 标记** `<roundId, userEntryId, status, settledAt>`——外层「会话记忆」Workflow 的整轮终态事实，**显式关联本轮用户 entry**（写入与读取都核对该 entry 确为**用户消息**，指向 assistant entry 的标记被拒绝/忽略），覆盖 `work` + `remember` 全轮（`appendTopicRoundMarker` 由该 Workflow 写入）。
   `running/failed/cancelled` 轮次与 assistant entry 都不是锚点；同一轮次的后续重试标记**不产生第二个锚点**。核验在**父会话的操作锁内**、写入任何产物**之前**完成（父轮次继续演进只会新增锚点，不会使已核验锚点失效）。`anchorEntryId`/`anchorSequence` 同时为空才表示“从起点分叉”；**指定 entry 就必须同时给定序号**。因此“`work` 完成、`remember` 未完成”时轮次尚未 settled，不可分叉。
+- **`topic-manage` 工具**（`src/tools/builtins/topic-manage/**`，`system:tool/topic_manage`，risk `write`，permission `long-agent:topic`）：身份只取运行上下文的 `longAgentId`（模型参数不能指定 Long Agent 或存储项目），仅 `purpose === "execution"` 可用。操作：`read_graph` / `read_node` / `read_memory` / `read_fulltext`（跨树**只读**，走 `authorizeTopicSession(read)`；会话记忆只存在于 Long Agent 归属会话，普通项目会话明确拒绝）/ `create_topic` / `create_node`（调 `createTopicNodeWithSession`，同一 `requestId` 幂等；父边锚点必须 entry+sequence 成对）/ `add_parent`（调 `addTopicNodeParent`）/ `update_node_status` / `relay`。工具**不实现**来源、锚点、幂等或授权判定，全部委托领域服务；需要当前 revision 的写操作经 `withTopicGraphRevision` 在冲突时重读重试。**`relay`**：写入一条**真实 user message** + 耐久标记 `chat.topic-relay {requestId, relayedByLongAgentId, source:"relay", userEntryId}`，按 `requestId` 幂等，仅限自己名下主题树；**触发该轮执行属于节点会话 API/轮次 Workflow**，不在本工具内。
 - **补边（R4 补充整合）**：`addTopicNodeParent` 与创建共用同一套门：**① 原样边规格才算幂等**（父/子相同但锚点或 `memoryRefs` 不同 → 409，不再按两个节点 ID 静默返回旧边）；**② 新边必须在父会话锁内做 settled 锚点核验**（`requireTopicAnchor`），再登记边；③ 父边 `memoryRefs` 走同一来源解析。**锁序**：预检（读图比较边规格 → 父会话锁核验锚点 → 来源解析）在**图锁之外**完成，随后才进图锁做 CAS 落盘，因此与编排的“会话锁 → 图锁”顺序一致，不会形成反向锁序。
 - **整合产物落两处**：整合摘要（CustomMessage，进入上下文）+ 初始 `background` 条目（带 §4 的来源引用）。
 - **防环**：加边只检查 `parent !== child` 且不存在 `child → … → parent`；`memoryRefs` 只校验来源存在与可读（**不禁止继承父记忆**）。新建节点没有出边，结构上不可能成环，因此防环真正生效的地点是**补边**（对既有节点追加父边，R4 补充整合），创建与补边共用同一检查。

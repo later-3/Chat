@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "topic-manage",
+  "name": "topic_manage",
+  "label": "Topic manage",
+  "description": "管理自己名下的主题树（topic mode）：read_graph/read_node 读主题图与节点；read_memory 跨树只读读取某个会话的会话记忆（每条带 {storageProjectId, sessionId, entryId} 来源地址）；read_fulltext 只读读取某个会话的最近条目；create_topic 建主题；create_node 建节点（提交整合摘要与初始记忆，同一 requestId 幂等）；add_parent 补一条整合父边（需父会话已 settled 的锚点）；update_node_status 归档/恢复节点；relay 把自己名下主题树的节点内容代传给另一个节点（写入一条真实 user message 并标记 relay）。身份取自运行上下文，模型参数不能指定 Long Agent 或存储项目。",
+  "implementationVersion": 1,
+  "risk": "write",
+  "permissions": [
+    "long-agent:topic"
+  ]
+}
