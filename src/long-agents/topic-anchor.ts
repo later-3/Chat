@@ -27,6 +27,10 @@ export function appendTopicRoundMarker(
   const settledAt = data.settledAt ?? (data.status === "running" ? null : new Date().toISOString());
   if (data.status !== "running" && (settledAt === null || Number.isNaN(Date.parse(settledAt))))
     throw new TopicAnchorError("终态轮次必须带 settledAt");
+  // The marker must point at a real user message on this session's branch: an id that happens to exist
+  // (an assistant entry) must never become a forkable anchor.
+  const anchorEntry = sessionManager.getBranch().find((entry) => isRecord(entry) && entry.id === data.userEntryId);
+  if (!isUserMessageEntry(anchorEntry)) throw new TopicAnchorError(`轮次锚点不是用户消息：${data.userEntryId}`);
   return sessionManager.appendCustomEntry(TOPIC_ROUND_CUSTOM_TYPE, {
     roundId: data.roundId.trim(), userEntryId: data.userEntryId.trim(), status: data.status, settledAt,
   });
@@ -117,6 +121,9 @@ export function readTopicSettledAnchors(sessionManager: SessionManager): TopicSe
     const position = positionById.get(round.entryId);
     const userPosition = positionById.get(round.userEntryId);
     if (position === undefined || userPosition === undefined || userPosition > position) continue;
+    // The referenced entry must be a user message entry (a marker pointing at an assistant entry is
+    // ignored, not promoted to an anchor).
+    if (!isUserMessageEntry(branch[userPosition])) continue;
     settled.push({ position, anchorEntryId: round.userEntryId, turnId: round.roundId, settledAt: round.settledAt ?? "" });
   }
   settled.sort((left, right) => left.position - right.position);

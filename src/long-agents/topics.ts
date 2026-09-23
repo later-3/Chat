@@ -7,6 +7,9 @@ import { chatSessionOperationKey, withChatSessionOperationLock } from "../sessio
 import { TopicAnchorError, requireTopicAnchor } from "./topic-anchor.js";
 import { longAgentConfigRoot } from "./storage.js";
 import { readSessionMemory, writeSessionMemoryEntry } from "./session-memory.js";
+import { resolveProjectContext } from "../projects/registry.js";
+import { listActiveSessionFiles } from "../session-files.js";
+import { findInactiveChatSessionState } from "../removed-session-index.js";
 
 /**
  * P2 topic graph: the durable record of a Long Agent's theme trees.
@@ -25,7 +28,10 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/;
 /** Bounded graph CAS attempts: concurrent node creations bump the revision under their own locks. */
 const TOPIC_GRAPH_CAS_ATTEMPTS = 5;
 
-/** Where one initial memory entry came from: the exact durable address, not a bare entry id. */
+/**
+ * Where one initial memory entry came from: the exact durable address of a SESSION MEMORY entry
+ * (`smem-...`) in `<storageProjectId>`'s agent home, not a Pi transcript entry id and not a bare id.
+ */
 export interface TopicMemorySource {
   readonly storageProjectId: string;
   readonly sessionId: string;
@@ -733,30 +739,43 @@ function memoryEntryIdForRevision(state: { revision: number; entries: readonly {
 }
 
 /**
- * Resolves one memory source address before it is recorded: the target session must exist, be readable
- * by the requester (topic nodes go through the shared authorization) and contain that entry. The
- * domain service validates sources, so the tool is not the only gate.
+ * Resolves one memory source address before it is recorded. A `TopicMemorySource` addresses a SESSION
+ * MEMORY entry (`smem-...`), not a Pi transcript entry: full-text Pi addresses are a different
+ * namespace and stay where they belong (an edge's `anchorEntryId`).
+ *
+ * Range: only Long Agent homes are valid sources (the topic contract's cross-agent/cross-tree READ of
+ * session memory). A plain Project session has no topic graph, so `authorizeTopicSession` cannot judge
+ * it — `applicable: false` is NOT an allow; such sources must go through that project's own explicit
+ * authorization, which this domain service does not have, so they are refused.
  */
 async function requireTopicMemorySource(input: {
   chatHome: string;
-  longAgentId: string;
   source: TopicMemorySource;
 }): Promise<void> {
   const { source } = input;
-  let session;
+  let context;
   try {
-    session = await openChatSession({ chatHome: input.chatHome, projectId: source.storageProjectId, sessionId: source.sessionId });
+    context = await resolveProjectContext(source.storageProjectId, input.chatHome);
   } catch {
-    throw new TopicError(404, `来源会话不存在或不可读：${source.storageProjectId}/${source.sessionId}`);
+    throw new TopicError(404, `来源项目不存在：${source.storageProjectId}`);
   }
-  const graph = await readTopicGraph(input.chatHome, source.storageProjectId);
-  const authorization = authorizeTopicSession({
-    graph, requester: { kind: "agent", longAgentId: input.longAgentId }, sessionId: source.sessionId, capability: "read",
-  });
-  if (authorization.applicable && !authorization.allowed) throw new TopicError(403, authorization.reason ?? "没有读取该来源的权限");
-  const entries = session.manager.getBranch();
-  if (!entries.some((entry) => isRecord(entry) && entry.id === source.entryId))
-    throw new TopicError(404, `来源条目不存在：${source.entryId}`);
+  if (context.kind !== "agent") throw new TopicError(403, "来源必须是 Long Agent 归属的会话记忆，普通项目会话需走其自身授权");
+  // A removed source is readable provenance but no longer an integration source (taskbook 3#9).
+  const active = (await listActiveSessionFiles(context)).some((candidate) => candidate.id === source.sessionId);
+  if (!active) {
+    const inactive = await findInactiveChatSessionState(context, source.sessionId);
+    if (inactive === "removed") throw new TopicError(409, `来源会话已移除，不能作为整合来源：${source.sessionId}`);
+    throw new TopicError(404, `来源会话记忆不存在或不可读：${source.storageProjectId}/${source.sessionId}`);
+  }
+  let memory;
+  try {
+    memory = await readSessionMemory(input.chatHome, source.storageProjectId, source.sessionId);
+  } catch {
+    throw new TopicError(404, `来源会话记忆不存在或不可读：${source.storageProjectId}/${source.sessionId}`);
+  }
+  const entry = memory.entries.find((candidate) => candidate.entryId === source.entryId);
+  if (entry === undefined) throw new TopicError(404, `来源会话记忆条目不存在：${source.entryId}`);
+  if (entry.status !== "active") throw new TopicError(409, `来源会话记忆条目已被推翻：${source.entryId}`);
 }
 
 /** Canonical fingerprint of the orchestration inputs; folded into the node creation digest. */
@@ -833,11 +852,6 @@ export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessi
   const fingerprint = topicCreationFingerprint({
     title, createdBy: input.createdBy, frozenProjectContext, summary, memory, source, parents: normalizeParentSpecs(parents),
   });
-  if (source !== null) {
-    await requireTopicMemorySource({ chatHome, longAgentId, source });
-    if (memory !== null && memory.originEntryId !== null && memory.originEntryId !== source.entryId)
-      throw new TopicError(400, "初始记忆的 originEntryId 必须与来源条目一致");
-  }
   const graphFile = topicGraphFile(chatHome, longAgentId);
   return withFileLock(`${graphFile}.node-request-${requestId}`, async () => {
     const current = await readTopicGraph(chatHome, longAgentId);
@@ -845,6 +859,9 @@ export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessi
     let ensuredSummaryEntryId: string | null = null;
     let ensuredMemoryEntryId: string | null = null;
     if (registered === undefined) {
+      // A source only has to be readable for the FIRST registration: once the node exists, an identical
+      // replay must return it even if the source session was removed in the meantime.
+      if (source !== null) await requireTopicMemorySource({ chatHome, source });
       await verifyParentAnchors({ chatHome, longAgentId, graph: current, parents });
       const ensured = await ensureChatSessionWithId({ chatHome, projectId: longAgentId }, sessionId, title);
       // The session lock is taken AFTER ensureChatSessionWithId released it (not re-entrant).

@@ -7,7 +7,7 @@ import { ensureChatSessionWithId, openChatSession } from "../../src/chat-session
 import { appendChatUserMessage } from "../../src/workflows/session-conversation.ts";
 import { appendChatLongAgentTurn } from "../../src/long-agents/session-turn.ts";
 import { readSessionMemory, writeSessionMemoryEntry } from "../../src/long-agents/session-memory.ts";
-import { ensureAgentHomeProject } from "../../src/projects/registry.ts";
+import { ensureAgentHomeProject, openProject } from "../../src/projects/registry.ts";
 import { purgeRemovedChatSession, removeChatSession, restoreRemovedChatSession } from "../../src/session-removal.ts";
 import {
   createTopic,
@@ -156,18 +156,21 @@ test("P2 creation: the four-step orchestration is replayable after an interrupti
   });
   parentSession.session.manager.flush();
   const root = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "rq", expectedRevision: 1 });
-  const source = { storageProjectId: "friend", sessionId: topic.rootSessionId, entryId: parentAnchor };
+  // A source addresses a SESSION MEMORY entry (smem-*), not a Pi transcript entry.
+  const parentMemory = await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: topic.rootSessionId,
+    operation: "write", purpose: "finding", author: "agent", content: "父会话结论：第一个问题已定位", expectedRevision: 0 });
+  const source = { storageProjectId: "friend", sessionId: topic.rootSessionId, entryId: parentMemory.entries.at(-1).entryId };
   const request = {
     chatHome: home, longAgentId: "friend", topicId: topic.topicId, requestId: "rq-child", title: "子节点",
     createdBy: "agent", integrationSummary: "整合摘要：第一个问题已经定位", source,
-    initialMemory: { content: "背景：第一个问题已定位", originEntryId: parentAnchor },
+    initialMemory: { content: "背景：第一个问题已定位", originEntryId: null },
     parents: [{ parentNodeId: root.node.nodeId, anchorEntryId: parentAnchor, anchorSequence: 1, memoryRefs: [source] }],
   };
   const first = await createTopicNodeWithSession(request);
   assert.equal(first.created, true);
   assert.equal(first.sessionId, topicNodeSessionIdOf(topic.topicId, "rq-child"));
   assert.equal(first.node.initialMemoryRefs.length, 1);
-  assert.equal(first.node.initialMemoryRefs[0].source.entryId, parentAnchor);
+  assert.equal(first.node.initialMemoryRefs[0].source.entryId, source.entryId);
   assert.equal(first.summaryEntryId !== null, true);
   assert.equal(first.memoryEntryId, first.node.initialMemoryRefs[0].entryId, "the recorded ref IS the bootstrap entry");
   assert.equal(first.graph.edges.find((edge) => edge.childNodeId === first.node.nodeId).anchorSequence, 1);
@@ -244,11 +247,13 @@ test("P2 creation: review counter-examples for the orchestration contract", asyn
       indexRevision: `sha256:${"c".repeat(64)}`, definitionRevision: `sha256:${"d".repeat(64)}`, stale: false, fetchedAt: "2026-09-24T00:00:00.000Z" },
   });
   rootSession.session.manager.flush();
-  const source = { storageProjectId: "friend", sessionId: topic.rootSessionId, entryId: anchor };
+  const sourceMemory = await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: topic.rootSessionId,
+    operation: "write", purpose: "finding", author: "agent", content: "结论 A", expectedRevision: 0 });
+  const source = { storageProjectId: "friend", sessionId: topic.rootSessionId, entryId: sourceMemory.entries.at(-1).entryId };
   const base = {
     chatHome: home, longAgentId: "friend", topicId: topic.topicId, requestId: "rq-fix", title: "Root",
     createdBy: "agent", integrationSummary: "摘要 A", source,
-    initialMemory: { content: "背景 A", originEntryId: anchor },
+    initialMemory: { content: "背景 A", originEntryId: null },
     parents: [{ parentNodeId: root.node.nodeId, anchorEntryId: anchor, anchorSequence: 1, memoryRefs: [source] }],
   };
   assert.equal((await createTopicNodeWithSession(base)).created, true);
@@ -258,11 +263,17 @@ test("P2 creation: review counter-examples for the orchestration contract", asyn
   // bootstrap memory), so all three changes are conflicts instead of silent successes.
   await assert.rejects(createTopicNodeWithSession({ ...base, title: "Changed title" }), /该 requestId 已用于不同的节点创建/);
   await assert.rejects(createTopicNodeWithSession({ ...base, integrationSummary: "摘要 B" }), /该 requestId 已用于不同的节点创建/);
-  await assert.rejects(createTopicNodeWithSession({ ...base, initialMemory: { content: "背景 B", originEntryId: anchor } }), /该 requestId 已用于不同的节点创建/);
+  await assert.rejects(createTopicNodeWithSession({ ...base, initialMemory: { content: "背景 B", originEntryId: null } }), /该 requestId 已用于不同的节点创建/);
   const afterRejections = await readTopicGraph(home, "friend");
   assert.equal(afterRejections.nodes.find((node) => node.createdByRequestId === "rq-fix").title, "Root", "the frozen title is untouched");
   // The identical request still replays idempotently.
   assert.equal((await createTopicNodeWithSession(base)).created, false);
+
+  // 4: a specific anchor must carry both the entry and its sequence.
+  await assert.rejects(
+    createTopicNodeWithSession({ ...base, requestId: "rq-anchor-null", parents: [{ parentNodeId: root.node.nodeId, anchorEntryId: anchor, anchorSequence: null }] }),
+    /锚点必须同时提供 entry 与序号/,
+  );
 
   // 2: an unrelated pre-existing background entry is NOT claimed by a new request.
   const otherRequest = { ...base, requestId: "rq-other", title: "另一个" };
@@ -271,7 +282,7 @@ test("P2 creation: review counter-examples for the orchestration contract", asyn
   preexisting.session.manager.flush();
   const emptyMemory = await readSessionMemory(home, "friend", childSessionId);
   await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: childSessionId, operation: "write",
-    purpose: "background", author: "agent", content: "背景 A", originEntryId: anchor, expectedRevision: emptyMemory.revision });
+    purpose: "background", author: "agent", content: "背景 A", expectedRevision: emptyMemory.revision });
   const createdOther = await createTopicNodeWithSession(otherRequest);
   const adopted = (await readSessionMemory(home, "friend", childSessionId)).entries;
   assert.equal(adopted.length, 2, "the unrelated entry is NOT claimed: this request writes its own");
@@ -281,19 +292,46 @@ test("P2 creation: review counter-examples for the orchestration contract", asyn
 
   // 3: a source address that does not exist is refused before any write.
   await assert.rejects(
-    createTopicNodeWithSession({ ...base, requestId: "rq-bad-source", source: { ...source, entryId: "unrelated-source" } }),
-    /来源条目不存在/,
+    createTopicNodeWithSession({ ...base, requestId: "rq-bad-source", source: { ...source, entryId: "smem-9999-unrelated" } }),
+    /来源会话记忆条目不存在/,
   );
   await assert.rejects(
-    createTopicNodeWithSession({ ...base, requestId: "rq-bad-session", source: { ...source, sessionId: "does-not-exist" }, initialMemory: { content: "x", originEntryId: anchor } }),
-    /来源会话不存在或不可读/,
+    createTopicNodeWithSession({ ...base, requestId: "rq-bad-session", source: { ...source, sessionId: "does-not-exist" } }),
+    /来源会话记忆不存在或不可读/,
+  );
+  // A Pi transcript id is NOT a memory address: the namespaces are distinct.
+  await assert.rejects(
+    createTopicNodeWithSession({ ...base, requestId: "rq-pi-entry", source: { ...source, entryId: anchor } }),
+    /来源会话记忆条目不存在/,
+  );
+  // A plain Project session is not a valid source: `applicable:false` is not an allow.
+  const privateProjectDir = path.join(home, "private-project");
+  fs.mkdirSync(privateProjectDir, { recursive: true });
+  await openProject({ path: privateProjectDir, chatHome: home, id: "private-project", name: "private" });
+  const privateSession = await ensureChatSessionWithId({ chatHome: home, projectId: "private-project" }, "sess-private-1", "private");
+  privateSession.session.manager.flush();
+  await assert.rejects(
+    createTopicNodeWithSession({ ...base, requestId: "rq-private", source: { storageProjectId: "private-project", sessionId: "sess-private-1", entryId: anchor } }),
+    /来源必须是 Long Agent 归属的会话记忆/,
   );
   const afterBadSource = await readTopicGraph(home, "friend");
   assert.equal(afterBadSource.nodes.some((node) => node.createdByRequestId === "rq-bad-source"), false);
 
-  // 4: a specific anchor must carry both the entry and its sequence.
+  // 3b: once the node exists, an identical replay returns it even after the SOURCE session was removed:
+  // the availability check belongs to the first registration only.
+  const removableSource = await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: topic.rootSessionId,
+    operation: "write", purpose: "finding", author: "agent", content: "将被移除的来源", expectedRevision: (await readSessionMemory(home, "friend", topic.rootSessionId)).revision });
+  const beforeRemoval = { ...base, requestId: "rq-removed-source", title: "来源稍后移除",
+    source: { storageProjectId: "friend", sessionId: topic.rootSessionId, entryId: removableSource.entries.at(-1).entryId } };
+  assert.equal((await createTopicNodeWithSession(beforeRemoval)).created, true);
+  await removeChatSession("friend", topic.rootSessionId, home);
+  const replayAfterRemoval = await createTopicNodeWithSession(beforeRemoval);
+  assert.equal(replayAfterRemoval.created, false, "the registered request is identified before source availability");
+  assert.equal(replayAfterRemoval.node.title, "来源稍后移除");
+  // A NEW request with the removed source is still refused.
   await assert.rejects(
-    createTopicNodeWithSession({ ...base, requestId: "rq-anchor-null", parents: [{ parentNodeId: root.node.nodeId, anchorEntryId: anchor, anchorSequence: null }] }),
-    /锚点必须同时提供 entry 与序号/,
+    createTopicNodeWithSession({ ...beforeRemoval, requestId: "rq-removed-source-2" }),
+    /来源会话已移除/,
   );
+
 });

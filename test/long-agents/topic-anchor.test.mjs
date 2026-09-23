@@ -94,6 +94,16 @@ test("P2 anchors: the outer round marker settles a whole work+remember round", (
   appendTopicRoundMarker(manager, { roundId: "round-2", userEntryId: second, status: "completed" });
   assert.deepEqual(readTopicSettledAnchors(manager).map((anchor) => anchor.anchorSequence), [1, 2]);
 
+  // A round marker that points at an ASSISTANT entry is not an anchor (and cannot be written at all).
+  const fourth = appendChatUserMessage(manager, "第四轮");
+  const assistantId = manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "答" }], timestamp: Date.now() });
+  assert.throws(() => appendTopicRoundMarker(manager, { roundId: "round-bad", userEntryId: assistantId, status: "completed" }),
+    /轮次锚点不是用户消息/);
+  // Even if such a marker reaches the file some other way, the reader ignores it.
+  manager.appendCustomEntry("chat.topic-round", { roundId: "round-bad", userEntryId: assistantId, status: "completed", settledAt: "2026-09-24T00:00:05.000Z" });
+  assert.equal(readTopicSettledAnchors(manager).some((anchor) => anchor.anchorEntryId === assistantId), false);
+  assert.equal(readTopicSettledAnchors(manager).some((anchor) => anchor.anchorEntryId === fourth), false);
+
   // A Long Agent turn marker and a round marker for the same user entry are one anchor, not two.
   const third = appendChatUserMessage(manager, "第三轮");
   manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "答" }], timestamp: Date.now() });
