@@ -78,6 +78,14 @@ test("LA5 conversations: the trusted scope comes from the record, not from the c
   const bound = await bindParticipationSession({ chatHome: f.home, storageProjectId: "a", conversationId: created.id, longAgentId: "friend" });
   assert.equal(bound.created, true);
   assert.equal(bound.participationEpoch, 1);
+  // The owner-facing detail exposes each member's participation Session so the Web full-history
+  // entry can open it; an unbound member stays null.
+  const { conversationSummary } = await import("../../src/long-agents/conversations/contract.ts");
+  const before = conversationSummary(await readConversation(f.home, "a", created.id));
+  assert.equal(before.members.find((member) => member.longAgentId === "friend2").sessionId, null);
+  const after = conversationSummary(await readConversation(f.home, "a", created.id));
+  assert.equal(after.members.find((member) => member.longAgentId === "friend").sessionId, bound.sessionId);
+  assert.equal(after.members.find((member) => member.longAgentId === "friend").hasParticipationSession, true);
   const rebound = await bindParticipationSession({ chatHome: f.home, storageProjectId: "a", conversationId: created.id, longAgentId: "friend" });
   assert.deepEqual({ sessionId: rebound.sessionId, created: rebound.created }, { sessionId: bound.sessionId, created: false }, "the participation Session is stable until the membership changes");
   // Each Friend gets its own Session.

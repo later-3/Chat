@@ -217,6 +217,9 @@ export function conversationSummary(conversation: Conversation) {
       revokedAt: member.revokedAt,
       grants: member.grants,
       hasParticipationSession: member.sessionId !== null,
+      // Owner-facing: the local owner keeps the right to read a member's full participation
+      // history (transcript/export pass the owner requester), so the binding id is exposed here.
+      sessionId: member.sessionId,
     })),
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,

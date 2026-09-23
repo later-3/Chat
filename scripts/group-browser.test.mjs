@@ -211,5 +211,11 @@ test("group chat is usable in a real browser: two groups, five policies, backgro
   await page.waitFor("document.body.innerText.includes('BROWSER_NEW_MESSAGE') && document.body.innerText.includes('GROUP_ONE_MSG')", {
     label: "刷新后公共历史恢复", timeoutMs: 40_000,
   });
+  // The owner-facing full-history entry: after a bound participation Session, each member exposes a
+  // read-only history dialog that must actually load the export HTML.
+  await page.waitFor("document.querySelector('[data-group-history]') !== null", { label: "成员完整历史入口", timeoutMs: 40_000 });
+  await page.waitFor("document.querySelector('[data-group-history-public]') !== null", { label: "群聊完整历史入口", timeoutMs: 20_000 });
+  await page.evaluate("document.querySelector('[data-group-history]')?.click()");
+  await page.waitFor("document.querySelector('iframe.full-history-frame') !== null", { label: "完整历史对话框打开", timeoutMs: 20_000 });
   await page.close();
 });
