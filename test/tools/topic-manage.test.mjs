@@ -9,6 +9,8 @@ import { ensureAgentHomeProject } from "../../src/projects/registry.ts";
 import { writeSessionMemoryEntry } from "../../src/long-agents/session-memory.ts";
 import { appendChatLongAgentTurn } from "../../src/long-agents/session-turn.ts";
 import { appendChatUserMessage } from "../../src/workflows/session-conversation.ts";
+import { sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
+import { convertToLlm } from "@earendil-works/pi-agent-core";
 import { createTopic, createTopicNode } from "../../src/long-agents/topics.ts";
 
 const turnContext = {
@@ -79,6 +81,9 @@ test("topic_manage: create, supplement, archive and relay go through the domain 
   assert.equal(created.created, true);
   const replayTopic = await call({ operation: "create_topic", requestId: "tm-new", title: "新主题", purpose: "目的" });
   assert.equal(replayTopic.created, false, "the same request id is idempotent");
+  // ... but the same request id with different content is a conflict, not a silent success.
+  await assert.rejects(call({ operation: "create_topic", requestId: "tm-new", title: "改了标题", purpose: "目的" }), /已用于不同的主题内容/);
+  await assert.rejects(call({ operation: "create_topic", requestId: "tm-new", title: "新主题", purpose: "改了目的" }), /已用于不同的主题内容/);
 
   // Root node + its settled round, then a child node created from that anchor through the tool.
   const rootNode = await call({ operation: "create_node", topicId: created.topic.topicId, requestId: "tm-new", title: "根节点" });
@@ -129,14 +134,109 @@ test("topic_manage: create, supplement, archive and relay go through the domain 
   const archived = await call({ operation: "update_node_status", nodeId: supplementalParent.node.nodeId, status: "archived" });
   assert.equal(archived.node.status, "archived");
 
-  // Relay: a real user message plus a durable marker, idempotent by request id, own tree only.
+  // Relay: ONE atomic custom_message append that enters the model context as a user message.
   const relayed = await call({ operation: "relay", targetNodeId: child.node.nodeId, requestId: "tm-relay", text: "请继续定位这个分支" });
   assert.equal(relayed.created, true);
   const childSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, child.node.sessionId, "子节点");
   const branch = childSession.session.manager.getBranch();
-  assert.equal(branch.some((entry) => entry.type === "message" && entry.message?.role === "user"), true, "relay writes a REAL user message");
-  assert.equal(branch.some((entry) => entry.type === "custom" && entry.customType === "chat.topic-relay"), true);
-  assert.equal((await call({ operation: "relay", targetNodeId: child.node.nodeId, requestId: "tm-relay", text: "重复" })).created, false);
+  const relayEntries = branch.filter((entry) => entry.type === "custom_message" && entry.customType === "chat.topic-relay");
+  assert.equal(relayEntries.length, 1, "relay is a single entry: there is no message/marker interruption window");
+  assert.equal(relayEntries[0].display, true);
+  assert.equal(relayEntries[0].content, "请继续定位这个分支");
+  // It becomes a real user message for the model (role custom -> role user).
+  assert.equal(sessionEntryToContextMessages(relayEntries[0])[0].role, "custom");
+  assert.equal(convertToLlm(sessionEntryToContextMessages(relayEntries[0]))[0].role, "user");
+  const replayRelay = await call({ operation: "relay", targetNodeId: child.node.nodeId, requestId: "tm-relay", text: "请继续定位这个分支" });
+  assert.equal(replayRelay.created, false);
+  assert.equal(replayRelay.userEntryId, relayed.userEntryId);
+  // Same request id, different relayed text: a conflict, not a silent success.
+  await assert.rejects(call({ operation: "relay", targetNodeId: child.node.nodeId, requestId: "tm-relay", text: "换了内容" }), /已用于不同的代传内容/);
+  const afterConflicts = (await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, child.node.sessionId, "子节点")).session.manager.getBranch()
+    .filter((entry) => entry.type === "custom_message" && entry.customType === "chat.topic-relay");
+  assert.equal(afterConflicts.length, 1, "no extra relay entry was written");
   // A node that does not exist in this agent's own tree cannot be relayed to.
   await assert.rejects(call({ operation: "relay", targetNodeId: "node-00000000000000000000000000000000", requestId: "tm-relay-2", text: "x" }), /找不到主题节点/);
+});
+
+test("topic_manage: a node records every source it was built from, with the frozen project context", async (t) => {
+  const home = await fixture(t);
+  const call = tool(home);
+  const topic = await call({ operation: "create_topic", requestId: "ms-topic", title: "多来源", purpose: "整合两个会话" });
+  const root = await call({ operation: "create_node", topicId: topic.topic.topicId, requestId: "ms-topic", title: "根节点" });
+  const firstSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根");
+  firstSession.session.manager.flush();
+  const secondSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, "sess-second-source", "第二来源");
+  secondSession.session.manager.flush();
+  const firstEntry = (await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: root.node.sessionId,
+    operation: "write", purpose: "finding", author: "agent", content: "来源一", expectedRevision: 0 })).entries.at(-1);
+  const secondEntry = (await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: "sess-second-source",
+    operation: "write", purpose: "finding", author: "agent", content: "来源二", expectedRevision: 0 })).entries.at(-1);
+  const sources = [
+    { storageProjectId: "friend", sessionId: root.node.sessionId, entryId: firstEntry.entryId },
+    { storageProjectId: "friend", sessionId: "sess-second-source", entryId: secondEntry.entryId },
+  ];
+  const child = await call({ operation: "create_node", topicId: topic.topic.topicId, requestId: "ms-child", title: "整合节点",
+    integrationSummary: "两个会话的整合", memoryContent: "共同背景", sources, frozenProjectContext: "child-project",
+    parents: [{ nodeId: root.node.nodeId }] });
+  assert.equal(child.created, true);
+  assert.equal(child.node.frozenProjectContext, "child-project", "the frozen project context is passed through");
+  assert.deepEqual(child.node.initialMemoryRefs.map((ref) => ref.source.sessionId).sort(),
+    [root.node.sessionId, "sess-second-source"].sort(), "both source sessions are traceable");
+  // Both refs still address a real, linked bootstrap entry.
+  const memory = (await call({ operation: "read_memory", sourceSessionId: child.node.sessionId })).entries;
+  assert.equal(memory.length, 1, "the shared content is written once");
+  assert.equal(child.node.initialMemoryRefs.every((ref) => ref.entryId === memory[0].entryId), true);
+  const graph = await call({ operation: "read_graph", topicId: topic.topic.topicId });
+  const readBack = graph.topics[0].nodes.find((node) => node.nodeId === child.node.nodeId);
+  assert.equal(readBack.initialMemoryRefs.length, 2);
+});
+
+test("topic_manage: read_fulltext returns custom-message text and pages back through history", async (t) => {
+  const home = await fixture(t);
+  const call = tool(home);
+  const topic = await call({ operation: "create_topic", requestId: "ft-topic", title: "全文", purpose: "读取" });
+  const root = await call({ operation: "create_node", topicId: topic.topic.topicId, requestId: "ft-topic", title: "根节点",
+    integrationSummary: "重要的整合摘要", memoryContent: null });
+  assert.equal(root.summaryEntryId !== null, true);
+  const sessionId = root.node.sessionId;
+  const session = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, sessionId, "根");
+  appendChatUserMessage(session.session.manager, "长消息：" + "x".repeat(5_000));
+  for (let index = 0; index < 60; index += 1) appendChatUserMessage(session.session.manager, `第 ${index} 条历史`);
+  session.session.manager.flush();
+
+  const recent = await call({ operation: "read_fulltext", sourceSessionId: sessionId, limit: 20 });
+  assert.equal(recent.entries.length, 20);
+  assert.equal(typeof recent.nextCursor, "string", "a cursor lets the caller keep reading older entries");
+  assert.equal(recent.total > 60, true);
+  // The integration summary is readable (not an empty text) and still carries its request id.
+  const foundSummary = recent.entries.find((entry) => entry.customType === "chat.topic-integration-summary")
+    ?? (await (async () => {
+      // The summary is the very first entry, so it appears only when paging reaches it.
+      let cursor = recent.nextCursor;
+      for (let page = 0; page < 10; page += 1) {
+        const older = await call({ operation: "read_fulltext", sourceSessionId: sessionId, limit: 50, beforeEntryId: cursor });
+        const hit = older.entries.find((entry) => entry.customType === "chat.topic-integration-summary");
+        if (hit !== undefined) return hit;
+        if (older.nextCursor === null || older.entries.length === 0) return undefined;
+        cursor = older.nextCursor;
+      }
+      return undefined;
+    })());
+  assert.notEqual(foundSummary, undefined, "the integration summary is reachable through paging");
+  assert.equal(foundSummary.text, "重要的整合摘要");
+  assert.equal(foundSummary.truncated, false);
+  assert.equal(foundSummary.requestId, "ft-topic");
+
+  // A long entry is returned with an explicit truncation flag instead of silently losing text.
+  let cursor = recent.nextCursor;
+  let longEntry = null;
+  for (let page = 0; page < 10 && longEntry === null; page += 1) {
+    const older = await call({ operation: "read_fulltext", sourceSessionId: sessionId, limit: 50, beforeEntryId: cursor });
+    longEntry = older.entries.find((entry) => entry.text.startsWith("长消息：")) ?? null;
+    if (older.nextCursor === null) break;
+    cursor = older.nextCursor;
+  }
+  assert.notEqual(longEntry, null, "the long message is reachable");
+  assert.equal(longEntry.truncated, true);
+  assert.equal(longEntry.text.length, 4_000);
 });

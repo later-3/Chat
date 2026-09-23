@@ -1,12 +1,12 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { appendChatUserMessage } from "../../../workflows/session-conversation.js";
 import { openChatSession } from "../../../chat-session.js";
 import { resolveProjectContext } from "../../../projects/registry.js";
 import { readSessionMemory } from "../../../long-agents/session-memory.js";
 import {
   addTopicNodeParent,
   authorizeTopicSession,
+  relayTopicNodeMessage,
   createTopic,
   createTopicNodeWithSession,
   readTopicGraph,
@@ -16,8 +16,6 @@ import {
 import type { ChatToolProvider } from "../../framework.js";
 import { defineChatSystemTool } from "../../framework.js";
 import manifest from "./tool.json" with { type: "json" };
-
-export const TOPIC_RELAY_CUSTOM_TYPE = "chat.topic-relay";
 
 function result(details: Record<string, unknown>) {
   return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
@@ -32,16 +30,22 @@ function optionalText(value: unknown, label: string, max = 4_000): string | null
   return value === undefined || value === null ? null : text(value, label, max);
 }
 
-function entryText(content: unknown, limit = 600): string {
-  if (typeof content === "string") return content.slice(0, limit);
-  if (!Array.isArray(content)) return "";
-  const parts: string[] = [];
-  for (const block of content) {
-    if (typeof block !== "object" || block === null) continue;
-    const value = block as { type?: unknown; text?: unknown };
-    if (value.type === "text" && typeof value.text === "string") parts.push(value.text);
+const FULLTEXT_TEXT_LIMIT = 4_000;
+
+/** Extracts readable text from a native message OR a custom_message entry (the two shapes differ). */
+function entryText(content: unknown): { text: string; truncated: boolean } {
+  let joined = "";
+  if (typeof content === "string") joined = content;
+  else if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      if (typeof block !== "object" || block === null) continue;
+      const value = block as { type?: unknown; text?: unknown };
+      if (value.type === "text" && typeof value.text === "string") parts.push(value.text);
+    }
+    joined = parts.join("\n");
   }
-  return parts.join("\n").slice(0, limit);
+  return { text: joined.slice(0, FULLTEXT_TEXT_LIMIT), truncated: joined.length > FULLTEXT_TEXT_LIMIT };
 }
 
 /**
@@ -90,6 +94,11 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
       status: Type.Optional(Type.Union([Type.Literal("active"), Type.Literal("archived")], { description: "update_node_status" })),
       text: Type.Optional(Type.String({ description: "relay：要代传的内容" })),
       limit: Type.Optional(Type.Number({ description: "read_fulltext：返回最近条数（默认 20，最大 50）" })),
+      beforeEntryId: Type.Optional(Type.String({ description: "read_fulltext：游标；读取该条目之前（更早）的条目" })),
+      frozenProjectContext: Type.Optional(Type.String({ description: "create_node：冻结的 Project 上下文（可选）" })),
+      sources: Type.Optional(Type.Array(Type.Object({
+        storageProjectId: Type.String(), sessionId: Type.String(), entryId: Type.String(),
+      }), { description: "create_node：来源会话记忆地址列表（可多条会话）" })),
     }),
     async execute(_toolCallId, params) {
       if (context.purpose !== "execution") throw new Error("检查模式不能访问主题");
@@ -158,14 +167,33 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
         await requireReadable(storageProjectId, sessionId);
         const limit = Number.isSafeInteger(record.limit) ? Math.min(Math.max(Number(record.limit), 1), 50) : 20;
         const session = await openChatSession({ chatHome, projectId: storageProjectId, sessionId });
-        const entries = session.manager.getBranch().slice(-limit).map((entry) => {
-          const value = entry as { id: string; parentId?: string | null; type: string; message?: unknown; customType?: unknown };
+        const branch = session.manager.getBranch();
+        // `beforeEntryId` pages further back: the window ends just before that entry.
+        const beforeEntryId = optionalText(record.beforeEntryId, "beforeEntryId", 200);
+        const end = beforeEntryId === null ? branch.length : (() => {
+          const index = branch.findIndex((entry) => (entry as { id?: unknown }).id === beforeEntryId);
+          if (index === -1) throw new Error(`游标条目不存在：${beforeEntryId}`);
+          return index;
+        })();
+        const window = branch.slice(Math.max(end - limit, 0), end);
+        const entries = window.map((entry) => {
+          const value = entry as { id: string; parentId?: string | null; type: string; message?: unknown; customType?: unknown;
+            content?: unknown; details?: unknown; display?: unknown };
           const message = (value.type === "message" ? value.message : undefined) as { role?: unknown; content?: unknown } | undefined;
+          // A custom_message keeps its text in `content` (and its machine payload in `details`).
+          const body = message !== undefined ? message.content : (value.type === "custom_message" ? value.content : undefined);
+          const extracted = entryText(body);
           return { entryId: value.id, parentId: value.parentId ?? null, kind: value.type,
-            role: typeof message?.role === "string" ? message.role : null, customType: typeof value.customType === "string" ? value.customType : null,
-            text: message === undefined ? "" : entryText(message.content) };
+            role: typeof message?.role === "string" ? message.role : (value.type === "custom_message" ? "custom" : null),
+            customType: typeof value.customType === "string" ? value.customType : null,
+            display: typeof value.display === "boolean" ? value.display : null,
+            text: extracted.text, truncated: extracted.truncated,
+            requestId: typeof value.details === "object" && value.details !== null && typeof (value.details as { requestId?: unknown }).requestId === "string"
+              ? (value.details as { requestId: string }).requestId : null };
         });
-        return result({ operation, storageProjectId, sessionId, entries });
+        const oldest = window[0] as { id?: unknown } | undefined;
+        return result({ operation, storageProjectId, sessionId, total: branch.length, entries,
+          nextCursor: typeof oldest?.id === "string" ? oldest.id : null });
       }
 
       if (operation === "create_topic") {
@@ -182,9 +210,13 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
         const topicId = text(record.topicId, "topicId", 200);
         const requestId = text(record.requestId, "requestId", 200);
         const title = text(record.title, "title", 200);
-        const source = record.source === undefined ? null : record.source as { storageProjectId?: unknown; sessionId?: unknown; entryId?: unknown };
-        const sourceRef = source === null ? null : { storageProjectId: text(source.storageProjectId, "source.storageProjectId", 200),
-          sessionId: text(source.sessionId, "source.sessionId", 200), entryId: text(source.entryId, "source.entryId", 200) };
+        const sourceRefs = (Array.isArray(record.sources) ? record.sources : (record.source === undefined ? [] : [record.source]))
+          .map((candidate) => {
+            const value = candidate as { storageProjectId?: unknown; sessionId?: unknown; entryId?: unknown };
+            return { storageProjectId: text(value.storageProjectId, "source.storageProjectId", 200),
+              sessionId: text(value.sessionId, "source.sessionId", 200), entryId: text(value.entryId, "source.entryId", 200) };
+          });
+        const frozenProjectContext = optionalText(record.frozenProjectContext, "frozenProjectContext", 200);
         const parentInputs = Array.isArray(record.parents) ? record.parents as readonly Record<string, unknown>[] : [];
         const integrationSummary = optionalText(record.integrationSummary, "integrationSummary", 20_000);
         const memoryContent = optionalText(record.memoryContent, "memoryContent", 4_000);
@@ -192,7 +224,8 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
           chatHome, longAgentId, topicId, requestId, title, createdBy: "agent",
           ...(integrationSummary === null ? {} : { integrationSummary }),
           ...(memoryContent === null ? {} : { initialMemory: { content: memoryContent, originEntryId: null } }),
-          ...(sourceRef === null ? {} : { source: sourceRef }),
+          ...(sourceRefs.length === 0 ? {} : { sources: sourceRefs.map((source) => ({ source })) }),
+          ...(frozenProjectContext === null ? {} : { frozenProjectContext }),
           parents: parentInputs.map((parent) => {
             const parentNodeId = text(parent.nodeId, "parent.nodeId", 200);
             const anchorEntryId = optionalText(parent.anchorEntryId, "parent.anchorEntryId", 200);
@@ -201,7 +234,7 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
             if (anchorEntryId === null && anchorSequence !== null) throw new Error("父边锚点必须同时提供 anchorEntryId 与 anchorSequence");
             return { parentNodeId,
               ...(anchorEntryId === null ? {} : { anchorEntryId, anchorSequence }),
-              ...(sourceRef === null ? {} : { memoryRefs: [sourceRef] }) };
+              ...(sourceRefs.length === 0 ? {} : { memoryRefs: sourceRefs }) };
           }),
         });
         return result({ operation, created: created.created, node: created.node, sessionId: created.sessionId,
@@ -233,29 +266,13 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
         return result({ operation, node });
       }
 
-      // relay: a real user message with a durable relay marker. Triggering the node round belongs to the
-      // node session API / round workflow, not to this tool.
-      const nodeId = text(record.nodeId ?? record.targetNodeId, "targetNodeId", 200);
-      const relayText = text(record.text, "text", 20_000);
-      const requestId = text(record.requestId, "requestId", 200);
-      const graph = await readTopicGraph(chatHome, longAgentId);
-      const node = graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-      if (node === undefined) throw new Error(`找不到主题节点：${nodeId}`);
-      const decision = authorizeTopicSession({ graph, requester: { kind: "agent", longAgentId }, sessionId: node.sessionId, capability: "relay" });
-      if (!decision.applicable || !decision.allowed) throw new Error(decision.reason ?? "只能代传自己名下主题树的节点");
-      const session = await openChatSession({ chatHome, projectId: longAgentId, sessionId: node.sessionId });
-      const already = session.manager.getBranch().some((entry) => {
-        const value = entry as { type?: string; customType?: string; data?: unknown };
-        return value.type === "custom" && value.customType === TOPIC_RELAY_CUSTOM_TYPE
-          && typeof value.data === "object" && value.data !== null && (value.data as { requestId?: unknown }).requestId === requestId;
+      // relay goes through the domain function: the single `custom_message` append is atomic (no
+      // "message written, marker missing" window) and enters the model context as a user message.
+      const relayed = await relayTopicNodeMessage({
+        chatHome, longAgentId, nodeId: record.nodeId ?? record.targetNodeId,
+        requestId: record.requestId, text: record.text,
       });
-      if (already) return result({ operation, created: false, nodeId, sessionId: node.sessionId });
-      const entryId = appendChatUserMessage(session.manager, relayText);
-      session.manager.appendCustomEntry(TOPIC_RELAY_CUSTOM_TYPE, {
-        requestId, relayedByLongAgentId: longAgentId, source: "relay", userEntryId: entryId,
-      });
-      session.manager.flush();
-      return result({ operation, created: true, nodeId, sessionId: node.sessionId, userEntryId: entryId });
+      return result({ operation, created: relayed.created, nodeId: relayed.nodeId, sessionId: relayed.sessionId, userEntryId: relayed.entryId });
     },
   }),
 );

@@ -328,7 +328,12 @@ export async function createTopic(input: {
   const topicId = topicIdOf(input.longAgentId, requestId);
   return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
     const existing = state.topics.find((topic) => topic.topicId === topicId);
-    if (existing !== undefined) return { topic: { ...existing }, graph: snapshot(state), created: false };
+    if (existing !== undefined) {
+      // Same request id, different content: this is not the request that created the topic.
+      if (existing.title !== title || existing.purpose !== purpose)
+        throw new TopicError(409, `该 requestId 已用于不同的主题内容：${requestId}`);
+      return { topic: { ...existing }, graph: snapshot(state), created: false };
+    }
     assertRevision(state, input.expectedRevision);
     const now = input.now ?? new Date().toISOString();
     const topic: TopicRecord = {
@@ -744,6 +749,7 @@ export function authorizeTopicSession(input: {
  * takes internally and which is not re-entrant.
  */
 export const TOPIC_INTEGRATION_SUMMARY_CUSTOM_TYPE = "chat.topic-integration-summary";
+export const TOPIC_RELAY_CUSTOM_TYPE = "chat.topic-relay";
 
 export interface CreateTopicNodeWithSessionInput {
   readonly chatHome: string;
@@ -755,9 +761,14 @@ export interface CreateTopicNodeWithSessionInput {
   readonly frozenProjectContext?: unknown;
   /** Integration product text, appended as a CustomMessage so it enters the child's context. */
   readonly integrationSummary?: unknown;
-  /** Initial session-memory bootstrap entry, distilled from the sources. */
+  /**
+   * Provenance list: one entry per source, so a node built from several sessions records ALL of them.
+   * `content` overrides the shared bootstrap text for that source.
+   */
+  readonly sources?: readonly { readonly source: unknown; readonly content?: unknown }[] | undefined;
+  /** Shared bootstrap text; used for a source without its own `content`. */
   readonly initialMemory?: { readonly content: unknown; readonly originEntryId?: unknown } | undefined;
-  /** Provenance of the bootstrap entry; without it no memory entry is written. */
+  /** Legacy single-source convenience; equivalent to `sources: [{ source, content }]`. */
   readonly source?: TopicMemorySource | null;
   readonly parents?: readonly CreateTopicNodeParentInput[];
   readonly now?: string;
@@ -768,7 +779,9 @@ export interface TopicNodeCreationResult {
   readonly sessionId: string;
   readonly created: boolean;
   readonly summaryEntryId: string | null;
+  /** First bootstrap entry (kept for single-source callers). */
   readonly memoryEntryId: string | null;
+  readonly memoryEntryIds: readonly string[];
   readonly graph: TopicGraphState;
 }
 
@@ -843,13 +856,14 @@ function topicCreationFingerprint(spec: {
   frozenProjectContext: string | null;
   summary: string | null;
   memory: { content: string; originEntryId: string | null } | null;
-  source: TopicMemorySource | null;
+  sources: readonly { source: TopicMemorySource; content: string }[];
   parents: readonly NormalizedParentSpec[];
 }): string {
   const canonical = JSON.stringify([
     spec.title, spec.createdBy, spec.frozenProjectContext, spec.summary,
     spec.memory === null ? null : [spec.memory.content, spec.memory.originEntryId],
-    spec.source === null ? null : [spec.source.storageProjectId, spec.source.sessionId, spec.source.entryId],
+    sortCanonical(spec.sources, (candidate) => `${canonicalSource(candidate.source)}|${candidate.content}`)
+      .map((candidate) => [canonicalSource(candidate.source), candidate.content]),
     sortCanonical(spec.parents, canonicalParent).map(canonicalParent),
   ]);
   return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
@@ -902,24 +916,34 @@ export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessi
     ? null
     : { content: text(input.initialMemory.content, "initialMemory.content", 4_000),
         originEntryId: optionalText(input.initialMemory.originEntryId, "initialMemory.originEntryId", 200) };
-  const source = input.source === undefined || input.source === null ? null : parseMemorySource(input.source, "source");
-  if (memory !== null && source === null) throw new TopicError(400, "初始记忆必须带来源地址");
+  const rawSources = input.sources ?? (input.source === undefined || input.source === null ? [] : [{ source: input.source }]);
+  if (!Array.isArray(rawSources)) throw new TopicError(400, "主题来源列表无效");
+  // Each source gets its own bootstrap entry (when contents differ), and every (entry, source) pair is
+  // recorded in the graph, so multi-session integration stays fully traceable.
+  const sources = rawSources.map((candidate) => {
+    if (!isRecord(candidate)) throw new TopicError(400, "主题来源列表无效");
+    const parsed = parseMemorySource(candidate.source, "source");
+    const override = candidate.content === undefined || candidate.content === null ? null : text(candidate.content, "source.content", 4_000);
+    const content = override ?? memory?.content ?? null;
+    if (content === null) throw new TopicError(400, "初始记忆必须带来源地址与内容");
+    return { source: parsed, content };
+  });
+  if (memory !== null && sources.length === 0) throw new TopicError(400, "初始记忆必须带来源地址");
   const frozenProjectContext = optionalText(input.frozenProjectContext, "frozenProjectContext", 200);
   // The creation digest covers the orchestration inputs too, so a replay with a changed title, summary,
   // anchor or bootstrap memory is a conflict rather than a silent success.
   const fingerprint = topicCreationFingerprint({
-    title, createdBy: input.createdBy, frozenProjectContext, summary, memory, source, parents: normalizeParentSpecs(parents),
+    title, createdBy: input.createdBy, frozenProjectContext, summary, memory, sources, parents: normalizeParentSpecs(parents),
   });
   const graphFile = topicGraphFile(chatHome, longAgentId);
   return withFileLock(`${graphFile}.node-request-${requestId}`, async () => {
     const current = await readTopicGraph(chatHome, longAgentId);
     const registered = current.nodes.find((node) => node.createdByRequestId === requestId);
     let ensuredSummaryEntryId: string | null = null;
-    let ensuredMemoryEntryId: string | null = null;
     if (registered === undefined) {
-      // A source only has to be readable for the FIRST registration: once the node exists, an identical
-      // replay must return it even if the source session was removed in the meantime.
-      if (source !== null) await requireTopicMemorySource({ chatHome, source });
+      // Sources only have to be readable for the FIRST registration: once the node exists, an identical
+      // replay must return it even if a source session was removed in the meantime.
+      await requireTopicSources({ chatHome, sources: sources.map((candidate) => candidate.source) });
       await verifyParentAnchors({ chatHome, longAgentId, graph: current, parents });
       const ensured = await ensureChatSessionWithId({ chatHome, projectId: longAgentId }, sessionId, title);
       // The session lock is taken AFTER ensureChatSessionWithId released it (not re-entrant).
@@ -941,22 +965,23 @@ export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessi
             ensured.session.manager.flush();
           }
         }
-        if (memory !== null) {
-          const state = await readSessionMemory(chatHome, longAgentId, sessionId);
-          // The retry identity is the DURABLE request link on the entry, never a content match: content
-          // equality cannot prove that an existing entry belongs to this request.
-          const linked = state.entries.find((entry) => entry.writeRequestId === requestId);
-          if (linked !== undefined) {
-            if (linked.purpose !== "background" || linked.author !== input.createdBy || linked.content !== memory.content
-              || linked.originEntryId !== memory.originEntryId)
-              throw new TopicError(409, `该 requestId 已写入不同的初始记忆：${requestId}`);
-            ensuredMemoryEntryId = linked.entryId;
-          } else {
+        if (sources.length > 0) {
+          // One entry per distinct bootstrap content; the retry identity is the DURABLE request link on
+          // the entry, never a content match (a request may legitimately reuse a content).
+          for (const content of [...new Set(sources.map((candidate) => candidate.content))]) {
+            const state = await readSessionMemory(chatHome, longAgentId, sessionId);
+            const linked = state.entries.find((entry) => entry.writeRequestId === requestId && entry.content === content);
+            if (linked !== undefined) {
+              if (linked.purpose !== "background" || linked.author !== input.createdBy
+                || (memory?.originEntryId ?? null) !== linked.originEntryId)
+                throw new TopicError(409, `该 requestId 已写入不同的初始记忆：${requestId}`);
+              continue;
+            }
             const written = await writeSessionMemoryEntry({ chatHome, longAgentId, sessionId, operation: "write",
-              purpose: "background", author: input.createdBy, content: memory.content, writeRequestId: requestId,
-              originEntryId: memory.originEntryId, expectedRevision: state.revision, ...(input.now === undefined ? {} : { now: input.now }) });
-            ensuredMemoryEntryId = memoryEntryIdForRevision(written);
-            if (ensuredMemoryEntryId === null) throw new TopicError(500, "初始会话记忆写入未返回条目");
+              purpose: "background", author: input.createdBy, content, writeRequestId: requestId,
+              originEntryId: memory?.originEntryId ?? null, expectedRevision: state.revision,
+              ...(input.now === undefined ? {} : { now: input.now }) });
+            if (memoryEntryIdForRevision(written) === null) throw new TopicError(500, "初始会话记忆写入未返回条目");
           }
         }
       });
@@ -966,13 +991,13 @@ export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessi
     // check, because the creation digest covers the orchestration fingerprint.
     for (let attempt = 0; ; attempt += 1) {
       const graph = await readTopicGraph(chatHome, longAgentId);
-      const memoryEntryId = registered === undefined
-        ? ensuredMemoryEntryId
-        : (await readSessionMemory(chatHome, longAgentId, graph.nodes.find((node) => node.createdByRequestId === requestId)?.sessionId ?? sessionId))
-            .entries.find((entry) => entry.writeRequestId === requestId)?.entryId ?? null;
-      const initialMemoryRefs: TopicNodeInitialMemoryRef[] = memoryEntryId === null || source === null
-        ? []
-        : [{ entryId: memoryEntryId, source }];
+      const requestEntries = (await readSessionMemory(chatHome, longAgentId,
+        graph.nodes.find((node) => node.createdByRequestId === requestId)?.sessionId ?? sessionId))
+        .entries.filter((entry) => entry.writeRequestId === requestId);
+      const initialMemoryRefs: TopicNodeInitialMemoryRef[] = sources.flatMap((candidate) => {
+        const entry = requestEntries.find((value) => value.content === candidate.content);
+        return entry === undefined ? [] : [{ entryId: entry.entryId, source: candidate.source }];
+      });
       try {
         const registeredNode = await createTopicNode({
           chatHome, longAgentId, topicId, title, createdBy: input.createdBy, requestId, expectedRevision: graph.revision,
@@ -981,7 +1006,9 @@ export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessi
           ...(input.now === undefined ? {} : { now: input.now }),
         });
         return { node: registeredNode.node, sessionId: registeredNode.node.sessionId, created: registeredNode.created,
-          summaryEntryId: ensuredSummaryEntryId, memoryEntryId, graph: registeredNode.graph };
+          summaryEntryId: ensuredSummaryEntryId,
+          memoryEntryId: initialMemoryRefs[0]?.entryId ?? null,
+          memoryEntryIds: initialMemoryRefs.map((ref) => ref.entryId), graph: registeredNode.graph };
       } catch (error) {
         const retryable = error instanceof TopicError && error.statusCode === 409 && attempt < TOPIC_GRAPH_CAS_ATTEMPTS
           && (error.message.includes("revision") || error.message.includes("已修改"));
@@ -1011,4 +1038,51 @@ export async function withTopicGraphRevision<T>(
       if (!retryable) throw error;
     }
   }
+}
+
+/**
+ * Relay: hand one node's content to another node of the SAME agent's tree.
+ *
+ * The relayed text is written as ONE `custom_message` entry with `display: true`. That single append is
+ * what makes relay crash-safe (there is no "message written but marker missing" window) and it enters
+ * the model context as a real user message (`role: custom` converts to `role: user`), while `details`
+ * carries the durable request association. The write happens inside the node session's operation lock.
+ */
+export async function relayTopicNodeMessage(input: {
+  readonly chatHome: string;
+  readonly longAgentId: string;
+  readonly nodeId: unknown;
+  readonly requestId: unknown;
+  readonly text: unknown;
+}): Promise<{ readonly nodeId: string; readonly sessionId: string; readonly entryId: string; readonly created: boolean }> {
+  const nodeId = identity(input.nodeId, "nodeId", NODE_ID_PATTERN);
+  const requestId = text(input.requestId, "requestId", 200);
+  if (!REQUEST_ID_PATTERN.test(requestId)) throw new TopicError(400, "主题requestId格式无效");
+  const body = text(input.text, "text", 20_000);
+  const textDigest = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+  const graph = await readTopicGraph(input.chatHome, input.longAgentId);
+  const node = graph.nodes.find((candidate) => candidate.nodeId === nodeId);
+  if (node === undefined) throw new TopicError(404, `找不到主题节点：${nodeId}`);
+  // Relay targets a live conversation of the caller's OWN tree: the shared authorization decides it.
+  const decision = authorizeTopicSession({ graph, requester: { kind: "agent", longAgentId: input.longAgentId }, sessionId: node.sessionId, capability: "relay" });
+  if (!decision.applicable || !decision.allowed) throw new TopicError(403, decision.reason ?? "只能代传自己名下主题树的节点");
+  return withChatSessionOperationLock(chatSessionOperationKey(input.longAgentId, node.sessionId), async () => {
+    const session = await openChatSession({ chatHome: input.chatHome, projectId: input.longAgentId, sessionId: node.sessionId });
+    const existing = session.manager.getBranch().find((entry) => {
+      const value = entry as { type?: string; customType?: string; details?: unknown };
+      return value.type === "custom_message" && value.customType === TOPIC_RELAY_CUSTOM_TYPE
+        && isRecord(value.details) && value.details.requestId === requestId;
+    });
+    if (existing !== undefined) {
+      const details = (existing as unknown as { details: Record<string, unknown> }).details;
+      if (details.textDigest !== textDigest || details.targetNodeId !== nodeId)
+        throw new TopicError(409, `该 requestId 已用于不同的代传内容：${requestId}`);
+      return { nodeId, sessionId: node.sessionId, entryId: (existing as { id: string }).id, created: false };
+    }
+    const entryId = session.manager.appendCustomMessageEntry(TOPIC_RELAY_CUSTOM_TYPE, body, true, {
+      requestId, targetNodeId: nodeId, relayedByLongAgentId: input.longAgentId, source: "relay", textDigest,
+    });
+    session.manager.flush();
+    return { nodeId, sessionId: node.sessionId, entryId, created: true };
+  });
 }

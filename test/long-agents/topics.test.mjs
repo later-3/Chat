@@ -48,11 +48,16 @@ test("P2 topics: topic creation is request-idempotent and revision-guarded", asy
   assert.equal(first.created, true);
   assert.equal(first.topic.ownerLongAgentId, "friend");
   assert.equal(first.graph.revision, 1);
-  // A retry with the same request id returns the same topic without a new revision.
-  const retry = await createTopic({ chatHome: home, longAgentId: "friend", title: "不同标题", purpose: "不同", requestId: "topic-req-1", expectedRevision: 99 });
+  // An IDENTICAL retry returns the same topic without a new revision ...
+  const retry = await createTopic({ chatHome: home, longAgentId: "friend", title: "定位问题", purpose: "定位线上 NPE", requestId: "topic-req-1", expectedRevision: 99 });
   assert.equal(retry.created, false);
   assert.equal(retry.topic.topicId, first.topic.topicId);
   assert.equal(retry.graph.revision, 1);
+  // ... but the same request id with different frozen content is a conflict, not a silent success.
+  await assert.rejects(
+    createTopic({ chatHome: home, longAgentId: "friend", title: "不同标题", purpose: "不同", requestId: "topic-req-1", expectedRevision: 99 }),
+    /已用于不同的主题内容/,
+  );
   // A stale revision is a conflict.
   await assert.rejects(
     createTopic({ chatHome: home, longAgentId: "friend", title: "第二个", purpose: "p", requestId: "topic-req-2", expectedRevision: 0 }),
