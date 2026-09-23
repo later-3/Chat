@@ -189,34 +189,111 @@ test("P2 creation: the four-step orchestration is replayable after an interrupti
   assert.equal(other.created, true);
   assert.notEqual(other.sessionId, first.sessionId);
 
-  // Interruption between the durable writes and the graph registration: the retry adopts what already
-  // exists instead of writing a second summary or a second bootstrap memory entry.
+  // Interruption at the LAST step: the session, summary and memory are durable, the graph registration
+  // is not (simulated by dropping the node from the graph file, keeping topic and revision).
   const interrupted = { ...request, requestId: "rq-child-4", title: "中断重试" };
   const interruptedSessionId = topicNodeSessionIdOf(topic.topicId, "rq-child-4");
-  const partial = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, interruptedSessionId, "中断重试");
-  const partialSummaryId = partial.session.manager.appendCustomMessageEntry(TOPIC_INTEGRATION_SUMMARY_CUSTOM_TYPE, interrupted.integrationSummary, false, { requestId: "rq-child-4", topicId: topic.topicId, sessionId: interruptedSessionId });
-  partial.session.manager.flush();
-  const beforeMemory = await readSessionMemory(home, "friend", interruptedSessionId);
-  const partialMemory = await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: interruptedSessionId, operation: "write",
-    purpose: "background", author: "agent", content: interrupted.initialMemory.content, originEntryId: parentAnchor, expectedRevision: beforeMemory.revision });
-  const partialMemoryId = partialMemory.entries.at(-1).entryId;
+  const firstInterrupted = await createTopicNodeWithSession(interrupted);
+  assert.equal(firstInterrupted.created, true);
+  const graphPath = topicGraphFile(home, "friend");
+  const droppedState = JSON.parse(fs.readFileSync(graphPath, "utf8"));
+  droppedState.nodes = droppedState.nodes.filter((node) => node.createdByRequestId !== "rq-child-4");
+  droppedState.edges = droppedState.edges.filter((edge) => !firstInterrupted.graph.edges.some((candidate) => candidate.edgeId === edge.edgeId));
+  fs.writeFileSync(graphPath, JSON.stringify(droppedState));
   const resumed = await createTopicNodeWithSession(interrupted);
   assert.equal(resumed.created, true, "the node itself was still missing, so it is registered now");
   assert.equal(resumed.sessionId, interruptedSessionId, "the retry reuses the same derived session");
-  assert.equal(resumed.summaryEntryId, partialSummaryId, "the existing summary is adopted");
-  assert.equal(resumed.memoryEntryId, partialMemoryId, "the existing bootstrap memory entry is adopted");
-  assert.equal(resumed.node.initialMemoryRefs[0].entryId, partialMemoryId);
+  assert.equal(resumed.summaryEntryId, firstInterrupted.summaryEntryId, "the existing summary is adopted");
+  assert.equal(resumed.memoryEntryId, firstInterrupted.memoryEntryId, "the existing bootstrap memory entry is adopted");
+  assert.equal(resumed.node.initialMemoryRefs[0].entryId, firstInterrupted.memoryEntryId);
   const resumedSession = await openChatSession({ chatHome: home, projectId: "friend", sessionId: interruptedSessionId });
   assert.equal(resumedSession.manager.getEntries().filter((entry) => entry.type === "custom_message" && entry.customType === TOPIC_INTEGRATION_SUMMARY_CUSTOM_TYPE).length, 1);
   assert.equal((await readSessionMemory(home, "friend", interruptedSessionId)).entries.length, 1, "no duplicate bootstrap entry");
+
+  // With the node still missing, a changed summary/memory for the SAME request id is a conflict rather
+  // than a second durable product (this is the branch the registered-node digest cannot cover).
+  fs.writeFileSync(graphPath, JSON.stringify(droppedState));
+  await assert.rejects(createTopicNodeWithSession({ ...interrupted, integrationSummary: "换了摘要" }), /已写入不同的整合摘要/);
+  fs.writeFileSync(graphPath, JSON.stringify(droppedState));
+  await assert.rejects(createTopicNodeWithSession({ ...interrupted, initialMemory: { content: "换了记忆", originEntryId: parentAnchor } }), /已写入不同的整合摘要|已写入不同的初始记忆/);
 
   // An anchor that is not a settled round is refused before anything is written.
   const running = appendChatUserMessage(parentSession.session.manager, "还在进行的问题");
   parentSession.session.manager.flush();
   await assert.rejects(
-    createTopicNodeWithSession({ ...request, requestId: "rq-child-3", parents: [{ parentNodeId: root.node.nodeId, anchorEntryId: running, anchorSequence: null }] }),
+    createTopicNodeWithSession({ ...request, requestId: "rq-child-3", parents: [{ parentNodeId: root.node.nodeId, anchorEntryId: running, anchorSequence: 1 }] }),
     /锚点不是已完成的轮次/,
   );
   const afterFailure = await readTopicGraph(home, "friend");
   assert.equal(afterFailure.nodes.some((node) => node.createdByRequestId === "rq-child-3"), false, "a rejected anchor leaves no node");
+});
+
+test("P2 creation: review counter-examples for the orchestration contract", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "rq", expectedRevision: 0 })).topic;
+  const root = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "rq", expectedRevision: 1 });
+  const rootSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, topic.rootSessionId, "根");
+  const anchor = appendChatUserMessage(rootSession.session.manager, "第一个问题");
+  rootSession.session.manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "回答" }], timestamp: Date.now() });
+  appendChatLongAgentTurn(rootSession.session.manager, {
+    turnId: "turn-1", longAgentId: "friend", bindingId: "bind-1", source: "chat-web", channelType: null,
+    inboundEntryId: null, inboundEventId: null, status: "completed", startedAt: "2026-09-24T00:00:00.000Z",
+    completedAt: "2026-09-24T00:00:05.000Z", error: null,
+    agentGroupContext: { contextRevision: `sha256:${"a".repeat(64)}`, agentGroupId: "group", agentGroupRevision: `sha256:${"b".repeat(64)}`,
+      indexRevision: `sha256:${"c".repeat(64)}`, definitionRevision: `sha256:${"d".repeat(64)}`, stale: false, fetchedAt: "2026-09-24T00:00:00.000Z" },
+  });
+  rootSession.session.manager.flush();
+  const source = { storageProjectId: "friend", sessionId: topic.rootSessionId, entryId: anchor };
+  const base = {
+    chatHome: home, longAgentId: "friend", topicId: topic.topicId, requestId: "rq-fix", title: "Root",
+    createdBy: "agent", integrationSummary: "摘要 A", source,
+    initialMemory: { content: "背景 A", originEntryId: anchor },
+    parents: [{ parentNodeId: root.node.nodeId, anchorEntryId: anchor, anchorSequence: 1, memoryRefs: [source] }],
+  };
+  assert.equal((await createTopicNodeWithSession(base)).created, true);
+
+  // 1: a registered node is NOT returned for a changed request — the full creation identity is checked.
+  // The creation digest covers title, anchors AND the orchestration fingerprint (summary text +
+  // bootstrap memory), so all three changes are conflicts instead of silent successes.
+  await assert.rejects(createTopicNodeWithSession({ ...base, title: "Changed title" }), /该 requestId 已用于不同的节点创建/);
+  await assert.rejects(createTopicNodeWithSession({ ...base, integrationSummary: "摘要 B" }), /该 requestId 已用于不同的节点创建/);
+  await assert.rejects(createTopicNodeWithSession({ ...base, initialMemory: { content: "背景 B", originEntryId: anchor } }), /该 requestId 已用于不同的节点创建/);
+  const afterRejections = await readTopicGraph(home, "friend");
+  assert.equal(afterRejections.nodes.find((node) => node.createdByRequestId === "rq-fix").title, "Root", "the frozen title is untouched");
+  // The identical request still replays idempotently.
+  assert.equal((await createTopicNodeWithSession(base)).created, false);
+
+  // 2: an unrelated pre-existing background entry is NOT claimed by a new request.
+  const otherRequest = { ...base, requestId: "rq-other", title: "另一个" };
+  const childSessionId = topicNodeSessionIdOf(topic.topicId, "rq-other");
+  const preexisting = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, childSessionId, "另一个");
+  preexisting.session.manager.flush();
+  const emptyMemory = await readSessionMemory(home, "friend", childSessionId);
+  await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: childSessionId, operation: "write",
+    purpose: "background", author: "agent", content: "背景 A", originEntryId: anchor, expectedRevision: emptyMemory.revision });
+  const createdOther = await createTopicNodeWithSession(otherRequest);
+  const adopted = (await readSessionMemory(home, "friend", childSessionId)).entries;
+  assert.equal(adopted.length, 2, "the unrelated entry is NOT claimed: this request writes its own");
+  assert.equal(createdOther.memoryEntryId, adopted.at(-1).entryId);
+  assert.notEqual(createdOther.memoryEntryId, adopted[0].entryId);
+  assert.equal(adopted.at(-1).writeRequestId, "rq-other", "the retry link is the durable request marker");
+
+  // 3: a source address that does not exist is refused before any write.
+  await assert.rejects(
+    createTopicNodeWithSession({ ...base, requestId: "rq-bad-source", source: { ...source, entryId: "unrelated-source" } }),
+    /来源条目不存在/,
+  );
+  await assert.rejects(
+    createTopicNodeWithSession({ ...base, requestId: "rq-bad-session", source: { ...source, sessionId: "does-not-exist" }, initialMemory: { content: "x", originEntryId: anchor } }),
+    /来源会话不存在或不可读/,
+  );
+  const afterBadSource = await readTopicGraph(home, "friend");
+  assert.equal(afterBadSource.nodes.some((node) => node.createdByRequestId === "rq-bad-source"), false);
+
+  // 4: a specific anchor must carry both the entry and its sequence.
+  await assert.rejects(
+    createTopicNodeWithSession({ ...base, requestId: "rq-anchor-null", parents: [{ parentNodeId: root.node.nodeId, anchorEntryId: anchor, anchorSequence: null }] }),
+    /锚点必须同时提供 entry 与序号/,
+  );
 });

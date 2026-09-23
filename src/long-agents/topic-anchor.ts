@@ -2,6 +2,54 @@ import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import { collectChatLongAgentTurnMarkers } from "./session-turn.js";
 
 /**
+ * Durable end-of-round fact written by the outer 「会话记忆」workflow. The workflow runs a node round as
+ * `work` + `remember`, so the Long Agent turn marker only covers part of a round; this marker is what
+ * says "this WHOLE round finished, and it started at this user entry".
+ */
+export const TOPIC_ROUND_CUSTOM_TYPE = "chat.topic-round";
+export type TopicRoundStatus = "running" | "completed" | "failed" | "cancelled";
+
+export interface TopicRoundMarker {
+  readonly entryId: string;
+  readonly roundId: string;
+  readonly userEntryId: string;
+  readonly status: TopicRoundStatus;
+  readonly settledAt: string | null;
+}
+
+export function appendTopicRoundMarker(
+  sessionManager: SessionManager,
+  data: { roundId: string; userEntryId: string; status: TopicRoundStatus; settledAt?: string | null },
+): string {
+  if (typeof data.roundId !== "string" || data.roundId.trim() === "") throw new TopicAnchorError("轮次 roundId 无效");
+  if (typeof data.userEntryId !== "string" || data.userEntryId.trim() === "") throw new TopicAnchorError("轮次 userEntryId 无效");
+  if (!["running", "completed", "failed", "cancelled"].includes(data.status)) throw new TopicAnchorError("轮次状态无效");
+  const settledAt = data.settledAt ?? (data.status === "running" ? null : new Date().toISOString());
+  if (data.status !== "running" && (settledAt === null || Number.isNaN(Date.parse(settledAt))))
+    throw new TopicAnchorError("终态轮次必须带 settledAt");
+  return sessionManager.appendCustomEntry(TOPIC_ROUND_CUSTOM_TYPE, {
+    roundId: data.roundId.trim(), userEntryId: data.userEntryId.trim(), status: data.status, settledAt,
+  });
+}
+
+export function collectTopicRoundMarkers(entries: readonly unknown[]): TopicRoundMarker[] {
+  const markers: TopicRoundMarker[] = [];
+  for (const entry of entries) {
+    if (!isRecord(entry) || entry.type !== "custom" || entry.customType !== TOPIC_ROUND_CUSTOM_TYPE) continue;
+    const data = entry.data;
+    if (!isRecord(data) || typeof entry.id !== "string") continue;
+    const roundId = typeof data.roundId === "string" ? data.roundId.trim() : "";
+    const userEntryId = typeof data.userEntryId === "string" ? data.userEntryId.trim() : "";
+    const status = data.status;
+    const settledAt = data.settledAt === null || data.settledAt === undefined ? null : String(data.settledAt);
+    if (roundId === "" || userEntryId === "" || (status !== "running" && status !== "completed" && status !== "failed" && status !== "cancelled")) continue;
+    if (status !== "running" && (settledAt === null || Number.isNaN(Date.parse(settledAt)))) continue;
+    markers.push({ entryId: entry.id, roundId, userEntryId, status, settledAt });
+  }
+  return markers;
+}
+
+/**
  * Topic anchors: the only forkable positions of a node session.
  *
  * A round is a user entry plus the Long Agent turn it started. It is forkable only when that outer
@@ -47,13 +95,12 @@ export function readTopicSettledAnchors(sessionManager: SessionManager): TopicSe
   branch.forEach((entry, index) => {
     if (isRecord(entry) && typeof entry.id === "string") positionById.set(entry.id, index);
   });
-  const byEntry = new Map<string, TopicSettledAnchor>();
-  let settledCount = 0;
+  const settled: { position: number; anchorEntryId: string; turnId: string; settledAt: string }[] = [];
+  // Source 1: a Long Agent turn that fully completed (its user entry is the last one before the marker).
   for (const marker of collectChatLongAgentTurnMarkers(branch)) {
     if (marker.status !== "completed") continue;
     const markerPosition = positionById.get(marker.entryId);
     if (markerPosition === undefined) continue;
-    // The round starts at the last user entry before this round's marker.
     let anchorEntryId: string | null = null;
     for (let index = markerPosition; index >= 0; index -= 1) {
       if (isUserMessageEntry(branch[index])) {
@@ -62,13 +109,25 @@ export function readTopicSettledAnchors(sessionManager: SessionManager): TopicSe
       }
     }
     if (anchorEntryId === null) continue;
-    if (byEntry.has(anchorEntryId)) continue;
-    settledCount += 1;
-    byEntry.set(anchorEntryId, {
-      anchorEntryId,
-      anchorSequence: settledCount,
-      turnId: marker.turnId,
-      settledAt: marker.completedAt ?? marker.startedAt,
+    settled.push({ position: markerPosition, anchorEntryId, turnId: marker.turnId, settledAt: marker.completedAt ?? marker.startedAt });
+  }
+  // Source 2: the outer round marker, which names its own user entry and covers work + remember.
+  for (const round of collectTopicRoundMarkers(branch)) {
+    if (round.status !== "completed") continue;
+    const position = positionById.get(round.entryId);
+    const userPosition = positionById.get(round.userEntryId);
+    if (position === undefined || userPosition === undefined || userPosition > position) continue;
+    settled.push({ position, anchorEntryId: round.userEntryId, turnId: round.roundId, settledAt: round.settledAt ?? "" });
+  }
+  settled.sort((left, right) => left.position - right.position);
+  const byEntry = new Map<string, TopicSettledAnchor>();
+  for (const candidate of settled) {
+    if (byEntry.has(candidate.anchorEntryId)) continue;
+    byEntry.set(candidate.anchorEntryId, {
+      anchorEntryId: candidate.anchorEntryId,
+      anchorSequence: byEntry.size + 1,
+      turnId: candidate.turnId,
+      settledAt: candidate.settledAt,
     });
   }
   return [...byEntry.values()];
@@ -94,8 +153,9 @@ export function requireTopicAnchor(
     throw new TopicAnchorError("锚点缺少 entry；起始锚点不能带序号");
   if (typeof anchorEntryId !== "string" || anchorEntryId.trim() === "")
     throw new TopicAnchorError("锚点 entryId 无效");
-  if (anchorSequence !== null && (!Number.isSafeInteger(anchorSequence) || Number(anchorSequence) < 1))
-    throw new TopicAnchorError("锚点序号无效");
+  // The entry and its sequence are frozen together: a specific anchor must provide both.
+  if (anchorSequence === null || !Number.isSafeInteger(anchorSequence) || Number(anchorSequence) < 1)
+    throw new TopicAnchorError("锚点必须同时提供 entry 与序号");
   const anchors = readTopicSettledAnchors(sessionManager);
   const anchor = anchors.find((candidate) => candidate.anchorEntryId === anchorEntryId);
   if (anchor === undefined)

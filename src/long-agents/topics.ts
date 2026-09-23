@@ -378,9 +378,10 @@ function nodeCreationDigest(spec: {
   frozenProjectContext: string | null;
   initialMemoryRefs: readonly TopicNodeInitialMemoryRef[];
   parents: readonly NormalizedParentSpec[];
+  requestFingerprint: string | null;
 }): string {
   const canonical = JSON.stringify([
-    spec.topicId, spec.sessionId, spec.title, spec.createdBy, spec.frozenProjectContext,
+    spec.topicId, spec.sessionId, spec.title, spec.createdBy, spec.frozenProjectContext, spec.requestFingerprint,
     sortCanonical(spec.initialMemoryRefs, (ref) => `${ref.entryId}|${canonicalSource(ref.source)}`)
       .map((ref) => [ref.entryId, ref.source.storageProjectId, ref.source.sessionId, ref.source.entryId]),
     sortCanonical(spec.parents, canonicalParent).map(canonicalParent),
@@ -419,6 +420,12 @@ export interface CreateTopicNodeInput {
   readonly initialMemoryRefs?: unknown;
   readonly parents?: readonly CreateTopicNodeParentInput[];
   readonly requestId: unknown;
+  /**
+   * Optional orchestration-level fingerprint (integration summary text, bootstrap memory content,
+   * sources) folded into the creation digest, so a replay with the same request id but different
+   * orchestration inputs is a conflict instead of a silent success.
+   */
+  readonly requestFingerprint?: unknown;
   readonly expectedRevision: unknown;
   readonly now?: string;
 }
@@ -445,7 +452,10 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
   });
   const parentInputs = input.parents ?? [];
   const parents = normalizeParentSpecs(parentInputs);
-  const digest = nodeCreationDigest({ topicId, sessionId, title, createdBy: input.createdBy, frozenProjectContext, initialMemoryRefs, parents });
+  const requestFingerprint = input.requestFingerprint === undefined || input.requestFingerprint === null
+    ? null
+    : text(input.requestFingerprint, "requestFingerprint", 200);
+  const digest = nodeCreationDigest({ topicId, sessionId, title, createdBy: input.createdBy, frozenProjectContext, initialMemoryRefs, parents, requestFingerprint });
   return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
     const nodeId = topicNodeIdOf(topicId, sessionId);
     // The request id is the retry identity for the whole four-step creation (session reservation,
@@ -722,6 +732,52 @@ function memoryEntryIdForRevision(state: { revision: number; entries: readonly {
   return state.entries.find((entry) => entry.entryId.startsWith(prefix))?.entryId ?? null;
 }
 
+/**
+ * Resolves one memory source address before it is recorded: the target session must exist, be readable
+ * by the requester (topic nodes go through the shared authorization) and contain that entry. The
+ * domain service validates sources, so the tool is not the only gate.
+ */
+async function requireTopicMemorySource(input: {
+  chatHome: string;
+  longAgentId: string;
+  source: TopicMemorySource;
+}): Promise<void> {
+  const { source } = input;
+  let session;
+  try {
+    session = await openChatSession({ chatHome: input.chatHome, projectId: source.storageProjectId, sessionId: source.sessionId });
+  } catch {
+    throw new TopicError(404, `来源会话不存在或不可读：${source.storageProjectId}/${source.sessionId}`);
+  }
+  const graph = await readTopicGraph(input.chatHome, source.storageProjectId);
+  const authorization = authorizeTopicSession({
+    graph, requester: { kind: "agent", longAgentId: input.longAgentId }, sessionId: source.sessionId, capability: "read",
+  });
+  if (authorization.applicable && !authorization.allowed) throw new TopicError(403, authorization.reason ?? "没有读取该来源的权限");
+  const entries = session.manager.getBranch();
+  if (!entries.some((entry) => isRecord(entry) && entry.id === source.entryId))
+    throw new TopicError(404, `来源条目不存在：${source.entryId}`);
+}
+
+/** Canonical fingerprint of the orchestration inputs; folded into the node creation digest. */
+function topicCreationFingerprint(spec: {
+  title: string;
+  createdBy: "user" | "agent";
+  frozenProjectContext: string | null;
+  summary: string | null;
+  memory: { content: string; originEntryId: string | null } | null;
+  source: TopicMemorySource | null;
+  parents: readonly NormalizedParentSpec[];
+}): string {
+  const canonical = JSON.stringify([
+    spec.title, spec.createdBy, spec.frozenProjectContext, spec.summary,
+    spec.memory === null ? null : [spec.memory.content, spec.memory.originEntryId],
+    spec.source === null ? null : [spec.source.storageProjectId, spec.source.sessionId, spec.source.entryId],
+    sortCanonical(spec.parents, canonicalParent).map(canonicalParent),
+  ]);
+  return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
+}
+
 /** Anchors are verified against the PARENT session while its operation lock is held. */
 async function verifyParentAnchors(input: {
   chatHome: string;
@@ -771,63 +827,86 @@ export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessi
         originEntryId: optionalText(input.initialMemory.originEntryId, "initialMemory.originEntryId", 200) };
   const source = input.source === undefined || input.source === null ? null : parseMemorySource(input.source, "source");
   if (memory !== null && source === null) throw new TopicError(400, "初始记忆必须带来源地址");
+  const frozenProjectContext = optionalText(input.frozenProjectContext, "frozenProjectContext", 200);
+  // The creation digest covers the orchestration inputs too, so a replay with a changed title, summary,
+  // anchor or bootstrap memory is a conflict rather than a silent success.
+  const fingerprint = topicCreationFingerprint({
+    title, createdBy: input.createdBy, frozenProjectContext, summary, memory, source, parents: normalizeParentSpecs(parents),
+  });
+  if (source !== null) {
+    await requireTopicMemorySource({ chatHome, longAgentId, source });
+    if (memory !== null && memory.originEntryId !== null && memory.originEntryId !== source.entryId)
+      throw new TopicError(400, "初始记忆的 originEntryId 必须与来源条目一致");
+  }
   const graphFile = topicGraphFile(chatHome, longAgentId);
   return withFileLock(`${graphFile}.node-request-${requestId}`, async () => {
     const current = await readTopicGraph(chatHome, longAgentId);
     const registered = current.nodes.find((node) => node.createdByRequestId === requestId);
-    if (registered !== undefined) {
-      return { node: registered, sessionId: registered.sessionId, created: false,
-        summaryEntryId: null, memoryEntryId: registered.initialMemoryRefs[0]?.entryId ?? null, graph: current };
+    let ensuredSummaryEntryId: string | null = null;
+    let ensuredMemoryEntryId: string | null = null;
+    if (registered === undefined) {
+      await verifyParentAnchors({ chatHome, longAgentId, graph: current, parents });
+      const ensured = await ensureChatSessionWithId({ chatHome, projectId: longAgentId }, sessionId, title);
+      // The session lock is taken AFTER ensureChatSessionWithId released it (not re-entrant).
+      await withChatSessionOperationLock(chatSessionOperationKey(longAgentId, sessionId), async () => {
+        if (summary !== null) {
+          const existing = ensured.session.manager.getEntries().find((entry) => entry.type === "custom_message"
+            && entry.customType === TOPIC_INTEGRATION_SUMMARY_CUSTOM_TYPE
+            && isRecord(entry.details) && entry.details.requestId === requestId);
+          if (existing !== undefined) {
+            // Same request id, different summary text: this request is not the one that wrote it.
+            const details: Record<string, unknown> = isRecord((existing as { details?: unknown }).details)
+              ? (existing as unknown as { details: Record<string, unknown> }).details : {};
+            if (details.requestFingerprint !== fingerprint)
+              throw new TopicError(409, `该 requestId 已写入不同的整合摘要：${requestId}`);
+            ensuredSummaryEntryId = existing.id;
+          } else {
+            ensuredSummaryEntryId = ensured.session.manager.appendCustomMessageEntry(
+              TOPIC_INTEGRATION_SUMMARY_CUSTOM_TYPE, summary, false, { requestId, topicId, sessionId, requestFingerprint: fingerprint });
+            ensured.session.manager.flush();
+          }
+        }
+        if (memory !== null) {
+          const state = await readSessionMemory(chatHome, longAgentId, sessionId);
+          // The retry identity is the DURABLE request link on the entry, never a content match: content
+          // equality cannot prove that an existing entry belongs to this request.
+          const linked = state.entries.find((entry) => entry.writeRequestId === requestId);
+          if (linked !== undefined) {
+            if (linked.purpose !== "background" || linked.author !== input.createdBy || linked.content !== memory.content
+              || linked.originEntryId !== memory.originEntryId)
+              throw new TopicError(409, `该 requestId 已写入不同的初始记忆：${requestId}`);
+            ensuredMemoryEntryId = linked.entryId;
+          } else {
+            const written = await writeSessionMemoryEntry({ chatHome, longAgentId, sessionId, operation: "write",
+              purpose: "background", author: input.createdBy, content: memory.content, writeRequestId: requestId,
+              originEntryId: memory.originEntryId, expectedRevision: state.revision, ...(input.now === undefined ? {} : { now: input.now }) });
+            ensuredMemoryEntryId = memoryEntryIdForRevision(written);
+            if (ensuredMemoryEntryId === null) throw new TopicError(500, "初始会话记忆写入未返回条目");
+          }
+        }
+      });
     }
-    await verifyParentAnchors({ chatHome, longAgentId, graph: current, parents });
-    const ensured = await ensureChatSessionWithId({ chatHome, projectId: longAgentId }, sessionId, title);
-    let summaryEntryId: string | null = null;
-    let memoryEntryId: string | null = null;
-    // The session lock is taken AFTER ensureChatSessionWithId released it (the lock is not re-entrant).
-    await withChatSessionOperationLock(chatSessionOperationKey(longAgentId, sessionId), async () => {
-      if (summary !== null) {
-        const existing = ensured.session.manager.getEntries().find((entry) => entry.type === "custom_message"
-          && entry.customType === TOPIC_INTEGRATION_SUMMARY_CUSTOM_TYPE
-          && isRecord(entry.details) && entry.details.requestId === requestId);
-        if (existing !== undefined) summaryEntryId = existing.id;
-        else {
-          summaryEntryId = ensured.session.manager.appendCustomMessageEntry(
-            TOPIC_INTEGRATION_SUMMARY_CUSTOM_TYPE, summary, false, { requestId, topicId, sessionId });
-          ensured.session.manager.flush();
-        }
-      }
-      if (memory !== null && source !== null) {
-        const state = await readSessionMemory(chatHome, longAgentId, sessionId);
-        // Replay detection: the same request always derives the same bootstrap entry, so an identical
-        // background entry is adopted instead of appended (append-only history is untouched otherwise).
-        const adopted = state.entries.find((entry) => entry.purpose === "background" && entry.author === input.createdBy
-          && entry.originEntryId === memory.originEntryId && entry.content === memory.content);
-        if (adopted !== undefined) memoryEntryId = adopted.entryId;
-        else {
-          const written = await writeSessionMemoryEntry({ chatHome, longAgentId, sessionId, operation: "write",
-            purpose: "background", author: input.createdBy, content: memory.content,
-            originEntryId: memory.originEntryId, expectedRevision: state.revision, ...(input.now === undefined ? {} : { now: input.now }) });
-          memoryEntryId = memoryEntryIdForRevision(written);
-          if (memoryEntryId === null) throw new TopicError(500, "初始会话记忆写入未返回条目");
-        }
-      }
-    });
-    const initialMemoryRefs: TopicNodeInitialMemoryRef[] = memoryEntryId === null || source === null
-      ? []
-      : [{ entryId: memoryEntryId, source }];
-    // Registration retries only on a graph revision conflict: the session, summary and memory writes
-    // above are already durable and replayable, so a fresh revision is the whole fix.
+    // Registration retries only on a graph revision conflict: the durable writes above are replayable,
+    // so a fresh revision is the whole fix. On the registered path this call is also the identity
+    // check, because the creation digest covers the orchestration fingerprint.
     for (let attempt = 0; ; attempt += 1) {
       const graph = await readTopicGraph(chatHome, longAgentId);
+      const memoryEntryId = registered === undefined
+        ? ensuredMemoryEntryId
+        : (await readSessionMemory(chatHome, longAgentId, graph.nodes.find((node) => node.createdByRequestId === requestId)?.sessionId ?? sessionId))
+            .entries.find((entry) => entry.writeRequestId === requestId)?.entryId ?? null;
+      const initialMemoryRefs: TopicNodeInitialMemoryRef[] = memoryEntryId === null || source === null
+        ? []
+        : [{ entryId: memoryEntryId, source }];
       try {
         const registeredNode = await createTopicNode({
-          chatHome, longAgentId, topicId, title, createdBy: input.createdBy, requestId,
-          expectedRevision: graph.revision, initialMemoryRefs, parents,
-          ...(input.frozenProjectContext === undefined ? {} : { frozenProjectContext: input.frozenProjectContext }),
+          chatHome, longAgentId, topicId, title, createdBy: input.createdBy, requestId, expectedRevision: graph.revision,
+          initialMemoryRefs, parents, requestFingerprint: fingerprint,
+          ...(frozenProjectContext === null ? {} : { frozenProjectContext }),
           ...(input.now === undefined ? {} : { now: input.now }),
         });
-        return { node: registeredNode.node, sessionId, created: registeredNode.created,
-          summaryEntryId, memoryEntryId, graph: registeredNode.graph };
+        return { node: registeredNode.node, sessionId: registeredNode.node.sessionId, created: registeredNode.created,
+          summaryEntryId: ensuredSummaryEntryId, memoryEntryId, graph: registeredNode.graph };
       } catch (error) {
         const retryable = error instanceof TopicError && error.statusCode === 409 && attempt < TOPIC_GRAPH_CAS_ATTEMPTS
           && (error.message.includes("revision") || error.message.includes("已修改"));
