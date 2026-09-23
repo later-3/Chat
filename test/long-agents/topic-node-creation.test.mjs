@@ -3,112 +3,93 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { ensureChatSessionWithId } from "../../src/chat-session.ts";
+import { ensureAgentHomeProject } from "../../src/projects/registry.ts";
 import {
   createTopic,
   createTopicNode,
   readTopicGraph,
-  reserveTopicNodeSession,
-  updateTopicNodeStatus,
-  updateTopicStatus,
+  topicGraphFile,
+  topicNodeSessionIdOf,
+  topicRootSessionIdOf,
+  topicIdOf,
 } from "../../src/long-agents/topics.ts";
 
 function fixture(t, agent = "friend") {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "chat-topic-create-"));
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-topic-create-")));
   fs.mkdirSync(path.join(home, "long-agents", agent), { recursive: true });
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   return home;
 }
 
-function allocator(prefix = "sess") {
-  const calls = [];
-  return {
-    calls,
-    allocate: async () => {
-      const id = `${prefix}-${calls.length + 1}`;
-      calls.push(id);
-      return id;
-    },
-  };
+async function topicFixture(home, requestId = "r-topic", expectedRevision = 0) {
+  return (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId, expectedRevision })).topic;
 }
 
-async function topicFixture(home) {
-  return (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "r-topic", rootSessionId: "s-root", expectedRevision: 0 })).topic;
-}
-
-test("P2 creation: concurrent retries of one requestId reserve exactly one session", async (t) => {
+test("P2 creation: a node session id is derived from (topicId, requestId), so retries recompute it", async (t) => {
   const home = fixture(t);
   const topic = await topicFixture(home);
-  const { calls, allocate } = allocator();
-  const [first, second] = await Promise.all([
-    reserveTopicNodeSession({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, requestId: "req-1", allocateSessionId: allocate }),
-    reserveTopicNodeSession({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, requestId: "req-1", allocateSessionId: allocate }),
-  ]);
-  assert.equal(calls.length, 1, "the allocator must run once for one request id");
-  assert.equal(first.sessionId, second.sessionId);
-  assert.equal([first.created, second.created].filter(Boolean).length, 1, "exactly one caller creates the reservation");
-  const graph = await readTopicGraph(home, "friend");
-  assert.equal(graph.reservations.length, 1);
-  assert.equal(graph.reservations[0].sessionId, first.sessionId);
+  // The topic's root session is derived from its own request id: no mapping has to exist first.
+  assert.equal(topic.rootSessionId, topicRootSessionIdOf("friend", "r-topic"));
+  assert.equal(topic.topicId, topicIdOf("friend", "r-topic"));
+  // Derivation is stable and per-request/per-topic distinct.
+  assert.equal(topicNodeSessionIdOf(topic.topicId, "req-1"), topicNodeSessionIdOf(topic.topicId, "req-1"));
+  assert.notEqual(topicNodeSessionIdOf(topic.topicId, "req-1"), topicNodeSessionIdOf(topic.topicId, "req-2"));
+  assert.notEqual(topicNodeSessionIdOf(topic.topicId, "req-1"), topicNodeSessionIdOf("topic-" + "0".repeat(32), "req-1"));
 
-  // A retry after a crash (reservation written, node not yet registered) reuses the same session and
-  // must not allocate a second one.
-  const retry = await reserveTopicNodeSession({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, requestId: "req-1", allocateSessionId: allocate });
+  const root = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "r-topic", expectedRevision: 1 });
+  assert.equal(root.node.sessionId, topic.rootSessionId, "the root node's session IS the topic's root session");
+  const child = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "子节点", createdBy: "agent", requestId: "req-1", expectedRevision: 2, parents: [{ parentNodeId: root.node.nodeId }] });
+  assert.equal(child.node.sessionId, topicNodeSessionIdOf(topic.topicId, "req-1"));
+
+  // A retry of the whole creation (same request id) recomputes the same session and stays idempotent:
+  // there is no "session created but the graph write failed" window that could leak a session.
+  const retry = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "子节点", createdBy: "agent", requestId: "req-1", expectedRevision: 2, parents: [{ parentNodeId: root.node.nodeId }] });
   assert.equal(retry.created, false);
-  assert.equal(retry.sessionId, first.sessionId);
-  assert.equal(calls.length, 1, "a retry never allocates another session");
-
-  // A different request id is independent.
-  const other = await reserveTopicNodeSession({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, requestId: "req-2", allocateSessionId: allocate });
-  assert.equal(other.created, true);
-  assert.notEqual(other.sessionId, first.sessionId);
-  assert.equal((await readTopicGraph(home, "friend")).reservations.length, 2);
+  assert.equal(retry.node.sessionId, child.node.sessionId);
+  assert.equal(retry.graph.revision, child.graph.revision, "a replay writes nothing");
+  // A different request id can never reuse that session (it derives its own).
+  const other = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "另一节点", createdBy: "agent", requestId: "req-2", expectedRevision: child.graph.revision, parents: [{ parentNodeId: root.node.nodeId }] });
+  assert.notEqual(other.node.sessionId, child.node.sessionId);
 });
 
-test("P2 creation: reservation is validated against the topic and consumed by node registration", async (t) => {
+test("P2 creation: a Chat session can be created for a derived id and reopened idempotently", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  const sessionId = topicNodeSessionIdOf(topicIdOf("friend", "req-session"), "req-session");
+  const first = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, sessionId, "节点会话");
+  assert.equal(first.created, true);
+  assert.equal(first.session.manager.getSessionId(), sessionId);
+  assert.equal(first.session.manager.isPersisted(), true);
+  const second = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, sessionId, "节点会话");
+  assert.equal(second.created, false, "a retry reopens the same session instead of allocating a new one");
+  assert.equal(second.session.manager.getSessionId(), sessionId);
+  const files = fs.readdirSync(second.session.sessionDir).filter((name) => name.includes(sessionId));
+  assert.equal(files.length, 1, "exactly one session file exists for the derived id");
+});
+
+test("P2 creation: a v1 graph written before these fields existed still loads", async (t) => {
   const home = fixture(t);
   const topic = await topicFixture(home);
-  const other = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T2", purpose: "P2", requestId: "r-topic-2", rootSessionId: "s-root-2", expectedRevision: 1 })).topic;
-  const { allocate } = allocator();
+  const root = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "r-topic", expectedRevision: 1 });
+  // Rewrite the file the way an intermediate revision would have: no digest on the node, plus the
+  // withdrawn reservations array.
+  const file = topicGraphFile(home, "friend");
+  const state = JSON.parse(fs.readFileSync(file, "utf8"));
+  for (const node of state.nodes) delete node.createdByRequestDigest;
+  state.reservations = [];
+  fs.writeFileSync(file, JSON.stringify(state));
 
+  const loaded = await readTopicGraph(home, "friend");
+  assert.equal(loaded.nodes.length, 1);
+  assert.equal(loaded.nodes[0].createdByRequestDigest, null, "a pre-digest node is legacy, not a load failure");
+  // A legacy node cannot be judged, so a retry fails closed instead of silently reusing it.
   await assert.rejects(
-    reserveTopicNodeSession({ chatHome: home, longAgentId: "friend", topicId: "topic-00000000000000000000000000000000", requestId: "req-x", allocateSessionId: allocate }),
-    /找不到主题/,
+    createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "r-topic", expectedRevision: loaded.revision }),
+    /登记早于创建摘要/,
   );
-  // The graph is per agent home, so another Long Agent has no such topic at all: a foreign owner is
-  // refused before any session is allocated (the owner check is defence in depth for the same file).
-  await assert.rejects(
-    reserveTopicNodeSession({ chatHome: home, longAgentId: "another-agent", topicId: topic.topicId, requestId: "req-x", allocateSessionId: allocate }),
-    /找不到主题/,
-  );
-  await assert.rejects(
-    reserveTopicNodeSession({ chatHome: home, longAgentId: "another-agent", topicId: topic.topicId, requestId: "req-x", allocateSessionId: allocate }),
-    /找不到主题/,
-  );
-  // A non-root node needs a parent, so register the topic root first.
-  const root = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, sessionId: "s-root", title: "根节点", createdBy: "agent", requestId: "r-root", expectedRevision: 2 });
-  const reserved = await reserveTopicNodeSession({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, requestId: "req-3", allocateSessionId: allocate });
-  // The same request id cannot be re-pointed at another topic.
-  await assert.rejects(
-    reserveTopicNodeSession({ chatHome: home, longAgentId: "friend", topicId: other.topicId, requestId: "req-3", allocateSessionId: allocate }),
-    /已预留给另一个主题/,
-  );
-  // Registering the node consumes the reservation in the same graph write.
-  const node = await createTopicNode({
-    chatHome: home, longAgentId: "friend", topicId: topic.topicId, sessionId: reserved.sessionId,
-    title: "子节点", createdBy: "agent", requestId: "req-3", expectedRevision: (await readTopicGraph(home, "friend")).revision,
-    parents: [{ parentNodeId: root.node.nodeId }],
-  });
-  assert.equal(node.created, true);
-  assert.equal(node.graph.reservations.some((reservation) => reservation.requestId === "req-3"), false);
-  assert.equal(node.graph.nodes.find((candidate) => candidate.nodeId === node.node.nodeId).createdByRequestId, "req-3");
-  // A node can still be archived, and an archived TOPIC refuses new reservations while staying readable.
-  assert.equal((await updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: node.node.nodeId, status: "archived", expectedRevision: (await readTopicGraph(home, "friend")).revision })).status, "archived");
-  assert.equal((await updateTopicStatus({ chatHome: home, longAgentId: "friend", topicId: other.topicId, status: "archived", expectedRevision: (await readTopicGraph(home, "friend")).revision })).status, "archived");
-  const { calls: calls2, allocate: allocate2 } = allocator();
-  await assert.rejects(
-    reserveTopicNodeSession({ chatHome: home, longAgentId: "friend", topicId: other.topicId, requestId: "req-4", allocateSessionId: allocate2 }),
-    /主题已归档/,
-  );
-  assert.equal(calls2.length, 0, "no session is allocated for an archived topic");
-  assert.equal((await readTopicGraph(home, "friend")).topics.find((candidate) => candidate.topicId === other.topicId).status, "archived");
+  // Registering a NEW node still works on the migrated file.
+  const child = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "子节点", createdBy: "agent", requestId: "req-legacy", expectedRevision: loaded.revision, parents: [{ parentNodeId: root.node.nodeId }] });
+  assert.equal(child.created, true);
+  assert.equal(typeof child.node.createdByRequestDigest, "string");
 });

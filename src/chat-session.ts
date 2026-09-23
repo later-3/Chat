@@ -7,6 +7,7 @@ import {
 import { openProject, resolveProjectContext } from "./projects/registry.js";
 import type { ChatProjectContext } from "./projects/types.js";
 import { requireActiveChatSessionFile } from "./session-state.js";
+import { listActiveSessionFiles } from "./session-files.js";
 import { CHAT_WORKFLOW_AGENT_HANDOFF_CUSTOM_TYPE } from "./workflows/session-conversation.js";
 import { LEGACY_PLANNING_HANDOFF_CUSTOM_TYPE } from "./workflows/planning-execution/context.js";
 
@@ -92,7 +93,7 @@ function configureChatSessionManager(manager: SessionManager): SessionManager {
  * the conversation's first turn. Browsers identify sessions by ID and never
  * provide a filesystem path.
  */
-export async function openChatSession(input: ChatSessionInput): Promise<ChatSession> {
+async function resolveChatSessionProject(input: ChatSessionInput): Promise<ChatProjectContext> {
   if (input.projectId === undefined && input.cwd === undefined) {
     throw new Error("打开Session必须提供projectId或cwd");
   }
@@ -102,10 +103,48 @@ export async function openChatSession(input: ChatSessionInput): Promise<ChatSess
         ...(input.chatHome === undefined ? {} : { chatHome: input.chatHome }),
       })
     : await resolveProjectContext(input.projectId, input.chatHome);
-  const { cwd, agentDir, sessionDir } = projectContext;
+  const { cwd } = projectContext;
   if (input.cwd !== undefined && await realpath(resolve(input.cwd)) !== cwd) {
     throw new Error(`Project ${projectContext.projectId}与工作目录不一致`);
   }
+  return projectContext;
+}
+
+/**
+ * Creates or reopens a Chat Session with a CALLER-CHOSEN durable id. Flows whose retry identity must
+ * survive a crash derive the id from their request (a topic node session is `f(topicId, requestId)`),
+ * so no id mapping has to be reserved and persisted before the session file exists.
+ */
+export async function ensureChatSessionWithId(
+  input: Omit<ChatSessionInput, "sessionId">,
+  sessionId: string,
+  initialDisplayName?: string,
+): Promise<{ session: ChatSession; created: boolean }> {
+  if (sessionId.trim() === "") throw new Error("sessionId不能为空");
+  const projectContext = await resolveChatSessionProject(input);
+  const { cwd, agentDir, sessionDir } = projectContext;
+  const existing = (await listActiveSessionFiles(projectContext)).find((candidate) => candidate.id === sessionId);
+  if (existing !== undefined) {
+    return {
+      created: false,
+      session: {
+        projectId: projectContext.projectId, projectContext, cwd, agentDir, sessionDir,
+        manager: configureChatSessionManager(SessionManager.open(existing.path, sessionDir)),
+      },
+    };
+  }
+  const manager = configureChatSessionManager(SessionManager.create(cwd, sessionDir, { id: sessionId }));
+  const normalizedDisplayName = initialDisplayName?.replace(/\s+/g, " ").trim();
+  if (normalizedDisplayName !== undefined && normalizedDisplayName !== "") {
+    manager.appendSessionInfo(Array.from(normalizedDisplayName).slice(0, 50).join(""));
+  }
+  manager.flush();
+  return { created: true, session: { projectId: projectContext.projectId, projectContext, cwd, agentDir, sessionDir, manager } };
+}
+
+export async function openChatSession(input: ChatSessionInput): Promise<ChatSession> {
+  const projectContext = await resolveChatSessionProject(input);
+  const { cwd, agentDir, sessionDir } = projectContext;
 
   if (input.sessionId === undefined) {
     return {

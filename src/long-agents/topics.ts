@@ -59,7 +59,7 @@ export interface TopicNodeRecord {
    * sources and the full parent-edge spec). Retry idempotency compares THIS, never the node's current
    * inbound edges, which are mutable through supplementary integration.
    */
-  readonly createdByRequestDigest: string;
+  readonly createdByRequestDigest: string | null;
   readonly initialMemoryRefs: readonly TopicNodeInitialMemoryRef[];
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -78,18 +78,6 @@ export interface TopicEdgeRecord {
   readonly createdAt: string;
 }
 
-/**
- * Durable "session already reserved for this creation request" record. `reserveChatSession` generates
- * the session id itself and `openChatSession` refuses an unknown id, so a retry after a crash between
- * reservation and graph registration can only reuse the same session if the id is recorded first.
- */
-export interface TopicNodeReservationRecord {
-  readonly requestId: string;
-  readonly topicId: string;
-  readonly sessionId: string;
-  readonly createdAt: string;
-}
-
 export interface TopicGraphState {
   readonly schemaVersion: typeof TOPIC_SCHEMA_VERSION;
   readonly longAgentId: string;
@@ -97,7 +85,6 @@ export interface TopicGraphState {
   readonly topics: readonly TopicRecord[];
   readonly nodes: readonly TopicNodeRecord[];
   readonly edges: readonly TopicEdgeRecord[];
-  readonly reservations: readonly TopicNodeReservationRecord[];
 }
 
 export class TopicError extends Error {
@@ -133,6 +120,20 @@ export function topicIdOf(ownerLongAgentId: string, requestId: string): string {
 
 export function topicNodeIdOf(topicId: string, sessionId: string): string {
   return `node-${createHash("sha256").update(JSON.stringify([topicId, sessionId])).digest("hex").slice(0, 32)}`;
+}
+
+/**
+ * The node session id is DERIVED from (topicId, requestId), never allocated. A retry recomputes the
+ * same id, so "session created but the graph write failed" has no window and needs no reservation
+ * record: the retry reopens exactly that session. Pi accepts an explicit id (`newSession({ id })`).
+ */
+export function topicNodeSessionIdOf(topicId: string, requestId: string): string {
+  return `sess-${createHash("sha256").update(JSON.stringify([topicId, requestId])).digest("hex").slice(0, 32)}`;
+}
+
+/** The root session of a topic is the root node's session, derived from the topic's own request id. */
+export function topicRootSessionIdOf(ownerLongAgentId: string, requestId: string): string {
+  return topicNodeSessionIdOf(topicIdOf(ownerLongAgentId, requestId), requestId);
 }
 
 function parseMemorySource(value: unknown, label: string): TopicMemorySource {
@@ -178,20 +179,13 @@ function parseNode(value: unknown): TopicNodeRecord {
     frozenProjectContext: optionalText(value.frozenProjectContext, "frozenProjectContext", 200),
     createdBy: value.createdBy,
     createdByRequestId: text(value.createdByRequestId, "createdByRequestId", 200),
-    createdByRequestDigest: text(value.createdByRequestDigest, "createdByRequestDigest", 200),
+    // A node registered before the digest existed: null means "a retry cannot be judged" (fail-closed).
+    createdByRequestDigest: value.createdByRequestDigest === undefined || value.createdByRequestDigest === null
+      ? null
+      : text(value.createdByRequestDigest, "createdByRequestDigest", 200),
     initialMemoryRefs,
     createdAt: text(value.createdAt, "createdAt", 64),
     updatedAt: text(value.updatedAt, "updatedAt", 64),
-  };
-}
-
-function parseReservation(value: unknown): TopicNodeReservationRecord {
-  if (!isRecord(value)) throw new TopicError(500, "主题节点预留记录无效");
-  return {
-    requestId: text(value.requestId, "reservation.requestId", 200),
-    topicId: identity(value.topicId, "reservation.topicId", TOPIC_ID_PATTERN),
-    sessionId: text(value.sessionId, "reservation.sessionId", 200),
-    createdAt: text(value.createdAt, "reservation.createdAt", 64),
   };
 }
 
@@ -223,12 +217,13 @@ export async function readTopicGraph(chatHome: string, longAgentId: string): Pro
     value = JSON.parse(await readFile(file, "utf8"));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT")
-      return { schemaVersion: TOPIC_SCHEMA_VERSION, longAgentId, revision: 0, topics: [], nodes: [], edges: [], reservations: [] };
+      return { schemaVersion: TOPIC_SCHEMA_VERSION, longAgentId, revision: 0, topics: [], nodes: [], edges: [] };
     throw error;
   }
+  // Tolerant of a v1 file written by an intermediate revision: a `reservations` array (the withdrawn
+  // reservation table) is simply ignored, so an existing graph never fails to load.
   if (!isRecord(value) || value.schemaVersion !== TOPIC_SCHEMA_VERSION || !Number.isSafeInteger(value.revision)
-    || !Array.isArray(value.topics) || !Array.isArray(value.nodes) || !Array.isArray(value.edges)
-    || !Array.isArray(value.reservations))
+    || !Array.isArray(value.topics) || !Array.isArray(value.nodes) || !Array.isArray(value.edges))
     throw new TopicError(500, "主题图存储格式无效");
   return {
     schemaVersion: TOPIC_SCHEMA_VERSION,
@@ -237,7 +232,6 @@ export async function readTopicGraph(chatHome: string, longAgentId: string): Pro
     topics: value.topics.map(parseTopic),
     nodes: value.nodes.map(parseNode),
     edges: value.edges.map(parseEdge),
-    reservations: value.reservations.map(parseReservation),
   };
 }
 
@@ -251,7 +245,6 @@ interface MutableTopicGraphState {
   topics: MutableTopic[];
   nodes: MutableNode[];
   edges: MutableEdge[];
-  reservations: TopicNodeReservationRecord[];
 }
 
 async function changeTopicGraph<T>(
@@ -269,7 +262,6 @@ async function changeTopicGraph<T>(
       topics: current.topics.map((topic) => ({ ...topic })),
       nodes: current.nodes.map((node) => ({ ...node, initialMemoryRefs: [...node.initialMemoryRefs] })),
       edges: current.edges.map((edge) => ({ ...edge, memoryRefs: [...edge.memoryRefs] })),
-      reservations: current.reservations.map((reservation) => ({ ...reservation })),
     };
     const result = await change(state);
     await assertFileWithin(file, chatHome);
@@ -294,66 +286,7 @@ function snapshot(state: MutableTopicGraphState): TopicGraphState {
     topics: state.topics.map((topic) => ({ ...topic })),
     nodes: state.nodes.map((node) => ({ ...node, initialMemoryRefs: [...node.initialMemoryRefs] })),
     edges: state.edges.map((edge) => ({ ...edge, memoryRefs: [...edge.memoryRefs] })),
-    reservations: state.reservations.map((reservation) => ({ ...reservation })),
   };
-}
-
-/** Bounded retries: a different creation request may have bumped the graph revision concurrently. */
-const TOPIC_GRAPH_CAS_ATTEMPTS = 5;
-
-/**
- * Reserve the Chat session for one node-creation request, under a dedicated per-request lock:
- * concurrent retries of the SAME requestId serialize and allocate exactly one session, and a retry
- * after a crash reuses the recorded session instead of allocating a second one.
- */
-export async function reserveTopicNodeSession(input: {
-  readonly chatHome: string;
-  readonly longAgentId: string;
-  readonly topicId: unknown;
-  readonly requestId: unknown;
-  readonly allocateSessionId: () => Promise<string>;
-  readonly now?: string;
-}): Promise<{ sessionId: string; created: boolean; reservation: TopicNodeReservationRecord }> {
-  const topicId = identity(input.topicId, "topicId", TOPIC_ID_PATTERN);
-  const requestId = text(input.requestId, "requestId", 200);
-  if (!REQUEST_ID_PATTERN.test(requestId)) throw new TopicError(400, "主题requestId格式无效");
-  const file = topicGraphFile(input.chatHome, input.longAgentId);
-  return withFileLock(`${file}.request-${requestId}`, async () => {
-    for (let attempt = 0; attempt < TOPIC_GRAPH_CAS_ATTEMPTS; attempt += 1) {
-      const current = await readTopicGraph(input.chatHome, input.longAgentId);
-      const existing = current.reservations.find((reservation) => reservation.requestId === requestId);
-      if (existing !== undefined) {
-        if (existing.topicId !== topicId) throw new TopicError(409, `该 requestId 已预留给另一个主题：${requestId}`);
-        return { sessionId: existing.sessionId, created: false, reservation: { ...existing } };
-      }
-      const topic = current.topics.find((candidate) => candidate.topicId === topicId);
-      if (topic === undefined) throw new TopicError(404, `找不到主题：${topicId}`);
-      if (topic.ownerLongAgentId !== input.longAgentId) throw new TopicError(403, "主题不属于该 Long Agent");
-      if (topic.status !== "active") throw new TopicError(409, "主题已归档，不能新建节点");
-      const sessionId = await input.allocateSessionId();
-      if (typeof sessionId !== "string" || !SESSION_ID_PATTERN.test(sessionId))
-        throw new TopicError(500, "会话预留返回了非法 session id");
-      const reservation: TopicNodeReservationRecord = {
-        requestId, topicId, sessionId, createdAt: input.now ?? new Date().toISOString(),
-      };
-      try {
-        await changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
-          assertRevision(state, current.revision);
-          const conflict = state.reservations.find((candidate) => candidate.requestId === requestId);
-          if (conflict !== undefined) return null;
-          state.reservations.push(reservation);
-          state.revision += 1;
-          return null;
-        });
-        return { sessionId, created: true, reservation };
-      } catch (error) {
-        // A concurrent unrelated graph write: re-read and decide again (the session id is recorded in
-        // the next attempt only if this request still has no reservation).
-        if (!(error instanceof TopicError) || error.statusCode !== 409) throw error;
-      }
-    }
-    throw new TopicError(409, "主题图并发写入过多，预留未完成，请重试");
-  });
 }
 
 /** Create a topic, or return the existing one for the same request id (retry-safe). */
@@ -363,7 +296,6 @@ export async function createTopic(input: {
   title: unknown;
   purpose: unknown;
   requestId: unknown;
-  rootSessionId: unknown;
   expectedRevision: unknown;
   now?: string;
 }): Promise<{ topic: TopicRecord; graph: TopicGraphState; created: boolean }> {
@@ -371,14 +303,14 @@ export async function createTopic(input: {
   if (!REQUEST_ID_PATTERN.test(requestId)) throw new TopicError(400, "主题requestId格式无效");
   const title = text(input.title, "title", 200);
   const purpose = text(input.purpose, "purpose", 2_000);
-  const rootSessionId = text(input.rootSessionId, "rootSessionId", 200);
+  // Derived, not supplied: the root session id is a pure function of (owner, requestId), which is what
+  // lets a brand-new topic's root session be created before the topic record exists.
+  const rootSessionId = topicRootSessionIdOf(input.longAgentId, requestId);
   const topicId = topicIdOf(input.longAgentId, requestId);
   return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
     const existing = state.topics.find((topic) => topic.topicId === topicId);
     if (existing !== undefined) return { topic: { ...existing }, graph: snapshot(state), created: false };
     assertRevision(state, input.expectedRevision);
-    if (state.topics.some((candidate) => candidate.rootSessionId === rootSessionId))
-      throw new TopicError(409, `该根会话已属于另一个主题：${rootSessionId}`);
     const now = input.now ?? new Date().toISOString();
     const topic: TopicRecord = {
       topicId, ownerLongAgentId: input.longAgentId, title, purpose, status: "active", rootSessionId,
@@ -475,7 +407,6 @@ export interface CreateTopicNodeInput {
   readonly chatHome: string;
   readonly longAgentId: string;
   readonly topicId: unknown;
-  readonly sessionId: unknown;
   readonly title: unknown;
   readonly createdBy: "user" | "agent";
   readonly frozenProjectContext?: unknown;
@@ -493,10 +424,12 @@ export interface CreateTopicNodeInput {
  */
 export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ node: TopicNodeRecord; graph: TopicGraphState; created: boolean }> {
   const topicId = identity(input.topicId, "topicId", TOPIC_ID_PATTERN);
-  const sessionId = text(input.sessionId, "sessionId", 200);
   const title = text(input.title, "title", 200);
   const requestId = text(input.requestId, "requestId", 200);
   if (!REQUEST_ID_PATTERN.test(requestId)) throw new TopicError(400, "主题requestId格式无效");
+  // Derived: a caller cannot register an arbitrary session under a request id, so "the session was
+  // registered as a different session" is impossible by construction.
+  const sessionId = topicNodeSessionIdOf(topicId, requestId);
   const frozenProjectContext = optionalText(input.frozenProjectContext, "frozenProjectContext", 200);
   const rawRefs = input.initialMemoryRefs === undefined ? [] : input.initialMemoryRefs;
   if (!Array.isArray(rawRefs)) throw new TopicError(400, "主题节点初始记忆引用无效");
@@ -512,29 +445,19 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
     // The request id is the retry identity for the whole four-step creation (session reservation,
     // summary, initial memory, graph registration): a retry with the same id returns the same node,
     // and the same id with different inputs is a conflict instead of a second node.
-    // The reservation and the node record are cleaned/created in the SAME graph write, so a retry after
-    // registration never allocates a second session.
-    const dropStaleReservation = (): void => {
-      const stale = state.reservations.filter((reservation) => reservation.requestId === requestId);
-      if (stale.length === 0) return;
-      state.reservations = state.reservations.filter((reservation) => reservation.requestId !== requestId);
-      state.revision += 1;
-    };
     const byRequest = state.nodes.find((node) => node.createdByRequestId === requestId);
     if (byRequest !== undefined) {
-      if (byRequest.createdByRequestDigest === digest) {
-        dropStaleReservation();
-        return { node: { ...byRequest }, graph: snapshot(state), created: false };
-      }
+      if (byRequest.createdByRequestDigest === digest) return { node: { ...byRequest }, graph: snapshot(state), created: false };
+      if (byRequest.createdByRequestDigest === null)
+        throw new TopicError(409, `节点登记早于创建摘要，无法判定是否为同一请求：${sessionId}`);
       throw new TopicError(409, `该 requestId 已用于不同的节点创建：${requestId}`);
     }
     const existing = state.nodes.find((node) => node.nodeId === nodeId);
     if (existing !== undefined) {
       // Same topic+session but a different creation request (title, anchors, initial sources, ...).
-      if (existing.createdByRequestDigest === digest) {
-        dropStaleReservation();
-        return { node: { ...existing }, graph: snapshot(state), created: false };
-      }
+      if (existing.createdByRequestDigest === digest) return { node: { ...existing }, graph: snapshot(state), created: false };
+      if (existing.createdByRequestDigest === null)
+        throw new TopicError(409, `节点登记早于创建摘要，无法判定是否为同一请求：${sessionId}`);
       throw new TopicError(409, `会话已属于某个主题节点，且创建请求不同：${sessionId}`);
     }
     const topic = state.topics.find((candidate) => candidate.topicId === topicId);
@@ -565,7 +488,6 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
     };
     state.nodes.push(node);
     state.edges.push(...edges);
-    state.reservations = state.reservations.filter((reservation) => reservation.requestId !== requestId);
     state.revision += 1;
     return { node: { ...node }, graph: snapshot(state), created: true };
   });

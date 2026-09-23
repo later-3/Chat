@@ -44,7 +44,13 @@
 - **写入目标**：`session-memory` 工具目标来自派发盖章的绑定（P1 已就绪），节点会话内写入落在**当前节点会话**。
 - **跨会话只读 + 来源地址**：`topic-manage` 提供跨 Agent/跨树**只读**操作，返回条目/全文，**每条来源引用为 `{storageProjectId, sessionId, entryId}`**（不是裸 `entryId`）。
 - **溯源落点（唯一位置：图记录）**：来源映射保存在 `topics.json` 的 **`nodes[].initialMemoryRefs: [{ entryId, source: {storageProjectId, sessionId, entryId} }]`** —— 即“本节点初始记忆条目 → 其来源”，因此**根节点**（没有入边、没有 `memoryRefs`）也能回答“这条从哪来”。边的 `memoryRefs` 用**同一地址形状**记录跨节点引用。两处 schema 与主任务书 §3.2 一致；**P1 记忆条目本身不带来源地址**（只有 `originEntryId` 指向轮次），不要把它当作已有字段。
-- **会话预留（“四步同一 `requestId`”的前提）**：`reserveChatSession` 自行生成 session id 且 `openChatSession` 拒绝未知 id，所以会话 id 必须**先落盘再使用**。`reserveTopicNodeSession` 在**该 `requestId` 专属的文件锁**内完成“读图 → 已有预留则复用 → 否则分配并 CAS 写入 `reservations[]`”，因此：同一 `requestId` 的并发重试只分配**一个**会话；“预留已写、节点未登记”时崩溃后重试**复用同一会话**；归档主题直接拒绝且不分配会话。预留记录与节点登记在**同一次图写入**中完成“登记 + 删除预留”，所以登记后的重试不会再分配第二个会话。节点创建服务在预留前先按 `requestId` 查图，已登记则直接返回。
+- **身份全部派生，不分配（“四步同一 `requestId`”的前提）**：Pi 支持显式 session id（`SessionManager.create(cwd, sessionDir, { id })` → `newSession({ id })`），因此节点身份是**纯函数**，不需要预留表：
+  - `topicId = f(owner, requestId)`；`rootSessionId = f(topicId, requestId)`；`nodeSessionId = f(topicId, requestId)`；`nodeId = f(topicId, nodeSessionId)`。
+  - `createTopic` **不接受** `rootSessionId`，`createTopicNode` **不接受** `sessionId`：调用方无法把“某个会话”登记成别的请求的节点，也不可能出现“预留的会话被登记成另一个会话”。
+  - Chat 侧新增 `ensureChatSessionWithId(input, sessionId, displayName)`：会话文件已存在则重开（`created:false`），否则按该 id 创建（`created:true`）。**重试自行重算出同一 id**，因此“会话已落盘、图登记未完成”没有窗口、也不需要记录找回；登记后重试同样返回同一会话。
+  - 根节点：新建主题的根会话 id 由**主题自身** `requestId` 派生，所以 `createTopic` 之前就能创建根会话（不存在“先有鸡还是先有蛋”）。
+  - 归档主题仍拒绝新建节点；主题级 `updateTopicStatus` 只影响“能否新建”，不动节点状态。
+- **旧文件容忍**：v1 图中缺少 `createdByRequestDigest` 的节点读作 `createdByRequestDigest: null`（legacy），任何重试对其 **fail-closed** 拒绝（“登记早于创建摘要”）；中间版本写出的 `reservations` 字段读入时直接忽略，因此既有图文件不会加载失败。
 - **整合产物落两处**：整合摘要（CustomMessage，进入上下文）+ 初始 `background` 条目（带 §4 的来源引用）。
 - **防环**：加边只检查 `parent !== child` 且不存在 `child → … → parent`；`memoryRefs` 只校验来源存在与可读（**不禁止继承父记忆**）。新建节点没有出边，结构上不可能成环，因此防环真正生效的地点是**补边**（对既有节点追加父边，R4 补充整合），创建与补边共用同一检查。
 - **图约束（首轮检视补齐，均为阻断项）**：
