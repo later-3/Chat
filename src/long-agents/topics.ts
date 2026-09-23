@@ -290,7 +290,14 @@ function assertRevision(state: { revision: number }, expectedRevision: unknown):
   return state.revision;
 }
 
-function snapshot(state: MutableTopicGraphState): TopicGraphState {
+function snapshot(state: {
+  schemaVersion: 1;
+  longAgentId: string;
+  revision: number;
+  topics: readonly TopicRecord[];
+  nodes: readonly TopicNodeRecord[];
+  edges: readonly TopicEdgeRecord[];
+}): TopicGraphState {
   return {
     schemaVersion: TOPIC_SCHEMA_VERSION,
     longAgentId: state.longAgentId,
@@ -393,6 +400,14 @@ function nodeCreationDigest(spec: {
     sortCanonical(spec.parents, canonicalParent).map(canonicalParent),
   ]);
   return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
+}
+
+/** Idempotency for a supplementary edge: only an IDENTICAL spec is a replay. */
+function sameParentEdgeSpec(edge: TopicEdgeRecord, spec: NormalizedParentSpec): boolean {
+  if (edge.anchorEntryId !== spec.anchorEntryId || edge.anchorSequence !== spec.anchorSequence) return false;
+  const existing = sortCanonical(edge.memoryRefs, canonicalSource).map(canonicalSource);
+  const requested = sortCanonical(spec.memoryRefs, canonicalSource).map(canonicalSource);
+  return JSON.stringify(existing) === JSON.stringify(requested);
 }
 
 /** True when `child` can already reach `parent` (adding parent → child would create a cycle). */
@@ -565,14 +580,31 @@ export async function addTopicNodeParent(input: ParentEdgeSpec & {
   readonly now?: string;
 }): Promise<{ edge: TopicEdgeRecord; graph: TopicGraphState; created: boolean }> {
   const childNodeId = identity(input.childNodeId, "childNodeId", NODE_ID_PATTERN);
+  const normalized = normalizeParentSpecs([input])[0]!;
+  const existingEdge = (
+    edge: TopicEdgeRecord,
+    state: { schemaVersion: 1; longAgentId: string; revision: number; topics: readonly TopicRecord[]; nodes: readonly TopicNodeRecord[]; edges: readonly TopicEdgeRecord[] },
+  ): { edge: TopicEdgeRecord; graph: TopicGraphState; created: boolean } => {
+    if (!sameParentEdgeSpec(edge, normalized))
+      throw new TopicError(409, `该父边已存在且规格不同（锚点或记忆引用不一致）：${normalized.parentNodeId}`);
+    return { edge: { ...edge }, graph: snapshot(state), created: false };
+  };
+  // Pre-flight OUTSIDE the graph lock (the orchestration uses session-lock -> graph-lock order, and
+  // this path must not invert it): only an identical edge is a replay, and a NEW edge needs a settled
+  // anchor verified inside the parent's session lock.
+  const preflightGraph = await readTopicGraph(input.chatHome, input.longAgentId);
+  const preflightChild = preflightGraph.nodes.find((node) => node.nodeId === childNodeId);
+  if (preflightChild === undefined) throw new TopicError(404, `找不到子节点：${childNodeId}`);
+  const preflightExisting = preflightGraph.edges.find((edge) => edge.parentNodeId === normalized.parentNodeId && edge.childNodeId === childNodeId);
+  if (preflightExisting !== undefined) return existingEdge(preflightExisting, preflightGraph);
+  await verifyParentAnchors({ chatHome: input.chatHome, longAgentId: input.longAgentId, graph: preflightGraph, parents: [input] });
+  await requireTopicSources({ chatHome: input.chatHome, sources: normalized.memoryRefs });
   return changeTopicGraph(input.chatHome, input.longAgentId, async (state) => {
     const child = state.nodes.find((node) => node.nodeId === childNodeId);
     if (child === undefined) throw new TopicError(404, `找不到子节点：${childNodeId}`);
     if (child.status !== "active") throw new TopicError(409, "节点已归档或移除，不能接受新的整合");
-    const normalized = normalizeParentSpecs([input])[0]!;
     const existing = state.edges.find((edge) => edge.parentNodeId === normalized.parentNodeId && edge.childNodeId === childNodeId);
-    if (existing !== undefined) return { edge: { ...existing }, graph: snapshot(state), created: false };
-    await requireTopicSources({ chatHome: input.chatHome, sources: normalized.memoryRefs });
+    if (existing !== undefined) return existingEdge(existing, state);
     assertRevision(state, input.expectedRevision);
     const now = input.now ?? new Date().toISOString();
     const edge = parseParentEdge(normalized, state, childNodeId, child.topicId, now);

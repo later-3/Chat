@@ -406,3 +406,59 @@ test("P2 creation: every recorded source is validated at the graph write entry",
   // ... but the already registered request still replays without re-checking its source.
   assert.equal((await createTopicNodeWithSession(usableRequest)).created, false);
 });
+
+test("P2 creation: a supplementary edge needs its own settled anchor and an exact spec", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "se-topic", expectedRevision: 0 })).topic;
+  const root = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "se-topic", expectedRevision: 1 });
+  const rootSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根");
+  rootSession.session.manager.flush();
+  const sourceMemory = await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: root.node.sessionId,
+    operation: "write", purpose: "finding", author: "agent", content: "来源", expectedRevision: 0 });
+  const realSource = { storageProjectId: "friend", sessionId: root.node.sessionId, entryId: sourceMemory.entries.at(-1).entryId };
+  const first = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "A", createdBy: "agent", requestId: "se-a", expectedRevision: 2, parents: [{ parentNodeId: root.node.nodeId }] });
+  const second = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "B", createdBy: "agent", requestId: "se-b", expectedRevision: first.graph.revision, parents: [{ parentNodeId: root.node.nodeId }] });
+  // The anchor belongs to the PARENT of the new edge (A), so it must be settled in A's own session.
+  const firstSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, first.node.sessionId, "A");
+  const anchor = appendChatUserMessage(firstSession.session.manager, "A 的第一轮");
+  firstSession.session.manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "答" }], timestamp: Date.now() });
+  appendChatLongAgentTurn(firstSession.session.manager, {
+    turnId: "turn-se", longAgentId: "friend", bindingId: "bind-se", source: "chat-web", channelType: null,
+    inboundEventId: null, status: "completed", startedAt: "2026-09-24T00:00:00.000Z", completedAt: "2026-09-24T00:00:05.000Z", error: null,
+    agentGroupContext: { contextRevision: `sha256:${"a".repeat(64)}`, agentGroupId: "group", agentGroupRevision: `sha256:${"b".repeat(64)}`,
+      indexRevision: `sha256:${"c".repeat(64)}`, definitionRevision: `sha256:${"d".repeat(64)}`, stale: false, fetchedAt: "2026-09-24T00:00:00.000Z" },
+  });
+  firstSession.session.manager.flush();
+
+  // An invented anchor must not become an edge.
+  await assert.rejects(
+    addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: second.node.nodeId, parentNodeId: first.node.nodeId,
+      anchorEntryId: "invented-anchor", anchorSequence: 99, memoryRefs: [realSource], expectedRevision: second.graph.revision }),
+    /锚点不是已完成的轮次/,
+  );
+  const afterFakeAnchor = await readTopicGraph(home, "friend");
+  assert.equal(afterFakeAnchor.edges.some((edge) => edge.anchorEntryId === "invented-anchor"), false);
+
+  // A real settled anchor is accepted, and repeating THAT exact spec is the idempotent path.
+  const added = await addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: second.node.nodeId, parentNodeId: first.node.nodeId,
+    anchorEntryId: anchor, anchorSequence: 1, memoryRefs: [realSource], expectedRevision: second.graph.revision });
+  assert.equal(added.created, true);
+  assert.equal(added.edge.anchorEntryId, anchor);
+  const replay = await addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: second.node.nodeId, parentNodeId: first.node.nodeId,
+    anchorEntryId: anchor, anchorSequence: 1, memoryRefs: [realSource], expectedRevision: 999 });
+  assert.equal(replay.created, false);
+  assert.equal(replay.edge.edgeId, added.edge.edgeId);
+
+  // A different spec for the SAME parent+child is a conflict, not a silent reuse of the old edge.
+  await assert.rejects(
+    addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: second.node.nodeId, parentNodeId: first.node.nodeId,
+      anchorEntryId: anchor, anchorSequence: 99, memoryRefs: [realSource], expectedRevision: 999 }),
+    /该父边已存在且规格不同/,
+  );
+  await assert.rejects(
+    addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: second.node.nodeId, parentNodeId: first.node.nodeId,
+      anchorEntryId: anchor, anchorSequence: 1, memoryRefs: [], expectedRevision: 999 }),
+    /该父边已存在且规格不同/,
+  );
+});

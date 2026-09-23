@@ -99,7 +99,7 @@ test("P2 topics: nodes record anchors, provenance and multi-parent edges, and re
     /形成环/,
   );
   // A legal supplementary edge on an existing node is accepted and idempotent on retry.
-  const supplementary = await addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: child.node.nodeId, parentNodeId: other.node.nodeId, anchorSequence: 3, expectedRevision: 5 });
+  const supplementary = await addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: child.node.nodeId, parentNodeId: other.node.nodeId, expectedRevision: 5 });
   assert.equal(supplementary.created, true);
   assert.equal(supplementary.graph.edges.length, 5);
   assert.equal((await addTopicNodeParent({ chatHome: home, longAgentId: "friend", childNodeId: child.node.nodeId, parentNodeId: other.node.nodeId, expectedRevision: 99 })).created, false);
