@@ -13,6 +13,8 @@ export interface ChatSessionRunBinding {
   readonly projectId: string;
   readonly sessionId: string;
   readonly startedAt: string;
+  /** The session whose session memory this run's agents write to (absent for non-agent homes). */
+  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string } | undefined;
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -26,6 +28,15 @@ function parseBinding(value: unknown): ChatSessionRunBinding {
     }
   }
   if (Number.isNaN(Date.parse(value.startedAt as string))) throw new Error("Workflow Run绑定startedAt无效");
+  let sessionMemoryTarget: { storageProjectId: string; sessionId: string } | undefined;
+  if (value.sessionMemoryTarget !== undefined && value.sessionMemoryTarget !== null) {
+    if (!isRecord(value.sessionMemoryTarget)
+      || typeof value.sessionMemoryTarget.storageProjectId !== "string" || value.sessionMemoryTarget.storageProjectId === ""
+      || typeof value.sessionMemoryTarget.sessionId !== "string" || value.sessionMemoryTarget.sessionId === "") {
+      throw new Error("Workflow Run绑定sessionMemoryTarget无效");
+    }
+    sessionMemoryTarget = { storageProjectId: value.sessionMemoryTarget.storageProjectId, sessionId: value.sessionMemoryTarget.sessionId };
+  }
   return {
     schemaVersion: 1,
     runId: value.runId as string,
@@ -34,6 +45,7 @@ function parseBinding(value: unknown): ChatSessionRunBinding {
     projectId: value.projectId as string,
     sessionId: value.sessionId as string,
     startedAt: value.startedAt as string,
+    ...(sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget }),
   };
 }
 
@@ -93,6 +105,19 @@ function isTerminalRunStatus(status: string): boolean {
 }
 
 /** Restore the last terminal outcome from the Runtime, including after a reload. */
+/** Read the durable binding of one Workflow run (used to inherit the session-memory target). */
+export async function readChatSessionRunBinding(
+  projectDataDir: string,
+  workflowInvocationId: string,
+): Promise<ChatSessionRunBinding | undefined> {
+  try {
+    return parseBinding(JSON.parse(await readFile(bindingPath(projectDataDir, workflowInvocationId), "utf8")));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
 export async function readChatSessionRunOutcome(projectDataDir: string, sessionId: string) {
   const latest = (await listBindings(projectDataDir)).filter(binding => binding.sessionId === sessionId)
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];

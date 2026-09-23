@@ -55,6 +55,8 @@ export interface CallChatWorkflowInput extends ChatWorkflowCallParentInput {
   readonly parentWorkflowInvocationId: string;
   readonly parentStageId: string;
   readonly parentAgentId: string;
+  /** Inherited session-memory target; a nested call must keep the original, not re-stamp the child. */
+  readonly parentSessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
   readonly toolCallId: string;
   readonly targetWorkflowId: string;
   readonly prompt: string;

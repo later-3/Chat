@@ -393,6 +393,7 @@ export async function callChatWorkflow(
     workflow: target.id as ChatWorkflowId,
     agentConfigs,
     delegatedByAgentId: input.parentAgentId,
+    ...(input.parentSessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.parentSessionMemoryTarget }),
   };
 
   let progressForwarder: WorkflowCallProgressForwarder | undefined;

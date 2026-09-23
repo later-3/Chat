@@ -14,6 +14,11 @@ export interface ChatWorkflowInput {
   readonly agentConfigs?: Readonly<Record<string, AgentConfigSelection>>;
   /** Present only for workflow_call; makes this turn's Agent capabilities caller-owned. */
   readonly delegatedByAgentId?: string;
+  /**
+   * Backend-internal: the session whose session memory a Workflow's internal agents write to
+   * (inherited through nested workflow calls; never accepted from an HTTP client or model argument).
+   */
+  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
 }
 
 export interface ChatWorkflowResult {

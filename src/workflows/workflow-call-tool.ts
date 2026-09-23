@@ -1,5 +1,6 @@
 import { Type, type Static, validateToolArguments } from "@earendil-works/pi-ai";
 import { defineTool, type SessionManager } from "@earendil-works/pi-coding-agent";
+import { sessionMemoryTargetForToolContext } from "./session-memory-target.js";
 import {
   listAgentCallableWorkflowTargets,
   type AgentCallableWorkflowTarget,
@@ -33,6 +34,8 @@ export interface WorkflowCallToolContext {
   readonly longAgentId?: string;
   readonly longAgentTurnId?: string;
   readonly agentId: string;
+  /** Trusted session-memory target of the dispatching session (inherited by nested calls). */
+  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string } | undefined;
 }
 
 const DEFAULT_WORKFLOW_CALL_RUNTIME: ChatWorkflowCallRuntime = {
@@ -240,8 +243,17 @@ export function createWorkflowCallTool(
         if (targetProjectId == null || context.chatHome === undefined) {
           throw new Error("Workflow调用缺少Project运行上下文");
         }
+        const sessionMemoryTarget = context.projectId === undefined
+          ? undefined
+          : sessionMemoryTargetForToolContext({
+              sessionMemoryTarget: context.sessionMemoryTarget,
+              longAgentId: context.longAgentId,
+              projectId: context.projectId,
+              sessionId: context.sessionManager.getSessionId(),
+            });
         result = await runtime.start({
           ...controlInput,
+          ...(sessionMemoryTarget === undefined ? {} : { parentSessionMemoryTarget: sessionMemoryTarget }),
           projectId: targetProjectId,
           chatHome: context.chatHome,
           cwd: context.cwd,

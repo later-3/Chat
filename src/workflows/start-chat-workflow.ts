@@ -34,6 +34,7 @@ export async function startChatWorkflow(
       workflowId: workflow,
       projectId: project.projectId,
       sessionId: input.sessionId,
+      ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
     });
   }
   if (definition.planReview && project !== undefined) {

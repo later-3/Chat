@@ -9,6 +9,7 @@ import {
   createChatPiAgentSession,
   type CreatedChatPiAgentSession,
 } from "../agents/pi-agent-session.js";
+import { inheritSessionMemoryTarget } from "./session-memory-target.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { WorkflowAgentDefinition } from "./agent-config.js";
 import { prepareWorkflowTurnContext } from "./session-conversation.js";
@@ -67,11 +68,21 @@ export async function createWorkflowAgentSession(
     stageId: context.stageId,
     agentId: context.agentId,
   };
+  // Inherit the dispatching session's session-memory target from the durable run binding, so a
+  // workflow's internal agents write memory to the originating session (never the child session).
+  const inheritedTarget = await inheritSessionMemoryTarget({
+    toolContextTarget: context.sessionMemoryTarget,
+    projectDataDir: options.chatSession.projectContext?.projectDataDir,
+    workflowInvocationId: context.workflowInvocationId,
+  });
+  const withTarget = inheritedTarget === undefined
+    ? options
+    : { ...options, toolContext: { ...context, sessionMemoryTarget: inheritedTarget } };
   return createChatPiAgentSession({
-    ...options,
+    ...withTarget,
     transformContext: async (messages, signal) => {
       const current = prepareWorkflowTurnContext(messages, turn);
-      return options.transformContext === undefined ? current : options.transformContext(current, signal);
+      return withTarget.transformContext === undefined ? current : withTarget.transformContext(current, signal);
     },
   });
 }
