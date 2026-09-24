@@ -7,6 +7,7 @@ import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earen
 import { ensureAgentHomeProject } from "../../src/projects/registry.ts";
 import { readSessionMemory } from "../../src/long-agents/session-memory.ts";
 import { sessionMemoryWorkflowDefinition } from "../../src/workflows/session-memory/index.ts";
+import { ensureChatSessionWithId } from "../../src/chat-session.ts";
 import { SESSION_MEMORY_WRITER_AGENT } from "../../src/workflows/session-memory/agents/writer/index.ts";
 
 function writeFauxConfiguration(agentDir, faux) {
@@ -53,13 +54,32 @@ test("session-memory workflow: work then remember with the current-round project
   const { faux, workspace, project } = await fixture(t, "chat-smem-workflow");
   const writerInputs = [];
   const workerTools = [];
+  const workerWorkflowCalls = [];
   faux.setResponses([
-    (context) => { workerTools.push((context.tools ?? []).map((tool) => tool.name)); return fauxAssistantMessage("work 阶段：已定位到空指针在第 42 行"); },
+    // The worker does ordinary work AND actually calls a business Workflow once (P2: work may delegate).
+    (context) => {
+      workerTools.push((context.tools ?? []).map((tool) => tool.name));
+      return fauxAssistantMessage(fauxToolCall("workflow_call", { workflowId: "minimal-pi-coding-agent", prompt: "检查第 42 行的空指针" }));
+    },
+    (context) => {
+      const result = context.messages.filter((message) => message.role === "toolResult").map(textOf).join("\n");
+      workerWorkflowCalls.push(result.slice(0, 200));
+      return fauxAssistantMessage("work 阶段：子工作流确认空指针在第 42 行");
+    },
     (context) => {
       writerInputs.push(context.messages.map((message) => `${message.role}:${textOf(message)}`).join("\n---\n"));
       return fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "空指针根因在第 42 行", expectedRevision: 0 }));
     },
-    fauxAssistantMessage("已写入：entryId=smem-0001，revision=1"),
+    // The writer cites the entry the tool ACTUALLY returned, parsed from its own tool result.
+    (context) => {
+      const toolResult = context.messages.filter((message) => message.role === "toolResult").map(textOf).join("\n");
+      const entryId = /"entryId":"([^"]+)"/.exec(toolResult)?.[1] ?? "missing";
+      const revision = /"revision":(\d+)/.exec(toolResult)?.[1] ?? "missing";
+      return fauxAssistantMessage(`已写入 entryId=${entryId} revision=${revision}`);
+    },
+    // The child business Workflow (minimal-pi-coding-agent) executes its own turn.
+    fauxAssistantMessage("子工作流结果：第 42 行确实为空指针"),
+    fauxAssistantMessage("子工作流结果：第 42 行确实为空指针"),
   ]);
   const result = await run({
     projectId: project.projectId, chatHome: process.env.CHAT_HOME, cwd: workspace,
@@ -68,12 +88,28 @@ test("session-memory workflow: work then remember with the current-round project
   assert.equal(typeof result.text, "string");
   assert.notEqual(result.text, "");
   assert.equal(workerTools[0].includes("session_memory"), true, "the worker is offered the memory tool for on-demand reads");
+  // Normal work capability: Pi's ordinary tools plus business Workflow delegation.
+  assert.equal(workerTools[0].includes("workflow_call"), true, "the worker may call a business Workflow");
+  assert.equal(workerTools[0].some((name) => ["read", "bash", "write", "edit"].includes(name)), true,
+    "the worker keeps ordinary work tools instead of only the memory tool");
+  assert.equal(workerWorkflowCalls.length, 1, "the worker actually delegated to a business Workflow");
+  assert.equal(workerWorkflowCalls[0].includes("第 42 行"), true, "the delegated Workflow really ran");
+  // The round's answer is the work answer, NOT the memory bookkeeping text.
+  assert.equal(result.text.includes("子工作流确认空指针在第 42 行"), true, "the user-facing result is the work answer");
+  assert.equal(result.text.includes("已写入 entryId"), false, "the memory report is not returned as the round's answer");
   const memory = await readSessionMemory(process.env.CHAT_HOME, "friend", result.sessionId);
   assert.equal(memory.entries.length, 1, "the writer wrote exactly one entry");
   assert.equal(memory.entries[0].content, "空指针根因在第 42 行");
   assert.equal(writerInputs.length, 1);
   assert.equal(writerInputs[0].includes("为什么这里空指针？"), true, "the writer sees the round's user message");
-  assert.equal(writerInputs[0].includes("work 阶段：已定位到空指针在第 42 行"), true, "the writer sees the whole work stage");
+  assert.equal(writerInputs[0].includes("子工作流确认空指针在第 42 行"), true, "the writer sees the whole work stage");
+  // The writer's visible reply cites the entry id the tool actually returned (not a scripted value).
+  const branch = (await ensureChatSessionWithId({ chatHome: process.env.CHAT_HOME, projectId: project.projectId },
+    result.sessionId)).session.manager.getBranch();
+  const lastAssistant = [...branch].reverse().find((entry) => entry.type === "message" && entry.message?.role === "assistant");
+  const cited = textOf(lastAssistant.message);
+  assert.equal(cited.includes(memory.entries[0].entryId), true, "the writer's reply cites the real entry id from the tool result");
+  assert.equal(cited.includes("revision=1"), true, "the writer's reply cites the real revision");
 });
 
 test("session-memory workflow: an earlier round never leaks into the writer", { concurrency: false }, async (t) => {

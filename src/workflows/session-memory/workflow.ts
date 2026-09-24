@@ -16,8 +16,11 @@ export async function sessionMemoryWorkflow(input: ChatWorkflowInput): Promise<C
     // Both stages MUST run in the SAME node Session: the work stage resolves the Session when the caller
     // did not name one (a fresh node round), so the resolved id is forwarded or `remember` would open a
     // second, empty Session and project nothing.
-    const remembered = await runSessionMemoryRememberStep({ ...input, sessionId: worked.sessionId });
-    return remembered.text === "" ? worked : remembered;
+    await runSessionMemoryRememberStep({ ...input, sessionId: worked.sessionId });
+    // The round's answer is the WORK answer: the user asked a question, not for a bookkeeping report.
+    // The memory write stays in the Session (its own stage records and the writer's visible reply), and
+    // the invocation is still settled only when BOTH stages finished (awaited above).
+    return worked;
   } finally {
     if (input.sessionId !== undefined) endSessionExecution(input.sessionId, input.workflowInvocationId);
   }
