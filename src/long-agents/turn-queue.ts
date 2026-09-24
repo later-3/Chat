@@ -236,6 +236,32 @@ export function drainLongAgentTurns(home: string, longAgentId: string, sessionId
         await executeAcceptedLongAgentTurn({ longAgentId, projectId: longAgentId, sessionId: turn.sessionId, text: turn.text,
           ...(turn.images === undefined ? {} : { images: turn.images }), chatHome: home, turnId: turn.turnId, source: turn.source, channelType: turn.channelType,
           ...(turn.inboundEventId === null ? {} : { inboundEventId: turn.inboundEventId }), contextProjectId: turn.contextProjectId }, turn, loaders.get(key(home, turn.turnId)));
+        // A topic node round is the OUTER chain: the reusable Long Agent work segment above is `work`,
+        // then (memory on) the session-memory writer runs in the same Session, and only then is the round
+        // complete. The turn is settled after BOTH, so "work finished, remember still writing" is not a
+        // settled round and cannot be forked.
+        if (turn.topicNode !== undefined) {
+          const [{ readTopicGraph }, { appendTopicRoundMarker }, { openChatSession }] = await Promise.all([
+            import("./topics.js"), import("./topic-anchor.js"), import("../chat-session.js"),
+          ]);
+          const node = (await readTopicGraph(home, longAgentId)).nodes.find((candidate) => candidate.nodeId === turn.topicNode!.nodeId);
+          if (node !== undefined && node.sessionMemory !== "off") {
+            // Lazy: a static import would pull the Workflow agent-definition graph into the Long Agent
+            // runtime graph and break Nitro's dev Step worker initialization (circular import).
+            const { runSessionMemoryWriterTurn } = await import("../workflows/session-memory/writer-run.js");
+            await runSessionMemoryWriterTurn({
+              chatHome: home, projectId: longAgentId,
+              sessionId: turn.sessionId, workflowInvocationId: `turn:${turn.turnId}`, stageId: "remember",
+            });
+          }
+          const session = await openChatSession({ projectId: longAgentId, chatHome: home, sessionId: turn.sessionId });
+          const userEntryId = [...session.manager.getBranch()].reverse()
+            .find((entry) => entry.type === "message" && entry.message?.role === "user")?.id;
+          if (userEntryId !== undefined) {
+            appendTopicRoundMarker(session.manager, { roundId: turn.turnId, userEntryId, status: "completed" });
+            session.manager.flush();
+          }
+        }
         await updateTurnStatus(home, turn.turnId, "completed");
       } catch (error) { await updateTurnStatus(home, turn.turnId, error instanceof FriendCancelledError ? "cancelled" : "failed", error instanceof Error ? error.message : String(error)); }
       finally {

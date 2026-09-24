@@ -22,15 +22,20 @@ export function appendTopicRoundMarker(
   data: { roundId: string; userEntryId: string; status: TopicRoundStatus; settledAt?: string | null },
 ): string {
   if (typeof data.roundId !== "string" || data.roundId.trim() === "") throw new TopicAnchorError("轮次 roundId 无效");
-  if (typeof data.userEntryId !== "string" || data.userEntryId.trim() === "") throw new TopicAnchorError("轮次 userEntryId 无效");
+  // A round that has just STARTED has no user entry yet (the work stage writes it), so only a terminal
+  // marker must name one.
+  const userEntryId = typeof data.userEntryId === "string" ? data.userEntryId.trim() : "";
+  if (data.status !== "running" && userEntryId === "") throw new TopicAnchorError("终态轮次必须带 userEntryId");
   if (!["running", "completed", "failed", "cancelled"].includes(data.status)) throw new TopicAnchorError("轮次状态无效");
   const settledAt = data.settledAt ?? (data.status === "running" ? null : new Date().toISOString());
   if (data.status !== "running" && (settledAt === null || Number.isNaN(Date.parse(settledAt))))
     throw new TopicAnchorError("终态轮次必须带 settledAt");
   // The marker must point at a real user message on this session's branch: an id that happens to exist
-  // (an assistant entry) must never become a forkable anchor.
-  const anchorEntry = sessionManager.getBranch().find((entry) => isRecord(entry) && entry.id === data.userEntryId);
-  if (!isUserMessageEntry(anchorEntry)) throw new TopicAnchorError(`轮次锚点不是用户消息：${data.userEntryId}`);
+  // (an assistant entry) must never become a forkable anchor. A just-started round has no user entry yet.
+  if (userEntryId !== "") {
+    const anchorEntry = sessionManager.getBranch().find((entry) => isRecord(entry) && entry.id === userEntryId);
+    if (!isUserMessageEntry(anchorEntry)) throw new TopicAnchorError(`轮次锚点不是用户消息：${userEntryId}`);
+  }
   return sessionManager.appendCustomEntry(TOPIC_ROUND_CUSTOM_TYPE, {
     roundId: data.roundId.trim(), userEntryId: data.userEntryId.trim(), status: data.status, settledAt,
   });
@@ -46,7 +51,8 @@ export function collectTopicRoundMarkers(entries: readonly unknown[]): TopicRoun
     const userEntryId = typeof data.userEntryId === "string" ? data.userEntryId.trim() : "";
     const status = data.status;
     const settledAt = data.settledAt === null || data.settledAt === undefined ? null : String(data.settledAt);
-    if (roundId === "" || userEntryId === "" || (status !== "running" && status !== "completed" && status !== "failed" && status !== "cancelled")) continue;
+    if (roundId === "" || (status !== "running" && status !== "completed" && status !== "failed" && status !== "cancelled")) continue;
+    if (status !== "running" && userEntryId === "") continue;
     if (status !== "running" && (settledAt === null || Number.isNaN(Date.parse(settledAt)))) continue;
     markers.push({ entryId: entry.id, roundId, userEntryId, status, settledAt });
   }
@@ -100,8 +106,12 @@ export function readTopicSettledAnchors(sessionManager: SessionManager): TopicSe
     if (isRecord(entry) && typeof entry.id === "string") positionById.set(entry.id, index);
   });
   const settled: { position: number; anchorEntryId: string; turnId: string; settledAt: string }[] = [];
-  // Source 1: a Long Agent turn that fully completed (its user entry is the last one before the marker).
+  // Topic-mode Sessions are settled by the OUTER round marker, not by the Long Agent turn: the turn is
+  // marked completed when the work segment ends, which is exactly the window where `remember` may still
+  // be writing. As soon as a Session carries round markers, a bare turn marker is not forkable.
+  const topicMode = collectTopicRoundMarkers(branch).length > 0;
   for (const marker of collectChatLongAgentTurnMarkers(branch)) {
+    if (topicMode) break;
     if (marker.status !== "completed") continue;
     const markerPosition = positionById.get(marker.entryId);
     if (markerPosition === undefined) continue;

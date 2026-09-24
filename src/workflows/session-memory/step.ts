@@ -1,4 +1,6 @@
 import { openChatSession } from "../../chat-session.js";
+import { resolveChatHome } from "../../chat-home.js";
+import { runSessionMemoryWriterTurn } from "./writer-run.js";
 import { localTimestamp } from "../../runtime-log.js";
 import { createWorkflowAgentSession } from "../agent-definition.js";
 import { subscribeAgentSessionLog } from "../agent-session-log.js";
@@ -45,6 +47,19 @@ async function runSessionMemoryStage(
   stage: "work" | "remember",
 ): Promise<ChatWorkflowResult> {
   const stepStartedAt = Date.now();
+  if (stage === "remember") {
+    // ONE writer implementation shared with the Long Agent queue worker (which runs it as the second
+    // half of a node round), so this stage never grows a second copy of the writer turn.
+    if (input.projectId === undefined) throw new Error("会话记忆写入需要Project身份");
+    return runSessionMemoryWriterTurn({
+      chatHome: resolveChatHome(input.chatHome),
+      projectId: input.projectId,
+      cwd: input.cwd,
+      sessionId: input.sessionId ?? "",
+      workflowInvocationId: input.workflowInvocationId,
+      stageId: "remember",
+    });
+  }
   const chatSession = await openChatSession(input);
   const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
     invocationId: input.workflowInvocationId,
@@ -57,29 +72,27 @@ async function runSessionMemoryStage(
     ...(input.agentConfigs === undefined ? {} : { adjustments: input.agentConfigs }),
     ...(input.delegatedByAgentId === undefined ? {} : { actor: "agent" as const, actorAgentId: input.delegatedByAgentId }),
   });
-  const agentId = stage === "work" ? SESSION_MEMORY_WORKER_AGENT.id : SESSION_MEMORY_WRITER_AGENT.id;
+  const agentId = SESSION_MEMORY_WORKER_AGENT.id;
   appendChatWorkflowStage(chatSession.manager, {
-    invocationId: input.workflowInvocationId,
-    workflowId: WORKFLOW_ID,
-    stageId: stage,
-    agentId,
+    invocationId: input.workflowInvocationId, workflowId: WORKFLOW_ID, stageId: "work", agentId,
   });
-  const inputEntryIds = stage === "work" ? [appendChatUserMessage(chatSession.manager, input.prompt)] : [];
-  if (stage === "work") {
-    appendChatWorkflowAgentInput(chatSession.manager, {
-      invocationId: input.workflowInvocationId, workflowId: WORKFLOW_ID, stageId: stage, agentId, inputEntryIds,
-    });
-  }
+  const inputEntryIds = [appendChatUserMessage(chatSession.manager, input.prompt)];
+  appendChatWorkflowAgentInput(chatSession.manager, {
+    invocationId: input.workflowInvocationId, workflowId: WORKFLOW_ID, stageId: "work", agentId, inputEntryIds,
+  });
   const agent = prepared.agents[agentId];
   if (agent === undefined) throw new Error(`本轮配置缺少Agent: ${agentId}`);
-  const sessionContext = {
-    purpose: "execution" as const,
+  const memoryEnabled = input.sessionMemoryEnabled !== false;
+  // With memory off the worker must not even be OFFERED the memory tool: capability removal happens at
+  // assembly, not by asking the model to ignore it.
+  const agentDefinition = memoryEnabled ? agent : withoutSessionMemoryTool(agent);
+  const sessionExtensions = await prepareSessionMemoryWorkerSession({
+    purpose: "execution",
     ...(chatSession.projectId === undefined ? {} : { projectId: chatSession.projectId }),
     ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
     cwd: chatSession.cwd,
     workflowId: WORKFLOW_ID,
     agentId,
-    stageId: stage,
     sessionManager: chatSession.manager,
     sessionId: chatSession.manager.getSessionId(),
     workflowInvocationId: input.workflowInvocationId,
@@ -87,26 +100,15 @@ async function runSessionMemoryStage(
     ...(input.delegatedByAgentId === undefined
       ? {}
       : { capabilitySource: "workflow_call" as const, capabilitySelection: prepared.agentConfigs[agentId] ?? {} }),
-  };
-  // 「会话记忆」switch: with memory off the round is an ordinary agent turn — no read Skill/tool and no
-  // writer stage (the workflow skips it), so nothing about the round changes except that.
-  const memoryEnabled = input.sessionMemoryEnabled !== false;
-  // With memory off the worker must not even be OFFERED the memory tool: capability removal happens at
-  // assembly, not by asking the model to ignore it.
-  const agentDefinition = memoryEnabled || stage !== "work" ? agent : withoutSessionMemoryTool(agent);
-  const sessionExtensions = stage === "work"
-    ? await prepareSessionMemoryWorkerSession(sessionContext, { memoryEnabled })
-    : await prepareSessionMemoryWriterSession(sessionContext);
-  const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
+  }, { memoryEnabled });
+  const { session, toolResources } = await createWorkflowAgentSession({
     chatSession,
     sessionManager: chatSession.manager,
     agent: agentDefinition,
     ...sessionExtensions,
     toolContext: {
       purpose: "execution", workflowId: WORKFLOW_ID, workflowInvocationId: input.workflowInvocationId,
-      stageId: stage, agentId,
-      // The Session's OWN storage project. A stamped durable binding still wins; this only lets the
-      // resolver recognise an agent-home node session, and it still refuses an ordinary project session.
+      stageId: "work", agentId,
       ...(input.projectId === undefined ? {} : { longAgentId: input.projectId }),
       ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
     },
@@ -116,9 +118,8 @@ async function runSessionMemoryStage(
     session.dispose();
     throw new Error("会话记忆 Agent没有创建持久Session文件");
   }
-  if (modelFallbackMessage !== undefined) console.log(`${localTimestamp()} [${WORKFLOW_ID}] modelFallback=${modelFallbackMessage}`);
   const observer = subscribeAgentSessionLog(session, WORKFLOW_ID, {
-    workflowId: WORKFLOW_ID, stageId: stage, nodeKind: "agent", agentId,
+    workflowId: WORKFLOW_ID, stageId: "work", nodeKind: "agent", agentId,
   }, {
     sessionManager: chatSession.manager,
     ...(chatSession.projectId === undefined ? {} : { projectId: chatSession.projectId }),
@@ -126,18 +127,7 @@ async function runSessionMemoryStage(
     toolResources,
   });
   try {
-    if (stage === "remember") {
-      // The handoff writes the internal control message AND triggers this writer turn itself. It only
-      // runs the turn when the session is idle; a streaming session would queue the message as a steer
-      // and return, leaving the writer without a reply, so wait for idle first.
-      await session.waitForIdle();
-      await triggerChatWorkflowAgentHandoff(session, {
-        workflowId: WORKFLOW_ID, invocationId: input.workflowInvocationId, stageId: stage, agentId, inputEntryIds: [],
-        content: "本轮工作阶段已完成。请只依据本轮（本轮用户消息与工作阶段产物）维护本会话的会话记忆；需要更早的上下文或既有条目时用 session_memory 工具按需读取。",
-      });
-    } else {
-      await session.resumePendingTurn();
-    }
+    await session.resumePendingTurn();
     const observed = observer.getLastAssistantText();
     const fallback = lastAssistantTextOf(session);
     const text = observed !== "" ? observed : fallback;

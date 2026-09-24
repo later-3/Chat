@@ -192,10 +192,11 @@ test("session-memory workflow: the remember stage refuses a round without a user
   faux.setResponses([template, template, template]);
   const { runSessionMemoryRememberStep } = await import("../../src/workflows/session-memory/step.ts");
   const { SessionMemoryRoundUnavailableError } = await import("../../src/workflows/session-memory/agents/writer/runtime.ts");
-  // A Session with no user entry at all: the remember stage must fail visibly and write nothing.
+  // A REAL Session that has no user entry at all: the remember stage must fail visibly, not record history.
+  await ensureChatSessionWithId({ chatHome: process.env.CHAT_HOME, projectId: project.projectId }, "sess-no-round", "空会话");
   await assert.rejects(
     runSessionMemoryRememberStep({ projectId: project.projectId, chatHome: process.env.CHAT_HOME, cwd: workspace,
-      sessionId: undefined, prompt: "无用户条目", workflowInvocationId: "smem-refuse-1" }),
+      sessionId: "sess-no-round", prompt: "无用户条目", workflowInvocationId: "smem-refuse-1" }),
     (error) => error instanceof Error && (error.message.includes("没有返回Assistant文本")
       || error.message.includes(SessionMemoryRoundUnavailableError.name)
       || error.message.includes("本轮用户消息")),

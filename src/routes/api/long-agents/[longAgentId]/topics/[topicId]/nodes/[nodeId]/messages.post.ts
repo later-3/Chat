@@ -36,6 +36,13 @@ export default defineEventHandler(async (event) => {
       turnId: String(value.requestId), text: value.text, source: "chat-web",
       topicNode: { topicId, nodeId },
     });
+    // Durable "this round started": from here on the Session is in topic mode, so its Long Agent turn
+    // marker can no longer be mistaken for a settled round while `remember` is still running.
+    const { openChatSession } = await import("../../../../../../../../chat-session.js");
+    const { appendTopicRoundMarker } = await import("../../../../../../../../long-agents/topic-anchor.js");
+    const nodeSession = await openChatSession({ chatHome: home, projectId: longAgentId, sessionId: node.sessionId });
+    appendTopicRoundMarker(nodeSession.manager, { roundId: String(value.requestId), userEntryId: "", status: "running" });
+    nodeSession.manager.flush();
     setResponseStatus(event, 202);
     void drainLongAgentTurns(home, longAgentId).catch((error: unknown) => console.error("Friend队列执行失败", error));
     return friendExecution(home, accepted);

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fixture } from "./daily-fixture.mjs";
+import fs from "node:fs";
+import path from "node:path";
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import { readSessionMemory } from "../../src/long-agents/session-memory.ts";
 import { createTopic, createTopicNode, createTopicNodeWithSession, readTopicGraph } from "../../src/long-agents/topics.ts";
 import { readChatSession } from "../../src/session-read-model.ts";
 import { ensureChatSessionWithId } from "../../src/chat-session.ts";
@@ -182,4 +186,96 @@ test("topic API: a node turn executes from durable state inside its own session,
   assert.equal(childResult.created, true);
   assert.equal(childResult.node.initialMemoryRefs.length, 0, "a fork without integration sources keeps an empty provenance list");
   assert.equal(childResult.graph.edges.find((edge) => edge.childNodeId === childResult.node.nodeId).anchorSequence, round[0].anchorSequence);
+});
+
+test("topic API: a node round runs work then remember, and only the finished round is forkable", async (t) => {
+  const base = await fixture(t);
+  const previousHome = process.env.CHAT_HOME;
+  process.env.CHAT_HOME = base.home;
+  const faux = registerFauxProvider({ api: "chat-node-chain-faux", provider: "chat-node-chain-faux" });
+  t.after(() => {
+    faux.unregister();
+    if (previousHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousHome;
+  });
+  // The daily fixture gives a real Long Agent environment; the model is replaced by a faux provider so the
+  // node round can be scripted (work answer, then the writer's tool call and reply).
+  const model = faux.getModel();
+  fs.writeFileSync(path.join(base.home, "agent/settings.json"), JSON.stringify({
+    defaultProvider: model.provider, defaultModel: model.id, defaultThinkingLevel: "off", compaction: { enabled: false } }));
+  fs.writeFileSync(path.join(base.home, "agent/models.json"), JSON.stringify({ providers: { [model.provider]: {
+    baseUrl: model.baseUrl, api: model.api, apiKey: "faux-key", models: [{ id: model.id, name: model.name,
+      reasoning: model.reasoning, input: model.input, cost: model.cost, contextWindow: model.contextWindow, maxTokens: model.maxTokens }] } } }));
+
+  const app = await router();
+  const call = (path, init) => app.fetch(new Request(`http://chat.test${path}`, init));
+  const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "定位", purpose: "定位", requestId: "chain-topic", expectedRevision: 0 })).topic;
+  const node = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
+    requestId: "chain-topic", title: "根节点", createdBy: "agent" })).node;
+  const { SESSION_MEMORY_WRITER_AGENT } = await import("../../src/workflows/session-memory/agents/writer/index.ts");
+  const writerConfig = { [SESSION_MEMORY_WRITER_AGENT.id]: { tools: { mode: "explicit", names: [], exclude: [], addresses: ["system:tool/session_memory"] } } };
+  faux.setResponses([
+    fauxAssistantMessage("work：空指针在第 42 行"),
+    fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "空指针根因在第 42 行", expectedRevision: 0 })),
+    (context) => {
+      const toolResult = context.messages.filter((message) => message.role === "toolResult").map((message) => JSON.stringify(message)).join("\n");
+      const entryId = /"entryId":"([^"]+)"/.exec(toolResult)?.[1] ?? "missing";
+      return fauxAssistantMessage(`已写入 ${entryId}`);
+    },
+  ]);
+
+  const accepted = await call(`/api/long-agents/friend/topics/${topic.topicId}/nodes/${node.nodeId}/messages`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schemaVersion: 1, requestId: "chain-turn-1", text: "为什么这里空指针？" }),
+  });
+  assert.equal(accepted.status, 202);
+  const { readLongAgentState } = await import("../../src/long-agents/storage.ts");
+  const { drainLongAgentTurns } = await import("../../src/long-agents/turn-queue.ts");
+  await drainLongAgentTurns(base.home, "friend", node.sessionId);
+  const turn = (await readLongAgentState(base.home)).turns.find((candidate) => candidate.turnId === "chat-web:friend:chain-turn-1");
+  assert.equal(turn.status, "completed", "the round completed");
+  assert.notEqual(turn.settledAt, undefined, "the turn settled after the whole outer chain");
+  const memory = await readSessionMemory(base.home, "friend", node.sessionId);
+  assert.equal(memory.entries.length, 1, "the writer wrote one entry inside the node round");
+  const { ensureChatSessionWithId: ensure } = await import("../../src/chat-session.ts");
+  const { readTopicSettledAnchors } = await import("../../src/long-agents/topic-anchor.ts");
+  const manager = (await ensure({ chatHome: base.home, projectId: "friend" }, node.sessionId)).session.manager;
+  const anchors = readTopicSettledAnchors(manager);
+  assert.equal(anchors.length, 1, "exactly one settled round is forkable");
+  void writerConfig;
+});
+
+test("topic API: work finished but remember unfinished is NOT a forkable round", async (t) => {
+  const base = await fixture(t);
+  const previousHome = process.env.CHAT_HOME;
+  process.env.CHAT_HOME = base.home;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousHome;
+  });
+  const { ensureChatSessionWithId: ensure } = await import("../../src/chat-session.ts");
+  const { appendChatUserMessage } = await import("../../src/workflows/session-conversation.ts");
+  const { appendChatLongAgentTurn } = await import("../../src/long-agents/session-turn.ts");
+  const { readTopicSettledAnchors, appendTopicRoundMarker } = await import("../../src/long-agents/topic-anchor.ts");
+  const session = await ensure({ chatHome: base.home, projectId: "friend" }, "sess-half-round", "半轮");
+  const anchor = appendChatUserMessage(session.session.manager, "为什么这里空指针？");
+  session.session.manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "work：在第 42 行" }], timestamp: Date.now() });
+  const agentGroupContext = { contextRevision: `sha256:${"a".repeat(64)}`, agentGroupId: "group", agentGroupRevision: `sha256:${"b".repeat(64)}`,
+    indexRevision: `sha256:${"c".repeat(64)}`, definitionRevision: `sha256:${"d".repeat(64)}`, stale: false, fetchedAt: "2026-09-24T00:00:00.000Z" };
+  // Acceptance wrote the durable "round started" marker (as the node POST does), so the Session is in
+  // topic mode from the start and its Long Agent turn marker can no longer settle the round by itself.
+  appendTopicRoundMarker(session.session.manager, { roundId: "turn-half", userEntryId: "", status: "running" });
+  // The work segment finished (the Long Agent turn marker says completed) while the writer has not run yet.
+  appendChatLongAgentTurn(session.session.manager, { turnId: "turn-half", longAgentId: "friend", bindingId: "bind", source: "chat-web",
+    channelType: null, inboundEventId: null, agentGroupContext, status: "completed",
+    startedAt: "2026-09-24T00:00:00.000Z", completedAt: "2026-09-24T00:00:05.000Z", error: null });
+  session.session.manager.flush();
+  assert.equal(readTopicSettledAnchors(session.session.manager).length, 0,
+    "a completed work turn is NOT a settled round while the outer chain has not finished");
+  // The outer round marker (written after remember) is what makes the round forkable.
+  appendTopicRoundMarker(session.session.manager, { roundId: "turn-half", userEntryId: anchor, status: "completed" });
+  session.session.manager.flush();
+  const settled = readTopicSettledAnchors(session.session.manager);
+  assert.equal(settled.length, 1);
+  assert.equal(settled[0].anchorEntryId, anchor);
 });
