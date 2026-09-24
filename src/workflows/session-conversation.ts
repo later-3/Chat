@@ -4,6 +4,22 @@ import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-age
 export const CHAT_WORKFLOW_AGENT_HANDOFF_CUSTOM_TYPE = "chat.workflow_agent_handoff";
 export const CHAT_PLANNER_OUTPUT_REPAIR_CUSTOM_TYPE = "chat.planner_output_repair";
 
+/**
+ * Keeps ONLY the current round: the last user message and everything after it (in this Session that is
+ * the round's own user entry, then the whole `work` stage — every assistant and tool entry — and this
+ * agent's own stage). Earlier rounds are dropped on purpose: the 「会话记忆」writer must judge the round
+ * it is recording, and previous rounds plus existing memory are read on demand through the tool instead
+ * of being injected on every turn (taskbook §3.4, review 01).
+ *
+ * A round boundary cannot be read from Pi's stage markers here: context messages only contain
+ * `message`/`custom_message` entries, while stage markers are `custom` entries. The last user message is
+ * therefore the boundary, and it is exactly the entry that started this round.
+ */
+export function projectCurrentRoundContext(messages: AgentMessage[]): AgentMessage[] {
+  const roundStart = messages.findLastIndex((message) => message.role === "user");
+  return roundStart === -1 ? messages : messages.slice(roundStart);
+}
+
 /** Old control messages remain on disk; only this invocation's controls reach the model. */
 export function prepareWorkflowTurnContext(
   messages: AgentMessage[],
