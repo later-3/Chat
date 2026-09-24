@@ -7,6 +7,7 @@ import { SessionManager, type DefaultResourceLoader } from "@earendil-works/pi-c
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
 import { withFileLock } from "../persistence/versioned-file.js";
+import { chatSessionOperationKey, withChatSessionOperationLock } from "../session-operation-lock.js";
 import { createChatPiAgentSession } from "../agents/pi-agent-session.js";
 import { assemblyRevision, CHAT_ASSEMBLY_CONTEXT, readAssemblySnapshot, persistAssemblySnapshot } from "../agents/assembly-context.js";
 import { prepareLongAgentAssembly } from "./assembly.js";
@@ -210,6 +211,25 @@ export async function updateTurnStatus(home: string, turnId: string, status: Acc
   }) }, result: undefined }));
 }
 
+/**
+ * Opens a topic node round durably, in the node's own Session, before its work segment starts.
+ *
+ * The check/append/flush runs UNDER the Session operation lock so it cannot interleave with another
+ * writer of the same Session (the work segment, relay, retries): without the lock two writers can append
+ * from the same parent and the running marker would no longer be guaranteed to sit on the branch the
+ * work continues. The lock is released before the work segment runs (the work acquires it itself);
+ * nesting it here would self-deadlock, because the lock is not re-entrant.
+ */
+export async function markTopicRoundRunning(home: string, projectId: string, turn: AcceptedTurn): Promise<void> {
+  const [{ openChatSession }, { ensureTopicRoundRunningMarker }] = await Promise.all([
+    import("../chat-session.js"), import("./topic-anchor.js"),
+  ]);
+  await withChatSessionOperationLock(chatSessionOperationKey(projectId, turn.sessionId), async () => {
+    const session = await openChatSession({ projectId, chatHome: home, sessionId: turn.sessionId });
+    if (ensureTopicRoundRunningMarker(session.manager, { roundId: turn.turnId })) session.manager.flush();
+  });
+}
+
 /** Each native Session has one ordered worker; one identity may have independent work in parallel. */
 export function drainLongAgentTurns(home: string, longAgentId: string, sessionId?: string): Promise<void> {
   if (sessionId === undefined) return readLongAgentState(home).then(async state => {
@@ -233,6 +253,11 @@ export function drainLongAgentTurns(home: string, longAgentId: string, sessionId
       });
       if (!claimed) continue;
       try {
+        // A topic node round is durably opened BEFORE any work runs: the round's own Long Agent turn
+        // marker can never settle it while `remember` is still running. Acceptance only queues the turn;
+        // the marker is written here (idempotently, same turnId as the completed marker) so an
+        // interruption between accept and work cannot open that window.
+        if (turn.topicNode !== undefined) await markTopicRoundRunning(home, longAgentId, turn);
         await executeAcceptedLongAgentTurn({ longAgentId, projectId: longAgentId, sessionId: turn.sessionId, text: turn.text,
           ...(turn.images === undefined ? {} : { images: turn.images }), chatHome: home, turnId: turn.turnId, source: turn.source, channelType: turn.channelType,
           ...(turn.inboundEventId === null ? {} : { inboundEventId: turn.inboundEventId }), contextProjectId: turn.contextProjectId }, turn, loaders.get(key(home, turn.turnId)));

@@ -262,8 +262,8 @@ test("topic API: work finished but remember unfinished is NOT a forkable round",
   session.session.manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "work：在第 42 行" }], timestamp: Date.now() });
   const agentGroupContext = { contextRevision: `sha256:${"a".repeat(64)}`, agentGroupId: "group", agentGroupRevision: `sha256:${"b".repeat(64)}`,
     indexRevision: `sha256:${"c".repeat(64)}`, definitionRevision: `sha256:${"d".repeat(64)}`, stale: false, fetchedAt: "2026-09-24T00:00:00.000Z" };
-  // Acceptance wrote the durable "round started" marker (as the node POST does), so the Session is in
-  // topic mode from the start and its Long Agent turn marker can no longer settle the round by itself.
+  // The queue opens the durable "round started" marker BEFORE any work runs, so the Session is in topic
+  // mode from the first work entry and its Long Agent turn marker cannot settle the round by itself.
   appendTopicRoundMarker(session.session.manager, { roundId: "turn-half", userEntryId: "", status: "running" });
   // The work segment finished (the Long Agent turn marker says completed) while the writer has not run yet.
   appendChatLongAgentTurn(session.session.manager, { turnId: "turn-half", longAgentId: "friend", bindingId: "bind", source: "chat-web",
@@ -278,4 +278,114 @@ test("topic API: work finished but remember unfinished is NOT a forkable round",
   const settled = readTopicSettledAnchors(session.session.manager);
   assert.equal(settled.length, 1);
   assert.equal(settled[0].anchorEntryId, anchor);
+});
+
+test("topic API: recovery opens the round marker BEFORE work, closing the accept-to-work window", async (t) => {
+  const base = await fixture(t);
+  const previousHome = process.env.CHAT_HOME;
+  process.env.CHAT_HOME = base.home;
+  const faux = registerFauxProvider({ api: "chat-node-recover-faux", provider: "chat-node-recover-faux" });
+  t.after(() => {
+    faux.unregister();
+    if (previousHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousHome;
+  });
+  const model = faux.getModel();
+  fs.writeFileSync(path.join(base.home, "agent/settings.json"), JSON.stringify({
+    defaultProvider: model.provider, defaultModel: model.id, defaultThinkingLevel: "off", compaction: { enabled: false } }));
+  fs.writeFileSync(path.join(base.home, "agent/models.json"), JSON.stringify({ providers: { [model.provider]: {
+    baseUrl: model.baseUrl, api: model.api, apiKey: "faux-key", models: [{ id: model.id, name: model.name,
+      reasoning: model.reasoning, input: model.input, cost: model.cost, contextWindow: model.contextWindow, maxTokens: model.maxTokens }] } } }));
+
+  const { openChatSession, ensureChatSessionWithId: ensure } = await import("../../src/chat-session.ts");
+  const { acceptLongAgentTurn, drainLongAgentTurns } = await import("../../src/long-agents/turn-queue.ts");
+  const { collectTopicRoundMarkers, readTopicSettledAnchors } = await import("../../src/long-agents/topic-anchor.ts");
+  const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "定位", purpose: "定位", requestId: "recover-topic", expectedRevision: 0 })).topic;
+  const node = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
+    requestId: "recover-topic", title: "根节点", createdBy: "agent" })).node;
+
+  // The probe runs from INSIDE the work model call; the operation lock is held, so it opens the file read-only.
+  let markersBeforeWork = null;
+  faux.setResponses([
+    async () => {
+      const probe = await openChatSession({ chatHome: base.home, projectId: "friend", sessionId: node.sessionId });
+      markersBeforeWork = collectTopicRoundMarkers(probe.manager.getBranch()).map((marker) => ({ roundId: marker.roundId, status: marker.status }));
+      return fauxAssistantMessage("work：空指针在第 42 行");
+    },
+    fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "空指针根因在第 42 行", expectedRevision: 0 })),
+    (context) => {
+      const toolResult = context.messages.filter((message) => message.role === "toolResult").map((message) => JSON.stringify(message)).join("\n");
+      const entryId = /"entryId":"([^"]+)"/.exec(toolResult)?.[1] ?? "missing";
+      return fauxAssistantMessage(`已写入 ${entryId}`);
+    },
+  ]);
+
+  // Accepted, then "interrupted" BEFORE the worker ran: the turn is durable, nothing was executed.
+  await acceptLongAgentTurn({ chatHome: base.home, longAgentId: "friend", requireInteractionRevision: false, projectId: "friend",
+    turnId: "recover-turn-1", text: "为什么这里空指针？", source: "chat-web", topicNode: { topicId: topic.topicId, nodeId: node.nodeId } });
+  const accepted = await openChatSession({ chatHome: base.home, projectId: "friend", sessionId: node.sessionId });
+  assert.equal(collectTopicRoundMarkers(accepted.manager.getBranch()).length, 0, "acceptance alone writes no round marker");
+
+  // Recovery drives the queued turn; the marker must already be durable when the work model runs.
+  await drainLongAgentTurns(base.home, "friend", node.sessionId);
+  assert.deepEqual(markersBeforeWork, [{ roundId: "chat-web:friend:recover-turn-1", status: "running" }],
+    "the round is durably open before the work segment runs");
+  const turn = (await readLongAgentState(base.home)).turns.find((candidate) => candidate.turnId === "chat-web:friend:recover-turn-1");
+  assert.equal(turn.status, "completed", "the recovered round completes");
+  const manager = (await ensure({ chatHome: base.home, projectId: "friend" }, node.sessionId)).session.manager;
+  const recovered = readTopicSettledAnchors(manager);
+  assert.equal(recovered.length, 1, "the recovered round settles exactly one anchor after work + remember");
+  assert.equal(recovered[0].turnId, "chat-web:friend:recover-turn-1");
+});
+
+test("topic API: the running marker is serialized on the node session operation lock", async (t) => {
+  const base = await fixture(t);
+  const previousHome = process.env.CHAT_HOME;
+  process.env.CHAT_HOME = base.home;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousHome;
+  });
+  const { openChatSession } = await import("../../src/chat-session.ts");
+  const { chatSessionOperationKey, withChatSessionOperationLock } = await import("../../src/session-operation-lock.ts");
+  const { markTopicRoundRunning } = await import("../../src/long-agents/turn-queue.ts");
+  const { collectTopicRoundMarkers } = await import("../../src/long-agents/topic-anchor.ts");
+  const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "锁", purpose: "锁", requestId: "lock-topic", expectedRevision: 0 })).topic;
+  const node = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
+    requestId: "lock-topic", title: "根节点", createdBy: "agent" })).node;
+  const seed = await openChatSession({ chatHome: base.home, projectId: "friend", sessionId: node.sessionId });
+  appendChatUserMessage(seed.manager, "起点");
+  seed.manager.flush();
+
+  // A competing writer (e.g. relay) takes the Session operation lock and snapshots the branch BEFORE the
+  // marker is written. The marker must wait for that writer and append AFTER it, rather than append from
+  // the same parent and risk landing on an abandoned branch.
+  let releaseGate;
+  const gate = new Promise((resolve) => { releaseGate = resolve; });
+  let holderOpened;
+  const opened = new Promise((resolve) => { holderOpened = resolve; });
+  let holderSession;
+  const holder = withChatSessionOperationLock(chatSessionOperationKey("friend", node.sessionId), async () => {
+    holderSession = await openChatSession({ chatHome: base.home, projectId: "friend", sessionId: node.sessionId });
+    holderOpened();
+    await gate;
+    appendChatUserMessage(holderSession.manager, "并发写入");
+    holderSession.manager.flush();
+  });
+  await opened;
+  const pending = markTopicRoundRunning(base.home, "friend", { sessionId: node.sessionId, turnId: "chat-web:friend:turn-lock" });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const during = await openChatSession({ chatHome: base.home, projectId: "friend", sessionId: node.sessionId });
+  assert.equal(collectTopicRoundMarkers(during.manager.getBranch()).length, 0, "the marker waits for the Session lock");
+  releaseGate();
+  await holder;
+  await pending;
+  const after = await openChatSession({ chatHome: base.home, projectId: "friend", sessionId: node.sessionId });
+  const branch = after.manager.getBranch();
+  const markers = collectTopicRoundMarkers(branch);
+  assert.equal(markers.length, 1, "exactly one running marker was written");
+  const markerPosition = branch.findIndex((entry) => entry.id === markers[0].entryId);
+  const concurrentPosition = branch.findIndex((entry) => entry.type === "message" && JSON.stringify(entry.message?.content ?? "").includes("并发写入"));
+  assert.notEqual(concurrentPosition, -1, "the competing write is on the branch");
+  assert.ok(markerPosition > concurrentPosition, "the marker lands after the competing write on the SAME branch");
 });

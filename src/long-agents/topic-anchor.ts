@@ -41,6 +41,23 @@ export function appendTopicRoundMarker(
   });
 }
 
+/**
+ * Durably marks a topic round as RUNNING before its work starts. The queue calls this BEFORE executing a
+ * node turn, so an interrupted acceptance cannot leave work running while the Session still looks like
+ * plain Long Agent history. Idempotent: a round that already has any marker (e.g. after recovery) is left
+ * untouched, and the roundId is the same turn id the completed marker uses.
+ */
+export function ensureTopicRoundRunningMarker(
+  sessionManager: SessionManager,
+  data: { roundId: string },
+): boolean {
+  const roundId = typeof data.roundId === "string" ? data.roundId.trim() : "";
+  if (roundId === "") throw new TopicAnchorError("轮次 roundId 无效");
+  if (collectTopicRoundMarkers(sessionManager.getBranch()).some((marker) => marker.roundId === roundId)) return false;
+  appendTopicRoundMarker(sessionManager, { roundId, userEntryId: "", status: "running" });
+  return true;
+}
+
 export function collectTopicRoundMarkers(entries: readonly unknown[]): TopicRoundMarker[] {
   const markers: TopicRoundMarker[] = [];
   for (const entry of entries) {
@@ -106,12 +123,16 @@ export function readTopicSettledAnchors(sessionManager: SessionManager): TopicSe
     if (isRecord(entry) && typeof entry.id === "string") positionById.set(entry.id, index);
   });
   const settled: { position: number; anchorEntryId: string; turnId: string; settledAt: string }[] = [];
-  // Topic-mode Sessions are settled by the OUTER round marker, not by the Long Agent turn: the turn is
-  // marked completed when the work segment ends, which is exactly the window where `remember` may still
-  // be writing. As soon as a Session carries round markers, a bare turn marker is not forkable.
-  const topicMode = collectTopicRoundMarkers(branch).length > 0;
+  // A Long Agent turn that belongs to an OUTER topic round is settled by the round marker, not by the
+  // turn: the turn is marked completed when the work segment ends, which is exactly the window where
+  // `remember` may still be writing. The rule is per ROUND, never per Session: sessions created before
+  // topic mode (and legacy rounds) keep their bare turn anchors, so a new round cannot erase history.
+  // A roundId is the turn id; a round marker written by an older acceptance may instead carry the raw
+  // requestId, which is the suffix of that turn id.
+  const governedTurnIds = [...new Set(collectTopicRoundMarkers(branch).map((round) => round.roundId))];
+  const isGovernedByRound = (turnId: string): boolean => governedTurnIds.some((roundId) => turnId === roundId || turnId.endsWith(`:${roundId}`));
   for (const marker of collectChatLongAgentTurnMarkers(branch)) {
-    if (topicMode) break;
+    if (isGovernedByRound(marker.turnId)) continue;
     if (marker.status !== "completed") continue;
     const markerPosition = positionById.get(marker.entryId);
     if (markerPosition === undefined) continue;

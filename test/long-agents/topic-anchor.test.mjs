@@ -5,6 +5,8 @@ import { appendChatUserMessage } from "../../src/workflows/session-conversation.
 import { appendChatLongAgentTurn } from "../../src/long-agents/session-turn.ts";
 import {
   appendTopicRoundMarker,
+  collectTopicRoundMarkers,
+  ensureTopicRoundRunningMarker,
   readLatestTopicSettledAnchor,
   readTopicSettledAnchors,
   requireTopicAnchor,
@@ -75,6 +77,45 @@ test("P2 anchors: a failed retry of the same round does not add a second anchor"
   assert.equal(anchors.length, 1, "the round keeps one anchor");
   assert.equal(anchors[0].anchorEntryId, anchor);
   assert.equal(anchors[0].turnId, "turn-a");
+});
+
+test("P2 anchors: a new running round does not erase legacy turn anchors", (t) => {
+  const { manager, rounds, round } = session();
+  const firstLegacy = round("legacy-a", "completed");
+  const secondLegacy = round("legacy-b", "completed");
+  const legacy = readTopicSettledAnchors(manager);
+  assert.deepEqual(legacy.map((anchor) => anchor.anchorEntryId), [firstLegacy, secondLegacy]);
+  // A topic round starts: the queue opens it durably (running, no user entry yet) before its work runs.
+  appendTopicRoundMarker(manager, { roundId: "chat-web:friend:round-x", userEntryId: "", status: "running" });
+  const preserved = readTopicSettledAnchors(manager);
+  assert.deepEqual(preserved.map((anchor) => anchor.anchorEntryId), [firstLegacy, secondLegacy],
+    "the new round must not erase the history that predates it");
+  assert.deepEqual(preserved.map((anchor) => anchor.anchorSequence), [1, 2], "legacy anchors keep their sequence");
+  // The round's work finishes (bare Long Agent turn says completed) but the outer chain has not: the
+  // round is not forkable and the legacy anchors are still untouched.
+  const roundUser = appendChatUserMessage(manager, "新一轮");
+  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "答" }], timestamp: Date.now() });
+  appendChatLongAgentTurn(manager, turnData("chat-web:friend:round-x", "completed"));
+  assert.deepEqual(readTopicSettledAnchors(manager).map((anchor) => anchor.anchorEntryId), [firstLegacy, secondLegacy]);
+  assert.throws(() => requireTopicAnchor(manager, { anchorEntryId: roundUser, anchorSequence: 3 }), /锚点不是已完成的轮次/);
+  // Only the completed outer round settles the round, appended after the legacy anchors.
+  appendTopicRoundMarker(manager, { roundId: "chat-web:friend:round-x", userEntryId: roundUser, status: "completed" });
+  const settled = readTopicSettledAnchors(manager);
+  assert.deepEqual(settled.map((anchor) => anchor.anchorEntryId), [firstLegacy, secondLegacy, roundUser]);
+  assert.deepEqual(settled.map((anchor) => anchor.anchorSequence), [1, 2, 3]);
+  assert.equal(settled[2].turnId, "chat-web:friend:round-x");
+});
+
+test("P2 anchors: ensureTopicRoundRunningMarker opens a round once and never rewrites it", (t) => {
+  const { manager } = session();
+  assert.equal(ensureTopicRoundRunningMarker(manager, { roundId: "turn-1" }), true);
+  assert.equal(ensureTopicRoundRunningMarker(manager, { roundId: "turn-1" }), false, "the marker is idempotent");
+  assert.deepEqual(collectTopicRoundMarkers(manager.getBranch()).map((marker) => [marker.roundId, marker.status]), [["turn-1", "running"]]);
+  // Once the round has a terminal marker, recovery must not reopen it.
+  const user = appendChatUserMessage(manager, "问题");
+  appendTopicRoundMarker(manager, { roundId: "turn-1", userEntryId: user, status: "completed" });
+  assert.equal(ensureTopicRoundRunningMarker(manager, { roundId: "turn-1" }), false);
+  assert.deepEqual(collectTopicRoundMarkers(manager.getBranch()).map((marker) => marker.status), ["running", "completed"]);
 });
 
 test("P2 anchors: the outer round marker settles a whole work+remember round", (t) => {

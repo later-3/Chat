@@ -1,7 +1,7 @@
 # 主题模式（Topic Mode）交接文档
 
 状态：**P1 已独立复核通过；P2 进行中（后端主干已可用，尚未收口）**。日期：2026-09-24。
-基线：**`28a4d2483`**（工作区干净，`pnpm verify` exit=0：56 tooling / 612 Backend / 185 Frontend / 30 built / 8 dev server）。
+基线：**`7dc339f13`** + 本批锚点修复提交（`git log` 顶部，含会话锁串行化）；`pnpm verify` exit=0：56 tooling / 616 Backend / 185 Frontend / 30 built / 8 dev。
 本文是**面向新会话的交接**：先看 §1 的 5 分钟入口，再按 §4 未完成清单继续，不要只看测试数量判断进度。
 
 ---
@@ -53,6 +53,7 @@ node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types --
 | 生命周期与读取守卫 | `d14fe2f9a`、`b2664c9bf` | 会话 remove/restore/purge 镜像到节点状态；恢复回调在清 pending 前收敛记忆与主题图；`assertSessionFileReadable` 对通用读取入口应用主题判定 |
 | 外层「会话记忆」workflow | `5f39c7308`、`e2a78cc0e`、`750596dbd`、`a54eb1456` | `work → remember` 同一节点会话；writer 只收到**当前轮**（从耐久分支投影）；worker 具备普通工作工具 + `workflow_call`；本轮返回**work 答案**；节点级记忆开关 |
 | 外层编排 + 关闭提前分叉 | `28a4d2483` | 队列 worker = 编排点：工作段 → writer → 整轮完成标记 → 才 settle；锚点只认 `completed` 整轮标记 |
+| 锚点窗口修复（复核后） | 本批（`git log` 顶部） | running 标记改由队列在**工作段之前**幂等写入（同一 `turnId`，且在**节点会话操作锁内**检查/追加/flush、work 前释放）；`readTopicSettledAnchors` 改为**按轮次**抑制 `chat.long_agent_turn`，不再用会话级开关抹掉历史；新增 3 条回归（历史锚点保留、恢复时先写 running 再工作、并发写入下标记串行落同分支） |
 
 ---
 
@@ -86,7 +87,7 @@ node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types --
 3. **writer 的上下文来自耐久分支**：`transformContext` 的入参**不含会话历史**（Workflow agent session 只有装配/控制条目）。`prepareWorkflowTurnContext` 也**不做**轮次投影。所以：投影 = `projectCurrentRoundContext(messages)`（保留最后一条 user 消息及其之后的一切）+ 从 `getContextBranch()` 取条目并 `sessionEntryToContextMessages` 转换；**没有 user 条目 → 返回 `null` 并拒写**（绝不把全部历史交给 writer）。
 4. **两 stage 必须同一会话**：work step 若用 `sessionId: undefined` 会新建会话，必须把 work 解析出的 `sessionId` 传给 remember（否则 remember 打开第二个空会话、投影为空、直接拒写）。
 5. **记忆目标身份**：toolContext 需要 `longAgentId`（会话自身存储项目）；`resolveSessionMemoryTarget` 仍强制必须是 agent home，普通项目会话永远拿不到记忆权限。
-6. **锚点门禁**：节点会话在**接受时**写 `chat.topic-round{status:"running"}`（刚开始的轮次还没有用户条目，故 running 允许空 `userEntryId`）；`readTopicSettledAnchors` 一旦发现整轮标记，就**只认 `completed` 整轮标记**，`chat.long_agent_turn` 的 completed 不再可分叉。关闭记忆时 worker 在工作段后直接写 completed。
+6. **锚点门禁**：**队列 worker** 在工作段启动**之前**，用 `ensureTopicRoundRunningMarker` 幂等写入 `chat.topic-round{status:"running"}`，`roundId` = 该轮 `turnId`（刚开始的轮次还没有用户条目，故 running 允许空 `userEntryId`）；检查/追加/flush 在**节点会话操作锁内**、且**在 work 之前释放**（不要把 work 包进同一把锁，会自锁），保证标记与 work/relay 落在同一分支。接受侧只排队、不写标记，所以“已接受、标记未写即中断”由 worker 在恢复执行时补上。`readTopicSettledAnchors` **按轮次**（`roundId === turnId`，兼容旧版把 `requestId` 当 `roundId` 的后缀匹配）抑制该轮**自己**的 `chat.long_agent_turn` completed，**不再用会话级开关**——主题模式之前的历史轮次继续可分叉、序号不变。关闭记忆时 worker 在工作段后直接写 completed。
 7. **锁与恢复的边界**：`withFileLock` **不可重入**；读取型守卫（`requireTopicMemorySource`、`ensureChatSessionWithId`）用 **不触发恢复** 的 `readInactiveChatSessionState`；来源校验放在**图锁之外**；恢复只由真正的生命周期入口执行，且**清 pending 前**先收敛记忆与主题图。
 8. **来源地址语义**：`TopicMemorySource` 指向**会话记忆条目**（agent home 下的 `smem-*`），不是 Pi 全文条目；Pi 全文地址只用于边的 `anchorEntryId`。
 9. **relay 的耐久关联**：写在**原生 user message 自身**的 Chat 自有字段上（`message.chatTopicRelay`，Pi 原样往返），因此重放**精确匹配**、不用正文认领；去重范围是**整个会话文件**（`getEntries()`），不在当前分支 → 409。
