@@ -100,14 +100,25 @@ export async function startTopicIntegration(input: StartTopicIntegrationInput) {
   const home = resolveChatHome(input.chatHome);
   const requestId = text(input.requestId, "requestId", 200);
   if (!isTopicRequestId(requestId)) throw new Error("requestId 格式无效");
-  // A replay after the work produced the node stays a success even across a daily-session rollover: the
-  // graph is the durable product, so it is checked before the source is resolved again.
+  // The persisted work is the request identity, so it is read BEFORE anything is skipped: a request
+  // that already produced (or is producing) a node must still be re-checked against it.
   const existing = await readTopicIntegration({ chatHome: home, longAgentId: input.longAgentId, requestId });
-  if (existing.node !== null) return existing;
   const title = text(input.title, "title", 200);
   const purpose = text(input.purpose, "purpose", 2_000);
-  const sourceSessionId = await resolveDailySource(home, input.longAgentId, input.sourceSessionId);
   const ids = topicIntegrationIds(input.longAgentId, requestId);
+  // A work that exists froze its source: a replay must not re-resolve "today's" daily session (which
+  // may have rolled over) and must not be allowed to change the source.
+  let sourceSessionId: string;
+  if (existing.work !== null) {
+    sourceSessionId = existing.work.originSessionId;
+    if (input.sourceSessionId !== undefined && text(input.sourceSessionId, "sourceSessionId", 200) !== sourceSessionId)
+      throw new Error("该 requestId 的建题来源已固定，不能更改");
+  } else {
+    if (existing.node !== null) throw new Error("建题节点已存在但缺少后台工作记录，无法核对请求身份");
+    sourceSessionId = await resolveDailySource(home, input.longAgentId, input.sourceSessionId);
+  }
+  // startFriendWork owns the payload comparison, so title/purpose/source changes after creation are a
+  // conflict (it throws) instead of a silent success.
   await startFriendWork({
     chatHome: home,
     longAgentId: input.longAgentId,

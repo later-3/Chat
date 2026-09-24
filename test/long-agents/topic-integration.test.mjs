@@ -112,6 +112,24 @@ test("topic integration: a daily 建题 request drives the background integratio
   const memory = await readSessionMemory(base.home, "friend", ids.sessionId);
   assert.equal(memory.entries.some((entry) => entry.purpose === "background" && entry.content.includes("空指针根因")), true,
     "the root node carries its integrated initial memory");
+  // After the node exists, the request identity is still enforced against the persisted work: a same
+  // payload replay is still that one work, while any changed field is a conflict — not a silent success.
+  const postReplay = await (await call("/api/long-agents/friend/topics/integrations", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schemaVersion: 1, requestId, title: "空指针定位", purpose: "定位线上空指针并沉淀结论" }),
+  })).json();
+  assert.equal(postReplay.work.id, started.work.id);
+  assert.equal(postReplay.node.nodeId, ids.nodeId);
+  for (const changed of [
+    { title: "换了标题", purpose: "定位线上空指针并沉淀结论" },
+    { title: "空指针定位", purpose: "换了目的" },
+    { title: "空指针定位", purpose: "定位线上空指针并沉淀结论", sourceSessionId: "sess-some-other-daily" },
+  ]) {
+    assert.equal((await call("/api/long-agents/friend/topics/integrations", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schemaVersion: 1, requestId, ...changed }),
+    })).status, 400, `a post-creation change must conflict: ${JSON.stringify(changed)}`);
+  }
   // Unknown requests are a 404, never an empty success.
   assert.equal((await call("/api/long-agents/friend/topics/integrations/no-such-request")).status, 404);
 

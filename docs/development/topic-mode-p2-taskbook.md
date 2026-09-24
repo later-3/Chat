@@ -105,7 +105,7 @@
 | T5 | 代传与生命周期 | relay 是真实 user message + 标记可见；越权（他人树）拒绝；**会话被移除后 node `removed` 且边保留**，archived/removed 拒绝 relay |
 | T6 | 权限（含绕行入口） | owner 可读写节点会话；树属 Agent 可代传；跨树只读可；写他人记忆拒绝；**通用 Session 读写与 Run 启动（如 `POST /runs`）对主题节点走同一授权，越权被拒** |
 | T7 | 开关 | 关闭后不装配读取工具、不跑 `remember`，普通对话不受影响 |
-| T8 | 后端端到端（假模型） | 建题请求 → 日常来源解析 → 后台整合 work → 建节点 + 初始记忆 → 节点内一轮（work+remember）→ 分叉 → 第二主题跨树引用父记忆；全程 API 断言（`test/long-agents/topic-integration.test.mjs` 已覆盖前段：建题 → 日常来源 → 后台整合 work 经**真实装配**调用 `topic_manage` 建根节点+初始记忆 → 节点内一轮 work+remember → 可分叉；第二主题跨树引用见既有用例） |
+| T8 | 后端端到端（假模型 + 真实模型） | 建题请求 → 日常来源解析 → 后台整合 work → 建节点 + 初始记忆 → 节点内一轮（work+remember）→ 分叉 → 第二主题跨树引用父记忆；假模型 API：`test/long-agents/topic-integration.test.mjs`（建题 → 真实装配调 `topic_manage` 建根节点+初始记忆 → 节点内 work+remember → 可分叉；建成后重放比对标题/目的/来源）；真实模型：`docs/history/reviews/2026-09-24-topic-mode-real-model-verification.md`（模型先 `read_fulltext`/`read_memory` 再 `create_topic`/`create_node`，初始 provenance 与真实子节点已验）。**未交付**：日常轮次“只说一句话自动触发建题” |
 | T9 | 随附业务 workflow | 主题会话内调用问题定位 workflow 返回结果（假模型），run 归属符合 §2 第 2 条 |
 
 退出条件：T1–T9 有证据；`pnpm verify` exit=0；无新增运行时旁路（不新建 Session/调度器/模型循环）。真实模型完整故事与浏览器可见性分别归 P4/P3。
