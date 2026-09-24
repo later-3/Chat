@@ -24,6 +24,7 @@ import {
 } from "./session-operation-lock.js";
 import { firstSessionUtterance, listActiveSessionFiles } from "./session-files.js";
 import { clearSessionMemoryOrphan, convergeSessionMemoryWithLifecycle, markSessionMemoryOrphan, purgeSessionMemory } from "./long-agents/session-memory.js";
+import { applyTopicNodeSessionLifecycle } from "./long-agents/topics.js";
 
 /**
  * Lifecycle convergence for a session whose removed-index operation was interrupted: the session's
@@ -168,6 +169,9 @@ export async function removeChatSession(
       await writeRemovedSessionIndex(project, prepared);
       await rename(session.path, target);
       if (project.kind === "agent") await markSessionMemoryOrphan(project.chatHome, projectId, sessionId);
+      // The topic node follows the session: removal is reflected durably before the index completes.
+      // The session lock is already held here, so this only takes the graph lock (session -> graph).
+      if (project.kind === "agent") await applyTopicNodeSessionLifecycle({ chatHome: project.chatHome, longAgentId: projectId, sessionId, state: "removed" });
       const completed = completeRemovedSessionIndex(prepared, {
         ...prepared.sessions,
         [record.id]: record,
@@ -209,6 +213,7 @@ export async function restoreRemovedChatSession(
       await rename(removedSessionRecordPath(project, record), target);
       // The memory change lands after the durable intent and file move, before completion (review 28).
       if (project.kind === "agent") await clearSessionMemoryOrphan(project.chatHome, projectId, sessionId);
+      if (project.kind === "agent") await applyTopicNodeSessionLifecycle({ chatHome: project.chatHome, longAgentId: projectId, sessionId, state: "active" });
       const sessions = { ...prepared.sessions };
       delete sessions[sessionId];
       await writeRemovedSessionIndex(project, completeRemovedSessionIndex(prepared, sessions));

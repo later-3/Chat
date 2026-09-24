@@ -12,7 +12,7 @@ import {
   createTopic,
   createTopicNode,
   findTopicNodeBySession,
-  markTopicNodeRemoved,
+  applyTopicNodeSessionLifecycle,
   readTopicGraph,
   topicNodeIdOf,
   topicNodeSessionIdOf,
@@ -137,10 +137,10 @@ test("P2 topics: removing a session marks the node removed and keeps its edges",
   const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "r1", expectedRevision: 0 })).topic;
   const root = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "root", createdBy: "agent", requestId: "r1", expectedRevision: 1 });
   const child = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "child", createdBy: "agent", requestId: "r3", expectedRevision: 2, parents: [{ parentNodeId: root.node.nodeId }] });
-  const removed = await markTopicNodeRemoved({ chatHome: home, longAgentId: "friend", sessionId: child.node.sessionId });
+  const removed = await applyTopicNodeSessionLifecycle({ chatHome: home, longAgentId: "friend", sessionId: child.node.sessionId, state: "removed" });
   assert.equal(removed.node.status, "removed");
   assert.equal(removed.graph.edges.length, 1, "the edge is kept for provenance");
-  assert.equal(await markTopicNodeRemoved({ chatHome: home, longAgentId: "friend", sessionId: "s-unknown" }), null);
+  assert.equal(await applyTopicNodeSessionLifecycle({ chatHome: home, longAgentId: "friend", sessionId: "s-unknown", state: "removed" }), null);
   // Archiving is a separate lifecycle state.
   assert.equal((await updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: root.node.nodeId, status: "archived", expectedRevision: removed.graph.revision })).status, "archived");
   // A removed node is terminal: a normal status update must not resurrect it.
@@ -173,7 +173,7 @@ test("P2 topics: the shared authorization decides read/relay/write for every ent
   // A session that is not a topic node is not this subsystem's business.
   assert.equal(authorizeTopicSession({ graph, requester: owner, sessionId: "s-plain-not-a-node", capability: "write" }).applicable, false);
 
-  graph = (await markTopicNodeRemoved({ chatHome: home, longAgentId: "owner", sessionId: child.node.sessionId })).graph;
+  graph = (await applyTopicNodeSessionLifecycle({ chatHome: home, longAgentId: "owner", sessionId: child.node.sessionId, state: "removed" })).graph;
   assert.equal(authorizeTopicSession({ graph, requester: owner, sessionId: child.node.sessionId, capability: "read" }).allowed, true, "removed nodes stay readable");
   assert.equal(authorizeTopicSession({ graph, requester: owner, sessionId: child.node.sessionId, capability: "relay" }).allowed, false);
   assert.equal(authorizeTopicSession({ graph, requester: { kind: "user" }, sessionId: child.node.sessionId, capability: "write" }).allowed, false);

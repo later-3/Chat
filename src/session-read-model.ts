@@ -471,18 +471,33 @@ async function assertSessionFileReadable(input: {
   chatHome?: string;
   sessionPath: string;
   sessionId: string;
+  /** Storage project of this Session; required to consult the topic graph. */
+  storageProjectId?: string;
   requester: import("./long-agents/conversations/access.js").SessionRequester | null;
 }): Promise<void> {
   const { participationBindingOf, assertParticipantSessionReadable } = await import("./long-agents/conversations/access.js");
   const binding = participationBindingOf(SessionManager.open(input.sessionPath, dirname(input.sessionPath)).getEntries());
-  if (binding === null) return;
-  if (input.requester === null) throw new Error("群参与 Session 需要明确的读取身份：普通读取入口不能绕过群授权");
-  await assertParticipantSessionReadable({
-    chatHome: input.chatHome ?? resolveChatHome(),
-    storageProjectId: binding.storageProjectId,
-    sessionId: input.sessionId,
-    requester: input.requester,
-  });
+  if (binding !== null) {
+    if (input.requester === null) throw new Error("群参与 Session 需要明确的读取身份：普通读取入口不能绕过群授权");
+    await assertParticipantSessionReadable({
+      chatHome: input.chatHome ?? resolveChatHome(),
+      storageProjectId: binding.storageProjectId,
+      sessionId: input.sessionId,
+      requester: input.requester,
+    });
+  }
+  // Topic nodes: EVERY session read entry (detail, history, transcript, export, node API, streams) goes
+  // through the shared topic decision, so the tool/domain rules cannot be bypassed by reading the
+  // session directly. A Session without a topic node is unaffected.
+  if (input.storageProjectId === undefined) return;
+  const { authorizeTopicSession, readTopicGraph } = await import("./long-agents/topics.js");
+  const graph = await readTopicGraph(input.chatHome ?? resolveChatHome(), input.storageProjectId);
+  const topicRequester = input.requester === null || input.requester.kind === "owner"
+    ? { kind: "user" as const }
+    : { kind: "agent" as const, longAgentId: input.requester.longAgentId };
+  const decision = authorizeTopicSession({ graph, requester: topicRequester, sessionId: input.sessionId, capability: "read" });
+  if (decision.applicable && !decision.allowed)
+    throw new Error(decision.reason ?? "没有读取该主题节点的权限");
 }
 
 /** Exported so owner-facing entry points (export/transcript) apply the same guard before reading. */
@@ -497,6 +512,7 @@ export async function assertChatSessionReadable(input: {
     ...(input.chatHome === undefined ? {} : { chatHome: input.chatHome }),
     sessionPath: info.path,
     sessionId: input.sessionId,
+    ...(input.projectId === undefined ? {} : { storageProjectId: input.projectId }),
     requester: input.requester,
   });
 }
@@ -511,7 +527,8 @@ export async function readChatToolResultImage(
   requester: import("./long-agents/conversations/access.js").SessionRequester | null = null,
 ): Promise<ChatToolResultImageRead> {
   const info = await requireChatSession(sessionId, projectId, chatHome);
-  await assertSessionFileReadable({ ...(chatHome === undefined ? {} : { chatHome }), sessionPath: info.path, sessionId, requester });
+  await assertSessionFileReadable({ ...(chatHome === undefined ? {} : { chatHome }), sessionPath: info.path, sessionId,
+    ...(projectId === undefined ? {} : { storageProjectId: projectId }), requester });
   let manager: SessionManager;
   try {
     manager = SessionManager.open(info.path, dirname(info.path));

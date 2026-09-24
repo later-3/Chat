@@ -620,16 +620,23 @@ export async function addTopicNodeParent(input: ParentEdgeSpec & {
   });
 }
 
-/** Mark the node that owns a removed session (edges are kept so provenance survives). */
-export async function markTopicNodeRemoved(input: {
+/**
+ * Mirrors a Session lifecycle change onto its topic node. This is the ONLY writer allowed to leave the
+ * `removed` state: it reflects what happened to the session file (the user/agent-facing
+ * `updateTopicNodeStatus` keeps `removed` terminal). Edges are always kept so provenance survives.
+ * Not a topic node -> no-op (ordinary project sessions and non-topic agent sessions are unaffected).
+ */
+export async function applyTopicNodeSessionLifecycle(input: {
   chatHome: string;
   longAgentId: string;
   sessionId: string;
+  state: "removed" | "active";
 }): Promise<{ node: TopicNodeRecord; graph: TopicGraphState } | null> {
   return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
     const node = state.nodes.find((candidate) => candidate.sessionId === input.sessionId);
     if (node === undefined) return null;
-    node.status = "removed";
+    if (node.status === input.state) return { node: { ...node }, graph: snapshot(state) };
+    node.status = input.state;
     node.updatedAt = new Date().toISOString();
     state.revision += 1;
     return { node: { ...node }, graph: snapshot(state) };

@@ -462,3 +462,59 @@ test("P2 creation: a supplementary edge needs its own settled anchor and an exac
     /该父边已存在且规格不同/,
   );
 });
+
+test("P2 creation: a removed session marks its node removed and a restore brings it back", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "lc-topic", expectedRevision: 0 })).topic;
+  const node = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "lc-topic", expectedRevision: 1 });
+  await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, node.node.sessionId, "根");
+
+  await removeChatSession("friend", node.node.sessionId, home);
+  const afterRemove = await readTopicGraph(home, "friend");
+  assert.equal(afterRemove.nodes.find((candidate) => candidate.nodeId === node.node.nodeId).status, "removed", "the node mirrors the session removal");
+  // Removal is terminal for the user/agent-facing status update ...
+  await assert.rejects(
+    updateTopicNodeStatus({ chatHome: home, longAgentId: "friend", nodeId: node.node.nodeId, status: "active", expectedRevision: afterRemove.revision }),
+    /已移除，不能改回可用状态/,
+  );
+  // ... but the lifecycle hook itself may bring the node back with the session.
+  await restoreRemovedChatSession("friend", node.node.sessionId, home);
+  const afterRestore = await readTopicGraph(home, "friend");
+  assert.equal(afterRestore.nodes.find((candidate) => candidate.nodeId === node.node.nodeId).status, "active", "a restored session restores its node");
+  // A purge leaves the node removed: the session is gone for good.
+  await removeChatSession("friend", node.node.sessionId, home);
+  await purgeRemovedChatSession("friend", node.node.sessionId, home);
+  const afterPurge = await readTopicGraph(home, "friend");
+  assert.equal(afterPurge.nodes.find((candidate) => candidate.nodeId === node.node.nodeId).status, "removed");
+  // An ordinary session has no node: the hook is a no-op.
+  const ordinary = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, "sess-not-a-node", "普通");
+  ordinary.session.manager.flush();
+  await removeChatSession("friend", "sess-not-a-node", home);
+  assert.equal((await readTopicGraph(home, "friend")).nodes.length, 1);
+});
+
+test("P2 creation: the shared session read entry applies the topic decision", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  await ensureAgentHomeProject("other", "Other", home);
+  const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "rg-topic", expectedRevision: 0 })).topic;
+  const node = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "rg-topic", expectedRevision: 1 });
+  await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, node.node.sessionId, "根");
+  const { assertChatSessionReadable } = await import("../../src/session-read-model.ts");
+
+  // The owner and another Long Agent may read a topic node (cross-tree read is part of the contract).
+  await assertChatSessionReadable({ sessionId: node.node.sessionId, projectId: "friend", chatHome: home, requester: { kind: "owner" } });
+  await assertChatSessionReadable({ sessionId: node.node.sessionId, projectId: "friend", chatHome: home, requester: { kind: "friend", longAgentId: "other" } });
+  // A removed node stays readable (provenance), which the shared entry must not break.
+  await removeChatSession("friend", node.node.sessionId, home);
+  await assert.rejects(
+    assertChatSessionReadable({ sessionId: node.node.sessionId, projectId: "friend", chatHome: home, requester: { kind: "owner" } }),
+    (error) => error.code === "SESSION_REMOVED",
+  );
+  // An ordinary session is unaffected by the topic gate.
+  await restoreRemovedChatSession("friend", node.node.sessionId, home);
+  const plain = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, "sess-plain-read", "普通");
+  plain.session.manager.flush();
+  await assertChatSessionReadable({ sessionId: "sess-plain-read", projectId: "friend", chatHome: home, requester: { kind: "friend", longAgentId: "other" } });
+});
