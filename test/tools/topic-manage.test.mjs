@@ -300,6 +300,22 @@ test("topic_manage: relay re-checks the node inside the session lock and never d
 
   // The relayed message is a native user message carrying the durable request association.
   const relayed = relayedFirst;
+  // An intra-session branch switch must not let the same request append a second relayed message.
+  const branched = await openChatSession({ chatHome: home, projectId: "friend", sessionId: root.node.sessionId });
+  const openingId = appendChatUserMessage(branched.manager, "分支前的一条普通消息");
+  branched.manager.flush();
+  const branchedRelay = await call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-branch", text: "在第一条分支上代传" });
+  assert.equal(branchedRelay.created, true);
+  branched.manager.branch(openingId);
+  appendChatUserMessage(branched.manager, "另一条分支上的消息");
+  branched.manager.flush();
+  assert.equal(branched.manager.getBranch().some((entry) => entry.id === branchedRelay.userEntryId), false, "the relayed message is now off the current branch");
+  await assert.rejects(call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-branch", text: "在第一条分支上代传" }),
+    /不在当前分支/, "a replay must not append a second copy after a branch switch");
+  const branchFileEntries = (await openChatSession({ chatHome: home, projectId: "friend", sessionId: root.node.sessionId }))
+    .manager.getEntries().filter((entry) => entry.message?.chatTopicRelay?.requestId === "rc-branch");
+  assert.equal(branchFileEntries.length, 1, "the whole session file holds exactly one relayed message for the request");
+
   // An unrelated user message with the SAME text must never be claimed as a relay. The association is
   // matched exactly, and a replay returns the same entry instead of writing a second message.
   const session2 = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根");

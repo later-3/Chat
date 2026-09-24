@@ -1099,7 +1099,9 @@ export async function relayTopicNodeMessage(input: {
     // Re-check next to the append: an archived node must not receive a relayed message.
     requireRelayable(await readTopicGraph(input.chatHome, input.longAgentId));
     const session = await openChatSession({ chatHome: input.chatHome, projectId: input.longAgentId, sessionId: node.sessionId });
-    const existing = session.manager.getBranch().find((entry) => {
+    // Dedupe over the WHOLE session file, not just the current branch: an intra-session branch switch
+    // must not let the same request append a second relayed message.
+    const existing = session.manager.getEntries().find((entry) => {
       const message = (entry as { type?: string; message?: unknown }).message;
       if ((entry as { type?: string }).type !== "message" || !isRecord(message)) return false;
       return relayAssociationOf(message)?.requestId === requestId;
@@ -1108,6 +1110,11 @@ export async function relayTopicNodeMessage(input: {
       const association = relayAssociationOf((existing as unknown as { message: Record<string, unknown> }).message)!;
       if (association.targetNodeId !== nodeId || association.textDigest !== textDigest)
         throw new TopicError(409, `该 requestId 已用于不同的代传内容或节点：${requestId}`);
+      const onCurrentBranch = session.manager.getBranch().some((entry) => (entry as { id?: unknown }).id === (existing as { id: string }).id);
+      // The message exists but the conversation moved on: appending again would duplicate the request,
+      // and silently reporting success would hide that the current branch never received it.
+      if (!onCurrentBranch)
+        throw new TopicError(409, `该 requestId 的代传消息不在当前分支，不能重复追加：${requestId}`);
       return { nodeId, sessionId: node.sessionId, entryId: (existing as { id: string }).id, created: false };
     }
     const entryId = session.manager.appendMessage({
