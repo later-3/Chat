@@ -21,6 +21,7 @@ test("P2 remember context: only the current round reaches the writer", () => {
     assistant("work 阶段回答 B"),
   ];
   const projected = projectCurrentRoundContext(messages);
+  assert.notEqual(projected, null);
   assert.deepEqual(projected.map((message) => message.role), ["user", "assistant", "toolResult", "assistant"]);
   assert.equal(projected[0].content[0].text, "第二轮：它又出现了", "the round starts at its own user entry");
   assert.equal(projected.some((message) => JSON.stringify(message).includes("第一轮")), false, "the previous round is not injected");
@@ -46,7 +47,8 @@ test("P2 remember context: the projection composes with the workflow turn contex
   assert.equal(JSON.stringify(prepared).includes("本轮问题"), true);
   assert.equal(JSON.stringify(prepared).includes("work 阶段产物"), true);
   assert.equal(prepared.some((message) => message.role === "custom" && message.customType === "chat.workflow_turn_context"), true);
-  // A session with no user message at all is passed through unchanged (no silent truncation).
-  const noUser = [assistant("only assistant")];
-  assert.deepEqual(projectCurrentRoundContext(noUser), noUser);
+  // A session with no user message has NO round to record. Returning the full history here would hand
+  // the writer every previous round, so the projection refuses instead and the caller fails visibly.
+  assert.equal(projectCurrentRoundContext([assistant("only assistant")]), null);
+  assert.equal(projectCurrentRoundContext([]), null);
 });

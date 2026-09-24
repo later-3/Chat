@@ -113,6 +113,7 @@ Long Agent 作为**上下文策展人**创建并管理主题会话树：用户�
   1. **主 agent 本轮的输出与思考过程**；
   2. **用户这一轮的消息**。
   前面几轮会话与现有会话记忆**不预塞**，由它自己**按需读取**（工具）——让模型按上下文判断需要看多少，避免固定开销。"续写/修正/去重"靠它主动读前文与既有条目实现。**实现要求（检视 01）**：当前轮投影用 `transformContext`（`src/workflows/agent-definition.ts`）实现，work 阶段的条目要收集**整个 stage**（多个 assistant entry 与工具条目），不能只取最后一个 leaf；**不能依赖 `triggerChatWorkflowAgentHandoff` 传上下文**——它只把 entry ID 写进 CustomMessage 的 `details`，历史上下文依然存在。
+> **投影原语现状**：`projectCurrentRoundContext()`（`src/workflows/session-conversation.ts`）已实现并测试——保留最后一条 user 消息及其之后的一切（本轮用户条目 + 整个 work stage），stage 标记因为是 `custom` 条目不进上下文，所以以“最后一条 user 消息”为边界；**没有 user 消息时返回 `null`（拒绝写入）**，绝不退化成“把全部历史交给 writer”。**注意**：既有的 `prepareWorkflowTurnContext` 不做轮次投影（它保留全部历史、只过滤控制消息），必须与前者组合使用。外层 workflow 本体（`src/workflows/session-memory/**`）、Skill 装配、开关与节点接线仍未实现。
 - **开关**：会话记忆功能可关闭（主题/节点级）——关闭后不提供读取（Skill/工具不装配、不注入）、不运行写入 agent，主流程照常。
 - **两 agent 的 workflow 合同**：`src/workflows/session-memory/workflow.json`，`id:"session-memory"`、名称「会话记忆」、`agentCallable: true`、`nodes` 有序两节点（`work`：干活 agent → `remember`：写入 agent）；两个 step 均 `"use step"` + `maxRetries=0`，都在**当前会话**内执行；主 agent 完成后仍可用既有 `triggerChatWorkflowAgentHandoff` **触发**写入 agent 的一轮（它传的是 custom message + `triggerTurn`），但**上下文不由它决定**——写入 agent 看到的当前轮内容由上面的 `transformContext` 投影产生（否则会带上整段会话历史）。注册进 `catalog.ts`（用户可选 + agent 可调用）。写入 agent 可用较便宜的模型（agent 定义可配 model）。
 - **建子节点时的补充路径**：除继承（读父节点累积的会话记忆）外，创建子节点时可以**全量读取父节点的 session 内容**，一次性抽取有价值的内容作为新会话的会话记忆（不依赖逐轮累积的完整度）。

@@ -15,9 +15,12 @@ export const CHAT_PLANNER_OUTPUT_REPAIR_CUSTOM_TYPE = "chat.planner_output_repai
  * `message`/`custom_message` entries, while stage markers are `custom` entries. The last user message is
  * therefore the boundary, and it is exactly the entry that started this round.
  */
-export function projectCurrentRoundContext(messages: AgentMessage[]): AgentMessage[] {
+export function projectCurrentRoundContext(messages: AgentMessage[]): AgentMessage[] | null {
   const roundStart = messages.findLastIndex((message) => message.role === "user");
-  return roundStart === -1 ? messages : messages.slice(roundStart);
+  // No user entry means there is no round to record: returning the whole history here would hand the
+  // writer every previous round, which is exactly what the projection exists to prevent. The caller
+  // refuses instead (the writer step fails visibly; it never silently records unrelated history).
+  return roundStart === -1 ? null : messages.slice(roundStart);
 }
 
 /** Old control messages remain on disk; only this invocation's controls reach the model. */
