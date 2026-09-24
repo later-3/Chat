@@ -98,6 +98,11 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     const payloadHash = payloadHashV3;
     if (prior !== undefined) {
       if (prior.workId !== undefined && prior.sessionId !== input.sessionId) throw new LongAgentRequestConflict("后台工作请求不能改投其他会话");
+      // The round KIND is part of the request identity: a node round and an ordinary round are not
+      // interchangeable, in either direction. Without this, a node acceptance could be "replayed" by the
+      // ordinary entry (and vice versa), silently answering a different request with the old turn.
+      if ((input.topicNode === undefined) !== (prior.topicNode === undefined))
+        throw new LongAgentRequestConflict("同一requestId不能改变轮次归属：节点轮次与普通轮次不可互换");
       if (input.topicNode !== undefined) {
         // A node retry replays the same acceptance. The client never sends a sessionId for a node round,
         // so the frozen node target and the durable binding are compared — never a sessionId that the

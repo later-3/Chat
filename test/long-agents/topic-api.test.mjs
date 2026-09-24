@@ -118,6 +118,17 @@ test("topic API: graph, topic, node messages and a node turn are owner-facing an
     body: JSON.stringify({ schemaVersion: 1, requestId: "api-turn-1", text: "继续定位" }),
   })).status, 409, "the same request id cannot be re-pointed at another node");
 
+  // The reverse polarity: a node acceptance cannot be replayed through the ordinary entry.
+  const { acceptLongAgentTurn } = await import("../../src/long-agents/turn-queue.ts");
+  await assert.rejects(
+    acceptLongAgentTurn({ chatHome: base.home, longAgentId: "friend", requireInteractionRevision: false, projectId: "friend",
+      turnId: "api-turn-1", text: "继续定位", sessionId: node.node.sessionId, source: "chat-web" }),
+    (error) => error.statusCode === 409 && /不可互换/.test(error.message),
+    "an ordinary round must not replay a node round with the same request id",
+  );
+  const afterKindMismatch = await readLongAgentState(base.home);
+  assert.equal(afterKindMismatch.turns.filter((candidate) => candidate.requestId === "api-turn-1").length, 1);
+
   // Invalid bodies are refused before any turn is accepted.
   assert.equal((await call(`/api/long-agents/friend/topics/${topic.topicId}/nodes/${node.node.nodeId}/messages`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ schemaVersion: 1, text: "缺少 requestId" }),

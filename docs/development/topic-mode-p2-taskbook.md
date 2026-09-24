@@ -68,7 +68,7 @@
 - **节点轮次的接受与执行（已实现）**：`POST /api/long-agents/{longAgentId}/topics/{topicId}/nodes/{nodeId}/messages`（body 只有 `{schemaVersion, requestId, text}`）：
   1. **接受侧**：`acceptLongAgentTurn` 增加 `topicNode: {topicId, nodeId}` 入口——**从主题图核实**（节点存在、`node.topicId === topicId`、会话即该节点会话；客户端不能传 `sessionId`），随后 `ensureProjectLongAgent` 的 `topicNode` 入口**只定位**（当日日期 + 该 Agent 时区 + 打开节点会话），**不动** `dailySessions` 与 primary 绑定；**节点绑定与 turn 在同一次 `updateLongAgentState` 写入**中保存（`nodeSessions` upsert 与 `turns` 追加同事务），turn 记录带 `topicNode` 目标。
   2. **执行侧**：`openAcceptedDay` 除每日记录外也接受**节点绑定**（返回以该节点会话为 primary 的定位，`sessionDate` 取绑定创建日），因此**重启后** Worker 仅凭耐久状态即可选回节点会话执行；不表达为 `works`。
-  3. **重放**：同 `requestId` 的节点重放要求会话/主题/节点与既有记录一致，否则 409；普通轮次新增“同一 requestId 不能改投其他会话”的 409。
+  3. **重放（双向）**：**轮次种类属于请求身份**——`input.topicNode` 的有无必须与既有 turn 的 `prior.topicNode` 一致（任方向不一致 → 409，节点轮次与普通轮次不可互换）；节点重放再要求**冻结目标**与**耐久绑定**的 `topicId/nodeId` 一致；普通轮次新增“同一 `requestId` 不能改投其他会话”的 409。
   **已验证**（真实会话）：发节点轮次 → Worker 仅凭**耐久绑定**选回节点会话执行 → `completed` 且写 `settledAt` → 该轮成为可分叉锚点 → 用该锚点建子节点；同一 POST 原样重发返回**同一 turn**（不新增 turn/绑定），同 `requestId` 改投另一节点 → 409。
   **尚未验证/未实现**：
   1. **进程级重启**：现有回归是**同进程**调用 drain（已如实改名，只证明“从耐久状态选会话”），子进程重启探针尚未跑通（本轮尝试时子进程 drain 挂起，未查明原因）。
