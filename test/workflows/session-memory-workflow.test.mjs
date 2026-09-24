@@ -28,6 +28,33 @@ function textOf(message) {
   return message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n");
 }
 
+/**
+ * Registers the Workflow-call dispatch runtime at the same boundary the production bootstrap uses
+ * (src/runtime-initialization.ts). The child Workflow itself runs inside the Workflow SDK runtime, which
+ * is not available in a plain unit-test process, so this stub records the call the worker actually made
+ * and returns a real child result through that boundary.
+ */
+const childCalls = [];
+async function registerWorkflowCallRuntime() {
+  const { registerChatWorkflowCallRuntime } = await import("../../src/workflows/workflow-call-runtime.ts");
+  registerChatWorkflowCallRuntime({
+    describe: async (input) => {
+      throw new Error(`describe 在本测试中未使用: ${JSON.stringify(input)}`);
+    },
+    start: async (input) => {
+      childCalls.push(input);
+      const startedAt = new Date().toISOString();
+      return {
+        status: "completed", callId: "call-child-1", workflowId: input.targetWorkflowId, runId: "run-child-1",
+        workflowInvocationId: "invocation-child-1", sessionId: "sess-child-1", startedAt, completedAt: startedAt,
+        durationMs: 3, text: "子工作流结果：第 42 行确实为空指针", model: null,
+      };
+    },
+    wait: async () => { throw new Error("wait 在本测试中未使用"); },
+    cancel: async () => { throw new Error("cancel 在本测试中未使用"); },
+  });
+}
+
 async function fixture(t, prefix) {
   const previousCwd = process.cwd();
   const previousChatHome = process.env.CHAT_HOME;
@@ -44,6 +71,7 @@ async function fixture(t, prefix) {
   process.env.CHAT_HOME = path.join(base, ".chat");
   writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
   // Session memory only exists inside a Long Agent home, so the node session must live there.
+  await registerWorkflowCallRuntime();
   const project = await ensureAgentHomeProject("friend", "Friend", process.env.CHAT_HOME);
   return { base, faux, workspace: project.cwd, project };
 }
@@ -59,12 +87,22 @@ test("session-memory workflow: work then remember with the current-round project
     // The worker does ordinary work AND actually calls a business Workflow once (P2: work may delegate).
     (context) => {
       workerTools.push((context.tools ?? []).map((tool) => tool.name));
-      return fauxAssistantMessage(fauxToolCall("workflow_call", { workflowId: "minimal-pi-coding-agent", prompt: "检查第 42 行的空指针" }));
+      return fauxAssistantMessage(fauxToolCall("workflow_call", {
+        action: "start",
+        workflowId: "minimal-pi-coding-agent",
+        prompt: "目标：确认第 42 行的空指针来源。上下文：节点会话已定位到该行。约束：只读检查，不修改文件。期望输出：一句话结论与证据。授权边界：只读。",
+        agents: [{ agentId: "pi-coding-agent", tools: ["read"], skills: [] }],
+        waitTimeoutMs: 20_000,
+      }));
     },
     (context) => {
       const result = context.messages.filter((message) => message.role === "toolResult").map(textOf).join("\n");
-      workerWorkflowCalls.push(result.slice(0, 200));
-      return fauxAssistantMessage("work 阶段：子工作流确认空指针在第 42 行");
+      workerWorkflowCalls.push(result);
+      const raw = result.slice(result.indexOf("{"));
+      const child = raw.startsWith("{") ? JSON.parse(raw) : {};
+      // The worker answers with what the delegation boundary reported, which is the child's terminal
+      // status; the child's own text is visible to the model only through the tool result.
+      return fauxAssistantMessage(`work 阶段：子工作流${result.includes("completed") ? "已完成" : "未完成"}：${String(child.text ?? result)}`.slice(0, 200));
     },
     (context) => {
       writerInputs.push(context.messages.map((message) => `${message.role}:${textOf(message)}`).join("\n---\n"));
@@ -93,16 +131,23 @@ test("session-memory workflow: work then remember with the current-round project
   assert.equal(workerTools[0].some((name) => ["read", "bash", "write", "edit"].includes(name)), true,
     "the worker keeps ordinary work tools instead of only the memory tool");
   assert.equal(workerWorkflowCalls.length, 1, "the worker actually delegated to a business Workflow");
-  assert.equal(workerWorkflowCalls[0].includes("第 42 行"), true, "the delegated Workflow really ran");
+  assert.equal(childCalls.length, 1, "exactly one child Workflow call reached the dispatch runtime");
+  assert.equal(childCalls[0].prompt.length > 0, true, "the delegation carries an objective, context, constraints and expected output");
+  assert.equal(Array.isArray(childCalls[0].agents) && childCalls[0].agents.length > 0, true, "the delegation selects the child Agent capabilities");
+  assert.equal(workerWorkflowCalls[0].includes("completed"), true,
+    `the worker saw the child Workflow's terminal status (tool result: ${workerWorkflowCalls[0].slice(0, 120)})`);
+  assert.equal(childCalls[0].targetWorkflowId, "minimal-pi-coding-agent", "the delegated target is the requested business Workflow");
+  assert.equal(childCalls[0].parentWorkflowId, "session-memory", "the delegation records the session-memory parent");
+  assert.equal(childCalls[0].parentStageId, "work", "the delegation is attributed to the work stage");
   // The round's answer is the work answer, NOT the memory bookkeeping text.
-  assert.equal(result.text.includes("子工作流确认空指针在第 42 行"), true, "the user-facing result is the work answer");
+  assert.equal(result.text.includes("子工作流已完成"), true, "the work answer reflects the child's terminal status");
   assert.equal(result.text.includes("已写入 entryId"), false, "the memory report is not returned as the round's answer");
   const memory = await readSessionMemory(process.env.CHAT_HOME, "friend", result.sessionId);
   assert.equal(memory.entries.length, 1, "the writer wrote exactly one entry");
   assert.equal(memory.entries[0].content, "空指针根因在第 42 行");
   assert.equal(writerInputs.length, 1);
   assert.equal(writerInputs[0].includes("为什么这里空指针？"), true, "the writer sees the round's user message");
-  assert.equal(writerInputs[0].includes("子工作流确认空指针在第 42 行"), true, "the writer sees the whole work stage");
+  assert.equal(writerInputs[0].includes("子工作流已完成"), true, "the writer sees the whole work stage, including the delegation outcome");
   // The writer's visible reply cites the entry id the tool actually returned (not a scripted value).
   const branch = (await ensureChatSessionWithId({ chatHome: process.env.CHAT_HOME, projectId: project.projectId },
     result.sessionId)).session.manager.getBranch();
