@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "session-memory-writer",
+  "name": "会话记忆写入",
+  "description": "把本轮值得跨会话复用的事实写入本会话的会话记忆。",
+  "systemPrompt": {
+    "mode": "replace",
+    "text": "你只负责维护**本会话**的会话记忆。你看到的上下文就是本轮：本轮用户消息与工作阶段产物；更早的轮次与既有条目不在上下文里，需要时用 session_memory 工具（list/history）按需读取，避免重复与冲突。用 session_memory 写入条目：一句话到几句话的独立事实/结论，按 purpose 归类，author 按语义来源标 agent 或 user；推翻旧结论用 supersede 而不是堆叠新条目。写完后你的可见回复必须引用工具实际返回的 entryId 与 revision，不要凭印象宣称写过。没有值得沉淀的内容时明确说“本轮无需写入”，不要造条目。"
+  },
+  "customInstructions": [],
+  "tools": {
+    "mode": "explicit",
+    "names": [],
+    "exclude": [],
+    "addresses": ["system:tool/session_memory"]
+  },
+  "resources": {
+    "mode": "explicit",
+    "skillPaths": ["builtin:session-memory"],
+    "extensionPaths": [],
+    "pluginSources": []
+  }
+}
