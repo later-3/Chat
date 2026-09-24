@@ -527,8 +527,11 @@ export async function readChatToolResultImage(
   requester: import("./long-agents/conversations/access.js").SessionRequester | null = null,
 ): Promise<ChatToolResultImageRead> {
   const info = await requireChatSession(sessionId, projectId, chatHome);
+  // The storage project is always known from the resolved session file, so the topic decision is
+  // consulted even when the caller did not pass projectId explicitly.
+  const storageProjectId = (info as { projectId?: string }).projectId ?? projectId;
   await assertSessionFileReadable({ ...(chatHome === undefined ? {} : { chatHome }), sessionPath: info.path, sessionId,
-    ...(projectId === undefined ? {} : { storageProjectId: projectId }), requester });
+    ...(storageProjectId === undefined ? {} : { storageProjectId }), requester });
   let manager: SessionManager;
   try {
     manager = SessionManager.open(info.path, dirname(info.path));
@@ -569,7 +572,11 @@ export async function readChatSession(
   requester: import("./long-agents/conversations/access.js").SessionRequester | null = null,
 ) {
   const info = await requireChatSession(sessionId, projectId, chatHome);
-  await assertSessionFileReadable({ ...(chatHome === undefined ? {} : { chatHome }), sessionPath: info.path, sessionId, requester });
+  // The storage project is known from the resolved session file, so the topic decision is consulted even
+  // when the caller did not pass projectId explicitly.
+  const storageProjectId = (info as { projectId?: string }).projectId ?? projectId;
+  await assertSessionFileReadable({ ...(chatHome === undefined ? {} : { chatHome }), sessionPath: info.path, sessionId,
+    ...(storageProjectId === undefined ? {} : { storageProjectId }), requester });
   let manager: SessionManager;
   let entries: SessionEntry[];
   try {

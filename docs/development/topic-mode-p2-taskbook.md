@@ -63,7 +63,8 @@
 
 - **补边（R4 补充整合）**：`addTopicNodeParent` 与创建共用同一套门：**① 原样边规格才算幂等**（父/子相同但锚点或 `memoryRefs` 不同 → 409，不再按两个节点 ID 静默返回旧边）；**② 新边必须在父会话锁内做 settled 锚点核验**（`requireTopicAnchor`），再登记边；③ 父边 `memoryRefs` 走同一来源解析。**锁序**：预检（读图比较边规格 → 父会话锁核验锚点 → 来源解析）在**图锁之外**完成，随后才进图锁做 CAS 落盘，因此与编排的“会话锁 → 图锁”顺序一致，不会形成反向锁序。
 - **节点生命周期挂钩（§3 表格第 9 行，已实现）**：`applyTopicNodeSessionLifecycle` 是**唯一可离开 `removed` 状态**的写入者（它镜像会话文件的事实）：`removeChatSession` 在「意图已写、文件已移动、完成前」把节点标 `removed`；`restoreRemovedChatSession` 把节点恢复为 `active`；`purge` 之后节点保持 `removed`（会话已永久消失，节点留作历史）。**边始终保留**供溯源；普通会话（非主题节点）为 no-op。它只取图锁（会话锁由移除流程持有，锁序仍为会话锁 → 图锁）；面向用户/Agent 的 `updateTopicNodeStatus` 仍视 `removed` 为终态。
-- **通用读取入口的主题判定（§3 表格第 7 行读取半，已实现）**：`assertSessionFileReadable`（detail / history / transcript / export / 未来节点 API 与事件流共用）在群参与判定之外，按会话的存储项目读取主题图并调用 `authorizeTopicSession(read)`：`{kind:"owner"}`（或未声明身份）视为本地用户，`{kind:"friend", longAgentId}` 视为该 Agent。非主题会话不受影响；被移除的节点会话仍由既有会话生命周期错误拒绝（`SESSION_REMOVED`）。
+- **恢复路径也必须收敛节点**：`recoverPendingOperation` 的收敛回调（`lifecycleConvergence`）除会话记忆外，**在清除 pending 之前**同样收敛主题节点状态（remove → `removed`、restore → `active`、purge → 保持 `removed`），因此“文件已移动但图写入失败”的中断不会留下 `active` 节点。`topics.ts` 已**静态**依赖 `removed-session-index.ts`，反向依赖用**惰性 `import()`** 解析以保持静态依赖图无环。
+- **通用读取入口的主题判定（§3 表格第 7 行读取半，已实现）**：`assertSessionFileReadable`（detail / history / transcript / export / 未来节点 API 与事件流共用）在群参与判定之外，按会话的存储项目读取主题图并调用 `authorizeTopicSession(read)`；存储项目**由已解析的会话文件给出**（`readChatSession` 等通用入口不依赖调用方是否显式传入 `projectId`，否则该判定会被静默跳过）：`{kind:"owner"}`（或未声明身份）视为本地用户，`{kind:"friend", longAgentId}` 视为该 Agent。非主题会话不受影响；被移除的节点会话仍由既有会话生命周期错误拒绝（`SESSION_REMOVED`）。
 - **整合产物落两处**：整合摘要（CustomMessage，进入上下文）+ 初始 `background` 条目（带 §4 的来源引用）。
 - **防环**：加边只检查 `parent !== child` 且不存在 `child → … → parent`；`memoryRefs` 只校验来源存在与可读（**不禁止继承父记忆**）。新建节点没有出边，结构上不可能成环，因此防环真正生效的地点是**补边**（对既有节点追加父边，R4 补充整合），创建与补边共用同一检查。
 - **图约束（首轮检视补齐，均为阻断项）**：

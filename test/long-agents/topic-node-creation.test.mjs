@@ -8,7 +8,7 @@ import { appendChatUserMessage } from "../../src/workflows/session-conversation.
 import { appendChatLongAgentTurn } from "../../src/long-agents/session-turn.ts";
 import { readSessionMemory, writeSessionMemoryEntry } from "../../src/long-agents/session-memory.ts";
 import { ensureAgentHomeProject, openProject } from "../../src/projects/registry.ts";
-import { purgeRemovedChatSession, removeChatSession, restoreRemovedChatSession } from "../../src/session-removal.ts";
+import { listRemovedChatSessions, purgeRemovedChatSession, removeChatSession, restoreRemovedChatSession } from "../../src/session-removal.ts";
 import {
   addTopicNodeParent,
   createTopic,
@@ -517,4 +517,62 @@ test("P2 creation: the shared session read entry applies the topic decision", as
   const plain = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, "sess-plain-read", "普通");
   plain.session.manager.flush();
   await assertChatSessionReadable({ sessionId: "sess-plain-read", projectId: "friend", chatHome: home, requester: { kind: "friend", longAgentId: "other" } });
+});
+
+test("P2 lifecycle: an interrupted removal converges its topic node before the index completes", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "rv-topic", expectedRevision: 0 })).topic;
+  const node = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "rv-topic", expectedRevision: 1 });
+  const session = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, node.node.sessionId, "根");
+  // A companion memory entry exists, so the memory convergence has something to converge.
+  await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: node.node.sessionId,
+    operation: "write", purpose: "finding", author: "agent", content: "节点结论", expectedRevision: 0 });
+  await removeChatSession("friend", node.node.sessionId, home);
+  // Simulate "the session file moved and the index intent was written, but the graph write failed":
+  // the node is back to active and the index carries a pending remove again.
+  const graphFile = topicGraphFile(home, "friend");
+  const graph = JSON.parse(fs.readFileSync(graphFile, "utf8"));
+  graph.nodes.find((candidate) => candidate.sessionId === node.node.sessionId).status = "active";
+  fs.writeFileSync(graphFile, JSON.stringify(graph));
+  const { removedSessionDirectory } = await import("../../src/session-files.ts");
+  const indexFile = path.join(removedSessionDirectory(session.session), "index.json");
+  const index = JSON.parse(fs.readFileSync(indexFile, "utf8"));
+  const record = index.sessions[node.node.sessionId];
+  assert.notEqual(record, undefined, "the removal record exists");
+  index.pendingOperation = { operationId: "interrupted-remove", type: "remove", record, startedAt: new Date().toISOString() };
+  fs.writeFileSync(indexFile, JSON.stringify(index));
+
+  // Any recovery-touching call must converge the topic node BEFORE clearing the pending intent.
+  await listRemovedChatSessions("friend", home);
+  const recovered = await readTopicGraph(home, "friend");
+  assert.equal(recovered.nodes.find((candidate) => candidate.nodeId === node.node.nodeId).status, "removed", "the node is converged during recovery");
+  const recoveredIndex = JSON.parse(fs.readFileSync(indexFile, "utf8"));
+  assert.equal(recoveredIndex.pendingOperation, undefined, "the pending intent is completed only after the node converged");
+  // Memory convergence and the node stay consistent (both reflect the removal).
+  assert.equal((await readSessionMemory(home, "friend", node.node.sessionId)).orphan, true);
+});
+
+test("P2 read: readChatSession itself applies the topic gate for its storage project", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "rd-topic", expectedRevision: 0 })).topic;
+  const node = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "rd-topic", expectedRevision: 1 });
+  const session = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, node.node.sessionId, "根");
+  appendChatUserMessage(session.session.manager, "节点里的第一条消息");
+  session.session.manager.flush();
+  const { readChatSession } = await import("../../src/session-read-model.ts");
+
+  // Normal read still works (the gate allows reading a topic node).
+  const read = await readChatSession(node.node.sessionId, undefined, {}, "friend", home, { kind: "owner" });
+  assert.equal(Array.isArray(read.context.messages ?? read.context), true);
+  // An unreadable topic graph must make the read fail instead of returning content: the storage project
+  // is passed from the resolved session file, not from the caller's optional projectId.
+  const graphFile = topicGraphFile(home, "friend");
+  const original = fs.readFileSync(graphFile, "utf8");
+  fs.writeFileSync(graphFile, "{ not json");
+  await assert.rejects(readChatSession(node.node.sessionId, undefined, {}, "friend", home, { kind: "owner" }));
+  fs.writeFileSync(graphFile, original);
+  const afterRestore = await readChatSession(node.node.sessionId, undefined, {}, "friend", home, { kind: "owner" });
+  assert.notEqual(afterRestore, undefined);
 });

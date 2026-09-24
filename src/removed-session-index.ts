@@ -269,6 +269,16 @@ function lifecycleConvergence(
   return async (pending) => {
     const state = pending.type === "remove" ? "removed" : pending.type === "restore" ? "active" : "purged";
     await convergeSessionMemoryWithLifecycle(full, pending.record.id, state);
+    // The topic node mirrors the session file too, so an interrupted remove/restore/purge must converge
+    // it BEFORE the pending intent is cleared — otherwise the index reports a completed fact while the
+    // graph still says `active`. `topics.ts` already imports this module statically, so the reverse
+    // direction is resolved lazily to keep the static dependency graph acyclic.
+    const { applyTopicNodeSessionLifecycle } = await import("./long-agents/topics.js");
+    await applyTopicNodeSessionLifecycle({
+      chatHome: full.chatHome, longAgentId: full.projectId, sessionId: pending.record.id,
+      // A purged session is gone for good, so its node stays `removed` rather than `purged`.
+      state: pending.type === "restore" ? "active" : "removed",
+    });
   };
 }
 
