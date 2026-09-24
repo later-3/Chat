@@ -98,6 +98,14 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     const payloadHash = payloadHashV3;
     if (prior !== undefined) {
       if (prior.workId !== undefined && prior.sessionId !== input.sessionId) throw new LongAgentRequestConflict("后台工作请求不能改投其他会话");
+      if (input.topicNode !== undefined) {
+        // A node retry replays the same acceptance: the session, topic and node must match the record.
+        const priorBinding = (await readLongAgentState(home)).nodeSessions.find((entry) => entry.sessionId === prior.sessionId);
+        if (priorBinding === undefined || priorBinding.topicId !== input.topicNode.topicId || priorBinding.nodeId !== input.topicNode.nodeId
+          || prior.sessionId !== input.sessionId)
+          throw new LongAgentRequestConflict("节点轮次不能改投其他主题节点");
+      } else if (input.sessionId !== undefined && prior.sessionId !== input.sessionId)
+        throw new LongAgentRequestConflict("同一requestId不能改投其他会话");
       if (!payloadHashCandidates.includes(prior.payloadHash)) throw new LongAgentRequestConflict("同一requestId包含不同消息或项目，不能重复接受");
       return { ...prior, newAcceptance: false };
     }
@@ -107,10 +115,22 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     const calendar = await ensureAgentCalendar(agent, home);
     const acceptedAt = new Date();
     if (work && work.contextProjectId !== contextProjectId) throw new Error("后台工作的项目已固定，请在原项目继续或创建新工作");
+    let nodeSessionId: string | undefined;
+    if (input.topicNode !== undefined) {
+      // A node turn never selects by daily index or requester claim: the caller names the topic and
+      // the node, and the graph decides which session that node runs in.
+      if (input.sessionId !== undefined) throw new LongAgentRequestConflict("节点轮次不能同时携带 sessionId");
+      const { readTopicGraph } = await import("./topics.js");
+      const node = (await readTopicGraph(home, input.longAgentId)).nodes.find((candidate) => candidate.nodeId === input.topicNode!.nodeId);
+      if (node === undefined) throw new Error(`主题节点不存在：${input.topicNode!.nodeId}`);
+      if (node.topicId !== input.topicNode!.topicId) throw new Error(`节点不属于该主题：${input.topicNode!.topicId}`);
+      nodeSessionId = node.sessionId;
+    }
     const located = work ? { isNewSession: !(await readLongAgentState(home)).turns.some(t => t.workId === work.id),
       day: { sessionId: work.sessionId, date: agentDate(calendar.timeZone), summary: { status: "pending" } } }
       : await ensureProjectLongAgent({ chatHome: home, projectId: input.projectId, agent, now: acceptedAt,
-      ...(source !== "chat-web" || input.sessionId === undefined ? {} : { requestedSessionId: input.sessionId }) });
+      ...(source !== "chat-web" || input.sessionId === undefined ? {} : { requestedSessionId: input.sessionId }),
+      ...(nodeSessionId === undefined && input.topicNode === undefined ? {} : { topicNode: { ...input.topicNode!, sessionId: nodeSessionId! } }) });
     if (located.day.summary.status === "running") throw new Error("该日期正在收尾，请稍后重试；原历史保留");
     const chatSession = await openChatSession({ projectId: agent.id, chatHome: home, sessionId: located.day.sessionId });
     const memory = SessionManager.inMemory(chatSession.cwd);
@@ -132,17 +152,25 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
           return { customType: entry.customType, data: entry.customType === CHAT_ASSEMBLY_CONTEXT ? { ...body, revision: assemblyRevision(body) } : entry.data }; });
       const turn = await updateLongAgentState(home, (state) => {
         if (state.dailySessions.some((day) => day.sessionId === located.day.sessionId && day.summary.status === "running")) throw new Error("该日期正在收尾，请稍后重试；原历史保留");
+        // The node binding lands in the SAME write as the turn it serves: the state never holds a turn
+        // whose node session has no binding, and never a binding without a cause.
+        let nodeSessions = state.nodeSessions;
+        if (input.topicNode !== undefined) {
+          const binding = { longAgentId: agent.id, sessionId: located.day.sessionId, topicId: input.topicNode.topicId,
+            nodeId: input.topicNode.nodeId, createdAt: acceptedAt.toISOString() };
+          nodeSessions = [...state.nodeSessions.filter((entry) => entry.sessionId !== binding.sessionId), binding];
+        }
         if (work) {
           const active = new Set(state.turns.filter(t => t.longAgentId === agent.id && t.workId && ["queued", "running"].includes(t.status)).map(t => t.workId));
           if (!active.has(work.id) && active.size >= 4) throw new Error("此Friend已有4项后台工作，请等待完成或取消后重试");
         }
-        const turn: AcceptedTurn = { ...(work ? { workId: work.id } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
+        const turn: AcceptedTurn = { ...(work ? { workId: work.id } : {}), ...(input.topicNode === undefined ? {} : { topicNode: { topicId: input.topicNode.topicId, nodeId: input.topicNode.nodeId } }), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
           channelType: input.channelType ?? (source === "chat-web" ? "chat-web" : null), inboundEventId: input.inboundEventId ?? null,
           contextProjectId, interactionRevision, payloadHashVersion: 3, sessionId: located.day.sessionId, date: located.day.date, timeZone: calendar.timeZone,
           acceptedAt: acceptedAt.toISOString(), sequence: state.turns.reduce((max, item) => Math.max(max, item.sequence), 0) + 1,
           status: "queued", error: null, text: input.text as string, ...(input.images === undefined ? {} : { images: input.images }), seed,
           groupContext: agentGroupContextRevisionOf(group) };
-        return { state: { ...state, turns: [...state.turns, turn],
+        return { state: { ...state, turns: [...state.turns, turn], nodeSessions,
           pendingEvents: pendingEvent === undefined || state.pendingEvents.some((item) => item.event.eventId === pendingEvent.event.eventId) ? state.pendingEvents : [...state.pendingEvents, pendingEvent], dailySessions: state.dailySessions.map((day) => day.sessionId === turn.sessionId && (day.summary.status !== "pending" || day.summary.cutoff !== null)
           ? { ...day, summary: { status: "pending" as const, attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } } : day) }, result: turn };
       });

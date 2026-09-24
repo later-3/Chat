@@ -21,6 +21,8 @@ export interface AcceptedTurn {
   readonly payloadHash: string;
   readonly summaryDraft: boolean;
   readonly isNewSession: boolean;
+  /** Frozen topic node target for a node round; present only on node turns. */
+  readonly topicNode?: { readonly topicId: string; readonly nodeId: string };
   readonly longAgentId: string;
   readonly source: "chat-web" | "channel" | "scheduled";
   readonly channelType: string | null;
@@ -63,7 +65,7 @@ export function parseDailySession(value: unknown): DailySession {
   return value as unknown as DailySession;
 }
 export function parseAcceptedTurn(value: unknown): AcceptedTurn {
-  record(value); fields(value, ["turnId", "requestId", "payloadHash", "summaryDraft", "isNewSession", "longAgentId", "source", "channelType", "inboundEventId", "contextProjectId", "interactionRevision", "payloadHashVersion", "sessionId", "date", "timeZone", "acceptedAt", "settledAt", "sequence", "status", "error", "text", "images", "seed", "groupContext", "workId", "cancelRequested"]);
+  record(value); fields(value, ["turnId", "requestId", "payloadHash", "summaryDraft", "isNewSession", "longAgentId", "source", "channelType", "inboundEventId", "contextProjectId", "interactionRevision", "payloadHashVersion", "sessionId", "date", "timeZone", "acceptedAt", "settledAt", "sequence", "status", "error", "text", "images", "seed", "groupContext", "workId", "cancelRequested", "topicNode"]);
   if (value.cancelRequested !== undefined && typeof value.cancelRequested !== "boolean") throw new Error("无效取消请求");
   if (value.workId !== undefined) { string(value.workId); if (!/^work-[a-f0-9]{32}$/.test(value.workId)) throw new Error("后台工作ID无效"); }
   for (const key of ["turnId", "requestId", "payloadHash", "longAgentId", "sessionId"]) string(value[key]);
@@ -73,6 +75,14 @@ export function parseAcceptedTurn(value: unknown): AcceptedTurn {
     throw new Error("无效项目关联 revision");
   if (value.payloadHashVersion !== undefined && value.payloadHashVersion !== null
     && ![1, 2, 3].includes(value.payloadHashVersion as number)) throw new Error("无效请求摘要版本");
+  if (value.topicNode !== undefined) {
+    record(value.topicNode);
+    fields(value.topicNode as Record<string, unknown>, ["topicId", "nodeId"]);
+    for (const turnKey of ["topicId", "nodeId"]) {
+      const fieldValue = (value.topicNode as Record<string, unknown>)[turnKey];
+      if (typeof fieldValue !== "string" || fieldValue.trim() === "") throw new Error("节点轮次主题/节点标识无效");
+    }
+  }
   if (typeof value.summaryDraft !== "boolean" || typeof value.isNewSession !== "boolean") throw new Error("无效请求用途");
   date(value.date); timestamp(value.acceptedAt); validateTimeZone(value.timeZone);
   if (value.settledAt !== undefined && value.settledAt !== null) {

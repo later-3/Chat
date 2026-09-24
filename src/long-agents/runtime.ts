@@ -36,6 +36,11 @@ export interface ExecuteLongAgentTurnInput {
   readonly longAgentId: string;
   readonly projectId: string;
   readonly sessionId?: string;
+  /**
+   * Topic node target for an owner-confirmed node round. Verified against the topic graph at
+   * acceptance; the turn is then bound to the matching node session (never to an arbitrary session).
+   */
+  readonly topicNode?: { readonly topicId: string; readonly nodeId: string };
   readonly text: unknown;
   /** Channel-provided image attachments; text may be empty when present. */
   readonly images?: readonly ImageContent[];

@@ -22,7 +22,13 @@ export async function ensureAgentCalendar(agent: LongAgentConfig, chatHome: stri
 /** Compatibility input projectId is validated; every new direct conversation belongs to Agent Home. */
 export async function ensureProjectLongAgent(input: {
   readonly chatHome: string; readonly projectId: string; readonly agent: LongAgentConfig;
-  readonly requestedSessionId?: string; readonly now?: Date;
+  readonly requestedSessionId?: string;
+  /**
+   * Topic node target for an owner-confirmed node round. Verified against the topic graph: the trio
+   * must reference each other exactly. The primary-Session binding is only read, never rewritten.
+   */
+  readonly topicNode?: { readonly topicId: string; readonly nodeId: string; readonly sessionId?: string };
+  readonly now?: Date;
 }): Promise<{ readonly projectAgent: ProjectLongAgent; readonly isNewSession: boolean; readonly day: DailySession }> {
   await resolveProjectContext(input.projectId, input.chatHome);
   const agent = await ensureAgentCalendar(input.agent, input.chatHome);
@@ -30,6 +36,25 @@ export async function ensureProjectLongAgent(input: {
   const now = input.now ?? new Date();
   const today = agentDate(agent.timeZone, now);
   return updateLongAgentState(input.chatHome, async (state) => {
+    // A topic node target bypasses today's index entirely: it is verified against the topic graph and
+    // only located, never registered as today's Session or primary binding.
+    if (input.topicNode !== undefined) {
+      const { readTopicGraph } = await import("./topics.js");
+      const graph = await readTopicGraph(input.chatHome, agent.id);
+      const node = graph.nodes.find((candidate) => candidate.nodeId === input.topicNode!.nodeId);
+      if (node === undefined) throw new Error(`主题节点不存在：${input.topicNode!.nodeId}`);
+      if (node.topicId !== input.topicNode!.topicId) throw new Error(`节点不属于该主题：${input.topicNode!.topicId}`);
+      await openChatSession({ projectId: agent.id, chatHome: input.chatHome, sessionId: node.sessionId });
+      const existing = state.projectAgents.find((candidate) => candidate.projectId === own.projectId && candidate.longAgentId === agent.id);
+      // The binding is only read: when no primary Session exists yet the location stands on its own
+      // (defined without an optional field touching the contract, and never written back).
+      const projectAgent: ProjectLongAgent = existing ?? { id: projectLongAgentId(own.projectId, agent.id), projectId: own.projectId,
+        longAgentId: agent.id, primarySessionId: node.sessionId, sessionDate: today,
+        status: "active", createdAt: now.toISOString(), updatedAt: now.toISOString() };
+      return { state, result: { projectAgent, isNewSession: false as const,
+        day: { longAgentId: agent.id, date: today, timeZone: agent.timeZone, sessionId: node.sessionId, createdAt: now.toISOString(),
+          summary: { status: "pending" as const, attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } } } };
+    }
     const existing = state.projectAgents.find((candidate) => candidate.projectId === own.projectId && candidate.longAgentId === agent.id);
     const dailySessions = [...state.dailySessions];
     if (existing?.sessionDate !== undefined && !dailySessions.some((entry) => entry.longAgentId === agent.id && entry.date === existing.sessionDate)) {
@@ -77,9 +102,15 @@ export async function ensureProjectLongAgent(input: {
 export async function openAcceptedDay(chatHome: string, longAgentId: string, sessionId: string): Promise<ProjectLongAgent> {
   const state = await readLongAgentState(chatHome);
   const day = state.dailySessions.find((item) => item.longAgentId === longAgentId && item.sessionId === sessionId);
-  if (day === undefined) throw new Error("已接受请求的每日Session记录缺失");
+  if (day !== undefined) {
+    return { id: projectLongAgentId(longAgentId, longAgentId), projectId: longAgentId, longAgentId, primarySessionId: sessionId,
+      sessionDate: day.date, status: "active", createdAt: day.createdAt, updatedAt: day.createdAt };
+  }
+  // Topic node sessions are not daily sessions: their authority lives in the matching node binding.
+  const node = state.nodeSessions.find((item) => item.longAgentId === longAgentId && item.sessionId === sessionId);
+  if (node === undefined) throw new Error("已接受请求的目标Session不在每日记录或节点绑定中");
   return { id: projectLongAgentId(longAgentId, longAgentId), projectId: longAgentId, longAgentId, primarySessionId: sessionId,
-    sessionDate: day.date, status: "active", createdAt: day.createdAt, updatedAt: day.createdAt };
+    sessionDate: node.createdAt.slice(0, 10), status: "active", createdAt: node.createdAt, updatedAt: node.createdAt };
 }
 
 /** Startup recovery indexes existing Home days only; it never allocates an idle day's Session. */

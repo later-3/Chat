@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fixture } from "./daily-fixture.mjs";
-import { createTopic, createTopicNode, readTopicGraph } from "../../src/long-agents/topics.ts";
+import { createTopic, createTopicNode, createTopicNodeWithSession, readTopicGraph } from "../../src/long-agents/topics.ts";
+import { readChatSession } from "../../src/session-read-model.ts";
 import { ensureChatSessionWithId } from "../../src/chat-session.ts";
+import { readLongAgentState } from "../../src/long-agents/storage.ts";
 import { appendChatUserMessage } from "../../src/workflows/session-conversation.ts";
 
 async function router() {
@@ -14,6 +16,8 @@ async function router() {
   ];
   const app = createRouter();
   for (const [path, module] of routes) app.get(path, (await import(module)).default);
+  app.post("/api/long-agents/:longAgentId/topics/:topicId/nodes/:nodeId/messages",
+    (await import("../../src/routes/api/long-agents/[longAgentId]/topics/[topicId]/nodes/[nodeId]/messages.post.ts")).default);
   return app;
 }
 
@@ -66,4 +70,79 @@ test("topic API: graph, topic, node messages and a node turn are owner-facing an
   const otherMessages = await call(`/api/long-agents/friend/topics/${topic.topicId}/nodes/${otherNode.node.nodeId}/messages`);
   assert.equal(otherMessages.status, 404, "the URL must describe one consistent topic+node path");
 
+  // A node turn is accepted on the NODE session (the client never sends a session id).
+  const sent = await call(`/api/long-agents/friend/topics/${topic.topicId}/nodes/${node.node.nodeId}/messages`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schemaVersion: 1, requestId: "api-turn-1", text: "继续定位" }),
+  });
+  if (sent.status !== 202) console.log("SENT_ERROR", sent.status, await sent.text());
+  assert.equal(sent.status, 202);
+  // Restart-equivalent: a fresh read of the durable state exposes the binding AND the accepted turn.
+  const fresh = await readLongAgentState(base.home);
+  assert.deepEqual(
+    fresh.nodeSessions.filter((entry) => entry.sessionId === node.node.sessionId),
+    [{ longAgentId: "friend", sessionId: node.node.sessionId, topicId: topic.topicId, nodeId: node.node.nodeId,
+      createdAt: fresh.nodeSessions.find((entry) => entry.sessionId === node.node.sessionId).createdAt }],
+    "the node binding is durable next to the turn",
+  );
+  const turn = fresh.turns.find((candidate) => candidate.turnId === "chat-web:friend:api-turn-1");
+  assert.notEqual(turn, undefined, "the turn was accepted");
+  assert.equal(turn.sessionId, node.node.sessionId, "the turn runs in the node session, not in the daily session");
+  assert.deepEqual(turn.topicNode, { topicId: topic.topicId, nodeId: node.node.nodeId }, "the turn carries its node target");
+  assert.equal(fresh.dailySessions.some((day) => day.sessionId === node.node.sessionId), false, "a node round never appears in today's index");
+  // A mismatched topic/node is refused before anything lands in the state.
+  const before = await readLongAgentState(base.home);
+  assert.equal((await call(`/api/long-agents/friend/topics/${other.topicId}/nodes/${node.node.nodeId}/messages`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schemaVersion: 1, requestId: "api-turn-2", text: "串主题" }),
+  })).status, 404);
+  const after = await readLongAgentState(base.home);
+  assert.equal(after.turns.length, before.turns.length, "no turn was accepted for the mismatched path");
+  assert.equal(after.nodeSessions.length, before.nodeSessions.length, "no binding was written for the mismatched path");
+  // Invalid bodies are refused before any turn is accepted.
+  assert.equal((await call(`/api/long-agents/friend/topics/${topic.topicId}/nodes/${node.node.nodeId}/messages`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ schemaVersion: 1, text: "缺少 requestId" }),
+  })).status, 400);
+
+});
+
+test("topic API: a node turn executes after restart inside its own session, then settles and forks", async (t) => {
+  const base = await fixture(t);
+  const previousHome = process.env.CHAT_HOME;
+  process.env.CHAT_HOME = base.home;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousHome;
+  });
+  const app = await router();
+  const call = (path, init) => app.fetch(new Request(`http://chat.test${path}`, init));
+  const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "定位", purpose: "定位线上问题", requestId: "run-topic", expectedRevision: 0 })).topic;
+  const node = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
+    requestId: "run-topic", title: "根节点", createdBy: "agent" })).node;
+  const sent = await call(`/api/long-agents/friend/topics/${topic.topicId}/nodes/${node.nodeId}/messages`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schemaVersion: 1, requestId: "run-turn-1", text: "把那个空指针修了" }),
+  });
+  if (sent.status !== 202) console.log("SENT2_ERROR", sent.status, await sent.text());
+  assert.equal(sent.status, 202);
+  // Restart: drop every in-process cache the runtime keeps and re-resolve only from durable state.
+  const { drainLongAgentTurns } = await import("../../src/long-agents/turn-queue.ts");
+  await drainLongAgentTurns(base.home, "friend", node.sessionId);
+  const settled = await readLongAgentState(base.home);
+  const turn = settled.turns.find((candidate) => candidate.turnId === "chat-web:friend:run-turn-1");
+  assert.equal(turn.status, "completed", "the node turn executed to completion after the durable state drove it");
+  assert.notEqual(turn.settledAt, undefined);
+  const produced = await readChatSession(node.sessionId, undefined, {}, "friend", base.home, { kind: "owner" });
+  assert.equal(produced.context.messages.some((message) => message.role === "assistant"), true, "the assistant replied in the node session");
+  // The assistant round is settled in the node session, so the branch is forkable through the tool.
+  const { appendTopicRoundMarker, readTopicSettledAnchors } = await import("../../src/long-agents/topic-anchor.ts");
+  const manager = (await ensureChatSessionWithId({ chatHome: base.home, projectId: "friend" }, node.sessionId)).session.manager;
+  const round = readTopicSettledAnchors(manager);
+  assert.equal(round.length, 1, "the executed node round settles exactly one anchor");
+  const childResult = await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
+    requestId: "run-child", title: "修复分支", createdBy: "agent", integrationSummary: "已修复空指针", initialMemory: null, source: null,
+    parents: [{ parentNodeId: node.nodeId, anchorEntryId: round[0].anchorEntryId, anchorSequence: round[0].anchorSequence }] });
+  assert.equal(childResult.created, true);
+  assert.equal(childResult.node.initialMemoryRefs.length, 0, "a fork without integration sources keeps an empty provenance list");
+  assert.equal(childResult.graph.edges.find((edge) => edge.childNodeId === childResult.node.nodeId).anchorSequence, round[0].anchorSequence);
 });
