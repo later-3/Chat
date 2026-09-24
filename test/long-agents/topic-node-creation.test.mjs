@@ -655,12 +655,13 @@ test("P2 creation: a pending lifecycle window is closed even when the file is st
   assert.equal(reopened.session.manager.getSessionId(), sessionId);
 });
 
-test("P2 state: node bindings are unique per session, per node and per topic", async (t) => {
+test("P2 state: node bindings are unique per session and per node (a topic keeps many nodes)", async (t) => {
   const home = fixture(t);
   const { parseLongAgentState } = await import("../../src/long-agents/types.ts");
   const base = { schemaVersion: 6, projectAgents: [], bindings: [], pendingEvents: [], processedEvents: [],
     dailySessions: [], turns: [], works: [], nodeSessions: [] };
-  const binding = (sessionId, nodeId, topicId = "topic-00000000000000000000000000000000") =>
+  const topicA = "topic-00000000000000000000000000000000";
+  const binding = (sessionId, nodeId, topicId = topicA) =>
     ({ longAgentId: "friend", sessionId, topicId, nodeId, createdAt: "2026-09-24T00:00:00.000Z" });
   const nodeA = "node-11111111111111111111111111111111";
   const nodeB = "node-22222222222222222222222222222222";
@@ -670,9 +671,13 @@ test("P2 state: node bindings are unique per session, per node and per topic", a
   // The same node bound to two sessions is refused: node identity is durable in the topic graph.
   assert.throws(() => parseLongAgentState({ ...base, nodeSessions: [binding("sess-a", nodeA), binding("sess-b", nodeA)] }),
     /同一节点对应多个会话/);
-  // ... and so is one topic with two bindings.
-  assert.throws(() => parseLongAgentState({ ...base, nodeSessions: [binding("sess-a", nodeA), binding("sess-b", nodeB)] }),
-    /一个主题只能对应一个节点绑定/);
+  // A topic is a TREE: two different nodes of the same topic each keep their own binding.
+  const tree = parseLongAgentState({ ...base, nodeSessions: [binding("sess-a", nodeA), binding("sess-b", nodeB)] });
+  assert.equal(tree.nodeSessions.length, 2, "a topic may own several node bindings");
+  assert.deepEqual(tree.nodeSessions.map((entry) => entry.topicId), [topicA, topicA]);
+  // ... but the same session cannot serve two nodes either.
+  assert.throws(() => parseLongAgentState({ ...base, nodeSessions: [binding("sess-a", nodeA), binding("sess-a", nodeB)] }),
+    /节点会话绑定重复/);
   // A node session may not be a daily session or a work.
   assert.throws(() => parseLongAgentState({ ...base, nodeSessions: [binding("sess-a", nodeA, topicB)],
     dailySessions: [{ longAgentId: "friend", date: "2026-09-24", timeZone: "Asia/Shanghai", sessionId: "sess-a", createdAt: "2026-09-24T00:00:00.000Z",

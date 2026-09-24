@@ -683,9 +683,10 @@ export function parseLongAgentState(value: unknown): LongAgentState {
   const nodeSessions = parseNodeSessions(value.nodeSessions);
   // Both identities are unique: one session cannot be two nodes, and one node cannot be two sessions
   // (node identity is durable in the topic graph, so a second session for it would be a second writer).
+  // A TOPIC is deliberately NOT unique: a topic is a multi-node tree whose nodes each have their own
+  // session and their own rounds.
   if (new Set(nodeSessions.map((binding) => binding.sessionId)).size !== nodeSessions.length) throw new Error("节点会话绑定重复");
   if (new Set(nodeSessions.map((binding) => binding.nodeId)).size !== nodeSessions.length) throw new Error("节点绑定重复：同一节点对应多个会话");
-  if (new Set(nodeSessions.map((binding) => binding.topicId)).size !== nodeSessions.length) throw new Error("一个主题只能对应一个节点绑定");
   if (nodeSessions.some((binding) => dailySessions.some((day) => day.sessionId === binding.sessionId)
     || works.some((work) => work.sessionId === binding.sessionId))) throw new Error("节点会话不能同时是每日会话或后台工作");
   const ownedByNode = (turn: { readonly longAgentId: string; readonly sessionId: string }) =>
