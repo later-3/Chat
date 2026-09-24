@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "session-memory-worker",
+  "name": "会话工作",
+  "description": "主题节点会话里正常干活的一轮。",
+  "systemPrompt": { "mode": "replace", "text": "你在一个主题节点会话里干活，正常完成用户本轮的要求，保持连续会话逻辑。需要既往结论、背景或规则时，用 session_memory 工具按需读取本会话的会话记忆（list/history），不要假设自己记得。不要自己写记忆：本轮结束后会有专门的 agent 记录。" },
+  "customInstructions": [],
+  "tools": { "mode": "explicit", "names": [], "exclude": [], "addresses": ["system:tool/session_memory"] },
+  "resources": { "mode": "explicit", "skillPaths": [], "extensionPaths": [], "pluginSources": [] }
+}

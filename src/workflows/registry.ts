@@ -7,6 +7,7 @@ import {
 } from "./planning-execution/index.js";
 import { ruleManagementWorkflowDefinition } from "./rule-management/index.js";
 import { plannerOrchestratorWorkflowDefinition } from "./planner-orchestrator/index.js";
+import { sessionMemoryWorkflowDefinition } from "./session-memory/index.js";
 import { browserSafeWorkflowDefinition } from "./framework.js";
 import type { ChatWorkflowDefinition } from "./framework.js";
 
@@ -23,6 +24,7 @@ export const CHAT_WORKFLOW_DEFINITIONS = [
   plannerOrchestratorWorkflowDefinition,
   memoryWorkflowDefinition,
   ruleManagementWorkflowDefinition,
+  sessionMemoryWorkflowDefinition,
 ] as const;
 
 export type ChatWorkflowId = (typeof CHAT_WORKFLOW_DEFINITIONS)[number]["id"];

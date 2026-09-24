@@ -12,6 +12,7 @@ test("Workflow declaration catalog is the single target-discovery source", () =>
     "planner-orchestrator",
     "memory",
     "rule-management",
+    "session-memory",
   ]);
   assert.deepEqual(
     listAgentCallableWorkflowTargets(),
@@ -39,6 +40,12 @@ test("Workflow declaration catalog is the single target-discovery source", () =>
         name: "长期记忆",
         description: "由Memory Agent按用户的明确指令管理长期记忆。",
         agentIds: ["memory-agent"],
+      },
+      {
+        id: "session-memory",
+        name: "会话记忆",
+        description: "在一个节点会话里跑完一轮工作（work），随后由会话记忆写入 agent 记录本轮（remember）。既有记忆按需读取，不注入上下文。",
+        agentIds: ["session-memory-worker", "session-memory-writer"],
       },
     ],
   );

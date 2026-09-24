@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "session-memory",
+  "name": "会话记忆",
+  "description": "在一个节点会话里跑完一轮工作（work），随后由会话记忆写入 agent 记录本轮（remember）。既有记忆按需读取，不注入上下文。",
+  "agentCallable": true,
+  "nodes": [
+    { "kind": "agent", "id": "work", "name": "工作", "description": "在当前节点会话里正常干活的一轮。", "agentId": "session-memory-worker" },
+    { "kind": "agent", "id": "remember", "name": "记录会话记忆", "description": "只依据本轮（用户消息与工作阶段产物）维护本会话的会话记忆。", "agentId": "session-memory-writer" }
+  ],
+  "agents": [
+    { "id": "session-memory-worker", "config": "./agents/worker/agent.json" },
+    { "id": "session-memory-writer", "config": "./agents/writer/agent.json" }
+  ]
+}

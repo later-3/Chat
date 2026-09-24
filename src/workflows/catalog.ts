@@ -3,6 +3,7 @@ import minimalPiCodingAgentManifestJson from "./minimal-pi-coding-agent/workflow
 import plannerOrchestratorManifestJson from "./planner-orchestrator/workflow.json" with { type: "json" };
 import planningExecutionManifestJson from "./planning-execution/workflow.json" with { type: "json" };
 import ruleManagementManifestJson from "./rule-management/workflow.json" with { type: "json" };
+import sessionMemoryManifestJson from "./session-memory/workflow.json" with { type: "json" };
 import { parseChatWorkflowManifest } from "./framework.js";
 
 export const MINIMAL_PI_CODING_AGENT_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
@@ -25,6 +26,10 @@ export const RULE_MANAGEMENT_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
   ruleManagementManifestJson,
   "rule-management",
 );
+export const SESSION_MEMORY_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
+  sessionMemoryManifestJson,
+  "session-memory",
+);
 
 /** Declarative Workflow facts that can be consumed without loading executable Workflow modules. */
 export const CHAT_WORKFLOW_MANIFESTS = [
@@ -33,6 +38,7 @@ export const CHAT_WORKFLOW_MANIFESTS = [
   PLANNER_ORCHESTRATOR_WORKFLOW_MANIFEST,
   MEMORY_WORKFLOW_MANIFEST,
   RULE_MANAGEMENT_WORKFLOW_MANIFEST,
+  SESSION_MEMORY_WORKFLOW_MANIFEST,
 ] as const;
 
 export interface AgentCallableWorkflowTarget {

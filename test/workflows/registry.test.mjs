@@ -14,12 +14,13 @@ test("Workflow registry is the single backend source for available Workflows", (
     "planner-orchestrator",
     "memory",
     "rule-management",
+    "session-memory",
   ]);
   assert.equal(DEFAULT_CHAT_WORKFLOW_ID, "minimal-pi-coding-agent");
   assert.equal(getChatWorkflowDefinition("unknown"), undefined);
 
   const workflows = listChatWorkflowDefinitions();
-  assert.equal(workflows.length, 5);
+  assert.equal(workflows.length, 6);
   assert.equal("run" in workflows[0], false);
   assert.equal(workflows.some((workflow) => "prepareAgentSession" in workflow), false);
   assert.deepEqual(workflows.map((workflow) => workflow.agentCallable), [
@@ -28,6 +29,7 @@ test("Workflow registry is the single backend source for available Workflows", (
     true,
     true,
     false,
+    true,
   ]);
   assert.deepEqual(workflows.map((workflow) => workflow.agents.map((agent) => agent.id)), [
     ["pi-coding-agent"],
@@ -35,6 +37,7 @@ test("Workflow registry is the single backend source for available Workflows", (
     ["planner", "coordinator"],
     ["memory-agent"],
     ["rule-curator-agent"],
+    ["session-memory-worker", "session-memory-writer"],
   ]);
   assert.deepEqual(workflows.map((workflow) => workflow.nodes.map((node) => (
     node.kind === "agent" ? node.agentId : null
@@ -44,5 +47,6 @@ test("Workflow registry is the single backend source for available Workflows", (
     ["planner", null, "coordinator"],
     ["memory-agent"],
     ["rule-curator-agent"],
+    ["session-memory-worker", "session-memory-writer"],
   ]);
 });

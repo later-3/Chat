@@ -818,6 +818,7 @@ test("Workflow containers and their Agents come from the backend registry", asyn
     "planner-orchestrator",
     "memory",
     "rule-management",
+    "session-memory",
   ]);
   assert.deepEqual(body.workflows.map((workflow) => workflow.agents.map((agent) => agent.id)), [
     ["pi-coding-agent"],
@@ -825,6 +826,7 @@ test("Workflow containers and their Agents come from the backend registry", asyn
     ["planner", "coordinator"],
     ["memory-agent"],
     ["rule-curator-agent"],
+    ["session-memory-worker", "session-memory-writer"],
   ]);
   assert.deepEqual(body.workflows.map((workflow) => workflow.nodes.map((node) => node.agentId)), [
     ["pi-coding-agent"],
@@ -832,6 +834,7 @@ test("Workflow containers and their Agents come from the backend registry", asyn
     ["planner", undefined, "coordinator"],
     ["memory-agent"],
     ["rule-curator-agent"],
+    ["session-memory-worker", "session-memory-writer"],
   ]);
   assert.equal(body.workflows[0].agentCallable, true);
   assert.equal(body.workflows[1].planReview, true);
