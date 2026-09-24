@@ -613,3 +613,44 @@ test("P2 sources: a source with a pending lifecycle operation fails closed witho
   assert.equal(recovered.pendingOperation, undefined);
   assert.equal((await readTopicGraph(home, "friend")).nodes.some((node) => node.sessionId === "sess-pending-source"), false);
 });
+
+test("P2 creation: a pending lifecycle window is closed even when the file is still active", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  const sessionId = topicNodeSessionIdOf(topicIdOf("friend", "pending-window"), "pending-window");
+  const created = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, sessionId, "窗口");
+  const { removedSessionDirectory } = await import("../../src/session-files.ts");
+  const indexFile = path.join(removedSessionDirectory(created.session), "index.json");
+  const emptyIndex = { schemaVersion: 1, revision: 0, sessions: {}, tombstones: {} };
+  fs.mkdirSync(path.dirname(indexFile), { recursive: true });
+  fs.writeFileSync(indexFile, JSON.stringify(emptyIndex));
+  // Window A: the remove intent is durable while the file is STILL in the active directory.
+  const { readRemovedSessionIndexState } = await import("../../src/removed-session-index.ts");
+  // The index needs a well-formed record, so take it from a real removal and then put the file back.
+  await removeChatSession("friend", sessionId, home);
+  const removedFile = fs.readdirSync(removedSessionDirectory(created.session)).find((name) => name.includes(sessionId));
+  const activePath = path.join(created.session.sessionDir, removedFile);
+  fs.renameSync(path.join(removedSessionDirectory(created.session), removedFile), activePath);
+  const removedIndex = JSON.parse(fs.readFileSync(indexFile, "utf8"));
+  const indexRecord = removedIndex.sessions[sessionId];
+  removedIndex.pendingOperation = { operationId: "win-a", type: "remove", record: indexRecord, startedAt: new Date().toISOString() };
+  fs.writeFileSync(indexFile, JSON.stringify(removedIndex));
+  assert.equal((await readRemovedSessionIndexState(created.session)).pendingOperation.type, "remove");
+  await assert.rejects(ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, sessionId),
+    (error) => error.code === "SESSION_BUSY", "a removal in flight must not hand out a reopened session");
+
+  // Window B: a restore already moved the file back but has not completed.
+  removedIndex.pendingOperation = { operationId: "win-b", type: "restore", record: indexRecord, startedAt: new Date().toISOString() };
+  fs.writeFileSync(indexFile, JSON.stringify(removedIndex));
+  assert.equal(fs.existsSync(activePath), true, "the restore already moved the file back");
+  await assert.rejects(ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, sessionId),
+    (error) => error.code === "SESSION_BUSY", "an unfinished restore must not hand out the session either");
+
+  // Once a lifecycle entry point completes the operation (the recovery finalizes the restore because the
+  // file is already back), the session is simply reopened.
+  await listRemovedChatSessions("friend", home);
+  assert.equal(JSON.parse(fs.readFileSync(indexFile, "utf8")).pendingOperation, undefined);
+  const reopened = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, sessionId);
+  assert.equal(reopened.created, false);
+  assert.equal(reopened.session.manager.getSessionId(), sessionId);
+});

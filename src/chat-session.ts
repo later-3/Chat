@@ -139,13 +139,17 @@ export async function ensureChatSessionWithId(
   // must be one critical section, because Pi names the file `<timestamp>_<id>.jsonl` and two concurrent
   // creations of the same id would otherwise leave two session files behind.
   return withChatSessionOperationLock(chatSessionOperationKey(projectId, sessionId), async () => {
+    // A pending lifecycle operation is checked FIRST: an interrupted removal can leave the durable
+    // intent written while the file is still in the active directory, and reopening it would hand out a
+    // session that is being removed. The same covers a restore whose file already moved back but whose
+    // index write has not completed. Both windows must report SESSION_BUSY, not a reopened session.
+    const inactive = await readInactiveChatSessionState(projectContext, sessionId);
+    if (inactive === "pending")
+      throw new SessionLifecycleError("SESSION_BUSY", `该Session的生命周期操作尚未完成，请稍后重试: ${sessionId}`);
     const existing = (await listActiveSessionFiles(projectContext)).find((candidate) => candidate.id === sessionId);
     if (existing !== undefined) return { created: false, session: openSession(existing.path) };
     // Removal is a lifecycle state, not an absence: re-creating a removed/purged id would silently
     // resurrect a session (and a topic node that was marked `removed`). Restoring stays the only path.
-    const inactive = await readInactiveChatSessionState(projectContext, sessionId);
-    if (inactive === "pending")
-      throw new SessionLifecycleError("SESSION_BUSY", `该Session的生命周期操作尚未完成，请稍后重试: ${sessionId}`);
     if (inactive === "removed")
       throw new SessionLifecycleError("SESSION_REMOVED", `Session已移除，不能按同一 ID 重建: ${sessionId}`);
     if (inactive === "purged")
