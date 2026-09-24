@@ -57,13 +57,14 @@ node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types --
 | 锚点窗口修复（复核后） | 本批（`git log` 顶部） | running 标记改由队列在**工作段之前**幂等写入（同一 `turnId`，且在**节点会话操作锁内**检查/追加/flush、work 前释放）；`readTopicSettledAnchors` 改为**按轮次**抑制 `chat.long_agent_turn`，不再用会话级开关抹掉历史；新增 3 条回归（历史锚点保留、恢复时先写 running 再工作、并发写入下标记串行落同分支） |
 | 建题入口 | 本批（`git log` 顶部） | `topic-integration.ts` + `POST/GET /topics/integrations`：服务器解析/校验**日常来源会话**，启动 `startFriendWork({title:"整合：…"})`，返回 work/execution 与**确定性** `topicId/nodeId/sessionId`；整合由该后台 work 经**真实装配**调用 `topic-manage` 提交；假模型 API e2e 覆盖建题 → 建根节点+初始记忆 → 节点内 work+remember → 可分叉 |
 | 建题幂等补齐 | 本批（`git log` 顶部） | `startTopicIntegration` 在节点已建成时也拿**已持久化 work** 核对请求身份：同 `requestId` 重放返回同一 work，改 title/purpose/source → 400，而不是静默成功；已持久化 work 的源在跨日重放时优先于重新解析“今天的日常会话”。补建成后重放测试 |
+| 日常“说一句建题” + fork | 本批（`git log` 顶部） | `topic_manage request_topic`：模型只给 `title`/`purpose`（可选 `parents`），**服务端从当前可信 turn 派生请求身份、以当前会话为日常来源**，再调现有 `startTopicIntegration`；`fork` 用 `parents`（父节点 + settled 锚点）复用父主题与同一后台链；日常 `create_topic` 被拒绝；完成无节点 → `status=failed`。假模型：`test/long-agents/topic-integration.test.mjs`（建题 → 根；节点轮 → 锚点 fork → 有父边子节点；无节点不算成功） |
 | 建题入口真实模型验证 | 本批（`git log` 顶部） | 隔离 `CHAT_HOME` + symlink：真实模型（`command/deepseek-v4.1-flash`）跑了 `read_fulltext → read_memory → create_topic → create_node` → 根节点+初始 provenance → 节点轮 `work+remember` → 真实锚点建子节点；证据：`docs/history/reviews/2026-09-24-topic-mode-real-model-verification.md` |
 
 ---
 
 ## 3. 当前用户可用能力（诚实范围）
 
-- 能用：`topic-manage`（Agent 侧建树/读图/读记忆/补边/relay/开关）；节点只读 API；节点轮次（Post 消息 → work → remember → 记忆可查 → 可分叉）；记忆开关（节点级）；**“说一句建题”后端入口**（`POST /topics/integrations` + `GET /topics/integrations/{requestId}`：解析日常来源、启动整合后台 work、返回确定性可进入节点；整合质量需 P4 真实模型验证）。
+- 能用：`topic-manage`（Agent 侧建树/读图/读记忆/补边/relay/开关/`request_topic` 建根与 fork）；节点只读 API；节点轮次（Post 消息 → work → remember → 记忆可查 → 可分叉）；记忆开关（节点级）；**日常“说一句建题”**（Agent 在对话里调 `request_topic`，后端解析来源与请求身份 → 整合后台 work → 根节点）；**fork 建题**（父节点 + settled 锚点 → 有父边的子节点）；显式 HTTP 入口 `POST/GET /topics/integrations`。
 - 不能用：P3 Web 界面（主题图/记忆面板/整合状态/relay 来源）；P4 真实模型完整故事（含建题整合的提示词质量）。
 
 ---
@@ -76,7 +77,8 @@ node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types --
    - **剩余**：真实模型下的整合提示词质量与“补充整合（R4）经用户确认”入口归 P4/P3。
 2. ✅ **真实模型验证（本批已完成）**
    - 隔离 `CHAT_HOME` + **symlink** 复用 `~/.chat/agent`（不复制、不打印凭据）：真实模型跑通 `read_fulltext/read_memory → create_topic/create_node` → 根节点+初始 provenance → 节点轮 `work+remember` → 真实锚点建子节点；证据在 `docs/history/reviews/2026-09-24-topic-mode-real-model-verification.md`。
-   - **未交付**：日常轮次只“说一句话”自动触发建题（真实模型在 daily turn 会猜错 `sourceSessionId` 并留下无节点孤儿主题）；本批交付的是**显式**建题后端入口。
+   - **已交付**：日常 Agent 在对话里调 `request_topic`（模型只给 title/purpose，服务端从当前可信 turn 派生来源与请求身份）→ 后台整合 → 根节点；`parents` 则 fork 出有父边的子节点；无节点不算成功。
+   - **剩余**：日常自然语言里“没说用什么工具”的意图识别仍归模型自己；“用户确认后的补充整合（R4）”入口未接。
 3. **relay 执行链（未实现，合同已定）**：接受侧携带并校验 relay 的 `userEntryId`，执行时对该条目 `resumePendingTurn()`，**不再 prompt 追加同文消息**；用真实 `relay → 执行 → settled → 分叉` 回归替换当前声明。
 4. **进程级重启验证**：现有回归是同进程 drain（只证明“从耐久状态选会话”）；子进程探针此前**挂起未查明**，需要诊断后给出跨进程证据。
 5. **P3 Web**：主题图（节点/边/锚点/状态）、点节点复用 `ChatWindow` 走节点 API、记忆面板（按 purpose 分组、编辑/推翻 + CAS 冲突提示）、记忆开关、整合状态机、relay 来源展示。

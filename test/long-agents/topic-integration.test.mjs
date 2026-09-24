@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fixture } from "./daily-fixture.mjs";
@@ -151,4 +152,119 @@ test("topic integration: a daily 建题 request drives the background integratio
   const anchors = readTopicSettledAnchors(manager);
   assert.equal(anchors.length, 1, "the integrated node round is forkable");
   assert.equal(anchors[0].turnId, "chat-web:friend:int-turn-1");
+});
+
+const requestIdForTurn = (turnId, parents = []) =>
+  `topic-req:${createHash("sha256").update(JSON.stringify([turnId, parents])).digest("hex").slice(0, 32)}`;
+
+test("topic integration: request_topic takes its source and request identity from the trusted turn, and forks", async (t) => {
+  const base = await fixture(t);
+  const previousHome = process.env.CHAT_HOME;
+  process.env.CHAT_HOME = base.home;
+  const faux = registerFauxProvider({ api: "chat-topic-request-faux", provider: "chat-topic-request-faux" });
+  t.after(() => {
+    faux.unregister();
+    if (previousHome === undefined) delete process.env.CHAT_HOME;
+    else process.env.CHAT_HOME = previousHome;
+  });
+  const model = faux.getModel();
+  fs.writeFileSync(path.join(base.home, "agent/settings.json"), JSON.stringify({
+    defaultProvider: model.provider, defaultModel: model.id, defaultThinkingLevel: "off", compaction: { enabled: false } }));
+  fs.writeFileSync(path.join(base.home, "agent/models.json"), JSON.stringify({ providers: { [model.provider]: {
+    baseUrl: model.baseUrl, api: model.api, apiKey: "faux-key", models: [{ id: model.id, name: model.name,
+      reasoning: model.reasoning, input: model.input, cost: model.cost, contextWindow: model.contextWindow, maxTokens: model.maxTokens }] } } }));
+  await enableTopicTool(base.home);
+
+  faux.setResponses([fauxAssistantMessage("ack")]);
+  await executeLongAgentTurn(base.input("rt-daily-1"));
+  const daily = (await readLongAgentState(base.home)).dailySessions.find((day) => day.longAgentId === "friend");
+  const sourceMemory = (await writeSessionMemoryEntry({ chatHome: base.home, longAgentId: "friend", sessionId: daily.sessionId,
+    operation: "write", purpose: "finding", author: "user", content: "来源事实：空指针候选", expectedRevision: 0 })).entries.at(-1);
+
+  const { TOPIC_MANAGE_TOOL_PROVIDER } = await import("../../src/tools/builtins/topic-manage/index.ts");
+  const { readTopicIntegration } = await import("../../src/long-agents/topic-integration.ts");
+  const { drainLongAgentTurns } = await import("../../src/long-agents/turn-queue.ts");
+  const tool = (turnId) => TOPIC_MANAGE_TOOL_PROVIDER.create({ purpose: "execution", projectId: "friend", chatHome: base.home, cwd: base.home,
+    sessionManager: { getSessionId: () => daily.sessionId }, sessionId: daily.sessionId, agentId: "friend", longAgentId: "friend", longAgentTurnId: turnId });
+  const call = async (turnId, params) => (await tool(turnId).execute("call-1", params)).details;
+  const workSessionOf = async (workId) => (await readLongAgentState(base.home)).works.find((work) => work.id === workId).sessionId;
+
+  // --- Root: the model only names title/purpose; there is no sourceSessionId in the parameters. ---
+  const rootTurn = "chat-web:friend:rt-daily-1";
+  const rootRequestId = requestIdForTurn(rootTurn);
+  const rootIds = topicIntegrationIds("friend", rootRequestId);
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("topic_manage", { operation: "create_topic", requestId: rootRequestId, title: "可信来源建题", purpose: "验证来源与请求身份来自当前 turn" })),
+    fauxAssistantMessage(fauxToolCall("topic_manage", { operation: "create_node", topicId: rootIds.topicId, requestId: rootRequestId, title: "可信来源建题",
+      integrationSummary: "整合摘要", sources: [{ storageProjectId: "friend", sessionId: daily.sessionId, entryId: sourceMemory.entryId, content: "整合后的初始记忆" }] })),
+    fauxAssistantMessage("已建节点「可信来源建题」"),
+  ]);
+  const root = await call(rootTurn, { operation: "request_topic", title: "可信来源建题", purpose: "验证来源与请求身份来自当前 turn" });
+  assert.equal(root.requestId, rootRequestId, "the request id is derived from the trusted turn");
+  assert.equal(root.topicId, rootIds.topicId);
+  assert.equal(root.nodeId, rootIds.nodeId);
+  assert.equal(root.sessionId, rootIds.sessionId);
+  await drainLongAgentTurns(base.home, "friend", await workSessionOf(root.workId));
+  const rootDone = await readTopicIntegration({ chatHome: base.home, longAgentId: "friend", requestId: rootRequestId });
+  assert.equal(rootDone.status, "completed");
+  assert.equal(rootDone.node.nodeId, rootIds.nodeId);
+  assert.equal(rootDone.sourceSessionId, daily.sessionId, "the source is the caller's own daily session");
+
+  // A daily conversation cannot open a bare topic shell; create_topic is reserved for the integration work.
+  await assert.rejects(call(rootTurn, { operation: "create_topic", requestId: "shell", title: "壳", purpose: "壳" }),
+    /request_topic/, "the daily entry must be request_topic, not create_topic");
+
+  // --- A real node round produces a real settled anchor. ---
+  faux.setResponses([
+    fauxAssistantMessage("work：继续排查"),
+    fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "排查结论", expectedRevision: 1 })),
+    (context) => fauxAssistantMessage(`已写入 ${/"entryId":"([^"]+)"/.exec(context.messages.filter((message) => message.role === "toolResult").map((message) => JSON.stringify(message)).join("\n"))?.[1] ?? "missing"}`),
+  ]);
+  const { acceptLongAgentTurn } = await import("../../src/long-agents/turn-queue.ts");
+  await acceptLongAgentTurn({ chatHome: base.home, longAgentId: "friend", requireInteractionRevision: false, projectId: "friend",
+    turnId: "rt-node-1", text: "继续排查", source: "chat-web", topicNode: { topicId: rootIds.topicId, nodeId: rootIds.nodeId } });
+  await drainLongAgentTurns(base.home, "friend", rootIds.sessionId);
+  const manager = (await ensureChatSessionWithId({ chatHome: base.home, projectId: "friend" }, rootIds.sessionId)).session.manager;
+  const anchor = readTopicSettledAnchors(manager).at(-1);
+  assert.notEqual(anchor, undefined, "the node round settled an anchor");
+
+  // --- Fork: the same integration chain, now integrating the parent node at its settled anchor. ---
+  const parents = [{ nodeId: rootIds.nodeId, anchorEntryId: anchor.anchorEntryId, anchorSequence: anchor.anchorSequence }];
+  const forkTurn = "chat-web:friend:rt-daily-2";
+  const forkRequestId = requestIdForTurn(forkTurn, parents);
+  const forkIds = topicIntegrationIds("friend", forkRequestId, rootIds.topicId);
+  const rootMemory = await readSessionMemory(base.home, "friend", rootIds.sessionId);
+  const parentMemoryEntry = rootMemory.entries.at(-1);
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("topic_manage", { operation: "create_node", topicId: forkIds.topicId, requestId: forkRequestId, title: "子节点",
+      integrationSummary: "从父节点锚点分叉的整合摘要", parents,
+      sources: [{ storageProjectId: "friend", sessionId: rootIds.sessionId, entryId: parentMemoryEntry.entryId, content: "子节点初始记忆" }] })),
+    fauxAssistantMessage("已建节点「子节点」"),
+  ]);
+  const fork = await call(forkTurn, { operation: "request_topic", title: "子节点", purpose: "从真实锚点 fork", parents });
+  assert.equal(fork.topicId, rootIds.topicId, "a fork reuses the parent's topic");
+  assert.equal(fork.nodeId, forkIds.nodeId);
+  await drainLongAgentTurns(base.home, "friend", await workSessionOf(fork.workId));
+  const forkDone = await readTopicIntegration({ chatHome: base.home, longAgentId: "friend", requestId: forkRequestId });
+  assert.equal(forkDone.status, "completed");
+  assert.deepEqual(forkDone.node.createdByRequestId, forkRequestId);
+  const edge = forkDone.node.parents ?? undefined;
+  const { readTopicGraph } = await import("../../src/long-agents/topics.ts");
+  const graph = await readTopicGraph(base.home, "friend");
+  const parentEdge = graph.edges.find((candidate) => candidate.childNodeId === forkIds.nodeId);
+  assert.notEqual(parentEdge, undefined, "the child carries its parent edge");
+  assert.equal(parentEdge.parentNodeId, rootIds.nodeId);
+  assert.equal(parentEdge.anchorEntryId, anchor.anchorEntryId);
+  assert.equal(parentEdge.anchorSequence, anchor.anchorSequence);
+  void edge;
+
+  // --- A work that finishes without a node is a FAILURE, never a reported success (no bare shell). ---
+  const failTurn = "chat-web:friend:rt-daily-3";
+  const failRequestId = requestIdForTurn(failTurn);
+  faux.setResponses([fauxAssistantMessage("我不建节点了")]);
+  const failed = await call(failTurn, { operation: "request_topic", title: "没有节点", purpose: "失败不得报成功" });
+  await drainLongAgentTurns(base.home, "friend", await workSessionOf(failed.workId));
+  const failedDone = await readTopicIntegration({ chatHome: base.home, longAgentId: "friend", requestId: failRequestId });
+  assert.equal(failedDone.node, null);
+  assert.equal(failedDone.status, "failed", "a finished work without a node is not success");
 });

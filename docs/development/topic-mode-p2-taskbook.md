@@ -30,7 +30,7 @@
 | 2 | **主题图**：topics/nodes/edges（边带创建锚点 + memoryRefs）、防环、revision CAS | `src/long-agents/topics.ts` |
 | 3 | **`topic-manage` 工具（已实现）**（Long Agent 入口）：① 跨 Agent/跨树**只读**读取会话记忆与全文（见 §4 来源地址）；② 建主题/建节点（提交整合产物）；③ 代传；④ 读图/读节点；⑤ 更新节点状态 | `src/tools/builtins/topic-manage/**`（照 `conversation-manage` 模式） |
 | 4 | **节点创建服务**：`reserveChatSession` → 整合摘要 `appendCustomMessageEntry` → 初始 `background` 记忆条目 → 图 CAS 登记；四步同一 `requestId`，重试识别已写产物 | `src/long-agents/topics.ts` + `chat-session.ts` |
-| 5 | **“说一句建题”接线（已实现）**：`POST /topics/integrations` 从建题请求解析该 Friend 的**日常来源会话**（服务器解析或校验 `sourceSessionId` 属于本 Friend 的日常会话），启动整合后台 work（`startFriendWork` 只接受日常来源），返回 work/execution 引用与**确定性** `topicId/nodeId/sessionId`；`GET /topics/integrations/{requestId}` 供 P3 恢复（图有节点即 success）。整合本身仍由该后台 work 的 Agent 通过 `topic-manage` 提交，不新建执行路径 | `src/long-agents/topic-integration.ts` + `startFriendWork`/`topic-manage` 复用；`src/routes/api/long-agents/[longAgentId]/topics/integrations*.ts` |
+| 5 | **“说一句建题”接线（已实现）**：日常 Agent 用 `topic_manage request_topic` 发起（只给 `title`/`purpose`，可选 `parents`）——**服务端从当前可信 turn 派生请求身份、以当前会话为来源**（不接受模型填 `sourceSessionId`），再调现有 `startTopicIntegration` 启动后台整合；同一后台链支持 **fork**（给父节点 + settled 锚点，复用父主题）。日常会话直接 `create_topic` 会被拒绝（它是整合工作内部用）。另有显式 HTTP 入口 `POST/GET /topics/integrations`（显式 `title`/`purpose`/可选 `sourceSessionId`）保留给 P3/前端。返回 work/execution 与**确定性** `topicId/nodeId/sessionId` | `src/long-agents/topic-integration.ts` + `topic-manage` + `startFriendWork` 复用；`src/routes/api/long-agents/[longAgentId]/topics/integrations*.ts` |
 | 6 | **节点会话 API**：读消息 / 发轮次 / 事件流 | `src/routes/api/long-agents/[longAgentId]/topics/**` |
 | 7 | **共享授权（读取已接入）**：read（跨树只读）/ relay（自己名下树）/ write（仅本会话记忆）在一处判定；节点 API、记忆 API、**通用 Session 读写与 Run 启动**在识别为主题节点后都走它；非主题会话走原合同 | `topics.ts` 共享函数，被 3/5/6 与 `sessions`/`runs` 路由复用 |
 | 8 | **读侧按需读取**：`session-memory` 工具 + `session-memory` Skill（**不注入 prompt**） | `src/resources/builtin-skills/session-memory/SKILL.md`、现有工具 |
@@ -105,7 +105,7 @@
 | T5 | 代传与生命周期 | relay 是真实 user message + 标记可见；越权（他人树）拒绝；**会话被移除后 node `removed` 且边保留**，archived/removed 拒绝 relay |
 | T6 | 权限（含绕行入口） | owner 可读写节点会话；树属 Agent 可代传；跨树只读可；写他人记忆拒绝；**通用 Session 读写与 Run 启动（如 `POST /runs`）对主题节点走同一授权，越权被拒** |
 | T7 | 开关 | 关闭后不装配读取工具、不跑 `remember`，普通对话不受影响 |
-| T8 | 后端端到端（假模型 + 真实模型） | 建题请求 → 日常来源解析 → 后台整合 work → 建节点 + 初始记忆 → 节点内一轮（work+remember）→ 分叉 → 第二主题跨树引用父记忆；假模型 API：`test/long-agents/topic-integration.test.mjs`（建题 → 真实装配调 `topic_manage` 建根节点+初始记忆 → 节点内 work+remember → 可分叉；建成后重放比对标题/目的/来源）；真实模型：`docs/history/reviews/2026-09-24-topic-mode-real-model-verification.md`（模型先 `read_fulltext`/`read_memory` 再 `create_topic`/`create_node`，初始 provenance 与真实子节点已验）。**未交付**：日常轮次“只说一句话自动触发建题” |
+| T8 | 后端端到端（假模型 + 真实模型） | 建题请求 → 日常来源解析 → 后台整合 work → 建节点 + 初始记忆 → 节点内一轮（work+remember）→ 分叉；假模型：`test/long-agents/topic-integration.test.mjs`（`request_topic` 从可信 turn 解析来源/请求身份建根；日常 `create_topic` 被拒；节点轮 → 真实锚点 fork 出有父边的子节点；完成后无节点 → status=`failed` 而非 success）+ 显式 API 建成后重放比对；真实模型：`docs/history/reviews/2026-09-24-topic-mode-real-model-verification.md`（模型先 `read_fulltext`/`read_memory` 再 `create_topic`/`create_node`）。跨树引用见既有用例 |
 | T9 | 随附业务 workflow | 主题会话内调用问题定位 workflow 返回结果（假模型），run 归属符合 §2 第 2 条 |
 
 退出条件：T1–T9 有证据；`pnpm verify` exit=0；无新增运行时旁路（不新建 Session/调度器/模型循环）。真实模型完整故事与浏览器可见性分别归 P4/P3。

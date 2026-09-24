@@ -1,5 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { createHash } from "node:crypto";
 import { openChatSession } from "../../../chat-session.js";
 import { resolveProjectContext } from "../../../projects/registry.js";
 import { readSessionMemory } from "../../../long-agents/session-memory.js";
@@ -67,15 +68,15 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
     parameters: Type.Object({
       operation: Type.Union([
         Type.Literal("read_graph"), Type.Literal("read_node"), Type.Literal("read_memory"), Type.Literal("read_fulltext"),
-        Type.Literal("create_topic"), Type.Literal("create_node"), Type.Literal("add_parent"),
+        Type.Literal("request_topic"), Type.Literal("create_topic"), Type.Literal("create_node"), Type.Literal("add_parent"),
         Type.Literal("update_node_status"), Type.Literal("relay"),
       ]),
       topicId: Type.Optional(Type.String({ description: "read_graph(可选过滤)/read_node/create_node/add_parent/relay：主题 id" })),
       nodeId: Type.Optional(Type.String({ description: "read_node/add_parent/update_node_status/relay：节点 id" })),
       targetNodeId: Type.Optional(Type.String({ description: "relay：接收节点 id" })),
-      requestId: Type.Optional(Type.String({ description: "create_topic/create_node/relay：幂等请求 id" })),
-      title: Type.Optional(Type.String({ description: "create_topic/create_node：标题" })),
-      purpose: Type.Optional(Type.String({ description: "create_topic：主题目的" })),
+      requestId: Type.Optional(Type.String({ description: "create_topic/create_node/relay：幂等请求 id；request_topic 不接受该参数（服务端从当前 turn 派生）" })),
+      title: Type.Optional(Type.String({ description: "request_topic/create_topic/create_node：标题" })),
+      purpose: Type.Optional(Type.String({ description: "request_topic/create_topic：目的" })),
       integrationSummary: Type.Optional(Type.String({ description: "create_node：整合摘要（进入子节点上下文）" })),
       memoryContent: Type.Optional(Type.String({ description: "create_node：初始 background 会话记忆内容" })),
       source: Type.Optional(Type.Object({
@@ -88,7 +89,7 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
         nodeId: Type.String(),
         anchorEntryId: Type.Optional(Type.String()),
         anchorSequence: Type.Optional(Type.Number()),
-      }), { description: "create_node：父边列表；给出锚点时必须同时给 anchorEntryId 与 anchorSequence" })),
+      }), { description: "create_node：父边列表；request_topic：fork 的父边（须 entry+sequence）——给出锚点时必须同时给 anchorEntryId 与 anchorSequence" })),
       anchorEntryId: Type.Optional(Type.String({ description: "add_parent：父会话已 settled 的用户 entry" })),
       anchorSequence: Type.Optional(Type.Number({ description: "add_parent：该锚点在父会话的分叉序号" })),
       status: Type.Optional(Type.Union([Type.Literal("active"), Type.Literal("archived")], { description: "update_node_status" })),
@@ -197,7 +198,35 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
           nextCursor: typeof oldest?.id === "string" ? oldest.id : null });
       }
 
+      if (operation === "request_topic") {
+        const title = text(record.title, "title", 200);
+        const purpose = text(record.purpose, "purpose", 2_000);
+        const turnId = typeof context.longAgentTurnId === "string" && context.longAgentTurnId.trim() !== "" ? context.longAgentTurnId : null;
+        if (turnId === null || context.sessionId === undefined) throw new Error("request_topic 需要当前可信轮次身份");
+        const parentInputs = Array.isArray(record.parents) ? record.parents as readonly Record<string, unknown>[] : [];
+        const parents = parentInputs.map((parent) => {
+          const anchorSequence = Number(parent.anchorSequence);
+          if (!Number.isSafeInteger(anchorSequence) || anchorSequence < 1) throw new Error("parents.anchorSequence 无效");
+          return { nodeId: text(parent.nodeId, "parents.nodeId", 200),
+            anchorEntryId: text(parent.anchorEntryId, "parents.anchorEntryId", 200), anchorSequence };
+        });
+        // The request identity comes from the TRUSTED turn, never from model args, and the source is the
+        // current session (startTopicIntegration validates it is this Friend's daily session).
+        const requestId = `topic-req:${createHash("sha256").update(JSON.stringify([turnId, parents])).digest("hex").slice(0, 32)}`;
+        const { startTopicIntegration } = await import("../../../long-agents/topic-integration.js");
+        const started = await startTopicIntegration({ chatHome, longAgentId, requestId, title, purpose,
+          sourceSessionId: context.sessionId, ...(parents.length === 0 ? {} : { parents }) });
+        return result({ operation, requestId, topicId: started.topicId, nodeId: started.nodeId, sessionId: started.sessionId,
+          status: started.status, workId: started.work?.id ?? null });
+      }
+
       if (operation === "create_topic") {
+        // A daily conversation must NOT open a topic shell directly: the observed failure mode. It has to
+        // go through request_topic so the background integration creates the node as well.
+        const { readLongAgentState } = await import("../../../long-agents/storage.js");
+        const state = await readLongAgentState(chatHome);
+        if (context.sessionId !== undefined && state.dailySessions.some((day) => day.sessionId === context.sessionId))
+          throw new Error("日常对话里不能直接用 create_topic；请用 request_topic 发起建题，由后台整合后建节点");
         const requestId = text(record.requestId, "requestId", 200);
         const title = text(record.title, "title", 200);
         const purpose = text(record.purpose, "purpose", 2_000);
