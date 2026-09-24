@@ -99,10 +99,12 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     if (prior !== undefined) {
       if (prior.workId !== undefined && prior.sessionId !== input.sessionId) throw new LongAgentRequestConflict("后台工作请求不能改投其他会话");
       if (input.topicNode !== undefined) {
-        // A node retry replays the same acceptance: the session, topic and node must match the record.
+        // A node retry replays the same acceptance. The client never sends a sessionId for a node round,
+        // so the frozen node target and the durable binding are compared — never a sessionId that the
+        // caller cannot supply.
         const priorBinding = (await readLongAgentState(home)).nodeSessions.find((entry) => entry.sessionId === prior.sessionId);
         if (priorBinding === undefined || priorBinding.topicId !== input.topicNode.topicId || priorBinding.nodeId !== input.topicNode.nodeId
-          || prior.sessionId !== input.sessionId)
+          || prior.topicNode?.topicId !== input.topicNode.topicId || prior.topicNode?.nodeId !== input.topicNode.nodeId)
           throw new LongAgentRequestConflict("节点轮次不能改投其他主题节点");
       } else if (input.sessionId !== undefined && prior.sessionId !== input.sessionId)
         throw new LongAgentRequestConflict("同一requestId不能改投其他会话");

@@ -69,7 +69,10 @@
   1. **接受侧**：`acceptLongAgentTurn` 增加 `topicNode: {topicId, nodeId}` 入口——**从主题图核实**（节点存在、`node.topicId === topicId`、会话即该节点会话；客户端不能传 `sessionId`），随后 `ensureProjectLongAgent` 的 `topicNode` 入口**只定位**（当日日期 + 该 Agent 时区 + 打开节点会话），**不动** `dailySessions` 与 primary 绑定；**节点绑定与 turn 在同一次 `updateLongAgentState` 写入**中保存（`nodeSessions` upsert 与 `turns` 追加同事务），turn 记录带 `topicNode` 目标。
   2. **执行侧**：`openAcceptedDay` 除每日记录外也接受**节点绑定**（返回以该节点会话为 primary 的定位，`sessionDate` 取绑定创建日），因此**重启后** Worker 仅凭耐久状态即可选回节点会话执行；不表达为 `works`。
   3. **重放**：同 `requestId` 的节点重放要求会话/主题/节点与既有记录一致，否则 409；普通轮次新增“同一 requestId 不能改投其他会话”的 409。
-  全链已用真实会话验证：发轮次 → 重启（丢弃进程内缓存、只读耐久状态）→ 节点会话内执行到 `completed` 并写 `settledAt` → 该轮成为可分叉锚点 → 用该锚点建子节点。
+  **已验证**（真实会话）：发节点轮次 → Worker 仅凭**耐久绑定**选回节点会话执行 → `completed` 且写 `settledAt` → 该轮成为可分叉锚点 → 用该锚点建子节点；同一 POST 原样重发返回**同一 turn**（不新增 turn/绑定），同 `requestId` 改投另一节点 → 409。
+  **尚未验证/未实现**：
+  1. **进程级重启**：现有回归是**同进程**调用 drain（已如实改名，只证明“从耐久状态选会话”），子进程重启探针尚未跑通（本轮尝试时子进程 drain 挂起，未查明原因）。
+  2. **`relay → 执行 → settled → 分叉` 全链**：目前**未实现**。代传写入的是一条独立 user 条目，而节点轮次接受后执行时仍会 `prompt(text)` **再追加一条**用户消息——因此「先代传、再用相同正文发轮次」会产生 **2 条**用户消息，settled 锚点指向轮次新增的那条，而不是代传条目。要做到“执行代传消息本身”，接受合同需要携带并校验 relay 的 `userEntryId`，执行时对该条目走 `resumePendingTurn()`（不追加新消息）；这条**纳入下一包**，在此之前不声称 relay 全链已完成。
 - **事件流**：节点轮次的事件流可直接复用既有 `GET /api/long-agents/{longAgentId}/turns/{turnId}/events`（返回 `turnId` 后前端即可订阅）；主题作用域的 `.../stream` 门面属于 P3 展示层，等节点轮次落地后再决定是否需要。
 - **节点生命周期挂钩（§3 表格第 9 行，已实现）**：`applyTopicNodeSessionLifecycle` 是**唯一可离开 `removed` 状态**的写入者（它镜像会话文件的事实）：`removeChatSession` 在「意图已写、文件已移动、完成前」把节点标 `removed`；`restoreRemovedChatSession` 把节点恢复为 `active`；`purge` 之后节点保持 `removed`（会话已永久消失，节点留作历史）。**边始终保留**供溯源；普通会话（非主题节点）为 no-op。它只取图锁（会话锁由移除流程持有，锁序仍为会话锁 → 图锁）；面向用户/Agent 的 `updateTopicNodeStatus` 仍视 `removed` 为终态。
 - **恢复路径也必须收敛节点**：`recoverPendingOperation` 的收敛回调（`lifecycleConvergence`）除会话记忆外，**在清除 pending 之前**同样收敛主题节点状态（remove → `removed`、restore → `active`、purge → 保持 `removed`），因此“文件已移动但图写入失败”的中断不会留下 `active` 节点。`topics.ts` 已**静态**依赖 `removed-session-index.ts`，反向依赖用**惰性 `import()`** 解析以保持静态依赖图无环。
