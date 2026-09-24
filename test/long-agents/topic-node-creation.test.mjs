@@ -576,3 +576,40 @@ test("P2 read: readChatSession itself applies the topic gate for its storage pro
   const afterRestore = await readChatSession(node.node.sessionId, undefined, {}, "friend", home, { kind: "owner" });
   assert.notEqual(afterRestore, undefined);
 });
+
+test("P2 sources: a source with a pending lifecycle operation fails closed without re-entering locks", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "pl-topic", expectedRevision: 0 })).topic;
+  const root = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点", createdBy: "agent", requestId: "pl-topic", expectedRevision: 1 });
+  const sourceSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, "sess-pending-source", "来源");
+  sourceSession.session.manager.flush();
+  const memory = await writeSessionMemoryEntry({ chatHome: home, longAgentId: "friend", sessionId: "sess-pending-source",
+    operation: "write", purpose: "finding", author: "agent", content: "待移除来源", expectedRevision: 0 });
+  const source = { storageProjectId: "friend", sessionId: "sess-pending-source", entryId: memory.entries.at(-1).entryId };
+  const request = { chatHome: home, longAgentId: "friend", topicId: topic.topicId, requestId: "pl-child", title: "整合节点",
+    source, initialMemory: { content: "背景", originEntryId: null }, parents: [{ parentNodeId: root.node.nodeId }] };
+
+  // Put the source session into an INTERRUPTED removal: the file is removed and the index keeps the
+  // durable intent. A source guard must reject this instead of recovering (recovery converges the topic
+  // graph, which would re-enter the graph lock the source check runs inside).
+  await removeChatSession("friend", "sess-pending-source", home);
+  const { removedSessionDirectory } = await import("../../src/session-files.ts");
+  const indexFile = path.join(removedSessionDirectory(sourceSession.session), "index.json");
+  const index = JSON.parse(fs.readFileSync(indexFile, "utf8"));
+  index.pendingOperation = { operationId: "interrupted-remove", type: "remove", record: index.sessions["sess-pending-source"], startedAt: new Date().toISOString() };
+  fs.writeFileSync(indexFile, JSON.stringify(index));
+
+  await assert.rejects(createTopicNodeWithSession(request), /生命周期操作尚未完成/);
+  // The pending intent is untouched: only a real lifecycle entry point may recover it.
+  const untouched = JSON.parse(fs.readFileSync(indexFile, "utf8"));
+  assert.equal(untouched.pendingOperation.operationId, "interrupted-remove");
+  // A new session id cannot be created for that id either (fail closed, no duplicate file).
+  await assert.rejects(ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, "sess-pending-source"),
+    (error) => error.code === "SESSION_BUSY");
+  // Recovering through a lifecycle entry point still converges both durables.
+  await listRemovedChatSessions("friend", home);
+  const recovered = JSON.parse(fs.readFileSync(indexFile, "utf8"));
+  assert.equal(recovered.pendingOperation, undefined);
+  assert.equal((await readTopicGraph(home, "friend")).nodes.some((node) => node.sessionId === "sess-pending-source"), false);
+});

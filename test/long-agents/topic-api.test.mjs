@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fixture } from "./daily-fixture.mjs";
-import { createTopic, createTopicNode } from "../../src/long-agents/topics.ts";
+import { createTopic, createTopicNode, readTopicGraph } from "../../src/long-agents/topics.ts";
 import { ensureChatSessionWithId } from "../../src/chat-session.ts";
 import { appendChatUserMessage } from "../../src/workflows/session-conversation.ts";
 
@@ -53,5 +53,17 @@ test("topic API: graph, topic, node messages and a node turn are owner-facing an
   assert.deepEqual(messagesBody.context.messages.map((message) => message.role), ["user"]);
   assert.equal(messagesBody.context.messages[0].content[0].text, "节点里的第一条消息", "the node's messages are returned");
   assert.equal((await call(`/api/long-agents/friend/topics/${topic.topicId}/nodes/node-00000000000000000000000000000000/messages`)).status, 404);
+
+  // A second topic: the single-topic read must not leak its nodes or edges.
+  const other = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "另一个主题", purpose: "隔离", requestId: "api-topic-2", expectedRevision: graphBody.revision })).topic;
+  const otherNode = await createTopicNode({ chatHome: base.home, longAgentId: "friend", topicId: other.topicId, title: "另一个根节点",
+    createdBy: "agent", requestId: "api-topic-2", expectedRevision: (await readTopicGraph(base.home, "friend")).revision });
+  const scoped = await (await call(`/api/long-agents/friend/topics/${topic.topicId}`)).json();
+  assert.equal(scoped.nodes.every((candidate) => candidate.topicId === topic.topicId), true);
+  assert.equal(scoped.edges.every((edge) => scoped.nodes.some((candidate) => candidate.nodeId === edge.parentNodeId)
+    && scoped.nodes.some((candidate) => candidate.nodeId === edge.childNodeId)), true, "only this topic's edges are returned");
+  // A node id from another topic is not reachable through this topic's route.
+  const otherMessages = await call(`/api/long-agents/friend/topics/${topic.topicId}/nodes/${otherNode.node.nodeId}/messages`);
+  assert.equal(otherMessages.status, 404, "the URL must describe one consistent topic+node path");
 
 });

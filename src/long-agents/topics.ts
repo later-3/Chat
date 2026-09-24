@@ -10,7 +10,7 @@ import { longAgentConfigRoot } from "./storage.js";
 import { readSessionMemory, writeSessionMemoryEntry } from "./session-memory.js";
 import { resolveProjectContext } from "../projects/registry.js";
 import { listActiveSessionFiles } from "../session-files.js";
-import { findInactiveChatSessionState } from "../removed-session-index.js";
+import { readInactiveChatSessionState } from "../removed-session-index.js";
 
 /**
  * P2 topic graph: the durable record of a Long Agent's theme trees.
@@ -483,8 +483,18 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
     ? null
     : text(input.requestFingerprint, "requestFingerprint", 200);
   const digest = nodeCreationDigest({ topicId, sessionId, title, createdBy: input.createdBy, frozenProjectContext, initialMemoryRefs, parents, requestFingerprint });
+  const nodeId = topicNodeIdOf(topicId, sessionId);
+  // Source validation runs OUTSIDE the graph lock: a source guard must never recover a pending
+  // lifecycle operation while the graph lock is held (that recovery converges the topic graph and would
+  // re-enter this lock). A replay of an already registered node skips it, exactly as before.
+  const preflight = await readTopicGraph(input.chatHome, input.longAgentId);
+  if (!preflight.nodes.some((node) => node.nodeId === nodeId || node.createdByRequestId === requestId)) {
+    await requireTopicSources({ chatHome: input.chatHome, sources: [
+      ...initialMemoryRefs.map((ref) => ref.source),
+      ...parents.flatMap((parent) => parent.memoryRefs),
+    ] });
+  }
   return changeTopicGraph(input.chatHome, input.longAgentId, async (state) => {
-    const nodeId = topicNodeIdOf(topicId, sessionId);
     // The request id is the retry identity for the whole four-step creation (session reservation,
     // summary, initial memory, graph registration): a retry with the same id returns the same node,
     // and the same id with different inputs is a conflict instead of a second node.
@@ -518,12 +528,6 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
     }
     assertRevision(state, input.expectedRevision);
     const now = input.now ?? new Date().toISOString();
-    // Sources are validated inside the locked mutation AFTER the idempotency checks, so an identical
-    // replay of an already registered node never re-checks availability (its sources may be gone).
-    await requireTopicSources({ chatHome: input.chatHome, sources: [
-      ...initialMemoryRefs.map((ref) => ref.source),
-      ...parents.flatMap((parent) => parent.memoryRefs),
-    ] });
     const edges: TopicEdgeRecord[] = [];
     for (const parent of parents) {
       if (edges.some((edge) => edge.parentNodeId === parent.parentNodeId))
@@ -836,7 +840,9 @@ async function requireTopicMemorySource(input: {
   // A removed source is readable provenance but no longer an integration source (taskbook 3#9).
   const active = (await listActiveSessionFiles(context)).some((candidate) => candidate.id === source.sessionId);
   if (!active) {
-    const inactive = await findInactiveChatSessionState(context, source.sessionId);
+    const inactive = await readInactiveChatSessionState(context, source.sessionId);
+    if (inactive === "pending")
+      throw new TopicError(409, `来源会话的生命周期操作尚未完成，请稍后重试：${source.sessionId}`);
     if (inactive === "removed") throw new TopicError(409, `来源会话已移除，不能作为整合来源：${source.sessionId}`);
     throw new TopicError(404, `来源会话记忆不存在或不可读：${source.storageProjectId}/${source.sessionId}`);
   }

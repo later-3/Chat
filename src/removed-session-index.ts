@@ -393,3 +393,22 @@ export async function findInactiveChatSessionState(
     return "missing";
   });
 }
+
+/**
+ * The same question WITHOUT recovering a pending operation — for guards that may already hold another
+ * lock. Recovery converges session memory AND the topic graph, and converging the topic graph takes the
+ * graph lock, so recovering from inside a graph mutation (source validation) or from a Session guard
+ * would re-enter that lock. The durable INTENT is interpreted in place and reported as `pending`, so
+ * the caller fails closed and a later lifecycle entry point performs the recovery.
+ */
+export async function readInactiveChatSessionState(
+  project: Pick<ChatProjectContext, "sessionDir">,
+  sessionId: string,
+): Promise<"removed" | "purged" | "pending" | "missing"> {
+  const index = await readRemovedSessionIndexState(project);
+  const pending = index.pendingOperation;
+  if (pending !== undefined && pending.record.id === sessionId) return "pending";
+  if (index.sessions[sessionId] !== undefined) return "removed";
+  if (index.tombstones[sessionId] !== undefined) return "purged";
+  return "missing";
+}

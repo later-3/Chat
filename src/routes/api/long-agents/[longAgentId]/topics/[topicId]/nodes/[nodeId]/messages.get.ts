@@ -12,13 +12,16 @@ import { SessionLifecycleError } from "../../../../../../../../session-errors.js
  */
 export default defineEventHandler(async (event) => {
   const longAgentId = getRouterParam(event, "longAgentId");
+  const topicId = getRouterParam(event, "topicId", { decode: true });
   const nodeId = getRouterParam(event, "nodeId", { decode: true });
-  if (!longAgentId || !nodeId) throw createError({ statusCode: 400, statusMessage: "缺少 Friend 或节点标识" });
+  if (!longAgentId || !topicId || !nodeId) throw createError({ statusCode: 400, statusMessage: "缺少 Friend、主题或节点标识" });
   setResponseHeader(event, "Cache-Control", "no-store");
   const query = getQuery(event);
   const home = resolveChatHome();
   const graph = await readTopicGraph(home, longAgentId);
-  const node = graph.nodes.find((candidate) => candidate.nodeId === nodeId);
+  // The URL must describe ONE consistent path: a node id from another topic is not reachable through
+  // this topic's route.
+  const node = graph.nodes.find((candidate) => candidate.nodeId === nodeId && candidate.topicId === topicId);
   if (node === undefined) throw createError({ statusCode: 404, statusMessage: "找不到主题节点" });
   const decision = authorizeTopicSession({ graph, requester: { kind: "user" }, sessionId: node.sessionId, capability: "read" });
   if (decision.applicable && !decision.allowed) throw createError({ statusCode: 403, statusMessage: decision.reason ?? "没有读取该节点的权限" });

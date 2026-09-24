@@ -8,7 +8,7 @@ import { openProject, resolveProjectContext } from "./projects/registry.js";
 import type { ChatProjectContext } from "./projects/types.js";
 import { requireActiveChatSessionFile } from "./session-state.js";
 import { listActiveSessionFiles } from "./session-files.js";
-import { findInactiveChatSessionState } from "./removed-session-index.js";
+import { readInactiveChatSessionState } from "./removed-session-index.js";
 import { SessionLifecycleError } from "./session-errors.js";
 import { chatSessionOperationKey, withChatSessionOperationLock } from "./session-operation-lock.js";
 import { CHAT_WORKFLOW_AGENT_HANDOFF_CUSTOM_TYPE } from "./workflows/session-conversation.js";
@@ -143,7 +143,9 @@ export async function ensureChatSessionWithId(
     if (existing !== undefined) return { created: false, session: openSession(existing.path) };
     // Removal is a lifecycle state, not an absence: re-creating a removed/purged id would silently
     // resurrect a session (and a topic node that was marked `removed`). Restoring stays the only path.
-    const inactive = await findInactiveChatSessionState(projectContext, sessionId);
+    const inactive = await readInactiveChatSessionState(projectContext, sessionId);
+    if (inactive === "pending")
+      throw new SessionLifecycleError("SESSION_BUSY", `该Session的生命周期操作尚未完成，请稍后重试: ${sessionId}`);
     if (inactive === "removed")
       throw new SessionLifecycleError("SESSION_REMOVED", `Session已移除，不能按同一 ID 重建: ${sessionId}`);
     if (inactive === "purged")

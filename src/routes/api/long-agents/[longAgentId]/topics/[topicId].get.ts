@@ -11,11 +11,14 @@ export default defineEventHandler(async (event) => {
   const graph = await readTopicGraph(resolveChatHome(), longAgentId);
   const topic = graph.topics.find((candidate) => candidate.topicId === topicId);
   if (topic === undefined) throw createError({ statusCode: 404, statusMessage: "找不到主题" });
+  const nodes = graph.nodes.filter((node) => node.topicId === topicId);
+  const nodeIds = new Set(nodes.map((node) => node.nodeId));
   return {
     schemaVersion: 1,
     revision: graph.revision,
     topic,
-    nodes: graph.nodes.filter((node) => node.topicId === topicId),
-    edges: graph.edges,
+    nodes,
+    // Only this topic's edges: an edge to another tree would leak another topic's structure.
+    edges: graph.edges.filter((edge) => nodeIds.has(edge.parentNodeId) && nodeIds.has(edge.childNodeId)),
   };
 });
