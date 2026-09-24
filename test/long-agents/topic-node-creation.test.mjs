@@ -9,6 +9,7 @@ import { appendChatLongAgentTurn } from "../../src/long-agents/session-turn.ts";
 import { readSessionMemory, writeSessionMemoryEntry } from "../../src/long-agents/session-memory.ts";
 import { ensureAgentHomeProject, openProject } from "../../src/projects/registry.ts";
 import { listRemovedChatSessions, purgeRemovedChatSession, removeChatSession, restoreRemovedChatSession } from "../../src/session-removal.ts";
+import { setTopicNodeSessionMemory } from "../../src/long-agents/topics.ts";
 import {
   addTopicNodeParent,
   createTopic,
@@ -684,4 +685,33 @@ test("P2 state: node bindings are unique per session and per node (a topic keeps
       summary: { status: "pending", attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } }] }),
     /节点会话不能同时是每日会话或后台工作/);
   void home;
+});
+
+test("P2 topics: the node session-memory switch is durable and defaults on", async (t) => {
+  const home = fixture(t);
+  await ensureAgentHomeProject("friend", "Friend", home);
+  const topic = (await createTopic({ chatHome: home, longAgentId: "friend", title: "T", purpose: "P", requestId: "sw-topic", expectedRevision: 0 })).topic;
+  const node = await createTopicNode({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, title: "根节点",
+    createdBy: "agent", requestId: "sw-topic", expectedRevision: 1 });
+  assert.equal(node.node.sessionMemory, "on", "a node defaults to memory on");
+  const off = await setTopicNodeSessionMemory({ chatHome: home, longAgentId: "friend", nodeId: node.node.nodeId, enabled: false, expectedRevision: node.graph.revision });
+  assert.equal(off.sessionMemory, "off");
+  assert.equal((await readTopicGraph(home, "friend")).nodes[0].sessionMemory, "off", "the switch is durable");
+  // A stale revision cannot flip it silently.
+  await assert.rejects(
+    setTopicNodeSessionMemory({ chatHome: home, longAgentId: "friend", nodeId: node.node.nodeId, enabled: true, expectedRevision: node.graph.revision }),
+    /revision/,
+  );
+  const on = await setTopicNodeSessionMemory({ chatHome: home, longAgentId: "friend", nodeId: node.node.nodeId, enabled: true, expectedRevision: (await readTopicGraph(home, "friend")).revision });
+  assert.equal(on.sessionMemory, "on");
+  // A node created with the switch off keeps it through the graph.
+  const child = await createTopicNodeWithSession({ chatHome: home, longAgentId: "friend", topicId: topic.topicId,
+    requestId: "sw-child", title: "关掉记忆的节点", createdBy: "agent", sessionMemory: "off",
+    parents: [{ parentNodeId: node.node.nodeId }] });
+  assert.equal(child.node.sessionMemory, "off");
+  await assert.rejects(
+    createTopicNodeWithSession({ chatHome: home, longAgentId: "friend", topicId: topic.topicId, requestId: "sw-bad",
+      title: "非法开关", createdBy: "agent", sessionMemory: "maybe", parents: [{ parentNodeId: node.node.nodeId }] }),
+    /会话记忆开关无效/,
+  );
 });

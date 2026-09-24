@@ -19,6 +19,12 @@ export interface ChatWorkflowInput {
    * (inherited through nested workflow calls; never accepted from an HTTP client or model argument).
    */
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
+  /**
+   * Backend-internal「会话记忆」switch for this round (node-level, resolved from the topic node by the
+   * dispatching service — never from an HTTP client or model argument). When false the round runs as an
+   * ordinary agent turn: no read Skill/tool is assembled and no writer stage runs.
+   */
+  readonly sessionMemoryEnabled?: boolean;
 }
 
 export interface ChatWorkflowResult {

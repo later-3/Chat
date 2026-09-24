@@ -9,9 +9,11 @@ import { SESSION_MEMORY_WORKER_AGENT } from "./index.js";
  */
 export async function prepareSessionMemoryWorkerSession(
   context: ChatWorkflowAgentSessionContext,
+  options: { readonly memoryEnabled?: boolean } = {},
 ): Promise<WorkflowAgentSessionExtensions> {
   if (context.workflowId !== "session-memory" || context.agentId !== SESSION_MEMORY_WORKER_AGENT.id) {
     throw new Error(`Session Memory Workflow不能装配Agent: ${context.workflowId}/${context.agentId}`);
   }
-  return { additionalSkillPaths: [sessionMemorySkillPath()] };
+  // Memory off: the worker does the same work without the read Skill and without the memory tool.
+  return options.memoryEnabled === false ? {} : { additionalSkillPaths: [sessionMemorySkillPath()] };
 }

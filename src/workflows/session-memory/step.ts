@@ -88,13 +88,19 @@ async function runSessionMemoryStage(
       ? {}
       : { capabilitySource: "workflow_call" as const, capabilitySelection: prepared.agentConfigs[agentId] ?? {} }),
   };
+  // 「会话记忆」switch: with memory off the round is an ordinary agent turn — no read Skill/tool and no
+  // writer stage (the workflow skips it), so nothing about the round changes except that.
+  const memoryEnabled = input.sessionMemoryEnabled !== false;
+  // With memory off the worker must not even be OFFERED the memory tool: capability removal happens at
+  // assembly, not by asking the model to ignore it.
+  const agentDefinition = memoryEnabled || stage !== "work" ? agent : withoutSessionMemoryTool(agent);
   const sessionExtensions = stage === "work"
-    ? await prepareSessionMemoryWorkerSession(sessionContext)
+    ? await prepareSessionMemoryWorkerSession(sessionContext, { memoryEnabled })
     : await prepareSessionMemoryWriterSession(sessionContext);
   const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
     chatSession,
     sessionManager: chatSession.manager,
-    agent,
+    agent: agentDefinition,
     ...sessionExtensions,
     toolContext: {
       purpose: "execution", workflowId: WORKFLOW_ID, workflowInvocationId: input.workflowInvocationId,
@@ -153,6 +159,15 @@ async function runSessionMemoryStage(
     await observer.finish(true);
     session.dispose();
   }
+}
+
+/** Drops the memory tool from an Agent whose policy lists addresses (memory-off rounds). */
+function withoutSessionMemoryTool<T extends { readonly tools: unknown }>(agent: T): T {
+  const tools = agent.tools as { readonly addresses?: readonly string[] };
+  // Both `explicit` and `pi-default` policies honour the address list, so the memory tool is removed
+  // from either shape.
+  if (!Array.isArray(tools.addresses)) return agent;
+  return { ...agent, tools: { ...tools, addresses: tools.addresses.filter((address) => address !== "system:tool/session_memory") } } as T;
 }
 
 /** Stage 1: an ordinary round in the node session (opens the round with its user entry). */

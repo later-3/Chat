@@ -66,6 +66,8 @@ export interface TopicNodeRecord {
   /** Project context frozen when the node was created; null means "explicitly no project". */
   readonly frozenProjectContext: string | null;
   readonly createdBy: "user" | "agent";
+  /** 「会话记忆」switch for this node; absent on an older graph means "on". */
+  readonly sessionMemory: "on" | "off";
   readonly createdByRequestId: string;
   /**
    * Immutable digest of the creation request (topic/session/title/creator/context, initial memory
@@ -191,6 +193,8 @@ function parseNode(value: unknown): TopicNodeRecord {
     status: value.status as TopicNodeRecord["status"],
     frozenProjectContext: optionalText(value.frozenProjectContext, "frozenProjectContext", 200),
     createdBy: value.createdBy,
+    // A node written before the switch existed keeps its memory capability (default on).
+    sessionMemory: value.sessionMemory === "off" ? "off" : "on",
     createdByRequestId: text(value.createdByRequestId, "createdByRequestId", 200),
     // A node registered before the digest existed: null means "a retry cannot be judged" (fail-closed).
     createdByRequestDigest: value.createdByRequestDigest === undefined || value.createdByRequestDigest === null
@@ -444,6 +448,8 @@ export interface CreateTopicNodeInput {
   readonly title: unknown;
   readonly createdBy: "user" | "agent";
   readonly frozenProjectContext?: unknown;
+  /** 「会话记忆」switch; default on. */
+  readonly sessionMemory?: unknown;
   readonly initialMemoryRefs?: unknown;
   readonly parents?: readonly CreateTopicNodeParentInput[];
   readonly requestId: unknown;
@@ -471,6 +477,8 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
   // registered as a different session" is impossible by construction.
   const sessionId = topicNodeSessionIdOf(topicId, requestId);
   const frozenProjectContext = optionalText(input.frozenProjectContext, "frozenProjectContext", 200);
+  if (input.sessionMemory !== undefined && input.sessionMemory !== "on" && input.sessionMemory !== "off")
+    throw new TopicError(400, "节点会话记忆开关无效");
   const rawRefs = input.initialMemoryRefs === undefined ? [] : input.initialMemoryRefs;
   if (!Array.isArray(rawRefs)) throw new TopicError(400, "主题节点初始记忆引用无效");
   const initialMemoryRefs: TopicNodeInitialMemoryRef[] = rawRefs.map((entry) => {
@@ -536,6 +544,7 @@ export async function createTopicNode(input: CreateTopicNodeInput): Promise<{ no
     }
     const node: TopicNodeRecord = {
       nodeId, topicId, sessionId, title, status: "active", frozenProjectContext,
+      sessionMemory: input.sessionMemory === "off" ? "off" : "on",
       createdBy: input.createdBy, createdByRequestId: requestId, createdByRequestDigest: digest, initialMemoryRefs,
       createdAt: now, updatedAt: now,
     };
@@ -669,6 +678,31 @@ export async function updateTopicStatus(input: {
   });
 }
 
+/**
+ * 「会话记忆」switch for one node. Turning it off means the next rounds run as ordinary agent turns:
+ * no read Skill/tool is assembled and no writer stage runs (no node type changes).
+ */
+export async function setTopicNodeSessionMemory(input: {
+  chatHome: string;
+  longAgentId: string;
+  nodeId: string;
+  enabled: boolean;
+  expectedRevision: unknown;
+}): Promise<TopicNodeRecord> {
+  return changeTopicGraph(input.chatHome, input.longAgentId, (state) => {
+    const node = state.nodes.find((candidate) => candidate.nodeId === input.nodeId);
+    if (node === undefined) throw new TopicError(404, `找不到主题节点：${input.nodeId}`);
+    if (node.status === "removed") throw new TopicError(409, "节点已移除，不能修改会话记忆开关");
+    const next = input.enabled ? "on" : "off";
+    if (node.sessionMemory === next) return { ...node };
+    assertRevision(state, input.expectedRevision);
+    node.sessionMemory = next;
+    node.updatedAt = new Date().toISOString();
+    state.revision += 1;
+    return { ...node };
+  });
+}
+
 /** Owner-facing status change. `removed` is terminal: a normal update must never resurrect it. */
 export async function updateTopicNodeStatus(input: {
   chatHome: string;
@@ -778,6 +812,8 @@ export interface CreateTopicNodeWithSessionInput {
   readonly title: unknown;
   readonly createdBy: "user" | "agent";
   readonly frozenProjectContext?: unknown;
+  /** 「会话记忆」switch for the new node; default on. */
+  readonly sessionMemory?: unknown;
   /** Integration product text, appended as a CustomMessage so it enters the child's context. */
   readonly integrationSummary?: unknown;
   /**
@@ -957,6 +993,8 @@ export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessi
   });
   if (memory !== null && sources.length === 0) throw new TopicError(400, "初始记忆必须带来源地址");
   const frozenProjectContext = optionalText(input.frozenProjectContext, "frozenProjectContext", 200);
+  if (input.sessionMemory !== undefined && input.sessionMemory !== "on" && input.sessionMemory !== "off")
+    throw new TopicError(400, "节点会话记忆开关无效");
   // The creation digest covers the orchestration inputs too, so a replay with a changed title, summary,
   // anchor or bootstrap memory is a conflict rather than a silent success.
   const fingerprint = topicCreationFingerprint({
@@ -1032,6 +1070,7 @@ export async function createTopicNodeWithSession(input: CreateTopicNodeWithSessi
       try {
         const registeredNode = await createTopicNode({
           chatHome, longAgentId, topicId, title, createdBy: input.createdBy, requestId, expectedRevision: graph.revision,
+          ...(input.sessionMemory === undefined ? {} : { sessionMemory: input.sessionMemory }),
           initialMemoryRefs, parents, requestFingerprint: fingerprint,
           ...(frozenProjectContext === null ? {} : { frozenProjectContext }),
           ...(input.now === undefined ? {} : { now: input.now }),

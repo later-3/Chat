@@ -206,3 +206,24 @@ test("session-memory workflow: the remember stage refuses a round without a user
       "a refused round wrote no memory");
   }
 });
+
+test("session-memory workflow: with the switch off the round is ordinary work and writes no memory", { concurrency: false }, async (t) => {
+  const { faux, workspace, project } = await fixture(t, "chat-smem-switch");
+  const workerTools = [];
+  faux.setResponses([
+    (context) => { workerTools.push((context.tools ?? []).map((tool) => tool.name)); return fauxAssistantMessage("普通一轮：没有记忆也能干活"); },
+  ]);
+  const result = await run({
+    projectId: project.projectId, chatHome: process.env.CHAT_HOME, cwd: workspace,
+    sessionId: undefined, prompt: "关掉记忆的这一轮", workflowInvocationId: "smem-off-1", sessionMemoryEnabled: false,
+  });
+  assert.equal(result.text, "普通一轮：没有记忆也能干活", "the round still does the work");
+  assert.equal(workerTools[0].includes("session_memory"), false, "the memory tool is not assembled when the switch is off");
+  assert.equal((await readSessionMemory(process.env.CHAT_HOME, "friend", result.sessionId)).entries.length, 0, "no memory is written");
+  // No writer stage ran: the Session has no remember-stage marker.
+  const session = await ensureChatSessionWithId({ chatHome: process.env.CHAT_HOME, projectId: project.projectId }, result.sessionId);
+  const stages = session.session.manager.getBranch()
+    .filter((entry) => entry.type === "custom" && entry.customType === "chat.workflow_stage")
+    .map((entry) => entry.data?.stageId);
+  assert.deepEqual(stages, ["work"], "only the work stage ran");
+});

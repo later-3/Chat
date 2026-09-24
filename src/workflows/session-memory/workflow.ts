@@ -13,6 +13,7 @@ export async function sessionMemoryWorkflow(input: ChatWorkflowInput): Promise<C
   }
   try {
     const worked = await runSessionMemoryWorkStep(input);
+    if (input.sessionMemoryEnabled === false) return worked;
     // Both stages MUST run in the SAME node Session: the work stage resolves the Session when the caller
     // did not name one (a fresh node round), so the resolved id is forwarded or `remember` would open a
     // second, empty Session and project nothing.
