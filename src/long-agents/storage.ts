@@ -187,14 +187,17 @@ async function readLongAgentStateValue(chatHome: string): Promise<{
     const raw = await readJson(paths.longAgentStatePath);
     const state = parseLongAgentState(raw);
     if (isRecord(raw) && raw.schemaVersion !== LONG_AGENT_STATE_SCHEMA_VERSION) {
-      const backup = resolve(paths.root, "runtime/migrations/long-agent-work-v5/source.json");
-      await writeJsonOnce(backup, raw);
+      // A backup belongs to the migration a source PREDATES: a v5 state is the v5 target, not a v5
+      // source, so backing it up under long-agent-work-v5 (and then recording a v5 completion receipt)
+      // would describe a migration that never happened. The v5 -> v6 upgrade is lossless and adds only
+      // an empty array, so it keeps no backup and no receipt of its own.
+      if (Number(raw.schemaVersion) < 5) await writeJsonOnce(resolve(paths.root, "runtime/migrations/long-agent-work-v5/source.json"), raw);
       if (Number(raw.schemaVersion) < 4) await writeJsonOnce(resolve(paths.root, "runtime/migrations/long-agent-daily-v4/source.json"), raw);
     }
-    // The completion receipts are repaired on EVERY read (they are idempotent): a state that already
-    // upgraded past the daily/work migrations still needs a missing receipt restored, and keying this on
-    // one schema version would silently stop repairing it after the next upgrade.
-    if (isRecord(raw)) await completeDailyMigration(paths.root);
+    // Legacy completion receipts are repaired only once their target version is actually on disk, so a
+    // receipt can never claim a migration that has not been persisted yet. A read that upgrades a legacy
+    // state completes them after the write (see readLongAgentState).
+    if (isRecord(raw) && Number(raw.schemaVersion) >= 5) await completeDailyMigration(paths.root);
     return {
       state,
       migrated: typeof raw === "object" && raw !== null
@@ -226,7 +229,10 @@ export async function readLongAgentState(chatHome = resolveChatHome()): Promise<
 
   // A legacy read is also a write. Re-read inside the state queue so a
   // concurrent runtime update cannot be overwritten by a stale migration.
-  return updateLongAgentState(root, (latest) => ({ state: latest, result: latest }));
+  const upgraded = await updateLongAgentState(root, (latest) => ({ state: latest, result: latest }));
+  // The upgrade is durable now, so the legacy receipts may be completed.
+  await completeDailyMigration(root);
+  return upgraded;
 }
 
 export async function updateLongAgentRegistry<T>(

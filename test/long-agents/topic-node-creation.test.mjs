@@ -654,3 +654,29 @@ test("P2 creation: a pending lifecycle window is closed even when the file is st
   assert.equal(reopened.created, false);
   assert.equal(reopened.session.manager.getSessionId(), sessionId);
 });
+
+test("P2 state: node bindings are unique per session, per node and per topic", async (t) => {
+  const home = fixture(t);
+  const { parseLongAgentState } = await import("../../src/long-agents/types.ts");
+  const base = { schemaVersion: 6, projectAgents: [], bindings: [], pendingEvents: [], processedEvents: [],
+    dailySessions: [], turns: [], works: [], nodeSessions: [] };
+  const binding = (sessionId, nodeId, topicId = "topic-00000000000000000000000000000000") =>
+    ({ longAgentId: "friend", sessionId, topicId, nodeId, createdAt: "2026-09-24T00:00:00.000Z" });
+  const nodeA = "node-11111111111111111111111111111111";
+  const nodeB = "node-22222222222222222222222222222222";
+  const topicB = "topic-33333333333333333333333333333333";
+  // A well-formed binding set parses.
+  assert.equal(parseLongAgentState({ ...base, nodeSessions: [binding("sess-a", nodeA)] }).nodeSessions.length, 1);
+  // The same node bound to two sessions is refused: node identity is durable in the topic graph.
+  assert.throws(() => parseLongAgentState({ ...base, nodeSessions: [binding("sess-a", nodeA), binding("sess-b", nodeA)] }),
+    /同一节点对应多个会话/);
+  // ... and so is one topic with two bindings.
+  assert.throws(() => parseLongAgentState({ ...base, nodeSessions: [binding("sess-a", nodeA), binding("sess-b", nodeB)] }),
+    /一个主题只能对应一个节点绑定/);
+  // A node session may not be a daily session or a work.
+  assert.throws(() => parseLongAgentState({ ...base, nodeSessions: [binding("sess-a", nodeA, topicB)],
+    dailySessions: [{ longAgentId: "friend", date: "2026-09-24", timeZone: "Asia/Shanghai", sessionId: "sess-a", createdAt: "2026-09-24T00:00:00.000Z",
+      summary: { status: "pending", attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } }] }),
+    /节点会话不能同时是每日会话或后台工作/);
+  void home;
+});

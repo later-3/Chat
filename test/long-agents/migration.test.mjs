@@ -184,3 +184,26 @@ test('P5 ordinary Workflow cannot take over a historical Friend even through the
   await assert.rejects(startChatWorkflow({ chatHome: f.home, projectId: 'business', sessionId: f.business.getSessionId(), cwd: f.projects.business.cwd, prompt: 'take over', workflow: 'minimal-pi-coding-agent' }), /Friend会话不能/);
   await assert.rejects(renameChatSession('business', f.business.getSessionId(), 'replace history', f.home), /历史会话只读/);
 });
+
+test('P5 v5 -> v6 keeps no v5 backup or completion receipt of its own', async t => {
+  const f = await fixture(t);
+  const stateFile = path.join(f.home, 'runtime/long-agent-state.json');
+  const current = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  // A genuine v5 state: the version that the long-agent-work-v5 migration produces.
+  const { nodeSessions, ...v5 } = current;
+  assert.deepEqual(nodeSessions, []);
+  fs.writeFileSync(stateFile, JSON.stringify({ ...v5, schemaVersion: 5 }));
+  const upgraded = await readLongAgentState(f.home);
+  assert.equal(upgraded.schemaVersion, 6);
+  assert.deepEqual(upgraded.nodeSessions, []);
+  const migrations = path.join(f.home, 'runtime/migrations');
+  // The v5 source is NOT recorded as a source of the v5 migration (it IS the v5 target).
+  assert.equal(fs.existsSync(path.join(migrations, 'long-agent-work-v5/source.json')), false);
+  assert.equal(fs.existsSync(path.join(migrations, 'long-agent-work-v5/complete.json')), false);
+  // No receipt claims a target version the state never had to migrate to.
+  for (const name of ['long-agent-daily-v4', 'long-agent-work-v5']) {
+    const complete = path.join(migrations, name, 'complete.json');
+    if (!fs.existsSync(complete)) continue;
+    assert.notEqual(JSON.parse(fs.readFileSync(complete, 'utf8')).targetSchema, 6);
+  }
+});
