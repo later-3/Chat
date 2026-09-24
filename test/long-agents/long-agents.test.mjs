@@ -300,7 +300,8 @@ test("legacy per-session bindings migrate to one Project Long Agent primary sess
   }));
 
   const state = await readLongAgentState(chatHome);
-  assert.equal(state.schemaVersion, 5);
+  assert.equal(state.schemaVersion, 6);
+  assert.deepEqual(state.nodeSessions, [], "a legacy state upgrades with no node bindings");
   assert.deepEqual(state.projectAgents, [{
     id: "project-long-agent:nexus:nexus",
     projectId: "nexus",
@@ -313,7 +314,7 @@ test("legacy per-session bindings migrate to one Project Long Agent primary sess
   assert.equal(state.bindings.length, 1);
   assert.equal(state.bindings[0].projectLongAgentId, state.projectAgents[0].id);
   assert.equal(state.bindings[0].nanoclawSessionId, "nano-session-1");
-  assert.equal(JSON.parse(fs.readFileSync(path.join(chatHome, "runtime", "long-agent-state.json"), "utf8")).schemaVersion, 5);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(chatHome, "runtime", "long-agent-state.json"), "utf8")).schemaVersion, 6);
 });
 
 test("LongAgent default definition grants every registered Chat system Tool", async (t) => {

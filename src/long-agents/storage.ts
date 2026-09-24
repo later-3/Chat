@@ -8,6 +8,7 @@ import {
   type WorkflowAgentDefinition,
 } from "../workflows/agent-config.js";
 import {
+  LONG_AGENT_STATE_SCHEMA_VERSION,
   emptyLongAgentState,
   LONG_AGENT_ID_PATTERN,
   parseLongAgentRegistry,
@@ -185,16 +186,19 @@ async function readLongAgentStateValue(chatHome: string): Promise<{
   try {
     const raw = await readJson(paths.longAgentStatePath);
     const state = parseLongAgentState(raw);
-    if (isRecord(raw) && raw.schemaVersion !== 5) {
+    if (isRecord(raw) && raw.schemaVersion !== LONG_AGENT_STATE_SCHEMA_VERSION) {
       const backup = resolve(paths.root, "runtime/migrations/long-agent-work-v5/source.json");
       await writeJsonOnce(backup, raw);
       if (Number(raw.schemaVersion) < 4) await writeJsonOnce(resolve(paths.root, "runtime/migrations/long-agent-daily-v4/source.json"), raw);
     }
-    if (isRecord(raw) && raw.schemaVersion === 5) await completeDailyMigration(paths.root);
+    // The completion receipts are repaired on EVERY read (they are idempotent): a state that already
+    // upgraded past the daily/work migrations still needs a missing receipt restored, and keying this on
+    // one schema version would silently stop repairing it after the next upgrade.
+    if (isRecord(raw)) await completeDailyMigration(paths.root);
     return {
       state,
       migrated: typeof raw === "object" && raw !== null
-        && "schemaVersion" in raw && raw.schemaVersion !== 5,
+        && "schemaVersion" in raw && raw.schemaVersion !== LONG_AGENT_STATE_SCHEMA_VERSION,
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {

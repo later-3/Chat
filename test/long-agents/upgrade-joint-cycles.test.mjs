@@ -140,7 +140,7 @@ test("LA6 C: three upgrade read/write cycles keep ownership, references and auth
     // Alternation: run both real migrations, then re-read.
     await migrateLegacyProjectLayout({ projectRoot: f.legacyRoot, chatHome: f.home });
     await migrateAgentHomeNormalization(f.home);
-    assert.equal(JSON.parse(fs.readFileSync(getChatHomePaths(f.home).longAgentStatePath, "utf8")).schemaVersion, 5);
+    assert.equal(JSON.parse(fs.readFileSync(getChatHomePaths(f.home).longAgentStatePath, "utf8")).schemaVersion, 6);
     assert.equal(JSON.parse(fs.readFileSync(path.join(f.home, "runtime/migrations/long-agent-work-v5/source.json"), "utf8")).schemaVersion, 3);
     const postMigration = groupSnapshot(await readConversation(f.home, "business", conversation.id));
     assert.deepEqual(postMigration, preMigration, `migration cycle ${String(cycle)} must not change group ownership or authorization`);
@@ -221,9 +221,9 @@ test("LA6 C: an unsupported downgrade fails closed instead of reinterpreting new
   const f = await legacyFixture(t);
   const stateFile = path.join(f.home, "runtime", "long-agent-state.json");
   const original = fs.readFileSync(stateFile);
-  fs.writeFileSync(stateFile, JSON.stringify({ ...JSON.parse(original.toString()), schemaVersion: 6 }));
-  await assert.rejects(readLongAgentState(f.home), /schemaVersion (5|${String(5)})/);
-  assert.deepEqual(fs.readFileSync(stateFile), Buffer.from(JSON.stringify({ ...JSON.parse(original.toString()), schemaVersion: 6 })), "a rejected downgrade leaves the newer state untouched");
+  fs.writeFileSync(stateFile, JSON.stringify({ ...JSON.parse(original.toString()), schemaVersion: 7 }));
+  await assert.rejects(readLongAgentState(f.home), /schemaVersion (6|${String(6)})/);
+  assert.deepEqual(fs.readFileSync(stateFile), Buffer.from(JSON.stringify({ ...JSON.parse(original.toString()), schemaVersion: 7 })), "a rejected downgrade leaves the newer state untouched");
   fs.writeFileSync(stateFile, original);
 
   const marker = path.join(f.home, "runtime/migrations/agent-home-normalization/done-v2.json");

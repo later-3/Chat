@@ -12,7 +12,7 @@ import {
 } from "../workflows/agent-config.js";
 
 export const LONG_AGENT_SCHEMA_VERSION = 1;
-export const LONG_AGENT_STATE_SCHEMA_VERSION = 5;
+export const LONG_AGENT_STATE_SCHEMA_VERSION = 6;
 export const LONG_AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 
 export interface LongAgentAddress {
@@ -102,9 +102,23 @@ export interface ProjectLongAgent {
   readonly updatedAt: string;
 }
 
+export interface LongAgentNodeSession {
+  readonly longAgentId: string;
+  readonly sessionId: string;
+  readonly topicId: string;
+  readonly nodeId: string;
+  readonly createdAt: string;
+}
+
 export interface LongAgentState {
-  readonly schemaVersion: 5;
+  readonly schemaVersion: 6;
   readonly works: readonly FriendWork[];
+  /**
+   * Topic node sessions. A node is an ordinary Pi session, so it gets its own binding instead of
+   * pretending to be a daily session or a work: a turn may belong to one of these, and the executor
+   * selects the node session from this binding after a restart.
+   */
+  readonly nodeSessions: readonly LongAgentNodeSession[];
   readonly dailySessions: readonly DailySession[];
   readonly turns: readonly AcceptedTurn[];
   readonly projectAgents: readonly ProjectLongAgent[];
@@ -389,7 +403,20 @@ export function parseLongAgentRegistry(value: unknown): LongAgentRegistry {
 }
 
 export function emptyLongAgentState(): LongAgentState {
-  return { schemaVersion: 5, works: [], dailySessions: [], turns: [], projectAgents: [], bindings: [], pendingEvents: [], processedEvents: [] };
+  return { schemaVersion: 6, works: [], nodeSessions: [], dailySessions: [], turns: [], projectAgents: [], bindings: [], pendingEvents: [], processedEvents: [] };
+}
+
+function parseNodeSessions(value: unknown): LongAgentNodeSession[] {
+  if (!Array.isArray(value)) throw new Error("缺少节点会话绑定");
+  return value.map((entry) => {
+    if (!isRecord(entry)) throw new Error("节点会话绑定必须是对象");
+    exactFields(entry, ["longAgentId", "sessionId", "topicId", "nodeId", "createdAt"], "节点会话绑定");
+    return { longAgentId: requiredString(entry.longAgentId, "节点会话 longAgentId"),
+      sessionId: requiredString(entry.sessionId, "节点会话 sessionId"),
+      topicId: requiredString(entry.topicId, "节点会话 topicId"),
+      nodeId: requiredString(entry.nodeId, "节点会话 nodeId"),
+      createdAt: parseTimestamp(entry.createdAt, "节点会话 createdAt") };
+  });
 }
 
 function parseTimestamp(value: unknown, field: string): string {
@@ -574,15 +601,28 @@ export function parseLongAgentState(value: unknown): LongAgentState {
       processedEvents: [],
     });
   }
-  if (isRecord(value) && value.schemaVersion === 3) return parseLongAgentState({ ...value, schemaVersion: 4, dailySessions: [], turns: [] });
+  // Each legacy branch carries ONLY the fields it owns, so a newer sibling field can never be
+  // misinterpreted as a legacy unknown field.
+  if (isRecord(value) && value.schemaVersion === 3) {
+    exactFields(value, ["schemaVersion", "projectAgents", "bindings", "pendingEvents", "processedEvents"], "Legacy LongAgent State");
+    return parseLongAgentState({ schemaVersion: 4, projectAgents: value.projectAgents, bindings: value.bindings,
+      pendingEvents: value.pendingEvents, processedEvents: value.processedEvents, dailySessions: [], turns: [] });
+  }
   if (isRecord(value) && value.schemaVersion === 4) {
     exactFields(value, ["schemaVersion", "projectAgents", "bindings", "pendingEvents", "processedEvents", "dailySessions", "turns"], "Legacy LongAgent State");
-    return parseLongAgentState({ ...value, schemaVersion: 5, works: [] });
+    return parseLongAgentState({ schemaVersion: 5, projectAgents: value.projectAgents, bindings: value.bindings,
+      pendingEvents: value.pendingEvents, processedEvents: value.processedEvents, dailySessions: value.dailySessions, turns: value.turns, works: [] });
+  }
+  if (isRecord(value) && value.schemaVersion === 5) {
+    exactFields(value, ["schemaVersion", "projectAgents", "bindings", "pendingEvents", "processedEvents", "dailySessions", "turns", "works"], "Legacy LongAgent State");
+    return parseLongAgentState({ schemaVersion: 6, projectAgents: value.projectAgents, bindings: value.bindings,
+      pendingEvents: value.pendingEvents, processedEvents: value.processedEvents, dailySessions: value.dailySessions,
+      turns: value.turns, works: value.works, nodeSessions: [] });
   }
   if (!isRecord(value) || value.schemaVersion !== LONG_AGENT_STATE_SCHEMA_VERSION) {
     throw new Error(`LongAgent State必须使用schemaVersion ${LONG_AGENT_STATE_SCHEMA_VERSION}`);
   }
-  exactFields(value, ["schemaVersion", "projectAgents", "bindings", "pendingEvents", "processedEvents", "dailySessions", "turns", "works"], "LongAgent State");
+  exactFields(value, ["schemaVersion", "projectAgents", "bindings", "pendingEvents", "processedEvents", "dailySessions", "turns", "works", "nodeSessions"], "LongAgent State");
   if (!Array.isArray(value.projectAgents) || !Array.isArray(value.bindings)
     || !Array.isArray(value.pendingEvents) || !Array.isArray(value.processedEvents)) {
     throw new Error("LongAgent State projectAgents、bindings、pendingEvents和processedEvents必须是数组");
@@ -640,13 +680,19 @@ export function parseLongAgentState(value: unknown): LongAgentState {
   const turns = value.turns.map(parseAcceptedTurn);
   const days = new Set<string>(); const turnIds = new Set<string>(); const sequences = new Set<number>();
   for (const day of dailySessions) { const key = `${day.longAgentId}/${day.date}`; if (days.has(key)) throw new Error("每日Session重复"); days.add(key); }
+  const nodeSessions = parseNodeSessions(value.nodeSessions);
+  if (new Set(nodeSessions.map((binding) => binding.sessionId)).size !== nodeSessions.length) throw new Error("节点会话绑定重复");
+  if (nodeSessions.some((binding) => dailySessions.some((day) => day.sessionId === binding.sessionId)
+    || works.some((work) => work.sessionId === binding.sessionId))) throw new Error("节点会话不能同时是每日会话或后台工作");
+  const ownedByNode = (turn: { readonly longAgentId: string; readonly sessionId: string }) =>
+    nodeSessions.some((binding) => binding.longAgentId === turn.longAgentId && binding.sessionId === turn.sessionId);
   for (const turn of turns) {
     if (turnIds.has(turn.turnId) || sequences.has(turn.sequence) || !(turn.workId === undefined
-      ? dailySessions.some((day) => day.longAgentId === turn.longAgentId && day.date === turn.date && day.sessionId === turn.sessionId)
+      ? dailySessions.some((day) => day.longAgentId === turn.longAgentId && day.date === turn.date && day.sessionId === turn.sessionId) || ownedByNode(turn)
       : works.some(work => work.id === turn.workId && work.longAgentId === turn.longAgentId && work.sessionId === turn.sessionId && work.contextProjectId === turn.contextProjectId))) throw new Error("请求归属或序号无效");
     turnIds.add(turn.turnId); sequences.add(turn.sequence);
   }
-  return { schemaVersion: 5, projectAgents, bindings, pendingEvents, processedEvents, dailySessions, turns, works };
+  return { schemaVersion: 6, projectAgents, bindings, pendingEvents, processedEvents, dailySessions, turns, works, nodeSessions };
 }
 
 export function parseNanoClawIntegrationEvent(value: unknown): NanoClawIntegrationEvent {
