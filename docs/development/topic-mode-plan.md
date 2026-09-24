@@ -55,7 +55,7 @@
 **⑤ 派发链（检视 15：两条链分别写清）**：
 - **外层 `session-memory`**：节点 API 在 agent home 的**节点会话**内启动，两 step 共用该会话；**Session 与 run binding 都归 agent home**（不经过 `workflow_call`）；冻结协作项目经公共装配的可信 invocation 提供。
 - **内部业务 Workflow**（`work` 调问题定位等）：走既有 `workflow_call`，**子 Session 与其 run binding 按目标项目归属**（`collaborationProjectId === undefined ? projectId : collaborationProjectId`）；冻结协作项目为**显式 `null`** 时**不回退**，调用被拒绝。
-**⑥ 节点整合服务**：`startFriendWork()` 只接受该 Friend 的日常来源——服务器解析日常来源、**另存源主题节点与锚点**；返回 work/execution 引用供 P3 恢复；确认后的补充整合走同一 `topic-manage` 领域入口。**随附业务 workflow（问题定位）在 P2 交付**，P4 实际调用一次。
+**⑥ 节点整合服务（已实现根节点建题）**：`startFriendWork()` 只接受该 Friend 的日常来源——服务器解析/校验日常来源，启动整合后台 work 并返回 work/execution 引用与确定性 `topicId/nodeId/sessionId` 供 P3 恢复；整合产物仍由该后台 work 的 Agent 经 `topic-manage` 结构化提交（无第二条执行路径）。见 `src/long-agents/topic-integration.ts` + `POST/GET /topics/integrations`。**尚未接入**：fork 建题时“另存源主题节点与锚点”的 `parents` 透传，与“确认后的补充整合”入口。**随附业务 workflow（问题定位）在 P2 交付**，P4 实际调用一次。
 **⑦ 节点会话 API**：读消息 / 发轮次 / 事件流；relay 轮 = 真实 user message + **持久来源标记**，并同步更新读模型与前端解析（现有解析器不接受 relay，须一并加）。
 **验证（重新分配）**：捕获模型**实际输入**，验证当前轮隔离、初始摘要进入上下文、历史/记忆按需读取、正常分叉（父记忆继承不被拒）、多亲、真成环拒绝；完整跑既有开发与生产链（不另建门禁）。
 

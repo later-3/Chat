@@ -26,6 +26,10 @@ const TOPIC_ID_PATTERN = /^topic-[a-f0-9]{16,64}$/;
 const NODE_ID_PATTERN = /^node-[a-f0-9]{16,64}$/;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/;
 const SESSION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/;
+/** The one request-id shape shared by topic/node creation and the integration entry. */
+export function isTopicRequestId(value: unknown): value is string {
+  return typeof value === "string" && REQUEST_ID_PATTERN.test(value);
+}
 /** Bounded graph CAS attempts: concurrent node creations bump the revision under their own locks. */
 const TOPIC_GRAPH_CAS_ATTEMPTS = 5;
 

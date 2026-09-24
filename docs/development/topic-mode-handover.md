@@ -30,6 +30,7 @@ node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types --
   test/long-agents/topic-anchor.test.mjs \
   test/long-agents/topic-node-creation.test.mjs \
   test/long-agents/topic-api.test.mjs \
+  test/long-agents/topic-integration.test.mjs \
   test/tools/topic-manage.test.mjs \
   test/workflows/session-memory-workflow.test.mjs \
   test/workflows/session-memory-round-context.test.mjs \
@@ -54,22 +55,23 @@ node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types --
 | 外层「会话记忆」workflow | `5f39c7308`、`e2a78cc0e`、`750596dbd`、`a54eb1456` | `work → remember` 同一节点会话；writer 只收到**当前轮**（从耐久分支投影）；worker 具备普通工作工具 + `workflow_call`；本轮返回**work 答案**；节点级记忆开关 |
 | 外层编排 + 关闭提前分叉 | `28a4d2483` | 队列 worker = 编排点：工作段 → writer → 整轮完成标记 → 才 settle；锚点只认 `completed` 整轮标记 |
 | 锚点窗口修复（复核后） | 本批（`git log` 顶部） | running 标记改由队列在**工作段之前**幂等写入（同一 `turnId`，且在**节点会话操作锁内**检查/追加/flush、work 前释放）；`readTopicSettledAnchors` 改为**按轮次**抑制 `chat.long_agent_turn`，不再用会话级开关抹掉历史；新增 3 条回归（历史锚点保留、恢复时先写 running 再工作、并发写入下标记串行落同分支） |
+| “说一句建题”入口 | 本批（`git log` 顶部） | `topic-integration.ts` + `POST/GET /topics/integrations`：服务器解析/校验**日常来源会话**，启动 `startFriendWork({title:"整合：…"})`，返回 work/execution 与**确定性** `topicId/nodeId/sessionId`；整合由该后台 work 经**真实装配**调用 `topic-manage` 提交；假模型 API e2e 已验证“建题 → 整合建根节点+初始记忆 → 节点内 work+remember → 可分叉” |
 
 ---
 
 ## 3. 当前用户可用能力（诚实范围）
 
-- 能用：`topic-manage`（Agent 侧建树/读图/读记忆/补边/relay/开关）；节点只读 API；节点轮次（Post 消息 → work → remember → 记忆可查 → 可分叉）；记忆开关（节点级）。
-- 不能用：**“说一句问题 → Long Agent 整合 → 建根节点 → 返回可进入节点”入口**（P2 剩余项）；P3 Web 界面（主题图/记忆面板/整合状态/relay 来源）；P4 真实模型完整故事。
+- 能用：`topic-manage`（Agent 侧建树/读图/读记忆/补边/relay/开关）；节点只读 API；节点轮次（Post 消息 → work → remember → 记忆可查 → 可分叉）；记忆开关（节点级）；**“说一句建题”后端入口**（`POST /topics/integrations` + `GET /topics/integrations/{requestId}`：解析日常来源、启动整合后台 work、返回确定性可进入节点；整合质量需 P4 真实模型验证）。
+- 不能用：P3 Web 界面（主题图/记忆面板/整合状态/relay 来源）；P4 真实模型完整故事（含建题整合的提示词质量）。
 
 ---
 
 ## 4. 未完成清单（按优先级；每项都有验收标准）
 
-1. **“说一句建题”入口**（P2 计划 §2⑥）
-   - 服务器从 Long Agent 的建题请求解析该 Friend 的**日常来源会话**，启动整合后台 work（`startFriendWork` 只接受日常来源），另存源节点与锚点，返回 work/execution 引用；
-   - 整合产物写新节点 → 建根节点 → 返回**可进入的节点**（`topicId/nodeId/sessionId`）；
-   - 验收：真实 API 测试（假模型）跑通“建题 → 节点工作 → 记忆可查 → 分叉”，并保存 work 引用供 P3 恢复。
+1. ✅ **“说一句建题”入口（本批已实现）**
+   - 服务器解析该 Friend 的**日常来源会话**（或校验显式 `sourceSessionId` 属于本 Friend 的日常会话），启动整合后台 work（`startFriendWork` 只接受日常来源），返回 work/execution 引用与确定性 `topicId/nodeId/sessionId`；`GET` 供 P3 恢复。
+   - 验收已过：`test/long-agents/topic-integration.test.mjs` 假模型 API e2e（建题 → 后台整合 work 经真实装配调用 `topic-manage` 建根节点 + 初始记忆 → 节点内 work+remember → 可分叉）；同 `requestId` 重放返回同一 work，改 payload → 400。
+   - **剩余**：真实模型下的整合提示词质量与“补充整合（R4）经用户确认”入口归 P4/P3。
 2. **真实模型验证**（P4 前置）
    - 隔离 `CHAT_HOME` + **symlink** 复用 `~/.chat/agent`（不复制、不打印凭据、不碰生产数据）：真实 `work → remember` 写出一条记忆、一次分叉、一次 relay；
    - 证据进 `.data/verification/topic-mode/`；检视记录进 `docs/history/reviews/`。
