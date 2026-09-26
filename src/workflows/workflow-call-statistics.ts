@@ -11,6 +11,7 @@ import {
   type ChatWorkflowCallStatus,
 } from "./workflow-call-state.js";
 
+import { findActiveSessionFile } from "../session-files.js";
 export interface ChatWorkflowCallCounts {
   readonly total: number;
   readonly active: number;
@@ -132,34 +133,43 @@ export async function collectChatWorkflowCallProjection(input: {
   readonly sessionDir: string;
   readonly chatHome?: string;
 }): Promise<ChatWorkflowCallProjection> {
-  const infos = await SessionManager.listAll(input.sessionDir);
-  const infoById = new Map(infos.map((info) => [info.id, info]));
-  const callsBySessionId = new Map<string, readonly ChatWorkflowCall[]>([
-    [input.rootSessionId, collectChatWorkflowCalls(input.rootEntries)],
-  ]);
+  const rootCalls = collectChatWorkflowCalls(input.rootEntries);
+  // No delegated call in the root Session means there is no tree to walk. Pi's listAll reads every
+  // Session body, so the empty case must not pay for it (opening a session is the hot path).
+  if (rootCalls.length === 0) return projectChatWorkflowCallTree(input.rootSessionId, new Map([[input.rootSessionId, rootCalls]]));
+  // With calls, ONLY the reachable children are resolved — and each by the identity the call recorded,
+  // never by scanning a directory: a Session that once delegated would otherwise read every unrelated
+  // Session body on every open, in its own project and in the child's.
+  const paths = new Map<string, string>();
+  const resolveChild = async (sessionId: string, projectId: string | undefined): Promise<string | undefined> => {
+    const key = `${projectId ?? ""}:${sessionId}`;
+    const cached = paths.get(key);
+    if (cached !== undefined) return cached;
+    const project = projectId === undefined || input.chatHome === undefined
+      ? { sessionDir: input.sessionDir }
+      : await resolveProjectContext(projectId, input.chatHome);
+    const info = await findActiveSessionFile(project, sessionId);
+    if (info === undefined) return undefined;
+    paths.set(key, info.path);
+    return info.path;
+  };
+  const callsBySessionId = new Map<string, readonly ChatWorkflowCall[]>([[input.rootSessionId, rootCalls]]);
+  const queue: { readonly sessionId: string; readonly projectId: string | undefined }[] = [{ sessionId: input.rootSessionId, projectId: undefined }];
   const visited = new Set<string>();
-  const queue = [input.rootSessionId];
   for (let index = 0; index < queue.length; index += 1) {
-    const sessionId = queue[index];
-    if (sessionId === undefined || visited.has(sessionId)) continue;
-    visited.add(sessionId);
-    let calls = callsBySessionId.get(sessionId);
+    const current = queue[index];
+    if (current === undefined) continue;
+    const key = `${current.projectId ?? ""}:${current.sessionId}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+    let calls = callsBySessionId.get(current.sessionId);
     if (calls === undefined) {
-      const info = infoById.get(sessionId);
-      if (info === undefined) continue;
-      calls = collectChatWorkflowCalls(
-        SessionManager.open(info.path, dirname(info.path)).getEntries(),
-      );
-      callsBySessionId.set(sessionId, calls);
+      const path = await resolveChild(current.sessionId, current.projectId);
+      if (path === undefined) continue;
+      calls = collectChatWorkflowCalls(SessionManager.open(path, dirname(path)).getEntries());
+      callsBySessionId.set(current.sessionId, calls);
     }
-    for (const call of calls) {
-      if (call.child.projectId !== undefined && input.chatHome !== undefined && !infoById.has(call.child.sessionId)) {
-        const project = await resolveProjectContext(call.child.projectId, input.chatHome);
-        const child = (await SessionManager.listAll(project.sessionDir)).find((info) => info.id === call.child.sessionId);
-        if (child !== undefined) infoById.set(child.id, child);
-      }
-      queue.push(call.child.sessionId);
-    }
+    for (const call of calls) queue.push({ sessionId: call.child.sessionId, projectId: call.child.projectId });
   }
   return projectChatWorkflowCallTree(input.rootSessionId, callsBySessionId);
 }

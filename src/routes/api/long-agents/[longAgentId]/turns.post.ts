@@ -20,8 +20,9 @@ export default defineEventHandler(async (event) => {
     const v = body as Record<string, unknown>;
     if (
       Object.keys(v).some(
-        (k) => !["schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId", "interactionRevision"].includes(k),
+        (k) => !["schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId", "interactionRevision", "sessionMemory"].includes(k),
       ) ||
+      (v.sessionMemory !== undefined && v.sessionMemory !== "on" && v.sessionMemory !== "off") ||
       v.schemaVersion !== 1 ||
       typeof v.requestId !== "string" ||
       !v.requestId.trim() ||
@@ -39,6 +40,7 @@ export default defineEventHandler(async (event) => {
       projectId: longAgentId,
       turnId: v.requestId,
       text: v.text,
+      ...(v.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}),
       ...(v.contextProjectId === undefined ? {} : { contextProjectId: v.contextProjectId as string | null }),
       ...(v.interactionRevision === undefined ? {} : { interactionRevision: Number(v.interactionRevision) }),
       ...(v.sessionId === undefined ? {} : { sessionId: v.sessionId as string }),

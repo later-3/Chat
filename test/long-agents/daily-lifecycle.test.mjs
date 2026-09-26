@@ -52,13 +52,14 @@ test("P3 accepted Web/channel/schedule requests freeze rules and execute once in
   await assert.rejects(acceptLongAgentTurn({ ...inputs[0], contextProjectId: "b" }), /同一requestId/);
   fs.writeFileSync(path.join(f.projects[0].cwd, "AGENTS.md"), "CHANGED_AFTER_ACCEPT");
   await Promise.all(turns.map(() => drainLongAgentTurns(f.home, "friend")));
-  assert.equal(f.requests.length, 3);
+  assert.equal(f.requests.length, 6);
   for (const [index, turn] of [...turns].sort((a,b) => a.sequence-b.sequence).entries()) {
-    assert.match(JSON.stringify(f.requests[index].messages), new RegExp(turn.requestId));
-    if (turn.requestId === "web") { assert.match(system(f.requests[index]), /RULE_a/); assert.doesNotMatch(system(f.requests[index]), /CHANGED_AFTER_ACCEPT|RULE_b/); }
-    if (turn.requestId === "channel") { assert.match(system(f.requests[index]), /RULE_b/); assert.doesNotMatch(system(f.requests[index]), /RULE_a/); }
+    // Each interactive turn is work + memory writer, so turn i owns request 2i.
+    assert.match(JSON.stringify(f.requests[index * 2].messages), new RegExp(turn.requestId));
+    if (turn.requestId === "web") { assert.match(system(f.requests[index * 2]), /RULE_a/); assert.doesNotMatch(system(f.requests[index * 2]), /CHANGED_AFTER_ACCEPT|RULE_b/); }
+    if (turn.requestId === "channel") { assert.match(system(f.requests[index * 2]), /RULE_b/); assert.doesNotMatch(system(f.requests[index * 2]), /RULE_a/); }
   }
-  const replay = await executeLongAgentTurn(inputs[0]); assert.equal(replay.text, "ack"); assert.equal(f.requests.length, 3);
+  const replay = await executeLongAgentTurn(inputs[0]); assert.equal(replay.text, "ack"); assert.equal(f.requests.length, 6);
   const state = await readLongAgentState(f.home); assert.ok(state.turns.every((turn) => turn.status === "completed" && turn.seed === undefined && turn.text === undefined));
   const view = await readFriendDays(f.home, "friend"); assert.equal(JSON.stringify(view).includes("RULE_a"), false);
 });
@@ -81,8 +82,8 @@ test("P3 crossing midnight keeps accepted work in yesterday, closes without an e
   const count = f.requests.length; await maintainLongAgentDays(f.home); assert.equal(f.requests.length, count);
   f.setHandler(() => ({ content: "next day" }));
   const next = await executeLongAgentTurn(f.input("next-day", "b")); await executeLongAgentTurn(f.input("next-day-again", "b"));
-  assert.notEqual(next.sessionId, queued.sessionId); assert.match(system(f.requests.at(-1)), /HANDOFF_PROJECT_B_NEXT/);
-  assert.doesNotMatch(system(f.requests.at(-1)), /RULE_a/); assert.match(system(f.requests.at(-1)), /RULE_b/);
+  assert.notEqual(next.sessionId, queued.sessionId); assert.match(system(f.requests.at(-2)), /HANDOFF_PROJECT_B_NEXT/);
+  assert.doesNotMatch(system(f.requests.at(-2)), /RULE_a/); assert.match(system(f.requests.at(-2)), /RULE_b/);
   state = await readLongAgentState(f.home); assert.equal(state.dailySessions.length, 2);
 });
 
@@ -130,7 +131,7 @@ test("P3 restart recovery resumes queued work, records unknown in-flight writes 
   const recovered = await readLongAgentState(f.home);
   assert.equal(recovered.turns[0].status, "interrupted"); assert.equal(recovered.turns[1].status, "completed");
   await assert.rejects(controlQueuedRequest(f.home, "friend", turns[0].turnId, "retry"), /结果不明/);
-  await drainLongAgentTurns(f.home, "friend"); assert.equal(f.requests.length, 1);
+  await drainLongAgentTurns(f.home, "friend"); assert.equal(f.requests.length, 2);
 });
 
 test("P3 queued cancellation and failed retries cannot rewind subsequent conversation", async (t) => {
@@ -190,7 +191,7 @@ test("P3 an accepted queue resumes in a fresh Backend process from its persisted
   const { execFile } = await import("node:child_process"); const { promisify } = await import("node:util");
   await promisify(execFile)(process.execPath, ["--import", path.resolve("scripts/typescript-test-loader.mjs"), "--experimental-strip-types", "--input-type=module", "-e",
     'const { drainLongAgentTurns } = await import("./src/long-agents/turn-queue.ts"); await drainLongAgentTurns(process.argv[1], "friend");', f.home], { cwd: process.cwd() });
-  assert.equal(f.requests.length, 1); assert.match(system(f.requests[0]), /RULE_a/);
+  assert.equal(f.requests.length, 2); assert.match(system(f.requests[0]), /RULE_a/);
   assert.equal((await readLongAgentState(f.home)).turns[0].status, "completed");
 });
 
@@ -200,7 +201,7 @@ test("P3 scheduled summary drafts stay internal and read-only, without pretendin
   assert.equal((await readLongAgentState(f.home)).dailySessions.length, 0);
   await executeLongAgentTurn(f.input("actual-work"));
   const result = await executeLongAgentTurn({ ...f.input("draft"), source: "scheduled", summaryDraft: true });
-  assert.equal(f.requests.at(-1).tools?.length ?? 0, 0);
+  assert.equal(f.requests.at(-2).tools?.length ?? 0, 0);
   const session = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: result.sessionId });
   assert.equal(session.manager.getEntries().filter((e) => e.type === "message" && e.message.role === "user").length, 1);
   assert.ok(session.manager.getEntries().some((e) => e.type === "custom_message" && e.customType === "chat.daily-summary-draft.v1" && !e.display));
@@ -239,7 +240,7 @@ test("P3 missing summary credentials stay failed and visible without a fabricate
   delete models.providers['p3-local'].apiKey; fs.writeFileSync(modelsPath, JSON.stringify(models));
   await maintainLongAgentDays(f.home, tomorrow());
   const day = (await readLongAgentState(f.home)).dailySessions[0]; assert.equal(day.summary.status, 'failed'); assert.equal(day.summary.nextAttemptAt, null);
-  assert.match(day.summary.error, /key|auth|认证/i); assert.equal(await readLongAgentSummary(f.home, 'friend', day.date), undefined); assert.equal(f.requests.length, 1);
+  assert.match(day.summary.error, /key|auth|认证/i); assert.equal(await readLongAgentSummary(f.home, 'friend', day.date), undefined); assert.equal(f.requests.length, 2);
 });
 
 test("P3 changing timezone freezes the new zone per request without duplicating an existing local date", async (t) => {

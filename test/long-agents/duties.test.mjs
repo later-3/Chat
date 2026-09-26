@@ -110,7 +110,7 @@ test("LA3 manual advancement composes duty text and reports persist progress and
   // Second advancement must carry the persisted progress instead of starting from scratch.
   await f.command({ operation: "advance", dutyId: duty.id, expectedRevision: await revOf(f, duty.id), requestId: "adv-2" });
   await settle(f);
-  const second = JSON.stringify(f.requests[1]);
+  const second = JSON.stringify(f.requests[2]);
   assert.match(second, /SUMMARY_FIRST/);
   assert.match(second, /NEXT_STEP_2/);
 });
@@ -202,7 +202,7 @@ test("LA3 budget is metered from real usage and blocks automatic advancement", a
   await reconcileFriendDuties(f.home, "friend");
   const listed = (await listFriendDuties(f.home, "friend")).duties[0];
   assert.equal(listed.advancements.length, 1);
-  assert.equal(listed.tokensToday, 60);
+  assert.equal(listed.tokensToday, 120);
   assert.equal(listed.budgetExhausted, true);
   await acceptTaskTrigger(f.home, timeTrigger(task));
   assert.match((await readTaskState(f.home, "friend")).occurrences.at(-1).reason, /预算已耗尽/);
@@ -212,7 +212,7 @@ test("LA3 budget is metered from real usage and blocks automatic advancement", a
   await reconcileFriendDuties(f.home, "friend");
   const after = (await listFriendDuties(f.home, "friend")).duties[0];
   assert.equal(after.advancements.length, 2);
-  assert.equal(after.tokensToday, 120);
+  assert.equal(after.tokensToday, 240);
 });
 
 test("LA3 goal revision supersedes old progress; conflicts are rejected and corrections kept", async t => {
@@ -311,7 +311,7 @@ test("LA3 lifecycle and configuration changes keep progress, budget and plan; on
   await reconcileFriendDuties(f.home, "friend");
   assert.equal(check.duties[0].unitsDone, 1);
   const tokensAfterRun = (await listFriendDuties(f.home, "friend")).duties[0].tokensToday;
-  assert.equal(tokensAfterRun, 60);
+  assert.equal(tokensAfterRun, 120);
   // Pause and resume are lifecycle changes: the goal generation, progress and plan must survive.
   const paused = await f.command({ operation: "pause", dutyId: duty.id, expectedRevision: check.duties[0].revision });
   const resumed = await f.command({ operation: "resume", dutyId: duty.id, expectedRevision: paused.duties[0].revision });
@@ -663,7 +663,7 @@ test("LA3 the direct trigger path accounts finished executions before judging th
   assert.match(occurrences[1].reason, /预算已耗尽/);
   assert.equal((await readLongAgentState(f.home)).works.length, 1);
   const duty2 = (await listFriendDuties(f.home, "friend")).duties[0];
-  assert.equal(duty2.tokensToday, 60);
+  assert.equal(duty2.tokensToday, 120);
   assert.equal(duty2.advancements.length, 1);
   void startFriendWork;
 });

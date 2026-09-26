@@ -29,14 +29,22 @@
 
 ## 失败点与观察（如实记录）
 
-1. **日常轮次的模型不知道自己的 sessionId，会猜成 turnId。** 真实模型在 daily turn 里为了"说一句建题"主动调用 `read_memory/read_fulltext`，但把 `sourceSessionId` 填成 turn 的 request/turn 形态 `chat-web:friend:real-daily-1`，两次读取都 `找不到Session`；随后它仍用自造 `requestId` 建了一个**只有主题壳、没有根节点**的主题 `topic-d5442f84bac7290faa3fa5684e76aa8e`。
-   - 结论：**"用户只说一句话就自动建题"不能算已交付**；日常轮次缺少可信的"来源会话 id"解析。当前交付的是**显式建题后端入口**（服务端解析/校验日常来源、启动整合 work），它不受这个模型猜测影响。
-   - 这也说明：让日常 Agent 自己调 `create_topic` 会留下无节点的孤儿主题；可靠路径必须经 `startTopicIntegration`。
+1. **（第二次验证已修正）日常轮次的模型不知道自己的 sessionId。** 第一次验证时，模型在 daily turn 里把 `sourceSessionId` 填成 turn 形态，留下无节点主题壳。现在日常路径改为 `topic_manage request_topic`：模型只给 `title`/`purpose`，服务端从**当前可信 turn** 派生来源与请求身份；日常直接 `create_topic` 被拒绝。见下方「第二轮」。
 2. **writer 的 purpose 白名单对真实模型有效，且模型能自我纠正。** 节点轮次的 writer 第一次用 `purpose:"排查方案"` 被拒绝（`会话记忆purpose不在允许列表：排查方案`），随后改用允许值重试成功（会话记忆 revision 1 → 2）。
 3. 真实模型在高 thinking 下会输出较长整合摘要与排查方案，属于预期；单次全链耗时在分钟级。
 
+## 第二轮：日常轮次模型真实选择 `request_topic`（2026-09-24）
+
+方法：隔离 `CHAT_HOME` + symlink，真实模型 `command/deepseek/deepseek-v4.1-flash`（thinking high）。先跑一轮日常记录创建会话并写入一条 session-memory，再发**一句自然语言**「帮我把这个问题建成一个主题，方便我后面继续排查。」；脚本 `verify-daily.mjs`，证据 `evidence-daily.json`。
+
+- 日常轮次**模型真实调用了 `topic_manage request_topic`**（不是手工调用工具）：参数只含 `title`/`purpose`，没有 `sourceSessionId`；`requestTopicCalled=true`。
+- 后台整合工作（同一模型）随后执行：`read_fulltext → read_memory → create_topic → create_node`。
+- 结果：`status=completed`，根节点 `node-644d532ef8ee2a67204604b93f828f0d`，`initialMemoryRefs` 指回来源会话记忆条目 `smem-0001-b151552ef451996d`。
+
+结论：**「一句自然语言 → 模型选择受控工具 → 服务端解析来源/请求身份 → 后台整合建根节点」已由真实模型跑通**；这与“手工调用 `topic_manage.execute(request_topic)`”是不同性质的证据（后者只证明接线）。日常直接 `create_topic` 仍被拒绝，因此不再产生无节点的主题壳。
+
 ## 未覆盖 / 下一步
 
-- 本验证是**显式入口**；日常轮次自然语言的"说一句 → 服务端解析建题意图"未实现（需要可信来源解析或结构化触发）。
-- 建题入口目前只建**根节点**；fork 建题的 `parents`（源节点 + 锚点）透传、以及"用户确认后的补充整合（R4）"入口未接入。
-- 建议后续把该验证脚本按需纳管（例如独立 manual 脚本或 opt-in 门禁），不放进每轮 `pnpm verify`。
+- fork 建题的 `parents` 透传与「用户确认后的补充整合（R4）」入口的**真实模型**验证未做（机制已由假模型覆盖）。
+- relay 执行链、问题定位 workflow 的身份/归属已由假模型覆盖；如需真实模型确认，可另跑一次。
+- 建议后续把验证脚本按需纳管（独立 manual 脚本或 opt-in 门禁），不放进每轮 `pnpm verify`。

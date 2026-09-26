@@ -4,12 +4,18 @@ import { createWorkflowAgentSession } from "../agent-definition.js";
 import { subscribeAgentSessionLog } from "../agent-session-log.js";
 import { triggerChatWorkflowAgentHandoff } from "../session-conversation.js";
 import type { ChatWorkflowResult } from "../types.js";
-import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
+import { prepareChatWorkflowAgentsFromRound } from "../workflow-configuration.js";
 import { appendChatWorkflowStage } from "../workflow-stage.js";
 import { SESSION_MEMORY_WRITER_AGENT } from "./agents/writer/index.js";
 import { prepareSessionMemoryWriterSession } from "./agents/writer/runtime.js";
+import type { LiveRoundHandle } from "../../long-agents/live-turn.js";
 
-const WORKFLOW_ID = "session-memory";
+/** The writer's own Workflow (topic-node rounds and the Long Agent queue). */
+const SESSION_MEMORY_WORKFLOW_ID = "session-memory";
+/** The provenance Workflow: the caller's own id when it declares `remember` as its last node. */
+function ownerWorkflowIdOf(input: { readonly workflowId?: string }): string {
+  return input.workflowId ?? SESSION_MEMORY_WORKFLOW_ID;
+}
 
 function textOfContent(content: unknown): string {
   if (typeof content === "string") return content;
@@ -46,11 +52,23 @@ export async function runSessionMemoryWriterTurn(input: {
   readonly sessionId: string;
   readonly workflowInvocationId: string;
   readonly stageId?: string;
+  /** The Workflow that owns this `remember` node; defaults to the session-memory Workflow itself. */
+  readonly workflowId?: string;
+  /** The round's live handle: the writer swaps its Session in so stop and events span both phases. */
+  readonly live?: LiveRoundHandle;
 }): Promise<Pick<ChatWorkflowResult, "text" | "sessionId" | "sessionFile" | "model">> {
   const stageId = input.stageId ?? "remember";
+  // Everything recorded about this turn carries the OWNING Workflow so the check pages and the frontend
+  // never see a `session-memory` stage inside, say, a minimal-pi-coding-agent run.
+  const WORKFLOW_ID = ownerWorkflowIdOf(input);
+  input.live?.setRoundPhase("remember");
   const chatSession = await openChatSession({ projectId: input.projectId, chatHome: input.chatHome,
     ...(input.cwd === undefined ? {} : { cwd: input.cwd }), sessionId: input.sessionId });
-  const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
+  // The round already froze ONE configuration (the work stage did). This stage only reuses it to resolve
+  // its own Agent: re-deriving from the writer alone would sanitize the work Agents' config to {} and
+  // append a second, incompatible snapshot for the same invocation.
+  const prepared = await prepareChatWorkflowAgentsFromRound({
+    sessionManager: chatSession.manager,
     invocationId: input.workflowInvocationId,
     workflowId: WORKFLOW_ID,
     agents: [SESSION_MEMORY_WRITER_AGENT],
@@ -91,7 +109,12 @@ export async function runSessionMemoryWriterTurn(input: {
     session.dispose();
     throw new Error("会话记忆写入没有创建持久Session文件");
   }
-  const observer = subscribeAgentSessionLog(session, WORKFLOW_ID, {
+  // Feed the writer's Pi events into the round's ONE live stream and register its Session so a stop
+  // during `remember` aborts the writer, not a stale work handle.
+  input.live?.setSession(session);
+  const unsubscribeLive = input.live === undefined ? undefined : session.subscribe((event) => input.live?.publish(event));
+  // The LOG component is always the session-memory implementation; the recorded workflowId is the owner's.
+  const observer = subscribeAgentSessionLog(session, SESSION_MEMORY_WORKFLOW_ID, {
     workflowId: WORKFLOW_ID, stageId, nodeKind: "agent", agentId: SESSION_MEMORY_WRITER_AGENT.id,
   }, {
     sessionManager: chatSession.manager,
@@ -116,6 +139,7 @@ export async function runSessionMemoryWriterTurn(input: {
       model: session.model === undefined ? null : { provider: session.model.provider, modelId: session.model.id },
     };
   } finally {
+    unsubscribeLive?.();
     await observer.finish(true);
     session.dispose();
   }

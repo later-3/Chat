@@ -8,6 +8,7 @@ import { agentDate } from "./calendar.js";
 import { ensureAgentCalendar, recoverFriendCalendar } from "./project-agent.js";
 import { readLongAgentRegistry, readLongAgentState, updateLongAgentState } from "./storage.js";
 import { appendChatLongAgentTurn, latestChatLongAgentTurn, collectChatLongAgentTurnMarkers } from "./session-turn.js";
+import { collectTopicRoundMarkers } from "./topic-anchor.js";
 import { drainLongAgentTurns, isFriendWorkerActive, updateTurnStatus } from "./turn-queue.js";
 import { readLongAgentSummary, writeLongAgentSummary } from "./summaries.js";
 import type { DailySession } from "./daily-state.js";
@@ -95,6 +96,22 @@ export async function recoverLongAgentTurns(home: string, workerOwnsSession?: st
     const session = await openChatSession({ projectId: turn.longAgentId, sessionId: turn.sessionId, chatHome: home });
     const entries = session.manager.getBranch();
     const marker = latestChatLongAgentTurn(entries, turn.turnId);
+    const error = "Backend中断，工具结果可能未知；已保留原始历史，不自动重放，请检查后发起新消息";
+    // A topic round is governed by its OWN outer round marker, not by the work segment. Resolve the
+    // LATEST marker per roundId: a normal round keeps BOTH its `running` opener and its `completed`
+    // closer, so a naive `some(status !== "completed")` would always see the stale opener. Only a round
+    // whose latest marker is still not `completed` is incomplete.
+    const latestStatusByRound = new Map<string, string>();
+    for (const round of collectTopicRoundMarkers(entries)) latestStatusByRound.set(round.roundId, round.status);
+    let governingRoundId: string | null = null;
+    if (latestStatusByRound.has(turn.turnId)) governingRoundId = turn.turnId;
+    else for (const roundId of latestStatusByRound.keys()) if (turn.turnId.endsWith(`:${roundId}`)) { governingRoundId = roundId; break; }
+    const incompleteTopicRound = governingRoundId !== null && latestStatusByRound.get(governingRoundId) !== "completed";
+    if (incompleteTopicRound) {
+      if (marker !== undefined && marker.status !== "completed") { appendChatLongAgentTurn(session.manager, { ...marker, status: "failed", completedAt: new Date().toISOString(), error }); session.manager.flush(); }
+      await updateTurnStatus(home, turn.turnId, "interrupted", error);
+      continue;
+    }
     if (marker?.status === "completed") { await updateTurnStatus(home, turn.turnId, "completed"); continue; }
     const startIndex = marker === undefined ? -1 : entries.findIndex((entry) => entry.id === marker.entryId);
     const nextTurn = collectChatLongAgentTurnMarkers(entries.slice(startIndex + 1)).find((entry) => entry.turnId !== turn.turnId);
@@ -106,7 +123,6 @@ export async function recoverLongAgentTurns(home: string, workerOwnsSession?: st
       session.manager.flush();
       await updateTurnStatus(home, turn.turnId, "completed");
     } else {
-      const error = "Backend中断，工具结果可能未知；已保留原始历史，不自动重放，请检查后发起新消息";
       if (marker !== undefined) { appendChatLongAgentTurn(session.manager, { ...marker, status: "failed", completedAt: new Date().toISOString(), error }); session.manager.flush(); }
       await updateTurnStatus(home, turn.turnId, "interrupted", error);
     }

@@ -21,6 +21,7 @@ export class FriendWorkCapacityError extends Error {}
 export async function startFriendWork(input: {
   chatHome: string; longAgentId: string; requestId: string; originSessionId: string;
   contextProjectId: string | null; text: string; title: string;
+  topicIntegration?: { readonly topicId: string; readonly sessionId: string; readonly nodeId: string };
 }) {
   if (!input.requestId.trim() || input.requestId.length > 256 || !input.text.trim() || input.text.length > 100_000
     || !input.title.trim() || input.title.length > 120) throw new Error("后台工作需要有效请求ID、名称（最多120字）与任务说明（最多100000字）");
@@ -28,7 +29,9 @@ export async function startFriendWork(input: {
   if (!agent) throw new Error("Friend已停用或不存在");
   if (input.contextProjectId !== null) await resolveProjectContext(input.contextProjectId, input.chatHome);
   const id = `work-${digest([agent.id, input.requestId]).slice(0, 32)}`;
-  const payloadHash = digest([input.originSessionId, input.contextProjectId, input.text, input.title]);
+  // An integration work freezes its target in the payload too, so a changed fork target conflicts.
+  const payloadHash = digest([input.originSessionId, input.contextProjectId, input.text, input.title,
+    ...(input.topicIntegration === undefined ? [] : [input.topicIntegration])]);
   const work = await withFileLock(`${input.chatHome}/runtime/friend-work-create`, async () => {
     const state = await readLongAgentState(input.chatHome);
     const existing = state.works.find(w => w.id === id);
@@ -60,7 +63,8 @@ export async function startFriendWork(input: {
         { parentSessionManager: origin.manager });
       binding = { id, longAgentId: agent.id, sessionId: child.manager.getSessionId(), originSessionId: input.originSessionId,
         originEntryId: origin.manager.getLeafId(), contextProjectId: input.contextProjectId, requestId: input.requestId,
-        payloadHash, title: input.title.trim(), createdAt: new Date().toISOString() };
+        payloadHash, title: input.title.trim(), createdAt: new Date().toISOString(),
+        ...(input.topicIntegration === undefined ? {} : { topicIntegration: input.topicIntegration }) };
       child.manager.appendCustomEntry(WORK_BINDING, binding); child.manager.flush();
     }
     const saved = binding;

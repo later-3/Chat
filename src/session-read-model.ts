@@ -237,6 +237,10 @@ function nativeMessageForFrontend(
   if (!isRecord(normalized)) {
     return normalized;
   }
+  // A relayed native user message keeps its Chat-owned association so the frontend can show the source.
+  if (normalized.role === "user" && isRecord((message as Record<string, unknown>).chatTopicRelay)) {
+    return { ...normalized, chatTopicRelay: (message as Record<string, unknown>).chatTopicRelay };
+  }
   if ((normalized.role === "user" || normalized.role === "assistant")
     && longAgentTurn !== undefined
     && !isRecord(normalized.chatLongAgent)) {
@@ -384,6 +388,7 @@ export function projectSessionContext(
     const longAgentTurn = longAgentTurnByEntryId.get(entry.id);
     if (longAgentTurn !== undefined) {
       activeLongAgentTurn = longAgentTurn.status === "running" ? longAgentTurn : undefined;
+      if (longAgentTurn.status === "running") activeStage = undefined;
       continue;
     }
     const reviewDecision = reviewDecisionByEntryId.get(entry.id);
@@ -640,11 +645,17 @@ export async function readChatSession(
     );
   }
 
+  // Topic Sessions use the same durable Friend turns, even though the legacy owner index only
+  // classifies daily/work Sessions. Restore from the storage scope and actual turn binding; never
+  // infer an active execution from the presence of a writer's Workflow stage markers.
+  const friendExecution = info.projectId === undefined ? undefined
+    : await readSessionFriendExecution(resolveChatHome(chatHome),
+      info.owner.type === "long-agent" ? info.owner.longAgentId : info.projectId, sessionId);
   return {
     session: info,
     sessionId: manager.getSessionId(),
     filePath: info.path,
-    ...(info.owner.type === "long-agent" ? { friendExecution: await readSessionFriendExecution(resolveChatHome(chatHome), info.owner.longAgentId, sessionId), longAgentActivity: projectLongAgentActivity(entries, info.projectId !== undefined && isChatSessionOperationBusy(info.projectId, manager.getSessionId())) } : {}),
+    ...(info.owner.type === "long-agent" || friendExecution !== undefined ? { friendExecution, longAgentActivity: projectLongAgentActivity(entries, info.projectId !== undefined && isChatSessionOperationBusy(info.projectId, manager.getSessionId())) } : {}),
     totalActiveMs: 0,
     tree: manager.getTree(),
     leafId: selectedLeafId ?? null,

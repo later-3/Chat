@@ -52,9 +52,12 @@ test("P2 writer runtime: a round without a user entry fails visibly and writes n
   );
   const empty = await prepareSessionMemoryWriterSession(context([]));
   await assert.rejects(async () => empty.transformContext([]), SessionMemoryRoundUnavailableError);
-  // A wrong workflow/agent cannot assemble this writer at all.
+  // The writer is the shared LAST node of every interactive Workflow, so any workflow may assemble it…
+  const asTail = await prepareSessionMemoryWriterSession({ ...context([]), workflowId: "memory" });
+  assert.equal(typeof asTail.transformContext, "function");
+  // …but a wrong AGENT is still refused.
   await assert.rejects(
-    prepareSessionMemoryWriterSession({ ...context([]), workflowId: "memory" }),
+    prepareSessionMemoryWriterSession({ ...context([]), agentId: "pi-coding-agent" }),
     /不能装配Agent/,
   );
 });

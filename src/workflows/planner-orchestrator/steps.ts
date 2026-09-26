@@ -26,6 +26,7 @@ import {
 import { ORCHESTRATION_PLANNER_AGENT } from "./agents/planner/index.js";
 import { WORKFLOW_COORDINATOR_AGENT } from "./agents/coordinator/index.js";
 import { prepareWorkflowCoordinatorSession } from "./agents/coordinator/runtime.js";
+import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 
 const WORKFLOW_ID = "planner-orchestrator";
 
@@ -41,6 +42,9 @@ export interface OrchestrationExecutionStepInput {
   readonly inputEntryIds: readonly string[];
   readonly agent: ResolvedWorkflowAgentDefinition;
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
+  /** The round's memory switch: the work stage only releases the stream when no memory node follows. */
+  readonly sessionMemoryEnabled?: boolean;
+  readonly sessionMemoryOwnerWorkflowId?: string;
 }
 
 function requireProjectContext(chatSession: ChatSession) {
@@ -210,7 +214,7 @@ export async function runWorkflowDelegationStep(
     await markOrchestrationPhase(chatSession, input.workflowInvocationId, "failed");
     throw error;
   } finally {
-    await observer.finish(true);
+    await observer.finish(stageFinishClosesStream(input));
     session.dispose();
   }
 }

@@ -11,7 +11,7 @@ import { appendChatLongAgentTurn } from "../../src/long-agents/session-turn.ts";
 import { appendChatUserMessage } from "../../src/workflows/session-conversation.ts";
 import { sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
 import { convertToLlm } from "@earendil-works/pi-agent-core";
-import { createTopic, createTopicNode, readTopicGraph, topicGraphFile } from "../../src/long-agents/topics.ts";
+import { appendRelayedTopicNodeMessage, createTopic, createTopicNode, readTopicGraph, topicGraphFile } from "../../src/long-agents/topics.ts";
 import { appendTopicRoundMarker, readTopicSettledAnchors } from "../../src/long-agents/topic-anchor.ts";
 import { chatSessionOperationKey, withChatSessionOperationLock } from "../../src/session-operation-lock.ts";
 import { readSessionMemory, sessionMemoryFile } from "../../src/long-agents/session-memory.ts";
@@ -137,31 +137,42 @@ test("topic_manage: create, supplement, archive and relay go through the domain 
   const archived = await call({ operation: "update_node_status", nodeId: supplementalParent.node.nodeId, status: "archived" });
   assert.equal(archived.node.status, "archived");
 
-  // Relay: a REAL user message flanked by durable pending/complete markers.
+  // Relay: the request is persisted as a durable INTENT; the native user message is appended by the
+  // round that consumes it, on the active branch (exactly one message per request).
   const relayed = await call({ operation: "relay", targetNodeId: child.node.nodeId, requestId: "tm-relay", text: "请继续定位这个分支" });
   assert.equal(relayed.created, true);
+  assert.notEqual(relayed.intentEntryId, "");
+  assert.equal(relayed.userEntryId, null, "no native message exists before the round runs");
   const childSession = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, child.node.sessionId, "子节点");
-  const branch = childSession.session.manager.getBranch();
-  assert.equal(branch.filter((entry) => entry.customType === "chat.topic-relay").length, 0, "no separate marker entry is needed");
-  const relayUserEntry = branch.find((entry) => entry.id === relayed.userEntryId);
+  const intentEntry = childSession.session.manager.getEntries().find((entry) => entry.id === relayed.intentEntryId);
+  assert.equal(intentEntry.type, "custom");
+  assert.equal(intentEntry.customType, "chat.topic-relay-intent");
+  assert.equal(intentEntry.data.targetNodeId, child.node.nodeId);
+  assert.equal(intentEntry.data.text, "请继续定位这个分支");
+  assert.equal(childSession.session.manager.getEntries().filter((entry) => entry.message?.chatTopicRelay).length, 0, "no native message at relay time");
+  const appended = appendRelayedTopicNodeMessage(childSession.session.manager, relayed.intentEntryId);
+  childSession.session.manager.flush();
+  const relayUserEntry = childSession.session.manager.getBranch().find((entry) => entry.id === appended.entryId);
   assert.equal(relayUserEntry.type, "message");
   assert.equal(relayUserEntry.message.role, "user", "the relayed text IS a real user message");
   assert.equal(relayUserEntry.message.content[0].text, "请继续定位这个分支");
   assert.equal(convertToLlm(sessionEntryToContextMessages(relayUserEntry))[0].role, "user");
   // The durable request association rides ON the native entry and survives a reload from disk.
   const reloaded = await openChatSession({ chatHome: home, projectId: "friend", sessionId: child.node.sessionId });
-  const reloadedEntry = reloaded.manager.getBranch().find((entry) => entry.id === relayed.userEntryId);
+  const reloadedEntry = reloaded.manager.getBranch().find((entry) => entry.id === appended.entryId);
   assert.deepEqual(reloadedEntry.message.chatTopicRelay.requestId, "tm-relay");
   assert.equal(reloadedEntry.message.chatTopicRelay.targetNodeId, child.node.nodeId);
   assert.equal(reloadedEntry.message.chatTopicRelay.relayedByLongAgentId, "friend");
+  // Appending again for the same intent is idempotent on the active branch.
+  assert.equal(appendRelayedTopicNodeMessage(childSession.session.manager, relayed.intentEntryId).created, false);
   // The relayed user entry can therefore start a settleable round in the node (anchor contract).
-  appendTopicRoundMarker(childSession.session.manager, { roundId: "relay-round", userEntryId: relayed.userEntryId, status: "completed" });
+  appendTopicRoundMarker(childSession.session.manager, { roundId: "relay-round", userEntryId: appended.entryId, status: "completed" });
   childSession.session.manager.flush();
-  assert.equal(readTopicSettledAnchors(childSession.session.manager).some((anchor) => anchor.anchorEntryId === relayed.userEntryId), true);
+  assert.equal(readTopicSettledAnchors(childSession.session.manager).some((anchor) => anchor.anchorEntryId === appended.entryId), true);
 
   const replayRelay = await call({ operation: "relay", targetNodeId: child.node.nodeId, requestId: "tm-relay", text: "请继续定位这个分支" });
   assert.equal(replayRelay.created, false);
-  assert.equal(replayRelay.userEntryId, relayed.userEntryId);
+  assert.equal(replayRelay.userEntryId, appended.entryId, "replay adopts the one native message");
   // Same request id, different relayed text: a conflict, not a silent success.
   await assert.rejects(call({ operation: "relay", targetNodeId: child.node.nodeId, requestId: "tm-relay", text: "换了内容" }), /已用于不同的代传内容或节点/);
   const afterConflicts = (await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, child.node.sessionId, "子节点")).session.manager.getBranch()
@@ -298,39 +309,45 @@ test("topic_manage: relay re-checks the node inside the session lock and never d
   assert.equal((await archivingSecond).node.status, "archived");
   await call({ operation: "update_node_status", nodeId: root.node.nodeId, status: "active" });
 
-  // The relayed message is a native user message carrying the durable request association.
+  // The relay request is durable as an intent; the native message is appended by the round that runs it.
   const relayed = relayedFirst;
+  assert.notEqual(relayed.intentEntryId, "");
+  assert.equal(relayed.userEntryId, null, "no native message at relay time");
   // An intra-session branch switch must not let the same request append a second relayed message.
   const branched = await openChatSession({ chatHome: home, projectId: "friend", sessionId: root.node.sessionId });
   const openingId = appendChatUserMessage(branched.manager, "分支前的一条普通消息");
   branched.manager.flush();
   const branchedRelay = await call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-branch", text: "在第一条分支上代传" });
   assert.equal(branchedRelay.created, true);
-  branched.manager.branch(openingId);
-  appendChatUserMessage(branched.manager, "另一条分支上的消息");
-  branched.manager.flush();
-  assert.equal(branched.manager.getBranch().some((entry) => entry.id === branchedRelay.userEntryId), false, "the relayed message is now off the current branch");
-  await assert.rejects(call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-branch", text: "在第一条分支上代传" }),
-    /不在当前分支/, "a replay must not append a second copy after a branch switch");
+  // The round reopens the session, so it sees the intent appended after the manager above was opened.
+  const branchedFresh = await openChatSession({ chatHome: home, projectId: "friend", sessionId: root.node.sessionId });
+  const branchedNative = appendRelayedTopicNodeMessage(branchedFresh.manager, branchedRelay.intentEntryId);
+  branchedFresh.manager.branch(openingId);
+  appendChatUserMessage(branchedFresh.manager, "另一条分支上的消息");
+  branchedFresh.manager.flush();
+  assert.equal(branchedFresh.manager.getBranch().some((entry) => entry.id === branchedNative.entryId), false, "the relayed message is now off the current branch");
+  // A replay adopts the ONE durable request instead of appending a second copy.
+  const branchedReplay = await call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-branch", text: "在第一条分支上代传" });
+  assert.equal(branchedReplay.created, false);
+  assert.equal(branchedReplay.userEntryId, branchedNative.entryId);
   const branchFileEntries = (await openChatSession({ chatHome: home, projectId: "friend", sessionId: root.node.sessionId }))
     .manager.getEntries().filter((entry) => entry.message?.chatTopicRelay?.requestId === "rc-branch");
   assert.equal(branchFileEntries.length, 1, "the whole session file holds exactly one relayed message for the request");
 
-  // An unrelated user message with the SAME text must never be claimed as a relay. The association is
-  // matched exactly, and a replay returns the same entry instead of writing a second message.
+  // An unrelated user message with the SAME text must never be claimed as a relay. The intent is matched
+  // by request id exactly, and a replay returns the same intent instead of writing a second request.
   const session2 = await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根");
   appendChatUserMessage(session2.session.manager, "只写一次");
   session2.session.manager.flush();
   const second = await call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay-2", text: "只写一次" });
   assert.equal(second.created, true);
-  assert.notEqual(second.userEntryId, relayed.userEntryId, "the pre-existing unrelated message is not adopted");
+  assert.equal(second.userEntryId, null, "the pre-existing unrelated message is not adopted");
   const third = await call({ operation: "relay", targetNodeId: root.node.nodeId, requestId: "rc-relay-2", text: "只写一次" });
   assert.equal(third.created, false);
-  assert.equal(third.userEntryId, second.userEntryId);
+  assert.equal(third.intentEntryId, second.intentEntryId);
   const after = (await ensureChatSessionWithId({ chatHome: home, projectId: "friend" }, root.node.sessionId, "根"))
-    .session.manager.getBranch().filter((entry) => entry.type === "message" && entry.message?.role === "user"
-      && entry.message?.chatTopicRelay?.requestId === "rc-relay-2");
-  assert.equal(after.length, 1, "exactly one relayed message exists for the request");
+    .session.manager.getEntries().filter((entry) => entry.message?.chatTopicRelay?.requestId === "rc-relay-2");
+  assert.equal(after.length, 0, "the unrelated same-text message is never claimed; the native message waits for its round");
 });
 
 test("topic_manage: a partial multi-source write is completed from the frozen request, and a changed request conflicts", async (t) => {

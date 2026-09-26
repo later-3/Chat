@@ -64,7 +64,7 @@ function normalizeParents(value: unknown): TopicIntegrationParent[] {
  * Friend's own daily sessions (never an arbitrary session): `startFriendWork` enforces the same rule
  * again, so a forged source cannot be used as an integration origin.
  */
-async function resolveDailySource(home: string, longAgentId: string, sourceSessionId?: unknown): Promise<string> {
+export async function resolveDailySource(home: string, longAgentId: string, sourceSessionId?: unknown): Promise<string> {
   const agent = (await readLongAgentRegistry(home)).agents.find((candidate) => candidate.id === longAgentId && candidate.enabled && candidate.status !== "archived");
   if (agent === undefined) throw new Error("Friend已停用或不存在");
   const state = await readLongAgentState(home);
@@ -172,6 +172,7 @@ export async function startTopicIntegration(input: StartTopicIntegrationInput) {
     contextProjectId: null,
     title: `整合：${title}`.slice(0, 120),
     text: buildIntegrationInstruction({ title, purpose, requestId, ids, readSourceSessionId, parents }),
+    topicIntegration: ids,
   });
   // The computed ids are authoritative for this request (a fork derives them from the parent topic);
   // readTopicIntegration can only recover them from the graph once the node exists.
@@ -193,14 +194,20 @@ export async function readTopicIntegration(input: ReadTopicIntegrationInput) {
   const home = resolveChatHome(input.chatHome);
   const requestId = text(input.requestId, "requestId", 200);
   const graph = await readTopicGraph(home, input.longAgentId);
-  const node = graph.nodes.find((candidate) => candidate.createdByRequestId === requestId) ?? null;
-  const ids: TopicIntegrationIds = node === null
-    ? topicIntegrationIds(input.longAgentId, requestId)
-    : { topicId: node.topicId, sessionId: node.sessionId, nodeId: node.nodeId };
-  const topic = graph.topics.find((candidate) => candidate.topicId === ids.topicId) ?? null;
   const state = await readLongAgentState(home);
   const work = state.works.find((candidate) => candidate.longAgentId === input.longAgentId
     && candidate.requestId === topicIntegrationWorkRequestId(requestId)) ?? null;
+  const node = graph.nodes.find((candidate) => candidate.createdByRequestId === requestId) ?? null;
+  // The FROZEN target wins over a re-derivation: in-progress, failed and completed queries must all
+  // return the same ids, and a fork's ids (parent topic based) cannot be recovered from the graph before
+  // the node exists. The node is only a fallback for records written before the freeze was persisted.
+  const frozen = work?.topicIntegration ?? null;
+  const ids: TopicIntegrationIds = frozen !== null
+    ? { topicId: frozen.topicId, sessionId: frozen.sessionId, nodeId: frozen.nodeId }
+    : node === null
+      ? topicIntegrationIds(input.longAgentId, requestId)
+      : { topicId: node.topicId, sessionId: node.sessionId, nodeId: node.nodeId };
+  const topic = graph.topics.find((candidate) => candidate.topicId === ids.topicId) ?? null;
   const turn = work === null ? undefined : state.turns.filter((candidate) => candidate.workId === work.id).at(-1);
   // The node is the product, so its existence wins over a delayed turn status write. A work that
   // FINISHED without producing its node is a failure, never a success (a topic shell is not a product).

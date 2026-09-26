@@ -1,5 +1,7 @@
 # 主题模式 P2 任务书：主题图与「会话记忆」workflow（后端能力）
 
+> **2026-09-25 当前任务**：[纠偏方案](./topic-mode-correction-plan.md)承接本文件已有领域能力；新建题改为用户审核后创建的真实 Workflow，同时补齐完整会话与两阶段反馈。下文保留早期 P2 合同与证据，“已交付”仅指对应历史机制，不代表新需求和当前用户体验已通过。
+
 状态：**草稿，待用户审核**。日期：2026-09-23。前置：P1（会话记忆底座）已独立复核通过，见 [P1 实施记录](../history/reviews/2026-09-22-topic-mode-p1.md)。合同见[主题模式任务书](./topic-mode-taskbook.md)，阶段计划见[开发计划](./topic-mode-plan.md) §2。
 
 ## 1. 本阶段目标：交付后端能力
@@ -32,11 +34,12 @@
 | 4 | **节点创建服务**：`reserveChatSession` → 整合摘要 `appendCustomMessageEntry` → 初始 `background` 记忆条目 → 图 CAS 登记；四步同一 `requestId`，重试识别已写产物 | `src/long-agents/topics.ts` + `chat-session.ts` |
 | 5 | **“说一句建题”接线（已实现）**：日常 Agent 用 `topic_manage request_topic` 发起（只给 `title`/`purpose`，可选 `parents`）——**服务端从当前可信 turn 派生请求身份、以当前会话为来源**（不接受模型填 `sourceSessionId`），再调现有 `startTopicIntegration` 启动后台整合；同一后台链支持 **fork**（给父节点 + settled 锚点，复用父主题）。日常会话直接 `create_topic` 会被拒绝（它是整合工作内部用）。另有显式 HTTP 入口 `POST/GET /topics/integrations`（显式 `title`/`purpose`/可选 `sourceSessionId`）保留给 P3/前端。返回 work/execution 与**确定性** `topicId/nodeId/sessionId` | `src/long-agents/topic-integration.ts` + `topic-manage` + `startFriendWork` 复用；`src/routes/api/long-agents/[longAgentId]/topics/integrations*.ts` |
 | 6 | **节点会话 API**：读消息 / 发轮次 / 事件流 | `src/routes/api/long-agents/[longAgentId]/topics/**` |
-| 7 | **共享授权（读取已接入）**：read（跨树只读）/ relay（自己名下树）/ write（仅本会话记忆）在一处判定；节点 API、记忆 API、**通用 Session 读写与 Run 启动**在识别为主题节点后都走它；非主题会话走原合同 | `topics.ts` 共享函数，被 3/5/6 与 `sessions`/`runs` 路由复用 |
+| 7 | **共享授权（已接入）**：read（跨树只读）/ relay（自己名下树）/ write（仅本会话记忆）在一处判定；节点 API、记忆 API、**通用 Session 读写与 Run 启动**在识别为主题节点后都走它；非主题会话走原合同。**relay 执行链（已实现）**：受理时校验目标节点 + 授权，写入**耐久代传意图**（`chat.topic-relay-intent` custom entry，含 text/textDigest/target/relayedBy），接受节点轮次时冻结 `relayIntentEntryId`；执行时**在活动分支上追加唯一一条原生 user message**（带 `chatTopicRelay` 关联）并 `resumePendingTurn()`，随后照常 work+remember、settle 锚点。N 条排队 relay 依次成为同一分支上的完整轮次，**每请求恰好一条原生消息**，完成后原样重放返回 `created:false` | `topics.ts` + `turn-queue.ts` + `runtime.ts` + `topic-manage` |
 | 8 | **读侧按需读取**：`session-memory` 工具 + `session-memory` Skill（**不注入 prompt**） | `src/resources/builtin-skills/session-memory/SKILL.md`、现有工具 |
 | 9 | **节点生命周期（已实现）**：既有 Session 被移除时把对应 node 标记 `removed`、**保留边**供溯源；`archived/removed` 节点拒绝 relay 与整合指向 | `topics.ts` + `session-removal.ts` 挂钩 |
-| 10 | **随附业务 workflow**：问题定位 workflow（供主题会话按需调用，P4 实际使用） | `src/workflows/problem-diagnosis/**` + `catalog.ts` |
+| 10 | **随附业务 workflow（已实现）**：问题定位 workflow（`problem-diagnosis`，一个诊断 agent，`agentCallable: true`）供主题会话按需 `workflow_call`；节点轮次先冻结 `contextProjectId = node.frozenProjectContext`，子 run/子会话按协作 Project 归属（显式 null 不回退，既有回归） | `src/workflows/problem-diagnosis/**` + `catalog.ts`/`registry.ts` |
 | 11 | **开关**：会话记忆可关闭 —— 不装配读取能力、不跑 `remember` | 节点记录字段 + workflow 判定 |
+| 12 | **R4 补充整合（已实现）**：`supplementTopicChildIntegration` 在一个用户确认动作里：写**确认留痕**（`chat.topic-supplement.v1`，记录 `actionDigest`）+ 产物（`memory` 会话记忆条目带 `writeRequestId`/`writeRequestFingerprint`，或 `relay` 经 `relayTopicNodeTurn` **真实执行节点轮次**）+ 补父边；**`requestId` 冻结整个动作**（child/parent/anchor/规范化 source/产物），改父节点、锚点、来源、正文或产物类型 → 409；同 `requestId` 重试续完缺失步骤，不新增确认/意图/原生消息/轮次/边；接口返回可查询 `turnId/turnStatus`。owner 路由 `POST .../nodes/{nodeId}/supplements`（`confirmedBy:"user"`，Agent 不能自确认）；P3 窄 API：`GET .../nodes/{nodeId}/anchors`、`PATCH .../nodes/{nodeId}`（记忆开关）、`POST /topics/integrations` 支持 `parents`（fork） | `src/long-agents/topics.ts` + routes |
 
 ## 4. 方案要点（关键机制）
 
@@ -60,7 +63,7 @@
   1. `chat.long_agent_turn` 标记 `status === "completed"` 的 Long Agent 轮次（取该轮次前的最后一条用户 entry）；
   2. **`chat.topic-round` 标记** `<roundId, userEntryId, status, settledAt>`——外层编排（`work` + `remember`）的整轮终态事实，**显式关联本轮用户 entry**（写入与读取都核对该 entry 确为**用户消息**，指向 assistant entry 的标记被拒绝/忽略），覆盖 `work` + `remember` 全轮（完成标记由队列 worker 写，见 §4“外层编排”）。
   `running/failed/cancelled` 轮次与 assistant entry 都不是锚点；同一轮次的后续重试标记**不产生第二个锚点**。`chat.long_agent_turn` 仅对该轮次**自身**有整轮标记时被抑制（按 `roundId === turnId`，兼容旧版把 `requestId` 当 `roundId` 的标记）；因此**新开一轮不会抹掉主题模式之前的历史锚点**，也不会改动旧锚点的序号。核验在**父会话的操作锁内**、写入任何产物**之前**完成（父轮次继续演进只会新增锚点，不会使已核验锚点失效）。`anchorEntryId`/`anchorSequence` 同时为空才表示“从起点分叉”；**指定 entry 就必须同时给定序号**。因此“`work` 完成、`remember` 未完成”时轮次尚未 settled，不可分叉。
-- **`topic-manage` 工具**（`src/tools/builtins/topic-manage/**`，`system:tool/topic_manage`，risk `write`，permission `long-agent:topic`）：身份只取运行上下文的 `longAgentId`（模型参数不能指定 Long Agent 或存储项目），仅 `purpose === "execution"` 可用。操作：`read_graph` / `read_node` / `read_memory` / `read_fulltext`（跨树**只读**，走 `authorizeTopicSession(read)`；正确提取 `custom_message` 正文（整合摘要可读）、长条目带 `truncated` 标记、支持 `beforeEntryId` 游标翻页；会话记忆只存在于 Long Agent 归属会话，普通项目会话明确拒绝）/ `create_topic`（同一 `requestId` **且标题/目的一致**才幂等，内容不同 → 409）/ `create_node`（调 `createTopicNodeWithSession`；**`sources` 支持多来源**，每个来源一条初始记忆条目并各自记入 `initialMemoryRefs`；可传 `frozenProjectContext`；父边锚点必须 entry+sequence 成对）/ `add_parent`（调 `addTopicNodeParent`）/ `update_node_status` / `relay`。工具**不实现**来源、锚点、幂等或授权判定，全部委托领域服务；需要当前 revision 的写操作经 `withTopicGraphRevision` 在冲突时重读重试。**`relay`**（领域函数 `relayTopicNodeMessage`，全程在**节点会话操作锁内**）：**单次原生 user message 追加**，请求关联直接写在原生消息上——`message.chatTopicRelay = {requestId, targetNodeId, relayedByLongAgentId, source:"relay", textDigest}`（Pi 的 `parseSessionEntryLine` 是普通 `JSON.parse`，Chat 自有字段**原样往返**，已用「重新打开会话后仍可读到」验证）。因此：**不存在“消息已写、关联未写”的中断窗口**；重放按 `requestId` **精确匹配关联**（**不再用正文相同认领**，普通入口写入的同文用户消息不会被误标成代传）；**去重范围是整个会话文件（`getEntries()`），不只看当前分支**——单会话内切换 Pi 分支（`manager.branch(entryId)`）后重放**不会**再追加第二条；若原消息已不在当前分支 → **409**（既不重复追加，也不假装成功）。条目本身是**真实 user message**，后续节点轮次可 settled、可分叉（P3 读模型可直接用它渲染“代传 by <Agent>”）。**幂等键为 `(nodeId, requestId)`**（同一 id 指向另一节点是另一次代传），同键但正文 `textDigest` 不同 → 409。**状态与授权在锁内、紧邻追加处重新判定**，且 `updateTopicNodeStatus` 也先取**目标会话锁**再取图锁（与创建/relay 同为「会话锁 → 图锁」顺序），因此“归档与 relay 追加”互相排斥，归档排在前时 relay 必然看到 `archived` 并拒绝。**触发该轮执行属于节点会话 API/轮次 Workflow**，不在本工具内。
+- **`topic-manage` 工具**（`src/tools/builtins/topic-manage/**`，`system:tool/topic_manage`，risk `write`，permission `long-agent:topic`）：身份只取运行上下文的 `longAgentId`（模型参数不能指定 Long Agent 或存储项目），仅 `purpose === "execution"` 可用。操作：`read_graph` / `read_node` / `read_memory` / `read_fulltext`（跨树**只读**，走 `authorizeTopicSession(read)`；正确提取 `custom_message` 正文（整合摘要可读）、长条目带 `truncated` 标记、支持 `beforeEntryId` 游标翻页；会话记忆只存在于 Long Agent 归属会话，普通项目会话明确拒绝）/ `create_topic`（同一 `requestId` **且标题/目的一致**才幂等，内容不同 → 409）/ `create_node`（调 `createTopicNodeWithSession`；**`sources` 支持多来源**，每个来源一条初始记忆条目并各自记入 `initialMemoryRefs`；可传 `frozenProjectContext`；父边锚点必须 entry+sequence 成对）/ `add_parent`（调 `addTopicNodeParent`）/ `update_node_status` / `relay`。工具**不实现**来源、锚点、幂等或授权判定，全部委托领域服务；需要当前 revision 的写操作经 `withTopicGraphRevision` 在冲突时重读重试。**`relay`**（领域函数 `relayTopicNodeMessage`，全程在**节点会话操作锁内**）：**先写耐久代传意图，轮到它的轮次时才在活动分支追加唯一一条原生 user message**，关联直接写在原生消息上——`message.chatTopicRelay = {requestId, targetNodeId, relayedByLongAgentId, source:"relay", textDigest}`（Pi 的 `parseSessionEntryLine` 是普通 `JSON.parse`，Chat 自有字段**原样往返**，已用「重新打开会话后仍可读到」验证）。重放按 `requestId` **精确匹配意图或原生消息**（**不用正文相同认领**，普通入口写入的同文用户消息不会被误标成代传）；**去重范围是整个会话文件（`getEntries()`）**，重放返回同一条目（`created:false`），**不会**追加第二条。条目本身是**真实 user message**，后续节点轮次可 settled、可分叉。**幂等键为 `(nodeId, requestId)`**，同键但正文 `textDigest` 不同 → 409。**状态与授权在锁内、紧邻写入处重新判定**；归档排在前时 relay 必然看到 `archived` 并拒绝。真实 Long Agent turn（带 `longAgentTurnId`）会接受节点轮次并触发执行；纯写入路径只落意图。
 
 - **补边（R4 补充整合）**：`addTopicNodeParent` 与创建共用同一套门：**① 原样边规格才算幂等**（父/子相同但锚点或 `memoryRefs` 不同 → 409，不再按两个节点 ID 静默返回旧边）；**② 新边必须在父会话锁内做 settled 锚点核验**（`requireTopicAnchor`），再登记边；③ 父边 `memoryRefs` 走同一来源解析。**锁序**：预检（读图比较边规格 → 父会话锁核验锚点 → 来源解析）在**图锁之外**完成，随后才进图锁做 CAS 落盘，因此与编排的“会话锁 → 图锁”顺序一致，不会形成反向锁序。
 - **节点只读 API（§3 表格第 6 行读取部分，已实现）**：`GET /api/long-agents/{longAgentId}/topics`（主题图 + 节点 `readable`）、`GET .../topics/{topicId}`（单主题 + 节点 + **仅该主题节点之间的边**）、`GET .../topics/{topicId}/nodes/{nodeId}/messages`（节点消息，复用 `readChatSession`；**必须 `node.topicId === topicId`**，否则 404 —— URL 只能是唯一一致路径）。**会话 id 一律由图解析**，客户端从不提供 sessionId，因此该路由不能被指向任意会话；共享主题判定与共享会话读取判定同时生效（`readChatSession` 现在自带存储归属，见下）。
@@ -76,7 +79,7 @@
   **已验证**（真实会话）：发节点轮次 → Worker 仅凭**耐久绑定**选回节点会话执行 → `completed` 且写 `settledAt` → 该轮成为可分叉锚点 → 用该锚点建子节点；同一 POST 原样重发返回**同一 turn**（不新增 turn/绑定），同 `requestId` 改投另一节点 → 409。
   **尚未验证/未实现**：
   1. **进程级重启**：现有回归是**同进程**调用 drain（已如实改名，只证明“从耐久状态选会话”），子进程重启探针尚未跑通（本轮尝试时子进程 drain 挂起，未查明原因）。
-  2. **`relay → 执行 → settled → 分叉` 全链**：目前**未实现**。代传写入的是一条独立 user 条目，而节点轮次接受后执行时仍会 `prompt(text)` **再追加一条**用户消息——因此「先代传、再用相同正文发轮次」会产生 **2 条**用户消息，settled 锚点指向轮次新增的那条，而不是代传条目。要做到“执行代传消息本身”，接受合同需要携带并校验 relay 的 `userEntryId`，执行时对该条目走 `resumePendingTurn()`（不追加新消息）；这条**纳入下一包**，在此之前不声称 relay 全链已完成。
+  2. ✅ **`relay → 执行 → settled → 分叉` 全链（已实现）**：受理写入耐久代传意图，节点轮次接受时冻结意图，执行时在**活动分支**追加**唯一一条**原生 user message 并 `resumePendingTurn()`（不再 `prompt` 第二条同文）。N 条排队 relay 依次成为同一活动分支上的完整轮次，每请求恰好一条关联消息；完成后原样重放返回 `created:false`。回归见 `test/long-agents/topic-integration.test.mjs`。
 - **事件流**：节点轮次的事件流可直接复用既有 `GET /api/long-agents/{longAgentId}/turns/{turnId}/events`（返回 `turnId` 后前端即可订阅）；主题作用域的 `.../stream` 门面属于 P3 展示层，等节点轮次落地后再决定是否需要。
 - **节点生命周期挂钩（§3 表格第 9 行，已实现）**：`applyTopicNodeSessionLifecycle` 是**唯一可离开 `removed` 状态**的写入者（它镜像会话文件的事实）：`removeChatSession` 在「意图已写、文件已移动、完成前」把节点标 `removed`；`restoreRemovedChatSession` 把节点恢复为 `active`；`purge` 之后节点保持 `removed`（会话已永久消失，节点留作历史）。**边始终保留**供溯源；普通会话（非主题节点）为 no-op。它只取图锁（会话锁由移除流程持有，锁序仍为会话锁 → 图锁）；面向用户/Agent 的 `updateTopicNodeStatus` 仍视 `removed` 为终态。
 - **恢复路径也必须收敛节点**：`recoverPendingOperation` 的收敛回调（`lifecycleConvergence`）除会话记忆外，**在清除 pending 之前**同样收敛主题节点状态（remove → `removed`、restore → `active`、purge → 保持 `removed`），因此“文件已移动但图写入失败”的中断不会留下 `active` 节点。`topics.ts` 已**静态**依赖 `removed-session-index.ts`，反向依赖用**惰性 `import()`** 解析以保持静态依赖图无环。
@@ -91,7 +94,7 @@
      **不允许从节点的当前入边反推原请求**：入边可被 R4 补充整合改变，反推会导致“同一 `requestId` 换了锚点却被静默当成成功”和“合法补边后原样重试反而 409”两种错误时序（两条均已有回归测试）。
   5. **状态不可复活**：`removed` 是终态，普通 `updateTopicNodeStatus` 不能改回 `active`；状态更新同样要求 `expectedRevision`；`archived/removed` 拒绝 relay（读保留，供溯源）。主题级 `updateTopicStatus` 只影响“能否新建节点/预留”，不动节点状态。
 - **锚点**：节点读模型给出可分叉锚点（当前分支、用户 entry、invocation、终态），创建时在 Session 锁内核验并冻结，同时冻结记忆 revision；不使用 `forkChatSession()`。
-- **代传**：一条**真实 user message**（持久标记 `source:"relay"` + 代传 Agent），并同步更新读模型与前端解析（前端展示在 P3）。
+- **代传**：先落**耐久代传意图**，执行时追加一条**真实 user message**（持久标记 `source:"relay"` + 代传 Agent）；N 条排队依次成为同分支完整轮次，每请求唯一一条消息；读模型/前端解析同步（前端展示在 P3）。
 - **remember 的可见回复**必须关联工具实际返回的 entry ID 与 revision。
 
 ## 5. 测试（功能为主；P2 用 API + 假模型）
@@ -107,8 +110,29 @@
 | T7 | 开关 | 关闭后不装配读取工具、不跑 `remember`，普通对话不受影响 |
 | T8 | 后端端到端（假模型 + 真实模型） | 建题请求 → 日常来源解析 → 后台整合 work → 建节点 + 初始记忆 → 节点内一轮（work+remember）→ 分叉；假模型：`test/long-agents/topic-integration.test.mjs`（`request_topic` 从可信 turn 解析来源/请求身份建根；日常 `create_topic` 被拒；节点轮 → 真实锚点 fork 出有父边的子节点；完成后无节点 → status=`failed` 而非 success）+ 显式 API 建成后重放比对；真实模型：`docs/history/reviews/2026-09-24-topic-mode-real-model-verification.md`（模型先 `read_fulltext`/`read_memory` 再 `create_topic`/`create_node`）。跨树引用见既有用例 |
 | T9 | 随附业务 workflow | 主题会话内调用问题定位 workflow 返回结果（假模型），run 归属符合 §2 第 2 条 |
+| T10 | 节点派发真实子 Workflow（收口补充） | 节点轮次经 `workflow_call` 派发 `problem-diagnosis`：节点冻结的协作 Project 为子 run/子会话归属，父存储仍为 Agent home；**真实 Workflow runtime** 创建并完成子 run/子会话（`scripts/dev-server.test.mjs` 的 `DIRECT_CALL_DIAGNOSIS`），子会话内可见诊断 turn 的 assistant 文本 |
+| T11 | relay 执行与重放边界（收口补充） | relay 先落耐久意图，轮次执行时在活动分支追加唯一原生消息；**两条已排队 relay 依次成为同一活动分支上的完整轮次**（`getBranch()` 保留两轮答案，`readTopicSettledAnchors()` 返回 A、B 两个锚点，**全文件恰好两条**关联消息，两请求完成后原样重放均 `created:false`）；节点 POST 带非空冻结 Project 时原样重放不 409（`test/long-agents/topic-integration.test.mjs`、`test/tools/topic-manage.test.mjs`） |
+| T12 | R4 补充整合 + 跨进程恢复（收口补充） | 用户确认动作写入产物（记忆/relay）+ 补边，同一 `requestId` 重试不重复；非用户确认被拒；**跨进程**：在子进程接受节点轮次与 relay 意图后退出，新进程仅凭耐久状态 drain 完成两轮并可分叉（`test/long-agents/topic-integration.test.mjs`、`test/long-agents/topic-restart.test.mjs`） |
 
-退出条件：T1–T9 有证据；`pnpm verify` exit=0；无新增运行时旁路（不新建 Session/调度器/模型循环）。真实模型完整故事与浏览器可见性分别归 P4/P3。
+退出条件：T1–T9 有证据（T10–T12 为本轮收口补充）；`pnpm verify` exit=0；无新增运行时旁路（不新建 Session/调度器/模型循环）。真实模型完整故事与浏览器可见性分别归 P4/P3。
+
+**P2 T1–T9 证据对照**（P2 任务书自己的门槛，与总任务书最终 T1–T9 不同）：
+
+| T | 现有证据 |
+|---|---|
+| T1 work→remember | `test/workflows/session-memory-workflow.test.mjs` |
+| T2 writer 当前轮投影 | `test/workflows/session-memory-round-context.test.mjs`、`session-memory-workflow.test.mjs` |
+| T3 节点创建幂等 + 来源 | `test/long-agents/topic-node-creation.test.mjs`、`topic-integration.test.mjs` |
+| T4 分叉/多亲/成环 | `test/long-agents/topic-api.test.mjs`、`topic-node-creation.test.mjs` |
+| T5 relay + 生命周期 | `test/tools/topic-manage.test.mjs`、`test/long-agents/topic-lifecycle*.mjs` |
+| T6 权限绕行 | `test/long-agents/scope.test.mjs`、`topic-api.test.mjs`、`test/tools/tools.test.mjs` |
+| T7 开关 | `test/workflows/session-memory-workflow.test.mjs`、`test/long-agents/topic-integration.test.mjs` |
+| T8 后端端到端 | `test/long-agents/topic-integration.test.mjs`、`scripts/dev-server.test.mjs`、`docs/history/reviews/2026-09-24-topic-mode-real-model-verification.md` |
+| T9 随附业务 workflow | `test/workflows/problem-diagnosis.test.mjs`、`scripts/dev-server.test.mjs`（真实 runtime 子 run） |
+
+**已完成（本轮）**：R4 补充整合（后端动作 + owner 确认路由 + 幂等回归）、节点/relay **跨进程恢复**（子进程接受、新进程 drain 完成）、`sessionMemory` 非法值解析收紧、P3 所需窄 API（anchors / 记忆开关 / fork `parents` / relay 关联暴露）。
+**P3 已交付**：工作区「主题」入口（`?view=topics`，`LongAgentTopicsView` + `LongAgentTopicsPanel`）+ Friend 设置页「主题」页签；节点对话用共享 `MessageView`；R4 补充整合确认表单（父节点与其锚点分开发取）；记忆面板可编辑内容与 purpose、CAS 冲突提示；点主题自动进入首个节点，选择持久化并可刷新恢复。真实浏览器验收 `scripts/topics-browser.test.mjs` 已入 `pnpm test:dev`（`pnpm verify`），并断言服务端事实（结构化工具调用/结果、CAS 冲突、记忆开关、R4 memory+relay 的新父边与真实轮次、UI 建题产物、刷新恢复）。
+**P4 已交付（总验收）**：执行中恢复（work 中断、remember 写前/写后中断、relay 中断；`test/long-agents/topic-interruption-recovery.test.mjs`，恢复拒绝提前完成由外层 round marker 治理的轮次）；真实模型完整故事（`verify-p4.mjs`：自然语言建题、节点工作与记忆、settled 后分叉、R4 memory/relay 补充整合、多主题跨树只读、归档节点、节点真实 `workflow_call problem-diagnosis`）；浏览器 fork 操作（`scripts/topics-browser.test.mjs`）。总验收记录见 [P4 总验收](../history/reviews/2026-09-25-topic-mode-p4-total-acceptance.md)。
 
 ## 6. 检视点
 

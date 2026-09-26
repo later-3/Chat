@@ -2,6 +2,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { openChatSession } from "../chat-session.js";
 import { ensureAgentHomeProject, resolveProjectContext } from "../projects/registry.js";
 import { readLongAgentState, updateLongAgentRegistry, updateLongAgentState } from "./storage.js";
+import { findActiveSessionFile } from "../session-files.js";
 import { agentDate, validateTimeZone } from "./calendar.js";
 import type { DailySession } from "./daily-state.js";
 import type { LongAgentConfig, ProjectLongAgent } from "./types.js";
@@ -35,6 +36,21 @@ export async function ensureProjectLongAgent(input: {
   const own = await ensureAgentHomeProject(agent.id, agent.name, input.chatHome);
   const now = input.now ?? new Date();
   const today = agentDate(agent.timeZone, now);
+  // READ-ONLY FAST PATH: today's Session and its binding already exist and the file is really there, so
+  // opening the same Friend again must not bump `updatedAt` or rewrite the whole state file. Only the
+  // "nothing to change" case short-circuits; first creation, a new day and every repair still go through
+  // the protected write path below.
+  if (input.topicNode === undefined) {
+    const settled = await readLongAgentState(input.chatHome);
+    const existingAgent = settled.projectAgents.find((candidate) => candidate.projectId === own.projectId && candidate.longAgentId === agent.id);
+    const settledDay = settled.dailySessions.find((candidate) => candidate.longAgentId === agent.id && candidate.date === today);
+    if (existingAgent !== undefined && existingAgent.sessionDate === today && settledDay !== undefined
+      && settledDay.sessionId === existingAgent.primarySessionId
+      && (input.requestedSessionId === undefined || input.requestedSessionId === settledDay.sessionId)
+      && await findActiveSessionFile(own, settledDay.sessionId) !== undefined) {
+      return { projectAgent: existingAgent, isNewSession: false, day: settledDay };
+    }
+  }
   return updateLongAgentState(input.chatHome, async (state) => {
     // A topic node target bypasses today's index entirely: it is verified against the topic graph and
     // only located, never registered as today's Session or primary binding.

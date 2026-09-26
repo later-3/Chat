@@ -81,6 +81,10 @@ async function runPlannerIteration(input: {
   readonly agent: ResolvedWorkflowAgentDefinition;
   /** Dispatching session whose session memory this agent writes to (never the workflow's own session). */
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
+  /** The initiating Long Agent, so its own tool addresses resolve node/source authorization. */
+  readonly longAgentId?: string;
+  /** Topic-creation collect/revise stages run the tool set read-only. */
+  readonly topicReadOnly?: boolean;
 }): Promise<PlanningRevisionStepResult> {
   const stepStartedAt = Date.now();
   const project = requireProjectContext(input.chatSession);
@@ -125,6 +129,8 @@ async function runPlannerIteration(input: {
       stageId: "plan",
       agentId: input.plannerAgentId,
       ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
+      ...(input.longAgentId === undefined ? {} : { longAgentId: input.longAgentId }),
+      ...(input.topicReadOnly === true ? { topicReadOnly: true } : {}),
     },
     transformContext: (messages) => injectPlanningRevisionContext(messages, {
       workflowId: input.workflowId,
@@ -271,6 +277,8 @@ export async function runReviewedPlanningStep(
       planRevision: 1,
       agent: plannerAgent,
       ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
+      ...(profile.longAgentId === undefined ? {} : { longAgentId: profile.longAgentId }),
+      ...(profile.topicReadOnly === true ? { topicReadOnly: true } : {}),
     });
     if (result.userEntryId === undefined) throw new Error("Planning Workflow没有写入原生用户消息");
     return {
@@ -291,7 +299,7 @@ export async function runReviewedPlanningStep(
 
 export async function runReviewedPlanningRevisionStep(
   input: PlanningRevisionStepInput,
-  profile: Pick<ReviewedPlanningProfile, "workflowId" | "plannerAgent">,
+  profile: { readonly workflowId: string; readonly plannerAgent: ReviewedPlanningProfile["plannerAgent"]; readonly longAgentId?: string; readonly topicReadOnly?: boolean },
 ): Promise<PlanningRevisionStepResult> {
   const chatSession = await openChatSession(input);
   return runPlannerIteration({
@@ -304,6 +312,7 @@ export async function runReviewedPlanningRevisionStep(
     previousPlan: input.previousPlan,
     agent: input.agent,
     ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
+    ...(profile.longAgentId === undefined ? {} : { longAgentId: profile.longAgentId }),
   });
 }
 
@@ -314,7 +323,7 @@ export async function publishReviewedPlan(
   const chatSession = await openChatSession(input);
   try {
     const project = requireProjectContext(chatSession);
-    const sha256 = planSha256(input.plan);
+    const sha256 = input.planSha256 ?? planSha256(input.plan);
     const review: ChatPlanReview = {
       schemaVersion: 1,
       workflowId,

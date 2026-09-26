@@ -4,7 +4,10 @@ import plannerOrchestratorManifestJson from "./planner-orchestrator/workflow.jso
 import planningExecutionManifestJson from "./planning-execution/workflow.json" with { type: "json" };
 import ruleManagementManifestJson from "./rule-management/workflow.json" with { type: "json" };
 import sessionMemoryManifestJson from "./session-memory/workflow.json" with { type: "json" };
+import problemDiagnosisManifestJson from "./problem-diagnosis/workflow.json" with { type: "json" };
+import topicSessionCreateManifestJson from "./topic-session-create/workflow.json" with { type: "json" };
 import { parseChatWorkflowManifest } from "./framework.js";
+import { isSessionMemoryTailAgent } from "./session-memory/tail-node.js";
 
 export const MINIMAL_PI_CODING_AGENT_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
   minimalPiCodingAgentManifestJson,
@@ -30,6 +33,14 @@ export const SESSION_MEMORY_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
   sessionMemoryManifestJson,
   "session-memory",
 );
+export const PROBLEM_DIAGNOSIS_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
+  problemDiagnosisManifestJson,
+  "problem-diagnosis",
+);
+export const TOPIC_SESSION_CREATE_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
+  topicSessionCreateManifestJson,
+  "topic-session-create",
+);
 
 /** Declarative Workflow facts that can be consumed without loading executable Workflow modules. */
 export const CHAT_WORKFLOW_MANIFESTS = [
@@ -39,6 +50,8 @@ export const CHAT_WORKFLOW_MANIFESTS = [
   MEMORY_WORKFLOW_MANIFEST,
   RULE_MANAGEMENT_WORKFLOW_MANIFEST,
   SESSION_MEMORY_WORKFLOW_MANIFEST,
+  PROBLEM_DIAGNOSIS_WORKFLOW_MANIFEST,
+  TOPIC_SESSION_CREATE_WORKFLOW_MANIFEST,
 ] as const;
 
 export interface AgentCallableWorkflowTarget {
@@ -56,6 +69,7 @@ export function listAgentCallableWorkflowTargets(): readonly AgentCallableWorkfl
       id: workflow.id,
       name: workflow.name,
       description: workflow.description,
-      agentIds: workflow.agents.map((agent) => agent.id),
+      // The session-memory writer is every Workflow's LAST node, not a selectable child capability.
+      agentIds: workflow.agents.map((agent) => agent.id).filter((id) => !isSessionMemoryTailAgent(id)),
     }));
 }

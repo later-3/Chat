@@ -7,7 +7,7 @@ import { readSessionMemory } from "../../../long-agents/session-memory.js";
 import {
   addTopicNodeParent,
   authorizeTopicSession,
-  relayTopicNodeMessage,
+  relayTopicNodeTurn,
   createTopic,
   createTopicNodeWithSession,
   readTopicGraph,
@@ -68,7 +68,7 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
     parameters: Type.Object({
       operation: Type.Union([
         Type.Literal("read_graph"), Type.Literal("read_node"), Type.Literal("read_memory"), Type.Literal("read_fulltext"),
-        Type.Literal("request_topic"), Type.Literal("create_topic"), Type.Literal("create_node"), Type.Literal("add_parent"),
+        Type.Literal("request_topic"), Type.Literal("commit_creation"), Type.Literal("create_topic"), Type.Literal("create_node"), Type.Literal("add_parent"),
         Type.Literal("update_node_status"), Type.Literal("relay"),
       ]),
       topicId: Type.Optional(Type.String({ description: "read_graph(可选过滤)/read_node/create_node/add_parent/relay：主题 id" })),
@@ -109,6 +109,10 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
       const chatHome = context.chatHome;
       const record = params as Record<string, unknown>;
       const operation = String(record.operation);
+      // The topic-creation COLLECT/REVISE stages run this tool READ-ONLY: the collector must not create
+      // a topic/node (or relay/archive) before the user approves. Enforced here, not by prompt wording.
+      if (context.topicReadOnly === true && !["read_graph", "read_node", "read_memory", "read_fulltext"].includes(operation))
+        throw new Error(`整理阶段只能只读读取主题资料；不允许 ${operation}`);
 
       /** Reads of a session that may belong to another agent's tree go through the shared decision. */
       const requireReadable = async (storageProjectId: string, sessionId: string): Promise<void> => {
@@ -210,14 +214,57 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
           return { nodeId: text(parent.nodeId, "parents.nodeId", 200),
             anchorEntryId: text(parent.anchorEntryId, "parents.anchorEntryId", 200), anchorSequence };
         });
-        // The request identity comes from the TRUSTED turn, never from model args, and the source is the
-        // current session (startTopicIntegration validates it is this Friend's daily session).
-        const requestId = `topic-req:${createHash("sha256").update(JSON.stringify([turnId, parents])).digest("hex").slice(0, 32)}`;
-        const { startTopicIntegration } = await import("../../../long-agents/topic-integration.js");
-        const started = await startTopicIntegration({ chatHome, longAgentId, requestId, title, purpose,
-          sourceSessionId: context.sessionId, ...(parents.length === 0 ? {} : { parents }) });
-        return result({ operation, requestId, topicId: started.topicId, nodeId: started.nodeId, sessionId: started.sessionId,
-          status: started.status, workId: started.work?.id ?? null });
+        // The request identity comes from the TRUSTED turn, never from model args; the source is the
+        // current session. This starts the REAL review-gated creation Workflow — the target topic Session
+        // is created only after the user approves.
+        const [{ startTopicCreation }, { topicCreationRequestForTurn }] = await Promise.all([
+          import("../../../workflows/topic-creation-runtime.js"),
+          import("../../../workflows/topic-session-create/topic-request-id.js"),
+        ]);
+        const requestId = topicCreationRequestForTurn(turnId, parents);
+        const started = await startTopicCreation({
+          chatHome, longAgentId, requestId, sourceSessionId: context.sessionId, sourceTurnId: turnId,
+          prompt: [
+            "用户在日常对话中要求把当前讨论创建为主题会话。",
+            `建议标题：${title}`,
+            `目的：${purpose}`,
+            parents.length === 0 ? "这是新建根主题。" : `这是从已完成轮次分叉：父边=${JSON.stringify(parents)}（不要自行更改）。`,
+            "请只读来源会话记忆/全文后整理出供用户审核的主题上下文草稿。",
+          ].join("\n"),
+          ...(parents.length === 0 ? {} : { parents }),
+        });
+        return result({ operation, requestId, prepareSessionId: started.prepareSessionId, runId: started.run.runId,
+          workflowInvocationId: started.workflowInvocationId, status: "awaiting_review" });
+      }
+
+      if (operation === "commit_creation") {
+        // The controlled commit: the model cannot supply title/summary/project/source. Everything comes
+        // from the trusted binding + the APPROVED draft stored by the collect step.
+        const binding = context.topicCreation;
+        const approval = context.topicCreationApproval;
+        if (binding === undefined || approval === undefined) throw new Error("commit_creation 只能由主题创建 Workflow 的创建阶段调用");
+        const { readTopicCreationDraft } = await import("../../../workflows/topic-session-create/creation-draft.js");
+        const draft = readTopicCreationDraft(context.sessionManager.getEntries(), { planRevision: approval.planRevision, planSha256: approval.planSha256 });
+        if (draft === null) throw new Error("找不到与该批准版本对应的主题草稿；请回到审核修订");
+        const { readTopicGraph, createTopic, createTopicNodeWithSession, topicIdOf } = await import("../../../long-agents/topics.js");
+        const graph = await readTopicGraph(chatHome, longAgentId);
+        const parentNodes = binding.parents.map((parent) => graph.nodes.find((node) => node.nodeId === parent.nodeId));
+        if (parentNodes.some((node) => node === undefined)) throw new Error("分叉父节点不存在；请回到审核修订");
+        // A root creation first publishes the topic record, then the root node — the graph is the success
+        // fact, and both steps share the approved requestId so a retry reuses the product.
+        if (parentNodes.length === 0) {
+          await createTopic({ chatHome, longAgentId, title: draft.title, purpose: draft.purpose, requestId: binding.requestId,
+            expectedRevision: (await readTopicGraph(chatHome, longAgentId)).revision });
+        }
+        const topicId = parentNodes.length === 0 ? topicIdOf(longAgentId, binding.requestId) : parentNodes[0]!.topicId;
+        const created = await createTopicNodeWithSession({
+          chatHome, longAgentId, topicId, requestId: binding.requestId,
+          title: draft.title, createdBy: "agent", integrationSummary: draft.integrationSummary,
+          ...(draft.frozenProjectContext === null ? {} : { frozenProjectContext: draft.frozenProjectContext }),
+          ...(draft.initialMemory.length === 0 ? {} : { sources: draft.initialMemory.map((ref) => ({ source: { storageProjectId: ref.storageProjectId, sessionId: ref.sessionId, entryId: ref.entryId }, content: ref.content })) }),
+          ...(binding.parents.length === 0 ? {} : { parents: binding.parents.map((parent) => ({ parentNodeId: parent.nodeId, anchorEntryId: parent.anchorEntryId, anchorSequence: parent.anchorSequence })) }),
+        });
+        return result({ operation, created: created.created, node: created.node, sessionId: created.sessionId, topicId });
       }
 
       if (operation === "create_topic") {
@@ -298,13 +345,24 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
         return result({ operation, node });
       }
 
-      // relay goes through the domain function: the single `custom_message` append is atomic (no
+      // relay goes through the domain function: the single native user-message append is atomic (no
       // "message written, marker missing" window) and enters the model context as a user message.
-      const relayed = await relayTopicNodeMessage({
+      // Then the node round is accepted to RESUME that exact message (never prompt a second copy).
+      // relay goes through the shared orchestration: the durable intent is written first, then the node
+      // round is accepted to RESUME that exact message (never prompt a second copy). A legacy request with
+      // no Long Agent turn context stages the intent only; the owner-driven round runs it later.
+      const relayed = await relayTopicNodeTurn({
         chatHome, longAgentId, nodeId: record.nodeId ?? record.targetNodeId,
-        requestId: record.requestId, text: record.text,
+        requestId: record.requestId, text: record.text, execute: context.longAgentTurnId !== undefined,
       });
-      return result({ operation, created: relayed.created, nodeId: relayed.nodeId, sessionId: relayed.sessionId, userEntryId: relayed.entryId });
+      if (relayed.turnId === null) {
+        return result({ operation, created: relayed.created, nodeId: relayed.nodeId, sessionId: relayed.sessionId,
+          intentEntryId: relayed.intentEntryId, userEntryId: relayed.userEntryId });
+      }
+      const { findFriendTurn, friendExecution } = await import("../../../long-agents/turn-feedback.js");
+      return result({ operation, created: relayed.created, nodeId: relayed.nodeId, sessionId: relayed.sessionId,
+        intentEntryId: relayed.intentEntryId, userEntryId: relayed.userEntryId,
+        execution: friendExecution(chatHome, await findFriendTurn(chatHome, longAgentId, relayed.turnId)) });
     },
   }),
 );

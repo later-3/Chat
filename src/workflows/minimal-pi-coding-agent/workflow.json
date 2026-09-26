@@ -11,12 +11,23 @@
       "name": "执行",
       "description": "由Pi Coding Agent处理用户请求。",
       "agentId": "pi-coding-agent"
+    },
+    {
+      "kind": "agent",
+      "id": "remember",
+      "name": "记录会话记忆",
+      "description": "只依据本轮（用户消息与工作阶段产物）维护本会话的会话记忆。",
+      "agentId": "session-memory-writer"
     }
   ],
   "agents": [
     {
       "id": "pi-coding-agent",
       "config": "./agents/pi-coding-agent/agent.json"
+    },
+    {
+      "id": "session-memory-writer",
+      "config": "../session-memory/agents/writer/agent.json"
     }
   ]
 }

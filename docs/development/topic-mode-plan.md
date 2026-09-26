@@ -1,6 +1,6 @@
 # 主题模式开发计划（Topic Mode Development Plan）
 
-状态：**P1 已独立复核通过（检视 18–34 全部收口，证据见 [P1 实施记录](../history/reviews/2026-09-22-topic-mode-p1.md)）；P2–P4 待开工。** P2 开工前先落定入口清单（见 §2 开头的「P2 入口前置」）。日期：2026-09-22。合同依据：[主题模式任务书](./topic-mode-taskbook.md)（同步修订）。检视回复见 §6。
+状态：**P1 及大量 P2 领域能力已有实现；当前主题会话体验未达标，不能宣称整体完成。** 2026-09-25 用户明确新建题采用“整理 → 用户审核/修订 → 创建”的真实 Workflow。当前唯一执行安排为[纠偏方案](./topic-mode-correction-plan.md) §5 的 A–C 工作包与 §6 统一退出表；不再逐项修复后反复请求进入下一阶段。下文保留原 P1–P4 机制与历史记录，旧“已交付”不覆盖本次新目标和已确认缺陷。[P1 实施记录](../history/reviews/2026-09-22-topic-mode-p1.md)，合同依据：[主题模式任务书](./topic-mode-taskbook.md)。
 
 ## 0. 基准：Pi 的沟通链
 
@@ -55,18 +55,18 @@
 **⑤ 派发链（检视 15：两条链分别写清）**：
 - **外层 `session-memory`**：节点 API 在 agent home 的**节点会话**内启动，两 step 共用该会话；**Session 与 run binding 都归 agent home**（不经过 `workflow_call`）；冻结协作项目经公共装配的可信 invocation 提供。
 - **内部业务 Workflow**（`work` 调问题定位等）：走既有 `workflow_call`，**子 Session 与其 run binding 按目标项目归属**（`collaborationProjectId === undefined ? projectId : collaborationProjectId`）；冻结协作项目为**显式 `null`** 时**不回退**，调用被拒绝。
-**⑥ 节点整合服务（已实现日常入口 + 根/fork）**：日常 Agent 用 `topic_manage request_topic` 发起——模型只给 `title`/`purpose`（可选 `parents`），**服务端从当前可信 turn 派生请求身份、以当前会话为日常来源**，再启动整合后台 work 并返回确定性 `topicId/nodeId/sessionId`；`fork` 由 `parents`（父节点 + settled 锚点）复用父主题与同一后台链。日常会话直接 `create_topic` 被拒绝；完成但无节点不会被报成功。显式 HTTP `POST/GET /topics/integrations` 保留给前端/P3。整合产物仍由该后台 work 的 Agent 经 `topic-manage` 结构化提交（无第二条执行路径）。见 `src/long-agents/topic-integration.ts` + `topic-manage`。**随附业务 workflow（问题定位）在 P2 交付**，P4 实际调用一次。
+**⑥ 节点整合服务（现状与新目标）**：现有日常 `topic_manage request_topic` 与 HTTP integrations 通过后台 work 建根/fork，来源和请求身份由 Backend 解析。**2026-09-25 用户已要求替换该新请求编排**：统一进入 `topic-session-create`，整理→用户审核/修改→创建；request_topic 与 HTTP 仅作同一 Workflow 的薄入口。批准前不创建目标，不提前把确定性 ID 展示成可进入节点；历史 work/产物保留。见[纠偏方案 §2–§3](./topic-mode-correction-plan.md)。问题定位等业务 Workflow 继续保留，不与创建审核混成一条执行路径。
 **⑦ 节点会话 API**：读消息 / 发轮次 / 事件流；relay 轮 = 真实 user message + **持久来源标记**，并同步更新读模型与前端解析（现有解析器不接受 relay，须一并加）。
 **验证（重新分配）**：捕获模型**实际输入**，验证当前轮隔离、初始摘要进入上下文、历史/记忆按需读取、正常分叉（父记忆继承不被拒）、多亲、真成环拒绝；完整跑既有开发与生产链（不另建门禁）。
 
 ## 3. P3 前端
 
-主题图视图（节点/边/锚点/状态，数据全来自 Backend）；点节点复用 `ChatWindow` 走节点 API；记忆面板（按 purpose 分组、查看/编辑/推翻、CAS 冲突提示）；开关；整合状态机（idle → integrating → success/failed）；relay 来源展示。
-**验证**：真实浏览器——remember 结果（关联 entry ID）、开关、节点内项目上下文只读、relay 来源、刷新恢复。
+主题图视图、记忆面板、节点读写等已有实现（`LongAgentTopicsView`/`LongAgentTopicsPanel` + `?view=topics`），但只共享 `MessageView` 没有保留完整会话控制，实际页面存在消息不可见等主链缺陷。**P3 用户体验重新打开验收**：公共 ChatWindow/会话控制器通过节点目标适配接入，主题导航和记忆/来源为辅助面板；具体要求见纠偏方案 §4，不以组件存在代替可用。
+**验证**：真实浏览器——`scripts/topics-browser.test.mjs`（已入 `pnpm test:dev`）：进入已有节点、节点对话、编辑记忆、从父节点锚点确认补充整合、刷新恢复。
 
 ## 4. P4 联调验收
 
-**验证**：一次真实模型完整故事（描述问题 → 整合开题 → 多轮含一轮记忆写入 → fork → 第二主题跨树引用 → 代传 → 归档一个节点），覆盖**实际业务 workflow（问题定位）**与两 agent 的**跨树只读**；复用前阶段确定性反例（成环、越权 relay、超限）；证据进 `.data/verification/topic-mode/`，检视记录进 `docs/history/reviews/`。
+**历史机制证据（不等于当前整体通过）**：`.data/verification/topic-mode/verify-p4.mjs`、`verify.mjs`、`verify-daily.mjs`、`test/long-agents/topic-interruption-recovery.test.mjs` 与 `scripts/topics-browser.test.mjs` 保留已有证据；原记录见 [P4 总验收](../history/reviews/2026-09-25-topic-mode-p4-total-acceptance.md)。新审核创建流程与完整会话体验须按纠偏方案 §6 重新统一验收，浏览器必须验证可见、可点击与服务端事实，不能只断言 DOM 文本。
 
 ## 5. 通用门禁与里程碑
 

@@ -27,7 +27,7 @@ export interface AgentSessionLogSubscription {
 /** Logs Pi AgentSession lifecycle events without logging message or tool data. */
 export function subscribeAgentSessionLog(
   session: AgentSession,
-  component: "pi" | "planner" | "memory" | "rule-curator" | "workflow-coordinator" | "session-memory",
+  component: "pi" | "planner" | "memory" | "rule-curator" | "workflow-coordinator" | "session-memory" | "problem-diagnosis" | "topic-session-create",
   stage: ChatRunStage,
   trace?: {
     readonly sessionManager: SessionManager;

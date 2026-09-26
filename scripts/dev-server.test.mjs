@@ -1,4 +1,5 @@
 import { respondPlannerConversation, exercisePlannerConversation } from "./planner-conversation-fixture.mjs";
+import { isSessionMemoryWriterRequest, writeAssistantText } from "./fake-model-stages.mjs";
 import { respondProjectManagement, exerciseProjectManagementRun } from "./project-management-runtime-fixture.mjs";
 import { exerciseWorkflowTui } from "./workflow-tui-runtime-fixture.mjs";
 import assert from "node:assert/strict";
@@ -88,6 +89,8 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
   let devServer;
   let output = "";
   const modelRequests = [];
+  // Writer-stage requests are logged separately: they are a different stage, not a work request.
+  const sessionMemoryRequests = [];
   let restartGeneration = 0;
   let releaseRestartModelRequest;
   let markRestartReady;
@@ -116,6 +119,20 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
         return;
       }
       const modelRequest = await readJson(request);
+      // The session-memory writer is the Workflow's LAST stage and carries the SAME history as the work
+      // turn. It MUST be routed first: every DIRECT_CALL_* gate below belongs to the WORK agent, and the
+      // writer waiting on one of them (released only once) would hang this request forever.
+      if (isSessionMemoryWriterRequest(modelRequest.messages)) {
+        sessionMemoryRequests.push(modelRequest);
+        if (modelRequest.messages.at(-1)?.role === "tool") {
+          writeAssistantText(response, "本轮无需写入", "chatcmpl-dev-session-memory", "dev-e2e-model");
+        } else {
+          writeToolCalls(response, "chatcmpl-dev-session-memory", [{ index: 0, id: "dev-session-memory-write",
+            type: "function", function: { name: "session_memory", arguments: JSON.stringify({
+              operation: "write", purpose: "finding", author: "agent", content: "DEV_E2E 会话记忆条目", expectedRevision: 0 }) } }]);
+        }
+        return;
+      }
       if (respondPlannerConversation(modelRequest, response)) return;
       modelRequests.push(modelRequest);
       if (respondProjectManagement(modelRequest, response, chatHome, "dev-e2e-model")) return;
@@ -170,6 +187,23 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
               workflowId: "memory",
               prompt: "DIRECT_MEMORY_CHILD: Confirm that the Memory Workflow received this delegated request without changing memory.",
               agents: childAgentCapabilities("memory-agent"),
+            }),
+          },
+        }]);
+        return;
+      }
+      if (latestMessageText.includes("DIRECT_CALL_DIAGNOSIS") && !hasToolResult) {
+        writeToolCalls(response, "chatcmpl-dev-direct-diagnosis", [{
+          index: 0,
+          id: "direct-diagnosis-call",
+          type: "function",
+          function: {
+            name: "workflow_call",
+            arguments: JSON.stringify({
+              action: "start",
+              workflowId: "problem-diagnosis",
+              prompt: "DIRECT_DIAGNOSIS_CHILD: 定位这个订单页空指针问题。",
+              agents: childAgentCapabilities("problem-diagnoser"),
             }),
           },
         }]);
@@ -349,6 +383,10 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
         responseText = "DIRECT_MEMORY_CHILD_OK";
       } else if (conversationText.includes("DIRECT_CALL_MEMORY") && hasToolResult) {
         responseText = "DIRECT_MEMORY_PARENT_OK";
+      } else if (systemText.includes("问题定位 Agent") && latestMessageText.includes("DIRECT_DIAGNOSIS_CHILD")) {
+        responseText = "DIRECT_DIAGNOSIS_CHILD_OK";
+      } else if (conversationText.includes("DIRECT_CALL_DIAGNOSIS") && hasToolResult) {
+        responseText = "DIRECT_DIAGNOSIS_PARENT_OK";
       } else if (conversationText.includes("DIRECT_CALL_REVIEW") && hasToolResult) {
         responseText = "DIRECT_REVIEW_PARENT_OK";
       } else if (conversationText.includes("DIRECT_CALL_SELF") && hasToolResult) {
@@ -614,6 +652,12 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     assert.equal(status?.status, "completed", `${JSON.stringify(status)}\n${output}`);
     assert.equal(status.result.text, "DEV_E2E_OK");
     assert.equal(modelRequests.length, 3);
+    // The Workflow's LAST node is the memory writer: it must really run after the work answer, and the
+    // round must settle only after it did.
+    assert.ok(sessionMemoryRequests.length > 0, "the memory writer stage must run");
+    const memoryFile = path.join(chatHome, "projects", "dev-e2e-project", "session-memory", `${status.result.sessionId}.json`);
+    assert.equal(fs.existsSync(memoryFile), true, `the writer must persist session memory: ${memoryFile}`);
+    assert.match(fs.readFileSync(memoryFile, "utf8"), /DEV_E2E 会话记忆条目/);
     assert.match(JSON.stringify(modelRequests[1]), /Add an explicit rollback step before execution\./);
     assert.match(JSON.stringify(modelRequests[1]), /PLAN_V1/);
     assert.match(JSON.stringify(modelRequests[2]), /PLAN_V2/);
@@ -804,6 +848,43 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     ));
     assert.deepEqual(directMemoryChildRequest?.tools ?? [], []);
     assert.doesNotMatch(JSON.stringify(directMemoryChildRequest?.messages ?? []), /<skill name=\\?"memory/);
+
+    // A real problem-diagnosis child Workflow: the child run and its Session are created by the real
+    // Workflow runtime and the diagnosis turn actually executes in them.
+    const directDiagnosisStartResponse = await serverFetch("/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: "dev-e2e-project",
+        cwd: canonicalWorkspace,
+        prompt: "DIRECT_CALL_DIAGNOSIS: Delegate a structured problem diagnosis.",
+        workflow: "minimal-pi-coding-agent",
+      }),
+    });
+    const directDiagnosisStarted = await directDiagnosisStartResponse.json();
+    assert.equal(directDiagnosisStartResponse.status, 202, JSON.stringify(directDiagnosisStarted));
+    const diagnosisDeadline = Date.now() + 15_000;
+    let directDiagnosisStatus;
+    while (Date.now() < diagnosisDeadline) {
+      const response = await serverFetch(`/runs/${encodeURIComponent(directDiagnosisStarted.runId)}`);
+      directDiagnosisStatus = await response.json();
+      if (["completed", "failed", "cancelled"].includes(directDiagnosisStatus.status)) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(directDiagnosisStatus?.status, "completed", `${JSON.stringify(directDiagnosisStatus)}\n${output}`);
+    assert.equal(directDiagnosisStatus.result.text, "DIRECT_DIAGNOSIS_PARENT_OK");
+    const directDiagnosisParent = await (await serverFetch(
+      `/api/sessions/${encodeURIComponent(directDiagnosisStarted.sessionId)}?projectId=dev-e2e-project`,
+    )).json();
+    assert.equal(directDiagnosisParent.workflowCalls.length, 1, JSON.stringify(directDiagnosisParent.workflowCalls));
+    assert.equal(directDiagnosisParent.workflowCalls[0].child.workflowId, "problem-diagnosis");
+    assert.equal(directDiagnosisParent.workflowCalls[0].status, "completed");
+    const directDiagnosisChild = await (await serverFetch(
+      `/api/sessions/${encodeURIComponent(directDiagnosisParent.workflowCalls[0].child.sessionId)}?projectId=dev-e2e-project`,
+    )).json();
+    assert.ok(directDiagnosisChild.context.messages.some((message) => (
+      message.role === "assistant" && JSON.stringify(message.content).includes("DIRECT_DIAGNOSIS_CHILD_OK")
+    )), JSON.stringify(directDiagnosisChild.context.messages));
 
     const directReviewStartResponse = await serverFetch("/runs", {
       method: "POST",

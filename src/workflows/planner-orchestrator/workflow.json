@@ -25,6 +25,13 @@
       "name": "协调执行",
       "description": "Coordinator只调用获批计划指定的执行Workflow并汇总结果。",
       "agentId": "coordinator"
+    },
+    {
+      "kind": "agent",
+      "id": "remember",
+      "name": "记录会话记忆",
+      "description": "只依据本轮（用户消息与工作阶段产物）维护本会话的会话记忆。",
+      "agentId": "session-memory-writer"
     }
   ],
   "agents": [
@@ -35,6 +42,10 @@
     {
       "id": "coordinator",
       "config": "./agents/coordinator/agent.json"
+    },
+    {
+      "id": "session-memory-writer",
+      "config": "../session-memory/agents/writer/agent.json"
     }
   ]
 }

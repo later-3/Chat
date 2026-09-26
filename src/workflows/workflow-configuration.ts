@@ -288,6 +288,51 @@ export function collectChatWorkflowTurnConfigurations(
 }
 
 /**
+ * Resolve Agents for a LATER stage of the SAME round, using the configuration this round already froze.
+ *
+ * A follow-up stage (the `remember` node) must never re-derive the round's configuration from its own
+ * agent list: that would treat the work Agents as "unknown", sanitize the Workflow's persisted selection
+ * down to the follow-up Agent and append a second, different snapshot for one invocation. This reads the
+ * existing snapshot (or the Workflow's stored selection when the round is not Workflow-managed at all)
+ * and resolves ONLY the requested Agents — read-only, no persistence, no sanitize.
+ */
+export async function prepareChatWorkflowAgentsFromRound(input: {
+  readonly sessionManager: SessionManager;
+  readonly invocationId: string;
+  readonly workflowId: string;
+  readonly agents: readonly WorkflowAgentDefinition[];
+  readonly cwd: string;
+  readonly chatHome?: string;
+  readonly projectDataDir?: string;
+}): Promise<PreparedChatWorkflowTurnConfiguration> {
+  const entries = input.sessionManager.getEntries();
+  const snapshot = collectChatWorkflowTurnConfigurations(entries)
+    .find((candidate) => candidate.invocationId === input.invocationId && candidate.workflowId === input.workflowId);
+  // Without a snapshot for this invocation the round was not Workflow-managed (Long Agent queue): the
+  // stage still must not clean anything, so it reads the stored selection as-is.
+  const stored = snapshot === undefined
+    // No snapshot (the Long Agent queue drives the writer directly): reuse what the Workflow stored,
+    // unfiltered, so the stage neither cleans it nor loses its own configured selection.
+    ? collectLatestChatWorkflowConfigurations(entries)[input.workflowId] ?? {}
+    : snapshot.agentConfigs;
+  const agentConfigs = structuredClone(stored);
+  const resolvedEntries = await Promise.all(input.agents.map(async (agent) => {
+    const selection = agentConfigs[agent.id];
+    const resolved = await resolveWorkflowAgentDefinition({
+      defaultAgent: agent,
+      cwd: input.cwd,
+      ...(input.chatHome === undefined ? {} : { chatHome: input.chatHome }),
+      ...(input.projectDataDir === undefined
+        ? {}
+        : { durableModelConfig: { projectDataDir: input.projectDataDir, workflowId: input.workflowId, agentId: agent.id } }),
+      ...(selection === undefined ? {} : { selection }),
+    });
+    return [agent.id, resolved] as const;
+  }));
+  return { agentConfigs, agents: Object.fromEntries(resolvedEntries) };
+}
+
+/**
  * Resolves all Agents before persisting anything, then records one immutable
  * snapshot reused by every Stage in this Workflow run.
  */

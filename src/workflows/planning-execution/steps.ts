@@ -29,6 +29,7 @@ import {
   runReviewedPlanningStep,
 } from "./reviewed-planning-runtime.js";
 
+import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 interface PlanningStepResult {
   readonly sessionId: string;
   readonly userEntryId: string;
@@ -44,6 +45,10 @@ export interface ReviewedPlanningProfile {
   readonly workflowId: string;
   readonly plannerAgent: WorkflowAgentDefinition;
   readonly agents: readonly WorkflowAgentDefinition[];
+  /** The initiating Long Agent (topic creation): lets its own tool addresses resolve authorization. */
+  readonly longAgentId?: string;
+  /** Topic-creation collect/revise stages run the tool set read-only. */
+  readonly topicReadOnly?: boolean;
 }
 
 export interface ReviewedPlanningStepResult {
@@ -70,6 +75,7 @@ export interface PlanningRevisionStepInput {
   readonly inputEntryIds: readonly string[];
   readonly agent: ResolvedWorkflowAgentDefinition;
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
+  readonly longAgentId?: string;
 }
 
 export interface PlanningRevisionStepResult {
@@ -91,6 +97,8 @@ export interface PublishPlanReviewStepInput {
   readonly planEntryId: string;
   readonly readiness: ChatPlanReview["readiness"];
   readonly blockingQuestions: readonly string[];
+  /** Optional explicit hash: binds a STRUCTURED source of truth while the plan text is its render. */
+  readonly planSha256?: string;
 }
 
 export interface RecordPlanReviewDecisionStepInput {
@@ -119,6 +127,9 @@ export interface PlanningExecutionStepInput {
   readonly inputEntryIds: readonly string[];
   readonly agent: ResolvedWorkflowAgentDefinition;
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
+  /** The round's memory switch: the work stage only releases the stream when no memory node follows. */
+  readonly sessionMemoryEnabled?: boolean;
+  readonly sessionMemoryOwnerWorkflowId?: string;
 }
 
 function requireProjectContext(chatSession: ChatSession) {
@@ -289,7 +300,7 @@ export async function runPlanningExecutionStep(
     await markPlanningExecutionFailed(chatSession, input.workflowInvocationId);
     throw error;
   } finally {
-    await observer.finish(true);
+    await observer.finish(stageFinishClosesStream(input));
     session.dispose();
     console.log(`${localTimestamp()} [pi] session disposed`);
   }

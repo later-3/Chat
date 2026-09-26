@@ -2,6 +2,8 @@ import { MINIMAL_PI_CODING_AGENT_WORKFLOW_MANIFEST } from "../catalog.js";
 import { defineChatWorkflow } from "../framework.js";
 import { PI_CODING_AGENT } from "./agents/pi-coding-agent/index.js";
 import { minimalPiCodingAgentWorkflow } from "./workflow.js";
+import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
+import { prepareSessionMemoryWriterSession } from "../session-memory/agents/writer/runtime.js";
 
 // `POST /run` uses this Prompt when the VS Code debug request has no body.
 export const MINIMAL_PI_CODING_AGENT_PROMPT = `
@@ -11,7 +13,10 @@ export const MINIMAL_PI_CODING_AGENT_PROMPT = `
 /** Complete definition exposed to Chat's Workflow registry. */
 export const minimalPiCodingAgentWorkflowDefinition = defineChatWorkflow({
   manifest: MINIMAL_PI_CODING_AGENT_WORKFLOW_MANIFEST,
-  agents: [PI_CODING_AGENT],
+  agents: [PI_CODING_AGENT, SESSION_MEMORY_WRITER_AGENT],
+  prepareAgentSession: (context) => context.agentId === SESSION_MEMORY_WRITER_AGENT.id
+    ? prepareSessionMemoryWriterSession(context)
+    : {},
   run: minimalPiCodingAgentWorkflow,
   // The single Agent step forwards user images straight into the Pi prompt.
   supportsImageInput: true,

@@ -11,12 +11,23 @@
       "name": "管理记忆",
       "description": "查询、添加、更新或删除个人长期记忆。",
       "agentId": "memory-agent"
+    },
+    {
+      "kind": "agent",
+      "id": "remember",
+      "name": "记录会话记忆",
+      "description": "只依据本轮（用户消息与工作阶段产物）维护本会话的会话记忆。",
+      "agentId": "session-memory-writer"
     }
   ],
   "agents": [
     {
       "id": "memory-agent",
       "config": "./agents/memory-agent/agent.json"
+    },
+    {
+      "id": "session-memory-writer",
+      "config": "../session-memory/agents/writer/agent.json"
     }
   ]
 }

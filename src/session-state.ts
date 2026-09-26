@@ -1,7 +1,7 @@
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import type { ChatProjectContext } from "./projects/types.js";
 import { SessionLifecycleError } from "./session-errors.js";
-import { listActiveSessionFiles } from "./session-files.js";
+import { findActiveSessionFile, listActiveSessionFiles } from "./session-files.js";
 import { findInactiveChatSessionState } from "./removed-session-index.js";
 
 /** Resolves active content access and reports removed/purged states consistently. */
@@ -10,7 +10,7 @@ export async function requireActiveChatSessionFile(
   sessionId: string,
 ): Promise<SessionInfo> {
   if (sessionId.trim() === "") throw new Error("sessionId不能为空");
-  const active = (await listActiveSessionFiles(project)).find((candidate) => candidate.id === sessionId);
+  const active = await findActiveSessionFile(project, sessionId);
   // An active Session short-circuits here without touching the removed-session index; session memory
   // convergence therefore happens only on index-touching reads, or is healed by a legitimate write to
   // the (active) session. Do not claim that every state query converges the companion memory.

@@ -1,6 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { defineChatSystemTool } from "../../framework.js";
+import { SESSION_MEMORY_PURPOSES, SESSION_MEMORY_PURPOSE_HINTS } from "../../../long-agents/session-memory-purposes.js";
 import manifest from "./tool.json" with { type: "json" };
 
 /** Agent-facing read/write entry for the current session's session memory. */
@@ -19,7 +20,12 @@ export const SESSION_MEMORY_TOOL_PROVIDER = defineChatSystemTool(
           Type.Literal("supersede"),
           Type.Literal("history"),
         ]),
-        purpose: Type.Optional(Type.String({ maxLength: 40 })),
+        // The defaults come from the SAME taxonomy the backend validates, but the label is OPEN: when
+        // none of them fits, the agent may name its own short tag.
+        purpose: Type.Optional(Type.String({
+          maxLength: 40,
+          description: `${SESSION_MEMORY_PURPOSES.map((purpose) => `${purpose}（${SESSION_MEMORY_PURPOSE_HINTS[purpose] ?? ""}）`).join("；")}；都不合适时可以自定义一个短标签`,
+        })),
         author: Type.Optional(Type.Union([Type.Literal("agent"), Type.Literal("user")])),
         content: Type.Optional(Type.String({ maxLength: 4000 })),
         originEntryId: Type.Optional(Type.String({ maxLength: 200 })),

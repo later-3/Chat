@@ -85,7 +85,7 @@ async function purgeExpiredRecords(
     const source = removedSessionRecordPath(project, record);
     if (await removedSessionPathExists(source)) await unlink(source);
     // The memory deletion is irreversible; it happens only after the purge intent is durable (review 29).
-    if (project.kind === "agent") await purgeSessionMemory(project.chatHome, projectId, record.id);
+    await purgeSessionMemory(project.chatHome, projectId, record.id);
     const sessions = { ...prepared.sessions };
     delete sessions[record.id];
     const completed = completeRemovedSessionIndex(prepared, sessions, {
@@ -168,7 +168,7 @@ export async function removeChatSession(
       const prepared = prepareRemovedSessionIndexOperation(index, "remove", record, now);
       await writeRemovedSessionIndex(project, prepared);
       await rename(session.path, target);
-      if (project.kind === "agent") await markSessionMemoryOrphan(project.chatHome, projectId, sessionId);
+      await markSessionMemoryOrphan(project.chatHome, projectId, sessionId);
       // The topic node follows the session: removal is reflected durably before the index completes.
       // The session lock is already held here, so this only takes the graph lock (session -> graph).
       if (project.kind === "agent") await applyTopicNodeSessionLifecycle({ chatHome: project.chatHome, longAgentId: projectId, sessionId, state: "removed" });
@@ -212,7 +212,7 @@ export async function restoreRemovedChatSession(
       await writeRemovedSessionIndex(project, prepared);
       await rename(removedSessionRecordPath(project, record), target);
       // The memory change lands after the durable intent and file move, before completion (review 28).
-      if (project.kind === "agent") await clearSessionMemoryOrphan(project.chatHome, projectId, sessionId);
+      await clearSessionMemoryOrphan(project.chatHome, projectId, sessionId);
       if (project.kind === "agent") await applyTopicNodeSessionLifecycle({ chatHome: project.chatHome, longAgentId: projectId, sessionId, state: "active" });
       const sessions = { ...prepared.sessions };
       delete sessions[sessionId];
@@ -239,7 +239,7 @@ export async function purgeRemovedChatSession(
       const index = await readRecoveredRemovedSessionIndex(project);
       const tombstone = index.tombstones[sessionId];
       if (tombstone !== undefined) {
-        if (project.kind === "agent") await purgeSessionMemory(project.chatHome, projectId, sessionId);
+        await purgeSessionMemory(project.chatHome, projectId, sessionId);
         return { sessionId, state: "purged", purgedAt: tombstone.purgedAt };
       }
       const record = index.sessions[sessionId];
@@ -251,7 +251,7 @@ export async function purgeRemovedChatSession(
       const source = removedSessionRecordPath(project, record);
       if (await removedSessionPathExists(source)) await unlink(source);
       // The memory deletion is irreversible; it happens only after the purge intent is durable (review 29).
-      if (project.kind === "agent") await purgeSessionMemory(project.chatHome, projectId, sessionId);
+      await purgeSessionMemory(project.chatHome, projectId, sessionId);
       const sessions = { ...prepared.sessions };
       delete sessions[sessionId];
       const purgedAt = now.toISOString();

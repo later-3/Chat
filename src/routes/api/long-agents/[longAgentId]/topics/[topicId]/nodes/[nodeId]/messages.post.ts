@@ -3,6 +3,7 @@ import { resolveChatHome } from "../../../../../../../../chat-home.js";
 import { authorizeTopicSession, readTopicGraph } from "../../../../../../../../long-agents/topics.js";
 import { acceptLongAgentTurn, drainLongAgentTurns } from "../../../../../../../../long-agents/turn-queue.js";
 import { friendExecution } from "../../../../../../../../long-agents/turn-feedback.js";
+import { parseWorkflowImages } from "../../../../../../../../workflows/image-input.js";
 
 /**
  * Owner-facing user turn in one topic node.
@@ -20,10 +21,13 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<unknown>(event);
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw createError({ statusCode: 400, statusMessage: "请求必须是对象" });
   const value = body as Record<string, unknown>;
-  if (Object.keys(value).some((key) => !["schemaVersion", "requestId", "text"].includes(key))
+  if (Object.keys(value).some((key) => !["schemaVersion", "requestId", "text", "images"].includes(key))
     || value.schemaVersion !== 1 || typeof value.requestId !== "string" || value.requestId.trim() === ""
-    || typeof value.text !== "string" || value.text.trim() === "")
+    || typeof value.text !== "string" || value.text.length > 100_000)
     throw createError({ statusCode: 400, statusMessage: "无效节点消息合同" });
+  const images = parseWorkflowImages(value.images);
+  if (value.text.trim() === "" && (images === undefined || images.length === 0))
+    throw createError({ statusCode: 400, statusMessage: "消息必须包含有效正文或图片" });
   const home = resolveChatHome();
   const graph = await readTopicGraph(home, longAgentId);
   const node = graph.nodes.find((candidate) => candidate.nodeId === nodeId && candidate.topicId === topicId);
@@ -34,6 +38,7 @@ export default defineEventHandler(async (event) => {
     const accepted = await acceptLongAgentTurn({
       chatHome: home, longAgentId, requireInteractionRevision: false, projectId: longAgentId,
       turnId: String(value.requestId), text: value.text, source: "chat-web",
+      ...(images === undefined ? {} : { images }),
       topicNode: { topicId, nodeId },
     });
     // Acceptance only queues the round. The durable "round started" marker is written by the queue

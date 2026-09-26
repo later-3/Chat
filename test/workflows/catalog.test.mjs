@@ -13,6 +13,8 @@ test("Workflow declaration catalog is the single target-discovery source", () =>
     "memory",
     "rule-management",
     "session-memory",
+    "problem-diagnosis",
+    "topic-session-create",
   ]);
   assert.deepEqual(
     listAgentCallableWorkflowTargets(),
@@ -45,7 +47,19 @@ test("Workflow declaration catalog is the single target-discovery source", () =>
         id: "session-memory",
         name: "会话记忆",
         description: "在一个节点会话里跑完一轮工作（work），随后由会话记忆写入 agent 记录本轮（remember）。既有记忆按需读取，不注入上下文。",
-        agentIds: ["session-memory-worker", "session-memory-writer"],
+        agentIds: ["session-memory-worker"],
+      },
+      {
+        id: "problem-diagnosis",
+        name: "问题定位",
+        description: "对一个线上或代码问题做结构化定位：先列已确认现场事实，再给互斥根因假设与各自的最小验证路径，最后给出结论边界与仍待确认的信息。",
+        agentIds: ["problem-diagnoser"],
+      },
+      {
+        id: "topic-session-create",
+        name: "主题会话创建",
+        description: "整理 Agent 收集上下文形成草稿，用户审核（可多轮修改）批准后由创建 Agent 调用受控动作创建真实主题节点会话。",
+        agentIds: ["topic-collector", "topic-creator"],
       },
     ],
   );

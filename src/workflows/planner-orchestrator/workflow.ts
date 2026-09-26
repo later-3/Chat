@@ -1,4 +1,5 @@
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
+import { runSessionMemoryTail } from "../session-memory/tail.js";
 import { beginSessionExecution, endSessionExecution } from "../execution-registry.js";
 import {
   assertPlanReviewDecisionMatches,
@@ -32,6 +33,8 @@ export async function plannerOrchestratorWorkflow(
       workflowInvocationId: input.workflowInvocationId,
       prompt: input.prompt,
       ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
+      ...(input.sessionMemoryEnabled === undefined ? {} : { sessionMemoryEnabled: input.sessionMemoryEnabled }),
+      ...(input.sessionMemoryOwnerWorkflowId === undefined ? {} : { sessionMemoryOwnerWorkflowId: input.sessionMemoryOwnerWorkflowId }),
     };
     const initial = await runOrchestrationPlanningStep(input);
     const coordinatorAgent = initial.agents[COORDINATOR_AGENT_ID];
@@ -74,7 +77,7 @@ export async function plannerOrchestratorWorkflow(
         });
 
         if (decision.kind === "approve") {
-          return await runWorkflowDelegationStep({
+          const tailResult = await runWorkflowDelegationStep({
             ...common,
             sessionId: initial.sessionId,
             plan,
@@ -87,6 +90,7 @@ export async function plannerOrchestratorWorkflow(
             ],
             agent: coordinatorAgent,
           });
+          return await runSessionMemoryTail(input, tailResult, "planner-orchestrator");
         }
         if (recordedDecision.feedbackEntryId === undefined) {
           throw new Error("计划修改意见没有写入原生用户消息");

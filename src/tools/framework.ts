@@ -39,6 +39,21 @@ export interface ChatToolRuntimeContext {
    * gains agent-home memory access through that fallback.
    */
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
+  /** Trusted binding for the review-gated topic creation Workflow (never from model parameters). */
+  readonly topicCreation?: {
+    readonly longAgentId: string;
+    readonly requestId: string;
+    readonly sourceSessionId: string;
+    readonly sourceTurnId: string | null;
+    readonly parents: readonly { readonly nodeId: string; readonly anchorEntryId: string; readonly anchorSequence: number }[];
+  };
+  /** The APPROVED revision the creator may commit (never from model parameters). */
+  readonly topicCreationApproval?: { readonly planRevision: number; readonly planSha256: string };
+  /**
+   * True while the topic-creation COLLECT/REVISE stage runs: `topic_manage` then refuses every write
+   * operation, so the collector cannot create a topic/node before the user approves.
+   */
+  readonly topicReadOnly?: boolean;
 }
 
 export interface ChatToolProvider {

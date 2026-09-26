@@ -787,7 +787,8 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
   assert.equal(first.completed, true);
   assert.equal(first.text, "Pi Long Agent reply 1");
   assert.equal(first.model?.provider, "long-agent-test");
-  assert.equal(modelRequests.length, 1);
+  // One work turn + the session-memory writer turn that now closes every interactive round.
+  assert.equal(modelRequests.length, 2);
 
   const replay = await executeLongAgentTurn({
     longAgentId: "nexus",
@@ -798,7 +799,7 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     turnId: "stable-web-turn-1",
   });
   assert.equal(replay.text, first.text);
-  assert.equal(modelRequests.length, 1);
+  assert.equal(modelRequests.length, 2);
 
   const second = await executeLongAgentTurn({
     longAgentId: "nexus",
@@ -808,10 +809,12 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     chatHome,
     turnId: "stable-web-turn-2",
   });
-  assert.equal(second.text, "Pi Long Agent reply 2");
-  assert.equal(modelRequests.length, 2);
-  assert.match(JSON.stringify(modelRequests[1].messages), /原生 Pi 第一问/);
-  assert.match(JSON.stringify(modelRequests[1].messages), /Pi Long Agent reply 1/);
+  // The memory writer consumes a model request too, so the fake provider numbers the next work reply 3.
+  assert.equal(second.text, "Pi Long Agent reply 3");
+  assert.equal(modelRequests.length, 4);
+  // Requests come in pairs (work, memory writer); the second round's WORK request is index 2.
+  assert.match(JSON.stringify(modelRequests[2].messages), /原生 Pi 第一问/);
+  assert.match(JSON.stringify(modelRequests[2].messages), /Pi Long Agent reply 1/);
 
   const oldReplayAfterNewTurn = await executeLongAgentTurn({
     longAgentId: "nexus",
@@ -822,12 +825,13 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     turnId: "stable-web-turn-1",
   });
   assert.equal(oldReplayAfterNewTurn.text, "Pi Long Agent reply 1");
-  assert.equal(modelRequests.length, 2);
+  assert.equal(modelRequests.length, 4);
 
   const opened = await openChatSession({ projectId: "nexus", chatHome, sessionId: first.sessionId });
   assert.deepEqual(
+    // Each round persists its work reply AND the session-memory writer's reply.
     opened.manager.buildSessionContext().messages.filter((message) => message.role !== "custom").map((message) => message.role),
-    ["user", "assistant", "user", "assistant"],
+    ["user", "assistant", "assistant", "user", "assistant", "assistant"],
   );
   assert.equal(
     opened.manager.buildSessionContext().messages.some((message) => "chatLongAgent" in message),
@@ -847,7 +851,8 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
   const projected = await readChatSession(first.sessionId, undefined, {}, "nexus", chatHome);
   assert.deepEqual(
     projected.context.messages.map((message) => message.chatLongAgent?.turnId ?? null),
-    ["chat-web:nexus:stable-web-turn-1", "chat-web:nexus:stable-web-turn-1", "chat-web:nexus:stable-web-turn-2", "chat-web:nexus:stable-web-turn-2"],
+    // null = the session-memory writer's own messages (they carry no Long Agent turn id).
+    ["chat-web:nexus:stable-web-turn-1", "chat-web:nexus:stable-web-turn-1", null, "chat-web:nexus:stable-web-turn-2", "chat-web:nexus:stable-web-turn-2", null],
   );
   assert.equal(projected.context.messages[1].usage.totalTokens, 7);
 
@@ -881,7 +886,8 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     }));
     assert.equal(response.status, 200);
     assert.equal((await response.json()).sessionId, first.sessionId);
-    const system = modelRequests.at(-1).messages.find((message) => message.role === "system").content;
+    // The last request belongs to the memory writer; the WORK request is the previous one.
+    const system = modelRequests.at(-2).messages.find((message) => message.role === "system").content;
     assert.equal(system, projection.prompt.final, "inspection and actual model input must be identical");
     if (name === "beta") assert.doesNotMatch(system, /CURRENT_RULE_alpha/);
   }
@@ -989,11 +995,11 @@ test("Long Agent retries a failed stable Turn without duplicating its user messa
   await controlQueuedRequest(chatHome, "nexus", `chat-web:nexus:${input.turnId}`, "retry");
   const retried = await executeLongAgentTurn(input);
   assert.equal(retried.text, "Pi Long Agent reply 3");
-  assert.equal(modelRequests.length, 3);
+  assert.equal(modelRequests.length, 4);
 
   const replay = await executeLongAgentTurn({ ...input, sessionId: retried.sessionId });
   assert.equal(replay.text, retried.text);
-  assert.equal(modelRequests.length, 3);
+  assert.equal(modelRequests.length, 4);
 
   const opened = await openChatSession({
     projectId: "nexus",
@@ -1007,8 +1013,9 @@ test("Long Agent retries a failed stable Turn without duplicating its user messa
     "retry must resume the persisted user message instead of appending it again",
   );
   assert.deepEqual(
+    // work reply + the session-memory writer's own reply, both persisted in the same Session.
     opened.manager.buildSessionContext().messages.filter((message) => message.role !== "custom").map((message) => message.role),
-    ["user", "assistant"],
+    ["user", "assistant", "assistant"],
   );
   const markers = collectChatLongAgentTurnMarkers(allEntries)
     .filter((marker) => marker.turnId === `chat-web:nexus:${input.turnId}`);
@@ -1091,7 +1098,7 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
   assert.deepEqual(accepted.results, [{ eventId: inbound.eventId, status: "accepted" }]);
   const [failedDelivery] = await syncLongAgentEvents(chatHome);
   assert.equal(failedDelivery.status, "unavailable");
-  assert.equal(modelRequests.length, 1);
+  assert.equal(modelRequests.length, 2);
   assert.equal(commands.filter((command) => command.path.endsWith("/acks")).length, 0);
   const acceptedDay = (await readLongAgentState(chatHome)).dailySessions[0];
   faults.failDelivery = false;
@@ -1101,7 +1108,7 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
   t.mock.timers.reset();
   assert.equal(first.executed, 1);
   assert.equal(first.projected, 0);
-  assert.equal(modelRequests.length, 1);
+  assert.equal(modelRequests.length, 2);
   assert.match(JSON.stringify(modelRequests[0].messages), /Preserve continuity across every channel/);
   // B2：模板作为“格式要求”注入提示词，由 Agent 自己输出，而不是程序事后拼接。
   assert.match(JSON.stringify(modelRequests[0].messages), /回复格式要求：每条回复的最后另起一行/);
@@ -1129,7 +1136,7 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
   });
   assert.deepEqual(
     opened.manager.buildSessionContext().messages.filter((message) => message.role !== "custom").map((message) => [message.role, message.content[0].text]),
-    [["user", "Telegram 通过 Chat Pi 提问"], ["assistant", "Pi Long Agent reply 1"]],
+    [["user", "Telegram 通过 Chat Pi 提问"], ["assistant", "Pi Long Agent reply 1"], ["assistant", "Pi Long Agent reply 2"]],
   );
   assert.equal(opened.manager.buildSessionContext().messages.some((message) => "chatLongAgent" in message), false);
 
@@ -1138,7 +1145,7 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
   const commandCount = commands.length;
   const [replay] = await syncLongAgentEvents(chatHome);
   assert.equal(replay.pulled, 0);
-  assert.equal(modelRequests.length, 1);
+  assert.equal(modelRequests.length, 2);
   assert.equal(commands.length, commandCount);
 
   const wechat = event(2, "in", {
@@ -1157,8 +1164,8 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
   await acceptLongAgentEvents({ instanceId: "local", events: [wechat], chatHome });
   const [wechatSync] = await syncLongAgentEvents(chatHome);
   assert.equal(wechatSync.executed, 1);
-  assert.equal(modelRequests.length, 2);
-  assert.match(JSON.stringify(modelRequests[1].messages), /Telegram 通过 Chat Pi 提问/);
+  assert.equal(modelRequests.length, 4);
+  assert.match(JSON.stringify(modelRequests[2].messages), /Telegram 通过 Chat Pi 提问/);
   const wechatDelivery = commands.filter((request) => request.path.endsWith("/deliveries")).at(-1);
   assert.equal(wechatDelivery.body.destination.channelType, "wechat");
   assert.equal(wechatDelivery.body.destination.platformId, "wechat:user-1");
@@ -1171,7 +1178,8 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
   const concurrent = await readLongAgentState(chatHome);
   assert.equal(new Set(concurrent.turns.map((turn) => turn.sessionId)).size, 1);
   assert.ok(concurrent.turns.every((turn) => turn.status === "completed"));
-  assert.equal(modelRequests.length, 4);
+  // Every interactive turn = work + memory writer.
+  assert.equal(modelRequests.length, 8);
   assert.equal(sharedState.pendingEvents.length, 0);
 });
 
@@ -1249,7 +1257,7 @@ test("channel images reach a vision model and text-only models answer in-channel
   await acceptLongAgentEvents({ instanceId: "local", events: [withImage], chatHome });
   const [imageSync] = await syncLongAgentEvents(chatHome);
   assert.equal(imageSync.executed, 1);
-  assert.equal(modelRequests.length, 1);
+  assert.equal(modelRequests.length, 2);
   const requestJson = JSON.stringify(modelRequests[0].messages);
   assert.match(requestJson, /image_url/);
   assert.match(requestJson, new RegExp(TEST_PNG_BASE64.slice(0, 32)));
@@ -1265,13 +1273,13 @@ test("channel images reach a vision model and text-only models answer in-channel
   await acceptLongAgentEvents({ instanceId: "local", events: [imageOnly], chatHome });
   const [imageOnlySync] = await syncLongAgentEvents(chatHome);
   assert.equal(imageOnlySync.executed, 1);
-  assert.equal(modelRequests.length, 2);
-  const imageOnlyJson = JSON.stringify(modelRequests[1].messages);
+  assert.equal(modelRequests.length, 4);
+  const imageOnlyJson = JSON.stringify(modelRequests[2].messages);
   assert.match(imageOnlyJson, /image_url/);
   assert.equal(imageOnlyJson.includes('"text":""'), false);
   assert.match(imageOnlyJson, /see attached image/);
   const imageOnlyDelivery = commands.filter((request) => request.path.endsWith("/deliveries")).at(-1);
-  assert.equal(imageOnlyDelivery.body.text, "Pi Long Agent reply 2");
+  assert.equal(imageOnlyDelivery.body.text, "Pi Long Agent reply 3");
 
   const state = await readLongAgentState(chatHome);
   const opened = await openChatSession({
@@ -1294,8 +1302,8 @@ test("channel images reach a vision model and text-only models answer in-channel
   await acceptLongAgentEvents({ instanceId: "local", events: [textOnlyEvent], chatHome });
   const [textOnlySync] = await syncLongAgentEvents(chatHome);
   assert.equal(textOnlySync.executed, 1);
-  // No new model call: phase 1 and 1b already made exactly two requests.
-  assert.equal(modelRequests.length, 2);
+  // No new model call: the earlier phases already made their requests (work + memory writer each).
+  assert.equal(modelRequests.length, 5);
   const noticeDelivery = commands.filter((request) => request.path.endsWith("/deliveries")).at(-1);
   assert.match(noticeDelivery.body.text, /Long Agent Model/);
   assert.match(noticeDelivery.body.text, /不支持图片输入/);
@@ -1308,10 +1316,12 @@ test("channel images reach a vision model and text-only models answer in-channel
     sessionId: state.projectAgents[0].primarySessionId,
   });
   const transcript = reopened.manager.buildSessionContext().messages;
-  const noticeMessage = transcript.at(-1);
+  // The memory writer appends its own messages after the notice, so locate the notice by content.
+  const noticeIndex = transcript.findLastIndex((message) => message.role === "assistant" && /不支持图片输入/.test(message.content[0].text));
+  assert.notEqual(noticeIndex, -1, "the text-only notice must still be persisted");
+  const noticeMessage = transcript[noticeIndex];
   assert.equal(noticeMessage.role, "assistant");
-  assert.match(noticeMessage.content[0].text, /不支持图片输入/);
-  const noticeUser = transcript.at(-2);
+  const noticeUser = transcript[noticeIndex - 1];
   assert.equal(noticeUser.role, "user");
   assert.equal(noticeUser.content[1].type, "image");
 });
@@ -1483,7 +1493,7 @@ test("a scheduled task event runs in the Agent home session without any channel 
   assert.deepEqual(accepted.results, [{ eventId: scheduled.eventId, status: "accepted" }]);
   const [result] = await syncLongAgentEvents(chatHome);
   assert.equal(result.executed, 1);
-  assert.equal(modelRequests.length, 1);
+  assert.equal(modelRequests.length, 2);
   assert.match(JSON.stringify(modelRequests[0].messages), /每日总结/);
 
   // 落在 Agent 自己的 home 项目当日会话；本次运行不自动回投。

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "id": "topic-session-create",
+  "name": "主题会话创建",
+  "description": "整理 Agent 收集上下文形成草稿，用户审核（可多轮修改）批准后由创建 Agent 调用受控动作创建真实主题节点会话。",
+  "agentCallable": true,
+  "planReview": true,
+  "nodes": [
+    {
+      "kind": "agent",
+      "id": "collect",
+      "name": "整理",
+      "description": "只读搜集并整理主题上下文草稿。",
+      "agentId": "topic-collector"
+    },
+    {
+      "kind": "task",
+      "id": "review",
+      "name": "审核",
+      "description": "等待用户批准或提出修改意见；可多轮。"
+    },
+    {
+      "kind": "agent",
+      "id": "create",
+      "name": "创建",
+      "description": "按已批准版本调用受控提交动作创建主题节点会话。",
+      "agentId": "topic-creator"
+    },
+    {
+      "kind": "agent",
+      "id": "remember",
+      "name": "记录会话记忆",
+      "description": "只依据本轮（用户消息与工作阶段产物）维护本会话的会话记忆。",
+      "agentId": "session-memory-writer"
+    }
+  ],
+  "agents": [
+    {
+      "id": "topic-collector",
+      "config": "./agents/collector/agent.json"
+    },
+    {
+      "id": "topic-creator",
+      "config": "./agents/creator/agent.json"
+    },
+    {
+      "id": "session-memory-writer",
+      "config": "../session-memory/agents/writer/agent.json"
+    }
+  ]
+}

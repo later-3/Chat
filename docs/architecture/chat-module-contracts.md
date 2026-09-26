@@ -130,7 +130,7 @@ P3 已在现有 Long Agent 状态中实现耐久接受信封、顺序 Worker、�
 
 | API | 行为 |
 |---|---|
-| `POST /api/long-agents/:id/turns` | 严格解析 `{schemaVersion:1,requestId,sessionId?,contextProjectId,text,images?}`；校验并耐久接受后返回 HTTP 202 与执行引用 |
+| `POST /api/long-agents/:id/turns` | 严格解析 `{schemaVersion:1,requestId,sessionId?,contextProjectId,text,images?,sessionMemory?:"on"|"off"}`；校验并耐久接受后返回 HTTP 202 与执行引用 |
 | `GET /api/long-agents/:id/turns/:turnId` | `{execution,snapshot}`；归属不匹配拒绝；snapshot 含 seq/messages/partial/phase |
 | `GET .../turns/:turnId/events?after=N` | NDJSON Agent event/status/reset；只在耐久终态确认后关闭 |
 | `DELETE .../turns/:turnId` | queued 取消或活跃 Pi abort；已结束幂等；装配中没有句柄时明确拒绝，不假报取消 |
@@ -169,3 +169,14 @@ LA2 的 Task API v2、Nano 调度投影 v1、可信触发 202 和旧任务所有
 LA4 的产物闭环（产物身份与幂等、内容冻结与提交校验、笔记落盘/站内发布状态、受众与来源、恢复）实现在 `src/long-agents/artifacts/`，配置经任务的 `deliverable` 字段，同源入口为 `/api/long-agents/:id/artifacts` 与 `artifact_manage` Tool，合同见 [Friend 产物闭环](../modules/long-agents/deliverables.md)。产物不新增调度器：发生与执行仍来自 LA2/LA1。
 
 LA3 的职责领域（目标代号与并发版本分离、锁内 CAS、报告绑定、进度与证据、推进前置检查、回执与预算计量）实现于 `src/long-agents/duties/`，同源入口为 `/api/long-agents/:id/duties` 与 `duty_manage` Tool，合同见 [Friend 长期职责](../modules/long-agents/duties.md)。职责不复制执行状态机：推进仍由 LA2 任务/发生记录与 LA1 work/turn 承载。
+
+
+### 主题 Session 创建与阶段反馈
+
+主题是原生 Session 的业务身份与关联，不是另一套聊天运行时。`topic_manage.request_topic`、`POST /api/long-agents/:id/topics/creations` 与旧 integrations POST 的新请求都调用 `startTopicSessionCreation`。准备 Session/Run 存于发起 Friend home；来源由 Backend 解析；批准前没有目标 Session。旧 integrations 仅对已有 work 请求保留重放和旧响应形状；新请求返回审核 Run 引用，其 GET 状态返回 `kind:workflow` 与同一创建读投影。
+
+原 `ChatSessionRunBinding` 的可选 `topicCreation` 仅保存 requestId/sourceSessionId/requestFingerprint，旧绑定仍可读；不复制审核内容或运行状态。`GET .../topics/creations?sourceSessionId=…` 联合已有绑定、Runtime、审核状态和图产物形成只读列表。身份一致的启动重试返回既有 Run；改变内容或来源拒绝。该保障不声称跨 Runtime 和文件系统的任意崩溃窗口具有 exactly-once 事务。
+
+Frontend 的日常聊天和主题导航共用该读模型与共享审核卡片；修改/批准仍经公共 Run review API，取消仍经公共 Run cancel API。断线和刷新只 GET 既有引用，不能重启创建或重发正文。批准版本、草稿与最终创建共用服务端结构化事实源。
+
+Friend 节点轮次在已有 live snapshot/Agent envelope 增加可选 `roundPhase:work|remember`；序列号和取消句柄贯穿两段。它是当前生命周期的显示阶段，不是伪造 Workflow Run/Step。终态仍从耐久 Turn 确认；未完成或已取消的记忆阶段不生成完成锚点。

@@ -1,12 +1,19 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { access, readFile, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
+import { getChatHomePaths } from "../chat-home.js";
 import { assertFileWithin, atomicWriteJson, withFileLock } from "../persistence/versioned-file.js";
 import { resolveProjectContext } from "../projects/registry.js";
 import type { ChatProjectContext } from "../projects/types.js";
 import { requireActiveSessionFile } from "../session-files.js";
 import { longAgentConfigRoot } from "./storage.js";
 import { removedSessionDirectory } from "../session-files.js";
+// The single purpose taxonomy: the domain validation and the agent tool schema both read it.
+import { SESSION_MEMORY_CORE_PURPOSES, SESSION_MEMORY_CUSTOM_PURPOSES, SESSION_MEMORY_PURPOSES, isSessionMemoryPurpose } from "./session-memory-purposes.js";
+import type { SessionMemoryPurpose } from "./session-memory-purposes.js";
+export { SESSION_MEMORY_CORE_PURPOSES, SESSION_MEMORY_CUSTOM_PURPOSES, SESSION_MEMORY_PURPOSES } from "./session-memory-purposes.js";
+export type { SessionMemoryPurpose } from "./session-memory-purposes.js";
 
 /**
  * P1 session memory: a per-session durable companion of purpose-typed entries.
@@ -16,18 +23,12 @@ import { removedSessionDirectory } from "../session-files.js";
  * `supersedes` the old one, so history stays auditable.
  */
 export const SESSION_MEMORY_SCHEMA_VERSION = 1;
-export const SESSION_MEMORY_CORE_PURPOSES = ["background", "goal", "experience", "rule", "finding"] as const;
-/** Custom labels are allowlisted so a typo cannot silently create a new taxonomy. */
-export const SESSION_MEMORY_CUSTOM_PURPOSES = ["hypothesis", "decision", "open-question"] as const;
 export const SESSION_MEMORY_MAX_CONTENT = 4_000;
-export const SESSION_MEMORY_MAX_ENTRIES = 500;
 const SESSION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/;
 
 export type SessionMemoryAuthor = "agent" | "user";
 export type SessionMemoryStatus = "active" | "superseded";
-export type SessionMemoryPurpose =
-  | (typeof SESSION_MEMORY_CORE_PURPOSES)[number]
-  | (typeof SESSION_MEMORY_CUSTOM_PURPOSES)[number];
+
 
 export interface SessionMemoryEntry {
   readonly entryId: string;
@@ -103,9 +104,10 @@ function optionalText(value: unknown, label: string, max: number): string | null
 
 function parsePurpose(value: unknown): SessionMemoryPurpose {
   const purpose = text(value, "purpose", 40);
-  const allowed: readonly string[] = [...SESSION_MEMORY_CORE_PURPOSES, ...SESSION_MEMORY_CUSTOM_PURPOSES];
-  if (!allowed.includes(purpose)) throw new SessionMemoryError(400, `会话记忆purpose不在允许列表：${purpose}`);
-  return purpose as SessionMemoryPurpose;
+  if (!isSessionMemoryPurpose(purpose)) {
+    throw new SessionMemoryError(400, `会话记忆purpose无效：${purpose}；默认标签：${SESSION_MEMORY_PURPOSES.join("、")}；都不合适可自定义一个短标签`);
+  }
+  return purpose;
 }
 
 function parseAuthor(value: unknown): SessionMemoryAuthor {
@@ -133,9 +135,21 @@ function parseEntry(value: unknown): SessionMemoryEntry {
   };
 }
 
-export function sessionMemoryFile(chatHome: string, longAgentId: string, sessionId: string): string {
+/**
+ * A session's memory lives beside its own project data: a Long Agent home keeps
+ * `<chatHome>/long-agents/<id>/session-memory/`, every other project `<chatHome>/projects/<id>/session-memory/`.
+ * The kind of an id never changes, and a Long Agent home exists before it can own a session, so the
+ * directory that exists is the authoritative one — no registry read on this hot path.
+ */
+function sessionMemoryDir(chatHome: string, storageProjectId: string): string {
+  const paths = getChatHomePaths(chatHome);
+  const agentHome = longAgentConfigRoot(paths.root, storageProjectId);
+  return existsSync(agentHome) ? agentHome : resolve(paths.projectsDir, storageProjectId);
+}
+
+export function sessionMemoryFile(chatHome: string, storageProjectId: string, sessionId: string): string {
   if (!SESSION_ID_PATTERN.test(sessionId)) throw new SessionMemoryError(400, `sessionId无效：${sessionId}`);
-  return resolve(longAgentConfigRoot(chatHome, longAgentId), "session-memory", `${sessionId}.json`);
+  return resolve(sessionMemoryDir(chatHome, storageProjectId), "session-memory", `${sessionId}.json`);
 }
 
 export async function readSessionMemory(chatHome: string, longAgentId: string, sessionId: string): Promise<SessionMemoryState> {
@@ -155,7 +169,6 @@ export async function readSessionMemory(chatHome: string, longAgentId: string, s
   if (value.schemaVersion !== SESSION_MEMORY_SCHEMA_VERSION || !Array.isArray(value.entries) || typeof value.orphan !== "boolean" || !Number.isSafeInteger(value.revision))
     throw new SessionMemoryError(500, "会话记忆存储格式无效");
   const entries = value.entries.map(parseEntry);
-  if (entries.length > SESSION_MEMORY_MAX_ENTRIES) throw new SessionMemoryError(500, "会话记忆条目超出上限");
   return { schemaVersion: SESSION_MEMORY_SCHEMA_VERSION, sessionId: text(value.sessionId, "sessionId", 200), orphan: value.orphan, revision: Number(value.revision), entries };
 }
 
@@ -236,8 +249,8 @@ export async function writeSessionMemoryEntry(input: WriteSessionMemoryEntryInpu
     // Lifecycle first (a removed/purged session is reported as such, not as a revision conflict), then
     // CAS, then self-heal: an interrupted restore can leave a stale orphan flag on an active session,
     // and a legitimate write must heal it rather than be refused (review 31).
+    // Every session owns its project's memory, so the only gate is that the session still exists.
     const project = await resolveProjectContext(input.longAgentId, input.chatHome);
-    if (project.kind !== "agent") throw new SessionMemoryError(403, "会话记忆只支持 Long Agent 归属的会话");
     let active = true;
     try {
       await requireActiveSessionFile(project, input.sessionId);
@@ -262,7 +275,6 @@ export async function writeSessionMemoryEntry(input: WriteSessionMemoryEntryInpu
       target.status = "superseded";
       target.updatedAt = now;
     }
-    if (state.entries.length >= SESSION_MEMORY_MAX_ENTRIES) throw new SessionMemoryError(409, "会话记忆条目已达上限");
     if (writeRequestId !== null) {
       // The request is frozen by its FIRST entry: a later entry of the same request id with a different
       // fingerprint means the caller changed the request instead of retrying it.
@@ -399,9 +411,13 @@ export interface SessionMemoryTarget {
 }
 
 /**
- * Resolve the trusted session-memory target. A binding carried by the invocation wins; otherwise the
- * current session must itself belong to an agent home (projectId === longAgentId). An ordinary project
- * session never gains agent-home memory access through this fallback.
+ * Resolve the trusted session-memory target. Every session has its own memory, so the storage owner is
+ * whichever project the session actually belongs to — NEVER a model- or client-supplied value:
+ *   1. a binding frozen server-side by the assembly (topic nodes / workflow calls) wins;
+ *   2. else the Long Agent home that ran the turn (its session owns the memory even when the turn
+ *      collaborates on another project);
+ *   3. else the session's own project (an ordinary project session).
+ * The target must still be an ACTIVE session of that project, so a stale/forged binding is refused.
  */
 export async function resolveSessionMemoryTarget(input: {
   chatHome: string;
@@ -410,19 +426,15 @@ export async function resolveSessionMemoryTarget(input: {
   longAgentId?: string;
   binding?: { readonly storageProjectId: string; readonly sessionId: string } | null;
 }): Promise<SessionMemoryTarget> {
-  const candidate: SessionMemoryTarget | null = input.binding != null
-    ? { longAgentId: input.binding.storageProjectId, sessionId: input.binding.sessionId }
-    : input.longAgentId !== undefined && input.projectId === input.longAgentId
-      ? { longAgentId: input.longAgentId, sessionId: input.sessionId }
-      : null;
-  if (candidate === null) throw new SessionMemoryError(403, "当前会话不属于 Long Agent，不能读写会话记忆");
-  const project = await resolveProjectContext(candidate.longAgentId, input.chatHome).catch(() => null);
-  if (project === null || project.kind !== "agent")
-    throw new SessionMemoryError(403, `会话记忆只支持 Long Agent 归属的会话：${candidate.longAgentId}`);
+  const storageProjectId = input.binding?.storageProjectId ?? input.longAgentId ?? input.projectId;
+  const sessionId = input.binding?.sessionId ?? input.sessionId;
+  if (sessionId.trim() === "") throw new SessionMemoryError(400, "会话记忆需要sessionId");
+  const project = await resolveProjectContext(storageProjectId, input.chatHome).catch(() => null);
+  if (project === null) throw new SessionMemoryError(403, `找不到会话记忆归属的项目：${storageProjectId}`);
   try {
-    await requireActiveSessionFile(project, candidate.sessionId);
+    await requireActiveSessionFile(project, sessionId);
   } catch {
-    throw new SessionMemoryError(404, `找不到会话记忆归属的会话：${candidate.sessionId}`);
+    throw new SessionMemoryError(404, `找不到会话记忆归属的会话：${sessionId}`);
   }
-  return candidate;
+  return { longAgentId: storageProjectId, sessionId };
 }

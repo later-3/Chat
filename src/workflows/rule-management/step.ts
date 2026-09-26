@@ -12,6 +12,7 @@ import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.
 import { getChatWorkflowDefinition } from "../registry.js";
 import { RULE_CURATOR_AGENT } from "./agents/rule-curator-agent/index.js";
 import { prepareRuleCuratorAgentSession } from "./agents/rule-curator-agent/runtime.js";
+import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 
 export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<ChatWorkflowResult> {
   "use step";
@@ -119,7 +120,7 @@ export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<C
         : { provider: session.model.provider, modelId: session.model.id },
     };
   } finally {
-    await observer.finish(true);
+    await observer.finish(stageFinishClosesStream(input));
     session.dispose();
     console.log(`${localTimestamp()} [rule-curator] session disposed`);
   }

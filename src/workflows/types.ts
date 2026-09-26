@@ -25,6 +25,24 @@ export interface ChatWorkflowInput {
    * ordinary agent turn: no read Skill/tool is assembled and no writer stage runs.
    */
   readonly sessionMemoryEnabled?: boolean;
+  /**
+   * Backend-internal: the Workflow that OWNS this round's `remember` node. The writer implementation is
+   * shared, but its stage/invocation provenance must stay that of the calling Workflow so execution,
+   * inspection and the frontend all read the same identity. Only the tail sets it.
+   */
+  readonly sessionMemoryOwnerWorkflowId?: string;
+  /**
+   * Backend-internal trusted binding for the review-gated topic creation Workflow. Resolved from the
+   * trusted dispatch context (initiating Long Agent, source session/turn, request identity, fork anchor)
+   * and serialized into the Run input; NEVER accepted from an HTTP client or a model argument.
+   */
+  readonly topicCreation?: {
+    readonly longAgentId: string;
+    readonly requestId: string;
+    readonly sourceSessionId: string;
+    readonly sourceTurnId: string | null;
+    readonly parents: readonly { readonly nodeId: string; readonly anchorEntryId: string; readonly anchorSequence: number }[];
+  };
 }
 
 export interface ChatWorkflowResult {

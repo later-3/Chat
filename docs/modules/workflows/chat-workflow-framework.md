@@ -310,6 +310,16 @@ DELETE /api/sessions/:parentSessionId/workflow-calls/:callId
 
 前端使用通用Workflow/Agent页面渲染这些数据。新增同类型资源不修改前端；只有框架新增资源类型或交互语义时才修改前端合同。
 
+## 9.1 尾阶段：会话记忆节点
+
+每个交互 Workflow 的最后一个节点都是会话记忆写入（`session-memory-writer`，节点 id 固定为 `remember`）。它由 `runSessionMemoryTail(input, result, ownerWorkflowId)` 调用，语义固定如下：
+
+- **共享实现，不共享身份**：writer 的组装、阶段记录和事件都使用**调用方 Workflow** 的 id、Invocation 与 Stage；Long Agent 队列复用同一个普通函数 `runSessionMemoryWriterTurn`，保留自身的轮次语义。
+- **整轮完成 = 工作阶段 + 记忆阶段**：工作答案先产生并可显示，`remember` 仍属于同一轮，只有它也结束，这一轮才算结算；调用方必须 `await`，不得提前完成 Run 或跳过该节点。
+- **事件流归属**：`memoryTailFollows` 判断本轮是否有记忆节点；工作阶段在有尾节点时只释放自己的观察器（`stageFinishClosesStream = false`），由记忆阶段关闭整轮事件流。这样工作答案先可见，记忆过程继续可见，且一个阶段只关闭一次。
+- **失败与取消**：记忆失败不撤回工作答案，但必须在该会话写入 `chat.session_memory_notice`（含 `failed`/`cancelled` 与 Invocation）后再抛出；取消只记录为取消，绝不改写成成功。开关 `sessionMemoryEnabled === false` 时节点正常跳过。
+- **Workflow body 约束**：尾节点本身不能引入 Node 内置模块（Builder 会拒绝），需要文件系统的工作全部在 Step 内完成。
+
 ## 10. 新增Workflow检查表
 
 1. 在`src/workflows/<id>/`创建`workflow.json`和`index.ts`。

@@ -1,9 +1,28 @@
 import { openChatSession } from "../chat-session.js";
+import { join } from "node:path";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { getChatHomePaths } from "../chat-home.js";
+import { personalAgentSettings, resolvePersonalAgentDefinition } from "../agents/assembly-context.js";
+import { readLongAgentRegistry } from "./storage.js";
 import { readAssemblySnapshot } from "../agents/assembly-context.js";
 import { listChatSystemTools } from "../tools/registry.js";
 import { LongAgentScopeError, applyScopeToCapabilities, type LongAgentExcludedCapability, type LongAgentScope } from "./scope.js";
 
 const FROZEN_TOOLS_ENTRY = "chat.agent-assembly-tools.v1";
+
+/** Composer capabilities use the same explicit-definition → Personal defaults model resolver.
+ * This read never opens/creates a Session or freezes a turn; acceptance checks the actual model again.
+ */
+export async function readLongAgentInputCapabilities(chatHome: string, longAgentId: string) {
+  const agent = (await readLongAgentRegistry(chatHome)).agents.find(candidate => candidate.id === longAgentId);
+  if (agent === undefined) throw new LongAgentScopeError("找不到 Friend");
+  const { agentDir } = getChatHomePaths(chatHome);
+  const definition = resolvePersonalAgentDefinition(agent.definition, personalAgentSettings(agentDir));
+  const runtime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
+  const model = definition.model === undefined ? undefined : runtime.getModel(definition.model.provider, definition.model.modelId);
+  return { schemaVersion: 1 as const, longAgentId, images: model?.input.includes("image") ?? false,
+    manualCompaction: false, followUp: true };
+}
 
 export interface LongAgentTurnCapabilities {
   schemaVersion: 1;

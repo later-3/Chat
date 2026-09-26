@@ -54,7 +54,7 @@ test("LA2 repeated event creates one native work, keeps main chat responsive, an
   const [a, b] = await Promise.all([acceptTaskTrigger(f.home, trigger), acceptTaskTrigger(f.home, trigger)]);
   assert.equal(a.occurrenceId, b.occurrenceId); await settle(f);
   const state = await readTaskState(f.home, "friend"); assert.equal(state.occurrences.length, 1); assert.equal(state.occurrences[0].state, "started");
-  assert.equal(f.requests.length, 1); assert.match(JSON.stringify(f.requests[0]), /RULE_a/);
+  assert.equal(f.requests.length, 2); assert.match(JSON.stringify(f.requests[0]), /RULE_a/);
   const main = await executeLongAgentTurn(f.input("MAIN", "b")); assert.equal(main.text, "ack");
   await assert.rejects(acceptTaskTrigger(f.home, { ...trigger, scheduledAt: new Date(Date.now() + 60000).toISOString() }), /内容冲突/);
   await settle(f);
@@ -72,7 +72,7 @@ test("LA2 queue-one is bounded; cancel waiting run and pause future leave active
   const paused = await f.command({ operation: "pause", taskId: task.id, expectedRevision: 1 });
   assert.equal(paused.occurrences[0].work.execution.status, "running");
   release(); await settle(f); state = await readTaskState(f.home, "friend");
-  assert.equal(state.occurrences[1].state, "skipped"); assert.equal(f.requests.length, 1);
+  assert.equal(state.occurrences[1].state, "skipped"); assert.equal(f.requests.length, 2);
 });
 test("LA2 migration retains legacy script ownership and requires explicit rewrite before resume", async t => {
   const f = await setup(t, [{ id: "legacy", createdAt: new Date().toISOString(), processAfter: new Date().toISOString(), prompt: "old", recurrence: null, script: "exit 0", status: "pending" }]);
@@ -96,7 +96,7 @@ test("LA2 missed once is skipped; manual request retries survive reload without 
   assert.equal((await readTaskState(f.home, "friend")).occurrences[0].state, "skipped");
   const command = { operation: "run", taskId: task.id, expectedRevision: 1, requestId: "retained-after-reload" };
   await f.command(command); await settle(f); await f.command(command); await settle(f);
-  const state = await readTaskState(f.home, "friend"); assert.equal(state.occurrences.length, 2); assert.equal(f.requests.length, 1);
+  const state = await readTaskState(f.home, "friend"); assert.equal(state.occurrences.length, 2); assert.equal(f.requests.length, 2);
 });
 test("LA2 invalid timezone is an actionable client error, not an uncertain committed request", async () => {
   const { parseTaskInput, FriendTaskError } = await import("../../src/long-agents/tasks/contract.ts");
@@ -110,5 +110,5 @@ test("LA2 restores a lost occurrence-to-work commit from the same native accepta
   await changeTaskState(f.home, "friend", s => { s.occurrences[0].state = "accepted"; s.occurrences[0].workId = null; });
   await settle(f);
   const restored = (await readTaskState(f.home, "friend")).occurrences[0];
-  assert.equal(restored.workId, before.workId); assert.equal(restored.originSessionId, before.originSessionId); assert.equal(restored.state, "started"); assert.equal(f.requests.length, 1);
+  assert.equal(restored.workId, before.workId); assert.equal(restored.originSessionId, before.originSessionId); assert.equal(restored.state, "started"); assert.equal(f.requests.length, 2);
 });

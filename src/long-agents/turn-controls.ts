@@ -39,16 +39,22 @@ export async function steerFriendTurn(
 ) {
   return withFileLock(`${home}/runtime/friend-control`, async () => {
     const target = await findFriendTurn(home, agent, id);
-    if (target.source !== "chat-web" || target.contextProjectId !== input.contextProjectId)
+    // A topic node turn OWNS its target: the frozen collaboration project comes from the durable turn,
+    // never from the client, and the steering turn keeps the node binding so it cannot drift into the
+    // ordinary private-chat path.
+    const topicNode = target.topicNode;
+    const contextProjectId = topicNode === undefined ? input.contextProjectId : target.contextProjectId;
+    if (target.source !== "chat-web" || (topicNode === undefined && target.contextProjectId !== input.contextProjectId))
       throw new Error("引导仅支持当前同一项目的Web执行；请使用后续消息");
     const accepted = await acceptLongAgentTurn({
       chatHome: home,
       longAgentId: agent,
       projectId: agent,
-      sessionId: target.sessionId,
+      ...(topicNode === undefined ? { sessionId: target.sessionId } : {}),
       turnId: input.requestId,
-      contextProjectId: input.contextProjectId,
+      contextProjectId,
       text: input.text,
+      ...(topicNode === undefined ? {} : { topicNode }),
     });
     const live = getLiveTurn(home, id);
     if (accepted.newAcceptance && live?.session.isStreaming && !live.cancelled) {
@@ -59,7 +65,7 @@ export async function steerFriendTurn(
             customType: FRIEND_STEERING,
             display: true,
             content: input.text,
-            details: { requestTurnId: accepted.turnId, parentTurnId: id, contextProjectId: input.contextProjectId },
+            details: { requestTurnId: accepted.turnId, parentTurnId: id, contextProjectId },
           },
           { deliverAs: "steer" },
         );

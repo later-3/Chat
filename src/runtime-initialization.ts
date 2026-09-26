@@ -10,6 +10,7 @@ import { ensureWorkflowDelegationSkill } from "./workflows/planner-orchestrator/
 import { ensureRuleLibrarySkill } from "./workflows/rule-management/agents/rule-curator-agent/skill.js";
 import { purgeExpiredRemovedSessionsAcrossProjects } from "./session-removal.js";
 import { registerChatWorkflowCallRuntime } from "./workflows/workflow-call-runtime.js";
+import { registerTopicCreationRuntime } from "./workflows/topic-creation-runtime.js";
 import { ensureLongAgentShareProject } from "./projects/registry.js";
 import { startLongAgentSync } from "./long-agents/bridge.js";
 
@@ -32,6 +33,10 @@ export function ensureChatRuntimeInitialized(options: {
     .then(({ CHAT_WORKFLOW_CALL_RUNTIME }) => {
       registerChatWorkflowCallRuntime(CHAT_WORKFLOW_CALL_RUNTIME);
       return migrateLegacyProjectLayout({ projectRoot, chatHome });
+    })
+    .then(async () => {
+      const { startTopicSessionCreation } = await import("./workflows/topic-session-create/start.js");
+      registerTopicCreationRuntime({ start: startTopicSessionCreation });
     })
     .then(async () => {
       const paths = await ensureChatHome(chatHome);

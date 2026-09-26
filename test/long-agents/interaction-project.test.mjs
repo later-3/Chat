@@ -187,8 +187,8 @@ test("LA6 A review: a channel turn cannot change the owner's private association
     : { content: "done" });
   await executeLongAgentTurn({ ...f.input("channel-change"), source: "channel", channelType: "telegram", inboundEventId: "unverified-channel" });
   assert.equal((await readLongAgentInteractionProject(f.home, "friend")).effective.projectId, "a", "an unverified channel must not change the private association");
-  assert.equal(calls, 2, "the model still continues; only the write is refused");
-  assert.match(JSON.stringify(f.requests.at(-1)), /只有用户本人在私聊中/);
+  assert.equal(calls, 3, "the model still continues; only the write is refused");
+  assert.match(JSON.stringify(f.requests.at(-2)), /只有用户本人在私聊中/);
   // The authoritative record decides management authority, not the longAgentId.
   const channelTurnId = (await readLongAgentState(f.home)).turns.find((turn) => turn.requestId === "channel-change").turnId;
   assert.equal(await isOwnerPrivateTurn(f.home, "friend", channelTurnId), false);

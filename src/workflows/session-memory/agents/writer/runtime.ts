@@ -30,8 +30,10 @@ export class SessionMemoryRoundUnavailableError extends Error {
 export async function prepareSessionMemoryWriterSession(
   context: ChatWorkflowAgentSessionContext,
 ): Promise<WorkflowAgentSessionExtensions> {
-  if (context.workflowId !== "session-memory" || context.agentId !== SESSION_MEMORY_WRITER_AGENT.id) {
-    throw new Error(`Session Memory Workflow不能装配Agent: ${context.workflowId}/${context.agentId}`);
+  // The writer is declared as the `remember` node of EVERY interactive Workflow, so it assembles for any
+  // of them (its own turn always runs under the session-memory Workflow, which owns the stage contract).
+  if (context.agentId !== SESSION_MEMORY_WRITER_AGENT.id) {
+    throw new Error(`Session Memory Writer不能装配Agent: ${context.workflowId}/${context.agentId}`);
   }
   const turn = {
     workflowId: context.workflowId,

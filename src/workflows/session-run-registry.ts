@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { getRun } from "workflow/api";
 import { getWorld } from "workflow/runtime";
 import { WorkflowRunNotFoundError } from "workflow/errors";
+import { parseTopicCreationBinding, type TopicCreationBinding } from "./topic-session-create/request.js";
 
 export interface ChatSessionRunBinding {
   readonly schemaVersion: 1;
@@ -13,6 +14,7 @@ export interface ChatSessionRunBinding {
   readonly projectId: string;
   readonly sessionId: string;
   readonly startedAt: string;
+  readonly topicCreation?: TopicCreationBinding;
   /** The session whose session memory this run's agents write to (absent for non-agent homes). */
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string } | undefined;
 }
@@ -45,6 +47,7 @@ function parseBinding(value: unknown): ChatSessionRunBinding {
     projectId: value.projectId as string,
     sessionId: value.sessionId as string,
     startedAt: value.startedAt as string,
+    ...(value.topicCreation === undefined ? {} : { topicCreation: parseTopicCreationBinding(value.topicCreation) }),
     ...(sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget }),
   };
 }
@@ -81,7 +84,7 @@ export async function recordChatSessionRunBinding(
   return value;
 }
 
-async function listBindings(projectDataDir: string): Promise<ChatSessionRunBinding[]> {
+export async function listChatSessionRunBindings(projectDataDir: string): Promise<ChatSessionRunBinding[]> {
   const directory = runBindingsDirectory(projectDataDir);
   let names: string[];
   try {
@@ -119,7 +122,7 @@ export async function readChatSessionRunBinding(
 }
 
 export async function readChatSessionRunOutcome(projectDataDir: string, sessionId: string) {
-  const latest = (await listBindings(projectDataDir)).filter(binding => binding.sessionId === sessionId)
+  const latest = (await listChatSessionRunBindings(projectDataDir)).filter(binding => binding.sessionId === sessionId)
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
   if (latest === undefined) return undefined;
   const run = await getWorld().runs.get(latest.runId, { resolveData: "none" }).catch((error: unknown) => {
@@ -144,7 +147,7 @@ export async function listNonTerminalChatSessionRuns(
   projectDataDir: string,
   sessionId: string,
 ): Promise<Array<ChatSessionRunBinding & { readonly status: string }>> {
-  const candidates = (await listBindings(projectDataDir))
+  const candidates = (await listChatSessionRunBindings(projectDataDir))
     .filter((binding) => binding.sessionId === sessionId)
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
   const active: Array<ChatSessionRunBinding & { readonly status: string }> = [];

@@ -29,7 +29,10 @@ export default defineEventHandler(async (event) => {
   if (body.interactionRevision !== undefined && (!Number.isSafeInteger(body.interactionRevision) || Number(body.interactionRevision) < 0)) {
     throw createError({ statusCode: 400, statusMessage: "interactionRevision无效" });
   }
-  if (Object.keys(body).some((key) => !["projectId", "sessionId", "text", "contextProjectId", "requestId", "interactionRevision"].includes(key))) throw createError({ statusCode: 400, statusMessage: "未知消息字段" });
+  if (body.sessionMemory !== undefined && body.sessionMemory !== "on" && body.sessionMemory !== "off") {
+    throw createError({ statusCode: 400, statusMessage: "sessionMemory必须是on或off" });
+  }
+  if (Object.keys(body).some((key) => !["projectId", "sessionId", "text", "contextProjectId", "requestId", "interactionRevision", "sessionMemory"].includes(key))) throw createError({ statusCode: 400, statusMessage: "未知消息字段" });
   try {
     return await executeLongAgentTurn({
       ...(typeof body.requestId === "string" ? { turnId: body.requestId } : {}),
@@ -37,6 +40,7 @@ export default defineEventHandler(async (event) => {
       requireInteractionRevision: true,
       projectId: body.projectId,
       ...(typeof body.sessionId === "string" ? { sessionId: body.sessionId } : {}),
+      ...(body.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}),
       text: body.text,
       contextProjectId: typeof body.contextProjectId === "string" ? body.contextProjectId : null,
       ...(typeof body.interactionRevision === "number" ? { interactionRevision: body.interactionRevision } : {}),

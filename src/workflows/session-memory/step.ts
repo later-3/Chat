@@ -14,7 +14,9 @@ import { appendChatWorkflowAgentInput, appendChatWorkflowStage } from "../workfl
 import { SESSION_MEMORY_WORKER_AGENT } from "./agents/worker/index.js";
 import { prepareSessionMemoryWorkerSession } from "./agents/worker/runtime.js";
 import { SESSION_MEMORY_WRITER_AGENT } from "./agents/writer/index.js";
+import { recordSessionMemoryNotice } from "./writer-notice.js";
 import { prepareSessionMemoryWriterSession } from "./agents/writer/runtime.js";
+import { stageFinishClosesStream } from "./tail-policy.js";
 
 const WORKFLOW_ID = "session-memory";
 
@@ -51,14 +53,29 @@ async function runSessionMemoryStage(
     // ONE writer implementation shared with the Long Agent queue worker (which runs it as the second
     // half of a node round), so this stage never grows a second copy of the writer turn.
     if (input.projectId === undefined) throw new Error("会话记忆写入需要Project身份");
-    return runSessionMemoryWriterTurn({
-      chatHome: resolveChatHome(input.chatHome),
-      projectId: input.projectId,
-      cwd: input.cwd,
-      sessionId: input.sessionId ?? "",
-      workflowInvocationId: input.workflowInvocationId,
-      stageId: "remember",
-    });
+    const ownerWorkflowId = input.sessionMemoryOwnerWorkflowId ?? WORKFLOW_ID;
+    try {
+      return await runSessionMemoryWriterTurn({
+        chatHome: resolveChatHome(input.chatHome),
+        projectId: input.projectId,
+        cwd: input.cwd,
+        sessionId: input.sessionId ?? "",
+        workflowInvocationId: input.workflowInvocationId,
+        stageId: "remember",
+        // The owner keeps its own provenance: a `remember` node inside another Workflow is recorded there.
+        workflowId: ownerWorkflowId,
+      });
+    } catch (error) {
+      // The work answer stays; the failure does NOT. A durable, viewable record is written in the session
+      // (this runs inside a Step, the only place allowed to touch the filesystem) and the error is then
+      // rethrown so the round can never be reported as a success it was not.
+      await recordSessionMemoryNotice({
+        ...(input.chatHome === undefined ? {} : { chatHome: input.chatHome }),
+        projectId: input.projectId ?? "", sessionId: input.sessionId ?? "",
+        ownerWorkflowId, workflowInvocationId: input.workflowInvocationId, error,
+      });
+      throw error;
+    }
   }
   const chatSession = await openChatSession(input);
   const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
@@ -146,7 +163,9 @@ async function runSessionMemoryStage(
     console.error(`${localTimestamp()} [${WORKFLOW_ID}] step=${stage} failed error=${error instanceof Error ? error.message : String(error)}`);
     throw error;
   } finally {
-    await observer.finish(true);
+    // The `remember` stage returns through the writer turn (which closes its own stream), so only the
+    // WORK stage lands here: it must step back when the memory node still has to run.
+    await observer.finish(stageFinishClosesStream(input));
     session.dispose();
   }
 }

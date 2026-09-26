@@ -93,6 +93,8 @@ test("topic API: graph, topic, node messages and a node turn are owner-facing an
   const turn = fresh.turns.find((candidate) => candidate.turnId === "chat-web:friend:api-turn-1");
   assert.notEqual(turn, undefined, "the turn was accepted");
   assert.equal(turn.sessionId, node.node.sessionId, "the turn runs in the node session, not in the daily session");
+  const publicSession = await readChatSession(node.node.sessionId, undefined, {}, "friend", base.home);
+  assert.equal(publicSession.friendExecution?.id, turn.turnId, "the common Session read restores a node's durable execution reference");
   assert.deepEqual(turn.topicNode, { topicId: topic.topicId, nodeId: node.node.nodeId }, "the turn carries its node target");
   assert.equal(fresh.dailySessions.some((day) => day.sessionId === node.node.sessionId), false, "a node round never appears in today's index");
   // A mismatched topic/node is refused before anything lands in the state.

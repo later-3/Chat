@@ -8,7 +8,7 @@
 | Friend 独立任务、长期职责、定时任务、动态与群聊（LA0–LA6） | [功能开发计划与阶段验收](./long-agent-functionality-plan.md) |
 | LA5 群聊、多 Friend 协作实施交接（本地范围已验收） | [LA5 任务书](./long-agent-la5-taskbook.md) |
 | LA6 Friend 项目关联、真实渠道与24h联合验收（待审核） | [LA6 任务书](./long-agent-la6-taskbook.md) |
-| 主题模式：Long Agent 策展的主题会话树与会话记忆 | [主题模式任务书](./topic-mode-taskbook.md) · [开发计划](./topic-mode-plan.md) · [P2 任务书](./topic-mode-p2-taskbook.md) · [交接文档](./topic-mode-handover.md) |
+| 主题模式：Long Agent 策展的主题会话树与会话记忆 | [当前纠偏方案与统一验收](./topic-mode-correction-plan.md) · [主题模式任务书](./topic-mode-taskbook.md) · [开发计划](./topic-mode-plan.md) · [P2 任务书](./topic-mode-p2-taskbook.md) · [交接文档](./topic-mode-handover.md) |
 | Agent参与开发、架构审核与交接 | [贡献工作方法](./agent-contribution.md) |
 | 端到端调试、源码学习与问题定位 | [调试与开发说明书](./debugging/README.md) |
 | VSCode调试和一键启动 | [本地开发与调试](./local-debugging.md) |

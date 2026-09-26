@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "problem-diagnosis",
+  "name": "问题定位",
+  "description": "对一个线上或代码问题做结构化定位：先列已确认现场事实，再给互斥根因假设与各自的最小验证路径，最后给出结论边界与仍待确认的信息。",
+  "agentCallable": true,
+  "nodes": [
+    {
+      "kind": "agent",
+      "id": "diagnose",
+      "name": "定位",
+      "description": "依据调用方给出的问题描述与证据做定位分析。",
+      "agentId": "problem-diagnoser"
+    },
+    {
+      "kind": "agent",
+      "id": "remember",
+      "name": "记录会话记忆",
+      "description": "只依据本轮（用户消息与工作阶段产物）维护本会话的会话记忆。",
+      "agentId": "session-memory-writer"
+    }
+  ],
+  "agents": [
+    {
+      "id": "problem-diagnoser",
+      "config": "./agents/diagnoser/agent.json"
+    },
+    {
+      "id": "session-memory-writer",
+      "config": "../session-memory/agents/writer/agent.json"
+    }
+  ]
+}

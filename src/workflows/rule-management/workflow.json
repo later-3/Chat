@@ -10,12 +10,23 @@
       "name": "管理规则与经验",
       "description": "Rule Curator Agent使用Prompt资源工具处理草稿、检索与Agent规则建议。",
       "agentId": "rule-curator-agent"
+    },
+    {
+      "kind": "agent",
+      "id": "remember",
+      "name": "记录会话记忆",
+      "description": "只依据本轮（用户消息与工作阶段产物）维护本会话的会话记忆。",
+      "agentId": "session-memory-writer"
     }
   ],
   "agents": [
     {
       "id": "rule-curator-agent",
       "config": "./agents/rule-curator-agent/agent.json"
+    },
+    {
+      "id": "session-memory-writer",
+      "config": "../session-memory/agents/writer/agent.json"
     }
   ]
 }

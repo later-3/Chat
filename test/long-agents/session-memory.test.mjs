@@ -44,7 +44,7 @@ test("P1 session memory: purpose-typed, append-only entries with revision CAS", 
     writeSessionMemoryEntry({ chatHome: f.home, longAgentId: "friend", sessionId: SESSION, operation: "write", purpose: "finding", author: "agent", content: "其它", expectedRevision: 0 }),
     /revision/,
   );
-  await assert.rejects(write({ operation: "write", purpose: "gossip", author: "agent", content: "x" }), /purpose/);
+  await assert.rejects(write({ operation: "write", purpose: "Not A Label!", author: "agent", content: "x" }), /purpose/);
   await assert.rejects(write({ operation: "write", purpose: "finding", author: "model", content: "x" }), /author/);
   await assert.rejects(
     write({ operation: "write", purpose: "background", author: "agent", content: "x", supersedes: first.entries[0].entryId }),
@@ -71,25 +71,39 @@ test("P1 session memory: purpose-typed, append-only entries with revision CAS", 
 
 });
 
-test("P1 session memory: the target only resolves for agent-home sessions", async (t) => {
+test("P1 session memory: the target resolves to the session's OWN project (agent home or ordinary project)", async (t) => {
   const f = await fixture(t);
   const turn = await executeLongAgentTurn(f.input("smem-target"));
   const target = await resolveSessionMemoryTarget({ chatHome: f.home, projectId: "friend", sessionId: turn.sessionId, longAgentId: "friend" });
   assert.equal(target.longAgentId, "friend");
   assert.equal(target.sessionId, turn.sessionId);
-  // An ordinary project session must not gain agent-home memory access through the fallback.
-  await assert.rejects(
-    resolveSessionMemoryTarget({ chatHome: f.home, projectId: "a", sessionId: turn.sessionId, longAgentId: "friend" }),
-    /不属于 Long Agent/,
-  );
+  // A Long Agent turn collaborating on another project still stores in the AGENT home: the session owns
+  // the memory, not the collaboration target.
+  const collaborating = await resolveSessionMemoryTarget({ chatHome: f.home, projectId: "a", sessionId: turn.sessionId, longAgentId: "friend" });
+  assert.equal(collaborating.longAgentId, "friend");
   // A trusted binding is honoured even when the caller's own project differs.
   const bound = await resolveSessionMemoryTarget({ chatHome: f.home, projectId: "a", sessionId: "other", longAgentId: "friend", binding: { storageProjectId: "friend", sessionId: turn.sessionId } });
   assert.equal(bound.sessionId, turn.sessionId);
-  // A binding that cannot be verified is refused rather than trusted.
+  // A binding whose session is not an ACTIVE session of that project is refused rather than trusted.
   await assert.rejects(
     resolveSessionMemoryTarget({ chatHome: f.home, projectId: "a", sessionId: turn.sessionId, binding: { storageProjectId: "a", sessionId: turn.sessionId } }),
-    /只支持 Long Agent/,
+    /找不到会话记忆归属的会话/,
   );
+});
+
+test("P1 session memory: an ordinary project session has its own memory, stored under projects/<id>", async (t) => {
+  const f = await fixture(t);
+  const { ensureChatSessionWithId } = await import("../../src/chat-session.ts");
+  const sessionId = "sess-project-memory";
+  await ensureChatSessionWithId({ chatHome: f.home, projectId: "a" }, sessionId, "Project session");
+  const target = await resolveSessionMemoryTarget({ chatHome: f.home, projectId: "a", sessionId });
+  assert.equal(target.longAgentId, "a", "an ordinary project session resolves to its own project");
+  await writeSessionMemoryEntry({ chatHome: f.home, longAgentId: "a", sessionId, operation: "write",
+    purpose: "finding", author: "agent", content: "项目会话也有自己的会话记忆", expectedRevision: 0 });
+  assert.equal((await readSessionMemory(f.home, "a", sessionId)).entries.length, 1);
+  const file = sessionMemoryFile(f.home, "a", sessionId);
+  assert.equal(file.includes("/projects/a/session-memory/"), true, `memory must live in the project data dir: ${file}`);
+  assert.equal(fs.existsSync(file), true);
 });
 
 test("P1 session memory: removal marks orphan, purge deletes the file", async (t) => {
@@ -298,9 +312,10 @@ test("P1 review 21 (route): invalid operations and field combinations are reject
   assert.equal((await patch({ operation: "supersed", purpose: "finding", content: "x", expectedRevision: 0 })).status, 400);
   assert.equal((await patch({ operation: "write", purpose: "finding", content: "x", supersedes: "e1", expectedRevision: 0 })).status, 400);
   assert.equal((await patch({ operation: "supersede", purpose: "finding", content: "x", expectedRevision: 0 })).status, 400);
-  const gossip = await patch({ operation: "write", purpose: "gossip", content: "x", expectedRevision: 0 });
-  assert.ok([400, 403].includes(gossip.status), `invalid purpose must not be accepted (got ${String(gossip.status)})`);
+  const badLabel = await patch({ operation: "write", purpose: "Not A Label!", content: "x", expectedRevision: 0 });
+  assert.equal(badLabel.status, 400, "a value that cannot be a grouping key is rejected");
   assert.equal((await patch({ operation: "write", purpose: "finding", content: "合法条目", expectedRevision: 0 })).status, 200);
+  assert.equal((await patch({ operation: "write", purpose: "risk", content: "自定义标签合法", expectedRevision: 1 })).status, 200);
 });
 
 test("P1 review 28: an index-write failure during remove leaves a state the next touch converges", async (t) => {
@@ -503,4 +518,32 @@ test("P1 review 32: a failed convergence keeps the pending intent for the automa
   await listRemovedChatSessions("friend", f.home, future);
   assert.equal(fs.existsSync(sessionMemoryFile(f.home, "friend", turn.sessionId)), false);
   assert.equal((await readRemovedSessionIndexState(project)).pendingOperation, undefined);
+});
+
+test("session_memory purpose is an OPEN label: defaults are described and a custom tag is accepted", async (t) => {
+  const { SESSION_MEMORY_TOOL_PROVIDER } = await import("../../src/tools/builtins/session-memory/index.ts");
+  const { SESSION_MEMORY_PURPOSES } = await import("../../src/long-agents/session-memory-purposes.ts");
+  const { readSessionMemory, writeSessionMemoryEntry } = await import("../../src/long-agents/session-memory.ts");
+  const tool = SESSION_MEMORY_TOOL_PROVIDER.create({ purpose: "execution", projectId: "friend", chatHome: "/tmp/does-not-matter", cwd: "/tmp",
+    sessionManager: { getSessionId: () => "sess-schema" }, sessionId: "sess-schema", agentId: "friend", longAgentId: "friend" });
+  const purposeSchema = tool.parameters.properties.purpose;
+  assert.equal(purposeSchema.type, "string", "a purpose is an open label, not a closed enum");
+  assert.equal(purposeSchema.anyOf ?? purposeSchema.enum ?? undefined, undefined, "the schema must not close the taxonomy");
+  for (const defaultPurpose of SESSION_MEMORY_PURPOSES) {
+    assert.match(String(purposeSchema.description ?? ""), new RegExp(defaultPurpose), "schema must offer the default purposes");
+  }
+  assert.match(String(purposeSchema.description ?? ""), /自定义/, "schema must say a custom label is allowed");
+
+  const f = await fixture(t);
+  const turn = await executeLongAgentTurn(f.input("smem-open-label"));
+  // A label outside the defaults is a legitimate custom tag, not an error.
+  await writeSessionMemoryEntry({ chatHome: f.home, longAgentId: "friend", sessionId: turn.sessionId, operation: "write",
+    purpose: "risk", author: "agent", content: "自定义标签可用", expectedRevision: 0 });
+  assert.equal((await readSessionMemory(f.home, "friend", turn.sessionId)).entries[0].purpose, "risk");
+  // A value that can never be a stable grouping key is still rejected, and the error lists the defaults.
+  await assert.rejects(
+    writeSessionMemoryEntry({ chatHome: f.home, longAgentId: "friend", sessionId: turn.sessionId, operation: "write",
+      purpose: "Not A Label!", author: "agent", content: "x", expectedRevision: 1 }),
+    (error) => /Not A Label!/.test(error.message) && /background/.test(error.message) && /open-question/.test(error.message),
+  );
 });

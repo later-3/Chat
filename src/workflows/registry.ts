@@ -8,6 +8,8 @@ import {
 import { ruleManagementWorkflowDefinition } from "./rule-management/index.js";
 import { plannerOrchestratorWorkflowDefinition } from "./planner-orchestrator/index.js";
 import { sessionMemoryWorkflowDefinition } from "./session-memory/index.js";
+import { problemDiagnosisWorkflowDefinition } from "./problem-diagnosis/index.js";
+import { topicSessionCreateWorkflowDefinition } from "./topic-session-create/index.js";
 import { browserSafeWorkflowDefinition } from "./framework.js";
 import type { ChatWorkflowDefinition } from "./framework.js";
 
@@ -25,6 +27,8 @@ export const CHAT_WORKFLOW_DEFINITIONS = [
   memoryWorkflowDefinition,
   ruleManagementWorkflowDefinition,
   sessionMemoryWorkflowDefinition,
+  problemDiagnosisWorkflowDefinition,
+  topicSessionCreateWorkflowDefinition,
 ] as const;
 
 export type ChatWorkflowId = (typeof CHAT_WORKFLOW_DEFINITIONS)[number]["id"];

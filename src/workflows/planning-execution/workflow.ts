@@ -1,4 +1,5 @@
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
+import { runSessionMemoryTail } from "../session-memory/tail.js";
 import {
   beginSessionExecution,
   endSessionExecution,
@@ -34,6 +35,8 @@ export async function planningExecutionWorkflow(
       workflowInvocationId: input.workflowInvocationId,
       prompt: input.prompt,
       ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
+      ...(input.sessionMemoryEnabled === undefined ? {} : { sessionMemoryEnabled: input.sessionMemoryEnabled }),
+      ...(input.sessionMemoryOwnerWorkflowId === undefined ? {} : { sessionMemoryOwnerWorkflowId: input.sessionMemoryOwnerWorkflowId }),
     };
     const initial = await runPlanningStep(input);
     let planRevision = 1;
@@ -76,7 +79,7 @@ export async function planningExecutionWorkflow(
         });
 
         if (decision.kind === "approve") {
-          return await runPlanningExecutionStep({
+          const tailResult = await runPlanningExecutionStep({
             ...common,
             sessionId: initial.sessionId,
             plan,
@@ -89,6 +92,7 @@ export async function planningExecutionWorkflow(
             ],
             agent: initial.executionAgent,
           });
+          return await runSessionMemoryTail(input, tailResult, "planning-execution");
         }
 
         if (recordedDecision.feedbackEntryId === undefined) {

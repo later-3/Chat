@@ -71,7 +71,11 @@ function stream(res) {
 test("P4 accepted HTTP returns before model; native deltas, bounded reset, reconnect and completion", async (t) => {
   const f = await setup(t);
   let send;
+  let handled = 0;
   f.setHandler((_body, res) => {
+    handled += 1;
+    // The round is work + the session-memory writer; only the WORK request is hand-streamed here.
+    if (handled > 1) return { content: "本轮无需写入" };
     send = stream(res);
     return undefined;
   });
@@ -105,7 +109,7 @@ test("P4 accepted HTTP returns before model; native deltas, bounded reset, recon
   assert.match(JSON.stringify(feedback.snapshot.messages), /Firstx+Final/);
   const duplicate = await (await f.post({ requestId: "stream", text: "stream" })).json();
   assert.equal(duplicate.id, ref.id);
-  assert.equal(f.requests.length, 1);
+  assert.equal(f.requests.length, 2); // work + the memory writer tail
   assert.equal((await f.post({ requestId: "stream", text: "different" })).status, 409);
   assert.equal((await f.router.fetch(new Request(f.url(ref.id).replace("/friend/", "/other/")))).status, 404);
 });
@@ -161,7 +165,7 @@ test("P4 native steering is durable and delivered once; cross-project steering r
   const turns = (await readLongAgentState(f.home)).turns;
   assert.equal(turns.length, 2);
   assert.ok(turns.every((t) => t.status === "completed"));
-  assert.equal(f.requests.length, 2);
+  assert.equal(f.requests.length, 3);
   const session = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: first.sessionId });
   assert.equal(
     session.manager
@@ -177,7 +181,7 @@ test("P4 native steering is durable and delivered once; cross-project steering r
   });
   assert.equal(late.delivery, "followUp");
   await drainLongAgentTurns(f.home, "friend");
-  assert.equal(f.requests.length, 3);
+  assert.equal(f.requests.length, 5);
 });
 
 test("P4 provider failure retains terminal error and original messages; images rejected before Web acceptance", async (t) => {
@@ -195,4 +199,19 @@ test("P4 provider failure retains terminal error and original messages; images r
   });
   assert.equal(invalid.status, 400);
   assert.equal((await readLongAgentState(f.home)).turns.length, 1);
+});
+
+
+test("the owner turn API persists memory-off and still completes the work round", async (t) => {
+  const f = await setup(t);
+  f.setHandler(() => ({ content: "记忆关闭，工作正常完成" }));
+  const response = await f.post({ requestId: "memory-off-http", text: "正常工作", sessionMemory: "off" });
+  assert.equal(response.status, 202, await response.clone().text());
+  const execution = await response.json();
+  await drainLongAgentTurns(f.home, "friend");
+  const stored = (await readLongAgentState(f.home)).turns.find((turn) => turn.turnId === execution.id);
+  assert.equal(stored.sessionMemory, "off");
+  assert.equal(stored.status, "completed");
+  assert.equal(f.requests.length, 1, "the work model ran; the writer did not");
+  assert.equal((await f.post({ requestId: "memory-invalid-http", text: "无效开关", sessionMemory: "maybe" })).status, 400);
 });

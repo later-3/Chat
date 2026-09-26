@@ -41,6 +41,13 @@ export interface ExecuteLongAgentTurnInput {
    * acceptance; the turn is then bound to the matching node session (never to an arbitrary session).
    */
   readonly topicNode?: { readonly topicId: string; readonly nodeId: string };
+  /**
+   * Relay round: the durable relay INTENT to consume. Verified at acceptance (node session, intent for
+   * this node) and appended as a native user message on the active branch when the round runs.
+   */
+  readonly relayIntentEntryId?: string;
+  /** Send-time switch: "off" runs this round WITHOUT the session-memory tail node. */
+  readonly sessionMemory?: "off";
   readonly text: unknown;
   /** Channel-provided image attachments; text may be empty when present. */
   readonly images?: readonly ImageContent[];
@@ -169,7 +176,14 @@ export async function executeAcceptedLongAgentTurn(
         chatHome,
         sessionId: projectAgent.primarySessionId,
       });
-      if (accepted.status !== "completed") installAcceptedAssembly(chatSession.manager, accepted);
+      if (accepted.status !== "completed" && accepted.relayIntentEntryId !== undefined) {
+        // Append the relayed native user message ON THE ACTIVE BRANCH when the round runs. N queued
+        // relays therefore become N sequential rounds with exactly ONE message per request; the message
+        // is appended before the assembly so it stays the last real message the round continues from.
+        const { appendRelayedTopicNodeMessage } = await import("./topics.js");
+        appendRelayedTopicNodeMessage(chatSession.manager, accepted.relayIntentEntryId);
+      }
+      if (accepted.status !== "completed") installAcceptedAssembly(chatSession.manager, accepted, { skipCollaborationHistory: accepted.relayIntentEntryId !== undefined });
       const entriesBeforeRun = chatSession.manager.getBranch();
       const previous = latestChatLongAgentTurn(entriesBeforeRun, turnId);
       const turnMarkers = collectChatLongAgentTurnMarkers(entriesBeforeRun)
@@ -229,6 +243,8 @@ export async function executeAcceptedLongAgentTurn(
 
       const groupContext = await readFrozenLongAgentAgentGroup(agent.id, accepted.groupContext, chatHome);
       const agentGroupContext = agentGroupContextRevisionOf(groupContext);
+      // A relay round consumes the user message the round just appended; never prompt a second copy.
+      if (accepted.relayIntentEntryId !== undefined) resumePending = true;
       if (resumeEntryId !== undefined) {
         chatSession.manager.branch(resumeEntryId);
         resumePending = true;
@@ -282,6 +298,9 @@ export async function executeAcceptedLongAgentTurn(
           }
         }
         const feedback = registerLiveTurn(chatHome, accepted, created.session, projectSessionContext(chatSession.manager.getEntries(), chatSession.manager.getLeafId()).messages);
+        // A topic node round continues into `remember`; the queue keeps ONE live reference across both
+        // phases, so the work segment must not close it on success.
+        let keepLiveAfterWork = false;
         const unsubscribe = created.session.subscribe((event) => {
           feedback.publish(event);
           if (event.type === "message_end" && event.message.role === "assistant") {
@@ -302,9 +321,10 @@ export async function executeAcceptedLongAgentTurn(
               );
             }
           }
+          keepLiveAfterWork = accepted.topicNode !== undefined && !feedback.cancelled;
         } finally {
           unsubscribe();
-          feedback.close();
+          if (!keepLiveAfterWork) feedback.close();
         }
         if (feedback.cancelled) throw new FriendCancelledError();
         if (capabilityNotice !== undefined && resolvedModel !== undefined) {

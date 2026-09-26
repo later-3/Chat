@@ -1,5 +1,7 @@
 # 主题模式任务书（Topic Mode：主题会话树与会话记忆）
 
+> **2026-09-25 用户需求修订与纠偏**：新建根节点与分叉创建统一改为真实 `topic-session-create` Workflow：整理 Agent → 用户审核（修改可循环）→ 创建 Agent；批准前不创建目标主题 Session。节点展示必须保留普通 Session 的完整聊天能力。具体方案、既有能力复用、实施顺序和统一退出表见[主题模式纠偏方案](./topic-mode-correction-plan.md)。该目标尚未实现；下文旧版本“直接整合并创建”按本修订执行，历史测试通过不代表当前主链达标。
+
 状态：**草稿（已吸收 Trae Agent doc review R1–R12，全部采纳；回复见 §9），待用户批准后开工**。日期：2026-09-22。前置：LA6 已完成并打 tag（Chat `v0.4.0` / frontend `v0.8.12` / nanoclaw `v2.5.0`），生产 release 运行中。本任务书按 feature 实际功能命名，不占用 LA 序号；总目标与既有阶段见 [LA0–LA6 计划](./long-agent-functionality-plan.md)。**执行计划（分阶段目标/方案/注意事项/验证/检视点）见 [主题模式开发计划](./topic-mode-plan.md)**。P1（会话记忆底座）已独立复核通过（证据见 [P1 实施记录](../history/reviews/2026-09-22-topic-mode-p1.md)），P2 起按其阶段推进。
 
 > **【Doc Review · Trae Agent · 2026-09-22】** 本文档已完成一轮独立 doc review：文中所有 `【Doc Review · Trae Agent】` 批注（R1–R12）均为检视意见（问题 + 建议），未改动正文语义，是否采纳由本文原作者判断。检视时已核实正文引用的既有机制均属实：`AcceptedTurn.seed` 的 `chat.agent-assembly` 前缀合同、duties 的 `withFileLock` + `atomicWriteJson` + revision CAS、`ChatToolRuntimeContext.sessionId`、`ChatWindow.tsx`、三个前置 tag。其中 **R9 为关键未定项，建议批准开工前先落定**。

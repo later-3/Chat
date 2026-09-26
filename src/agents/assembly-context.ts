@@ -254,9 +254,12 @@ export function collaborationInstructions(snapshot: ChatAssemblySnapshot): strin
   ].join("\n");
 }
 
-export function persistAssemblySnapshot(manager: SessionManager, snapshot: ChatAssemblySnapshot): void {
+export function persistAssemblySnapshot(manager: SessionManager, snapshot: ChatAssemblySnapshot, options: { readonly skipCollaborationHistory?: boolean } = {}): void {
   if (readAssemblySnapshot(manager, snapshot.turnId) !== undefined) return;
   manager.appendCustomEntry(CHAT_ASSEMBLY_CONTEXT, snapshot);
+  // A resumed existing user entry must stay the LAST message so the turn can continue from it. This
+  // historical label is redundant with the collaboration system prompt, so it is skipped there.
+  if (options.skipCollaborationHistory === true) { manager.flush(); return; }
   const previous = manager.getEntries().slice(0, -1).findLast((entry) => entry.type === "custom" && entry.customType === CHAT_ASSEMBLY_CONTEXT);
   const previousData: unknown = previous?.type === "custom" ? previous.data : undefined;
   if (!record(previousData) || previousData.projectId !== snapshot.projectId) manager.appendCustomMessageEntry(CHAT_COLLABORATION_HISTORY,

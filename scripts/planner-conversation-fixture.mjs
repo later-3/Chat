@@ -1,20 +1,42 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { isSessionMemoryWriterRequest, writeAssistantError, writeAssistantText } from "./fake-model-stages.mjs";
 
 const requests = [];
 
-/** Deterministic malformed output; exercised through both real server builds. */
+/**
+ * Deterministic malformed output; exercised through both real server builds.
+ *
+ * The memory writer's request carries the same history, so it is answered as ITS OWN stage first: the
+ * planning log stays about planning, and the writer gets a bounded answer instead of the planner gates.
+ */
 export function respondPlannerConversation(request, response) {
   const text = JSON.stringify(request.messages);
   if (!text.includes("PLANNER_CONVERSATION_")) return false;
+  if (isSessionMemoryWriterRequest(request.messages)) {
+    writeAssistantText(response, "本轮无需写入", "chatcmpl-planner-conversation-writer", request.model);
+    return true;
+  }
   requests.push(request);
+  try {
+    return respondPlanningRequest(request, response, text);
+  } catch (error) {
+    // A routing/assertion failure must FAIL the request instead of leaving it dangling.
+    writeAssistantError(response, error instanceof Error ? error.stack ?? error.message : String(error));
+    return true;
+  }
+}
+
+function respondPlanningRequest(request, response, text) {
   const system = request.messages.filter((message) => message.role === "system").map((message) => JSON.stringify(message.content)).join("\n");
   const planner = system.includes("你是Planning Execution Workflow中的Planner Agent");
   const latest = JSON.stringify(request.messages.at(-1)?.content);
   const repair = latest.includes("这是唯一一次格式修正机会");
   const user = request.messages.findLast((message) => message.role === "user"
     && JSON.stringify(message.content).includes("PLANNER_CONVERSATION_"));
+  // The marker comes from the CURRENT turn's user message; a missing one is a fixture bug, not "no match".
+  assert.notEqual(user, undefined, "PLANNER_CONVERSATION marker must be on a user message of the current request");
   const marker = JSON.stringify(user?.content).match(/PLANNER_CONVERSATION_(?:NORMAL|REPAIR|FAIL|AFTER)/)?.[0];
   let answer = `Conversation execution completed: ${marker}`;
   if (planner) {

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { assertFileWithin, atomicWriteJson, withFileLock } from "../persistence/versioned-file.js";
@@ -197,8 +198,11 @@ function parseNode(value: unknown): TopicNodeRecord {
     status: value.status as TopicNodeRecord["status"],
     frozenProjectContext: optionalText(value.frozenProjectContext, "frozenProjectContext", 200),
     createdBy: value.createdBy,
-    // A node written before the switch existed keeps its memory capability (default on).
-    sessionMemory: value.sessionMemory === "off" ? "off" : "on",
+    // A node written before the switch existed keeps its memory capability (default on); an unknown
+    // stored value is a writer bug, not a legacy shape, so it is rejected instead of silently turned on.
+    sessionMemory: value.sessionMemory === undefined || value.sessionMemory === "on" ? "on"
+      : value.sessionMemory === "off" ? "off"
+        : (() => { throw new TopicError(500, "节点会话记忆开关无效"); })(),
     createdByRequestId: text(value.createdByRequestId, "createdByRequestId", 200),
     // A node registered before the digest existed: null means "a retry cannot be judged" (fail-closed).
     createdByRequestDigest: value.createdByRequestDigest === undefined || value.createdByRequestDigest === null
@@ -1117,24 +1121,26 @@ export async function withTopicGraphRevision<T>(
 /**
  * Relay: hand content to one node of the same Long Agent's tree, as a REAL user message.
  *
- * ONE native user message is appended, carrying its own durable request association in a Chat-owned
- * field (`message.chatTopicRelay`), which Pi round-trips verbatim (`parseSessionEntryLine` is a plain
- * JSON.parse). That gives three properties at once: there is no "message written but association
- * missing" window; recovery matches the association EXACTLY instead of guessing from the text (an
- * unrelated user message with the same text is never claimed); and the entry is a real user message,
- * so a later node round can settle and fork from it.
+ * The request is first persisted as a durable INTENT (`chat.topic-relay-intent` custom entry, no model
+ * context). The native user message is appended by the round that consumes the intent, on the ACTIVE
+ * branch, so N queued relays become N sequential rounds on the same branch with exactly ONE native
+ * message per request. Writing the message at relay time could not do that: a later relay's message was
+ * written before the earlier round answered, forcing either a second copy or an unforkable branch.
  *
- * The append happens inside the node session's operation lock with the node status and authorization
- * re-checked next to it, and status changes take the same lock (see updateTopicNodeStatus), so an
- * archived node can never receive a relayed message.
+ * The intent (and the native message) carries the request association, matched EXACTLY by requestId
+ * instead of by text. The write happens inside the node session's operation lock with node status and
+ * authorization re-checked next to it, so an archived node can never receive a relay.
  */
+export const TOPIC_RELAY_INTENT_CUSTOM_TYPE = "chat.topic-relay-intent";
+
+/** Durably records a relayed request. One authoritative native message is appended when its round runs. */
 export async function relayTopicNodeMessage(input: {
   readonly chatHome: string;
   readonly longAgentId: string;
   readonly nodeId: unknown;
   readonly requestId: unknown;
   readonly text: unknown;
-}): Promise<{ readonly nodeId: string; readonly sessionId: string; readonly entryId: string; readonly created: boolean }> {
+}): Promise<{ readonly nodeId: string; readonly topicId: string; readonly sessionId: string; readonly intentEntryId: string; readonly userEntryId: string | null; readonly created: boolean }> {
   const nodeId = identity(input.nodeId, "nodeId", NODE_ID_PATTERN);
   const requestId = text(input.requestId, "requestId", 200);
   if (!REQUEST_ID_PATTERN.test(requestId)) throw new TopicError(400, "主题requestId格式无效");
@@ -1152,36 +1158,128 @@ export async function relayTopicNodeMessage(input: {
   };
   requireRelayable(graph);
   return withChatSessionOperationLock(chatSessionOperationKey(input.longAgentId, node.sessionId), async () => {
-    // Re-check next to the append: an archived node must not receive a relayed message.
+    // Re-check next to the write: an archived node must not receive a relay.
     requireRelayable(await readTopicGraph(input.chatHome, input.longAgentId));
     const session = await openChatSession({ chatHome: input.chatHome, projectId: input.longAgentId, sessionId: node.sessionId });
-    // Dedupe over the WHOLE session file, not just the current branch: an intra-session branch switch
-    // must not let the same request append a second relayed message.
-    const existing = session.manager.getEntries().find((entry) => {
+    // Dedupe over the WHOLE session file: the same request must never get a second intent or message.
+    const native = session.manager.getEntries().find((entry) => {
       const message = (entry as { type?: string; message?: unknown }).message;
       if ((entry as { type?: string }).type !== "message" || !isRecord(message)) return false;
       return relayAssociationOf(message)?.requestId === requestId;
     });
-    if (existing !== undefined) {
-      const association = relayAssociationOf((existing as unknown as { message: Record<string, unknown> }).message)!;
+    const intent = collectTopicRelayIntent(session.manager.getEntries(), requestId);
+    if (native !== undefined) {
+      const association = relayAssociationOf((native as unknown as { message: Record<string, unknown> }).message)!;
       if (association.targetNodeId !== nodeId || association.textDigest !== textDigest)
         throw new TopicError(409, `该 requestId 已用于不同的代传内容或节点：${requestId}`);
-      const onCurrentBranch = session.manager.getBranch().some((entry) => (entry as { id?: unknown }).id === (existing as { id: string }).id);
-      // The message exists but the conversation moved on: appending again would duplicate the request,
-      // and silently reporting success would hide that the current branch never received it.
-      if (!onCurrentBranch)
-        throw new TopicError(409, `该 requestId 的代传消息不在当前分支，不能重复追加：${requestId}`);
-      return { nodeId, sessionId: node.sessionId, entryId: (existing as { id: string }).id, created: false };
+      return { nodeId, topicId: node.topicId, sessionId: node.sessionId, intentEntryId: intent?.entryId ?? "", userEntryId: (native as { id: string }).id, created: false };
     }
-    const entryId = session.manager.appendMessage({
-      role: "user",
-      content: [{ type: "text", text: body }],
-      timestamp: Date.now(),
-      chatTopicRelay: { requestId, targetNodeId: nodeId, relayedByLongAgentId: input.longAgentId, source: "relay", textDigest },
-    } as never);
+    if (intent !== null) {
+      if (intent.intent.targetNodeId !== nodeId || intent.intent.textDigest !== textDigest)
+        throw new TopicError(409, `该 requestId 已用于不同的代传内容或节点：${requestId}`);
+      return { nodeId, topicId: node.topicId, sessionId: node.sessionId, intentEntryId: intent.entryId, userEntryId: null, created: false };
+    }
+    const intentEntryId = session.manager.appendCustomEntry(TOPIC_RELAY_INTENT_CUSTOM_TYPE, {
+      requestId, targetNodeId: nodeId, relayedByLongAgentId: input.longAgentId, text: body, textDigest,
+      createdAt: new Date().toISOString(),
+    });
     session.manager.flush();
-    return { nodeId, sessionId: node.sessionId, entryId, created: true };
+    return { nodeId, topicId: node.topicId, sessionId: node.sessionId, intentEntryId, userEntryId: null, created: true };
   });
+}
+
+export interface RelayTopicNodeTurnResult {
+  readonly nodeId: string;
+  readonly topicId: string;
+  readonly sessionId: string;
+  readonly intentEntryId: string;
+  readonly userEntryId: string | null;
+  readonly created: boolean;
+  /** The accepted round, queryable through `/api/long-agents/:id/turns/:turnId`. Null on the write-only path. */
+  readonly turnId: string | null;
+  readonly turnStatus: string | null;
+}
+
+/**
+ * Narrow shared orchestration for ONE relayed node request: stage the durable intent, then accept and run
+ * its node round. The `topic_manage` relay tool and the owner-confirmed R4 relay BOTH call this, so the
+ * ordering and the idempotency contract exist once. Each step enters its own lock (the intent write
+ * releases the node Session lock before the turn is accepted), so no step re-enters a held lock.
+ */
+export async function relayTopicNodeTurn(input: {
+  readonly chatHome: string;
+  readonly longAgentId: string;
+  readonly nodeId: unknown;
+  readonly requestId: unknown;
+  readonly text: unknown;
+  /** False stages only the durable intent (no Long Agent turn); the default runs the round. */
+  readonly execute?: boolean;
+}): Promise<RelayTopicNodeTurnResult> {
+  const relayed = await relayTopicNodeMessage({
+    chatHome: input.chatHome, longAgentId: input.longAgentId, nodeId: input.nodeId, requestId: input.requestId, text: input.text,
+  });
+  if ((input.execute ?? true) === false || relayed.intentEntryId === "") {
+    return { ...relayed, turnId: null, turnStatus: null };
+  }
+  const requestId = text(input.requestId, "requestId", 200);
+  const body = text(input.text, "text", 20_000);
+  // Dynamic import keeps the topics domain free of a static turn-queue cycle; turn-queue imports topics.
+  const { acceptLongAgentTurn, drainLongAgentTurns } = await import("./turn-queue.js");
+  const accepted = await acceptLongAgentTurn({
+    chatHome: input.chatHome, longAgentId: input.longAgentId, requireInteractionRevision: false, projectId: input.longAgentId,
+    turnId: `relay:${requestId}`, text: body, source: "chat-web",
+    topicNode: { topicId: relayed.topicId, nodeId: relayed.nodeId }, relayIntentEntryId: relayed.intentEntryId,
+  });
+  void drainLongAgentTurns(input.chatHome, input.longAgentId, relayed.sessionId)
+    .catch((error: unknown) => console.error("代传轮次执行失败", error));
+  return { ...relayed, turnId: accepted.turnId, turnStatus: accepted.status };
+}
+
+export interface TopicRelayIntent {
+  readonly requestId: string;
+  readonly targetNodeId: string;
+  readonly relayedByLongAgentId: string;
+  readonly text: string;
+  readonly textDigest: string;
+}
+
+/** Reads one durable relay intent by request id. */
+export function collectTopicRelayIntent(entries: readonly unknown[], requestId: string): { entryId: string; intent: TopicRelayIntent } | null {
+  for (const entry of entries) {
+    if (!isRecord(entry) || entry.type !== "custom" || entry.customType !== TOPIC_RELAY_INTENT_CUSTOM_TYPE || typeof entry.id !== "string") continue;
+    const data = entry.data;
+    if (!isRecord(data) || data.requestId !== requestId) continue;
+    if (typeof data.targetNodeId !== "string" || typeof data.relayedByLongAgentId !== "string"
+      || typeof data.text !== "string" || typeof data.textDigest !== "string") continue;
+    return { entryId: entry.id, intent: { requestId, targetNodeId: data.targetNodeId, relayedByLongAgentId: data.relayedByLongAgentId, text: data.text, textDigest: data.textDigest } };
+  }
+  return null;
+}
+
+/**
+ * Appends the relayed native user message for one intent, ON THE ACTIVE BRANCH. Called by the round that
+ * consumes the intent; idempotent if the message is already on the current branch (recovery re-run).
+ */
+export function appendRelayedTopicNodeMessage(sessionManager: SessionManager, intentEntryId: string): { entryId: string; created: boolean } {
+  const entry = sessionManager.getEntries().find((candidate) => isRecord(candidate) && candidate.id === intentEntryId);
+  if (entry === undefined || !isRecord(entry) || entry.type !== "custom" || entry.customType !== TOPIC_RELAY_INTENT_CUSTOM_TYPE || !isRecord(entry.data))
+    throw new TopicError(409, `找不到代传意图：${intentEntryId}`);
+  const data = entry.data;
+  if (typeof data.requestId !== "string" || typeof data.targetNodeId !== "string" || typeof data.relayedByLongAgentId !== "string"
+    || typeof data.text !== "string" || typeof data.textDigest !== "string") throw new TopicError(409, `代传意图字段无效：${intentEntryId}`);
+  const existing = sessionManager.getBranch().find((candidate) => {
+    const message = (candidate as { type?: string; message?: unknown }).message;
+    return (candidate as { type?: string }).type === "message" && isRecord(message) && relayAssociationOf(message)?.requestId === data.requestId;
+  });
+  if (existing !== undefined) return { entryId: (existing as { id: string }).id, created: false };
+  const entryId = sessionManager.appendMessage({
+    role: "user",
+    content: [{ type: "text", text: data.text }],
+    timestamp: Date.now(),
+    chatTopicRelay: { requestId: data.requestId, targetNodeId: data.targetNodeId, relayedByLongAgentId: data.relayedByLongAgentId, source: "relay", textDigest: data.textDigest },
+  } as never);
+  sessionManager.flush();
+  return { entryId, created: true };
 }
 
 /** Reads the Chat-owned relay association off a native user message, if present. */
@@ -1192,4 +1290,115 @@ export function relayAssociationOf(message: Record<string, unknown>): { requestI
   const targetNodeId = typeof value.targetNodeId === "string" ? value.targetNodeId : null;
   const textDigest = typeof value.textDigest === "string" ? value.textDigest : null;
   return requestId === null || targetNodeId === null || textDigest === null ? null : { requestId, targetNodeId, textDigest };
+}
+
+export const TOPIC_SUPPLEMENT_CONFIRMATION_CUSTOM_TYPE = "chat.topic-supplement.v1";
+
+export interface SupplementTopicChildIntegrationInput {
+  readonly chatHome: string;
+  readonly longAgentId: string;
+  readonly childNodeId: unknown;
+  readonly parentNodeId: unknown;
+  readonly anchorEntryId: unknown;
+  readonly anchorSequence: unknown;
+  readonly requestId: unknown;
+  readonly product: { readonly kind: "memory"; readonly content: unknown } | { readonly kind: "relay"; readonly text: unknown };
+  /** Optional memory address recorded on the new edge as its source. */
+  readonly source?: unknown;
+  /** Trusted owner confirmation. The domain refuses anything else, so an Agent cannot self-confirm. */
+  readonly confirmedBy: unknown;
+  readonly now?: string;
+}
+
+/**
+ * R4 supplemental integration for an EXISTING node: the owner confirms ONE integrate-and-link action
+ * that (a) leaves an explicit confirmation record, (b) writes the product — a session-memory entry or a
+ * relay intent — and (c) adds the parent edge with its anchor. Every step is idempotent under the same
+ * request id, so a retry after a cross-file interruption completes the missing steps without duplicating
+ * the memory entry, the relay or the edge.
+ */
+export async function supplementTopicChildIntegration(input: SupplementTopicChildIntegrationInput): Promise<{
+  readonly edge: TopicEdgeRecord;
+  readonly graph: TopicGraphState;
+  readonly created: boolean;
+  readonly product:
+    | { readonly kind: "memory"; readonly entryId: string }
+    | { readonly kind: "relay"; readonly intentEntryId: string; readonly turnId: string | null; readonly turnStatus: string | null };
+}> {
+  const childNodeId = identity(input.childNodeId, "childNodeId", NODE_ID_PATTERN);
+  const parentNodeId = identity(input.parentNodeId, "parentNodeId", NODE_ID_PATTERN);
+  const anchorEntryId = text(input.anchorEntryId, "anchorEntryId", 200);
+  const anchorSequence = Number(input.anchorSequence);
+  if (Number.isSafeInteger(anchorSequence) !== true || anchorSequence < 1) throw new TopicError(400, "锚点序号无效");
+  const requestId = text(input.requestId, "requestId", 200);
+  if (!REQUEST_ID_PATTERN.test(requestId)) throw new TopicError(400, "请求 id 格式无效");
+  if (input.confirmedBy !== "user") throw new TopicError(403, "补充整合必须经用户确认后才能执行");
+  // Freeze the WHOLE confirmed action under one request id: child, parent, anchor and the exact product.
+  // A replay with a changed parent/anchor/product is a conflict, never a second action.
+  const productPayload = input.product.kind === "memory"
+    ? { kind: "memory" as const, content: text(input.product.content, "product.content", 4_000) }
+    : { kind: "relay" as const, text: text(input.product.text, "product.text", 20_000) };
+  // The optional source is part of the frozen action: a replay that changes where the edge points is a
+  // different action, not a retry. Normalize it to the canonical address before hashing.
+  const memoryRefs = input.source === undefined ? [] : [parseMemorySource(input.source, "source")];
+  const actionDigest = `sha256:${createHash("sha256").update(JSON.stringify([
+    input.longAgentId, childNodeId, parentNodeId, anchorEntryId, anchorSequence, productPayload, memoryRefs,
+  ])).digest("hex")}`;
+  const graph = await readTopicGraph(input.chatHome, input.longAgentId);
+  const child = graph.nodes.find((candidate) => candidate.nodeId === childNodeId);
+  const parent = graph.nodes.find((candidate) => candidate.nodeId === parentNodeId);
+  if (child === undefined) throw new TopicError(404, `找不到主题节点：${childNodeId}`);
+  if (parent === undefined) throw new TopicError(404, `找不到主题节点：${parentNodeId}`);
+  if (child.topicId !== parent.topicId) throw new TopicError(409, "补充整合的两端必须属于同一主题");
+  if (child.status !== "active" || parent.status !== "active") throw new TopicError(409, "节点已归档或移除，不能执行补充整合");
+  let product: { kind: "memory"; entryId: string }
+    | { kind: "relay"; intentEntryId: string; turnId: string | null; turnStatus: string | null }
+    | undefined;
+  await withChatSessionOperationLock(chatSessionOperationKey(input.longAgentId, child.sessionId), async () => {
+    const session = await openChatSession({ chatHome: input.chatHome, projectId: input.longAgentId, sessionId: child.sessionId });
+    const confirmation = session.manager.getEntries().find((entry) => entry.type === "custom"
+      && entry.customType === TOPIC_SUPPLEMENT_CONFIRMATION_CUSTOM_TYPE
+      && isRecord((entry as { data?: unknown }).data)
+      && ((entry as { data: Record<string, unknown> }).data).requestId === requestId);
+    if (confirmation !== undefined) {
+      const data = isRecord((confirmation as { data?: unknown }).data) ? (confirmation as { data: Record<string, unknown> }).data : {};
+      if (data.actionDigest !== actionDigest) throw new TopicError(409, "同一请求不能变更补充整合动作（父节点/锚点/产物）");
+    } else {
+      session.manager.appendCustomEntry(TOPIC_SUPPLEMENT_CONFIRMATION_CUSTOM_TYPE, {
+        requestId, actionDigest, childNodeId, parentNodeId, anchorEntryId, anchorSequence,
+        productKind: productPayload.kind, confirmedBy: "user", confirmedAt: new Date().toISOString(),
+      });
+      session.manager.flush();
+    }
+    if (productPayload.kind === "memory") {
+      const current = await readSessionMemory(input.chatHome, input.longAgentId, child.sessionId);
+      const existing = current.entries.find((entry) => entry.writeRequestId === requestId);
+      if (existing !== undefined) {
+        if (existing.content !== productPayload.content || existing.writeRequestFingerprint !== actionDigest)
+          throw new TopicError(409, "同一请求已写入不同的补充整合内容");
+        product = { kind: "memory", entryId: existing.entryId };
+      } else {
+        const written = await writeSessionMemoryEntry({ chatHome: input.chatHome, longAgentId: input.longAgentId,
+          sessionId: child.sessionId, operation: "write", purpose: "background", author: "user", content: productPayload.content,
+          writeRequestId: requestId, writeRequestFingerprint: actionDigest,
+          expectedRevision: current.revision, ...(input.now === undefined ? {} : { now: input.now }) });
+        const entry = written.entries.find((candidate) => candidate.writeRequestId === requestId);
+        if (entry === undefined) throw new TopicError(500, "补充整合记忆写入未返回条目");
+        product = { kind: "memory", entryId: entry.entryId };
+      }
+    }
+  });
+  if (productPayload.kind === "relay") {
+    // The relay product must actually RUN, exactly like the topic_manage relay: stage the durable intent,
+    // then accept and drain the node round through the SAME shared orchestration. Both steps enter their
+    // own lock, so neither re-enters the node Session lock this function held for the confirmation/memory.
+    const relayed = await relayTopicNodeTurn({ chatHome: input.chatHome, longAgentId: input.longAgentId, nodeId: childNodeId, requestId, text: productPayload.text });
+    product = { kind: "relay", intentEntryId: relayed.intentEntryId, turnId: relayed.turnId, turnStatus: relayed.turnStatus };
+  }
+  const added = await withTopicGraphRevision(input.chatHome, input.longAgentId, (expectedRevision) => addTopicNodeParent({
+    chatHome: input.chatHome, longAgentId: input.longAgentId, childNodeId, parentNodeId, anchorEntryId, anchorSequence,
+    ...(memoryRefs.length === 0 ? {} : { memoryRefs }), expectedRevision,
+  }));
+  if (product === undefined) throw new TopicError(500, "补充整合没有产出");
+  return { ...added, product };
 }

@@ -26,7 +26,7 @@
     "test:backend": "node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types scripts/run-backend-tests.mjs",
     "test:frontend": "pnpm --dir frontend test",
     "test:built": "node --test scripts/built-server.test.mjs",
-    "test:dev": "pnpm build:cli && node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types --test-concurrency=1 --test scripts/dev-server.test.mjs scripts/conversation-stream-http.test.mjs scripts/group-conversation-http.test.mjs scripts/group-recovery-restart.test.mjs scripts/group-browser.test.mjs scripts/group-real-model.test.mjs scripts/friend-project-browser.test.mjs scripts/la6-joint-acceptance.test.mjs",
+    "test:dev": "pnpm build:cli && node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types --test-concurrency=1 --test scripts/dev-server.test.mjs scripts/conversation-stream-http.test.mjs scripts/group-conversation-http.test.mjs scripts/group-recovery-restart.test.mjs scripts/group-browser.test.mjs scripts/group-real-model.test.mjs scripts/friend-project-browser.test.mjs scripts/la6-joint-acceptance.test.mjs scripts/topics-browser.test.mjs scripts/topic-create-workflow.test.mjs scripts/session-memory-switch-browser.test.mjs",
     "verify": "pnpm check:architecture && pnpm test:tooling && pnpm test && pnpm typecheck && pnpm build && pnpm test:built && pnpm test:dev",
     "dev:all": "bash scripts/dev-start.sh",
     "check:architecture": "node scripts/check-architecture.mjs",

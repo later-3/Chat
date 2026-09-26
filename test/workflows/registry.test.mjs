@@ -15,12 +15,14 @@ test("Workflow registry is the single backend source for available Workflows", (
     "memory",
     "rule-management",
     "session-memory",
+    "problem-diagnosis",
+    "topic-session-create",
   ]);
   assert.equal(DEFAULT_CHAT_WORKFLOW_ID, "minimal-pi-coding-agent");
   assert.equal(getChatWorkflowDefinition("unknown"), undefined);
 
   const workflows = listChatWorkflowDefinitions();
-  assert.equal(workflows.length, 6);
+  assert.equal(workflows.length, 8);
   assert.equal("run" in workflows[0], false);
   assert.equal(workflows.some((workflow) => "prepareAgentSession" in workflow), false);
   assert.deepEqual(workflows.map((workflow) => workflow.agentCallable), [
@@ -30,23 +32,29 @@ test("Workflow registry is the single backend source for available Workflows", (
     true,
     false,
     true,
+    true,
+    true,
   ]);
   assert.deepEqual(workflows.map((workflow) => workflow.agents.map((agent) => agent.id)), [
-    ["pi-coding-agent"],
-    ["planner", "pi-coding-agent"],
-    ["planner", "coordinator"],
-    ["memory-agent"],
-    ["rule-curator-agent"],
+    ["pi-coding-agent", "session-memory-writer"],
+    ["planner", "pi-coding-agent", "session-memory-writer"],
+    ["planner", "coordinator", "session-memory-writer"],
+    ["memory-agent", "session-memory-writer"],
+    ["rule-curator-agent", "session-memory-writer"],
     ["session-memory-worker", "session-memory-writer"],
+    ["problem-diagnoser", "session-memory-writer"],
+    ["topic-collector", "topic-creator", "session-memory-writer"],
   ]);
   assert.deepEqual(workflows.map((workflow) => workflow.nodes.map((node) => (
     node.kind === "agent" ? node.agentId : null
   ))), [
-    ["pi-coding-agent"],
-    ["planner", null, "pi-coding-agent"],
-    ["planner", null, "coordinator"],
-    ["memory-agent"],
-    ["rule-curator-agent"],
+    ["pi-coding-agent", "session-memory-writer"],
+    ["planner", null, "pi-coding-agent", "session-memory-writer"],
+    ["planner", null, "coordinator", "session-memory-writer"],
+    ["memory-agent", "session-memory-writer"],
+    ["rule-curator-agent", "session-memory-writer"],
     ["session-memory-worker", "session-memory-writer"],
+    ["problem-diagnoser", "session-memory-writer"],
+    ["topic-collector", null, "topic-creator", "session-memory-writer"],
   ]);
 });

@@ -10,6 +10,7 @@ import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.
 import { appendChatWorkflowAgentInput, appendChatWorkflowStage } from "../workflow-stage.js";
 import { MEMORY_AGENT } from "./agents/memory-agent/index.js";
 import { prepareMemoryAgentSession } from "./agents/memory-agent/runtime.js";
+import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 
 export async function runMemoryAgentStep(
   input: ChatWorkflowInput,
@@ -127,7 +128,7 @@ export async function runMemoryAgentStep(
     );
     throw error;
   } finally {
-    await observer.finish(true);
+    await observer.finish(stageFinishClosesStream(input));
     session.dispose();
     console.log(`${localTimestamp()} [memory] session disposed`);
   }

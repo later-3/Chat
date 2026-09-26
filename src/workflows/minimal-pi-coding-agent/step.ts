@@ -10,6 +10,7 @@ import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 import { appendChatWorkflowStage } from "../workflow-stage.js";
 import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
 import { PI_CODING_AGENT } from "./agents/pi-coding-agent/index.js";
+import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 
 export async function runPiCodingAgentPromptStep(
   input: ChatWorkflowInput,
@@ -115,7 +116,7 @@ export async function runPiCodingAgentPromptStep(
     );
     throw error;
   } finally {
-    await observer.finish(true);
+    await observer.finish(stageFinishClosesStream(input));
     session.dispose();
     console.log(`${localTimestamp()} [pi] session disposed`);
   }

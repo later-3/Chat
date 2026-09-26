@@ -12,6 +12,10 @@
 
 当前案例：
 
+- [Workflow尾阶段：记忆节点的分流、收尾与失败记录](./workflow-tail-stage-routing.md)：按当前阶段分流、有限响应、事件流归属与可恢复的失败记录。
+
+- [主题会话接入公共聊天的验收接缝](./topic-session-public-chat-closeout.md)：耐久执行恢复、工作答案与记忆回执分开、真实指针与窄屏验收。
+
 - [异步返回与原生 Session 写入权](./asynchronous-session-writer.md)
 
 - [进程健康不等于 Web 就绪](./web-readiness-build-parity.md)

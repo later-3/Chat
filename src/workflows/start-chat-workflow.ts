@@ -7,6 +7,7 @@ import { requireActiveChatSessionFile } from "../session-state.js";
 import { bindPlanningExecutionRun } from "./planning-execution/review-state.js";
 import { getChatWorkflowDefinition } from "./registry.js";
 import { recordChatSessionRunBinding } from "./session-run-registry.js";
+import { topicCreationBinding } from "./topic-session-create/request.js";
 
 /** Starts one Workflow invocation and gives all of its Stages one stable ID. */
 export async function startChatWorkflow(
@@ -34,6 +35,7 @@ export async function startChatWorkflow(
       workflowId: workflow,
       projectId: project.projectId,
       sessionId: input.sessionId,
+      ...(input.topicCreation === undefined ? {} : { topicCreation: topicCreationBinding(input.prompt, input.topicCreation) }),
       ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
     });
   }

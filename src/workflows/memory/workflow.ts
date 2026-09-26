@@ -1,4 +1,5 @@
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
+import { runSessionMemoryTail } from "../session-memory/tail.js";
 import {
   beginSessionExecution,
   endSessionExecution,
@@ -14,7 +15,7 @@ export async function memoryWorkflow(
     beginSessionExecution(input.sessionId, "memory", input.workflowInvocationId);
   }
   try {
-    return await runMemoryAgentStep(input);
+    return await runSessionMemoryTail(input, await runMemoryAgentStep(input), "memory");
   } finally {
     if (input.sessionId !== undefined) {
       endSessionExecution(input.sessionId, input.workflowInvocationId);
