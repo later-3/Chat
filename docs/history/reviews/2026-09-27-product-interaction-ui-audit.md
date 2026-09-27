@@ -76,7 +76,7 @@ F=功能/状态；I=交互、信息架构、文案与可访问操作；V=颜色�
 
 分类校验：F = 4/8/9/11/12；I = 2/4/5/6/7/8/9/10/11/12/13/17/24/26；V = 4/5/12/13/16/19/28；并集 17。4 个界面优先级 P1、13 个 P2。共享缺陷可能影响多个入口，但每个界面在并集中只计一次。
 
-本机截图入口：[群聊](../../../.data/verification/ui-audit-2026-09-27/25-groups-medium.png)、[任务不可确认/空态并列](../../../.data/verification/ui-audit-2026-09-27/08-friend-tasks.png)、[主题记忆双入口与主按钮](../../../.data/verification/ui-audit-2026-09-27/27-topic-contrast.png)、[日期工作区](../../../.data/verification/ui-audit-2026-09-27/22-day-work.png)、[Tools 目录](../../../.data/verification/ui-audit-2026-09-27/16-tools.png)。这些链接指向本机忽略目录，不随 Git 发布。
+本机证据索引（位于上文忽略目录，不随 Git 发布）：群聊 `25-groups-medium.png`；任务不可确认/空态并列 `08-friend-tasks.png`；主题记忆双入口与主按钮 `27-topic-contrast.png`；日期工作区 `22-day-work.png`；Tools 目录 `16-tools.png`。这里只列文件名，避免让新机器上的文档依赖私有截图文件。
 
 ## 5. 按用户流程排列的证据与发现
 
