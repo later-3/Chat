@@ -1,6 +1,7 @@
 // Minimal Chrome DevTools Protocol client: launches headless Chrome and runs JS in a page.
 // No Playwright/Puppeteer dependency; Node's global WebSocket is used.
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -74,8 +75,12 @@ export async function launchBrowser() {
     child,
     userDataDir,
     async close() {
-      try { child.kill("SIGKILL"); } catch {}
-      fs.rmSync(userDataDir, { recursive: true, force: true });
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = once(child, "exit");
+        child.kill("SIGKILL");
+        await exited;
+      }
+      fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     },
     async newPage(url) {
       const target = await requestJson(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, "PUT");

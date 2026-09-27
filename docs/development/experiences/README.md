@@ -14,6 +14,8 @@
 
 当前案例：
 
+- [中等视口的抽屉与会话深链接](./medium-sidebar-deep-links.md)：统一覆盖断点，真实指针与显式视口共同验收。
+
 - [Linux 调试僵尸进程组](./linux-debug-zombie-process-groups.md)：退出不等于 PID 立即回收，暂停启动器恢复和失败清理必须有界。
 
 - [业务上下文投影撤销了 Pi 压缩](./writer-compaction-boundary.md)：本轮归属不等于原始全文回填，完整父链、原生摘要与实际 Provider 请求共同验收。

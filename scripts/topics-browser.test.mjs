@@ -260,6 +260,7 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
   // ---- A fresh direct topic link must not be hijacked by default-Friend session selection. ----
   browser = await launchBrowser();
   const page = await browser.newPage(`${baseUrl}/?view=topics&topicAgent=friend&topicId=${topic.topicId}&nodeId=${rootNode.nodeId}`);
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 800, height: 513, deviceScaleFactor: 1, mobile: false });
   // Page.reload acknowledges navigation before the old document is replaced. Wait for a new
   // document so a still-visible old button/dialog cannot satisfy the recovery assertion.
   const reloadPage = async () => {
@@ -276,6 +277,12 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
       return r.width > 0 && r.height > 0 && el.contains(document.elementFromPoint(r.x + r.width/2, r.y + r.height/2));
     })()`, { label: `可点击 ${selector}`, timeoutMs: 20_000 }).catch(async error => {
       await screenshot('covered-control');
+      console.error(await page.evaluate(`(() => {
+        const el = document.querySelector(${JSON.stringify(selector)}), r = el?.getBoundingClientRect();
+        const hit = r && document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);
+        return JSON.stringify({ selector: ${JSON.stringify(selector)}, viewport: {width:innerWidth,height:innerHeight},
+          rect:r?.toJSON(), hit:hit?.outerHTML, control:el?.outerHTML });
+      })()`));
       console.error(await page.evaluate("document.body.innerText"));
       throw error;
     });
