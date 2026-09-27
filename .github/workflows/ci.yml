@@ -74,10 +74,34 @@ jobs:
       - name: Install Chat dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify Chat integration and production runtime
-        run: |
-          node --input-type=module -e 'import { chromeExecutable } from "./scripts/cdp.mjs"; const browser = chromeExecutable(); if (!browser) throw new Error("Chrome/Chromium is required for CI browser regressions"); console.log(browser);'
-          pnpm verify
+      # Same ordered gates as pnpm verify; separate steps expose hangs and failures.
+      - name: Require the Linux browser
+        timeout-minutes: 1
+        run: node --input-type=module -e 'import { chromeExecutable } from "./scripts/cdp.mjs"; const browser = chromeExecutable(); if (!browser) throw new Error("Chrome/Chromium is required for CI browser regressions"); console.log(browser);'
+
+      - name: Check architecture and lifecycle tooling
+        timeout-minutes: 5
+        run: pnpm check:architecture && pnpm test:tooling
+
+      - name: Test Backend and Frontend
+        timeout-minutes: 10
+        run: pnpm test
+
+      - name: Check types
+        timeout-minutes: 5
+        run: pnpm typecheck
+
+      - name: Build the production release
+        timeout-minutes: 10
+        run: pnpm build
+
+      - name: Verify production HTTP and runtime
+        timeout-minutes: 10
+        run: pnpm test:built
+
+      - name: Verify development runtime and browser flows
+        timeout-minutes: 10
+        run: pnpm test:dev
 
       - name: Check tracked diffs
         run: |

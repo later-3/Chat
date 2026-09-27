@@ -26,11 +26,13 @@ Chat使用父仓库固定三个公开Submodule Commit：`pi/`、`frontend/`和`n
 → pnpm pi:prepare
 → pnpm install --frozen-lockfile
 → 检查 Linux Chrome/Chromium 可执行文件，缺失则失败
-→ pnpm verify
+→ 按 pnpm verify 的相同顺序执行下面各阶段
 → Git/Submodule差异检查
 ```
 
 `pnpm verify`已经包含后端与前端测试、类型检查、前端与Nitro生产构建、构建产物HTTP测试，以及Nitro开发链的真实Workflow/Pi AgentSession测试。因此CI不再重复增加一个仅检查`/api/health`的服务。
+
+同一个 `ci` Job 将该命令展开为可见步骤：`check:architecture` + `test:tooling`（5 分钟）、`test`（10 分钟）、`typecheck`（5 分钟）、`build`（10 分钟）、`test:built`（10 分钟）、`test:dev`（10 分钟）。前一阶段失败即停止后续阶段，整个 Job 仍限制 45 分钟；没有删除或重复门禁。本地和安装脚本继续使用 `pnpm verify`。阶段时限避免退出钩子卡住时只看到长期“运行中”，但测试自己的清理仍须有界。
 
 当前保持单Job，因为拆分后每个Runner都必须重新拉取Submodule、安装两套包管理器依赖并构建Pi；通过Artifact传递Pi `dist`、`.output`和原生依赖也会增加平台与陈旧产物风险。只有冷启动持续超过10分钟且能证明分Job节省总时间时，才考虑拆分。
 
