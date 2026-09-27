@@ -441,4 +441,16 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-20T00:00:00.000Z",
     }],
   },
+  {
+    schemaVersion: 1, id: "linux-debug-zombie-process-groups",
+    revisions: [{
+      schemaVersion: 1, id: "linux-debug-zombie-process-groups", revision: 1, kind: "experience",
+      title: "Linux 调试停止不能等待僵尸进程组",
+      purpose: "避免暂停启动器无法回收子进程时，调试替换及测试清理永久等待。",
+      content: "Linux 的 kill(-pgid, 0) 成功不代表组内仍有执行中的进程；结合 ps 状态排除只有 Z 成员的组。停止仍须验证 PID、启动时间、UID、组和 checkout 的归属，不能扩大信号范围。真实回归覆盖正常替换、杀死启动器后的孤儿恢复、SIGSTOP 启动器替换和无关监听器保留；失败清理先恢复测试拥有的暂停进程，再有界 TERM/KILL。macOS 通过不能代替 Linux 回归，测试超时也不能代替清理期限。",
+      tags: ["development", "incident", "debugging", "lifecycle"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/linux-debug-zombie-process-groups.md", capturedAt: "2026-09-28T00:00:00.000+08:00" }],
+      author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-28T00:00:00.000+08:00",
+    }],
+  },
 ] as const satisfies readonly PromptResourceDocument[];

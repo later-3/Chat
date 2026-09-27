@@ -10,6 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { assertPortFree, cleanEnvironment, ports } from "./debug-environment.mjs";
 import { createDebugModelServer, debugModelReply } from "./debug-model.mjs";
+import { identity, signalGroup } from "./debug-processes.mjs";
 
 test("debug launch contracts use dedicated ports, browser profile, and independent NanoClaw cwd", async () => {
   const launch = JSON.parse((await readFile(".vscode/launch.json", "utf8")).replace(/^\s*\/\/.*$/gm, ""));
@@ -270,9 +271,16 @@ test("repeated launch replaces only its own instance and recovers a killed launc
   const children = [];
   let servicePid;
   t.after(async () => {
-    for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+    for (const child of children) if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGCONT");
+      child.kill("SIGTERM");
+    }
     if (servicePid) { try { process.kill(servicePid, "SIGTERM"); } catch {} }
-    await Promise.all(children.map(child => child.done));
+    const force = setTimeout(() => {
+      for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    }, 5000);
+    try { await Promise.all(children.map(child => child.done)); }
+    finally { clearTimeout(force); }
     await rm(root, { recursive: true, force: true });
   });
   function launch() {
@@ -299,15 +307,18 @@ test("repeated launch replaces only its own instance and recovers a killed launc
   const second = launch(); const secondPid = await ready(second);
   assert.notEqual(secondPid, firstPid);
   assert.equal((await first.done)[0], 0);
-  assert.throws(() => process.kill(firstPid, 0), { code: "ESRCH" });
+  assert.equal(identity(firstPid), null);
+  assert.equal(signalGroup(firstPid, 0), false);
   second.kill("SIGKILL"); await second.done;
   const third = launch(); const thirdPid = await ready(third);
   assert.notEqual(thirdPid, secondPid);
-  assert.throws(() => process.kill(secondPid, 0), { code: "ESRCH" });
+  assert.equal(identity(secondPid), null);
+  assert.equal(signalGroup(secondPid, 0), false);
   third.kill("SIGSTOP");
   const fourth = launch(); await ready(fourth);
   assert.equal((await third.done)[1], "SIGKILL");
-  assert.throws(() => process.kill(thirdPid, 0), { code: "ESRCH" });
+  assert.equal(identity(thirdPid), null);
+  assert.equal(signalGroup(thirdPid, 0), false);
   fourth.kill("SIGTERM"); assert.equal((await fourth.done)[0], 0);
   servicePid = undefined;
   await assert.rejects(readFile(join(debug, "backend.lock")), { code: "ENOENT" });

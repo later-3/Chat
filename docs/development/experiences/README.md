@@ -14,6 +14,8 @@
 
 当前案例：
 
+- [Linux 调试僵尸进程组](./linux-debug-zombie-process-groups.md)：退出不等于 PID 立即回收，暂停启动器恢复和失败清理必须有界。
+
 - [业务上下文投影撤销了 Pi 压缩](./writer-compaction-boundary.md)：本轮归属不等于原始全文回填，完整父链、原生摘要与实际 Provider 请求共同验收。
 
 - [统一会话执行接缝](./unified-session-runtime-seams.md)：冻结装配元数据、Nitro 句柄共享、轮询碰撞与首帧闪动。

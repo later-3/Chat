@@ -104,6 +104,8 @@ sudo node scripts/chat-stop.mjs --normal --chat-service my-chat.service
 
 调试：停止操作校验PID启动时间、用户和已记录进程组。普通dev wrapper可能不是进程组leader，只给wrapper发TERM，由其已有trap清理自有子进程。专用调试支持有界等待后的自有进程强制清理；普通dev超时则明确报错，不扩大kill范围。重复停止保留所有配置、Workspace、Memory、Session、日志与Nano worktree，下一次可直接`pnpm debug:start`、F5或`pnpm dev:all`。
 
+Linux 的僵尸进程可能保留 PID 或让进程组信号探针成功，但已经不执行代码、不持有监听端口。调试停止和替换会结合进程状态排除这类成员；不能因暂停的启动器尚未回收子进程就无限等待。实现与跨平台回归见[故障案例](../experiences/linux-debug-zombie-process-groups.md)。
+
 ## 在途工作与能力边界
 
 本命令实现**进程/服务停止**，会中断正在进行的模型、工具和投递；没有实现跨Backend/Nano的业务排空协议。恢复后按[日志与故障定位](./troubleshooting.md)检查未完成Run和未确认Delivery，外部动作是否成功不能仅凭本地停机结果判断。[系统生命周期合同](../../architecture/chat-system-lifecycle.md)中的暂停接收、有界收尾、取消与投递恢复仍是后续实施范围。

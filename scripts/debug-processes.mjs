@@ -19,19 +19,26 @@ function same(record) {
   const current = identity(record.pid);
   return current && current.started === record.started && current.uid === record.uid && current.group === record.group;
 }
+function groupHasLiveMembers(pid) {
+  const rows = execFileSync("ps", ["-axo", "pgid=,stat="], { encoding: "utf8" });
+  return rows.trim().split("\n").some(row => {
+    const [group, state] = row.trim().split(/\s+/);
+    return Number(group) === pid && !state.startsWith("Z");
+  });
+}
 export function signalGroup(pid, signal) {
-  try { process.kill(-pid, signal); return true; }
+  try {
+    process.kill(-pid, signal);
+    if (signal !== 0) return true;
+  }
   catch (error) {
     if (error.code === "ESRCH") return false;
-    if (error.code === "EPERM") {
-      const rows = execFileSync("ps", ["-axo", "pgid=,stat="], { encoding: "utf8" });
-      if (!rows.trim().split("\n").some(row => {
-        const [group, state] = row.trim().split(/\s+/);
-        return Number(group) === pid && !state.startsWith("Z");
-      })) return false;
-    }
+    if (error.code === "EPERM" && !groupHasLiveMembers(pid)) return false;
     throw error;
   }
+  // Linux kill(0) succeeds for zombie-only groups. A stopped launcher cannot
+  // reap its child until recovery kills/resumes it, so do not wait on zombies.
+  return groupHasLiveMembers(pid);
 }
 export async function stopGroup(pid) {
   signalGroup(pid, "SIGTERM");
