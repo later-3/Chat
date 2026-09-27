@@ -1,3 +1,4 @@
+import { installWorkflowTransport } from "./workflow-transport-fixture.mjs";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -5,6 +6,7 @@ import path from "node:path";
 import { ensureAgentHomeProject, openProject } from "../../src/projects/registry.ts";
 import { writeLongAgentRegistry } from "../../src/long-agents/storage.ts";
 export async function fixture(t) {
+  if (t.mock !== undefined) installWorkflowTransport(t);
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-p3-daily-")));
   const home = path.join(root, "home");
   const requests = [];
@@ -15,11 +17,12 @@ export async function fixture(t) {
     const delta = await handler(body, res);
     if (delta === undefined) return;
     if (delta.error) { res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: { message: delta.error } })); return; }
+    const { finishReason, usage = { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60 }, ...messageDelta } = delta;
     res.writeHead(200, { "Content-Type": "text/event-stream" });
     const frame = (change, finish) => ({ id: `p3-${requests.length}`, object: "chat.completion.chunk", created: 0, model: "daily-model",
       choices: [{ index: 0, delta: change, finish_reason: finish }] });
-    res.write(`data: ${JSON.stringify(frame({ role: "assistant", ...delta }, null))}\n\n`);
-    res.write(`data: ${JSON.stringify({ ...frame({}, delta.tool_calls ? "tool_calls" : "stop"), usage: { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60 } })}\n\n`);
+    res.write(`data: ${JSON.stringify(frame({ role: "assistant", ...messageDelta }, null))}\n\n`);
+    res.write(`data: ${JSON.stringify({ ...frame({}, finishReason ?? (delta.tool_calls ? "tool_calls" : "stop")), usage })}\n\n`);
     res.end("data: [DONE]\n\n");
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

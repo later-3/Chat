@@ -92,7 +92,7 @@ export async function migrateFriendTasks(
       const legacyId = string(raw.id);
       const createdAt = timestamp(raw.createdAt);
       const task = parseTaskInput({
-        name: legacyId.slice(0, 120),
+        name: string(raw.prompt, 65536).trim().replace(/\s+/g, " ").slice(0, 100),
         prompt: string(raw.prompt, 65536),
         contextProjectId: null,
         timeZone: value.timeZone,

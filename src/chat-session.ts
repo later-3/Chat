@@ -4,7 +4,8 @@ import {
   type SessionEntry,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import { openProject, resolveProjectContext } from "./projects/registry.js";
+import { openProject, readProjectRegistry, resolveProjectContext } from "./projects/registry.js";
+import { resolveChatHome } from "./chat-home.js";
 import type { ChatProjectContext } from "./projects/types.js";
 import { requireActiveChatSessionFile } from "./session-state.js";
 import { listActiveSessionFiles } from "./session-files.js";
@@ -181,7 +182,17 @@ export async function openChatSession(input: ChatSessionInput): Promise<ChatSess
 
   const sessionInfo = await requireActiveChatSessionFile(projectContext, input.sessionId);
   if (resolve(sessionInfo.cwd) !== cwd) {
-    throw new Error(`Session ${input.sessionId}不属于工作目录${cwd}`);
+    // The old Home migration preserved Pi headers. Only its exact durable receipt plus the
+    // registered original root authorizes this mismatch; arbitrary copied Sessions still fail.
+    const { readLegacyFriendSessions } = await import("./migrations/agent-home-normalization.js");
+    const home = resolveChatHome(input.chatHome);
+    const receipt = (await readLegacyFriendSessions(home)).find(entry => entry.sessionId === input.sessionId
+      && entry.targetProjectId === projectContext.projectId && entry.longAgentId === projectContext.projectId);
+    const original = receipt === undefined ? undefined
+      : (await readProjectRegistry(home)).projects.find(project => project.projectId === receipt.sourceProjectId);
+    if (projectContext.kind !== "agent" || original === undefined || resolve(original.path) !== resolve(sessionInfo.cwd)) {
+      throw new Error(`Session ${input.sessionId}不属于工作目录${cwd}`);
+    }
   }
 
   return {

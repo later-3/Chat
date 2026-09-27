@@ -1,8 +1,6 @@
-import {
-  prepareWorkflowTurnContext,
-  projectCurrentRoundContext,
-} from "../../../session-conversation.js";
-import { sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
+import { collectChatWorkflowStageMarkers } from "../../../workflow-stage.js";
+import { prepareWorkflowTurnContext } from "../../../session-conversation.js";
+import { buildContextEntries, sessionEntryToContextMessages, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { WorkflowAgentSessionExtensions } from "../../../agent-definition.js";
 import type { ChatWorkflowAgentSessionContext } from "../../../registry.js";
@@ -21,9 +19,9 @@ export class SessionMemoryRoundUnavailableError extends Error {
 /**
  * The single runtime assembly path for the session-memory writer (execution and inspection).
  *
- * The writer must judge exactly ONE round: the round's own user entry plus the whole `work` stage. That
- * is why the context transform projects the current round FIRST and only then applies the invocation
- * control filter — `prepareWorkflowTurnContext` alone keeps the entire history. When the projection
+ * The writer must judge ONE round: the round's user/work entries that remain in Pi context, including
+ * a summary generated during the round if compaction replaced earlier text. The transform projects
+ * that scope before the invocation control filter — `prepareWorkflowTurnContext` alone keeps history. When the projection
  * cannot find a user entry it throws instead of handing over every previous round, so a round without a
  * user message fails visibly and writes nothing.
  */
@@ -45,10 +43,9 @@ export async function prepareSessionMemoryWriterSession(
   return {
     additionalSkillPaths: [sessionMemorySkillPath()],
     transformContext: () => {
-      // The round is read from the DURABLE Session branch, never from the messages handed to this
-      // transform: a Workflow agent session is assembled with its own assembly/control entries and does
-      // not carry the conversation, so projecting that list would always find "no round" and refuse.
-      const round = currentRoundMessagesOf(context.sessionManager);
+      // Resolve the round from durable stage identities, then respect Pi's active compaction boundary.
+      // Re-injecting the raw branch here would undo compaction on every provider request.
+      const round = currentRoundMessagesOf(context.sessionManager, context.workflowInvocationId);
       if (round === null) throw new SessionMemoryRoundUnavailableError();
       return prepareWorkflowTurnContext(round, turn);
     },
@@ -56,16 +53,29 @@ export async function prepareSessionMemoryWriterSession(
 }
 
 /**
- * The current round read from the durable Session: the round's own user entry plus the whole work stage.
- * `getContextBranch()` applies the same entry filter the model context uses (internal control messages of
- * other invocations stay out), and each entry is converted exactly as Pi builds context messages.
+ * The durable branch determines ownership; Pi determines which entries remain in context. A summary
+ * created during this round replaces its compacted messages. Earlier round summaries are not injected.
+ * Original messages stay on disk, including when the round's first user entry was compacted away.
  */
 function currentRoundMessagesOf(sessionManager: {
   getContextBranch?: () => readonly unknown[];
   getBranch: () => readonly unknown[];
-}): AgentMessage[] | null {
-  const branch = (sessionManager.getContextBranch ?? sessionManager.getBranch).call(sessionManager);
-  const messages = (branch as readonly Parameters<typeof sessionEntryToContextMessages>[0][])
-    .flatMap((entry) => sessionEntryToContextMessages(entry)) as AgentMessage[];
-  return projectCurrentRoundContext(messages);
+}, invocationId: string): AgentMessage[] | null {
+  // Keep the complete parent chain for native tree traversal. Filtering before buildContextEntries
+  // would leave missing parent IDs at hidden handoffs and cut off the preceding conversation.
+  const branch = sessionManager.getBranch() as readonly SessionEntry[];
+  const allowedIds = new Set(((sessionManager.getContextBranch ?? sessionManager.getBranch)
+    .call(sessionManager) as readonly SessionEntry[]).map(entry => entry.id));
+  const start = collectChatWorkflowStageMarkers(branch).find(stage => stage.invocationId === invocationId && stage.stageId !== "remember");
+  const startIndex = start === undefined ? -1 : branch.findIndex(entry => typeof entry === "object" && entry !== null && "id" in entry && entry.id === start.entryId);
+  // Review/revision adds native user messages within ONE invocation. Keep the whole current workflow
+  // round, not just the final approval. Legacy queue rounds lack a work-stage marker and keep the fallback.
+  const firstUser = startIndex < 0
+    ? branch.findLastIndex(entry => entry.type === "message" && entry.message.role === "user")
+    : branch.findIndex((entry, index) => index > startIndex && entry.type === "message" && entry.message.role === "user");
+  if (firstUser < 0) return null;
+  const roundIds = new Set(branch.slice(firstUser).map(entry => entry.id));
+  return buildContextEntries([...branch])
+    .filter(entry => roundIds.has(entry.id) && allowedIds.has(entry.id))
+    .flatMap(sessionEntryToContextMessages);
 }

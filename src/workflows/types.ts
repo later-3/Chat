@@ -2,6 +2,8 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import type { AgentConfigSelection } from "./agent-config.js";
 
 export interface ChatWorkflowInput {
+  /** Backend-only reference to a durable accepted Friend/node request. Never parsed from HTTP. */
+  readonly acceptedLongAgentTurn?: { readonly longAgentId: string; readonly turnId: string };
   readonly projectId?: string;
   readonly chatHome?: string;
   readonly cwd: string;

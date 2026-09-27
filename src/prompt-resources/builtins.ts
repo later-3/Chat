@@ -173,6 +173,32 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
   },
   {
     schemaVersion: 1,
+    id: "writer-compaction-boundary",
+    revisions: [{
+      schemaVersion: 1, id: "writer-compaction-boundary", revision: 1, kind: "experience",
+      title: "业务上下文投影不能撤销 Pi 压缩",
+      purpose: "避免记忆等业务阶段从原始分支恢复已被 Pi 压缩的长文本。",
+      content: "修改 transformContext 或阶段上下文时，区分原始历史、本轮归属和当前有效模型上下文。先在完整 Session 父链中定位 invocation 的首个 user，再使用 Pi buildContextEntries 选择摘要和保留区间，最后过滤业务范围及隐藏控制消息。先删 handoff 再遍历会断 parentId 链；每次从原始本轮回填会撤销压缩。无本轮 user 时拒绝写记忆，保留原始 JSONL 供按需受权读取。本轮生成的摘要可能含更早背景，不得当作全是本轮新结论。验证须检查真实 Workflow/Step 压缩后 Writer 的 Provider 请求，不只断言存在 compaction Entry。门禁：test/workflows/session-memory-writer-runtime.test.mjs 与 scripts/unified-session-runtime.test.mjs；压缩结果投影另以 chat-run-events/run-activity 测试确认。",
+      tags: ["development", "session", "compaction", "workflow", "memory"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/writer-compaction-boundary.md", capturedAt: "2026-09-27T00:00:00.000+08:00" }],
+      author: { type: "user" }, createdAt: "2026-09-27T00:00:00.000+08:00",
+    }],
+  },
+  {
+    schemaVersion: 1,
+    id: "native-summary-admission-and-recovery",
+    revisions: [{
+      schemaVersion: 1, id: "native-summary-admission-and-recovery", revision: 1, kind: "experience",
+      title: "原生摘要准入与取消恢复",
+      purpose: "防止摘要绕过预算、取消被误报及恢复重放收费或有副作用请求。",
+      content: "Pi compact/branch summary 直接调用 streamFunction；只拦 Agent.onPayload 不足以控制预算。准入放在 SDK 共用 stream 边界，先完成 callback/扩展转换再 fail-closed gate，普通请求不得双计数。成功摘要 usage 接现有持久预算链，下次请求等待记录完成；未报告用量不得伪造。取消根据所属 AbortSignal 判断，不能只看 transport 包装后的错误类型。手动维护使用原生 compact/abort 和 Session 操作锁，验证 Workflow/Friend 队列及原生群绑定；导航未列群工作不等于可走普通入口。原生 CustomEntry 保存幂等身份，重启只读恢复，不重放未知收费请求。历史浏览只读，显式继续以 expectedLeafId 和原生 branch/resetLeaf 提交。统计不加载扩展。门禁：compaction-recovery、summary-budget、session-maintenance、unified-session-runtime、session-memory-switch-browser。",
+      tags: ["development", "session", "compaction", "budget", "recovery"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/native-summary-admission-and-recovery.md", capturedAt: "2026-09-27T00:00:00.000+08:00" }],
+      author: { type: "user" }, createdAt: "2026-09-27T00:00:00.000+08:00",
+    }],
+  },
+  {
+    schemaVersion: 1,
     id: "planner-conversation-output-repair",
     revisions: [{
       schemaVersion: 1, id: "planner-conversation-output-repair", revision: 1, kind: "experience",

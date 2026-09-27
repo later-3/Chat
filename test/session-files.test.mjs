@@ -41,3 +41,30 @@ test("active Session lookup uses Pi and ignores the nested removed directory", a
     new RegExp(`找不到Session: ${removed.getSessionId()}`),
   );
 });
+
+test("summary revalidation reads changed native files only and observes rename/removal/external append", async t => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-summary-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const project = { sessionDir: path.join(base, "sessions") };
+  const a = SessionManager.create(base, project.sessionDir);
+  const b = SessionManager.create(base, project.sessionDir);
+  a.appendMessage({ role: "assistant", content: [{ type: "text", text: "first answer" }], timestamp: Date.now() }); a.flush();
+  b.appendMessage({ role: "user", content: "other".repeat(200) + "search tail", timestamp: Date.now() }); b.flush();
+  const original = SessionManager.open;
+  let opens = 0;
+  SessionManager.open = (...args) => { opens++; return original.apply(SessionManager, args); };
+  t.after(() => { SessionManager.open = original; });
+  let list = await listActiveSessionFiles(project);
+  assert.equal(opens, 2);
+  assert.match(list.find(item => item.id === b.getSessionId()).firstMessage, /search tail$/, "sidebar search must retain long first messages");
+  assert.equal(list.find(item => item.id === a.getSessionId()).firstMessage, "first answer");
+  await listActiveSessionFiles(project);
+  assert.equal(opens, 2, "unchanged files need no JSONL parsing");
+  a.appendMessage({ role: "user", content: "external append", timestamp: Date.now() }); a.appendSessionInfo("renamed"); a.flush();
+  list = await listActiveSessionFiles(project);
+  assert.equal(opens, 3, "only changed Session parsed");
+  assert.equal(list.find(item => item.id === a.getSessionId()).name, "renamed");
+  assert.equal(list.find(item => item.id === a.getSessionId()).messageCount, 2);
+  fs.unlinkSync(b.getSessionFile());
+  assert.deepEqual((await listActiveSessionFiles(project)).map(item => item.id), [a.getSessionId()]);
+});

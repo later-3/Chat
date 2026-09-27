@@ -33,6 +33,9 @@ const CHAT_WEB_CHANNEL = "chat-web";
 const MAX_LONG_AGENT_MESSAGE_CHARS = 100_000;
 
 export interface ExecuteLongAgentTurnInput {
+  readonly workflow?: string;
+  /** Set only by the Workflow Step adapter, never by an HTTP request. */
+  readonly workflowExecution?: { readonly invocationId: string; readonly workflowId: string; readonly memoryEnabled: boolean };
   readonly longAgentId: string;
   readonly projectId: string;
   readonly sessionId?: string;
@@ -297,6 +300,11 @@ export async function executeAcceptedLongAgentTurn(
             capabilityNotice = error instanceof Error ? error.message : String(error);
           }
         }
+        const workflowObserver = input.workflowExecution === undefined ? undefined
+          : (await import("../workflows/agent-session-log.js")).subscribeAgentSessionLog(created.session, "pi", {
+            workflowId: input.workflowExecution.workflowId, stageId: "execute", nodeKind: "agent", agentId: "pi-coding-agent",
+          }, { sessionManager: chatSession.manager, projectId: agent.id,
+            workflowInvocationId: input.workflowExecution.invocationId, toolResources: created.toolResources });
         const feedback = registerLiveTurn(chatHome, accepted, created.session, projectSessionContext(chatSession.manager.getEntries(), chatSession.manager.getLeafId()).messages);
         // A topic node round continues into `remember`; the queue keeps ONE live reference across both
         // phases, so the work segment must not close it on success.
@@ -321,9 +329,10 @@ export async function executeAcceptedLongAgentTurn(
               );
             }
           }
-          keepLiveAfterWork = accepted.topicNode !== undefined && !feedback.cancelled;
+          keepLiveAfterWork = (accepted.topicNode !== undefined || input.workflowExecution !== undefined) && !feedback.cancelled;
         } finally {
           unsubscribe();
+          await workflowObserver?.finish(input.workflowExecution?.memoryEnabled === false);
           if (!keepLiveAfterWork) feedback.close();
         }
         if (feedback.cancelled) throw new FriendCancelledError();

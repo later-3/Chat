@@ -1,6 +1,6 @@
 # 源码、流程与核心接口地图
 
-本页供打开 IDE 后直接找文件、函数和断点。2026-09-15 按当前 checkout 源码核对；描述源码可达路径，不表示运行中的生产构建或私有任务配置已同步。函数名比行号稳定：点击文件后搜索表中的函数名；路由默认导出没有名字时，在 `defineEventHandler` 回调内打断点。
+本页供打开 IDE 后直接找文件、函数和断点。2026-09-27 按统一 Workflow 执行链核对；描述源码可达路径，不表示运行中的生产构建或私有任务配置已同步。函数名比行号稳定：点击文件后搜索表中的函数名；路由默认导出没有名字时，在 `defineEventHandler` 回调内打断点。
 
 
 Workflow终端入口从 `cli/src/main.ts` → `controller.ts` → `api.ts` →同一 `POST /runs` 接入；UI组合在 `tui.ts`。启动、具体断点与Web/Fork同步场景见[Workflow TUI调试](./workflow-tui.md)。
@@ -18,11 +18,11 @@ Workflow终端入口从 `cli/src/main.ts` → `controller.ts` → `api.ts` →�
 flowchart LR
   W[浏览器普通 Chat] -->|POST /runs| R[Backend Run 路由]
   R --> F[Workflow → Step]
-  L[浏览器Friend] -->|POST messages| T[executeLongAgentTurn]
+  L[浏览器Friend] -->|POST turns| T[耐久接受记录]
   N[NanoClaw Channel / 到期任务] -->|HTTP events| Q[Chat 耐久事件队列]
   Q --> T
   F --> A[createChatPiAgentSession]
-  T --> A
+  T --> F
   A --> P[Pi AgentSession → Agent Loop]
   P --> M[模型 API / Tool]
   P --> S[Pi SessionManager / JSONL]
@@ -85,20 +85,19 @@ flowchart LR
 | 同上：`executeToolCalls`、`executePreparedToolCall` | Assistant 的 toolCall → 校验与执行 → ToolResult → 后续模型轮次；`read` 的具体执行在 [tools/read.ts](../../../pi/packages/coding-agent/src/core/tools/read.ts) |
 | [Pi session-manager.ts](../../../pi/packages/coding-agent/src/core/session-manager.ts)：`appendMessage`、`appendCustomEntry`、`buildSessionContext` | 原生消息与 Chat 元数据分别追加；根据当前叶节点/分支还原模型上下文 |
 
-Long Agent 的能力源是自身 `LongAgentConfig.definition`，经 `executeLongAgentTurn` 附加 Group 上下文后进入公共装配；不经过普通 Workflow 的 `prepareChatWorkflowTurnConfiguration`。Tool 的 `projectId/chatHome/sessionId/longAgentId` 来源于宿主上下文，模型只提供工具业务参数。完整配置实验见[配置与资源调试](./configuration-resources.md)。
+Long Agent 的能力源是自身 `LongAgentConfig.definition`，接受时冻结身份，在 Workflow Stage 附加 Group 上下文后进入公共装配；按冻结定义解析，不从当前页面重新猜配置。Tool 的 `projectId/chatHome/sessionId/longAgentId` 来源于宿主上下文，模型只提供工具业务参数。完整配置实验见[配置与资源调试](./configuration-resources.md)。
 
-## Web 长期 Agent：不经过普通 Workflow
+## Web 长期 Agent：先授权接受，再进入 Workflow
 
 | 交接 | 文件 + 函数 | 观察什么 |
 |---|---|---|
-| 打开 Agent | [long-agents-browser.ts](../../../frontend/lib/long-agents-browser.ts)：`startProjectLongAgent` → [start.post.ts](../../../src/routes/api/long-agents/%5BlongAgentId%5D/start.post.ts)：默认 handler | 请求 Project 与返回 `projectId/primarySessionId`；从系统共享入口打开时可能转到 Agent 自己的默认 Project |
-| 确定主会话 | [project-agent.ts](../../../src/long-agents/project-agent.ts)：`ensureProjectLongAgent` | 当前 `(projectId, longAgentId)` 的 `ProjectLongAgent`；Agent 自己的 Daily Project 按宿主本地日期轮换，其他 Project 复用专属主会话 |
-| 发送文本 | [useAgentSession.ts](../../../frontend/hooks/useAgentSession.ts)：`handleSend` → [long-agents-browser.ts](../../../frontend/lib/long-agents-browser.ts)：`sendLongAgentMessage` → [messages.post.ts](../../../src/routes/api/long-agents/%5BlongAgentId%5D/messages.post.ts) | `projectId/sessionId/text/contextProjectId`；不是 POST `/runs` |
-| 生命周期与执行 | [runtime.ts](../../../src/long-agents/runtime.ts)：`executeLongAgentTurn` | `turnId`、原生 Turn 标记、Session 锁；`contextProjectId` 用于提示词上下文，不改变会话归属 |
-| Group → Prompt | [agent-group-service.ts](../../../src/long-agents/agent-group-service.ts)：`readLongAgentAgentGroup`、`readFrozenLongAgentAgentGroup`、`buildAgentGroupContextInstructions` | Group 身份、核心 Memory、revision；重试读取冻结快照，避免同一 Turn 悄悄换身份 |
-| 公共 Pi → 回复 | `runtime.ts` 中 `createChatPiAgentSession`、`created.session.prompt` | 实际模型、active tools、Long Agent 资源；返回 `ExecuteLongAgentTurnResult` 后前端重读 Session |
+| 打开 Agent / 日期 | [project-agent.ts](../../../src/long-agents/project-agent.ts)：`ensureProjectLongAgent`；[start 路由](../../../src/routes/api/long-agents/%5BlongAgentId%5D/start.post.ts) | Agent Home、Friend 时区、目标日期；存储归属与本轮协作项目分开 |
+| 发送与耐久接受 | [turns 路由](../../../src/routes/api/long-agents/%5BlongAgentId%5D/turns.post.ts)；[turn-queue.ts](../../../src/long-agents/turn-queue.ts)：`acceptLongAgentTurn` | request/turnId、sessionId、冻结项目与能力；接受不代表完成 |
+| 接受记录 → Run | [workflow-execution.ts](../../../src/long-agents/workflow-execution.ts)：`executeAcceptedWorkflowTurn`；[accepted-run-runtime.ts](../../../src/workflows/accepted-run-runtime.ts) | Workflow Run 引用、重放与绑定；重复观察不能再建 Run |
+| Step → Friend 上下文 | [long-agent-stage.ts](../../../src/workflows/long-agent-stage.ts)：`attachLongAgentWorkflowContext` | Group 快照、工作项目、工具和预算，交给同一公共 Pi 装配 |
+| Pi → 回复 / 统计 | [agent-definition.ts](../../../src/workflows/agent-definition.ts)：`createWorkflowAgentSession`；[Pi AgentSession](../../../pi/packages/coding-agent/src/core/agent-session.ts) | 原生消息、压缩/分支摘要、预算准入和取消；终态后重读 Session |
 
-当前 Web `messages` 请求等待本轮完成，返回 `accepted: true` **和** `completed: true`；它不是普通 `/runs` 的异步 202 合同。若只在直接执行 Workflow 的 Step 下断点，Long Agent 对话不会命中。
+前端的新轮次从接受回执取得 `workflowRun` 后订阅公共 `/runs/:id/events`，旧接受记录保留兼容观察。`messages` 为既有阻塞调用合同，不能把它当成当前 Web 主发送路径。后台工作按绑定的 workId/projectId 打开；群成员参与记录留在群视图，页面导航不改变 Session owner。手动压缩/历史继续入口见 [Session 维护](../../modules/sessions/chat-session-maintenance.md)。
 
 ## 渠道对话：跨进程的边界
 
@@ -110,8 +109,8 @@ Telegram/微信 Adapter
   → POST /api/internal/channel/v1/events（服务认证 + 结构校验）
   → acceptLongAgentEvents（Chat 耐久接收，返回 202）
   → syncLongAgentEvents（恢复 Worker / 重试）
-  → executeLongAgentTurn（真实 Project + 原生 Chat Session）
-  → createChatPiAgentSession → Pi
+  → executeLongAgentTurn → 耐久接受记录（真实 Project + 原生 Chat Session）
+  → executeAcceptedWorkflowTurn → Workflow / Step → createChatPiAgentSession → Pi
   → persistNanoClawDelivery → Nano Outbound
   → acknowledgeNanoClawInbound → Nano Inbox Ack
   → delivery poll → 对应 Adapter → 平台

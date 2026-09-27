@@ -75,7 +75,7 @@ pnpm debug:prepare
 
 1. 用 VS Code 打开 Chat 根目录，点击左侧“运行和调试”。
 2. 在顶部配置下拉框选 `Debug Backend (full environment)`，按 F5。等待 Backend ready、网页打开、TUI 出现输入框、Nano 输出 `[debug] lab ready`。此时只有 Backend 挂调试器。
-3. 按 **Command＋Shift＋P**（macOS）打开顶部命令搜索框；也可以从菜单“查看 → 命令面板”进入。
+3. 按 **Ctrl＋Shift＋P**（Linux/Windows）或 **Command＋Shift＋P**（macOS）打开顶部命令搜索框；也可以从菜单“查看 → 命令面板”进入。
 4. 输入 **`Debug: Select and Start Debugging`**，选择该命令并回车。中文界面可搜索“选择并开始调试”。
 5. 接下来出现配置列表，选 **`Debug NanoClaw`**，回车。等它重新就绪后，Backend 和 NanoClaw 都能停在各自断点上，Web、TUI 和模型服务继续运行。
 6. 想同时调第三个模块，就重复第 3～5 步，最后改选 `Debug TUI` 或 `Debug Frontend Server`。左侧“调用堆栈（Call Stack）”会列出多个会话，点击对应会话或暂停的线程查看变量和调用栈。

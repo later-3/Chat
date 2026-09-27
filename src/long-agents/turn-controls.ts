@@ -21,6 +21,11 @@ export async function cancelFriendTurn(home: string, agent: string, id: string) 
       return { ...receipt, status: "cancelled" as const, settledAt: new Date().toISOString(), cancelRequested: true };
     }) }, result: undefined };
   });
+  const bound = await findFriendTurn(home, agent, id);
+  if (["queued", "running"].includes(bound.status) && bound.workflow?.runId !== undefined) {
+    const { acceptedRunRuntime } = await import("../workflows/accepted-run-runtime.js");
+    await acceptedRunRuntime.cancel(bound.workflow.runId);
+  }
   const live = getLiveTurn(home, id);
   if (live) { live.cancelled = true; await live.session.abort(); }
   return friendExecution(home, await findFriendTurn(home, agent, id));
@@ -52,12 +57,13 @@ export async function steerFriendTurn(
       projectId: agent,
       ...(topicNode === undefined ? { sessionId: target.sessionId } : {}),
       turnId: input.requestId,
+      ...(target.workflow === undefined ? {} : { workflow: target.workflow.id }),
       contextProjectId,
       text: input.text,
       ...(topicNode === undefined ? {} : { topicNode }),
     });
     const live = getLiveTurn(home, id);
-    if (accepted.newAcceptance && live?.session.isStreaming && !live.cancelled) {
+    if (accepted.newAcceptance && live?.session.isStreaming && live.roundPhase !== "remember" && !live.cancelled) {
       live.steering.add(accepted.turnId);
       try {
         await live.session.sendCustomMessage(

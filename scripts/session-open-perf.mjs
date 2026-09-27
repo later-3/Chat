@@ -15,6 +15,7 @@
  * Requires a production build (pnpm build).
  */
 import fs from "node:fs";
+import { mock } from "node:test";
 import path from "node:path";
 import net from "node:net";
 import { spawn } from "node:child_process";
@@ -60,7 +61,7 @@ const percentile = (values, fraction) => [...values].sort((a, b) => a - b)[Math.
 const stats = (values) => ({ p50: percentile(values, 0.5), p95: percentile(values, 0.95), max: Math.max(...values) });
 
 const cleanups = [];
-const f = await fixture({ after: (register) => cleanups.push(register) });
+const f = await fixture({ mock, after: (register) => cleanups.push(register) });
 let server;
 let browser;
 try {

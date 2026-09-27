@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { installWorkflowTransport } from "../test/long-agents/workflow-transport-fixture.mjs";
 
 import { ensureAgentHomeProject, openProject } from "../src/projects/registry.ts";
 import { writeLongAgentRegistry } from "../src/long-agents/storage.ts";
@@ -121,6 +122,8 @@ test("topic creation over the REAL Workflow runtime: collect -> revise -> approv
     models: [{ id: "fake-model", name: "Fake", reasoning: false, input: ["text"], contextWindow: 128_000, maxTokens: 4_096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }));
 
   // A daily session is the trusted creation source.
+  // Source data setup runs the same Workflow body in-process; the child Nitro below uses the real SDK.
+  installWorkflowTransport(t);
   const { executeLongAgentTurn } = await import("../src/long-agents/runtime.ts");
   const { readLongAgentState } = await import("../src/long-agents/storage.ts");
   const { writeSessionMemoryEntry } = await import("../src/long-agents/session-memory.ts");

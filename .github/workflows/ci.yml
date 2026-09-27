@@ -75,7 +75,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Verify Chat integration and production runtime
-        run: pnpm verify
+        run: |
+          node --input-type=module -e 'import { chromeExecutable } from "./scripts/cdp.mjs"; const browser = chromeExecutable(); if (!browser) throw new Error("Chrome/Chromium is required for CI browser regressions"); console.log(browser);'
+          pnpm verify
 
       - name: Check tracked diffs
         run: |

@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
     const projectId = typeof query.projectId === "string" ? query.projectId : undefined;
     // Owner-facing UI read: the local user keeps access to group history.
     return await readChatSession(sessionId, undefined, {
+      compactTree: query.view === "chat",
       deferThinking: "deferThinking" in query,
       deferToolResultImages: "deferMedia" in query,
     }, projectId, undefined, { kind: "owner" });

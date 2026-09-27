@@ -806,6 +806,12 @@ test("the model editor reads and writes only Chat Home's models configuration", 
   assert.equal(writeResponse.status, 200, JSON.stringify(saved));
   assert.deepEqual(saved, initial);
   assert.equal(fs.existsSync(path.join(chatHome, "agent", "models.json")), true);
+  const catalog = await (await serverFetch("/api/models")).json();
+  const model = catalog.models.find(model => model.provider === "built-runtime" && model.modelId === "built-runtime-model");
+  assert.ok(model);
+  assert.ok(Array.isArray(model.thinkingLevels));
+  assert.ok(model.thinkingLevels.every(level => catalog.thinkingLevels.includes(level)));
+  if (!model.reasoning) assert.deepEqual(model.thinkingLevels, ["off"]);
 });
 
 test("Workflow containers and their Agents come from the backend registry", async () => {

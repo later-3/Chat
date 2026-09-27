@@ -2,6 +2,8 @@
 
 目标：准备软件、固定依赖、私有配置和服务定义，**不启动服务，也不启用开机自启**。日常拉起见[运行手册](./running.md)，不要为启动重复安装。
 
+安装本次确定版本、并行准备 VS Code 调试时，直接按 [0.5.0 交付步骤](./release-0.5.0.md)；下文保留通用安装参数和系统前提。
+
 ## 1. 系统前提
 
 使用有 sudo 权限的账号。推荐 Ubuntu 24.04 或 Debian 的 WSL2/Linux；脚本也识别 dnf/yum。机器需为 x86_64/aarch64，具有运行中的 systemd 和可运行 Node 22 官方二进制的 glibc。需要网络访问 GitHub、nodejs.org、npm Registry 和依赖下载地址；离线安装未提供。

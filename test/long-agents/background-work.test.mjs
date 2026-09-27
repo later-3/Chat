@@ -140,6 +140,8 @@ test("LA1 restart classifies unknown work as interrupted and never replays tools
   const turn = await acceptLongAgentTurn({ ...f.input("unknown-after-crash", "a"), sessionId: work.work.sessionId });
   const { updateTurnStatus } = await import("../../src/long-agents/turn-queue.ts");
   await updateTurnStatus(f.home, turn.turnId, "running");
+  const { updateLongAgentState } = await import("../../src/long-agents/storage.ts");
+  await updateLongAgentState(f.home, state => ({state: {...state, turns: state.turns.map(t => t.turnId === turn.turnId ? {...t, workflow: undefined} : t)}, result: undefined}));
   const { execFileSync } = await import("node:child_process");
   const recovery = new URL("../../src/long-agents/daily-maintenance.ts", import.meta.url).href;
   execFileSync(process.execPath, ["--import", "./scripts/typescript-test-loader.mjs", "--experimental-strip-types", "--input-type=module", "-e",
@@ -215,7 +217,7 @@ test("LA1 queued work resumes in a new Backend process with the originally accep
   const { execFile } = await import("node:child_process"); const { promisify } = await import("node:util");
   const queue = new URL("../../src/long-agents/turn-queue.ts", import.meta.url).href;
   await promisify(execFile)(process.execPath, ["--import", "./scripts/typescript-test-loader.mjs", "--experimental-strip-types", "--input-type=module", "-e",
-    `const {drainLongAgentTurns}=await import(${JSON.stringify(queue)});await drainLongAgentTurns(${JSON.stringify(f.home)},"friend");`]);
+    `const {mock}=await import("node:test"); const {installWorkflowTransport}=await import("./test/long-agents/workflow-transport-fixture.mjs"); installWorkflowTransport({mock}); const {drainLongAgentTurns}=await import(${JSON.stringify(queue)});await drainLongAgentTurns(${JSON.stringify(f.home)},"friend");`]);
   assert.equal((await readFriendWork(f.home, "friend", work.work.id)).execution.status, "completed");
   assert.equal(f.requests.length, 6);
   // The last request belongs to the memory writer; the WORK request is the one before it.

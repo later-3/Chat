@@ -102,6 +102,9 @@ function startModelServer(options = {}) {
 /** A child process that drains one node session, so it can be SIGKILLed in the middle of a round. */
 function spawnWorker(home, sessionId) {
   const script = `
+    // These are the pre-Workflow crash fixtures; new SDK crash windows have a real-Runtime gate.
+    const { updateLongAgentState } = await import("./src/long-agents/storage.ts");
+    await updateLongAgentState(process.env.CHAT_HOME, state => ({ state: {...state, turns: state.turns.map(t => t.sessionId === process.env.TARGET_SESSION ? {...t, workflow: undefined} : t)}, result: undefined }));
     const { drainLongAgentTurns } = await import("./src/long-agents/turn-queue.js");
     await drainLongAgentTurns(process.env.CHAT_HOME, "friend", process.env.TARGET_SESSION);
     console.log("DRAINED");

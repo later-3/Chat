@@ -36,13 +36,13 @@
 
 先按[渠道章节](./channels.md)准备 Nano Group 与 Chat Registry，启动 `Debug Chat + NanoClaw`。在当前 Project 切换“Friend”，点击 Debug Agent。
 
-1. 观察 `POST /api/long-agents/:id/start`，它应创建或打开该 Project 的专属主 Session。
-2. 检查 Session 返回 `owner: { type: "long-agent", ... }`，发送时 `useAgentSession` 应走 `sendLongAgentMessage()`，不再调用普通 `/runs`。
-3. 在 [long-agents-browser](../../../frontend/lib/long-agents-browser.ts)、[messages路由](../../../src/routes/api/long-agents/%5BlongAgentId%5D/messages.post.ts)、[executeLongAgentTurn](../../../src/long-agents/runtime.ts) 暂停。
-4. 输入 `DEBUG_HELLO`，确认同一个 Project/Long Agent/Session 到达公共 Pi 装配。当前请求等待本轮完成，然后重读原生 Session；它不是普通 Workflow 的 NDJSON 全局流。
-5. 刷新后仍显示Friend归属，普通 Session 的输入区与Friend入口不互相替换。
+1. 观察 `POST /api/long-agents/:id/start`，它打开 Friend 的 Agent Home 下目标日期的日常 Session，默认今天；存储 Project 与协作 Project 分开。
+2. 检查 Session 的 `owner`。发送通过 `POST /api/long-agents/:id/turns`，接受回执中的 `workflowRun` 指向公共 Workflow Run；不把 Friend 请求改发普通 `/runs` 来绕过授权。
+3. 在 [turns 路由](../../../src/routes/api/long-agents/%5BlongAgentId%5D/turns.post.ts)、[turn-queue](../../../src/long-agents/turn-queue.ts)、[workflow-execution](../../../src/long-agents/workflow-execution.ts) 和实际 Workflow Step 暂停。
+4. 输入 `DEBUG_HELLO`，确认冻结的 Friend、Session 和协作项目进入公共 Pi 装配；前端订阅公共 `/runs/:id/events` 并在终态重读 Session。原 `messages` 阻塞接口仍用于既有调用，不是当前主发送路径。
+5. 刷新后仍从 Backend 恢复原归属；进入群成员参与记录留在群工作区，不跳到 Friend 私聊。
 
-若配置页能看到同事，但发送失败，应分别检查 Personal enabled、Project active、默认Project、Gateway鉴权/Group存在、模型认证。当前每个 ProjectLongAgent 保留一个 primarySessionId；Agent 自己的 Daily Project 在 `ensureProjectLongAgent()` 中按宿主本地日期轮换，历史 Session 保留，其他 Project 复用专属主会话。顶栏的 contextProjectId 不改变 Session 归属。精确断点与数据字段见[源码地图](./code-map.md)。
+配置可读但发送失败时，分别检查 Friend 启用状态、Gateway 认证/Group、冻结项目授权、模型认证及接受记录的 Run 绑定。日期使用 Friend 配置的时区；顶栏项目选择只影响后续日常轮次，不移动 Session，后台工作继续使用创建时固定项目。精确断点见[源码地图](./code-map.md)。
 
 ## Frontend 代码修改练习
 

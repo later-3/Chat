@@ -1,4 +1,4 @@
-# Friend 长期职责（LA3）
+# Friend 长期任务（内部 Duty）
 
 长期职责是持续负责的工作目标：目标、授权范围、资料、进度证据、下一步与推进节奏保存在 Chat，推进经 LA2 任务/触发进入 LA1 独立工作 Session 与公共 Pi 装配。本文是职责领域的技术合同；机制边界见[机制合同 §9.4](./chat-long-agent-mechanism-contract.md)。职责不是第二套任务状态机：调度、发生记录、执行容量与回执全部复用 `src/long-agents/tasks/` 与 `src/long-agents/work.ts`。
 
@@ -39,7 +39,7 @@
 2. 到下次检查时间：`nextCheckAt` 在未来时自动触发跳过（`manual` 显式推进不受该门槛限制）。
 3. 允许时段：`allowedHours`（duty.timeZone 本地小时 0–23，null 为全天）。
 4. 资料可用：`materials` 非空且未置 `awaitingMaterial`。
-5. 预算：`budget.tokensPerDay`（自然日，按 duty.timeZone，跨目标代号累计）；计量来源是推进 work 原生 Session 中该 turn 起点之后 assistant `usage.totalTokens` 累加，在终态回执时落账。已计量 ≥ 上限时自动推进跳过。这是启动前软上限：不中断在途执行；手动推进允许但记录超额。界面与文档说明该实际控制能力，不宣称精确硬上限。
+5. 预算：`budget.tokensPerDay`（自然日，按 duty.timeZone，跨目标代号累计）；计量来源是推进 work 原生 Session 中该 turn 起点至下一不同 turn 标记之间的原生 message（assistant/toolResult）、compaction、branch_summary 的 usage 累加；与 Pi 统计相同，以 input/output/cacheRead/cacheWrite 求和，同 turn 的状态标记不截断计量，在终态回执时落账。已计量 ≥ 上限时自动推进跳过。这是启动前软上限：不中断在途执行；手动推进允许但记录超额。界面与文档说明该实际控制能力，不宣称精确硬上限。
 6. 计量完整性：接受与派发前都先刷新消费账本（把已结束但未入账的执行补记），所以触发直达派发与维护派发看到同一份计量；计量读取失败时**不记零**，留待下次补记，并在设置了预算时暂不自动推进（原因"推进计量待恢复"）。只有原生 Session 已不可读时才按零入账。
 
 派发前若 `occurrence.dutyGoalRevision` 与当前 `goalRevision` 不一致，旧推进以"目标已修订"跳过，不执行冻结的旧文本。

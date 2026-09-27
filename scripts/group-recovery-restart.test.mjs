@@ -205,8 +205,8 @@ test("group state survives a real process kill: running is interrupted, queued r
     await page.waitFor("document.querySelector('[data-group-chat-root]') !== null", { label: "中央群聊", timeoutMs: 20_000 });
     await page.waitFor("document.body.innerText.includes('重启群')", { label: "群列表含重启群", timeoutMs: 30_000 });
     await page.evaluate("[...document.querySelectorAll('button')].find(b => (b.textContent||'').includes('重启群'))?.click()");
-    await page.waitFor("(document.querySelector('[data-group-discussion-status]')?.textContent||'').includes('interrupted')", { label: "讨论 interrupted 终态", timeoutMs: 40_000 });
-    await page.waitFor("(document.querySelector('[data-group-work-status]')?.textContent||'').includes('completed')", { label: "任务 completed 终态", timeoutMs: 40_000 });
+    await page.waitFor("/Interrupted|已中断/.test(document.querySelector('[data-group-discussion-status]')?.textContent||'')", { label: "讨论 interrupted 终态", timeoutMs: 40_000 });
+    await page.waitFor("/Completed|已完成/.test(document.querySelector('[data-group-work-status]')?.textContent||'')", { label: "任务 completed 终态", timeoutMs: 40_000 });
     await page.waitFor("document.body.innerText.includes('重启后任务')", { label: "任务标题", timeoutMs: 20_000 });
     await page.close();
   }

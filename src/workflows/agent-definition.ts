@@ -58,10 +58,13 @@ export { buildChatAgentCustomInstructions };
 export async function createWorkflowAgentSession(
   options: CreateWorkflowAgentSessionOptions,
 ): Promise<CreatedWorkflowAgentSession> {
+  const { attachLongAgentWorkflowContext } = await import("./long-agent-stage.js");
+  const owned = await attachLongAgentWorkflowContext(options);
+  options = owned.options;
   const context = options.toolContext;
   if (context?.purpose !== "execution" || context.workflowId === undefined
     || context.workflowInvocationId === undefined || context.stageId === undefined
-    || context.agentId === undefined) return createChatPiAgentSession(options);
+    || context.agentId === undefined) return createChatPiAgentSession({ ...options, ...(owned.invocation === undefined ? {} : { invocation: owned.invocation }) });
   const turn = {
     workflowId: context.workflowId,
     invocationId: context.workflowInvocationId,
@@ -78,11 +81,14 @@ export async function createWorkflowAgentSession(
   const withTarget = inheritedTarget === undefined
     ? options
     : { ...options, toolContext: { ...context, sessionMemoryTarget: inheritedTarget } };
-  return createChatPiAgentSession({
+  const created = await createChatPiAgentSession({
     ...withTarget,
+    ...(owned.invocation === undefined ? {} : { invocation: owned.invocation }),
     transformContext: async (messages, signal) => {
       const current = prepareWorkflowTurnContext(messages, turn);
       return withTarget.transformContext === undefined ? current : withTarget.transformContext(current, signal);
     },
   });
+  owned.attachLive?.(created.session);
+  return created;
 }

@@ -21,7 +21,8 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<unknown>(event);
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw createError({ statusCode: 400, statusMessage: "请求必须是对象" });
   const value = body as Record<string, unknown>;
-  if (Object.keys(value).some((key) => !["schemaVersion", "requestId", "text", "images"].includes(key))
+  if (Object.keys(value).some((key) => !["workflow", "sessionMemory", "schemaVersion", "requestId", "text", "images"].includes(key))
+    || (value.sessionMemory !== undefined && value.sessionMemory !== "off" && value.sessionMemory !== "on")
     || value.schemaVersion !== 1 || typeof value.requestId !== "string" || value.requestId.trim() === ""
     || typeof value.text !== "string" || value.text.length > 100_000)
     throw createError({ statusCode: 400, statusMessage: "无效节点消息合同" });
@@ -35,9 +36,12 @@ export default defineEventHandler(async (event) => {
   const decision = authorizeTopicSession({ graph, requester: { kind: "user" }, sessionId: node.sessionId, capability: "write" });
   if (decision.applicable && !decision.allowed) throw createError({ statusCode: 403, statusMessage: decision.reason ?? "没有写入该节点的权限" });
   try {
+    if (value.workflow !== undefined && typeof value.workflow !== "string") throw new Error("无效Workflow选择");
     const accepted = await acceptLongAgentTurn({
+      ...(value.workflow === undefined ? {} : { workflow: value.workflow as string }),
       chatHome: home, longAgentId, requireInteractionRevision: false, projectId: longAgentId,
       turnId: String(value.requestId), text: value.text, source: "chat-web",
+      ...(value.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}),
       ...(images === undefined ? {} : { images }),
       topicNode: { topicId, nodeId },
     });

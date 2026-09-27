@@ -17,6 +17,10 @@ export async function runPiCodingAgentPromptStep(
 ): Promise<ChatWorkflowResult> {
   "use step";
 
+  if (input.acceptedLongAgentTurn !== undefined) {
+    const { executeLongAgentWorkflowStep } = await import("../long-agent-context.js");
+    return executeLongAgentWorkflowStep(input);
+  }
   const stepStartedAt = Date.now();
   const chatSession = await openChatSession(input);
   const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {

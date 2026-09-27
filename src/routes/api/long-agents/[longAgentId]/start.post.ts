@@ -15,7 +15,9 @@ export default defineEventHandler(async (event) => {
   const longAgentId = getRouterParam(event, "longAgentId");
   if (!longAgentId) throw createError({ statusCode: 400, statusMessage: "缺少longAgentId" });
   const body = await readBody<unknown>(event);
-  if (!isRecord(body) || typeof body.projectId !== "string" || body.projectId.trim() === "") {
+  if (!isRecord(body) || typeof body.projectId !== "string" || body.projectId.trim() === ""
+    || Object.keys(body).some(key => !["projectId", "date"].includes(key))
+    || (body.date !== undefined && typeof body.date !== "string")) {
     throw createError({ statusCode: 400, statusMessage: "projectId必须是非空字符串" });
   }
   try {
@@ -33,6 +35,7 @@ export default defineEventHandler(async (event) => {
       chatHome: resolveChatHome(),
       projectId,
       agent,
+      ...(body.date === undefined ? {} : { date: body.date as string }),
     });
     return {
       projectLongAgentId: result.projectAgent.id,

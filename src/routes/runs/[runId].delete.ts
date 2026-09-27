@@ -14,8 +14,6 @@ export default defineEventHandler(async (event) => {
   if (!runId) throw createError({ statusCode: 400, statusMessage: "缺少runId" });
 
   try {
-    await getRun(runId).cancel();
-    await abortWorkflowAgents(runId);
     const query = getQuery(event);
     const projectId = typeof query.projectId === "string" ? query.projectId : undefined;
     const workflowInvocationId = typeof query.workflowInvocationId === "string"
@@ -23,6 +21,12 @@ export default defineEventHandler(async (event) => {
       : undefined;
     if (projectId !== undefined && workflowInvocationId !== undefined) {
       const project = await resolveProjectContext(projectId);
+      const { readChatSessionRunBinding } = await import("../../workflows/session-run-registry.js");
+      const binding = await readChatSessionRunBinding(project.projectDataDir, workflowInvocationId);
+      if (binding?.runId === runId && binding.acceptedLongAgentTurn !== undefined) {
+        const { cancelFriendTurn } = await import("../../long-agents/turn-controls.js");
+        await cancelFriendTurn(project.chatHome, binding.acceptedLongAgentTurn.longAgentId, binding.acceptedLongAgentTurn.turnId);
+      }
       const record = await getPlanningExecutionRun(project.projectDataDir, workflowInvocationId);
       if (record?.runId === runId) {
         await setPlanningExecutionPhase({
@@ -35,6 +39,8 @@ export default defineEventHandler(async (event) => {
         });
       }
     }
+    await getRun(runId).cancel();
+    await abortWorkflowAgents(runId);
     console.log(`${localTimestamp()} [workflow] cancelled runId=${runId}`);
     return { runId, status: "cancelled" as const };
   } catch (error) {

@@ -237,10 +237,14 @@ export async function executeConversationWork(input: {
       runningWorkSessions.set(work.workId, { abort: async () => { await created?.session.abort(); } });
       let last: { content?: unknown; stopReason?: string; errorMessage?: string; usage?: { totalTokens?: number; input?: number; output?: number; cacheRead?: number; cacheWrite?: number } } | undefined;
       const unsubscribe = created.session.subscribe((event) => {
-        if (event.type !== "message_end" || event.message.role !== "assistant") return;
-        last = event.message;
+        let tokens: number;
+        if (event.type === "message_end" && event.message.role === "assistant") {
+          last = event.message;
+          tokens = assistantTokens(event.message);
+        } else if (event.type === "compaction_end" && event.result?.usage) {
+          tokens = assistantTokens({ usage: event.result.usage });
+        } else return;
         // Durable token metering for whichever budget this work is charged to.
-        const tokens = assistantTokens(event.message);
         usageCommit = usageCommit.then(() => isDerived
           ? recordDiscussionTokenUsage({
               chatHome: input.chatHome, storageProjectId: input.storageProjectId,

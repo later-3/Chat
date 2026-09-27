@@ -12,8 +12,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function activeTotal(repository: MemoryRepository): Promise<number> {
-  const page = await repository.list({ status: "active", limit: 1 });
-  return page.total;
+  try { return repository.list({ status: "active", limit: 1 }).total; }
+  finally { repository.close(); }
 }
 
 async function readLongAgentSnapshot(chatHome: string, longAgentId: string): Promise<{
@@ -49,7 +49,7 @@ export default defineEventHandler(async () => {
     const registry = await readLongAgentRegistry(home.root);
     const longAgentIds = new Set(registry.agents.map((agent) => agent.id));
     const userProjects = (await listProjects(home.root)).filter(
-      (project) => !isSystemLongAgentProjectId(project.projectId, longAgentIds),
+      (project) => project.kind === "project" && !isSystemLongAgentProjectId(project.projectId, longAgentIds),
     );
 
     const projects = await Promise.all(userProjects.map(async (project) => {

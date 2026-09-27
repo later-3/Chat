@@ -17,9 +17,10 @@
 Chat是围绕Agent构建的本地系统，执行链固定为：
 
 ```text
-Chat Web / Chat TUI → Backend → Workflow ─┐
-Chat Web → Backend → LongAgent ──────────┼→ 公共Agent装配 → Pi AgentSession
-IM → NanoClaw Channel → Backend → LongAgent┘
+Chat Web / Chat TUI → Backend ───────────────────────────┐
+Chat Web → Backend → LongAgent受理/顺序/身份适配 ────────┼→ Workflow → 公共Agent装配 → Pi AgentSession
+IM → NanoClaw Channel → Backend → LongAgent适配 ─────────┘
+（旧轮次兼容与群聊参与者调度保留独立生命周期，见模块合同）
 ```
 
 - Workflow组织一次执行需要的Node、Agent、Stage和资源，不是第二套Agent运行时。

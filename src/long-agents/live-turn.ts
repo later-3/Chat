@@ -29,7 +29,9 @@ interface LiveTurn {
   cancelled: boolean;
   readonly steering: Set<string>;
 }
-const live = new Map<string, LiveTurn>();
+// API routes and SDK Step bundles share handles in the same process.
+const liveKey = Symbol.for("chat.friendLiveTurns");
+const live = ((globalThis as Record<PropertyKey, unknown>)[liveKey] ??= new Map()) as Map<string, LiveTurn>;
 const key = (home: string, id: string) => `${home}\0${id}`;
 export function isLiveSteering(home: string, id: string) {
   return [...live.entries()].some(([entryKey, turn]) => entryKey.startsWith(`${home}\0`) && turn.steering.has(id));

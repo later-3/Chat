@@ -857,3 +857,12 @@ test("a second message queued mid-round stays in the same node session and reads
   const dailyTurns = (await readLongAgentState(base.home)).turns.filter((turn) => turn.topicNode === undefined);
   assert.equal(dailyTurns.some((turn) => turn.text === "第二轮追问"), false, "the follow-up never reaches the daily conversation");
 });
+
+
+test("choosing a text-only Workflow rejects images before accepting a Friend turn", async t => {
+  const f = await fixture(t);
+  const {acceptLongAgentTurn} = await import("../../src/long-agents/turn-queue.ts");
+  await assert.rejects(acceptLongAgentTurn({...f.input("no-image-loss"), workflow:"problem-diagnosis",
+    images:[{type:"image",mimeType:"image/png",data:"aGVsbG8="}]}), /不支持图片/);
+  assert.equal((await readLongAgentState(f.home)).turns.length,0);
+});

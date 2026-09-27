@@ -83,6 +83,14 @@ git -C frontend diff --check
 
 测试通过只说明已覆盖的行为通过。提交前仍要检查架构、配置、Frontend 合同和生产装配路径是否与改动一致。
 
+## Pi 原生测试与 Chat 场景对照
+
+[Pi 测试场景对照](../modules/pi/chat-pi-test-coverage.md)按机制说明原生测试验证了什么、Chat 实际接入与产品入口在哪里、哪些失败/并发边界缺少 Chat 回归；[文件索引](../modules/pi/pi-test-file-inventory.md)固定到核对时的 Pi 提交。更新 Pi gitlink、公共装配、上下文过滤、事件投影或 Workflow 生命周期时，同步复核受影响场景。
+
+`pnpm verify` 不执行 Pi 的全部原生测试。原生用例通过、Chat 公共装配通过、实际 Workflow Runtime/浏览器通过分别记录，不能相互替代。尤其要区分普通自动重试与摘要重试、完整原文与有效上下文、只读历史浏览与改变写入分支、原生内存队列与 Chat 耐久队列。
+
+执行原生测试前遵守 `pi/AGENTS.md`，确认模型目录数据已准备、隔离用户资源与凭据。优先显式选择本地假模型用例；`test/suite/` 使用自身 Harness/faux provider。测试文件中的 skipIf、each、动态循环和共享 suite 会改变实际执行数量；不能把静态声明或文件数当作通过数量。只读盘点无需运行真实供应商测试，也不自动授权收费调用。
+
 ## 测试隔离
 
 测试不得读写用户真实的 `~/.chat` 或正式 Project 数据。
@@ -176,6 +184,8 @@ CI 的职责、环境版本和 Submodule 边界见 [Chat CI](./ci.md)。
 
 ## 安装与服务控制回归
 
+`scripts/cdp.test.mjs` 验证 Linux 浏览器可执行路径发现、显式 `CHROME_BIN` 优先级及错误路径拒绝；真实浏览器仍由 `test:dev` 启动。服务器未装 Chrome 时浏览器用例明确 skip；CI 预检拒绝无浏览器环境，见 [CI 合同](./ci.md)。
+
 `pnpm test:tooling` 同时运行 `scripts/chat-start.test.mjs`：服务归属/端口/产物/配置预检、Backend→Nano 顺序、重复启动不换 PID、只回收新启动服务、控制锁和 Linux chatctl 参数转发。在 macOS 创建临时双 LaunchAgent，真实启动/健康及网页资源检查/再次启动/停止，另验证“健康 200、首页 500/重定向/资源缺失/资源返回 HTML”必须失败；Linux 同样验证调用公共 Web 检查。Nano HTTP 为带认证的隔离替身；不启动用户正式服务，也不把它视为真实渠道验收。
 
 `pnpm test:tooling` 包含 `scripts/chatctl.test.mjs`：在临时目录替换系统服务适配边界，执行实际 shell 安装/启停控制逻辑，检查安装不启动、重复 start、逆序停止、模块选择和失败回收；Node 测试通过本地 HTTP 验证 Nano 认证和实例 ID，环境准备验证已有私有值保留与冲突拒绝。不会对宿主执行 sudo、systemctl 或包管理安装。
@@ -215,3 +225,12 @@ P1 只修改合同与实验测试，无产品执行代码变更；运行上述�
 ## LA0 原生独立会话接缝
 
 `test/long-agents/la0-session-seams.test.mjs` 使用公共工厂、本地 HTTP 假模型与真实 Pi 持久化，验证同身份独立 Session 并发、原生工具/压缩后的公开 Entry 引用、旧写入器风险、同锁重开及丢回执去重。已知风险用例是可行性基线，不是生产修复验收；LA1 必须增加真实入口回归并替换对应风险断言。LA0 没有新增群/任务 UI，不能报告真实浏览器群聊通过。阶段边界与证据见[LA0 审计](../history/reviews/2026-09-20-long-agent-la0.md)。
+
+
+统一会话门禁：`scripts/unified-session-runtime.test.mjs` 已进入 `pnpm test:dev`，必须证明同 Friend Pi Session 默认→规划审核→真实进程替换后批准→默认，节点选择业务 Workflow 并 settled，work/remember 执行中断不自动重放，以及停止幂等。另以真实自动压缩验证 Writer 的下一次 Provider 请求使用摘要而不回填归档原文；`session-memory-switch-browser.test.mjs` 检查原生事件驱动的压缩结果和估计文案，默认截图位于 `.data/verification/pi-capabilities/native-compaction-feedback.png`。领域单元测试的 `workflow-transport-fixture.mjs` 只替换 SDK 传输并运行同一 Workflow body/Pi；不能称为真实 Runtime 证据。性能使用 `scripts/unified-session-perf.mjs`，保留数据规模、冷热态、轮询重叠与原始计时，不把小会话平均数冒充所有场景上限。
+
+会话切换连续性门禁：`session-memory-switch-browser.test.mjs` 在同一浏览器跨 Friend 切换，再切回已访问会话，检查 DOM 与逐帧采样中聊天输入不消失、联系人没有整列灰闪、目标历史保留。不能以最后出现答案或两帧之后可输入代替中间状态验证。首次滚动由 `chat-auto-scroll.test.mjs` 检查绘制前定位，历史上翻与真实新活动保持原合同。
+
+## Friend 任务导航与摘要计量门禁（2026-09-27）
+
+`test/long-agents/task-usage.test.mjs` 从 Duty → Task → Work → 原生 Pi 压缩 → 本地 HTTP 模型验证全部已记录摘要用量进入预算和助手汇总，同时覆盖 UTC 主机/Asia-Shanghai Friend 跨日、缓存与分支摘要用量。`frontend/lib/task-results.test.mjs` 验证同任务多次执行、长期任务多项成果和无关任务过滤。真实浏览器门禁在 `scripts/group-browser.test.mjs` 与 `scripts/session-memory-switch-browser.test.mjs`：成员参与记录深链/刷新回群、共享 Dialog 焦点/Escape、聊天工具创建后台任务、侧栏无创建表单、确认取消不丢草稿及中英文/主题/视口恢复。设置 `CHAT_UI_EVIDENCE_DIR` 可保留截图；这些检查随 `pnpm verify` 执行。

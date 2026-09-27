@@ -8,8 +8,8 @@
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y git curl ca-certificates lsof build-essential python3 pkg-config
-# Node 另按目标环境安装；不要使用 Windows 的 Node/npm。
+sudo apt-get install -y git curl ca-certificates lsof build-essential python3 pkg-config xz-utils
+# 已有 Node >=22.19.0 + Corepack 可直接继续；没有则先按下节安装。
 node --version
 corepack enable
 corepack prepare pnpm@10.13.1 --activate
@@ -25,6 +25,31 @@ pnpm debug:prepare:nanoclaw
 无需在这里配置真实模型密钥：debug:prepare 生成隔离的本地假模型、项目与服务 Token。已有私有文件不覆盖。Nano 准备创建 `.data/debug/nanoclaw` 工作区，不复制生产 `.env`、数据库、Group 或渠道账号。
 
 日常启动不重复执行依赖安装。调试 worktree 已存在时，prepare 不偷偷更新 Commit；升级流程见[环境说明](./environment.md#nanoclaw-独立工作区)。
+
+### 开发用户尚未安装 Node
+
+release 的工具链位于 `/var/lib/chat/runtime`，不应借用它的服务用户权限或私有目录。Linux 开发账号可使用自己的 Node 版本管理器；下面以与 chatctl 相同的官方 `22.19.0` 二进制为例，下载后核对 SHA256，全程不使用 sudo、不复制另一操作系统的原生包。
+
+```bash
+case "$(uname -m)" in
+  x86_64) CHAT_DEV_ARCH=x64 ;;
+  aarch64|arm64) CHAT_DEV_ARCH=arm64 ;;
+  *) echo '仅支持 x86_64 / aarch64'; exit 1 ;;
+esac
+CHAT_DEV_ARCHIVE="node-v22.19.0-linux-$CHAT_DEV_ARCH.tar.xz"
+CHAT_DEV_DOWNLOAD="$(mktemp -d)"
+curl --fail --location "https://nodejs.org/dist/v22.19.0/$CHAT_DEV_ARCHIVE" -o "$CHAT_DEV_DOWNLOAD/$CHAT_DEV_ARCHIVE"
+curl --fail --location https://nodejs.org/dist/v22.19.0/SHASUMS256.txt -o "$CHAT_DEV_DOWNLOAD/SHASUMS256.txt"
+(cd "$CHAT_DEV_DOWNLOAD" && awk -v name="$CHAT_DEV_ARCHIVE" '$2 == name' SHASUMS256.txt | sha256sum --check --strict) && \
+  mkdir -p "$HOME/.local/share/chat-node-22.19.0" && \
+  tar -xJf "$CHAT_DEV_DOWNLOAD/$CHAT_DEV_ARCHIVE" --strip-components=1 -C "$HOME/.local/share/chat-node-22.19.0"
+export PATH="$HOME/.local/share/chat-node-22.19.0/bin:$PATH"
+node --version
+corepack enable
+corepack prepare pnpm@10.13.1 --activate
+```
+
+校验或下载失败时停止，不继续安装。把上面的 `export PATH=…` 一行加入自己的 shell 启动文件，然后重新打开终端；VS Code 集成终端也必须显示该 Node 与 `pnpm 10.13.1`。需要自动启动浏览器的桌面 F5 组合另安装 Chrome；无桌面 Remote SSH 的具体组合见 [0.5.0 交付步骤](../../operations/release-0.5.0.md)。
 
 ## 启动、检查、停止
 

@@ -1,8 +1,17 @@
-import { agentDate } from "./long-agents/calendar.js";
 import { projectLongAgentId } from "./long-agents/project-agent.js";
 import { readLegacyFriendSessions } from "./migrations/agent-home-normalization.js";
 import { resolveChatHome } from "./chat-home.js";
 import { readLongAgentState } from "./long-agents/storage.js";
+
+export async function readSessionOwnershipFacts(chatHome?: string) {
+  try {
+    const [state, legacy] = await Promise.all([readLongAgentState(chatHome), readLegacyFriendSessions(resolveChatHome(chatHome))]);
+    return { state, legacy };
+  } catch (cause) {
+    throw new SessionOwnerResolutionError(cause);
+  }
+}
+export type SessionOwnershipFacts = Awaited<ReturnType<typeof readSessionOwnershipFacts>>;
 
 export type ChatSessionOwner =
   | { readonly type: "ordinary" }
@@ -25,16 +34,17 @@ export class SessionOwnerResolutionError extends Error {
 export async function readChatSessionOwnerIndex(
   projectId: string,
   chatHome?: string,
+  snapshot?: SessionOwnershipFacts,
 ): Promise<ReadonlyMap<string, ChatSessionOwner>> {
   try {
-    const state = await readLongAgentState(chatHome);
+    const { state, legacy: legacySessions } = snapshot ?? await readSessionOwnershipFacts(chatHome);
     const owners = new Map<string, ChatSessionOwner>();
     const add = (sessionId: string, longAgentId: string, bindingId: string) => {
       const previous = owners.get(sessionId);
       if (previous?.type === "long-agent" && previous.longAgentId !== longAgentId) throw new Error("Session存在多个Friend归属");
       owners.set(sessionId, { type: "long-agent", longAgentId, projectLongAgentId: bindingId });
     };
-    for (const legacy of await readLegacyFriendSessions(resolveChatHome(chatHome))) {
+    for (const legacy of legacySessions) {
       if (legacy.longAgentId !== null && (legacy.sourceProjectId === projectId || legacy.targetProjectId === projectId)) add(legacy.sessionId, legacy.longAgentId, projectLongAgentId(projectId, legacy.longAgentId));
     }
     for (const entry of state.projectAgents) {
@@ -43,11 +53,15 @@ export async function readChatSessionOwnerIndex(
     for (const day of state.dailySessions) {
       if (day.longAgentId === projectId) add(day.sessionId, day.longAgentId, projectLongAgentId(projectId, day.longAgentId));
     }
+    for (const node of state.nodeSessions) {
+      if (node.longAgentId === projectId) add(node.sessionId, node.longAgentId, projectLongAgentId(projectId, node.longAgentId));
+    }
     for (const work of state.works) {
       if (work.longAgentId === projectId) add(work.sessionId, work.longAgentId, work.id);
     }
     return owners;
   } catch (cause) {
+    if (cause instanceof SessionOwnerResolutionError) throw cause;
     throw new SessionOwnerResolutionError(cause);
   }
 }
@@ -59,8 +73,10 @@ export function chatSessionOwner(
   return owners.get(sessionId) ?? ORDINARY_SESSION_OWNER;
 }
 
-/** Only today's native Friend Session accepts direct conversation; legacy history never does. */
-export async function readWritableFriendSessionIds(chatHome?: string): Promise<ReadonlySet<string>> {
-  const state = await readLongAgentState(chatHome);
-  return new Set([...state.dailySessions.filter((day) => day.date === agentDate(day.timeZone)).map((day) => day.sessionId), ...state.works.map(work => work.sessionId)]);
+/** Native Home history remains conversational; business-project migration archives stay separate. */
+export async function readWritableFriendSessionIds(chatHome?: string, snapshot?: SessionOwnershipFacts): Promise<ReadonlySet<string>> {
+  const { state, legacy } = snapshot ?? await readSessionOwnershipFacts(chatHome);
+  return new Set([...state.dailySessions.map(day => day.sessionId), ...state.works.map(work => work.sessionId),
+    ...state.nodeSessions.map(node => node.sessionId),
+    ...legacy.filter(entry => entry.longAgentId !== null && entry.targetProjectId === entry.longAgentId).map(entry => entry.sessionId)]);
 }

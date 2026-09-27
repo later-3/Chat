@@ -1,5 +1,7 @@
 # 开发经验案例
 
+- [原生摘要准入与取消恢复](./native-summary-admission-and-recovery.md)：共用请求边界、摘要预算、信号取消与原生维护恢复。
+
 这里归档已经发生、可复用且会影响后续工程决策的开发问题。案例不是第二套规则系统；需要长期影响 Agent 的结论会同时归档为 `experience` Prompt 资源，继续通过现有规则与经验库发现、选择和装配。
 
 每个案例必须包含：
@@ -11,6 +13,10 @@
 5. 至少一条自动化回归门禁。
 
 当前案例：
+
+- [业务上下文投影撤销了 Pi 压缩](./writer-compaction-boundary.md)：本轮归属不等于原始全文回填，完整父链、原生摘要与实际 Provider 请求共同验收。
+
+- [统一会话执行接缝](./unified-session-runtime-seams.md)：冻结装配元数据、Nitro 句柄共享、轮询碰撞与首帧闪动。
 
 - [Workflow尾阶段：记忆节点的分流、收尾与失败记录](./workflow-tail-stage-routing.md)：按当前阶段分流、有限响应、事件流归属与可恢复的失败记录。
 
@@ -49,3 +55,6 @@
 - [模态焦点与层级归属](./modal-focus-and-layer-ownership.md)
 
 - [发送确认前的草稿保护](./submission-draft-recovery.md)：乐观清空与持久输入分开，确认不能清掉后续草稿。
+- [Friend 日期导航与输入区遮挡](./friend-date-navigation-and-composer.md)：日期、会话、工作列表与完整工具栏沿真实用户入口验证。
+
+- [合并控件时保留领域策略事实](./shared-control-server-policy.md)：共享记忆入口必须保留主题节点的持久化、冲突和刷新恢复合同。

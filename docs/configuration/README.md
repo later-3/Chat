@@ -425,3 +425,13 @@ Friend 配置 GET/PUT 的可选 `timeZone` 为 IANA 时区（例如 `Asia/Shangh
 ### LA1 状态升级
 
 `runtime/long-agent-state.json` 从 v4 升至 v5，增加 `works`；旧状态默认空数组，旧 Session 不移动、不合并。升级前原件一次性保存在 `runtime/migrations/long-agent-work-v5/source.json`，完成后记录 `complete.json`；中断可重跑，原备份不覆盖。v1–v3 同时保留原 daily-v4 迁移收据合同。已有 v5 工作后不能将旧程序直接指向该状态文件，应向前修复；没有新增数据时才可停服按受管备份恢复。执行合同、HTTP 与工具说明见 [LA1](../modules/long-agents/chat-long-agent-architecture.md#la1独立后台工作实现合同)。
+
+
+2026-09-26 单聊统一：Friend/Topic 消息可选 `workflow`（默认 minimal-pi-coding-agent）；这是下一轮执行选择，不改变 Session 存储归属或 Friend 配置。默认工作 Agent 继续使用 Friend 冻结定义，业务 Workflow 使用自己的阶段角色并继承可信 owner/协作项目，记忆 writer 不改写工作 Agent 配置。字段和恢复规则见 [模块合同](../architecture/chat-module-contracts.md#三类会话的统一执行与导航2026-09-26)。
+
+
+### 模型选择的能力展示（2026-09-27）
+
+`GET /api/models` 保留全局 thinkingLevels，并在每个已配置模型返回 `thinkingLevels:string[]`，由同一个 Pi ModelRuntime 解析模型后调用 Pi 的 `getSupportedThinkingLevels()`，再限制到 Chat 已支持的枚举。非推理模型仅支持 off；不能给每个模型无条件展示全局最高等级。Frontend 验证响应，在缺少 per-model 字段的旧 Backend 上只展示继承与当前配置提示，不自行猜测。
+
+Friend 与 Workflow Agent 采用共用可搜索模型选择和思考等级单选。继承、显式配置、不可用当前值分别呈现；未认证模型不可新选，已经保存的不可用值不会静默替换。保存持久配置对下一次运行生效，不能改变在途执行冻结的配置。Provider 编辑仍保存 `models.json`，模型高级 thinkingLevelMap 的 default/null/string 语义不变。

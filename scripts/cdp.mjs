@@ -6,15 +6,31 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
-export function chromeExecutable() {
+export function chromeExecutable({ env = process.env, platform = process.platform } = {}) {
+  const executable = (candidate) => {
+    try { return fs.statSync(candidate).isFile() && (fs.accessSync(candidate, fs.constants.X_OK), true); }
+    catch { return false; }
+  };
+  if (env.CHROME_BIN) {
+    if (!path.isAbsolute(env.CHROME_BIN) || !executable(env.CHROME_BIN)) {
+      throw new Error("CHROME_BIN 必须指向可执行的 Chrome/Chromium 绝对路径");
+    }
+    return env.CHROME_BIN;
+  }
+  const linuxCandidates = platform === "linux"
+    ? (env.PATH ?? "/usr/local/bin:/usr/bin:/bin").split(path.delimiter)
+      .filter((directory) => path.isAbsolute(directory))
+      .flatMap((directory) => ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"].map((name) => path.join(directory, name)))
+    : [];
   const candidates = [
+    ...linuxCandidates,
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    `${process.env.HOME ?? ""}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
-    `${process.env.HOME ?? ""}/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
-    `${process.env.HOME ?? ""}/Library/Caches/ms-playwright/chromium-1223/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
+    `${env.HOME ?? ""}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
+    `${env.HOME ?? ""}/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
+    `${env.HOME ?? ""}/Library/Caches/ms-playwright/chromium-1223/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
   ];
-  return candidates.find((candidate) => candidate !== "" && fs.existsSync(candidate)) ?? null;
+  return candidates.find(executable) ?? null;
 }
 
 function requestJson(url, method) {

@@ -1,7 +1,10 @@
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ensureChatHome } from "../chat-home.js";
-import { longAgentConfigRoot } from "./storage.js";
+import { nativeEntryUsage } from "./session-usage.js";
+import { agentDate, validateCalendarDate } from "./calendar.js";
+import { ensureAgentCalendar } from "./project-agent.js";
+import { longAgentConfigRoot, readLongAgentRegistry } from "./storage.js";
 
 export interface LongAgentActivityDay {
   readonly date: string;
@@ -16,15 +19,8 @@ export interface LongAgentActivity {
   readonly longAgentId: string;
   readonly from: string;
   readonly to: string;
+  readonly timeZone: string;
   readonly days: readonly LongAgentActivityDay[];
-}
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-function dateOfLocal(timestamp: string): string | null {
-  const parsed = new Date(timestamp);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return `${String(parsed.getFullYear())}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
 }
 
 /**
@@ -34,13 +30,16 @@ function dateOfLocal(timestamp: string): string | null {
 export async function buildLongAgentActivity(input: {
   readonly chatHome?: string;
   readonly longAgentId: string;
-  readonly from: string;
-  readonly to: string;
+  readonly from?: string;
+  readonly to?: string;
 }): Promise<LongAgentActivity> {
   const home = await ensureChatHome(input.chatHome);
-  for (const [field, value] of [["from", input.from], ["to", input.to]] as const) {
-    if (!DATE_PATTERN.test(value)) throw new Error(`${field}必须是YYYY-MM-DD`);
-  }
+  const found = (await readLongAgentRegistry(home.root)).agents.find(agent => agent.id === input.longAgentId);
+  if (!found) throw new Error("找不到Long Agent");
+  const { timeZone } = await ensureAgentCalendar(found, home.root);
+  const to = validateCalendarDate(input.to ?? agentDate(timeZone));
+  const from = validateCalendarDate(input.from ?? new Date(Date.parse(to) - 13 * 86400000).toISOString().slice(0, 10));
+  if (from > to) throw new Error("from不能晚于to");
   const sessionDir = resolve(longAgentConfigRoot(home.root, input.longAgentId), "sessions");
   const files = (await readdir(sessionDir).catch(() => [] as string[])).filter((file) => file.endsWith(".jsonl"));
 
@@ -74,8 +73,8 @@ export async function buildLongAgentActivity(input: {
       if (typeof entry !== "object" || entry === null) continue;
       const record = entry as Record<string, unknown>;
       const timestamp = typeof record.timestamp === "string" ? record.timestamp : null;
-      const date = timestamp === null ? null : dateOfLocal(timestamp);
-      if (date === null || date < input.from || date > input.to) continue;
+      const date = timestamp === null || !Number.isFinite(Date.parse(timestamp)) ? null : agentDate(timeZone, new Date(timestamp));
+      if (date === null || date < from || date > to) continue;
 
       // 轮次标记：与执行同一来源（Chat 自己写的 custom 条目）。
       if (record.type === "custom") {
@@ -90,22 +89,17 @@ export async function buildLongAgentActivity(input: {
       }
 
       const message = record.type === "message" ? (record.message as Record<string, unknown> | undefined) : undefined;
-      if (message === undefined || typeof message !== "object" || message === null) continue;
+      if ((message === undefined || typeof message !== "object" || message === null) && record.type !== "compaction" && record.type !== "branch_summary") continue;
       const day = days.get(date) ?? { sessions: new Set(), turns: new Set(), input: 0, output: 0, total: 0, tools: new Map(), models: new Set() };
       day.sessions.add(sessionId);
-      if (message.role === "assistant") {
-        const usage = message.usage as Record<string, unknown> | undefined;
-        if (usage !== undefined && typeof usage === "object" && usage !== null) {
-          const asNumber = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : 0);
-          day.input += asNumber(usage.input);
-          day.output += asNumber(usage.output);
-          day.total += asNumber(usage.totalTokens ?? usage.total);
-        }
+      const usage = nativeEntryUsage(record);
+      day.input += usage.input; day.output += usage.output; day.total += usage.total;
+      if (message?.role === "assistant") {
         if (typeof message.provider === "string" && typeof message.model === "string") {
           day.models.add(`${message.provider}/${message.model}`);
         }
       }
-      if (message.role === "toolResult" || message.role === "tool") {
+      if (message?.role === "toolResult" || message?.role === "tool") {
         const name = typeof message.toolName === "string" ? message.toolName : undefined;
         if (name !== undefined) day.tools.set(name, (day.tools.get(name) ?? 0) + 1);
       }
@@ -123,5 +117,5 @@ export async function buildLongAgentActivity(input: {
       tools: [...day.tools.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
       models: [...day.models],
     }));
-  return { longAgentId: input.longAgentId, from: input.from, to: input.to, days: result };
+  return { longAgentId: input.longAgentId, from, to, timeZone, days: result };
 }

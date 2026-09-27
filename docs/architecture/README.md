@@ -6,6 +6,7 @@
 |---|---|
 | [Agent 第一性原理](./chat-agent-first-principles.md) | 稳定约束、新能力归类和架构审核 |
 | [当前架构](./chat-current-architecture.md) | 当前执行链、服务与状态来源；以源码和测试复核 |
+| [会话导航性能](../development/session-navigation-performance.md) | 点击到首帧、摘要/视图失效、视觉连续性与实测边界 |
 | [模块合同](./chat-module-contracts.md) | 谁拥有事实、谁调用谁、变更与连接如何传播 |
 | [Context 与 Resource](./chat-context-resource-model.md) | Context、Target、Owner、授权、资源和版本 |
 | [系统生命周期](./chat-system-lifecycle.md) | 安装/启动/停止、组件就绪与尚未实施的业务排空 |
@@ -22,7 +23,7 @@
 - [Project](../modules/projects/chat-project-framework.md)、[Session](../modules/sessions/chat-session-architecture.md)、[Workflow](../modules/workflows/chat-workflow-framework.md)。
 - [Friend 当前使用](../modules/long-agents/README.md)、[实施状态](../modules/long-agents/chat-long-agent-roadmap.md)、[工程基线](../modules/long-agents/chat-long-agent-engineering-baseline.md)。
 - [Web 对象与交互](../modules/web/chat-web.md)、[TUI](../modules/tui/chat-workflow-tui.md)。
-- [Pi Agent](../modules/pi/pi-agent-design.md)、[上游 Pi Web](../modules/pi/pi-web-design.md)。
+- [Pi 会话能力与 Chat 适配基线](../modules/pi/chat-pi-session-capabilities.md)、[Pi Agent](../modules/pi/pi-agent-design.md)、[上游 Pi Web](../modules/pi/pi-web-design.md)。
 
 历史审核进入 [history](../history/README.md)；可复用故障进入 [development/experiences](../development/experiences/README.md)。这里不复制逐模块状态或历次验收表。
 

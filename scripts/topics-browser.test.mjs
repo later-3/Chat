@@ -50,6 +50,8 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
   timeout: 420_000,
   skip: chromeExecutable() === null ? "环境没有可用的 Chrome/Chromium" : false,
 }, async (t) => {
+  const { installWorkflowTransport } = await import("../test/long-agents/workflow-transport-fixture.mjs");
+  installWorkflowTransport(t); // Setup only; the spawned Nitro uses the real SDK.
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-topics-browser-")));
   const home = path.join(root, "home");
   const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-topics-browser-"));
@@ -258,6 +260,13 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
   // ---- A fresh direct topic link must not be hijacked by default-Friend session selection. ----
   browser = await launchBrowser();
   const page = await browser.newPage(`${baseUrl}/?view=topics&topicAgent=friend&topicId=${topic.topicId}&nodeId=${rootNode.nodeId}`);
+  // Page.reload acknowledges navigation before the old document is replaced. Wait for a new
+  // document so a still-visible old button/dialog cannot satisfy the recovery assertion.
+  const reloadPage = async () => {
+    const oldDocument = await page.evaluate("performance.timeOrigin");
+    await page.send("Page.reload");
+    await page.waitFor(`performance.timeOrigin !== ${oldDocument} && document.readyState === 'complete'`, { label: "刷新后的新文档", timeoutMs: 30_000 });
+  };
   // New acceptance scenarios use hit-tested pointer events and keyboard input, not DOM click().
   const click = async (selector) => {
     await page.waitFor(`document.querySelector(${JSON.stringify(selector)}) !== null`, { label: selector, timeoutMs: 60_000 });
@@ -270,12 +279,20 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
       console.error(await page.evaluate("document.body.innerText"));
       throw error;
     });
-    const point = await page.evaluate(`(() => {
-      const el = document.querySelector(${JSON.stringify(selector)}); el.scrollIntoView({ block: 'center' });
+    // The chat follows delayed content layout. Use stable actionability, as a real browser driver
+    // does, before dispatching pointer input; a single hit test can race the next layout frame.
+    const point = await page.waitFor(`(async () => {
+      const el = document.querySelector(${JSON.stringify(selector)}); if (!el || el.disabled) return null;
+      el.scrollIntoView({ block: 'center' });
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const before = el.getBoundingClientRect();
+      await new Promise(resolve => requestAnimationFrame(resolve));
       const r = el.getBoundingClientRect(); const x = r.x + r.width/2, y = r.y + r.height/2;
-      if (!el.contains(document.elementFromPoint(x,y))) throw new Error('Control is covered: ' + ${JSON.stringify(selector)});
+      if (!el.isConnected || Math.abs(before.x-r.x) > .5 || Math.abs(before.y-r.y) > .5
+          || Math.abs(before.width-r.width) > .5 || Math.abs(before.height-r.height) > .5
+          || !el.contains(document.elementFromPoint(x,y))) return null;
       return { x, y };
-    })()`);
+    })()`, { label: `稳定可点击 ${selector}`, timeoutMs: 20_000 });
     await page.send("Input.dispatchMouseEvent", { type: "mousePressed", button: "left", clickCount: 1, ...point });
     await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", button: "left", clickCount: 1, ...point });
   };
@@ -350,8 +367,8 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
   await sendInSession('UI_TOPIC_MESSAGE');
   await page.waitFor("document.querySelector('[data-topic-session]')?.innerText.includes('UI_TOPIC_MESSAGE') && document.querySelector('[data-topic-session]')?.innerText.includes('BROWSER_TOPIC_REPLY')", { label: "节点对话发送", timeoutMs: 90_000 });
 
-  // 4) Memory edit with a real CAS conflict: bump the server revision behind the loaded UI, then save.
-  await openAux();
+  // 4) The shared memory dialog is the only entry for both records and its recording switch.
+  await click('[data-session-memory-open]');
   await page.waitFor("document.querySelector('[data-session-memory-edit]') !== null", { label: "记忆条目", timeoutMs: 60_000 });
   const memoryBefore = await (await fetch(`${baseUrl}/api/long-agents/friend/sessions/${rootNode.sessionId}/memory`)).json();
   await fetch(`${baseUrl}/api/long-agents/friend/sessions/${rootNode.sessionId}/memory`, { method: "PATCH", headers: { "content-type": "application/json" },
@@ -368,14 +385,14 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
   await page.waitFor("document.querySelector('[data-session-memory-conflict]') !== null", { label: "记忆 CAS 冲突", timeoutMs: 20_000 });
 
   // 5) Refresh, re-enter the node and edit the memory for real (content + purpose).
-  await page.send("Page.reload");
+  await reloadPage();
   await page.waitFor("document.readyState === 'complete'", { label: "刷新加载", timeoutMs: 30_000 });
   await page.waitFor("document.querySelector('[data-topics-view-root]') !== null", { label: "刷新后主题视图", timeoutMs: 30_000 });
   await page.waitFor(`document.querySelector('[data-topic-id=${JSON.stringify(topic.topicId)}]') !== null`, { label: "刷新后主题列表", timeoutMs: 30_000 });
   await page.evaluate(`document.querySelector('[data-topic-id=${JSON.stringify(topic.topicId)}]')?.click()`);
   await page.waitFor(`document.querySelector('[data-topic-node-id=${JSON.stringify(rootNode.nodeId)}]') !== null`, { label: "刷新后节点列表", timeoutMs: 20_000 });
   await page.evaluate(`document.querySelector('[data-topic-node-id=${JSON.stringify(rootNode.nodeId)}]')?.click()`);
-  await openAux();
+  await click('[data-session-memory-open]');
   await page.waitFor("document.querySelector('[data-session-memory-edit]') !== null", { label: "刷新后记忆条目", timeoutMs: 30_000 });
   await page.evaluate("document.querySelector('[data-session-memory-edit]')?.click()");
   await page.waitFor("document.querySelector('[data-session-memory-content]') !== null", { label: "刷新后记忆编辑器", timeoutMs: 10_000 });
@@ -406,12 +423,23 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
     }
     assert.fail(`${label}: session memory never became ${expected}`);
   };
-  await page.evaluate("document.querySelector('[data-topic-memory-toggle]')?.click()");
+  await page.evaluate("document.querySelector('[data-session-memory-toggle]')?.click()");
   await waitForMemoryState("off", "toggling memory off");
-  await page.evaluate("document.querySelector('[data-topic-memory-toggle]')?.click()");
+  await page.waitFor("document.querySelector('[data-session-memory-toggle]')?.disabled === false", { label: "记忆策略保存完成", timeoutMs: 10_000 });
+  // Opening the same node through a direct Session/calendar entry must restore its persisted policy.
+  await page.send("Page.navigate", { url: `${baseUrl}/?session=${rootNode.sessionId}&projectId=friend` });
+  await page.waitFor("document.querySelector('[data-session-memory-open]') !== null", { label: "直接进入节点会话", timeoutMs: 20_000 });
+  await click('[data-session-memory-open]');
+  await page.waitFor("document.querySelector('[data-session-memory-toggle]')?.checked === false", { label: "跨入口恢复关闭的节点记忆策略", timeoutMs: 20_000 });
+
+  await page.evaluate("document.querySelector('[data-session-memory-toggle]')?.click()");
   await waitForMemoryState("on", "toggling memory on");
   await page.waitFor("document.body.innerText.includes('UI_EDITED_MEMORY')", { label: "切换记忆后重载", timeoutMs: 30_000 });
 
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await page.send("Page.navigate", { url: `${baseUrl}/?view=topics&topicAgent=friend&topicId=${topic.topicId}&nodeId=${rootNode.nodeId}` });
+  await page.waitFor("document.querySelector('[data-topic-aux-open]') !== null", { label: "返回主题地图", timeoutMs: 20_000 });
   // 7) R4 memory supplement: pick the PARENT (not the current child) and one of the PARENT's anchors.
   const supplement = async (targetNode, content) => {
     await closeAux();
@@ -443,6 +471,7 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
     const set = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
     set.call(product, ${JSON.stringify(kind)}); product.dispatchEvent(new Event('change', { bubbles: true }));
   })()`);
+  await openAux();
   await page.waitFor("document.querySelector('[data-topic-supplement-product]') !== null", { label: "补充整合产物选择", timeoutMs: 20_000 });
   await selectProduct("memory");
   await supplement(targetMemory, "UI_SUPPLEMENT_MEMORY");
@@ -541,28 +570,33 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
   await page.waitFor("document.querySelector('[data-topic-session] textarea') !== null", { label: "进入新建会话", timeoutMs: 30_000 });
 
   // 10) Refresh recovery: messages, memory, edges, relay badge and the initial sources all come back.
-  await page.send("Page.reload");
+  await reloadPage();
   await page.waitFor("document.readyState === 'complete'", { label: "刷新加载", timeoutMs: 30_000 });
   await page.waitFor("document.querySelector('[data-topics-view-root]') !== null", { label: "刷新后主题视图", timeoutMs: 30_000 });
   await page.evaluate(`document.querySelector('[data-topic-id=${JSON.stringify(topic.topicId)}]')?.click()`);
   await page.waitFor(`document.querySelector('[data-topic-node-id=${JSON.stringify(rootNode.nodeId)}]') !== null`, { label: "刷新后节点列表", timeoutMs: 20_000 });
   await page.evaluate(`document.querySelector('[data-topic-node-id=${JSON.stringify(rootNode.nodeId)}]')?.click()`);
   await page.waitFor("document.querySelector('[data-topic-session]')?.innerText.includes('UI_TOPIC_MESSAGE')", { label: "刷新后消息恢复", timeoutMs: 40_000 });
-  await openAux();
+  await click('[data-session-memory-open]');
   await page.waitFor("document.body.innerText.includes('UI_EDITED_MEMORY')", { label: "刷新后记忆恢复", timeoutMs: 30_000 });
+  assert.equal(await page.evaluate("document.querySelector('[data-session-memory-toggle]')?.checked"), true, "node policy is restored from the server");
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await openAux();
   assert.equal(String(await page.evaluate("document.querySelector('[data-topic-frozen-project]')?.textContent ?? ''")).includes("a"), true, "frozen project recovered on refresh");
   await page.evaluate(`document.querySelector('[data-topic-node-id=${JSON.stringify(targetRelay.nodeId)}]')?.click()`);
   await page.waitFor("document.querySelector('[data-topic-session]')?.innerText.includes('UI_SUPPLEMENT_RELAY')", { label: "刷新后代传消息恢复", timeoutMs: 30_000 });
   // The forked child and its conversation survive the refresh too.
   await page.waitFor(`document.querySelector('[data-topic-node-id=${JSON.stringify(forkDetail.child.nodeId)}]') !== null`, { label: "刷新后分叉子节点", timeoutMs: 20_000 });
   await page.evaluate(`document.querySelector('[data-topic-node-id=${JSON.stringify(forkDetail.child.nodeId)}]')?.click()`);
-  await page.waitFor("document.querySelector('[data-topic-session]')?.innerText.includes('UI_FORK_CHILD_MESSAGE')", { label: "刷新后子节点对话恢复", timeoutMs: 30_000 });
+  await page.waitFor("document.querySelector('[data-topic-session]')?.innerText.includes('UI_FORK_CHILD_MESSAGE') && document.querySelector('[data-topic-session]')?.innerText.includes('BROWSER_TOPIC_REPLY')", { label: "刷新后子节点完整对话恢复", timeoutMs: 30_000 });
   assert.equal(String(await page.evaluate("document.body.innerText")).includes("BROWSER_TOPIC_REPLY"), true, `${output}`);
 
   // T1/T2: the user starts in DAILY CHAT and can operate the review without extracting IDs from tools.
   await page.send("Page.navigate", { url: `${baseUrl}/?session=${daily.sessionId}&projectId=friend` });
-  await page.waitFor("document.querySelector('textarea') !== null", { label: "日常聊天输入" });
-  await type('textarea', '帮我把这个问题建成一个主题会话');
+  await page.waitFor(`document.querySelector('[data-rendered-session="${daily.sessionId}"] [data-chat-composer]:not([disabled])') !== null`, { label: "日常聊天输入" });
+  await type('[data-chat-composer]', '帮我把这个问题建成一个主题会话');
+  assert.equal(await page.evaluate("document.querySelector('[data-chat-composer]').value"),'帮我把这个问题建成一个主题会话');
   await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", modifiers: 2, windowsVirtualKeyCode: 13 });
   await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", modifiers: 2, windowsVirtualKeyCode: 13 });
   try {
@@ -583,10 +617,15 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
     await page.waitFor(`document.querySelector('[data-topic-creation-review]')?.innerText.includes('Revision ${revision}')`, { label: `审核修订 ${revision}`, timeoutMs: 90_000 });
   }
   await screenshot('review-revision-3');
-  await page.send('Page.reload');
+  await reloadPage();
   await page.waitFor(`document.querySelector('[data-topic-creation-open="${naturalRequestId}"]') !== null`, { label: "审核刷新后仍可找回" });
   await click(`[data-topic-creation-open="${naturalRequestId}"]`);
-  await page.waitFor("document.querySelector('[data-plan-review-approve]') !== null", { label: "恢复审核卡片" });
+  await page.waitFor("document.querySelector('[data-plan-review-approve]') !== null", { label: "恢复审核卡片" }).catch(async error => {
+    await screenshot('review-recovery-failure');
+    console.error('REVIEW_RECOVERY_UI', await page.evaluate("JSON.stringify({url:location.href,text:document.body.innerText,rendered:document.querySelector('[data-rendered-session]')?.dataset.renderedSession,dialogs:[...document.querySelectorAll('[role=dialog]')].map(el=>el.outerHTML)})"));
+    console.error('REVIEW_RECOVERY_API', JSON.stringify(await (await fetch(`${baseUrl}/api/long-agents/friend/topics/creations?sourceSessionId=${daily.sessionId}`)).json()));
+    throw error;
+  });
   assert.equal(await page.evaluate("document.querySelector('[data-creation-run]').dataset.creationRun"), naturalRunId);
   assert.equal(await page.evaluate("document.querySelector('[data-topic-creation-review]').innerText.includes('Revision 3')"), true);
   // Disconnect while waiting for approval, then recover the SAME reference with GET only.
@@ -615,7 +654,7 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
   await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
   await new Promise(resolve => setTimeout(resolve, 1200));
   await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
-  await page.send('Page.reload');
+  await reloadPage();
   await page.waitFor("document.querySelector('[data-round-phase=remember]') !== null", { label: "运行中刷新恢复记忆阶段", timeoutMs: 30_000 });
   await click('[data-topic-session] [data-chat-stop]');
   await page.waitFor("document.querySelector('[data-run-status]')?.innerText.includes('Stopped')", { label: "真实停止确认", timeoutMs: 30_000 });
@@ -697,5 +736,20 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
     })()`), true, `zoom ${zoom}: composer must remain visible ${zoomState}`);
   }
   await page.send("Emulation.clearDeviceMetricsOverride");
+  // Calendar / normal Session navigation must preserve the Backend-derived topic target too.
+  // It uses the same ChatWindow, without relying on props from the topic panel.
+  const sessionResponse = await (await fetch(`${baseUrl}/api/sessions/${naturalCreation.node.sessionId}?projectId=friend`)).json();
+  assert.equal(sessionResponse.session.readOnly,false);
+  assert.deepEqual(sessionResponse.session.topicNode,{longAgentId:'friend',topicId:naturalCreation.node.topicId,nodeId:naturalCreation.node.nodeId});
+  await page.send('Page.navigate',{url:`${baseUrl}/?session=${naturalCreation.node.sessionId}&projectId=friend`});
+  await page.waitFor(`document.querySelector('[data-rendered-session="${naturalCreation.node.sessionId}"] [data-chat-composer]:not([disabled])') !== null`, { label:'普通 Session 入口可继续节点会话' });
+  const commonBefore = page.events.length;
+  await page.evaluate("document.querySelector('[data-chat-composer]').focus()");
+  await page.send('Input.insertText',{text:'UI_NODE_COMMON_ENTRY'});
+  for (const type of ['keyDown','keyUp']) await page.send('Input.dispatchKeyEvent',{type,key:'Enter',code:'Enter',modifiers:2,windowsVirtualKeyCode:13});
+  await page.waitFor(`document.querySelector('[data-rendered-session="${naturalCreation.node.sessionId}"]')?.innerText.includes('BROWSER_TOPIC_REPLY') && document.querySelector('[data-chat-stop]') === null && document.querySelector('[data-chat-composer]').value === ''`,{label:'普通入口节点续聊完成',timeoutMs:60000});
+  const sent = page.events.slice(commonBefore).filter(event=>event.method==='Network.requestWillBeSent' && event.params.request.method==='POST' && event.params.request.postData?.includes('UI_NODE_COMMON_ENTRY'));
+  assert.equal(sent.length,1);
+  assert.equal(new URL(sent[0].params.request.url).pathname,`/api/long-agents/friend/topics/${naturalCreation.node.topicId}/nodes/${naturalCreation.node.nodeId}/messages`);
   await page.close();
 });

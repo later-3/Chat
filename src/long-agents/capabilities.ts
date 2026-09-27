@@ -21,7 +21,8 @@ export async function readLongAgentInputCapabilities(chatHome: string, longAgent
   const runtime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
   const model = definition.model === undefined ? undefined : runtime.getModel(definition.model.provider, definition.model.modelId);
   return { schemaVersion: 1 as const, longAgentId, images: model?.input.includes("image") ?? false,
-    manualCompaction: false, followUp: true };
+    // Per-Session maintenance capabilities still enforce owner, scope and active-work restrictions.
+    manualCompaction: true, followUp: true };
 }
 
 export interface LongAgentTurnCapabilities {

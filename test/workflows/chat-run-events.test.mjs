@@ -7,7 +7,20 @@ test("turn boundaries, retries and compression reach the frontend without changi
     { type: "turn_start" },
     { type: "auto_retry_start", attempt: 1, maxAttempts: 3, delayMs: 1000, errorMessage: "busy" },
     { type: "compaction_start", reason: "threshold" },
+    { type: "summarization_retry_scheduled", attempt: 1, maxAttempts: 2, delayMs: 1000, errorMessage: "terminated" },
+    { type: "summarization_retry_attempt_start", source: "compaction", reason: "manual" },
+    { type: "summarization_retry_finished" },
   ]) assert.deepEqual(projectAgentSessionEvent(event), event);
+});
+
+test("compaction feedback keeps native counts and failure while history stays in Session", () => {
+  const result = { summary: "large native summary", firstKeptEntryId: "kept", tokensBefore: 48000, estimatedTokensAfter: 8000 };
+  assert.deepEqual(projectAgentSessionEvent({ type: "compaction_end", reason: "threshold", result, aborted: false, willRetry: false }), {
+    type: "compaction_end", reason: "threshold", aborted: false, willRetry: false,
+    result: { tokensBefore: 48000, estimatedTokensAfter: 8000 },
+  });
+  const failed = { type: "compaction_end", reason: "overflow", aborted: false, willRetry: false, errorMessage: "provider unavailable" };
+  assert.deepEqual(projectAgentSessionEvent(failed), failed);
 });
 
 test("projects message deltas without repeating the full partial message", () => {

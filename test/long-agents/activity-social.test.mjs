@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fixture as agentFixture } from "./daily-fixture.mjs";
 import { buildLongAgentActivity } from "../../src/long-agents/activity.ts";
 import {
   commentOnLongAgentPost,
@@ -18,7 +19,7 @@ function fixture(t) {
 }
 
 function writeSession(chatHome, sessionFile, date, { turns, input, output, tools }) {
-  const dir = path.join(chatHome, "long-agents", "nexus", "sessions");
+  const dir = path.join(chatHome, "long-agents", "friend", "sessions");
   fs.mkdirSync(dir, { recursive: true });
   const lines = [JSON.stringify({ type: "session", id: sessionFile, timestamp: `${date}T00:00:00.000Z` })];
   for (const turnId of turns) {
@@ -36,11 +37,12 @@ function writeSession(chatHome, sessionFile, date, { turns, input, output, tools
 }
 
 test("activity is derived from the Agent's own sessions per day", async (t) => {
-  const { chatHome } = fixture(t);
+  const f = await agentFixture(t);
+  const chatHome = f.home;
   writeSession(chatHome, "s-1", "2026-09-10", { turns: ["t1", "t2"], input: 100, output: 20, tools: ["memory_search", "memory_search", "channel_send"] });
   writeSession(chatHome, "s-2", "2026-09-11", { turns: ["t3"], input: 50, output: 10, tools: ["workflow_call"] });
 
-  const activity = await buildLongAgentActivity({ chatHome, longAgentId: "nexus", from: "2026-09-09", to: "2026-09-12" });
+  const activity = await buildLongAgentActivity({ chatHome, longAgentId: "friend", from: "2026-09-09", to: "2026-09-12" });
   assert.deepEqual(activity.days.map((day) => day.date), ["2026-09-10", "2026-09-11"]);
   const first = activity.days[0];
   assert.equal(first.turns, 2);
@@ -50,7 +52,7 @@ test("activity is derived from the Agent's own sessions per day", async (t) => {
   assert.deepEqual(first.tools, [{ name: "memory_search", count: 2 }, { name: "channel_send", count: 1 }]);
   assert.deepEqual(first.models, ["p/m"]);
 
-  const windowed = await buildLongAgentActivity({ chatHome, longAgentId: "nexus", from: "2026-09-11", to: "2026-09-11" });
+  const windowed = await buildLongAgentActivity({ chatHome, longAgentId: "friend", from: "2026-09-11", to: "2026-09-11" });
   assert.deepEqual(windowed.days.map((day) => day.date), ["2026-09-11"]);
 });
 

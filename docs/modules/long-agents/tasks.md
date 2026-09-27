@@ -1,4 +1,4 @@
-# Friend 任务（LA2）
+# Friend 定时任务（内部 Task）
 
 任务管理入口是 Friend 设置的“任务”，Agent 使用同源 `task_manage` Tool。任务定义由 Chat 管理；NanoClaw 只保存调度投影、计算到期时间并可靠转交触发。模型执行继续使用 LA1 的独立工作 Session、公共 Pi 装配和实时聊天。长期职责（LA3）用职责归属的推进任务复用本机制：`FriendTask` 可带 `dutyId`，任务定义由[职责服务](./duties.md)派生并按职责状态同步（职责页是这类任务的唯一管理入口）；职责进度、心跳跳过原因与预算见该文档。群聊属于 LA5。
 

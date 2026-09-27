@@ -170,7 +170,7 @@ install_build_dependencies() {
     apt-get update
     apt-get install -y ca-certificates curl git openssh-client xz-utils build-essential python3 pkg-config util-linux lsof
   elif command -v dnf >/dev/null; then
-    dnf install -y ca-certificates curl git openssh-clients xz gcc gcc-c++ make python3 pkgconf-pkg-config util-linux lsof lsof
+    dnf install -y ca-certificates curl git openssh-clients xz gcc gcc-c++ make python3 pkgconf-pkg-config util-linux lsof
   elif command -v yum >/dev/null; then
     yum install -y ca-certificates curl git openssh-clients xz gcc gcc-c++ make python3 pkgconfig util-linux lsof
   else

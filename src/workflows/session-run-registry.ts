@@ -14,6 +14,7 @@ export interface ChatSessionRunBinding {
   readonly projectId: string;
   readonly sessionId: string;
   readonly startedAt: string;
+  readonly acceptedLongAgentTurn?: { readonly longAgentId: string; readonly turnId: string };
   readonly topicCreation?: TopicCreationBinding;
   /** The session whose session memory this run's agents write to (absent for non-agent homes). */
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string } | undefined;
@@ -39,6 +40,9 @@ function parseBinding(value: unknown): ChatSessionRunBinding {
     }
     sessionMemoryTarget = { storageProjectId: value.sessionMemoryTarget.storageProjectId, sessionId: value.sessionMemoryTarget.sessionId };
   }
+  const owner = value.acceptedLongAgentTurn;
+  if (owner !== undefined && (!isRecord(owner) || typeof owner.longAgentId !== "string" || !owner.longAgentId
+    || typeof owner.turnId !== "string" || !owner.turnId)) throw new Error("无效接受轮次绑定");
   return {
     schemaVersion: 1,
     runId: value.runId as string,
@@ -47,6 +51,7 @@ function parseBinding(value: unknown): ChatSessionRunBinding {
     projectId: value.projectId as string,
     sessionId: value.sessionId as string,
     startedAt: value.startedAt as string,
+    ...(owner === undefined ? {} : { acceptedLongAgentTurn: { longAgentId: owner.longAgentId as string, turnId: owner.turnId as string } }),
     ...(value.topicCreation === undefined ? {} : { topicCreation: parseTopicCreationBinding(value.topicCreation) }),
     ...(sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget }),
   };

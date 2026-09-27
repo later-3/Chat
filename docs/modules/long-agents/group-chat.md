@@ -128,3 +128,7 @@ Publication:  pending ─→ committed ─(投递)→ delivered        （pendin
 ### 预算持久化失败的收尾
 
 Provider 回报的 Token 用量通过串行写入链保存。Pi 的同步事件回调不等待 I/O，但下一次 provider 请求准入和本轮收尾必须等待这条链；写入失败则拒绝续轮及公开结果，保留失败终态，不忽略错误后继续执行。讨论与独立 user work 使用相同约束，分别计入各自的耐久预算。`maxTokensSoft` 是事后计量的软限制，单次响应或已经准入的并发响应可能超出余额，不声称 Token 精确硬限额。
+
+### 群记录的产品导航（2026-09-27）
+
+Session 的存储归属始终唯一。公共群记录与每位成员的参与记录是不同 Session，Frontend 使用 Session 读模型的 `groupConversation` 返回群聊，不用执行者的 Friend 身份覆盖导航关系。成员完整过程仍从群内“完整历史”读取，刷新与深链接继续保留群身份。身份设置中的 NanoClaw Agent Group 是单个 Friend 的运行身份，不是群聊，也不作为“智能体组”顶层入口。群后台任务通过对话安排；已有任务状态与停止仍在群内展示，保留旧未确认提交的同 ID 重试。

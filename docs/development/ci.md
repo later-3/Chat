@@ -7,7 +7,7 @@
 Chat使用父仓库固定三个公开Submodule Commit：`pi/`、`frontend/`和`nanoclaw/`。因此CI分两层负责：
 
 1. 子仓库CI验证子仓库自己的源码。Pi的完整构建、检查和测试属于`later-3/pi`；Frontend的独立测试应在`later-3/chat-frontend`执行；NanoClaw源码改动应在`later-3/nanoclaw`执行自己的构建和测试。
-2. Chat父仓库CI验证三个gitlink都能按父提交精确检出，并通过Chat的前后端、Workflow、Pi装配和生产服务集成闭环。NanoClaw尚未接入Chat运行时，因此当前父仓库不安装或构建它的依赖。
+2. Chat父仓库CI验证三个gitlink都能按父提交精确检出，并通过Chat的前后端、Workflow、Pi装配和生产服务集成闭环。NanoClaw已通过认证 HTTP 接入；父仓库使用隔离 Gateway/Channel 夹具验证合同，默认 CI 不安装 Nano 自身依赖或运行真实渠道。Linux Friend 安装与 Nano 调试准备另执行它自身的门禁。
 
 父仓库不重复运行Pi的完整测试，否则每次Chat改动都会重复两千余条与Chat接缝无关的用例。更新gitlink之前，仍应要求目标子仓库Commit自己的CI通过。
 
@@ -25,6 +25,7 @@ Chat使用父仓库固定三个公开Submodule Commit：`pi/`、`frontend/`和`n
 读取固定Submodule Commit
 → pnpm pi:prepare
 → pnpm install --frozen-lockfile
+→ 检查 Linux Chrome/Chromium 可执行文件，缺失则失败
 → pnpm verify
 → Git/Submodule差异检查
 ```
@@ -34,6 +35,8 @@ Chat使用父仓库固定三个公开Submodule Commit：`pi/`、`frontend/`和`n
 当前保持单Job，因为拆分后每个Runner都必须重新拉取Submodule、安装两套包管理器依赖并构建Pi；通过Artifact传递Pi `dist`、`.output`和原生依赖也会增加平台与陈旧产物风险。只有冷启动持续超过10分钟且能证明分Job节省总时间时，才考虑拆分。
 
 CI固定使用Ubuntu 24.04、Node.js 22.19.0和pnpm 10.13.1。缓存只包含pnpm Store和Pi的npm下载缓存，不缓存`node_modules`、Pi `dist`、Frontend `dist`或`.output`。
+
+真实浏览器测试通过 `scripts/cdp.mjs` 发现 Linux PATH 中的 Chrome/Chromium，或显式 `CHROME_BIN`；错误的显式路径直接失败。无浏览器的普通本地/服务器测试会显示 skip，但 CI 在 verify 前检查，不能以浏览器全跳过冒充完整门禁。
 
 ## 当前非目标
 

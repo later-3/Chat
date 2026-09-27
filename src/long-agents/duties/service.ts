@@ -1,3 +1,4 @@
+import { nativeEntryUsage } from "../session-usage.js";
 import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, resolve, sep } from "node:path";
@@ -726,15 +727,11 @@ async function measureTurnTokens(home: string, agentId: string, sessionId: strin
         (e.data as { turnId?: unknown }).turnId === turnId,
     );
     if (first < 0) return 0;
-    return branch
-      .slice(first + 1)
-      .reduce(
-        (sum, e) =>
-          e.type === "message" && e.message.role === "assistant" && e.message.usage
-            ? sum + (e.message.usage.totalTokens ?? 0)
-            : sum,
-        0,
-      );
+    const remaining = branch.slice(first + 1);
+    const nextTurn = remaining.findIndex(e => e.type === "custom" && e.customType === "chat.long_agent_turn"
+      && typeof e.data === "object" && e.data !== null && "turnId" in e.data && e.data.turnId !== turnId);
+    return (nextTurn < 0 ? remaining : remaining.slice(0, nextTurn))
+      .reduce((sum, entry) => sum + nativeEntryUsage(entry).total, 0);
   } catch (e) {
     console.error("推进Token计量待恢复", e instanceof Error ? e.message : e);
     return null;

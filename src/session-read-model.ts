@@ -1,5 +1,7 @@
+import { readConversationState } from "./long-agents/conversations/storage.js";
+import { projectNavigationTree } from "./session-tree-projection.js";
 import { readLegacyFriendSessions } from "./migrations/agent-home-normalization.js";
-import { readWritableFriendSessionIds } from "./session-owner.js";
+import { readWritableFriendSessionIds, readSessionOwnershipFacts } from "./session-owner.js";
 import { readSessionFriendExecution } from "./long-agents/turn-feedback.js";
 import { resolveChatHome } from "./chat-home.js";
 import { projectLongAgentActivity } from "./long-agents/session-activity.js";
@@ -16,11 +18,12 @@ import {
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 import { openProject, resolveProjectContext } from "./projects/registry.js";
-import { firstSessionUtterance, listActiveSessionFiles } from "./session-files.js";
+import { firstSessionUtterance, listActiveSessionFiles, sessionSummaryParent } from "./session-files.js";
 import {
   chatSessionOwner,
   readChatSessionOwnerIndex,
   type ChatSessionOwner,
+  type SessionOwnershipFacts,
 } from "./session-owner.js";
 import { requireActiveChatSessionFile } from "./session-state.js";
 import {
@@ -31,7 +34,6 @@ import {
   type ChatLongAgentTurnMarker,
 } from "./long-agents/session-turn.js";
 import {
-  collectChatSubsessionRelation,
   collectChatWorkflowCalls,
   collectChatWorkflowDelegationOrigins,
   resolveChatWorkflowDelegationOrigins,
@@ -86,6 +88,8 @@ export interface ChatSessionListItem {
   transient: false;
   sessionSource: "chat";
   readOnly: boolean;
+  groupConversation?: { conversationId: string; longAgentId: string; role: "public" | "participant" };
+  topicNode?: { longAgentId: string; topicId: string; nodeId: string };
   owner: ChatSessionOwner;
   projectId?: string;
 }
@@ -95,16 +99,23 @@ async function toListItems(
   projectId: string,
   chatHome?: string,
   activePlanningBySessionId: ReadonlyMap<string, PlanningExecutionRunRecord> = new Map(),
+  ownership?: SessionOwnershipFacts,
 ): Promise<ChatSessionListItem[]> {
-  const owners = await readChatSessionOwnerIndex(projectId, chatHome);
-  const writableFriends = await readWritableFriendSessionIds(chatHome);
-  const migrated = await readLegacyFriendSessions(resolveChatHome(chatHome));
+  const facts = ownership ?? await readSessionOwnershipFacts(chatHome);
+  const owners = await readChatSessionOwnerIndex(projectId, chatHome, facts);
+  const writableFriends = await readWritableFriendSessionIds(chatHome, facts);
+  const migrated = facts.legacy;
+  const groupSessions = new Map<string, NonNullable<ChatSessionListItem["groupConversation"]>>();
+  const conversations = await readConversationState(chatHome ?? resolveChatHome(), projectId);
+  for (const group of conversations.conversations) {
+    const navigator = group.members.find(member => member.revokedAt === null) ?? group.members[0];
+    if (navigator) groupSessions.set(group.publicSessionId, {conversationId:group.id,longAgentId:navigator.longAgentId,role:"public"});
+    for (const member of group.members) if (member.sessionId) groupSessions.set(member.sessionId, {conversationId:group.id,longAgentId:member.longAgentId,role:"participant"});
+  }
   const idByPath = new Map(infos.map((info) => [resolve(info.path), info.id]));
   return Promise.all(infos.map(async (info) => {
-    const relation = collectChatSubsessionRelation(
-      SessionManager.open(info.path, dirname(info.path)).getEntries(),
-    );
-    const parentSessionId = relation?.parentSessionId ?? (info.parentSessionPath === undefined
+    const node = facts.state.nodeSessions.find(node => node.longAgentId === projectId && node.sessionId === info.id);
+    const parentSessionId = sessionSummaryParent(info) ?? (info.parentSessionPath === undefined
       ? undefined
       : idByPath.get(resolve(info.parentSessionPath)));
     const planning = activePlanningBySessionId.get(info.id);
@@ -133,9 +144,11 @@ async function toListItems(
       projectKey: projectId ?? info.cwd,
       transient: false,
       sessionSource: "chat",
+      ...(node === undefined ? {} : { topicNode: { longAgentId: node.longAgentId, topicId: node.topicId, nodeId: node.nodeId } }),
       readOnly: (chatSessionOwner(owners, info.id).type === "long-agent" && !writableFriends.has(info.id))
-        || migrated.some((entry) => entry.sessionId === info.id && entry.targetProjectId === projectId && entry.sourceProjectId !== entry.targetProjectId),
+        || (!writableFriends.has(info.id) && migrated.some((entry) => entry.sessionId === info.id && entry.targetProjectId === projectId && entry.sourceProjectId !== entry.targetProjectId)),
       owner: chatSessionOwner(owners, info.id),
+      ...(groupSessions.has(info.id) ? {groupConversation:groupSessions.get(info.id)!} : {}),
       projectId,
     };
   }));
@@ -161,7 +174,7 @@ async function rethrowWithCurrentSessionState(
 }
 
 /** Lists one registered Project; cwd is resolved through its Project Manifest when omitted. */
-export async function listChatSessions(projectId?: string, chatHome?: string): Promise<ChatSessionListItem[]> {
+export async function listChatSessions(projectId?: string, chatHome?: string, ownership?: SessionOwnershipFacts): Promise<ChatSessionListItem[]> {
   const project = await resolveSessionProject(projectId, chatHome);
   const [infos, activePlanning] = await Promise.all([
     listActiveSessionFiles(project),
@@ -173,7 +186,7 @@ export async function listChatSessions(projectId?: string, chatHome?: string): P
       activePlanningBySessionId.set(record.sessionId, record);
     }
   }
-  return toListItems(infos, project.projectId, chatHome, activePlanningBySessionId);
+  return toListItems(infos, project.projectId, chatHome, activePlanningBySessionId, ownership);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -219,6 +232,8 @@ export function normalizeMessageForFrontend(message: unknown): unknown {
 }
 
 export interface SessionProjectionOptions {
+  /** Browser branch navigation only; full native tree remains available to explicit reads/exports. */
+  readonly compactTree?: boolean;
   readonly deferThinking?: boolean;
   readonly deferToolResultImages?: boolean;
   /** Used only to build same-session lazy URLs for deferred tool-result images. */
@@ -657,7 +672,7 @@ export async function readChatSession(
     filePath: info.path,
     ...(info.owner.type === "long-agent" || friendExecution !== undefined ? { friendExecution, longAgentActivity: projectLongAgentActivity(entries, info.projectId !== undefined && isChatSessionOperationBusy(info.projectId, manager.getSessionId())) } : {}),
     totalActiveMs: 0,
-    tree: manager.getTree(),
+    tree: options.compactTree ? projectNavigationTree(manager.getTree()) : manager.getTree(),
     leafId: selectedLeafId ?? null,
     context: {
       messages: context.messages,

@@ -8,7 +8,8 @@
 Web ──HTTP / Run NDJSON──→ Chat Backend
 Chat CLI（复用 Pi UI 组件）──同一 HTTP / Run NDJSON──→ Chat Backend
 IM → NanoClaw ──认证 Event / Management HTTP──↔ Chat Backend
-                           Workflow / Long Agent 生命周期
+                           Workflow Runtime（单聊/节点/项目）
+                           Long Agent 受理/来源/顺序适配
                                       ↓
                            createChatPiAgentSession
                                       ↓
@@ -20,7 +21,7 @@ IM → NanoClaw ──认证 Event / Management HTTP──↔ Chat Backend
 | Frontend | 草稿、导航、临时交互状态；展示和校验 Backend 响应 | `frontend/lib/*-browser.ts`；不拥有配置或 Session 的另一份事实 |
 | Workflow CLI | 终端交互、目标服务地址；复用 Pi 原生显示组件 | 同一 Run API 与 v1 transcript/fork 投影；不装配 Agent、不写服务端 Session，见 [TUI 合同](../modules/tui/chat-workflow-tui.md) |
 | Chat 配置、Project、资源服务 | Chat Home、稳定 Project 身份、配置解析、Catalog、授权及资源选择 | HTTP 与受控 Tool 使用同一服务；模型配置来自 Chat，不读 `~/.pi` |
-| Workflow / Long Agent 生命周期 | 一次 Workflow 执行；长期身份关联、入站事件、执行关联与恢复 | 分别包装公共 Pi 装配；不再实现 Agent Loop |
+| Workflow / Long Agent 生命周期 | SDK 拥有新单聊/节点/项目轮次的 Run/Step；Long Agent 拥有身份、入站、顺序与回执 | `startChatWorkflow` →公共 Pi 装配；旧无 workflow 接受记录保留兼容执行 |
 | 公共 Agent 装配 | 把已解析的模型、Prompt、Skill、Tool、Extension 和 Session 装入 Pi | `src/agents/pi-agent-session.ts`；检查和运行遵守同一解析合同 |
 | Pi | Agent Loop、资源加载、原生消息和 Session 文件 | 公开 SDK；产品关联用 CustomEntry/读模型扩展 |
 | NanoClaw | Group、Workspace、Agent Markdown Memory、Channel、Inbox、调度触发、Delivery/Ack | 认证的版本化 Event 与 Management/Resource API；Chat 不读 Nano 数据库 |
@@ -103,11 +104,11 @@ Nano 保持既有认证 Event/Delivery/Ack API，由薄适配把事件映射到�
 
 ### 公共反馈与恢复
 
-统一的是 Pi payload、消费器和状态/渲染核心。Friend Agent envelope 带 schemaVersion、执行身份、单次执行递增 seq、时间及 event；status/reset 传递耐久状态与显示快照。Workflow 保留原生 Runtime 流协议和 stage/review 附加信息，不强造 Friend Workflow Stage，也不为格式一致改写 Workflow 的运行事实。
+统一的是 Pi payload、消费器和状态/渲染核心。Friend Agent envelope 带 schemaVersion、执行身份、单次执行递增 seq、时间及 event；status/reset 传递耐久状态与显示快照。新 Friend/Topic 轮次订阅关联 Run 的原生 Runtime 流和 stage/review；旧记录才使用 Friend 增量流。
 
 运行状态为 queued/running/waiting/completed/failed/cancelled/interrupted；浏览器连接状态另列 connected/reconnecting/detached，不能覆盖后端终态。公开响应必须运行时校验；未知版本提示升级，不按成功解析。
 
-Frontend 共用聊天 reducer/render 和订阅恢复接口，各适配器只提供接受、读取状态、订阅和操作能力。现有 Workflow Runtime 流保留其运行事实；Friend 在现有生命周期中发同构事件，不另外启动 Workflow 来包裹 Friend。
+Frontend 共用聊天 reducer/render 和订阅恢复接口，各适配器只提供接受、读取状态、订阅和操作能力。新 Friend/Topic 轮次由真实 Workflow Runtime 执行，队列仅负责接受顺序和领域回执；默认工作段是既有最小 Workflow 的 Step，不启动嵌套的重复工作轮次。
 
 重连先取原生 Session＋执行快照及其事件边界，再从该边界接流；用 executionId/seq/entryId/toolCallId 去重，快照替换当前未完成投影而非重复 append。无法补齐增量时明确 reset 后重读，不能拼接两个不同快照。流结束不等于完成；terminal 必须在持久终态确认后发出，随后核对原生历史。重启可保留中断前原生消息，但不承诺尚未落盘的每个 Token 都可重放。
 
@@ -130,12 +131,15 @@ P3 已在现有 Long Agent 状态中实现耐久接受信封、顺序 Worker、�
 
 | API | 行为 |
 |---|---|
-| `POST /api/long-agents/:id/turns` | 严格解析 `{schemaVersion:1,requestId,sessionId?,contextProjectId,text,images?,sessionMemory?:"on"|"off"}`；校验并耐久接受后返回 HTTP 202 与执行引用 |
+| `POST /api/long-agents/:id/turns` | 严格解析 `{schemaVersion:1,requestId,sessionId?,contextProjectId,text,images?,workflow?,sessionMemory?:"on"|"off"}`；校验并耐久接受后返回 HTTP 202 与执行引用 |
 | `GET /api/long-agents/:id/turns/:turnId` | `{execution,snapshot}`；归属不匹配拒绝；snapshot 含 seq/messages/partial/phase |
 | `GET .../turns/:turnId/events?after=N` | NDJSON Agent event/status/reset；只在耐久终态确认后关闭 |
 | `DELETE .../turns/:turnId` | queued 取消或活跃 Pi abort；已结束幂等；装配中没有句柄时明确拒绝，不假报取消 |
 | `POST .../turns/:turnId/steer` | `{requestId,text,contextProjectId}`；耐久接受、原生 Pi steer 或降为 follow-up；返回 delivery 和执行引用 |
 | `GET /api/long-agents/:id/capabilities` | schema 1、longAgentId、images/manualCompaction/followUp；图片由有效模型解析，接受时再次校验 |
+| `GET/POST/DELETE /api/sessions/:sessionId/maintenance` | [原生维护合同](../modules/sessions/chat-session-maintenance.md)：只读统计、带 requestId/expectedLeafId 的压缩或历史继续、显式取消；群及 Topic 归属限制仍在服务端执行 |
+
+执行引用新增可选 `workflow:{id,invocationId,runId?}`；新接受默认 `minimal-pi-coding-agent`，同 requestId 不得改变 Workflow。绑定前 runId 缺省，客户端读取同一回执直到绑定，不重新 POST。旧记录无此字段仍按旧合同读取。
 
 执行引用为 schema 1：kind=friend、id、longAgentId、存储 projectId、sessionId、协作 contextProjectId、status、error、acceptedAt、capabilities。Session 详情通过可选 friendExecution 提供同一结构。原 `/messages` 同步 API 保留兼容，当前 Web 不再使用。
 
@@ -146,12 +150,12 @@ P3 已在现有 Long Agent 状态中实现耐久接受信封、顺序 Worker、�
 | 能力 | 普通 Workflow Session | Friend |
 |---|---|---|
 | 文字/工具/自动重试/自动压缩显示 | 共用 Pi 事件、reducer、组件 | 同左 |
-| 完成/失败/取消/恢复 | Workflow Run 为事实源，原生 Session 为历史 | 耐久 Turn 为事实源，同一原生历史投影 |
-| 显式停止 | 取消 Run 及子执行 | Pi abort；原有 workflow_call signal 取消子 Run |
+| 完成/失败/取消/恢复 | Workflow Run 为事实源，原生 Session 为历史 | 新轮次同左；Turn 投影 Run 结果并在主题标记落盘后 settled，旧记录保留原对账 |
+| 显式停止 | 取消 Run 及子执行 | 取消关联 Run 与活动 Pi；已终态幂等，remember 只可停止/排后续，不接受工作引导 |
 | 引导、后续消息 | 当前 Workflow 未提供运行中追加合同；保留草稿，结束后发送 | 同项目原生 steer、耐久 follow-up；新项目只能 follow-up |
 | 图片 | 现有 Workflow 接受合同 | 有效 Friend 模型能力；后端再次校验 |
 | 手动压缩 | 既有入口尚未提供执行合同 | capability=false；自动压缩照常展示 |
-| 阶段、人工审核 | 保留 Workflow 附加信息 | 不制造假 Workflow Stage |
+| 阶段、人工审核 | 保留 Workflow 附加信息 | 选择同一 Workflow，使用真实 Run/Stage/审核 Hook |
 
 普通 Workflow 原来显示但调用后仅报“不支持”的引导/后续按钮不再伪装可用；输入草稿仍保留。没有删除已实现的执行能力。P5 已完成旧数据副本迁移与本地全链验收；Nano 真实外部收发仍待验收，不能以本地验证替代，见[P5 记录](../history/reviews/2026-09-20-agent-unification-p5.md)。
 
@@ -179,4 +183,44 @@ LA3 的职责领域（目标代号与并发版本分离、锁内 CAS、报告绑
 
 Frontend 的日常聊天和主题导航共用该读模型与共享审核卡片；修改/批准仍经公共 Run review API，取消仍经公共 Run cancel API。断线和刷新只 GET 既有引用，不能重启创建或重发正文。批准版本、草稿与最终创建共用服务端结构化事实源。
 
-Friend 节点轮次在已有 live snapshot/Agent envelope 增加可选 `roundPhase:work|remember`；序列号和取消句柄贯穿两段。它是当前生命周期的显示阶段，不是伪造 Workflow Run/Step。终态仍从耐久 Turn 确认；未完成或已取消的记忆阶段不生成完成锚点。
+Friend 节点轮次在已有 live snapshot/Agent envelope 增加可选 `roundPhase:work|remember`；序列号和取消句柄贯穿两段。旧记录是生命周期的显示阶段；新轮次由关联 Workflow 的真实 work/remember Step 驱动。终态仍从耐久 Turn 确认；未完成或已取消的记忆阶段不生成完成锚点。
+
+
+## 三类会话的统一执行与导航（2026-09-26）
+
+用户已要求统一 Long Agent、Project 和 Topic Session 后端。实现复用 `startChatWorkflow`、Workflow SDK、公共装配和 Pi Session，不改变存储归属，不新增调度器。群聊参与者的专用调度不在本次单聊统一范围。
+
+- Project 沿用 `/runs`；Friend、节点、渠道和后台工作的接受入口保留来源校验、requestId 与单 Session 排序，所有**新**接受记录保存 workflow id、invocationId，再启动同一个 SDK。切换 Workflow 只影响下一轮，不执行模型、不复制 Session。
+- 最小 Workflow 的工作 Step 使用 Friend 原有冻结装配；其他 Workflow 保留自己的 Agent 角色、模型和工具，公共 factory 叠加受理时冻结的 owner 身份与协作项目文件。Agent home 始终存储原 Session。Workflow 并不把 Friend 的全部工具复制给 writer；已解析配置的 sources 等检查元数据不能写成 capability 配置。
+- `acceptedLongAgentTurn` 是后端序列化引用，HTTP Parser 不接受它。启动和每一阶段都校验耐久 turn、Session、Agent home 与 invocation；普通 `/runs` 不能绕过 Friend/节点入口。审核使用原 Run 的持久 Hook。
+- 接受记录的 `launch-binding.ts` 包装 SDK **公开 World.queue**：先原子保存原样队列参数，再写 Run/receipt 绑定，最后准许派发。日志位于存储项目 `workflows/dispatch/<invocationId>.bin`，0600，不是新运行账本；重启使用同一个 runId 重派。SDK 当前 queue 的 runInput 保留原生 run_created 并行失败恢复语义，不自己生成/解析 SDK 参数。启动确认后删除日志。
+- work/remember 都属于同一 Run。SDK 终态后再幂等写主题 completed/cancelled/failed 标记及接受回执，浏览器等回执 settled 后才报告节点完成。review 尚未批准、取消或结果不明的轮次不可分叉。
+- Local World 进程中断规则沿用上节：queued 可恢复，同一审核 Hook 可恢复；丢失执行者的 work/remember Step 标 interrupted，不自动重放未知工具副作用。旧无 workflow 字段的运行记录继续原有兼容对账；没有删除或迁移原生历史。删除旧执行分支的前提是正式数据中不再有无 workflow 的 queued/running 请求，且旧终态结果读取另有保持兼容的实现；本批不强行重放或迁移旧请求。
+- Nitro API 与 Step bundle 共享的进程锁、活动取消句柄使用相同 Symbol 槽；这些只是本进程协调，持久事实仍来自既有文件及 SDK，不能用于多 Backend 共享数据目录。
+
+`GET /api/sessions/overview` 返回 `{projects,sessions,runningSessionIds}`。每次请求重读归属状态并 stat 原生文件；未变正文复用最多 2048 项的可丢弃摘要，无模型或配置装配。一次请求替代每项目列表 fan-out，响应支持私有 ETag/304。列表 firstMessage 保留完整首条发言，既有侧栏搜索范围不缩小。原列表 API 保持可用。
+
+`GET /api/sessions/:id?view=chat` 保留完整当前上下文消息，tree 仅返回分支身份、标签、压缩路径与 160 字预览，不重复传工具结果、图片、装配快照。默认详情/全文 API 仍保留完整树。Frontend 最近 16 项/8MiB/5 分钟的可丢弃视图只加速首屏，**每次导航仍权威 GET**，错误失效；权限、轮次状态和编辑版本不能由缓存授权。既有 Pi CLI 外部追加、重命名、删除经文件指纹和重读可见。
+
+导航的视觉连续性与耗时独立验收：已有目标数据在 ChatWindow 首次绘制前完成解析和初始滚动，不先呈现 loading 再替换；联系人打开期间不降低整列透明度，超过 300ms 才显示打开提示。仍保留 Session 隔离与后台权威 GET。流程、目标和实测限制见[会话导航性能](../development/session-navigation-performance.md)。
+
+### Friend 日历打开与历史续聊（2026-09-27）
+
+`POST /api/long-agents/:id/start` 保留 `projectId`，新增可选 `date: YYYY-MM-DD`（1970–9999 的有效日期），调用既有每日唯一定位。无 date 默认今天；显式日期重复请求返回同一 Session，创建不执行模型、不设定任务，也不把默认今日 primary 指针改成过去/未来。时间归属由服务端验证，消息和装配当前时间不回拨。
+
+`GET /api/long-agents/:id/daily?year=YYYY` 的活动投影从 Home 原生 Session 消息读取；不以空日期绑定点亮。旧日常 Session 经既有 Friend 接受/Workflow/Pi 链续聊，完成总结被新接受轮次标为待更新。经过 v1 迁移的 Home 历史按精确 receipt 与源 Registry cwd 核实，不为任意目录不匹配放行。仍在业务项目的历史归档保持原权限。
+
+公共 Session 列表/详情新增可选 `topicNode: {longAgentId,topicId,nodeId}`，只从耐久节点绑定投影；Frontend 校验其 owner 并交给同一 ChatWindow 的节点目标适配，使日历或普通 Session 链接不会丢失节点发送归属。它是派生定位信息，不是另一份节点状态。
+
+日历 Session 投影包含可选原生 `createdAt`（ISO 时间），Frontend 同步校验。`friendDate` 只用于工作区 URL 的日期过滤，不传入模型执行；侧栏在公共 Session 呈现后异步读取日历与 work 投影。日期导航通过现有 start 日定位，后续发送仍按同一个 Session owner，不新建活动存储。
+
+
+### Frontend 全面更新的窄读投影（2026-09-27）
+
+架构复核：此次复用现有领域事实与公开 Pi 能力，未新增执行入口、Session owner、配置来源或授权。`/api/models` 的 models[].thinkingLevels 来自 Pi 已解析模型能力，前端只展示与选择。`Session` 列表可选 groupConversation 导航关系由存储 Project 的群目录解析，公共与参与角色独立于既有 owner；跳转后仍由群 API 检查当前授权，不能据此允许普通 Workflow 对群 Session 执行。
+
+Friend 工作 GET 的 displayTitle 是只读展示字段：通过 work.requestId 对应任务 occurrence 的冻结定义，仅旧迁移定义仍以 legacyId 命名时使用 prompt 摘要；普通名称保持原值。不可用标题去重、重写已有 payloadHash 或改工作 Session。新迁移任务直接以 prompt 摘要命名，保留 legacyId 与原迁移状态。验证分别覆盖群导航/owner 分离、模型能力边界、迁移名称与原脚本接管约束。
+
+### Friend 用量派生读模型
+
+`GET /api/long-agents/:id/activity` 的 from/to 可省略，后端按该 Friend 持久时区确定最近 14 个自然日，响应包含 `longAgentId/from/to/timeZone/days`。前端校验每一天的计数、用量与工具模型集合，不能使用浏览器时区另定窗口。统计从该助手 Home 下的 Pi 原生 Session 记录派生，不包含其他 Project 中的群参与 Session；包含 message、compaction 和 branch_summary 的已持久化 usage，不构造第二套运行事实；单任务会话累计通过现有 Session maintenance 只读入口取得。任务成果按后端来源 ID 过滤并展示在所属任务内。

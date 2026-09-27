@@ -1,4 +1,4 @@
-# Friend 产物闭环：笔记与动态（LA4）
+# 任务成果：笔记与朋友圈动态（内部 Artifact）
 
 LA4 把"模型生成了内容"变成"可查、可核、可恢复的产物"：站内动态（3 个时段）与自身 Workspace 笔记（每晚 1 篇）。调度与执行完全复用 LA2 任务/触发与 LA1 独立工作 Session；本文件只定义**产物身份、提交、验证与状态**的合同。机制边界见[机制合同 §9.3–9.5](./chat-long-agent-mechanism-contract.md)。日终交接、Memory、职责进度、笔记、动态各自保留原有职责，不能互相冒充。
 
@@ -110,8 +110,12 @@ artifactId  = art-<hash(longAgentId, artifactKey) 前 32 位>
 | 配置 | 任务（kind/slot/audience）沿用 `task_manage` 与任务页；职责推进的产物来源来自职责配置 |
 | Agent | `artifact_manage`（`list`/`submit`/`resubmit`/`notify`）；`social_manage` 保留人工浏览与评论 |
 | API | `GET/POST /api/long-agents/:id/artifacts`，`schemaVersion 1` |
-| Web | Friend 设置"交付"页：3+1 配置视图、按日期状态、产物链接、补交/重新生成/补发通知；动态出现在现有 feed |
+| Web | 所属长期任务/定时任务/后台任务的“任务成果与用量”详情：按稳定来源 ID 过滤成果、按日期展示、保留补交/重新生成/补发通知；动态出现在朋友圈，无独立“交付”导航 |
 
 ## 11. 验证入口
 
 Backend：`test/long-agents/note-store.test.mjs`（不可变版本文件、工作区文件只创建一次、只读分类、存储路径稳定性）、`test/long-agents/artifacts-boundaries.test.mjs` 中的 R19（符号链接存储目录被拒）、R20（过期刷新不得回退指针）、R21（冲突决定不沿用于新冲突）、R22（导出经符号链接目录被拒）与 `test/long-agents/artifacts.test.mjs`（正常链路与恢复）、`test/long-agents/artifacts-boundaries.test.mjs`（并发副作用、路径归属与写后恢复、授权收窄、长度与正文校验、评论权限、self 读取；R11–R15 为交错竞态门禁：迟到写入不得回滚新所有者、外部新建文件不被覆盖、陈旧回执不得完成新版本、恢复按正文校验、同产物后到写入者等待后完成）。竞态/挂起类用例请带 `--test-timeout` 运行，避免探针构造不当造成长时间挂起。Frontend：`frontend/lib/friend-artifacts.test.mjs`；完整门禁 `pnpm verify`。真实模型/浏览器/触发验收与阶段自审见 `docs/history/reviews/` 的 LA4 记录。
+
+## 产品呈现与统计
+
+内部 Artifact 不是新的用户工作对象。任务可有多次执行，每次执行可关联成果；同一成果的修订仍属于原来源。界面必须携带 taskId/dutyId/workId 范围，不能按名称、日期混排其他任务的结果。普通文件写入保留在原 Session 工具记录中，未登记成果不得被界面伪装成已确认产物。后台任务统计读取原生 Session 累计（含继续交流及摘要）；长期任务自然日预算读取各推进执行，助手全局汇总包含日常对话并明确标注范围。

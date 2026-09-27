@@ -1,6 +1,6 @@
 # Chat：Pi Web前端与Pi Agent Workflow
 
-启动先看[场景与脚本对照](./docs/operations/running.md)：区分正式使用、源码热更新和隔离调试。新机器见[Linux / WSL2 安装](./docs/operations/installation.md)，断点与 F5 见[调试手册](./docs/development/debugging/README.md)。
+启动先看[场景与脚本对照](./docs/operations/running.md)：区分正式使用、源码热更新和隔离调试。本次固定版本见[0.5.0 Linux release 与 VS Code 交付](./docs/operations/release-0.5.0.md)，通用新机器安装见[Linux / WSL2 安装](./docs/operations/installation.md)，断点与 F5 见[调试手册](./docs/development/debugging/README.md)。
 
 
 Chat允许用户在同一个连续Session中逐轮选择Workflow。独立的[Workflow TUI](./docs/modules/tui/README.md)复用Pi终端显示组件，通过同一Backend与Web共享Project、Run和原生Session。浏览器中的Pi Web派生前端把Prompt、Workflow和Agent配置选择提交给Chat，Chat启动对应的Vercel Workflow，并把Agent执行过程、Assistant回复和Pi Session展示在前端。
@@ -9,7 +9,7 @@ Chat以Workflow作为一级管理对象。每个Workflow目录归拢自己的Wor
 
 Chat新增需求必须先遵守[Agent第一性原理与架构约束](./docs/architecture/chat-agent-first-principles.md)，再进入具体需求和详细设计。Pi、Pi Web与Chat的源码分析、需求推导和详细设计按顺序维护在[架构、需求与详细设计文档](./docs/architecture/README.md)中。当前README只描述已经实现并验证的运行方式，不替代上游架构分析。
 
-Chat同时选择NanoClaw作为长期Agent Host、Agent Group与Channel生态的源码和演进基线。长期Agent面向IM、长期在线、独立Workspace、Agent Memory、主动与定时工作和后续多Agent场景；Workflow继续组织一次执行。当前开发基线已经完成公开Fork、`chat`长期分支、`nanoclaw/` Submodule、系统管理的Daily Project、本机单Host常驻部署，以及Chat管理的Pi LongAgent Runtime。该Host承载多个Agent Group与Telegram Bot；当Instance运行于`chat-pi`模式时，NanoClaw通过服务认证HTTP提交耐久Channel Event，所有长期Agent统一进入Chat的Pi Runtime。NanoClaw不再启动第二套Agent Session Runtime或Docker容器，但继续拥有Agent Group身份、Workspace、Markdown Agent Memory、Channel、调度、Destination和生态资源；这些能力通过版本化合同逐步接入Chat Pi。当前每个`(Project, LongAgent)`仍使用唯一专属Chat Session；新版独立Daily、跨主题Session、动态资源和主动工作属于已认可目标，不能视作全部已接通。当前支持和迁移差距统一见[Long Agent实施状态](./docs/modules/long-agents/chat-long-agent-roadmap.md)。
+Chat同时选择NanoClaw作为长期Agent Host、Agent Group与Channel生态的源码和演进基线。长期Agent面向IM、长期在线、独立Workspace、Agent Memory、主动与定时工作和后续多Agent场景；Workflow继续组织一次执行。当前开发基线已经完成公开Fork、`chat`长期分支、`nanoclaw/` Submodule、系统管理的Daily Project、本机单Host常驻部署，以及Chat管理的Pi LongAgent Runtime。该Host承载多个Agent Group与Telegram Bot；当Instance运行于`chat-pi`模式时，NanoClaw通过服务认证HTTP提交耐久Channel Event，所有长期Agent统一进入Chat的Pi Runtime。NanoClaw不再启动第二套Agent Session Runtime或Docker容器，但继续拥有Agent Group身份、Workspace、Markdown Agent Memory、Channel、调度、Destination和生态资源；这些能力通过版本化合同逐步接入Chat Pi。当前 Friend 每日直接交流 Session 固定保存在自己的 Agent Home；每轮协作项目独立冻结，切项目不迁移会话。后台工作、群参与和主题保留各自绑定，新轮次统一通过 Workflow 执行。当前支持和迁移差距统一见[Long Agent实施状态](./docs/modules/long-agents/chat-long-agent-roadmap.md)。
 
 ## 文档
 
@@ -59,7 +59,7 @@ Pi Web不再作为独立服务运行。它原来的Next.js后端、`app/api`、A
 
 Pi Web现有功能全部属于Chat的目标能力。当前接入状态和后续必须迁移的接口见[Pi Web前端API迁移清单](./docs/modules/web/api-migration.md)。
 
-NanoClaw主干不提供面向用户的完整Web聊天前端，也默认不带监控或调试UI；它可以通过自带的`/add-dashboard` Skill安装本地监控Dashboard。Chat Web是Chat统一的浏览器产品入口：Web消息由Chat直接运行Pi，IM消息由NanoClaw耐久接收后通过`chat-pi` Driver交给同一个Chat LongAgent Runtime，而不是使用该Dashboard替代Chat Web。
+NanoClaw主干不提供面向用户的完整Web聊天前端，也默认不带监控或调试UI；它可以通过自带的`/add-dashboard` Skill安装本地监控Dashboard。Chat Web是Chat统一的浏览器产品入口：Web消息由Chat接受后启动Workflow执行Pi，IM消息由NanoClaw耐久接收后通过`chat-pi` Driver交给同一Long Agent接受与Workflow执行链，而不是使用该Dashboard替代Chat Web。
 
 当前Long Agent运行拓扑是一个NanoClaw Host管理多个Agent Group和Telegram Adapter；Chat管理Project、Pi运行策略、Pi Session、Workflow与Personal/Project Memory，NanoClaw管理Agent Group身份与资源、Channel、Agent Memory、耐久Inbox、调度、Destination和投递，不为每个Bot或Agent启动独立Host。NanoClaw原生能力清单和接入状态见[Chat Long Agent能力与NanoClaw Agent Group模型](./docs/modules/long-agents/chat-long-agent-capability-model.md)。
 
@@ -249,7 +249,7 @@ http://127.0.0.1:43112/
 ~/.chat/cache/fastembed/               可重新下载的本地Embedding模型缓存
 ```
 
-这些目录都不属于Chat源码仓库。新的Linux/systemd环境需要`root`/`sudo`以及访问GitHub、Node、npm Registry和依赖原生包CDN的网络，但不需要GitHub账号或Submodule凭证。脚本会自动创建`chat`用户，准备固定Node/pnpm、公开Submodule、经过SHA256校验的Pi模型快照、版本化构建、systemd服务和回滚点，只暂停等待用户填写Web密码、Provider凭证与默认模型；多设备目录是可选的`$CHAT_HOME/devices.json`。`WORKFLOW_LOCAL_DATA_DIR`必须位于`CHAT_HOME`内部。更新、诊断和回滚分别使用`chatctl update`、`chatctl doctor`和`chatctl rollback`。必须在目标操作系统和CPU架构上构建，不能复制其他机器的`.output`；完整步骤见[部署指南](./docs/operations/README.md)。
+这些目录都不属于Chat源码仓库。新的Linux/systemd环境需要`root`/`sudo`以及访问GitHub、Node、npm Registry和依赖原生包CDN的网络，但不需要GitHub账号或Submodule凭证。脚本会自动创建`chat`用户，准备固定Node/pnpm、公开Submodule、经过SHA256校验的Pi模型快照、版本化构建、systemd服务和回滚点，安装结束保持服务停止，首次启动后由用户在设置中填写Provider凭证与默认模型；Web不设产品登录密码；多设备目录是可选的`$CHAT_HOME/devices.json`。`WORKFLOW_LOCAL_DATA_DIR`必须位于`CHAT_HOME`内部。更新、诊断和回滚分别使用`chatctl update`、`chatctl doctor`和`chatctl rollback`。必须在目标操作系统和CPU架构上构建，不能复制其他机器的`.output`；完整步骤见[部署指南](./docs/operations/README.md)。
 
 # 启停脚本
 

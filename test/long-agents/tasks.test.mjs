@@ -79,6 +79,7 @@ test("LA2 migration retains legacy script ownership and requires explicit rewrit
   await migrateFriendTasks(f.home, "friend"); await migrateFriendTasks(f.home, "friend");
   const state = await readTaskState(f.home, "friend"); assert.equal(state.tasks.length, 1); const task = state.tasks[0];
   assert.equal(task.status, "paused"); assert.match(task.migrationNote, /脚本/);
+  assert.equal(task.name, "old"); assert.equal(task.legacyId, "legacy");
   await assert.rejects(f.command({ operation: "resume", taskId: task.id, expectedRevision: 1 }), /脚本/);
   const edited = await f.command({ operation: "update", taskId: task.id, expectedRevision: 1, definition });
   assert.equal(edited.tasks[0].migrationNote, undefined); assert.equal(edited.tasks[0].status, "paused");

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { createError, defineEventHandler } from "nitro/h3";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { ensureChatHome } from "../../chat-home.js";
 import { CHAT_THINKING_LEVELS } from "../../model-capabilities.js";
 import { readChatModelsConfig } from "../../models-config.js";
@@ -32,6 +33,7 @@ export default defineEventHandler(async () => {
       contextWindow: number;
       maxTokens: number;
       authConfigured: boolean;
+      thinkingLevels: readonly string[];
     }> = [];
     for (const [providerId, rawProvider] of Object.entries(config.config.providers)) {
       if (!isRecord(rawProvider) || !Array.isArray(rawProvider.models)) continue;
@@ -53,6 +55,7 @@ export default defineEventHandler(async () => {
           contextWindow: model?.contextWindow ?? 0,
           maxTokens: model?.maxTokens ?? 0,
           authConfigured,
+          thinkingLevels: model ? getSupportedThinkingLevels(model).filter(level => CHAT_THINKING_LEVELS.includes(level)) : [],
         });
       }
     }

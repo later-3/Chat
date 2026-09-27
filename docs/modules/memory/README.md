@@ -267,3 +267,9 @@ pnpm verify
 git diff --check
 git -C frontend diff --check
 ```
+
+## 记忆目录身份与隔离预览
+
+目录的 Project 分组以 Registry 的 `kind=project` 为准，同时兼容旧系统 ID 过滤。迁移后的 Agent home（例如 id 与 Friend 相同）不能重复成为 Project Memory；其领域访问仍走 NanoClaw Agent Memory。传 Agent home 到 Catalog list/health 返回 400 和正确入口提示，不返回内部错误 500。
+
+Personal Catalog、Project Catalog 与 NanoClaw Agent Memory 分别核查。`CHAT_HOME` 隔离副本中 Catalog 为空不证明正式库为空；NanoClaw 断连也不证明文件被删。预览如需个人记忆，应在停机副本上通过 SQLite backup 复制一致性快照，不能将正式目录软链成可写数据源；不为了消除提示而给预览接入正式网关。Agent Memory 没有有效快照时计数为未知，读取失败与空库分开呈现。

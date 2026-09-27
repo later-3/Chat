@@ -2,7 +2,8 @@ interface SessionOperationQueue {
   tail: Promise<void>;
   readonly owners: Set<{ readonly longAgentId: string }>;
 }
-const sessionOperationTails = new Map<string, SessionOperationQueue>();
+const sessionOperationTailsKey = Symbol.for("chat.sessionOperationLocks");
+const sessionOperationTails = ((globalThis as Record<PropertyKey, unknown>)[sessionOperationTailsKey] ??= new Map()) as Map<string, SessionOperationQueue>;
 
 export function chatSessionOperationKey(projectId: string, sessionId: string): string {
   return `${projectId}\0${sessionId}`;

@@ -1,8 +1,14 @@
 # Chat Session架构
 
+手动压缩、只读统计与历史继续的 API、锁、恢复及归属合同见 [Pi 原生会话维护](./chat-session-maintenance.md)。
+
 本文是Chat Session语义、Workflow持久化和历史投影的约束性规范。Pi `SessionManager`是会话事实源；Workflow只能增加编排信息，不能发明第二套消息格式。
 
+原生会话特性的逐项兼容核对见 [Pi 会话能力与 Chat 适配基线](../pi/chat-pi-session-capabilities.md)。`transformContext` 的业务投影必须尊重 Pi 已生效的压缩边界；Session Memory Writer 从完整父链确定本轮归属后取原生有效上下文，不能重新注入已压缩的本轮原文。当前轮摘要可能含更早背景，不能据此将旧事实认定为本轮结论。Web 的压缩反馈明确区分完成、取消、失败，压缩后令牌数标为估计，原始 Entry 保留。
+
 2026-09-07 Long Agent 目标扩展了会话选择与跨日生命周期，见本文第10节及[Long Agent架构](../long-agents/chat-long-agent-architecture.md)。下文的Workflow消息、谱系和持久化合同继续有效；多Agent与用户共同会话的参与者协议尚未定案。
+
+2026-09-27 开发分支：Project、Friend、Topic 的新轮次共用 Workflow Run/Step 与 Pi 装配；业务受理入口仍校验各自来源、owner 和顺序。会话切换只读取目标会话，不启动 Run，Workflow 选择不改变 Session ID。只读摘要/近期视图均为有界、可失效投影，原生消息不裁剪。精确实现见[统一模块合同](../../architecture/chat-module-contracts.md#三类会话的统一执行与导航2026-09-26)与[导航性能](../../development/session-navigation-performance.md)。
 
 ## 1. 对象边界
 
@@ -206,7 +212,7 @@ Session详情的`workflowCallStatistics`是上述关系的只读聚合：`direct
 
 旧 Agent 项目绑定、旧按日索引和旧 Channel 映射先扫描并报告。每 Friend 每日期建立唯一新索引；若同日已有多个旧 Session，以已有 Home 当日主 Session 为优先，无法唯一确定时停止该 Agent 迁移并报告冲突，不合并正文。其他旧 Session 保留为历史。迁移和维护时没有当日主 Session 就保持空；首次实际交流再创建。旧业务历史提供有来源入口，不伪装成当日既有对话。
 
-迁移在停止新接受并排空在途工作后进行；保存受管备份、版本标记和原映射。阶段写入原子化，重跑从标记恢复；失败前不发布新映射。回退仅允许新格式尚无新增工作时恢复原映射；已有新消息后必须导出兼容数据或向前修复，不把旧版本直接指向未知格式。旧链接读取保持，继续发送由后端明确定位今天，不静默写旧日。
+迁移在停止新接受并排空在途工作后进行；保存受管备份、版本标记和原映射。阶段写入原子化，重跑从标记恢复；失败前不发布新映射。回退仅允许新格式尚无新增工作时恢复原映射；已有新消息后必须导出兼容数据或向前修复，不把旧版本直接指向未知格式。旧链接读取保持。2026-09-27 起，显式选择 Home 历史会话可继续该 Session，默认联系人入口仍定位今天，不互相改投；消息时间保持真实时间。
 
 Project 参与者不因能读项目而自动获得 Friend 混合多个项目的整日 Session。按项目活动投影只返回授权轮次引用/摘要；整个 Friend 日常历史继续属于其私有受众。
 
@@ -220,7 +226,7 @@ Project 参与者不因能读项目而自动获得 Friend 混合多个项目的�
 
 Workflow Call 的 parent/child 端点增加可选 `projectId`。旧记录省略时沿用原同项目关系；跨项目子会话创建先验证 parentProjectId 与真实父 Session 归属，保持 Pi 原生 parentSession。树读模型和前端解析保留两端 Project，统计按已记录目标加载子 Session，不从父 cwd 猜测。Memory 写入来源仍为父存储 Session，默认写入目标取协作 Project。
 
-P5 归属查询同时读取当前主会话、全部 dailySessions 和经过校验的历史迁移记录。旧 Friend 历史返回原 owner 与 `readOnly: true`，不能变成普通 Workflow 会话；普通 Workflow 启动入口再次校验归属。旧链接携带的 projectId 由 Backend 按精确 Session 映射解析，未知项目或 Session 不回退。新迁移不移动或复制 JSONL；只为已执行 v1 迁移的历史保留当前位置别名。
+P5 归属查询同时读取当前主会话、全部 dailySessions 和经过校验的历史迁移记录。Home 每日历史返回原 owner 与 `readOnly: false`，通过同一 Friend 受理链续聊；已经迁入 Home 的旧历史也可在核实精确迁移回执和源 cwd 后续聊，不改原 header。仍留在旧业务项目的迁移档案保留只读。普通 Workflow 启动入口再次校验归属，不能接管 Friend。旧链接携带的 projectId 由 Backend 按精确 Session 映射解析，未知项目或 Session 不回退。新迁移不移动或复制 JSONL；只为已执行 v1 迁移的历史保留当前位置别名。
 
 ## 11. LA0：独立工作与群聊的原生 Session 合同
 

@@ -56,22 +56,34 @@ Friend 的直接交流始终使用自己的每日 Session。业务项目通过�
 
 项目展示与 Agent Home 分开；旧 API 的 projectId 兼容表示存储归属，新消费者明确使用 SessionRef 与 CollaborationContext，精确字段以[公共装配合同](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)为准。项目页只列普通项目 Session；Friend 的项目活动可引用相关轮次，不复制私有每日对话或授权其他参与者读取整天历史。
 
+### 日历历史入口（2026-09-27 实现）
+
+Friend 列表每行的日历按钮打开历史阅读器：全年格子按周排列，Agent Home 的原生 Session 在当天有消息才显示绿色。只有文件头/配置的空 Session 不点亮；不能把每日绑定存在当作已有历史。Home 中日常、后台工作、主题和其他原生 Session 都沿用现有存储与归属。点击任意日期直接进入该日工作区：中央打开日常 Session，侧栏按所选日期列出会话和后台工作，不再弹出第二层会话选择；每个 Session 沿用自己的权限和公共 ChatWindow，已有历史可以继续会话；打开已有会话不创建替代品。空日期可点击，通过既有 `POST /api/long-agents/:id/start` 的可选 `date: YYYY-MM-DD` 幂等打开或创建该日直接交流 Session。只创建不会调用模型，也不是定时任务。
+
+`GET /api/long-agents/:id/daily?year=YYYY` 保留 `days` 生命周期记录，另返回 `sessions: [{sessionId,projectId,title,kind,dates,createdAt}]` 只读投影供历史入口使用。年份允许 1970–9999；不传年份时保留状态面板最近 60 天合同。会话发现复用公共 `listActiveSessionFiles`，日期从同一次 stat 校验的 Pi 分支消息读取，按 Agent 时区计算；跨日会话只出现在真正有消息的日期，不填满创建至修改之间的空闲日。过去分支/压缩前全文继续通过公共历史入口查看。此版本范围是 Agent Home，不递归扫描其他项目中的委派子会话。无新存储、调度或模型调用，日历读取不加入联系人切换的关键路径。侧栏在主聊天打开后异步读取投影，后台工作按创建日或当日实际消息归入；同名定时任务每次执行按 work/Session 身份区分，并显示实际开始时间。
+
+用户选择的日期只是 Session 的日历归属；接受时间、消息时间与模型所见今天仍使用真实当前时间。继续旧日不改变默认联系人今天的会话；旧日总结已完成时重新置为待总结，按新 cutoff 更新，收尾正在占用会话时仍使用既有冲突提示。日历后续可以投影现有 Task/Occurrence/Duty，但本批只提供 Session 导航和创建，未把任务定义或跳过记录当成已有会话。
+
+后续已确认方向：按每天真实 Token 消耗映射绿色深浅（多则深、少则浅），当前只记录实现注释，未启用强度。届时应读取原生 assistant usage，明确缓存 Token 口径与 fork 继承去重；不能以会话数量或文件大小代替用量，也不新建会话事实源。
+
+回归：`test/long-agents/daily-lifecycle.test.mjs` 覆盖超过 60 条/闰日/空年、空绑定、多会话、跨日、移除、作用域和只读查询；`frontend/lib/friend-calendar.test.mjs` 覆盖日期布局与同日多会话；`scripts/session-memory-switch-browser.test.mjs` 覆盖空日期不点亮、选择两个不同历史会话、实际消息可见、在原历史续聊及读取旧上下文、空日期幂等创建而不执行模型、刷新和默认今日目标不变。
+
 ### 4.2 每日唯一性、日期与排队（P1 实施决策）
 
 2026-09-20 LA0 补充：以下描述现有每日入口。目标将独立任务/群参与分离到各自 Session，“每日唯一”仅适用于直接交流；不能继续将新后台任务默认送入日常主会话。目标合同见[机制 §9](./chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)，LA1 已扩展明确后台工作绑定；每日唯一性只约束直接交流，工作按独立 Session 排队。
 
-- 唯一键为 `(longAgentId, localDate)`，不含业务 projectId、Channel 或浏览器 ID。日期由 Backend 耐久接受时间及 Agent 的持久 IANA timeZone 计算，不相信客户端时间；迟到渠道消息保留原发送时间，但新接受请求进入接受日。
+- 唯一键为 `(longAgentId, localDate)`，不含业务 projectId、Channel 或浏览器 ID。默认日期由 Backend 耐久接受时间及 Agent 的持久 IANA timeZone 计算；迟到渠道消息保留原发送时间，但新接受请求进入接受日。2026-09-27 用户明确选择日历日期或已有 Session 时例外：Backend 验证日期/归属后定位该 Session，不改变消息时间和模型所见当前时间。
 - 老配置首次迁移时把 Backend 的有效 IANA 时区持久固定，并在检查中展示；以后不随服务器时区漂移。改时区从下一轮接受生效，历史不改；遇到同一日期复用原 Session，不能因时区更名再建一个。同一执行保存其 timeZone revision。
 - 同日直接消息和内部维护进入每日原生 Session，有序执行；LA2 任务触发通过 LA1 独立工作 Session 执行（[任务合同](./tasks.md)）；接收与模型执行分离，使用现有 Long Agent 耐久待处理记录扩展请求序号/状态，不新增通用任务引擎。多个 Friend 可并行；独立 Workflow 委派仍按自身合同并行。
 - 本轮接受时选定日期/项目/资源；午夜不迁移已接受或执行中的轮次。旧日队列仍写旧 Session，新日任务使用新 Session，缺少最终交接时携带“旧日仍在执行”的可查引用；不得假称昨日已全部总结。
-- Backend 恢复 Worker 启动时、每 60 秒及接受消息前检查换日和待总结记录；空闲日不制造空 Session。首条新日工作按唯一键创建；已关闭日期的新消息不会回写旧日，显式旧链接保持历史阅读，并明确提供“在今天继续”。
+- Backend 恢复 Worker 启动时、每 60 秒及接受消息前检查换日和待总结记录；空闲日不制造空 Session。首条新日工作按唯一键创建。2026-09-27 按用户修正的产品要求，显式打开旧日可以在原 Session 继续；默认点 Friend 仍进入今天。已完成总结会随新轮次重新进入待总结，不能悄悄转投今日。
 - 新日初始化按唯一键幂等，不因先打开页面或进程重建丢失交接。交接 readiness/revision 独立记录，每轮从记录恢复；后来完成的旧日总结从下一轮进入，不改已接受轮次。
 
 ### 4.2.1 P3 实现合同（2026-09-19）
 
 所有直接入口复用 `acceptLongAgentTurn → drainLongAgentTurns → executeAcceptedLongAgentTurn → createChatPiAgentSession`。Nano Event API 在返回 202 前冻结模型输入并保存事件；P4 Web 已使用 turns API 在耐久接受后返回 202，再按引用订阅公共 Pi 事件；旧 messages API 保留同步兼容。精确路由、恢复边界和能力差异见[模块合同](../../architecture/chat-module-contracts.md#friend-p4-实时与控制合同)。
 
-- `project-agent.ts` 按 Friend＋日期定位 Home 原生 Session，兼容输入的业务 projectId 不再创建另一条 Friend 主会话。显式旧 Session ID 不接受新消息，历史仍可读取；点 Friend 的“开始聊天”进入今天。
+- `project-agent.ts` 按 Friend＋日期定位 Home 原生 Session，兼容输入的业务 projectId 不再创建另一条 Friend 主会话。显式旧 Home 日常 Session ID 可以继续原历史；点 Friend 的“开始聊天”仍进入今天。经过旧迁移的 Home 历史须有精确迁移回执；原生 header 保留，公共打开入口只在原 cwd 与迁移来源 Registry 一致时允许从当前 Home 续聊。仍在旧业务 Project 的迁移档案不自动接管。
 - 时区首次读取配置、打开会话或 Worker 恢复时固定进 Registry；保存配置可修改 `timeZone`。每个请求记录接受时的日期和时区，改配置不重写历史。当前日期因改时区再次出现时复用原 Session；若该日正在收尾则明确要求稍后重试，完成后追加工作会重新标记待总结。
 - `runtime/long-agent-state.json` schema 4 增加 dailySessions 和 turns。turns 是执行信封/收据：保存 requestId、可信来源、全局接受序号、日历归属、项目、Nano revision、公共装配 seed、正文/图片和状态；不是第二套聊天。完成/取消后清除正文、图片、seed，消息事实始终在 Pi JSONL。失败/不明中断保留原输入供检查。
 - Web 使用稳定 requestId；同来源/Friend/requestId 且正文、项目、附件一致即复用，不同则 409。Turn ID 带来源和 Friend 前缀，避免不同入口身份碰撞。一个 Friend 的 Worker 串行处理接受序号，不同 Friend 可并行；当前采用单 Backend 进程的原子状态写队列，不支持多个 Backend 同写一个 Chat Home。
@@ -178,7 +190,7 @@ Task、Run、模型执行和 Delivery 状态分开。投递重试不重新执行
 
 并发控制落到实际冲突资源：同一配置或 Memory 文件的写入需要版本冲突保护或短时串行；相同可写工作副本、浏览器页面、设备等按资源能力互斥；只读快照与互不冲突的工作可以并行。正在执行的轮次保留其配置快照，后续轮次读取新版本。等待另一 Agent 或用户回复时，不得持有阻塞整个身份或对方响应所需资源的锁。
 
-Friend 同日直接交流使用现有待处理记录的接受序号，不能并发写同一 Pi 分支；后台维护排在其截止范围的已接受消息之后。跨日后旧日不再接受新用户轮次，可最终收尾，避免维护无限饥饿。未来多 Agent 协作不能用新增隐藏 Friend Session 绕过此合同。
+Friend 同日直接交流使用现有待处理记录的接受序号，不能并发写同一 Pi 分支；后台维护排在其截止范围的已接受消息之后。跨日后仍可显式在旧日 Session 接受新用户轮次；总结按已有 cutoff 与会话锁收尾，完成后若有新轮次则更新总结。默认新消息仍进入今天。未来多 Agent 协作不能用新增隐藏 Friend Session 绕过此合同。
 
 自由活动与正式工作可以并行；收到正式任务不自动中断全部自由活动。只有资源冲突、优先级或预算需要时才等待、暂停或让出资源。自由活动的完整产品场景仍在讨论。
 

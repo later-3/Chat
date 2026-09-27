@@ -31,15 +31,13 @@
 ## 当前系统的主要执行链
 
 ```text
-普通 Workflow Session
-  React / Chat TUI → POST /runs → Workflow → Step → Workflow Agent 包装
-                                          ↓
-                                    公共 Pi 装配 → Pi AgentSession
-                                          ↑
-Web Friend → Long Agent 生命周期 ──────────┤
-Telegram / 微信 → NanoClaw → HTTP Event → Chat 耐久入站 → Long Agent 生命周期
-                       ↑                                  ↓
-                       └──── Channel 投递 ← Delivery / Ack ┘
+普通 Web / TUI → POST /runs ──────────────────┐
+Web Friend / 工作 / 群参与 / 主题 → 授权接受记录 ─┼→ Workflow → Step
+IM → NanoClaw → 耐久 HTTP Event → 同一接受链 ───┘       ↓
+                                                公共 Pi 装配
+                                                    ↓
+                                              Pi AgentSession
+IM 回复 → NanoClaw Delivery / Ack → Channel
 ```
 
 普通 Web/TUI Workflow 对话不需要 NanoClaw；Web Friend当前会从 NanoClaw读取 Group 身份/Memory，因此练习它时需要已准备的调试 Gateway。Pi 是 Backend 内调用的 SDK，不是另一个必须占端口的服务。模型协议、资源加载和 Session 的权威实现都在 Pi。

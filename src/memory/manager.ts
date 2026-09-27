@@ -4,6 +4,7 @@ import { resolveChatHome } from "../chat-home.js";
 import { resolveProjectContext } from "../projects/registry.js";
 import { createMemoryServiceForTarget } from "./runtime.js";
 import type { MemoryService } from "./service.js";
+import { MemoryValidationError } from "./service.js";
 import type {
   CreateMemoryInput,
   DeleteMemoryResult,
@@ -55,7 +56,7 @@ export class MemoryStoreManager {
       // 记忆只有三类：Chat（个人）/ Project（真实项目）/ Long Agent（OKF）。
       // Agent home 与共享空间是系统容器，不提供 Project Memory。
       if (project.kind !== "project") {
-        throw new Error(`Project ${target.projectId}是系统管理的Long Agent容器，不提供Project Memory`);
+        throw new MemoryValidationError(`Project ${target.projectId}是系统管理的Long Agent容器，请在Agent Memory中查看记忆`);
       }
     }
     const key = targetKey(target);

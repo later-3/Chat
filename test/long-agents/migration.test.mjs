@@ -7,7 +7,8 @@ import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { migrateAgentHomeNormalization } from '../../src/migrations/agent-home-normalization.ts';
 import { ensureAgentHomeProject, openProject, readProjectRegistry } from '../../src/projects/registry.ts';
 import { readLongAgentRegistry, readLongAgentState, updateLongAgentState, writeLongAgentRegistry } from '../../src/long-agents/storage.ts';
-import { ensureProjectLongAgent, projectLongAgentId } from '../../src/long-agents/project-agent.ts';
+import { ensureProjectLongAgent, openAcceptedDay, projectLongAgentId } from '../../src/long-agents/project-agent.ts';
+import { openChatSession } from '../../src/chat-session.ts';
 import { readChatSession, requireChatSession } from '../../src/session-read-model.ts';
 
 const stamp = '2026-09-01T00:00:00.000Z';
@@ -105,20 +106,30 @@ test('P5 v1 receipt recovery restores Friend ownership and exact old links witho
   const result = await migrateAgentHomeNormalization(f.home);
   assert.equal(result.previousVersion, 1);
   const view = await requireChatSession(f.old.getSessionId(), 'daily-friend', f.home);
-  assert.equal(view.projectId, 'friend'); assert.equal(view.readOnly, true); assert.equal(view.owner.longAgentId, 'friend');
+  assert.equal(view.projectId, 'friend'); assert.equal(view.readOnly, false); assert.equal(view.owner.longAgentId, 'friend');
+  const resumed = await ensureProjectLongAgent({chatHome:f.home,projectId:'friend',agent:(await readLongAgentRegistry(f.home)).agents[0],requestedSessionId:f.old.getSessionId()});
+  assert.equal(resumed.day.sessionId,f.old.getSessionId());
+  assert.equal((await openAcceptedDay(f.home,'friend',f.old.getSessionId())).primarySessionId,f.old.getSessionId());
+  assert.equal((await openChatSession({chatHome:f.home,projectId:'friend',sessionId:f.old.getSessionId()})).cwd,f.own.cwd);
   assert.deepEqual(fs.readFileSync(view.path), bytes);
+  // A receipt is not permission to replace the original cwd with an unrelated directory.
+  const entries = bytes.toString().trim().split('\n').map(line=>JSON.parse(line));
+  entries[0].cwd=f.projects.business.cwd;
+  fs.writeFileSync(view.path,entries.map(entry=>JSON.stringify(entry)).join('\n')+'\n');
+  await assert.rejects(openChatSession({chatHome:f.home,projectId:'friend',sessionId:f.old.getSessionId()}),/不属于工作目录/);
 });
 
-test('P5 past days retain Friend ownership after daily rotation and stay read-only', async t => {
+test("past native days retain Friend ownership and can continue without rotating today's target", async t => {
   const f = await fixture(t);
   await migrateAgentHomeNormalization(f.home);
   const agent = (await readLongAgentRegistry(f.home)).agents[0];
   const yesterday = await ensureProjectLongAgent({ chatHome: f.home, projectId: 'friend', agent, now: new Date(Date.now() - 86400000) });
   const today = await ensureProjectLongAgent({ chatHome: f.home, projectId: 'friend', agent });
   const oldView = await requireChatSession(yesterday.day.sessionId, 'friend', f.home);
-  assert.equal(oldView.owner.longAgentId, 'friend'); assert.equal(oldView.readOnly, true);
+  assert.equal(oldView.owner.longAgentId, 'friend'); assert.equal(oldView.readOnly, false);
   assert.equal((await requireChatSession(today.day.sessionId, 'friend', f.home)).readOnly, false);
-  await assert.rejects(ensureProjectLongAgent({ chatHome: f.home, projectId: 'friend', agent, requestedSessionId: yesterday.day.sessionId }), /历史保持只读/);
+  assert.equal((await ensureProjectLongAgent({ chatHome: f.home, projectId: 'friend', agent, requestedSessionId: yesterday.day.sessionId })).day.sessionId, yesterday.day.sessionId);
+  assert.equal((await readLongAgentState(f.home)).projectAgents.find(p=>p.projectId==='friend' && p.longAgentId==='friend').primarySessionId,today.day.sessionId);
 });
 
 test('P5 definition split refuses conflicting files and serializes concurrent recovery', async t => {

@@ -152,13 +152,18 @@ export async function dispatchConversationAttempt(input: {
     });
     let lastAssistant: AssistantMessageLike | undefined;
     const unsubscribe = created.session.subscribe((event) => {
-      if (event.type !== "message_end" || event.message.role !== "assistant") return;
-      lastAssistant = event.message;
+      let tokens: number;
+      if (event.type === "message_end" && event.message.role === "assistant") {
+        lastAssistant = event.message;
+        tokens = assistantTokens(event.message);
+      } else if (event.type === "compaction_end" && event.result?.usage) {
+        tokens = assistantTokens({ usage: event.result.usage });
+      } else return;
       // Durable token metering: the next provider request's gate reads this counter.
       usageCommit = usageCommit.then(() => recordDiscussionTokenUsage({
         chatHome: input.chatHome, storageProjectId: input.storageProjectId,
         conversationId: input.conversationId, discussionId: input.discussionId,
-        tokens: assistantTokens(event.message),
+        tokens,
       }));
       // The synchronous event emitter cannot await this write. Observe rejection here, but keep
       // the original rejected promise for the next request gate and final settlement to enforce.

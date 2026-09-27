@@ -20,6 +20,8 @@ export {
 };
 
 export interface ChatWorkflowHttpInput {
+  /** Backend-only reference to a durable accepted Friend/node request. Never parsed from HTTP. */
+  readonly acceptedLongAgentTurn?: { readonly longAgentId: string; readonly turnId: string };
   readonly projectId?: string;
   readonly chatHome?: string;
   readonly cwd: string;

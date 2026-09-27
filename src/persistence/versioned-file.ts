@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 
-const writes = new Map<string, Promise<unknown>>();
+const writesKey = Symbol.for("chat.versionedFileWrites");
+const writes = ((globalThis as Record<PropertyKey, unknown>)[writesKey] ??= new Map()) as Map<string, Promise<unknown>>;
 
 /** Shared by HTTP and Tool writers; callbacks must not reacquire the same lock. */
 export async function withFileLock<T>(path: string, operation: () => Promise<T>): Promise<T> {

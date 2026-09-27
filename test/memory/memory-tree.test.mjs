@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { createRouter } from "nitro/h3";
 import { MemoryRepository } from "../../src/memory/repository.ts";
-import { ensureLongAgentShareProject, openProject, resolveProjectContext } from "../../src/projects/registry.ts";
+import { ensureAgentHomeProject, ensureLongAgentShareProject, openProject, resolveProjectContext } from "../../src/projects/registry.ts";
 import treeHandler from "../../src/routes/api/memories/tree.get.ts";
 
 function fixture(t) {
@@ -24,6 +24,7 @@ test("memory tree lists Chat system, Project, and Long Agent scopes with counts"
     else process.env.CHAT_HOME = previousHome;
   });
   const daily = await ensureLongAgentShareProject(chatHome);
+  await ensureAgentHomeProject("nexus", "Nexus", chatHome);
   fs.mkdirSync(path.join(base, "workspace"));
   const project = await openProject({
     path: path.join(base, "workspace"), chatHome, id: "tree-project", name: "Tree Project",
@@ -53,6 +54,8 @@ test("memory tree lists Chat system, Project, and Long Agent scopes with counts"
     "the shared Long Agent space must not appear as a user Project");
   assert.equal(tree.projects.some((entry) => entry.projectId.startsWith("daily-")), false,
     "Long Agent daily Projects must not appear as user Projects");
+  assert.equal(tree.projects.some((entry) => entry.projectId === "nexus"), false,
+    "current Agent homes are filtered by kind, not only the legacy daily- prefix");
   assert.ok(Array.isArray(tree.longAgents));
 });
 

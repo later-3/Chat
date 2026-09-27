@@ -10,6 +10,7 @@ export function friendExecution(home: string, turn: AcceptedTurn) {
     schemaVersion: 1 as const,
     kind: "friend" as const,
     ...(turn.workId === undefined ? {} : { workId: turn.workId }),
+    ...(turn.workflow === undefined ? {} : { workflow: turn.workflow }),
     id: turn.turnId,
     longAgentId: turn.longAgentId,
     projectId: turn.longAgentId,
@@ -20,7 +21,7 @@ export function friendExecution(home: string, turn: AcceptedTurn) {
     acceptedAt: turn.acceptedAt,
     capabilities: {
       cancel: (turn.status === "queued" && !isLiveSteering(home, turn.turnId)) || turn.status === "running",
-      steer: turn.source === "chat-web" && live?.session.isStreaming === true && !live.cancelled,
+      steer: turn.source === "chat-web" && live?.session.isStreaming === true && live.roundPhase !== "remember" && !live.cancelled,
       followUp: true,
       images: live?.session.model?.input.includes("image") ?? false,
     },

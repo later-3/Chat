@@ -3,7 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { openProject, resolveProjectContext } from "../../src/projects/registry.ts";
+import { ensureAgentHomeProject, openProject, resolveProjectContext } from "../../src/projects/registry.ts";
+import { createRouter } from "nitro/h3";
+import listHandler from "../../src/routes/api/memories/index.get.ts";
+import healthHandler from "../../src/routes/api/memories/health.get.ts";
 import { MemoryStoreManager } from "../../src/memory/manager.ts";
 import { MemoryRepository } from "../../src/memory/repository.ts";
 import { MemoryService } from "../../src/memory/service.ts";
@@ -28,6 +31,20 @@ class TestIndex {
       .map(([id, record]) => ({ mem0Id: id, chatMemoryId: record.id, score: 1 }));
   }
 }
+
+test("Agent home memory targets return actionable 400 for list and health, not HTTP 500", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-memory-home-"));
+  const prior = process.env.CHAT_HOME;
+  process.env.CHAT_HOME = root;
+  t.after(() => { if (prior === undefined) delete process.env.CHAT_HOME; else process.env.CHAT_HOME = prior; fs.rmSync(root, { recursive: true, force: true }); });
+  await ensureAgentHomeProject("nexus", "Nexus", root);
+  const router = createRouter(); router.get("/api/memories", listHandler); router.get("/api/memories/health", healthHandler);
+  for (const path of ["/api/memories", "/api/memories/health"]) {
+    const response = await router.fetch(new Request(`http://chat.test${path}?scope=project&projectId=nexus`));
+    assert.equal(response.status, 400);
+    assert.match(JSON.stringify(await response.json()), /Agent Memory/);
+  }
+});
 
 test("Personal and every Project use independent catalogs while explicit cross-Project search works", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-memory-manager-"));

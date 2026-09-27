@@ -93,6 +93,9 @@ async function summarizeDay(home: string, agent: LongAgentConfig, day: DailySess
 export async function recoverLongAgentTurns(home: string, workerOwnsSession?: string): Promise<void> {
   for (const turn of (await readLongAgentState(home)).turns) {
     if (turn.status !== "running" || (isFriendWorkerActive(home, turn.longAgentId, turn.sessionId) && workerOwnsSession !== turn.sessionId)) continue;
+    // New receipts are governed by the Workflow World. A completed work marker cannot settle a
+    // suspended review or unfinished memory Step; the ordered worker reattaches to that same Run.
+    if (turn.workflow !== undefined) continue;
     const session = await openChatSession({ projectId: turn.longAgentId, sessionId: turn.sessionId, chatHome: home });
     const entries = session.manager.getBranch();
     const marker = latestChatLongAgentTurn(entries, turn.turnId);

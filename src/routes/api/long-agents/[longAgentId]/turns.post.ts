@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
     const v = body as Record<string, unknown>;
     if (
       Object.keys(v).some(
-        (k) => !["schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId", "interactionRevision", "sessionMemory"].includes(k),
+        (k) => !["workflow", "schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId", "interactionRevision", "sessionMemory"].includes(k),
       ) ||
       (v.sessionMemory !== undefined && v.sessionMemory !== "on" && v.sessionMemory !== "off") ||
       v.schemaVersion !== 1 ||
@@ -33,7 +33,9 @@ export default defineEventHandler(async (event) => {
       throw new Error("无效Friend消息合同");
     const home = resolveChatHome();
     const images = parseWorkflowImages(v.images);
+    if (v.workflow !== undefined && typeof v.workflow !== "string") throw new Error("无效Workflow选择");
     const accepted = await acceptLongAgentTurn({
+      ...(v.workflow === undefined ? {} : { workflow: v.workflow as string }),
       chatHome: home,
       longAgentId,
       requireInteractionRevision: true,

@@ -67,6 +67,7 @@ export function projectAgentSessionEvent(event: AgentSessionEvent): Readonly<Rec
         isError: event.isError,
       };
     case "auto_retry_start":
+    case "summarization_retry_scheduled":
       return {
         type: event.type,
         attempt: event.attempt,
@@ -83,6 +84,10 @@ export function projectAgentSessionEvent(event: AgentSessionEvent): Readonly<Rec
       };
     case "compaction_start":
       return { type: event.type, reason: event.reason };
+    case "summarization_retry_attempt_start":
+      return { type: event.type, source: event.source, ...(event.source === "compaction" ? { reason: event.reason } : {}) };
+    case "summarization_retry_finished":
+      return { type: event.type };
     case "compaction_end":
       return {
         type: event.type,
@@ -90,6 +95,10 @@ export function projectAgentSessionEvent(event: AgentSessionEvent): Readonly<Rec
         aborted: event.aborted,
         willRetry: event.willRetry,
         ...(event.errorMessage === undefined ? {} : { errorMessage: event.errorMessage }),
+        ...(event.result === undefined ? {} : { result: {
+          tokensBefore: event.result.tokensBefore,
+          estimatedTokensAfter: event.result.estimatedTokensAfter,
+        } }),
       };
     default:
       return null;

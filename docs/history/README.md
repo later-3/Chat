@@ -4,9 +4,16 @@
 
 | 主题 | 记录 |
 |---|---|
+| 0.5.0 版本、Linux release 与 VS Code 调试交付核对 | [2026-09-27](./reviews/2026-09-27-release-0.5.0.md) |
+| Long Agent 设置 9 个入口：实现、可用性与测试盲区 | [2026-09-27](./reviews/2026-09-27-long-agent-settings-capability-audit.md) |
+| Pi 摘要准入、取消恢复与原生会话入口 | [2026-09-27](./reviews/2026-09-27-pi-session-controls.md) |
+| Pi 会话能力盘点、压缩适配与剩余缺口 | [2026-09-27](./reviews/2026-09-27-pi-session-capabilities.md) |
+| Pi 原生测试分类、Chat 场景对照与定向验证 | [2026-09-27](./reviews/2026-09-27-pi-test-coverage.md) |
+| 全局交互与 UI 盘点：30 个任务界面、规范分工与整改顺序 | [2026-09-27 审计](./reviews/2026-09-27-product-interaction-ui-audit.md) |
 | Friend 群聊与多 Friend 协作（LA5 验收） | [LA5](./reviews/2026-09-21-long-agent-la5-acceptance.md) |
 | LA6 联合运行：Friend 协作项目关联（A 包） | [LA6](./reviews/2026-09-21-long-agent-la6.md) |
 | Friend 创建、任务/触发与真实浏览器 | [LA2](./reviews/2026-09-20-long-agent-la2.md) |
+| Frontend 全面更新与覆盖矩阵 | [2026-09-27](./reviews/2026-09-27-frontend-renewal-delivery.md) |
 | Friend 独立后台工作、真实模型与浏览器 | [LA1](./reviews/2026-09-20-long-agent-la1.md) |
 | Friend 任务/群聊的合同与原生接缝 | [LA0](./reviews/2026-09-20-long-agent-la0.md) |
 | 公共 Agent 装配合同与实现 | [P1](./reviews/2026-09-19-agent-unification-p1.md)、[P2](./reviews/2026-09-19-agent-unification-p2.md) |
@@ -19,3 +26,5 @@
 | Agent 开发治理 | [2026-09-07](./reviews/2026-09-07-agent-development-readiness.md) |
 
 已有记录中的测试数量、路径、能力结论属于记录日期；后续补充明确标日期/范围，不回写成“当时已支持”。
+
+- [2026-09-27 Friend 任务导航与共用交互](./reviews/2026-09-27-friend-task-navigation.md)：六项产品调整、摘要计量修复及浏览器证据。

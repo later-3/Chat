@@ -137,6 +137,7 @@ test("group chat is usable in a real browser: two groups, five policies, backgro
   assert.equal(shell.status, 200, `前端未构建或未提供：HTTP ${String(shell.status)}\n${output}`);
   browser = await launchBrowser();
   const page = await browser.newPage(`${baseUrl}/?view=groups`);
+  await page.send("Emulation.setDeviceMetricsOverride", {width:1280,height:900,deviceScaleFactor:1,mobile:false});
   await page.waitFor("document.readyState === 'complete'", { label: "页面加载", timeoutMs: 30_000 });
   await page.waitFor("document.getElementById('workspace-groups-tab') !== null", { label: "导航栏群聊入口", timeoutMs: 40_000 });
   // The app restores its last Session and switches to chat first; open the group view after it settles.
@@ -177,12 +178,37 @@ test("group chat is usable in a real browser: two groups, five policies, backgro
   await page.waitFor("document.body.innerText.includes('后台任务一')", { label: "群一后台任务状态", timeoutMs: 40_000 });
   await page.evaluate(`(() => {
     const input = document.querySelector('[data-group-composer]');
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
     setter.call(input, 'BROWSER_NEW_MESSAGE');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   })()`);
+  // A draft belongs to its group and survives visiting another group.
+  await openGroup("浏览器群二");
+  await page.waitFor("document.body.innerText.includes('GROUP_TWO_MSG')", {label:"切到另一群保存草稿"});
+  assert.equal(await page.evaluate("document.querySelector('[data-group-composer]')?.value"), "");
+  await openGroup("浏览器群一");
+  await page.waitFor("document.querySelector('[data-group-composer]')?.value === 'BROWSER_NEW_MESSAGE'", {label:"群草稿恢复"});
+  // Simulate an accepted POST whose acknowledgement is lost. The explicit retry must reuse its ID.
+  await page.evaluate(`(() => {
+    const original = window.fetch;
+    let loseAck = true;
+    window.fetch = async (...args) => {
+      const response = await original(...args);
+      if (loseAck && String(args[0]).includes('/conversations/') && String(args[0]).endsWith('/messages') && args[1]?.method === 'POST') {
+        loseAck = false; throw new TypeError('TEST_LOST_ACK');
+      }
+      return response;
+    };
+  })()`);
+  await page.evaluate("document.querySelector('[data-group-send]')?.click(); document.querySelector('[data-group-send]')?.click()");
+  await page.waitFor("document.querySelector('[data-group-chat-root] [role=alert] .interface-feedback-toggle') !== null", {label:"未确认发布显示可展开诊断"});
+  await page.evaluate("document.querySelector('[data-group-chat-root] [role=alert] .interface-feedback-toggle').click()");
+  await page.waitFor("document.body.innerText.includes('TEST_LOST_ACK')", {label:"未确认发布保留重试"});
   await page.evaluate("document.querySelector('[data-group-send]')?.click()");
-  await page.waitFor("document.body.innerText.includes('BROWSER_NEW_MESSAGE')", { label: "群一发送的消息", timeoutMs: 20_000 });
+  await page.waitFor("document.querySelector('[data-group-composer]')?.value === ''", {label:"原发布确认后清草稿"});
+  const posted = await api(`/${g1Id}/messages`);
+  assert.equal(posted.body.messages.filter(message => message.text === 'BROWSER_NEW_MESSAGE').length, 1, '重试和连点不能发布重复消息');
+
 
   // Group two: switching shows only its own public history.
   await openGroup("浏览器群二");
@@ -197,8 +223,8 @@ test("group chat is usable in a real browser: two groups, five policies, backgro
     await page.evaluate(`document.querySelector('[data-group-policy=${JSON.stringify(policy)}]')?.click()`);
     await page.waitFor(`document.querySelector('[data-group-policy=${JSON.stringify(policy)}]')?.getAttribute('aria-pressed') === 'true'`, { label: `策略选中 ${policy}` });
     await page.evaluate("document.querySelector('[data-group-start-round]')?.click()");
-    await page.waitFor(`(document.querySelector('[data-group-discussion-status]')?.textContent||'').includes(${JSON.stringify(policy)})`, { label: `策略状态 ${policy}`, timeoutMs: 40_000 });
-    await page.waitFor(`(document.querySelector('[data-group-discussion-status]')?.textContent||'').includes('completed')`, { label: `策略完成 ${policy}`, timeoutMs: 60_000 });
+    await page.waitFor(`document.querySelector('[data-group-discussion-status]')?.dataset.policy === ${JSON.stringify(policy)}`, { label: `策略状态 ${policy}`, timeoutMs: 40_000 });
+    await page.waitFor(`/Completed|已完成/.test(document.querySelector('[data-group-discussion-status]')?.textContent||'')`, { label: `策略完成 ${policy}`, timeoutMs: 60_000 });
   }
   const identityLeak = await page.evaluate("JSON.stringify([...performance.getEntriesByType('resource')].map(e => e.name).filter(n => n.includes('viewerLongAgentId')))");
   assert.equal(identityLeak, "[]");
@@ -215,7 +241,32 @@ test("group chat is usable in a real browser: two groups, five policies, backgro
   // read-only history dialog that must actually load the export HTML.
   await page.waitFor("document.querySelector('[data-group-history]') !== null", { label: "成员完整历史入口", timeoutMs: 40_000 });
   await page.waitFor("document.querySelector('[data-group-history-public]') !== null", { label: "群聊完整历史入口", timeoutMs: 20_000 });
-  await page.evaluate("document.querySelector('[data-group-history]')?.click()");
+  await page.evaluate("document.querySelector('[data-group-history]')?.closest('details')?.querySelector('summary')?.click()");
+  await page.evaluate("document.querySelector('[data-group-history]')?.focus(); document.querySelector('[data-group-history]')?.click()");
   await page.waitFor("document.querySelector('iframe.full-history-frame') !== null", { label: "完整历史对话框打开", timeoutMs: 20_000 });
+  // Close the shared reader with Escape and restore focus to its history trigger.
+  await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await page.waitFor("document.querySelector('iframe.full-history-frame') === null", {label:'shared reader Escape'});
+  await page.waitFor("document.activeElement?.matches('[data-group-history]')", {label:"reader restores trigger focus"});
+  // A member record owns one storage Session; its deep link navigates back to its group.
+  const groupSessions = await (await fetch(`${baseUrl}/api/sessions?projectId=${encodeURIComponent(targetProjectId)}`)).json();
+  const memberRecord = groupSessions.sessions.find(session => session.groupConversation?.conversationId === g1Id && session.groupConversation.role === 'participant');
+  assert.ok(memberRecord, JSON.stringify(groupSessions));
+  await page.send("Page.navigate", {url:`${baseUrl}/?session=${encodeURIComponent(memberRecord.id)}&projectId=${encodeURIComponent(targetProjectId)}`});
+  await page.waitFor("document.querySelector('[data-group-chat-root]') !== null && document.body.innerText.includes('GROUP_ONE_MSG')", {label:'member record returns to its group', timeoutMs:40000});
+  assert.equal(await page.evaluate("new URL(location.href).searchParams.get('groupId')"),g1Id);
+  await page.send("Page.reload");
+  await page.waitFor("document.querySelector('[data-group-chat-root]') !== null && document.body.innerText.includes('GROUP_ONE_MSG')", {label:'member record group survives refresh',timeoutMs:40000});
+  // Compact keeps the primary action outside options scrolling and leaves room for conversation.
+  await page.send("Emulation.setDeviceMetricsOverride", {width:390,height:844,deviceScaleFactor:1,mobile:false});
+  await page.evaluate("document.querySelector('[data-ui-dialog]')?.querySelector('button')?.click()");
+  const compact = await page.evaluate(`(() => {
+    const action = document.querySelector('[data-group-start-round]');
+    const rect = action.getBoundingClientRect(), parent = action.parentElement.getBoundingClientRect();
+    return {height:rect.height,bottom:rect.bottom,parentBottom:parent.bottom,viewport:innerHeight,overflow:document.documentElement.scrollWidth>innerWidth};
+  })()`);
+  assert.ok(compact.height >= 43 && compact.bottom <= compact.parentBottom && compact.bottom < compact.viewport, JSON.stringify(compact));
+  assert.equal(compact.overflow,false);
+  await page.send("Emulation.clearDeviceMetricsOverride");
   await page.close();
 });

@@ -190,3 +190,15 @@ test("LA5 access: participation Sessions are readable only by current authorized
 async function readLongAgentStatePlain() {
   return "no-daily-session";
 }
+
+test('group navigation projection identifies public and member records without changing Session ownership', async t => {
+  const f = await fixture(t);
+  await addSecondFriend(f);
+  const group = await createConversation({chatHome:f.home,storageProjectId:'a',title:'Design review',requestId:'group-navigation',memberLongAgentIds:['friend','friend2']});
+  const member = await bindParticipationSession({chatHome:f.home,storageProjectId:'a',conversationId:group.id,longAgentId:'friend'});
+  const { listChatSessions } = await import('../../src/session-read-model.ts');
+  const sessions = await listChatSessions('a',f.home);
+  assert.deepEqual(sessions.find(session=>session.id===group.publicSessionId).groupConversation,{conversationId:group.id,longAgentId:'friend',role:'public'});
+  assert.deepEqual(sessions.find(session=>session.id===member.sessionId).groupConversation,{conversationId:group.id,longAgentId:'friend',role:'participant'});
+  assert.deepEqual(sessions.find(session=>session.id===member.sessionId).owner,{type:'ordinary'});
+});

@@ -20,8 +20,10 @@ import { FriendCancelledError } from "./runtime.js";
 import { assertModelSupportsImages } from "../workflows/image-input.js";
 import type { ExecuteLongAgentTurnInput, ExecuteLongAgentTurnResult } from "./runtime.js";
 
-const loaders = new Map<string, DefaultResourceLoader>();
-const drains = new Map<string, Promise<void>>();
+const loadersKey = Symbol.for("chat.acceptedResourceLoaders");
+const loaders = ((globalThis as Record<PropertyKey, unknown>)[loadersKey] ??= new Map()) as Map<string, DefaultResourceLoader>;
+const drainsKey = Symbol.for("chat.friendTurnDrains");
+const drains = ((globalThis as Record<PropertyKey, unknown>)[drainsKey] ??= new Map()) as Map<string, Promise<void>>;
 const key = (home: string, turnId: string) => `${home}\0${turnId}`;
 export class LongAgentRequestConflict extends Error { readonly statusCode = 409; }
 
@@ -32,6 +34,12 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
   if (!requestId.trim() || requestId.length > 256) throw new Error("requestId必须为1–256个字符");
   if (typeof input.text !== "string" || (!input.text.trim() && !input.images?.length) || input.text.length > 100_000) throw new Error("消息必须包含有效正文或图片，正文最多100000字符");
   const source = input.source ?? "chat-web";
+  if (input.workflow !== undefined) {
+    const { getChatWorkflowDefinition } = await import("../workflows/registry.js");
+    const selected = getChatWorkflowDefinition(input.workflow);
+    if (selected === undefined) throw new Error(`找不到Workflow: ${input.workflow}`);
+    if (input.images?.length && selected.supportsImageInput !== true) throw new Error(`Workflow ${input.workflow} 不支持图片输入`);
+  }
   return withFileLock(`${home}/runtime/friend-accept`, async () => {
     // Resolve and freeze the collaboration target inside the accept lock. For the owner-facing private
     // chat the association is authoritative; a declared revision that no longer matches is a conflict,
@@ -127,6 +135,8 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
       : [...v1Candidates, v2, payloadHashV3];
     const payloadHash = payloadHashV3;
     if (prior !== undefined) {
+      if ((prior.workflow?.id ?? "minimal-pi-coding-agent") !== (input.workflow ?? "minimal-pi-coding-agent"))
+        throw new LongAgentRequestConflict("同一requestId不能改变Workflow");
       if (prior.workId !== undefined && prior.sessionId !== input.sessionId) throw new LongAgentRequestConflict("后台工作请求不能改投其他会话");
       // The round KIND is part of the request identity: a node round and an ordinary round are not
       // interchangeable, in either direction. Without this, a node acceptance could be "replayed" by the
@@ -165,7 +175,7 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     // The temporary Session is solely an assembly preview; only its custom snapshots are retained.
     const turnId = `${source}:${agent.id}:${requestId}`;
     const group = await readLongAgentAgentGroup(agent.id, home);
-    const prepared = await prepareLongAgentAssembly({ agent, chatHome: home, projectId: contextProjectId, turnId, groupContext: group, today: located.day.date });
+    const prepared = await prepareLongAgentAssembly({ agent, chatHome: home, projectId: contextProjectId, turnId, groupContext: group, today: agentDate(calendar.timeZone, acceptedAt) });
     const created = await createChatPiAgentSession({ chatSession, sessionManager: memory, ...prepared,
       ...(input.summaryDraft ? { agent: { ...prepared.agent, tools: { mode: "none" as const }, resources: { mode: "explicit" as const, skillPaths: [], extensionPaths: [], pluginSources: [] } } } : {}),
       toolContext: { purpose: "execution", agentId: agent.id, longAgentId: agent.id, longAgentTurnId: turnId } });
@@ -192,7 +202,7 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
           const active = new Set(state.turns.filter(t => t.longAgentId === agent.id && t.workId && ["queued", "running"].includes(t.status)).map(t => t.workId));
           if (!active.has(work.id) && active.size >= 4) throw new Error("此Friend已有4项后台工作，请等待完成或取消后重试");
         }
-        const turn: AcceptedTurn = { ...(work ? { workId: work.id } : {}), ...(input.topicNode === undefined ? {} : { topicNode: { topicId: input.topicNode.topicId, nodeId: input.topicNode.nodeId } }), ...(input.relayIntentEntryId === undefined ? {} : { relayIntentEntryId: input.relayIntentEntryId }), ...(input.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
+        const turn: AcceptedTurn = { workflow: { id: input.workflow ?? "minimal-pi-coding-agent", invocationId: randomUUID() }, ...(work ? { workId: work.id } : {}), ...(input.topicNode === undefined ? {} : { topicNode: { topicId: input.topicNode.topicId, nodeId: input.topicNode.nodeId } }), ...(input.relayIntentEntryId === undefined ? {} : { relayIntentEntryId: input.relayIntentEntryId }), ...(input.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
           channelType: input.channelType ?? (source === "chat-web" ? "chat-web" : null), inboundEventId: input.inboundEventId ?? null,
           contextProjectId, interactionRevision, payloadHashVersion: 3, sessionId: located.day.sessionId, date: located.day.date, timeZone: calendar.timeZone,
           acceptedAt: acceptedAt.toISOString(), sequence: state.turns.reduce((max, item) => Math.max(max, item.sequence), 0) + 1,
@@ -263,11 +273,12 @@ export function drainLongAgentTurns(home: string, longAgentId: string, sessionId
     const { recoverLongAgentTurns } = await import("./daily-maintenance.js");
     await recoverLongAgentTurns(home, sessionId);
     while (true) {
-      const turn = (await readLongAgentState(home)).turns.filter((item) => item.longAgentId === longAgentId && item.sessionId === sessionId && item.status === "queued").sort((a, b) => a.sequence - b.sequence)[0];
+      const turn = (await readLongAgentState(home)).turns.filter((item) => item.longAgentId === longAgentId && item.sessionId === sessionId && (item.status === "queued" || (item.status === "running" && item.workflow !== undefined))).sort((a, b) => a.sequence - b.sequence)[0];
       if (turn === undefined) return;
       if (await settleConsumedSteering(home, turn)) continue;
       const claimed = await updateLongAgentState(home, (state) => {
         const current = state.turns.find((entry) => entry.turnId === turn.turnId);
+        if (current?.status === "running" && current.workflow !== undefined) return { state, result: true };
         if (current?.status !== "queued") return { state, result: false };
         return { state: { ...state, turns: state.turns.map((entry) => entry.turnId === turn.turnId ? { ...entry, status: "running" as const } : entry) }, result: true };
       });
@@ -278,6 +289,11 @@ export function drainLongAgentTurns(home: string, longAgentId: string, sessionId
         // the marker is written here (idempotently, same turnId as the completed marker) so an
         // interruption between accept and work cannot open that window.
         if (turn.topicNode !== undefined) await markTopicRoundRunning(home, longAgentId, turn);
+        if (turn.workflow !== undefined) {
+          const { executeAcceptedWorkflowTurn } = await import("./workflow-execution.js");
+          await executeAcceptedWorkflowTurn(home, turn);
+          continue;
+        }
         await executeAcceptedLongAgentTurn({ longAgentId, projectId: longAgentId, sessionId: turn.sessionId, text: turn.text,
           ...(turn.images === undefined ? {} : { images: turn.images }), chatHome: home, turnId: turn.turnId, source: turn.source, channelType: turn.channelType,
           ...(turn.inboundEventId === null ? {} : { inboundEventId: turn.inboundEventId }), contextProjectId: turn.contextProjectId }, turn, loaders.get(key(home, turn.turnId)));
@@ -369,6 +385,12 @@ export async function executeQueuedLongAgentTurn(input: ExecuteLongAgentTurnInpu
     }
   }
   if (turn.status !== "completed") throw new Error(turn.error ?? `请求状态：${turn.status}`);
+  if (turn.workflow?.runId !== undefined) {
+    const { acceptedRunRuntime } = await import("../workflows/accepted-run-runtime.js");
+    const result = await acceptedRunRuntime.result(turn.workflow.runId);
+    return { accepted: true, completed: true, sessionId: turn.sessionId, projectLongAgentId: turn.longAgentId,
+      messageId: turn.turnId, turnId: turn.turnId, isNewSession: turn.isNewSession, text: result.text, model: result.model };
+  }
   const { executeAcceptedLongAgentTurn } = await import("./runtime.js");
   return executeAcceptedLongAgentTurn({ ...input, projectId: input.longAgentId, sessionId: turn.sessionId, turnId: turn.turnId }, turn);
 }
@@ -388,7 +410,8 @@ export async function controlQueuedRequest(home: string, longAgentId: string, tu
     return { state: { ...state, dailySessions: action !== "retry" ? state.dailySessions : state.dailySessions.map((day) => day.sessionId === turn.sessionId
       ? { ...day, summary: { status: "pending" as const, attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } } : day), turns: state.turns.map((item) => {
       if (item.turnId !== turnId) return item;
-      if (action === "retry") return { ...item, cancelRequested: false, status: "queued" as const, settledAt: null, error: null };
+      if (action === "retry") return { ...item,
+        ...(item.workflow === undefined ? {} : { workflow: { id: item.workflow.id, invocationId: randomUUID() } }), cancelRequested: false, status: "queued" as const, settledAt: null, error: null };
       const { text: _text, images: _images, seed: _seed, ...receipt } = item;
       loaders.delete(key(home, turnId));
       return { ...receipt, status: "cancelled" as const, settledAt: new Date().toISOString(), error: null };

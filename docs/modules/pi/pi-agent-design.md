@@ -1,5 +1,7 @@
 # Pi Agent设计与源码分析
 
+本文保留 0.84.4 的设计分析基线。当前固定 Pi 版本的会话能力、Chat 逐项差异与回归证据见 [Pi 会话能力与 Chat 适配基线](./chat-pi-session-capabilities.md)；不能据本篇推断 Web 已暴露全部 SDK 能力。
+
 ## 1. 目的与范围
 
 本文先回答Pi自身是怎么设计的，再为后续Chat需求分析提供输入。这里不定义Chat的Agent配置Schema，也不把Chat当前实现误认为Pi原生设计。

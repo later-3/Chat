@@ -14,6 +14,8 @@ export interface DailySession {
     readonly nextAttemptAt: string | null; readonly error: string | null; readonly revision: string | null };
 }
 export interface AcceptedTurn {
+  /** Present on unified Workflow executions; absent only on legacy accepted records. */
+  readonly workflow?: { readonly id: string; readonly invocationId: string; readonly runId?: string };
   readonly workId?: string;
   readonly cancelRequested?: boolean;
   readonly turnId: string;
@@ -75,7 +77,13 @@ export function parseDailySession(value: unknown): DailySession {
   return value as unknown as DailySession;
 }
 export function parseAcceptedTurn(value: unknown): AcceptedTurn {
-  record(value); fields(value, ["turnId", "requestId", "payloadHash", "summaryDraft", "isNewSession", "longAgentId", "source", "channelType", "inboundEventId", "contextProjectId", "interactionRevision", "payloadHashVersion", "sessionId", "date", "timeZone", "acceptedAt", "settledAt", "sequence", "status", "error", "text", "images", "seed", "groupContext", "workId", "cancelRequested", "topicNode", "relayIntentEntryId", "sessionMemory"]);
+  record(value); fields(value, ["workflow", "turnId", "requestId", "payloadHash", "summaryDraft", "isNewSession", "longAgentId", "source", "channelType", "inboundEventId", "contextProjectId", "interactionRevision", "payloadHashVersion", "sessionId", "date", "timeZone", "acceptedAt", "settledAt", "sequence", "status", "error", "text", "images", "seed", "groupContext", "workId", "cancelRequested", "topicNode", "relayIntentEntryId", "sessionMemory"]);
+  if (value.workflow !== undefined) {
+    record(value.workflow); fields(value.workflow, ["id", "invocationId", "runId"]);
+    string(value.workflow.id); string(value.workflow.invocationId);
+    if (!/^[a-zA-Z0-9-]{1,100}$/.test(String(value.workflow.invocationId))) throw new Error("无效Workflow invocation身份");
+    if (value.workflow.runId !== undefined) string(value.workflow.runId);
+  }
   if (value.sessionMemory !== undefined && value.sessionMemory !== "off") throw new Error("无效会话记忆开关");
   if (value.relayIntentEntryId !== undefined && (typeof value.relayIntentEntryId !== "string" || value.relayIntentEntryId.trim() === "")) throw new Error("无效代传意图条目");
   if (value.cancelRequested !== undefined && typeof value.cancelRequested !== "boolean") throw new Error("无效取消请求");

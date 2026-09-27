@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { ensureAgentHomeProject, openProject } from "../../src/projects/registry.ts";
 import { openChatSession } from "../../src/chat-session.ts";
+import { readChatSession } from "../../src/session-read-model.ts";
 import { createChatPiAgentSession } from "../../src/agents/pi-agent-session.ts";
 import { prepareLongAgentAssembly } from "../../src/long-agents/assembly.ts";
 import { readLongAgentRegistry, writeLongAgentRegistry, readLongAgentState, updateLongAgentState } from "../../src/long-agents/storage.ts";
@@ -23,6 +24,50 @@ const tomorrow = () => new Date(Date.now() + 86_400_000);
 const system = (body) => JSON.stringify(body.messages.filter((m) => m.role === "system" || m.role === "developer"));
 const summary = { did: ["项目a完成阅读", "项目b待续"], reflections: ["保留项目来源"], handoff: "HANDOFF_PROJECT_B_NEXT" };
 
+test("year calendar includes older than 60 daily sessions and reads without creating a day", async t => {
+  const f = await fixture(t);
+  const agent = (await readLongAgentRegistry(f.home)).agents[0];
+  const current = await ensureProjectLongAgent({ chatHome: f.home, projectId: "friend", agent });
+  const dates = Array.from({ length: 65 }, (_, i) => new Date(Date.UTC(2024, 0, i + 1)).toISOString().slice(0, 10));
+  await updateLongAgentState(f.home, state => ({ state: { ...state, dailySessions: [current.day,
+    ...dates.map((date, i) => ({ ...current.day, date, sessionId: `history-${i}` }))] }, result: undefined }));
+  const before = await readLongAgentState(f.home);
+  const annual = await readFriendDays(f.home, "friend", 2024);
+  assert.equal(annual.days.length, 65);
+  assert.ok(annual.days.some(day => day.date === "2024-02-29"));
+  assert.equal(annual.timeZone, "Asia/Shanghai");
+  assert.equal((await readFriendDays(f.home, "friend", 2023)).days.length, 0);
+  assert.equal((await readFriendDays(f.home, "friend")).days.length, 60);
+  assert.deepEqual(await readLongAgentState(f.home), before, "viewing empty or historical years must not create sessions");
+  await assert.rejects(readFriendDays(f.home, "friend", 2024.5), /年份/);
+});
+
+test("calendar uses native nonempty Home sessions, retaining multiple jobs and timezone activity dates", async t => {
+  const f = await fixture(t);
+  const agent = (await readLongAgentRegistry(f.home)).agents[0];
+  const empty = await ensureProjectLongAgent({chatHome:f.home, projectId:'friend', agent});
+  const create = async (projectId, title, times) => {
+    const session = await openChatSession({chatHome:f.home, projectId});
+    session.manager.appendSessionInfo(title);
+    for (const time of times) session.manager.appendMessage({role:'user',content:title,timestamp:Date.parse(time)});
+    session.manager.flush(); return session;
+  };
+  const a = await create('friend', 'Research A', ['2024-02-28T16:30:00Z','2024-03-01T16:30:00Z']);
+  const b = await create('friend', 'Research B', ['2024-02-29T10:00:00Z']);
+  await create('a', 'Other Project', ['2024-02-29T10:00:00Z']);
+  const before = await readLongAgentState(f.home);
+  const view = await readFriendDays(f.home,'friend',2024);
+  assert.deepEqual(view.sessions.map(s=>s.sessionId).sort(),[a.manager.getSessionId(),b.manager.getSessionId()].sort());
+  assert.ok(view.sessions.every(s => Number.isFinite(Date.parse(s.createdAt))));
+  assert.deepEqual(view.sessions.find(s=>s.title==='Research A').dates,['2024-02-29','2024-03-02']);
+  assert.deepEqual(view.sessions.filter(s=>s.dates.includes('2024-02-29')).length,2);
+  assert.equal(view.sessions.some(s=>s.sessionId===empty.day.sessionId),false,'empty daily binding must not light a date');
+  for (const item of view.sessions) assert.ok((await readChatSession(item.sessionId,undefined,{},item.projectId,f.home)).context.messages.length>0);
+  fs.unlinkSync(b.manager.getSessionFile());
+  assert.equal((await readFriendDays(f.home,'friend',2024)).sessions.length,1,'removed files are not offered as history');
+  assert.deepEqual(await readLongAgentState(f.home),before,'calendar is a projection, not a second session store');
+});
+
 // Only Date is mocked: real HTTP, native Pi streaming and filesystem writes remain in use.
 test("P3 calendar: concurrent opens, timezone, old links and crash before day index commit", async (t) => {
   const f = await fixture(t); const agent = (await readLongAgentRegistry(f.home)).agents[0];
@@ -35,7 +80,7 @@ test("P3 calendar: concurrent opens, timezone, old links and crash before day in
   await updateLongAgentState(f.home, (state) => ({ state: { ...state, projectAgents: [], dailySessions: [] }, result: undefined }));
   const recovered = await ensureProjectLongAgent({ chatHome: f.home, projectId: "a", agent });
   assert.equal(recovered.day.sessionId, prior.sessionId);
-  await assert.rejects(ensureProjectLongAgent({ chatHome: f.home, projectId: "friend", agent, now: tomorrow(), requestedSessionId: prior.sessionId }), /历史保持只读/);
+  assert.equal((await ensureProjectLongAgent({ chatHome: f.home, projectId: "friend", agent, now: tomorrow(), requestedSessionId: prior.sessionId })).day.sessionId, prior.sessionId);
   assert.equal((await readLongAgentState(f.home)).dailySessions.length, 1, "old link cannot create an orphan next-day session");
   const next = await ensureProjectLongAgent({ chatHome: f.home, projectId: "friend", agent, now: tomorrow() });
   assert.notEqual(next.day.sessionId, prior.sessionId);
@@ -126,7 +171,7 @@ test("P3 restart recovery resumes queued work, records unknown in-flight writes 
     if (index === 1) session.manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "proven response" }], api: "openai-completions", provider: "p3-local", model: "daily-model", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: Date.now() });
   }
   session.manager.flush();
-  await updateLongAgentState(f.home, (state) => ({ state: { ...state, turns: state.turns.map((turn, i) => i < 2 ? { ...turn, status: "running" } : turn) }, result: undefined }));
+  await updateLongAgentState(f.home, (state) => ({ state: { ...state, turns: state.turns.map((turn, i) => i < 2 ? { ...turn, workflow: undefined, status: "running" } : turn) }, result: undefined }));
   await recoverLongAgentTurns(f.home);
   const recovered = await readLongAgentState(f.home);
   assert.equal(recovered.turns[0].status, "interrupted"); assert.equal(recovered.turns[1].status, "completed");
@@ -190,7 +235,7 @@ test("P3 an accepted queue resumes in a fresh Backend process from its persisted
   const f = await fixture(t); await acceptLongAgentTurn(f.input("restart-queued", "a"));
   const { execFile } = await import("node:child_process"); const { promisify } = await import("node:util");
   await promisify(execFile)(process.execPath, ["--import", path.resolve("scripts/typescript-test-loader.mjs"), "--experimental-strip-types", "--input-type=module", "-e",
-    'const { drainLongAgentTurns } = await import("./src/long-agents/turn-queue.ts"); await drainLongAgentTurns(process.argv[1], "friend");', f.home], { cwd: process.cwd() });
+    'const { mock } = await import("node:test"); const { installWorkflowTransport } = await import("./test/long-agents/workflow-transport-fixture.mjs"); installWorkflowTransport({mock}); const { drainLongAgentTurns } = await import("./src/long-agents/turn-queue.ts"); await drainLongAgentTurns(process.argv[1], "friend");', f.home], { cwd: process.cwd() });
   assert.equal(f.requests.length, 2); assert.match(system(f.requests[0]), /RULE_a/);
   assert.equal((await readLongAgentState(f.home)).turns[0].status, "completed");
 });
@@ -201,7 +246,7 @@ test("P3 scheduled summary drafts stay internal and read-only, without pretendin
   assert.equal((await readLongAgentState(f.home)).dailySessions.length, 0);
   await executeLongAgentTurn(f.input("actual-work"));
   const result = await executeLongAgentTurn({ ...f.input("draft"), source: "scheduled", summaryDraft: true });
-  assert.equal(f.requests.at(-2).tools?.length ?? 0, 0);
+  assert.equal(f.requests.at(-1).tools?.length ?? 0, 0);
   const session = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: result.sessionId });
   assert.equal(session.manager.getEntries().filter((e) => e.type === "message" && e.message.role === "user").length, 1);
   assert.ok(session.manager.getEntries().some((e) => e.type === "custom_message" && e.customType === "chat.daily-summary-draft.v1" && !e.display));
@@ -249,4 +294,41 @@ test("P3 changing timezone freezes the new zone per request without duplicating 
   const registry = await readLongAgentRegistry(f.home); await writeLongAgentRegistry({...registry,agents:registry.agents.map(agent=>({...agent,timeZone:'America/New_York'}))},f.home);
   const next = await acceptLongAgentTurn(f.input('zone-next')); assert.equal(first.sessionId,next.sessionId); assert.equal(first.timeZone,'Asia/Shanghai'); assert.equal(next.timeZone,'America/New_York');
   await drainLongAgentTurns(f.home,'friend'); assert.equal((await readLongAgentState(f.home)).dailySessions.length,1);
+});
+
+
+test("calendar creates an empty chosen date idempotently and continues a settled past Session", async t => {
+  const f = await fixture(t);
+  const agent = (await readLongAgentRegistry(f.home)).agents[0];
+  const today = await ensureProjectLongAgent({chatHome:f.home,projectId:'friend',agent});
+  const date = agentDate(agent.timeZone,new Date(Date.now()-3*86400000));
+  const input = {chatHome:f.home,projectId:'friend',agent,date};
+  const [one,two] = await Promise.all([ensureProjectLongAgent(input),ensureProjectLongAgent(input)]);
+  assert.equal(one.day.sessionId,two.day.sessionId);
+  assert.notEqual(one.day.sessionId,today.day.sessionId);
+  assert.equal(f.requests.length,0,'opening a calendar date does not run a model');
+  assert.equal((await readLongAgentState(f.home)).projectAgents[0].primarySessionId,today.day.sessionId);
+  const old = await openChatSession({chatHome:f.home,projectId:'friend',sessionId:one.day.sessionId});
+  old.manager.appendMessage({role:'user',content:'OLD_CALENDAR_CONTEXT',timestamp:Date.now()-3*86400000}); old.manager.flush();
+  await updateLongAgentState(f.home,state=>({state:{...state,dailySessions:state.dailySessions.map(day=>day.sessionId===one.day.sessionId
+    ? {...day,summary:{...day.summary,status:'completed',cutoff:old.manager.getLeafId()}}:day)},result:undefined}));
+  const view = await readChatSession(one.day.sessionId,undefined,{},'friend',f.home);
+  assert.equal(view.session.readOnly,false);
+  const accepted = await acceptLongAgentTurn({...f.input('CONTINUE_PAST_SESSION'),sessionId:one.day.sessionId});
+  assert.equal(accepted.sessionId,one.day.sessionId);
+  assert.equal((await readLongAgentState(f.home)).dailySessions.find(day=>day.date===date).summary.status,'pending');
+  await drainLongAgentTurns(f.home,'friend',one.day.sessionId);
+  assert.match(JSON.stringify(f.requests[0].messages),/OLD_CALENDAR_CONTEXT/);
+  assert.match(JSON.stringify(f.requests[0].messages),/CONTINUE_PAST_SESSION/);
+  assert.equal((await readLongAgentState(f.home)).projectAgents[0].primarySessionId,today.day.sessionId);
+  const history = await readChatSession(one.day.sessionId,undefined,{},'friend',f.home);
+  assert.match(JSON.stringify(history.context.messages),/CONTINUE_PAST_SESSION/);
+  f.setHandler(()=>({content:JSON.stringify(summary)}));
+  await maintainLongAgentDays(f.home);
+  const settled = (await readLongAgentState(f.home)).dailySessions.find(day=>day.date===date);
+  assert.equal(settled.summary.status,'completed');
+  assert.notEqual(settled.summary.cutoff,old.manager.getLeafId(),'continuing invalidates the old summary cutoff');
+  for (const invalid of ['2026-02-30','not-a-date','1969-12-31']) await assert.rejects(ensureProjectLongAgent({...input,date:invalid}),/日期/);
+  const other = await openChatSession({chatHome:f.home,projectId:'a'});
+  await assert.rejects(ensureProjectLongAgent({...input,date:undefined,requestedSessionId:other.manager.getSessionId()}),/不属于/);
 });
