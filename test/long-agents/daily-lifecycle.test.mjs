@@ -4,13 +4,14 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { ensureAgentHomeProject, openProject } from "../../src/projects/registry.ts";
 import { openChatSession } from "../../src/chat-session.ts";
 import { readChatSession } from "../../src/session-read-model.ts";
 import { createChatPiAgentSession } from "../../src/agents/pi-agent-session.ts";
 import { prepareLongAgentAssembly } from "../../src/long-agents/assembly.ts";
 import { readLongAgentRegistry, writeLongAgentRegistry, readLongAgentState, updateLongAgentState } from "../../src/long-agents/storage.ts";
-import { ensureProjectLongAgent } from "../../src/long-agents/project-agent.ts";
+import { ensureProjectLongAgent, recoverFriendCalendar } from "../../src/long-agents/project-agent.ts";
 import { acceptLongAgentTurn, drainLongAgentTurns, controlQueuedRequest, installAcceptedAssembly } from "../../src/long-agents/turn-queue.ts";
 import { executeLongAgentTurn } from "../../src/long-agents/runtime.ts";
 import { maintainLongAgentDays, recoverLongAgentTurns, retryDailySummary } from "../../src/long-agents/daily-maintenance.ts";
@@ -331,4 +332,36 @@ test("calendar creates an empty chosen date idempotently and continues a settled
   for (const invalid of ['2026-02-30','not-a-date','1969-12-31']) await assert.rejects(ensureProjectLongAgent({...input,date:invalid}),/日期/);
   const other = await openChatSession({chatHome:f.home,projectId:'a'});
   await assert.rejects(ensureProjectLongAgent({...input,date:undefined,requestedSessionId:other.manager.getSessionId()}),/不属于/);
+});
+
+test("P3 calendar rescan skips unchanged session files and re-indexes on change (event-loop budget)", async (t) => {
+  const f = await fixture(t);
+  const agent = { ...(await readLongAgentRegistry(f.home)).agents[0], timeZone: "Asia/Shanghai" };
+  const own = await ensureAgentHomeProject(agent.id, agent.name, f.home);
+  const statePath = path.join(f.home, "runtime", "long-agent-state.json");
+  await recoverFriendCalendar(f.home, agent);
+  const first = fs.statSync(statePath);
+  // 指纹未变：第二次扫描必须跳过整个写路径（原实现每分钟对每个 Friend 全量解析 session 文件并重写 state，
+  // 是空闲事件循环 ~1s 周期阻塞的来源）。
+  await recoverFriendCalendar(f.home, agent);
+  const second = fs.statSync(statePath);
+  assert.equal(second.ino, first.ino, "unchanged session files must not rewrite the state file");
+  // 新原生日历标记出现：指纹变化必须触发重新索引，不能吃缓存。
+  const marker = SessionManager.create(own.cwd, own.sessionDir);
+  marker.appendCustomEntry("chat.long-agent-day.v1", { schemaVersion: 1, longAgentId: agent.id, date: agentDate(agent.timeZone), timeZone: agent.timeZone });
+  marker.flush();
+  await recoverFriendCalendar(f.home, agent);
+  const days = (await readLongAgentState(f.home)).dailySessions;
+  assert.ok(days.some((day) => day.date === agentDate(agent.timeZone) && day.sessionId === marker.getSessionId()), "a new day marker must be indexed");
+});
+
+test("P3 state reads see external file edits (freshness guard for the read cache)", async (t) => {
+  const f = await fixture(t);
+  const statePath = path.join(f.home, "runtime", "long-agent-state.json");
+  await updateLongAgentState(f.home, (state) => ({ state, result: undefined })); // 落盘并填充读缓存
+  await readLongAgentState(f.home);
+  const raw = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  raw.dailySessions = [];
+  fs.writeFileSync(statePath, `${JSON.stringify(raw, null, 2)}\n`);
+  assert.equal((await readLongAgentState(f.home)).dailySessions.length, 0, "a read after an external write must not serve the cached parse");
 });

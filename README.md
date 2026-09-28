@@ -26,30 +26,36 @@ README只提供项目概览和入口，不复制各模块的完整说明。
 ## 架构
 
 ```text
-Chat/frontend（Pi Web纯浏览器前端子模块）
+Chat Web / Chat TUI（Chat Web前端为frontend/子模块；TUI是复用Pi显示组件的HTTP客户端）
   → Chat Nitro HTTP API
     ├── Project与Session → ~/.chat/projects/<projectId>/sessions
-    └── Vercel Workflow
-          ├── Direct Workflow → Pi Coding Agent
-          ├── Planning + Execution
-                ├── Planner：无工具的Pi AgentSession，计划原生写入当前Chat Session
-                └── Executor：Pi Coding Agent，继续当前Chat Session
-          ├── Planner Orchestrator
-                ├── Planner + 人工审核：冻结获批计划revision
-                └── Coordinator：通过Pi Skill/Tool调用多个独立子Workflow Session
-          ├── Memory与Rule Management Workflow
-          ├── 配置与全局资源 → ~/.chat/agent
-          ├── Workflow运行数据 → ~/.chat/runtime/workflow-data
-          └── Session → ~/.chat/projects/<projectId>/sessions
+    ├── Vercel Workflow
+    │     ├── Direct Workflow → Pi Coding Agent
+    │     ├── Planning + Execution
+    │     │     ├── Planner：无工具的Pi AgentSession，计划原生写入当前Chat Session
+    │     │     └── Executor：Pi Coding Agent，继续当前Chat Session
+    │     ├── Planner Orchestrator
+    │     │     ├── Planner + 人工审核：冻结获批计划revision
+    │     │     └── Coordinator：通过Pi Skill/Tool调用多个独立子Workflow Session
+    │     ├── Memory与Rule Management Workflow
+    │     └── Workflow运行数据 → ~/.chat/runtime/workflow-data
+    ├── LongAgent
+    │     ├── Chat Web直接发起；IM消息由NanoClaw经服务认证Event API耐久进入
+    │     └── 运行数据 → ~/.chat/runtime/long-agents/
+    ├── 配置与全局资源 → ~/.chat/agent
+    └── 公共Agent装配 → Pi AgentSession（Workflow与LongAgent共用的唯一执行出口）
 ```
 
-前端可选择五个Workflow：
+前端可选择的Workflow来自后端注册表，当前共八个：
 
 - `minimal-pi-coding-agent`（直接执行）：一个Step直接运行Pi Coding Agent。
 - `planning-execution`（规划执行）：固定为`Planner Agent → 人工审核Task → Pi Coding Agent`。Planner先完整理解背景、目标、交付物、范围、约束、授权边界和验收标准；存在用户专属阻塞决策时只允许补充信息并继续规划，计划就绪后才允许批准。补充或拒绝时，用户原文、上一版完整文档和原始请求返回同一个Planner配置；批准后Executor接收带批准版本、最终计划和执行契约的任务书。全程只有一个持久Chat Session，计划、审核决定、Agent输入来源和Stage身份都作为可恢复事实记录其中。
 - `planner-orchestrator`（规划协调）：`Planner Agent → 人工审核Task → Workflow Coordinator`。批准后Coordinator按`workflow-delegation` Skill通过Pi `workflow_call` Tool把独立工作包并行交给多个完整Workflow；调用前先读取目标各Agent可选的Tool/Skill，调用时由父Agent明确选择。每个子调用使用独立Pi Subsession并建立原生父子关系，但不复制父对话；父Session保留Tool Call/Result和调用终态，Child Session保留任务、冻结能力配置与完整执行历史。
 - `memory`：通过普通Workflow Agent和原生Pi Tool管理个人或指定Project Memory。
 - `rule-management`：通过普通Workflow Agent管理规则与经验Prompt资源及采用建议。
+- `session-memory`（会话记忆）：一个节点会话里先跑完一轮工作（work），再由会话记忆写入Agent记录本轮（remember）；既有记忆按需读取，不注入上下文。
+- `problem-diagnosis`（问题定位）：对线上或代码问题做结构化定位，先列已确认现场事实，再给互斥根因假设与各自最小验证路径，最后给出结论边界与仍待确认的信息，结尾同样记录会话记忆。
+- `topic-session-create`（主题会话创建）：整理Agent只读搜集上下文形成草稿，用户审核（可多轮修改）批准后由创建Agent调用受控动作创建真实主题节点会话，最后记录会话记忆。
 
 `workflow_call`是按Agent配置装配的通用Pi Tool，不限于Coordinator；Workflow只要声明`agentCallable: true`就可作为目标，包括当前Workflow自身和需要人工审核的Workflow。父会话按普通Tool Call展示，Child Session在左侧递归会话树中打开；若Child等待审核，侧栏显示可恢复的待确认提示，用户进入该Session后按普通会话完成确认。
 
@@ -97,7 +103,9 @@ Chat通过以下依赖使用本地Pi源码构建：
 
 ```text
 link:./pi/packages/agent
+link:./pi/packages/ai
 link:./pi/packages/coding-agent
+link:./pi/packages/tui
 ```
 
 `frontend/`的上游、提取基线和许可证记录在[frontend/UPSTREAM.md](./frontend/UPSTREAM.md)。NanoClaw的官方上游是<https://github.com/nanocoai/nanoclaw>。Chat父仓库中的gitlink决定实际使用的子模块版本；`.gitmodules`中的`branch`只供显式更新使用，不会让部署自动漂移到分支最新提交。
@@ -171,6 +179,8 @@ pnpm dev:frontend
 
 ## 当前调用链
 
+核心链路节选；完整HTTP API以`src/routes/`为准：
+
 ```text
 POST /runs
   → 校验请求；首轮先持久化Pi Session，再返回sessionId与Workflow Run ID
@@ -196,6 +206,12 @@ GET/PATCH /api/skills
 GET/POST /api/extensions
 GET/POST /api/plugins
   → 管理Chat控制的Pi全局资源并供Workflow内Agent选择
+GET/POST /api/long-agents（及各Long Agent的配置、话题、轮次与任务子资源）
+  → 管理Long Agent注册、配置与运行；IM侧由NanoClaw经服务认证Event API进入
+GET/POST /api/memories
+  → 管理Memory条目、检索与索引重建
+GET /api/projects、POST /api/projects/open
+  → 发现与打开Project
 GET /api/files/[...path]
   → 在Chat授权的工作目录内列出、读取、下载和预览文件
 ```
@@ -240,13 +256,21 @@ http://127.0.0.1:43112/
 ## Chat Home运行数据
 
 ```text
-~/.chat/devices.json                    可选的私有多设备目录
-~/.chat/agent/                         Pi模型、设置、认证与全局资源
-~/.chat/memory/personal/               个人Memory事实源与索引
-~/.chat/projects/<projectId>/sessions/ 各Project的Pi Session
-~/.chat/projects/<projectId>/memory/   各Project独立Memory事实源与索引
-~/.chat/runtime/workflow-data/         进程级Workflow Run、Step和Event
-~/.chat/cache/fastembed/               可重新下载的本地Embedding模型缓存
+~/.chat/devices.json                            可选的私有多设备目录
+~/.chat/config.json                             Chat Home级配置
+~/.chat/agent/                                  Pi模型、设置、认证与全局资源
+~/.chat/prompt-resources/                       Personal规则与经验Prompt资源
+~/.chat/memory/personal/                        个人Memory事实源与索引
+~/.chat/projects/<projectId>/sessions/          各Project的Pi Session
+~/.chat/projects/<projectId>/memory/            各Project独立Memory事实源与索引
+~/.chat/projects/<projectId>/prompt-resources/  各Project的规则与经验Prompt资源
+~/.chat/projects/<projectId>/workflows/         各Project的Workflow Agent模型与资源配置
+~/.chat/workspaces/                             Managed Workspace与Long Agent共享空间
+~/.chat/long-agents.json                        Long Agent注册事实源
+~/.chat/runtime/workflow-data/                  进程级Workflow Run、Step和Event
+~/.chat/runtime/long-agents/                    Long Agent运行状态
+~/.chat/cache/fastembed/                        可重新下载的本地Embedding模型缓存
+~/.chat/logs/                                   运行日志
 ```
 
 这些目录都不属于Chat源码仓库。新的Linux/systemd环境需要`root`/`sudo`以及访问GitHub、Node、npm Registry和依赖原生包CDN的网络，但不需要GitHub账号或Submodule凭证。脚本会自动创建`chat`用户，准备固定Node/pnpm、公开Submodule、经过SHA256校验的Pi模型快照、版本化构建、systemd服务和回滚点，安装结束保持服务停止，首次启动后由用户在设置中填写Provider凭证与默认模型；Web不设产品登录密码；多设备目录是可选的`$CHAT_HOME/devices.json`。`WORKFLOW_LOCAL_DATA_DIR`必须位于`CHAT_HOME`内部。更新、诊断和回滚分别使用`chatctl update`、`chatctl doctor`和`chatctl rollback`。必须在目标操作系统和CPU架构上构建，不能复制其他机器的`.output`；完整步骤见[部署指南](./docs/operations/README.md)。

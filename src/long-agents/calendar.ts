@@ -6,14 +6,33 @@ export function validateCalendarDate(value: unknown): string {
   return value;
 }
 
+// Intl.DateTimeFormat construction dominates repeated date work (session ownership resolution
+// walks every dailySession per read); formatters are immutable per locale+timeZone, so cache them.
+const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+const resolvedTimeZones = new Map<string, string>();
+
+function dayFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = dayFormatters.get(timeZone);
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    dayFormatters.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
 export function validateTimeZone(value: unknown): string {
   if (typeof value !== "string" || value.trim() === "" || /^[+-]/.test(value)) throw new Error("timeZone必须是IANA时区");
-  try { return new Intl.DateTimeFormat("en", { timeZone: value }).resolvedOptions().timeZone; }
-  catch { throw new Error(`无效timeZone: ${value}`); }
+  const cached = resolvedTimeZones.get(value);
+  if (cached !== undefined) return cached;
+  try {
+    const resolved = new Intl.DateTimeFormat("en", { timeZone: value }).resolvedOptions().timeZone;
+    resolvedTimeZones.set(value, resolved);
+    return resolved;
+  } catch { throw new Error(`无效timeZone: ${value}`); }
 }
 
 export function agentDate(timeZone: string, now = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const parts = dayFormatter(timeZone).formatToParts(now);
   const part = (type: string) => parts.find((value) => value.type === type)!.value;
   return `${part("year")}-${part("month")}-${part("day")}`;
 }

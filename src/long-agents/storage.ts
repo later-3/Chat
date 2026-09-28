@@ -1,6 +1,6 @@
 import { withFileLock } from "../persistence/versioned-file.js";
 import { randomUUID } from "node:crypto";
-import { link, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { ensureChatHome, getChatHomePaths, resolveChatHome } from "../chat-home.js";
 import {
@@ -178,11 +178,35 @@ export async function readLongAgentRegistry(chatHome = resolveChatHome()): Promi
   return { ...parsed, agents };
 }
 
+// The state file is read on every sync tick, presence check and API call, and it grows with turn
+// history (hundreds of KB). The write path always replaces the file (rename), so inode+mtime+size is
+// a sufficient freshness test: any replacement changes at least the inode or mtime.
+const stateFileCache = new Map<string, {
+  readonly fingerprint: string;
+  readonly state: LongAgentState;
+  readonly migrated: boolean;
+}>();
+
 async function readLongAgentStateValue(chatHome: string): Promise<{
   readonly state: LongAgentState;
   readonly migrated: boolean;
 }> {
   const paths = await ensureChatHome(chatHome);
+  let info;
+  try {
+    info = await stat(paths.longAgentStatePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      stateFileCache.delete(paths.longAgentStatePath);
+      return { state: emptyLongAgentState(), migrated: false };
+    }
+    throw error;
+  }
+  const fingerprint = `${info.ino}:${info.mtimeMs}:${info.size}`;
+  const cached = stateFileCache.get(paths.longAgentStatePath);
+  if (cached !== undefined && cached.fingerprint === fingerprint) {
+    return { state: cached.state, migrated: cached.migrated };
+  }
   try {
     const raw = await readJson(paths.longAgentStatePath);
     const state = parseLongAgentState(raw);
@@ -198,13 +222,13 @@ async function readLongAgentStateValue(chatHome: string): Promise<{
     // receipt can never claim a migration that has not been persisted yet. A read that upgrades a legacy
     // state completes them after the write (see readLongAgentState).
     if (isRecord(raw) && Number(raw.schemaVersion) >= 5) await completeDailyMigration(paths.root);
-    return {
-      state,
-      migrated: typeof raw === "object" && raw !== null
-        && "schemaVersion" in raw && raw.schemaVersion !== LONG_AGENT_STATE_SCHEMA_VERSION,
-    };
+    const migrated = typeof raw === "object" && raw !== null
+      && "schemaVersion" in raw && raw.schemaVersion !== LONG_AGENT_STATE_SCHEMA_VERSION;
+    if (!migrated) stateFileCache.set(paths.longAgentStatePath, { fingerprint, state, migrated: false });
+    return { state, migrated };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      stateFileCache.delete(paths.longAgentStatePath);
       return { state: emptyLongAgentState(), migrated: false };
     }
     throw error;

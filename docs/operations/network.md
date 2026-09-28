@@ -38,6 +38,8 @@ Cloudflare → 127.0.0.1:33052 Nginx → 127.0.0.1:33051 Relay → Mac:43110
 
 同一个Tunnel的不同连接器各自读取本机ingress；任何一个连接器缺少Relay都会导致公网请求间歇性503，因此发布验收至少连续检查5次健康接口。
 
+云服务器过期或主动停用云端链路期间：`com.later.chat.cloud-relay`（SSH反向Relay）和`com.later.chat.cloudflare-direct`（Mac直连Cloudflare Tunnel）都可以`launchctl bootout`停止并`launchctl disable gui/$(id -u)/<label>`禁用登录自启，公开域名随之中断，Chat仅保留本机`127.0.0.1:43110`和上文的SSH转发访问；本地生产Backend与NanoClaw不依赖云端链路，照常运行。恢复云端链路时先核对SSH主机密钥是否变更（服务器过期后IP可能被释放复用，不要直接清除known_hosts旧记录），再`launchctl enable`并bootstrap对应服务。
+
 将示例域名替换为当前环境的`CHAT_PUBLIC_URL`后做公网验收：
 
 ```bash

@@ -1,4 +1,5 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { stat } from "node:fs/promises";
 import { openChatSession } from "../chat-session.js";
 import { ensureAgentHomeProject, resolveProjectContext } from "../projects/registry.js";
 import { readLongAgentState, updateLongAgentRegistry, updateLongAgentState } from "./storage.js";
@@ -165,8 +166,27 @@ export async function openAcceptedDay(chatHome: string, longAgentId: string, ses
 }
 
 /** Startup recovery indexes existing Home days only; it never allocates an idle day's Session. */
+
+// The per-minute maintenance tick calls this for every Friend. A full rescan parses every session
+// file in the Friend's directory (large history files included) and rewrites the whole state file
+// even when nothing changed, which stalls the event loop for ~1s each minute. The scan result is a
+// pure function of the directory contents, so an unchanged file fingerprint (id + mtime + size)
+// means the previous scan already indexed exactly these files and the pass can be skipped.
+const calendarScanFingerprints = new Map<string, string>();
+
+async function calendarScanFingerprint(sessionDir: string): Promise<string> {
+  const entries = await Promise.all((await SessionManager.listAll(sessionDir)).map(async (info) => {
+    const file = await stat(info.path).catch(() => undefined);
+    return file === undefined ? null : `${info.id}:${file.mtimeMs}:${file.size}`;
+  }));
+  return entries.filter((entry) => entry !== null).sort().join("|");
+}
+
 export async function recoverFriendCalendar(chatHome: string, agent: LongAgentConfig & { timeZone: string }): Promise<void> {
   const own = await ensureAgentHomeProject(agent.id, agent.name, chatHome);
+  const fingerprint = await calendarScanFingerprint(own.sessionDir);
+  const cacheKey = `${chatHome}\0${agent.id}`;
+  if (calendarScanFingerprints.get(cacheKey) === fingerprint) return;
   await updateLongAgentState(chatHome, async (state) => {
     const days = [...state.dailySessions];
     const add = (date: string, timeZone: string, sessionId: string, createdAt: string) => {
@@ -191,6 +211,7 @@ export async function recoverFriendCalendar(chatHome: string, agent: LongAgentCo
     }
     return { state: { ...state, dailySessions: days }, result: undefined };
   });
+  calendarScanFingerprints.set(cacheKey, fingerprint);
 }
 
 /** A timer alone is not daily activity. Do not allocate a Session just to summarize nothing. */

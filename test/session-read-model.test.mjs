@@ -744,3 +744,52 @@ test("session reads restore Workflow Agent configuration and pending Prompt prop
   assert.equal(session.promptResourceProposals[0].id, proposalId);
   assert.equal(session.promptResourceProposals[0].resolution, undefined);
 });
+
+test("session list derivation survives repeated polls and follows same-path file replacement", { concurrency: false }, async (t) => {
+  const previousCwd = process.cwd();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-list-cache-"));
+  t.after(() => {
+    process.chdir(previousCwd);
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace, { recursive: true });
+  const chatHome = path.join(base, "home");
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    id: "list-cache",
+    name: "List Cache",
+  });
+  const created = SessionManager.create(workspace, project.sessionDir);
+  created.appendMessage({ role: "user", content: "first utterance v1", timestamp: Date.now() });
+  created.flush();
+
+  process.chdir(base);
+  const [listed] = await listChatSessions(project.projectId, chatHome);
+  assert.equal(listed.firstMessage, "first utterance v1");
+  // A repeat poll reuses the derived data and must not drift.
+  const [repolled] = await listChatSessions(project.projectId, chatHome);
+  assert.equal(repolled.firstMessage, "first utterance v1");
+  assert.equal(repolled.messageCount, listed.messageCount);
+
+  // An external append (new bytes on an existing file) must invalidate the caches.
+  const appending = SessionManager.open(listed.path, project.sessionDir);
+  appending.appendMessage({
+    role: "assistant", provider: "test", model: "test-model",
+    content: [{ type: "text", text: "appended later" }], timestamp: Date.now(),
+  });
+  appending.flush();
+  const [appended] = await listChatSessions(project.projectId, chatHome);
+  assert.equal(appended.firstMessage, "first utterance v1");
+  assert.equal(appended.messageCount, listed.messageCount + 1);
+
+  // Replacing the file at the SAME path (new inode) must not be hidden by the cache.
+  const fsPromises = await import("node:fs/promises");
+  await fsPromises.unlink(listed.path);
+  const reborn = SessionManager.create(workspace, project.sessionDir, { id: listed.id });
+  reborn.appendMessage({ role: "user", content: "first utterance v2", timestamp: Date.now() });
+  reborn.flush();
+  const [replaced] = await listChatSessions(project.projectId, chatHome);
+  assert.equal(replaced.firstMessage, "first utterance v2");
+});
