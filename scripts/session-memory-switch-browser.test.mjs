@@ -384,8 +384,37 @@ test("the session-memory switch reaches the real send and really gates the memor
     await screenshot(`composer-${width}x${height}`);
   }
   await page.send("Emulation.setDeviceMetricsOverride", {width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  // The day panel lives behind the conversation title; the sidebar no longer carries it.
+  // The region stays mounted (that is what makes the reveal animate), so "open" is
+  // the dock state, not the presence of its rows.
+  const openDayPanel = async () => {
+    if (await page.evaluate("!!document.querySelector('.workspace-friend-panel.is-open')")) return;
+    await page.evaluate("document.querySelector('[data-friend-panel-toggle]').click()");
+    await page.waitFor("!!document.querySelector('.workspace-friend-panel.is-open')", {label:'tasks & archive region opens from the top bar action'});
+  };
+  // Earlier days enter the column on purpose: browse in the floating calendar, then
+  // pick the day; entering the day is a separate, explicit action.
+  const openDayPicker = async () => {
+    await openDayPanel();
+    await page.evaluate("document.querySelector('[data-friend-add-day]').click()");
+    await page.waitFor("document.querySelector('[data-friend-calendar]') !== null", {label:'calendar opens in add-a-date mode'});
+  };
+  const enterDay = async day => {
+    await page.waitFor(`document.querySelector('[data-friend-day="${day}"]') !== null`, {label:'the picked day is added to the archive area'});
+    // A day with history opens through its listed Session; an empty day through the
+    // idempotent "open this day's daily session" row.
+    const clicked = await page.evaluate(`(() => {
+      const row = document.querySelector('[data-friend-enter-day="${day}"]')
+        ?? document.querySelector('[data-friend-day="${day}"] [data-day-session]');
+      if (!row) return false;
+      row.click();
+      return true;
+    })()`);
+    assert.equal(clicked, true, `day ${day} exposes an entry row`);
+    await ready();
+  };
   // Native history remains conversational. An explicit empty-date click creates/opens without a model.
-  await page.evaluate(`document.querySelector('[data-friend-calendar-open="friend"]').click()`);
+  await openDayPicker();
   await page.waitFor(`document.querySelector('[data-friend-calendar="friend"][aria-busy="false"] [data-calendar-heat-date="${historical.day.date}"][data-active]') !== null`);
   const cellSize = await page.evaluate(`(() => { const r = document.querySelector('[data-calendar-heat-date="${historical.day.date}"]').getBoundingClientRect(); return {width:r.width,height:r.height}; })()`);
   assert.equal(cellSize.width, cellSize.height, "shared form button minimum height must not stretch heatmap squares");
@@ -402,6 +431,7 @@ test("the session-memory switch reaches the real send and really gates the memor
   await page.evaluate(`document.querySelector('[data-calendar-month="${Number(historical.day.date.slice(5,7))}"]').click()`);
   await page.evaluate(`document.querySelector('[data-calendar-date="${historical.day.date}"]').click()`);
   await page.waitFor("document.querySelector('[data-friend-calendar]') === null");
+  await enterDay(historical.day.date);
   await page.waitFor(`document.querySelector('[data-rendered-session="${historical.day.sessionId}"]')?.innerText.includes('CALENDAR_HISTORY_CONTENT')`);
   await ready();
   writerFails = false;
@@ -414,22 +444,25 @@ test("the session-memory switch reaches the real send and really gates the memor
   assert.deepEqual(calendarAfter.days.map(d => d.sessionId), calendarBefore.days.map(d => d.sessionId));
   await page.send("Page.reload");
   await page.waitFor(`document.querySelector('[data-rendered-session="${historical.day.sessionId}"]')?.innerText.includes('CALENDAR_HISTORY_CONTENT')`);
-  await page.waitFor(`document.querySelector('[data-friend-day="${historical.day.date}"] [data-day-work="${calendarJobs[0].id}"]') !== null`);
-  assert.equal(await page.evaluate(`document.querySelector('[data-day-work="${calendarJobs[1].id}"]') === null`), true, 'the other day’s same-title work is not listed');
+  await openDayPanel();
+  await page.waitFor(`document.querySelector('[data-friend-day="${historical.day.date}"]') !== null`);
+  assert.equal(await page.evaluate("document.querySelector('[data-friend-day] [data-day-work]') === null"), true, 'the day panel is navigation only; background executions live in the tasks panel');
   assert.equal(await page.evaluate(`new URL(location.href).searchParams.get('friendDate')`), historical.day.date, 'refresh preserves the day filter');
-  await page.evaluate(`document.querySelector('[data-day-work="${calendarJobs[0].id}"] button').click()`);
+  assert.equal(await page.evaluate("document.querySelector('[data-friend-day] form') === null"), true, 'background tasks are arranged through chat, not a second form');
+  // Executions are still reachable and readable, from their dedicated panel.
+  await page.evaluate("document.querySelector('[data-friend-tasks-open]').click()");
+  await page.waitFor(`document.querySelector('[data-task-row="${calendarJobs[0].id}"] [data-task-open]') !== null`, {label:'work row is listed in the tasks panel'});
+  await page.evaluate(`document.querySelector('[data-task-row="${calendarJobs[0].id}"] [data-task-open]').click()`);
   await page.waitFor(`document.querySelector('[data-rendered-session="${calendarJobs[0].sessionId}"]')?.innerText.includes('CALENDAR_JOB_0')`);
-  assert.equal(await page.evaluate(`new URL(location.href).searchParams.get('friendDate')`), historical.day.date, 'historical work without a live execution remains readable on the same day');
+  assert.equal(await page.evaluate("document.querySelector('[data-long-agent-tasks]') === null"), true, 'opening a work closes the tasks panel');
   await page.evaluate('history.back()');
   await page.waitFor(`document.querySelector('[data-rendered-session="${historical.day.sessionId}"]')?.innerText.includes('CALENDAR_HISTORY_CONTENT')`);
-  await page.waitFor(`document.querySelector('[data-friend-day="${historical.day.date}"] [data-day-work="${calendarJobs[0].id}"]') !== null`);
-  assert.equal(await page.evaluate("document.querySelector('[data-friend-day] form') === null"), true, 'background tasks are arranged through chat, not a second form');
-  await page.evaluate("document.querySelector('[data-arrange-background]').click()");
-  await page.waitFor("document.activeElement?.matches('[data-chat-composer]')", {label:'arrange task focuses the daily composer'});
+  await openDayPanel();
   await screenshot('day-workspace-light');
   await page.evaluate("document.documentElement.classList.add('dark')");
   await screenshot('day-workspace-dark');
   await page.evaluate("document.documentElement.classList.remove('dark')");
+  await openDayPanel();
   await page.waitFor(`document.querySelector('[data-day-session="${secondHistory.manager.getSessionId()}"]') !== null`);
   await page.evaluate(`document.querySelector('[data-day-session="${secondHistory.manager.getSessionId()}"]').click()`);
   await page.waitFor(`document.querySelector('[data-rendered-session="${secondHistory.manager.getSessionId()}"]')?.innerText.includes('CALENDAR_SECOND_ACTIVITY')`);
@@ -439,8 +472,7 @@ test("the session-memory switch reaches the real send and really gates the memor
   const freshDate = new Date(Date.now()+2*86400000).toLocaleDateString('en-CA',{timeZone:'Asia/Shanghai'});
   const openEmptyDate = async date => {
     await page.evaluate("document.querySelector('#workspace-coworkers-tab').click()");
-    await page.waitFor("document.querySelector('[data-friend-calendar-open=\"friend\"]') !== null");
-    await page.evaluate(`document.querySelector('[data-friend-calendar-open="friend"]').click()`);
+    await openDayPicker();
     await page.waitFor(`document.querySelector('[data-friend-calendar="friend"][aria-busy="false"]') !== null`);
     const targetYear = Number(date.slice(0,4));
     const currentYear = Number(await page.evaluate(`document.querySelector('[data-calendar-year]').textContent`));
@@ -450,14 +482,15 @@ test("the session-memory switch reaches the real send and really gates the memor
     }
     await page.evaluate(`document.querySelector('[data-calendar-heat-date="${date}"]').click()`);
     await page.waitFor("document.querySelector('[data-friend-calendar]') === null");
-    await ready();
+    await enterDay(date);
   };
   await openEmptyDate(emptyHistory.day.date);
   assert.equal(await page.evaluate(`document.querySelector('[data-rendered-session]').getAttribute('data-rendered-session')`),emptyHistory.day.sessionId);
-  await page.waitFor(`document.querySelector('[data-friend-day="${emptyHistory.day.date}"] [data-day-work="${calendarJobs[1].id}"]') !== null`);
-  assert.equal(await page.evaluate(`document.querySelector('[data-day-work="${calendarJobs[0].id}"]') === null`), true);
+  await openDayPanel();
+  await page.waitFor(`document.querySelector('[data-friend-day="${emptyHistory.day.date}"]') !== null`);
   await page.send('Page.reload'); await ready();
-  await page.waitFor(`document.querySelector('[data-friend-day="${emptyHistory.day.date}"] [data-day-work="${calendarJobs[1].id}"]') !== null`);
+  await openDayPanel();
+  await page.waitFor(`document.querySelector('[data-friend-day="${emptyHistory.day.date}"]') !== null`);
   const callsBeforeCreate = f.requests.length;
   await openEmptyDate(freshDate);
   const fresh = (await (await fetch(`${baseUrl}/api/long-agents/friend/daily`)).json()).days.find(day=>day.date===freshDate);
@@ -490,7 +523,11 @@ test("the session-memory switch reaches the real send and really gates the memor
   await page.evaluate(`document.querySelector('[data-long-agent-open="friend"]').click()`);
   await page.waitFor(`document.querySelector('[data-rendered-session="${first.sessionId}"]') !== null`);
   assert.equal(await page.evaluate(`new URL(location.href).searchParams.has('friendDate')`),false,'the Friend card is the one return-to-today action');
-  await page.waitFor("document.querySelector('[data-friend-day]')?.innerText.includes('BROWSER_CHAT_TASK')", {label:'chat-created task appears in day sidebar',timeoutMs:30000});
+  await openDayPanel();
+  await page.evaluate("document.querySelector('[data-friend-tasks-open]').click()");
+  await page.waitFor("document.querySelector('[data-long-agent-tasks]')?.innerText.includes('BROWSER_CHAT_TASK')", {label:'chat-created work appears in the tasks panel',timeoutMs:30000});
+  await page.send("Input.dispatchKeyEvent", {type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+  await page.waitFor("document.querySelector('[data-long-agent-tasks]') === null");
   await page.evaluate("document.querySelector('#workspace-moments-tab').click()");
   await page.waitFor("document.body.innerText.includes('CALENDAR_SOCIAL_HISTORY_REMAINS')");
   await page.evaluate("document.querySelector('#workspace-settings-tab').click()");

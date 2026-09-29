@@ -10,7 +10,7 @@ Long Agent 是 Chat 中长期陪伴用户工作的助手。每个 Agent 有自�
 
 ## 2. 现在可以做什么
 
-首次使用从 Web 全局导航“Friend”点击“启用并创建默认助手”，系统准备 Nexus；无已选 Project 也可以操作。后续用“＋”新增 Friend，不需要手填 NanoClaw Group ID。启动 Host、配置 Chat 模型后，点击 Friend 即可对话。启用前提、错误重试及 HTTP 合同见[系统配置](../../configuration/README.md#long-agent注册与配置管理当前实现)。
+首次使用从 Web 全局导航“Friend”点击“启用并创建默认助手”，系统准备 Nexus；无已选 Project 也可以操作。后续新增长期助手在对话中由某位长期助手创建（同源 `long_agent_manage` Tool），Web 面板不再提供“＋”创建表单，也不需要手填 NanoClaw Group ID。启动 Host、配置 Chat 模型后，点击 Friend 即可对话。启用前提、错误重试及 HTTP 合同见[系统配置](../../configuration/README.md#long-agent注册与配置管理当前实现)。
 
 当前已有 Chat Web 与 NanoClaw 文本对话、Telegram/微信接入路径、Long Agent 的部分配置管理、Agent 身份和 Standing Instructions 注入、Markdown Agent Memory 管理、Chat Personal/Project Memory、Workflow 调用，以及 Project 管理 Skill 和 6 个 Tool。
 
