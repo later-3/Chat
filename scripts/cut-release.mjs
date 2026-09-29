@@ -50,6 +50,8 @@ function run(command, commandArgs, options = {}) {
   if (mutating) console.log(`  $ ${command} ${commandArgs.join(" ")}`);
   return execFileSync(command, commandArgs, { cwd, encoding: "utf8", stdio: mutating ? "inherit" : "pipe" }).trim();
 }
+/** Writes generated content: into the scratch dir when set, else into the repository. */
+function renderTo(path, contents) { write(path, contents); }
 function read(path) { return readFileSync(resolve(repositoryRoot, path), "utf8"); }
 function write(path, contents) {
   if (scratchDir !== null) {
@@ -146,7 +148,7 @@ console.log(`  files: frontend/package.json, package.json, docs/operations/${nex
 
 // -------------------------------------------------------------- frontend -----
 console.log("frontend");
-replaceAll("frontend/package.json", [[`"version": "${frontendPackage.version}"`, `"version": "${frontendVersion}"`]]);
+renderTo("frontend/package.json", read("frontend/package.json").replace(`"version": "${frontendPackage.version}"`, `"version": "${frontendVersion}"`));
 if (runTests) {
   run("pnpm", ["--dir", "frontend", "test"], { mutating: true });
   run("pnpm", ["--dir", "frontend", "typecheck"], { mutating: true });
@@ -157,8 +159,10 @@ if (!dryRun && runBuild) {
   if (hit === "") throw new Error(`the built bundle does not carry ${frontendVersion}`);
   console.log(`  bundle carries ${frontendVersion}`);
 }
-run("git", ["-C", "frontend", "add", "package.json"], { mutating: true });
-run("git", ["-C", "frontend", "commit", "-m", `chore(release): frontend ${frontendVersion}`, "-m", bodyOf(frontendSubjects)], { mutating: true });
+if (scratchDir === null) {
+  run("git", ["-C", "frontend", "add", "package.json"], { mutating: true });
+  run("git", ["-C", "frontend", "commit", "-m", `chore(release): frontend ${frontendVersion}`, "-m", bodyOf(frontendSubjects)], { mutating: true });
+}
 
 // ------------------------------------------------------------- chat files ----
 console.log("chat");
