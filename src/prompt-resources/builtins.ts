@@ -152,7 +152,7 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       schemaVersion: 1, id: "session-migration-provenance", revision: 1, kind: "experience",
       title: "Session 迁移保留原件与归属",
       purpose: "避免归一目录时丢失历史、配置作用域、渠道目的地与重试恢复依据。",
-      content: "适用迁移旧 Project、Friend Session、配置和渠道绑定。先盘点原生文件、归属、来源和目的地；Session 存储归属不等于当前协作项目。禁止在冲突跳过后删除源目录，禁止重试覆盖首次备份，禁止把 Project Memory 自动提升到 Personal。先校验并原子发布不可覆盖备份，保留原件，以版本化精确 Project＋Session 映射兼容旧链接；完成标记只能在全部步骤成功后发布。历史只读要同时检查前端入口和后端 Workflow/改名接口。演练必须使用隔离副本并核对原件哈希、第二次运行无变化、冲突双方保留、v1 已迁移链接及 schema 升级中断恢复。Nano 绑定须核对来源地址和目的地，不能只靠共享的 Chat Session ID 选渠道。自动化门禁见 test/long-agents/migration.test.mjs 与 long-agents.test.mjs；浏览器旧链接与真实模型流式验证不能由结构测试替代。",
+      content: "适用迁移旧 Project、Friend Session、配置和渠道绑定。先盘点原生文件、归属、来源和目的地；Session 存储归属不等于本轮冻结项目。禁止在冲突跳过后删除源目录，禁止重试覆盖首次备份，禁止把 Project Memory 自动提升到 Personal。先校验并原子发布不可覆盖备份，保留原件，以版本化精确 Project＋Session 映射兼容旧链接；完成标记只能在全部步骤成功后发布。历史只读要同时检查前端入口和后端 Workflow/改名接口。演练必须使用隔离副本并核对原件哈希、第二次运行无变化、冲突双方保留、v1 已迁移链接及 schema 升级中断恢复。Nano 绑定须核对来源地址和目的地，不能只靠共享的 Chat Session ID 选渠道。自动化门禁见 test/long-agents/migration.test.mjs 与 long-agents.test.mjs；浏览器旧链接与真实模型流式验证不能由结构测试替代。",
       tags: ["development", "migration", "session", "recovery"], status: "active",
       sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/session-migration-provenance.md", capturedAt: "2026-09-20T00:00:00.000+08:00" }],
       author: { type: "user" }, createdAt: "2026-09-20T00:00:00.000+08:00",

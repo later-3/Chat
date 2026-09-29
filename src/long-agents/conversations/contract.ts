@@ -35,9 +35,8 @@ export interface Conversation {
   schemaVersion: 1;
   id: string;
   title: string;
+  /** 会话唯一项目（统一项目合同）：存储锚点，也是群聊轮次的冻结执行项目。 */
   storageProjectId: string;
-  /** Frozen collaboration target, separate from the storage Project; null means own workspace only. */
-  collaborationProjectId: string | null;
   publicSessionId: string;
   lifecycle: ConversationLifecycle;
   /** Bumps whenever members/grants/policy change, so in-flight runs never inherit new authorization. */
@@ -160,31 +159,33 @@ export function parseConversationMember(value: unknown): ConversationMember {
 
 export function parseConversation(value: unknown): Conversation {
   if (!record(value)) throw new ConversationError(400, "会话无效");
-  exactKeys(value, ["schemaVersion", "id", "title", "storageProjectId", "collaborationProjectId", "publicSessionId", "lifecycle", "authorizationRevision", "policy", "budget", "members", "createdAt", "updatedAt", "revision"], "会话");
-  if (value.schemaVersion !== 1) throw new ConversationError(400, "会话版本无效");
-  const id = text(value.id, "会话 id", 64);
+  // Legacy records carry a separate `collaborationProjectId`; it is stripped on read (migration-on-read)
+  // because the conversation's single project is `storageProjectId` under the unified project contract.
+  const { collaborationProjectId: _legacyProject, ...rest } = value;
+  void _legacyProject;
+  exactKeys(rest, ["schemaVersion", "id", "title", "storageProjectId", "publicSessionId", "lifecycle", "authorizationRevision", "policy", "budget", "members", "createdAt", "updatedAt", "revision"], "会话");
+  if (rest.schemaVersion !== 1) throw new ConversationError(400, "会话版本无效");
+  const id = text(rest.id, "会话 id", 64);
   if (!/^conv-[a-f0-9]{32}$/.test(id)) throw new ConversationError(400, "会话 id 无效");
-  if (value.lifecycle !== "active" && value.lifecycle !== "archived") throw new ConversationError(400, "会话生命周期无效");
-  if (!Array.isArray(value.members)) throw new ConversationError(400, "成员列表无效");
-  const members = value.members.map(parseConversationMember);
+  if (rest.lifecycle !== "active" && rest.lifecycle !== "archived") throw new ConversationError(400, "会话生命周期无效");
+  if (!Array.isArray(rest.members)) throw new ConversationError(400, "成员列表无效");
+  const members = rest.members.map(parseConversationMember);
   if (new Set(members.map((member) => member.longAgentId)).size !== members.length)
     throw new ConversationError(400, "会话包含重复成员");
   return {
     schemaVersion: 1,
     id,
-    title: text(value.title, "群名称", 120),
-    storageProjectId: text(value.storageProjectId, "存储 Project", 120),
-    collaborationProjectId: value.collaborationProjectId === null || value.collaborationProjectId === undefined
-      ? null : text(value.collaborationProjectId, "协作项目", 120),
-    publicSessionId: text(value.publicSessionId, "公共 Session", 200),
-    lifecycle: value.lifecycle,
-    authorizationRevision: positiveInteger(value.authorizationRevision, "授权修订", 1_000_000),
-    policy: parseConversationPolicy(value.policy, members.map((member) => member.longAgentId)),
-    budget: parseConversationBudget(value.budget),
+    title: text(rest.title, "群名称", 120),
+    storageProjectId: text(rest.storageProjectId, "存储 Project", 120),
+    publicSessionId: text(rest.publicSessionId, "公共 Session", 200),
+    lifecycle: rest.lifecycle,
+    authorizationRevision: positiveInteger(rest.authorizationRevision, "授权修订", 1_000_000),
+    policy: parseConversationPolicy(rest.policy, members.map((member) => member.longAgentId)),
+    budget: parseConversationBudget(rest.budget),
     members,
-    createdAt: text(value.createdAt, "创建时间", 64),
-    updatedAt: text(value.updatedAt, "更新时间", 64),
-    revision: positiveInteger(value.revision, "会话修订", 1_000_000),
+    createdAt: text(rest.createdAt, "创建时间", 64),
+    updatedAt: text(rest.updatedAt, "更新时间", 64),
+    revision: positiveInteger(rest.revision, "会话修订", 1_000_000),
   };
 }
 
@@ -202,7 +203,6 @@ export function conversationSummary(conversation: Conversation) {
     id: conversation.id,
     title: conversation.title,
     storageProjectId: conversation.storageProjectId,
-    collaborationProjectId: conversation.collaborationProjectId,
     publicSessionId: conversation.publicSessionId,
     lifecycle: conversation.lifecycle,
     revision: conversation.revision,

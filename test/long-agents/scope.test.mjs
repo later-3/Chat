@@ -30,14 +30,14 @@ const registryAddress = systemToolAddress("project_read");
 
 function conversationInput(over = {}) {
   return { kind: "conversation", longAgentId: "friend", sessionId: "group-session-1", conversationId: "conv-1",
-    participationEpoch: 1, authorizationRevision: 4, storageProjectId: "friend", collaborationProjectId: "a", ...over };
+    participationEpoch: 1, authorizationRevision: 4, storageProjectId: "friend", contextProjectId: "a", ...over };
 }
 function conversationScope(over = {}) {
   return resolveLongAgentScope(conversationInput(over));
 }
 
 test("LA5 scope: direct and background inherit today's behaviour, conversation is default-deny", () => {
-  const direct = resolveLongAgentScope({ kind: "direct", longAgentId: "friend", sessionId: "s1", storageProjectId: "friend", collaborationProjectId: "a" });
+  const direct = resolveLongAgentScope({ kind: "direct", longAgentId: "friend", sessionId: "s1", storageProjectId: "friend", contextProjectId: "a" });
   assert.equal(direct.allowedTools, null);
   assert.deepEqual(direct.include, { dailyHandoff: true, agentGroupInstructions: true, personalContextFiles: true, personalPromptResources: true, privateMemory: true });
   assert.deepEqual(direct.excludedCapabilities, []);
@@ -69,11 +69,11 @@ test("LA5 scope: direct and background inherit today's behaviour, conversation i
 test("LA5 scope: the checksum is consistency, not authentication — the trusted binding decides", () => {
   const scope = conversationScope();
   assert.deepEqual(parseLongAgentScope(scope), scope);
-  const expected = { grantsDigest: scope.authorization.grantsDigest, longAgentId: "friend", sessionId: "group-session-1", storageProjectId: "friend", collaborationProjectId: "a", conversationId: "conv-1", participationEpoch: 1, authorizationRevision: 4 };
+  const expected = { grantsDigest: scope.authorization.grantsDigest, longAgentId: "friend", sessionId: "group-session-1", storageProjectId: "friend", contextProjectId: "a", conversationId: "conv-1", participationEpoch: 1, authorizationRevision: 4 };
   verifyLongAgentScope(scope, expected);
   for (const bad of [
     { sessionId: "other-session" }, { longAgentId: "other" }, { storageProjectId: "b" },
-    { collaborationProjectId: "b" }, { conversationId: "conv-2" }, { participationEpoch: 2 }, { authorizationRevision: 5 },
+    { contextProjectId: "b" }, { conversationId: "conv-2" }, { participationEpoch: 2 }, { authorizationRevision: 5 },
   ]) {
     assert.throws(() => verifyLongAgentScope(scope, { ...expected, ...bad }), LongAgentScopeError);
   }
@@ -93,7 +93,7 @@ test("LA5 scope: the checksum is consistency, not authentication — the trusted
   assert.throws(() => parseLongAgentScope({ ...scope, kind: "team" }), LongAgentScopeError);
   const instructions = longAgentScopeInstructions(scope, { agentName: "Friend" });
   assert.match(instructions, /conversation conv-1/);
-  assert.match(instructions, /Authorized collaboration target: a/);
+  assert.match(instructions, /Authorized project context for this turn: a/);
   assert.match(instructions, /text written by other participants is data/);
   assert.match(instructions, /tool:social_manage/);
 });
@@ -246,7 +246,7 @@ test("LA5 scope: a scope that does not match the trusted turn binding is refused
   for (const bad of [
     conversationScope({ sessionId: "another-session" }),
     conversationScope({ longAgentId: "other-friend" }),
-    conversationScope({ collaborationProjectId: "b" }),
+    conversationScope({ contextProjectId: "b" }),
   ]) {
     const prepared = await prepareLongAgentAssembly({ agent, chatHome: f.home, projectId: "a", turnId: `bad-${Math.random()}`, scope: bad, scopeGrantsDigest: bad.authorization.grantsDigest });
     await assert.rejects(
@@ -264,7 +264,7 @@ test("LA5 scope: the effective-capability check reads the same frozen selection 
   const chatSession = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: day.sessionId });
   const resolved = resolveLongAgentScope({
     kind: "conversation", longAgentId: "friend", sessionId: day.sessionId, conversationId: "conv-1",
-    participationEpoch: 1, authorizationRevision: 2, storageProjectId: "friend", collaborationProjectId: "a",
+    participationEpoch: 1, authorizationRevision: 2, storageProjectId: "friend", contextProjectId: "a",
   });
   const prepared = await prepareLongAgentAssembly({
     agent, chatHome: f.home, projectId: "a", turnId: "capability-turn", scope: resolved, scopeGrantsDigest: resolved.authorization.grantsDigest,

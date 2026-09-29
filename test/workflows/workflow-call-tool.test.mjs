@@ -281,11 +281,11 @@ test("Friend workflow_call separates collaboration target from parent storage an
   const adapter = runtime({ start: async (input) => { captured = input; throw new Error("captured target"); } });
   const input = { action: "start", workflowId: "minimal-pi-coding-agent", prompt: "work in collaboration project",
     agents: [{ agentId: "pi-coding-agent", tools: [], skills: [] }] };
-  const tool = createWorkflowCallTool({ ...context(), collaborationProjectId: "work-project" }, adapter);
+  const tool = createWorkflowCallTool({ ...context(), contextProjectId: "work-project" }, adapter);
   await assert.rejects(tool.execute("work", input), /captured target/);
   assert.equal(captured.projectId, "work-project");
   assert.equal(captured.parentProjectId, "project-1");
-  const absent = createWorkflowCallTool({ ...context(), collaborationProjectId: null }, adapter);
+  const absent = createWorkflowCallTool({ ...context(), contextProjectId: null }, adapter);
   captured = undefined;
   await assert.rejects(absent.execute("absent", input), /Project/);
   assert.equal(captured, undefined);

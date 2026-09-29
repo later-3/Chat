@@ -161,12 +161,6 @@ test("Chat system Tool manifests are stable, qualified, and risk classified", ()
       risk: "write",
       permissions: ["long-agent:topic"],
     },
-    {
-      address: "system:tool/collaboration_project",
-      name: "collaboration_project",
-      risk: "write",
-      permissions: ["long-agent:interaction-project"],
-    },
   ]);
   const memorySearch = listChatSystemTools().find((tool) => tool.manifest.name === "memory_search");
   assert.equal(memorySearch?.version, "system:memory-search@2");

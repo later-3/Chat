@@ -876,15 +876,10 @@ test("Chat Web Long Agent runs Pi natively and replays one stable Turn only once
     const projection = await inspected.json();
     assert.match(projection.prompt.final, new RegExp(`CURRENT_RULE_${name}`));
     assert.match(projection.prompt.final, /Nexus Nano/);
-    const { setLongAgentInteractionProject, readLongAgentInteractionProject } = await import("../../src/long-agents/interaction-project.ts");
-    const current = await readLongAgentInteractionProject(chatHome, "nexus");
-    if (current.effective.projectId !== name) {
-      await setLongAgentInteractionProject({ chatHome, longAgentId: "nexus", projectId: name, expectedRevision: current.revision });
-    }
-    const association = await readLongAgentInteractionProject(chatHome, "nexus");
+    // The owner entry freezes the selected project per turn; no separate association record exists.
     const response = await router.fetch(new Request("http://chat.test/api/long-agents/nexus/messages", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: "nexus", sessionId: first.sessionId, contextProjectId: name, interactionRevision: association.revision, text: `Work on ${name}` }),
+      body: JSON.stringify({ projectId: "nexus", sessionId: first.sessionId, contextProjectId: name, text: `Work on ${name}` }),
     }));
     assert.equal(response.status, 200);
     assert.equal((await response.json()).sessionId, first.sessionId);
@@ -1114,7 +1109,7 @@ test("NanoClaw chat-pi events execute once, persist delivery, then acknowledge i
   assert.match(JSON.stringify(modelRequests[0].messages), /Preserve continuity across every channel/);
   // B2：模板作为“格式要求”注入提示词，由 Agent 自己输出，而不是程序事后拼接。
   assert.match(JSON.stringify(modelRequests[0].messages), /回复格式要求：每条回复的最后另起一行/);
-  assert.match(JSON.stringify(modelRequests[0].messages), /project：无协作项目/);
+  assert.match(JSON.stringify(modelRequests[0].messages), /project：无项目/);
   assert.match(JSON.stringify(modelRequests[0].messages), /Remember the user's durable working context/);
   assert.match(JSON.stringify(modelRequests[0].messages), /runtime_identity_name/);
   const delivery = commands.find((request) => request.path.endsWith("/deliveries"));

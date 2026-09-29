@@ -198,7 +198,7 @@ export async function resolveChatAssemblyContext(input: {
         verifyLongAgentScope(saved.scope, {
           grantsDigest: input.invocation.scopeGrantsDigest ?? "",
           longAgentId: input.agent.id, sessionId: saved.sessionId, storageProjectId: saved.storageProjectId,
-          collaborationProjectId: saved.projectId,
+          contextProjectId: saved.projectId,
           conversationId: saved.scope.authorization.conversationId,
           participationEpoch: saved.scope.authorization.participationEpoch,
           authorizationRevision: saved.scope.authorization.authorizationRevision,
@@ -217,7 +217,7 @@ export async function resolveChatAssemblyContext(input: {
       verifyLongAgentScope(scope, {
         grantsDigest: String(input.invocation.scopeGrantsDigest),
         longAgentId: input.agent.id, sessionId: sessionManager.getSessionId(), storageProjectId: storage.projectId,
-        collaborationProjectId: projectId,
+        contextProjectId: projectId,
       });
     } catch (error) {
       if (error instanceof LongAgentScopeError) throw new Error(`本轮授权作用域与可信执行绑定不一致：${error.message}`);

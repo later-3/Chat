@@ -193,7 +193,7 @@ test("LA1 the registered Friend tool starts the same identity and refuses an ord
   const f = await setup(t);
   const { FRIEND_WORK_TOOL_PROVIDER } = await import("../../src/tools/builtins/friend-work/index.ts");
   const parent = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: f.origin.sessionId });
-  const context = { purpose: "execution", projectId: "friend", collaborationProjectId: "a", chatHome: f.home,
+  const context = { purpose: "execution", projectId: "friend", contextProjectId: "a", chatHome: f.home,
     cwd: parent.cwd, sessionManager: parent.manager, sessionId: f.origin.sessionId, agentId: "friend", longAgentId: "friend", longAgentTurnId: "trusted-parent-turn" };
   const tool = FRIEND_WORK_TOOL_PROVIDER.create(context);
   const input = { operation: "start", title: "工具委派", text: "BACKGROUND" };

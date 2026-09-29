@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createRouter } from "nitro/h3";
 import { fixture } from "./daily-fixture.mjs";
-import { readLongAgentInteractionProject } from "../../src/long-agents/interaction-project.ts";
 import { readLongAgentState } from "../../src/long-agents/storage.ts";
-import { drainLongAgentTurns, acceptLongAgentTurn } from "../../src/long-agents/turn-queue.ts";
+import { drainLongAgentTurns } from "../../src/long-agents/turn-queue.ts";
 import { readFriendFeedback } from "../../src/long-agents/turn-feedback.ts";
 import { getLiveTurn } from "../../src/long-agents/live-turn.ts";
 import { steerFriendTurn } from "../../src/long-agents/turn-controls.ts";
@@ -37,21 +36,13 @@ async function setup(t) {
   router.get(base + "/:turnId/events", events);
   router.delete(base + "/:turnId", cancel);
   const post = async (body) => {
-    // The owner-facing private-chat entry carries the Friend's association revision (LA6 A).
+    // The owner-facing private-chat entry carries the turn's selected project; the Backend freezes it.
     const requested = { schemaVersion: 1, contextProjectId: "a", ...body };
-    const current = await readLongAgentInteractionProject(f.home, "friend");
-    if (current.effective.projectId !== (requested.contextProjectId ?? null)) {
-      const { setLongAgentInteractionProject } = await import("../../src/long-agents/interaction-project.ts");
-      await setLongAgentInteractionProject({
-        chatHome: f.home, longAgentId: "friend", projectId: requested.contextProjectId ?? null, expectedRevision: current.revision,
-      });
-    }
-    const state = await readLongAgentInteractionProject(f.home, "friend");
     return router.fetch(
       new Request("http://chat.test/api/long-agents/friend/turns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...requested, interactionRevision: state.revision }),
+        body: JSON.stringify(requested),
       }),
     );
   };
@@ -201,6 +192,23 @@ test("P4 provider failure retains terminal error and original messages; images r
   assert.equal((await readLongAgentState(f.home)).turns.length, 1);
 });
 
+
+test("the unified contract accepts a bare per-turn contextProjectId and freezes it", async (t) => {
+  const f = await setup(t);
+  f.setHandler(() => ({ content: "ok" }));
+  const first = await (await f.post({ requestId: "bare-project", text: "with project" })).json();
+  assert.equal(first.contextProjectId, "a", "the response exposes the frozen per-turn project");
+  const second = await (await f.post({ requestId: "bare-project-2", text: "switch", contextProjectId: "b" })).json();
+  assert.equal(second.contextProjectId, "b");
+  const container = await (await f.post({ requestId: "bare-project-3", text: "container", contextProjectId: null })).json();
+  assert.equal(container.contextProjectId, null, "no selected project freezes the Agent container");
+  await drainLongAgentTurns(f.home, "friend");
+  const turns = (await readLongAgentState(f.home)).turns;
+  assert.equal(turns.find((turn) => turn.requestId === "bare-project").contextProjectId, "a");
+  assert.equal(turns.find((turn) => turn.requestId === "bare-project-2").contextProjectId, "b");
+  assert.equal(turns.find((turn) => turn.requestId === "bare-project-3").contextProjectId, null);
+  assert.ok(turns.every((turn) => turn.interactionRevision == null), "new acceptances carry no retired revision");
+});
 
 test("the owner turn API persists memory-off and still completes the work round", async (t) => {
   const f = await setup(t);

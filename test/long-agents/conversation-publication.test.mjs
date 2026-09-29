@@ -29,13 +29,13 @@ async function speak(f, { conversation, sessionId, longAgentId, text }) {
   const session = await openChatSession({ chatHome: f.home, projectId: conversation.storageProjectId, sessionId });
   const scope = await scopeFor(f, conversation, longAgentId, sessionId);
   const prepared = await prepareLongAgentAssembly({
-    agent, chatHome: f.home, projectId: scope.authorization.collaborationProjectId, turnId: `turn-${Math.random()}`,
+    agent, chatHome: f.home, projectId: scope.authorization.contextProjectId, turnId: `turn-${Math.random()}`,
     scope: { ...scope },
   });
   const digest = prepared.invocation.scope.authorization.grantsDigest;
   const created = await createChatPiAgentSession({
     chatSession: session, sessionManager: session.manager,
-    ...(await prepareLongAgentAssembly({ agent, chatHome: f.home, projectId: scope.authorization.collaborationProjectId, turnId: prepared.invocation.turnId, scope: prepared.invocation.scope, scopeGrantsDigest: digest })),
+    ...(await prepareLongAgentAssembly({ agent, chatHome: f.home, projectId: scope.authorization.contextProjectId, turnId: prepared.invocation.turnId, scope: prepared.invocation.scope, scopeGrantsDigest: digest })),
     toolContext: { purpose: "execution", agentId: longAgentId, longAgentId, longAgentTurnId: prepared.invocation.turnId },
   });
   f.setHandler(() => ({ content: text }));

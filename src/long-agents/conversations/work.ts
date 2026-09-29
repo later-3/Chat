@@ -204,7 +204,7 @@ export async function executeConversationWork(input: {
     let created: Awaited<ReturnType<typeof createChatPiAgentSession>> | undefined;
     try {
       const prepared = await prepareLongAgentAssembly({
-        agent, chatHome: input.chatHome, projectId: resolved.scope.authorization.collaborationProjectId, turnId: work.workId,
+        agent, chatHome: input.chatHome, projectId: resolved.scope.authorization.contextProjectId, turnId: work.workId,
         scope: resolved.scope, scopeGrantsDigest: resolved.grantsDigest,
       });
       const isDerived = work.source === "discussion" && work.discussionId !== null;

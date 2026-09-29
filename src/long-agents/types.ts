@@ -280,9 +280,13 @@ function parseAgent(value: unknown): LongAgentConfig {
     throw new Error("agent.responseTemplate必须是不超过2000字符的字符串");
   }
   const defaultDefinition = buildDefaultLongAgentDefinition(id, name, description);
-  const definition = value.definition === undefined
-    ? parseWorkflowAgentDefinition(defaultDefinition)
-    : parseWorkflowAgentDefinition(value.definition);
+  // The collaboration_project tool retired with the unified project contract (2026-09-28); strip it
+  // from persisted definitions on read so older registries keep loading instead of failing tool resolution.
+  const retired = systemToolAddress("collaboration_project");
+  const parsed = parseWorkflowAgentDefinition(value.definition ?? defaultDefinition);
+  const definition = parsed.tools.mode !== "none" && parsed.tools.addresses !== undefined && parsed.tools.addresses.includes(retired)
+    ? { ...parsed, tools: { ...parsed.tools, addresses: parsed.tools.addresses.filter((address) => address !== retired) } }
+    : parsed;
   if (definition.id !== id || definition.name !== name || definition.description !== defaultDefinition.description) {
     throw new Error("agent.definition的id、name和description必须与LongAgent身份一致");
   }
@@ -363,7 +367,6 @@ export function buildDefaultLongAgentDefinition(id: string, name: string, descri
         systemToolAddress("social_manage"),
         systemToolAddress("conversation_manage"),
         systemToolAddress("session_memory"),
-        systemToolAddress("collaboration_project"),
         systemToolAddress("topic_manage"),
       ],
     },

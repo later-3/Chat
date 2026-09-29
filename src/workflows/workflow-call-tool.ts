@@ -24,7 +24,7 @@ import { MAX_ACTIVE_CHAT_WORKFLOW_CALLS_PER_PARENT } from "./workflow-call-capac
 export interface WorkflowCallToolContext {
   readonly purpose: "execution" | "inspection";
   readonly projectId?: string;
-  readonly collaborationProjectId?: string | null;
+  readonly contextProjectId?: string | null;
   readonly chatHome?: string;
   readonly cwd: string;
   readonly sessionManager: SessionManager;
@@ -212,7 +212,7 @@ export function createWorkflowCallTool(
         { type: "toolCall", id: toolCallId, name: "workflow_call", arguments: params },
       );
       if (context.purpose !== "execution") throw new Error("Agent检查期间不能调用Workflow");
-      const targetProjectId = context.collaborationProjectId === undefined ? context.projectId : context.collaborationProjectId;
+      const targetProjectId = context.contextProjectId === undefined ? context.projectId : context.contextProjectId;
       const controlInput = {
         parentSessionManager: context.sessionManager,
         ...(signal === undefined ? {} : { signal }),

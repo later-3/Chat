@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   const namespace = getRouterParam(event, "longAgentId");
   const conversationId = getRouterParam(event, "conversationId", { decode: true });
   if (!namespace || !conversationId) throw createError({ statusCode: 400, statusMessage: "缺少群或 Friend 标识" });
-  const body = await readConversationBody(event, ["expectedRevision", "title", "policy", "budget", "memberLongAgentIds", "collaborationProjectId"]);
+  const body = await readConversationBody(event, ["expectedRevision", "title", "policy", "budget", "memberLongAgentIds"]);
   if (!Number.isSafeInteger(body.expectedRevision) || (body.expectedRevision as number) < 1)
     throw createError({ statusCode: 400, statusMessage: "需要 expectedRevision（CAS）" });
   const home = resolveChatHome();
@@ -27,7 +27,6 @@ export default defineEventHandler(async (event) => {
       ...(body.policy === undefined ? {} : { policy: body.policy as ConversationPolicyConfig }),
       ...(body.budget === undefined ? {} : { budget: body.budget as ConversationBudget }),
       ...(body.memberLongAgentIds === undefined ? {} : { memberLongAgentIds: body.memberLongAgentIds as string[] }),
-      ...(body.collaborationProjectId === undefined ? {} : { collaborationProjectId: body.collaborationProjectId === null ? null : String(body.collaborationProjectId) }),
     });
     setResponseHeader(event, "Cache-Control", "no-store");
     return conversationSummary(conversation);

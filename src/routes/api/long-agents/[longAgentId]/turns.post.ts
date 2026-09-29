@@ -20,15 +20,14 @@ export default defineEventHandler(async (event) => {
     const v = body as Record<string, unknown>;
     if (
       Object.keys(v).some(
-        (k) => !["workflow", "schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId", "interactionRevision", "sessionMemory"].includes(k),
+        (k) => !["workflow", "schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId", "sessionMemory"].includes(k),
       ) ||
       (v.sessionMemory !== undefined && v.sessionMemory !== "on" && v.sessionMemory !== "off") ||
       v.schemaVersion !== 1 ||
       typeof v.requestId !== "string" ||
       !v.requestId.trim() ||
       (v.sessionId !== undefined && (typeof v.sessionId !== "string" || !v.sessionId)) ||
-      (v.contextProjectId !== undefined && !(v.contextProjectId === null || (typeof v.contextProjectId === "string" && v.contextProjectId.trim()))) ||
-      (v.interactionRevision !== undefined && (!Number.isSafeInteger(v.interactionRevision) || Number(v.interactionRevision) < 0))
+      (v.contextProjectId !== undefined && !(v.contextProjectId === null || (typeof v.contextProjectId === "string" && v.contextProjectId.trim())))
     )
       throw new Error("无效Friend消息合同");
     const home = resolveChatHome();
@@ -38,13 +37,11 @@ export default defineEventHandler(async (event) => {
       ...(v.workflow === undefined ? {} : { workflow: v.workflow as string }),
       chatHome: home,
       longAgentId,
-      requireInteractionRevision: true,
       projectId: longAgentId,
       turnId: v.requestId,
       text: v.text,
       ...(v.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}),
       ...(v.contextProjectId === undefined ? {} : { contextProjectId: v.contextProjectId as string | null }),
-      ...(v.interactionRevision === undefined ? {} : { interactionRevision: Number(v.interactionRevision) }),
       ...(v.sessionId === undefined ? {} : { sessionId: v.sessionId as string }),
       ...(images === undefined ? {} : { images }),
     });

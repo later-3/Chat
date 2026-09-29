@@ -40,7 +40,7 @@ export interface AcceptedTurn {
   readonly channelType: string | null;
   readonly inboundEventId: string | null;
   readonly contextProjectId: string | null;
-  /** Revision of the Friend's collaboration-project association frozen at acceptance (chat-web only). */
+  /** Legacy per-Friend association revision kept for older turn records; new acceptances always write null. */
   readonly interactionRevision?: number | null;
   /** Version of the acceptance payload digest; absent on records written before the versioning. */
   readonly payloadHashVersion?: 1 | 2 | 3 | null;

@@ -3,7 +3,7 @@
   "id": "task-manage",
   "name": "task_manage",
   "label": "Task manage",
-  "description": "管理自己的任务定义与执行：list读取任务及revision，create/update配置一次性、cron或可信事件触发，pause/resume暂停恢复，cancel取消未来安排，run手动运行一次，cancel-run停止指定执行。修改须使用当前expectedRevision；任务上下文固定为当前协作项目。暂停或取消安排不终止在途执行。",
+  "description": "管理自己的任务定义与执行：list读取任务及revision，create/update配置一次性、cron或可信事件触发，pause/resume暂停恢复，cancel取消未来安排，run手动运行一次，cancel-run停止指定执行。修改须使用当前expectedRevision；任务上下文固定为创建时冻结的项目。暂停或取消安排不终止在途执行。",
   "implementationVersion": 2,
   "risk": "write",
   "permissions": [

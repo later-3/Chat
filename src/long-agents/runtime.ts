@@ -60,20 +60,11 @@ export interface ExecuteLongAgentTurnInput {
   readonly inboundEventId?: string;
   readonly source?: ChatLongAgentTurnSource;
   readonly channelType?: string | null;
-  /** 本轮协作目标；null/省略均无项目，渠道适配器须显式提供绑定目标。 */
+  /**
+   * 本轮冻结执行项目（统一项目合同：Web 私聊=发送时选中的注册项目；群聊=会话项目；后台工作=创建时
+   * 固定项目）。null/省略均无项目，渠道与定时轮次在 Agent 容器执行。受理时解析授权并冻结。
+   */
   readonly contextProjectId?: string | null;
-  /**
-   * Revision of the Friend's collaboration-project association that the caller last read. Declared by
-   * the owner-facing private-chat entry: acceptance then resolves and freezes the project from the
-   * association (never from an arbitrary per-turn projectId) and rejects a stale revision.
-   */
-  readonly interactionRevision?: number;
-  /**
-   * Set by the owner-facing HTTP private-chat entries: an ordinary private turn must then carry
-   * `interactionRevision` and may not fall back to a bare `contextProjectId`. Internal callers and
-   * accepted-turn recovery keep the legacy seam; a server-derived work-session target is exempt.
-   */
-  readonly requireInteractionRevision?: boolean;
   /** Trusted Nano daily-summary trigger; read-only draft, never final coverage. */
   readonly summaryDraft?: boolean;
 }

@@ -31,7 +31,11 @@ export interface LongAgentScopeAuthorization {
   /** Authorization revision of the owning record at resolve time (conversation or definition). */
   authorizationRevision: number;
   storageProjectId: string;
-  collaborationProjectId: string | null;
+  /**
+   * 本轮冻结执行项目（统一项目合同：群聊=会话项目，私聊=发送时选中项目，null=Agent 容器）。
+   * 旧记录中的 `collaborationProjectId` 在解析时等价映射到本字段。
+   */
+  contextProjectId: string | null;
   /**
    * Commitment over `include` + `allowedTools`. The Backend computes the expected value from the
    * trusted record (never from the scope object) so a client/model-supplied scope cannot widen the
@@ -167,7 +171,7 @@ export interface LongAgentScopeInput {
   longAgentId: string;
   sessionId: string;
   storageProjectId: string;
-  collaborationProjectId?: string | null;
+  contextProjectId?: string | null;
   conversationId?: string | null;
   participationEpoch?: number | null;
   authorizationRevision?: number;
@@ -202,7 +206,7 @@ export function resolveLongAgentScope(input: LongAgentScopeInput): LongAgentScop
     participationEpoch: conversation ? input.participationEpoch ?? null : null,
     authorizationRevision: input.authorizationRevision ?? 1,
     storageProjectId: input.storageProjectId,
-    collaborationProjectId: input.collaborationProjectId ?? null,
+    contextProjectId: input.contextProjectId ?? null,
     grantsDigest: longAgentGrantsDigest({ include, allowedTools }),
   };
   const body: Omit<LongAgentScope, "revision"> = { schemaVersion: 2, kind: input.kind, authorization, include, allowedTools,
@@ -240,10 +244,15 @@ export function parseLongAgentScope(value: unknown): LongAgentScope {
     throw new LongAgentScopeError("作用域类型无效");
   if (!record(value.authorization)) throw new LongAgentScopeError("作用域缺少授权绑定");
   const auth = value.authorization;
-  exactKeys(auth, ["longAgentId", "sessionId", "conversationId", "participationEpoch", "authorizationRevision", "storageProjectId", "collaborationProjectId", "grantsDigest"], "授权绑定");
+  // Legacy scopes record the execution target as `collaborationProjectId`; both keys are accepted
+  // and mapped to `contextProjectId` (migration-on-read; the next write persists the new name).
+  const hasLegacyProjectKey = auth.collaborationProjectId !== undefined;
+  if (hasLegacyProjectKey && auth.contextProjectId !== undefined) throw new LongAgentScopeError("授权绑定同时存在新旧项目字段");
+  exactKeys(auth, ["longAgentId", "sessionId", "conversationId", "participationEpoch", "authorizationRevision", "storageProjectId", "contextProjectId", "collaborationProjectId", "grantsDigest"], "授权绑定");
   for (const key of ["longAgentId", "sessionId", "storageProjectId"]) {
     if (typeof auth[key] !== "string" || auth[key] === "") throw new LongAgentScopeError(`授权绑定缺少${key}`);
   }
+  const rawContextProjectId = hasLegacyProjectKey ? auth.collaborationProjectId : auth.contextProjectId;
   const authorization: LongAgentScopeAuthorization = {
     longAgentId: auth.longAgentId as string,
     sessionId: auth.sessionId as string,
@@ -251,7 +260,7 @@ export function parseLongAgentScope(value: unknown): LongAgentScope {
     participationEpoch: auth.participationEpoch === null ? null : Number(auth.participationEpoch),
     authorizationRevision: Number(auth.authorizationRevision),
     storageProjectId: auth.storageProjectId as string,
-    collaborationProjectId: auth.collaborationProjectId === null ? null : String(auth.collaborationProjectId),
+    contextProjectId: rawContextProjectId === null || rawContextProjectId === undefined ? null : String(rawContextProjectId),
     grantsDigest: String(auth.grantsDigest ?? ""),
   };
   if (!Number.isSafeInteger(authorization.authorizationRevision) || authorization.authorizationRevision < 1)
@@ -300,9 +309,26 @@ export function parseLongAgentScope(value: unknown): LongAgentScope {
   };
   if (body.authorization.grantsDigest !== longAgentGrantsDigest({ include: body.include, allowedTools: body.allowedTools }))
     throw new LongAgentScopeError("作用域的授权承诺与内容不一致");
-  if (typeof value.revision !== "string" || value.revision !== longAgentScopeRevision(body))
+  // A legacy record's checksum was computed over the old key name (and key order); verify against
+  // that exact wire format, then return the scope with the renamed field and its own checksum.
+  const expectedRevision = hasLegacyProjectKey
+    ? longAgentScopeRevision({
+      ...body,
+      authorization: {
+        longAgentId: authorization.longAgentId,
+        sessionId: authorization.sessionId,
+        conversationId: authorization.conversationId,
+        participationEpoch: authorization.participationEpoch,
+        authorizationRevision: authorization.authorizationRevision,
+        storageProjectId: authorization.storageProjectId,
+        collaborationProjectId: authorization.contextProjectId,
+        grantsDigest: authorization.grantsDigest,
+      },
+    } as unknown as Omit<LongAgentScope, "revision">)
+    : longAgentScopeRevision(body);
+  if (typeof value.revision !== "string" || value.revision !== expectedRevision)
     throw new LongAgentScopeError("作用域校验和无效");
-  return { ...body, revision: value.revision };
+  return { ...body, revision: longAgentScopeRevision(body) };
 }
 
 export interface TrustedScopeExpectation {
@@ -311,7 +337,7 @@ export interface TrustedScopeExpectation {
   longAgentId: string;
   sessionId: string;
   storageProjectId: string;
-  collaborationProjectId: string | null;
+  contextProjectId: string | null;
   conversationId?: string | null;
   participationEpoch?: number | null;
   authorizationRevision?: number;
@@ -330,7 +356,7 @@ export function verifyLongAgentScope(scope: LongAgentScope, expected: TrustedSco
   if (auth.longAgentId !== expected.longAgentId) throw new LongAgentScopeError(mismatch("Friend"));
   if (auth.sessionId !== expected.sessionId) throw new LongAgentScopeError(mismatch("Session"));
   if (auth.storageProjectId !== expected.storageProjectId) throw new LongAgentScopeError(mismatch("存储 Project"));
-  if (auth.collaborationProjectId !== expected.collaborationProjectId) throw new LongAgentScopeError(mismatch("协作目标"));
+  if (auth.contextProjectId !== expected.contextProjectId) throw new LongAgentScopeError(mismatch("本轮项目"));
   if (expected.conversationId !== undefined && auth.conversationId !== expected.conversationId) throw new LongAgentScopeError(mismatch("群"));
   if (expected.participationEpoch !== undefined && auth.participationEpoch !== expected.participationEpoch) throw new LongAgentScopeError(mismatch("参与期"));
   if (expected.authorizationRevision !== undefined && auth.authorizationRevision !== expected.authorizationRevision)
@@ -424,8 +450,8 @@ export function longAgentScopeInstructions(scope: LongAgentScope, input: { agent
     `This turn runs in scope: ${scope.kind}${scope.authorization.conversationId === null ? "" : ` (conversation ${scope.authorization.conversationId})`}.`,
     `Your stable identity is ${input.agentName}; the scope changes what you may read and do, not who you are.`,
   ];
-  if (scope.authorization.collaborationProjectId === null) lines.push("No collaboration project is bound to this turn.");
-  else lines.push(`Authorized collaboration target: ${scope.authorization.collaborationProjectId}.`);
+  if (scope.authorization.contextProjectId === null) lines.push("No project context is bound to this turn; you run in your own Agent workspace.");
+  else lines.push(`Authorized project context for this turn: ${scope.authorization.contextProjectId}.`);
   if (scope.kind === "conversation") {
     lines.push(
       "You are participating in a shared group conversation. Only the messages published to that conversation are yours to read;",

@@ -19,7 +19,7 @@ export const FRIEND_WORK_TOOL_PROVIDER = defineChatSystemTool(manifest, context 
       : params.operation === "get" ? await readFriendWork(home, agent, params.workId ?? "")
       : params.operation === "cancel" ? await cancelFriendWork(home, agent, params.workId ?? "", params.expectedTurnId ?? "")
       : await startFriendWork({ chatHome: home, longAgentId: agent, requestId: `tool:${context.longAgentTurnId}:${callId}`,
-        originSessionId: context.sessionId, contextProjectId: context.collaborationProjectId ?? null, title: params.title ?? "", text: params.text ?? "" });
+        originSessionId: context.sessionId, contextProjectId: context.contextProjectId ?? null, title: params.title ?? "", text: params.text ?? "" });
     return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
   },
 }));

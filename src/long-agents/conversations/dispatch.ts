@@ -124,7 +124,7 @@ export async function dispatchConversationAttempt(input: {
   let created: Awaited<ReturnType<typeof createChatPiAgentSession>> | undefined;
   try {
     const prepared = await prepareLongAgentAssembly({
-      agent, chatHome: input.chatHome, projectId: resolved.scope.authorization.collaborationProjectId, turnId: input.attemptId,
+      agent, chatHome: input.chatHome, projectId: resolved.scope.authorization.contextProjectId, turnId: input.attemptId,
       scope: resolved.scope, scopeGrantsDigest: resolved.grantsDigest,
     });
     // Every real provider request (including tool continuations) passes this fail-closed gate at the

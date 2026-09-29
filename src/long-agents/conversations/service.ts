@@ -1,5 +1,4 @@
 import { reserveChatSession } from "../../chat-session.js";
-import { resolveProjectContext } from "../../projects/registry.js";
 import { readLongAgentRegistry } from "../storage.js";
 import { resolveLongAgentScope, assertConversationGrantsAllowed, type LongAgentScope, type LongAgentToolGrants } from "../scope.js";
 import {
@@ -32,8 +31,6 @@ export async function createConversation(input: {
   title: string;
   requestId: string;
   memberLongAgentIds: readonly string[];
-  /** Optional collaboration target; it is NOT the storage Project unless the user says so. */
-  collaborationProjectId?: string | null;
   policy?: { defaultPolicy?: ConversationPolicy; moderatorLongAgentId?: string | null; roundRobinOrder?: string[] };
   budget?: Partial<ConversationBudget>;
 }): Promise<Conversation> {
@@ -41,8 +38,6 @@ export async function createConversation(input: {
   if (input.memberLongAgentIds.length === 0) throw new ConversationError(400, "群至少需要一位 Friend");
   const members = [...new Set(input.memberLongAgentIds)];
   for (const longAgentId of members) await enabledFriend(input.chatHome, longAgentId);
-  const collaborationProjectId = input.collaborationProjectId ?? null;
-  if (collaborationProjectId !== null) await resolveProjectContext(collaborationProjectId, input.chatHome);
   const id = conversationIdOf(input.requestId);
   const existing = (await readConversationState(input.chatHome, input.storageProjectId)).conversations.find((candidate) => candidate.id === id);
   if (existing !== undefined) return existing;
@@ -64,7 +59,6 @@ export async function createConversation(input: {
       id,
       title: input.title,
       storageProjectId: input.storageProjectId,
-      collaborationProjectId,
       publicSessionId: publicSession.manager.getSessionId(),
       lifecycle: "active",
       authorizationRevision: 1,
@@ -103,7 +97,6 @@ export async function updateConversation(input: {
   policy?: ConversationPolicyConfig;
   budget?: ConversationBudget;
   memberLongAgentIds?: readonly string[];
-  collaborationProjectId?: string | null;
 }): Promise<Conversation> {
   return changeConversationState(input.chatHome, input.storageProjectId, async (state) => {
     const conversation = requireConversation(state, input.conversationId);
@@ -126,14 +119,6 @@ export async function updateConversation(input: {
       conversation.members = members;
     }
     if (input.title !== undefined) conversation.title = input.title;
-    if (input.collaborationProjectId !== undefined) {
-      const next = input.collaborationProjectId;
-      if (next !== null) await resolveProjectContext(next, input.chatHome);
-      if (conversation.collaborationProjectId !== next) {
-        conversation.collaborationProjectId = next;
-        authorizationChanged = true;
-      }
-    }
     if (input.policy !== undefined) {
       conversation.policy = parseConversationPolicy(input.policy, conversation.members.map((member) => member.longAgentId));
       authorizationChanged = true;
@@ -298,7 +283,7 @@ export async function resolveParticipationScope(input: {
     participationEpoch: member.participationEpoch,
     authorizationRevision: conversation.authorizationRevision,
     storageProjectId: conversation.storageProjectId,
-    collaborationProjectId: collaborationProjectOf(conversation),
+    contextProjectId: conversation.storageProjectId,
     grants: member.grants,
   });
   return { conversation, scope, grantsDigest: scope.authorization.grantsDigest };
@@ -333,13 +318,8 @@ export async function resolveConversationWorkScope(input: {
     participationEpoch: member.participationEpoch,
     authorizationRevision: conversation.authorizationRevision,
     storageProjectId: conversation.storageProjectId,
-    collaborationProjectId: collaborationProjectOf(conversation),
+    contextProjectId: conversation.storageProjectId,
     grants: member.grants,
   });
   return { conversation, scope, grantsDigest: scope.authorization.grantsDigest };
-}
-
-/** The collaboration target of a group turn: the configured project, never the storage Project by default. */
-function collaborationProjectOf(conversation: Conversation): string | null {
-  return conversation.collaborationProjectId;
 }

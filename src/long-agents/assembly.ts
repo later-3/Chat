@@ -34,7 +34,7 @@ export async function prepareLongAgentAssembly(input: {
     ? await buildLongAgentHandoff({ chatHome, longAgentId: agent.id, ...(input.today === undefined ? {} : { today: input.today }) })
     : null;
   const format = buildReplyFormatInstruction(agent.responseTemplate, {
-    project: project?.name ?? "无协作项目", agentName: agent.name, date: input.today ?? localDate(),
+    project: project?.name ?? "无项目", agentName: agent.name, date: input.today ?? localDate(),
   });
   return {
     invocation: {

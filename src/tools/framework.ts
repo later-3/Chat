@@ -21,8 +21,8 @@ export interface ChatToolRuntimeContext {
   readonly authorizedToolNames?: readonly string[];
   /** Session/audit storage owner, never the mutable work target. */
   readonly projectId: string;
-  /** undefined: legacy Workflow target = projectId; null: no user project. */
-  readonly collaborationProjectId?: string | null;
+  /** 本轮冻结执行项目（统一项目合同）。undefined: legacy target = projectId; null: no user project. */
+  readonly contextProjectId?: string | null;
   readonly chatHome: string;
   readonly cwd: string;
   readonly sessionManager: SessionManager;

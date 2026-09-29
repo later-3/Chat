@@ -1226,7 +1226,7 @@ export async function relayTopicNodeTurn(input: {
   // Dynamic import keeps the topics domain free of a static turn-queue cycle; turn-queue imports topics.
   const { acceptLongAgentTurn, drainLongAgentTurns } = await import("./turn-queue.js");
   const accepted = await acceptLongAgentTurn({
-    chatHome: input.chatHome, longAgentId: input.longAgentId, requireInteractionRevision: false, projectId: input.longAgentId,
+    chatHome: input.chatHome, longAgentId: input.longAgentId, projectId: input.longAgentId,
     turnId: `relay:${requestId}`, text: body, source: "chat-web",
     topicNode: { topicId: relayed.topicId, nodeId: relayed.nodeId }, relayIntentEntryId: relayed.intentEntryId,
   });

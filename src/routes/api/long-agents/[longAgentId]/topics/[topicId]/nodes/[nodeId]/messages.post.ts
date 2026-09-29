@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
     if (value.workflow !== undefined && typeof value.workflow !== "string") throw new Error("无效Workflow选择");
     const accepted = await acceptLongAgentTurn({
       ...(value.workflow === undefined ? {} : { workflow: value.workflow as string }),
-      chatHome: home, longAgentId, requireInteractionRevision: false, projectId: longAgentId,
+      chatHome: home, longAgentId, projectId: longAgentId,
       turnId: String(value.requestId), text: value.text, source: "chat-web",
       ...(value.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}),
       ...(images === undefined ? {} : { images }),

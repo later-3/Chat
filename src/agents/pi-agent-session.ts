@@ -212,7 +212,7 @@ export async function createChatPiAgentSession(
       authorizedToolAddresses,
       authorizedToolNames,
       projectId: chatSession.projectContext.projectId,
-      collaborationProjectId: assembly === undefined ? chatSession.projectContext.projectId : assembly.snapshot.projectId,
+      contextProjectId: assembly === undefined ? chatSession.projectContext.projectId : assembly.snapshot.projectId,
       chatHome: chatSession.projectContext.chatHome,
       cwd,
       sessionManager: options.sessionManager,

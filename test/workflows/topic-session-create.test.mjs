@@ -20,7 +20,7 @@ test("topic-session-create: the draft is the single source; the preview is its d
   assert.deepEqual(draft.initialMemory, []);
   const preview = renderTopicCreationPreview(draft);
   assert.match(preview, /# 订单页空指针/);
-  assert.match(preview, /无协作项目/);
+  assert.match(preview, /无项目/);
   assert.doesNotMatch(preview, /chat-topic-draft/, "the machine draft never reaches the preview");
   // The preview is a pure function of the draft: the same draft always renders the same text.
   assert.equal(renderTopicCreationPreview(draft), preview);

@@ -15,7 +15,7 @@ import type { ConversationBudget, ConversationPolicy } from "../../../../../long
 export default defineEventHandler(async (event) => {
   const namespace = getRouterParam(event, "longAgentId");
   if (!namespace) throw createError({ statusCode: 400, statusMessage: "缺少 Friend 标识" });
-  const body = await readConversationBody(event, ["storageProjectId", "title", "requestId", "memberLongAgentIds", "policy", "budget", "collaborationProjectId"]);
+  const body = await readConversationBody(event, ["storageProjectId", "title", "requestId", "memberLongAgentIds", "policy", "budget"]);
   const storageProjectId = body.storageProjectId;
   const title = body.title;
   const requestId = body.requestId;
@@ -31,7 +31,6 @@ export default defineEventHandler(async (event) => {
     const conversation = await createConversation({
       chatHome: resolveChatHome(), storageProjectId, title, requestId,
       memberLongAgentIds: memberLongAgentIds as string[],
-      ...(body.collaborationProjectId === undefined ? {} : { collaborationProjectId: body.collaborationProjectId === null ? null : String(body.collaborationProjectId) }),
       ...(body.policy === undefined ? {} : { policy: body.policy as { defaultPolicy?: ConversationPolicy; moderatorLongAgentId?: string | null; roundRobinOrder?: string[] } }),
       ...(body.budget === undefined ? {} : { budget: body.budget as Partial<ConversationBudget> }),
     });

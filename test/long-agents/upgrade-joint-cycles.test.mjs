@@ -100,7 +100,6 @@ async function legacyFixture(t) {
 
 const groupSnapshot = (conversation) => ({
   storageProjectId: conversation.storageProjectId,
-  collaborationProjectId: conversation.collaborationProjectId,
   members: conversation.members.map((member) => ({ id: member.longAgentId, epoch: member.participationEpoch, revokedAt: member.revokedAt, grants: member.grants })),
   authorizationRevision: conversation.authorizationRevision,
   policy: conversation.policy,
@@ -114,19 +113,21 @@ test("LA6 C: three upgrade read/write cycles keep ownership, references and auth
   let previousRevision = 0;
 
   for (let cycle = 1; cycle <= 3; cycle += 1) {
-    // Read before migrating: an old-schema group record (no collaborationProjectId) must still resolve.
+    // Read before migrating: the freshly created record must resolve under the unified contract.
     if (cycle === 1) {
       conversation = await createConversation({
         chatHome: f.home, storageProjectId: "business", title: "升级小组", requestId: "req-upgrade",
         memberLongAgentIds: ["friend"],
       });
-      // Simulate the pre-LA6-A record shape: the field did not exist yet.
+      // Regression gate: a pre-unification record still carrying `collaborationProjectId` parses
+      // with the field stripped; the conversation's single project is `storageProjectId`.
       const file = path.join(f.home, "projects", "business", "conversations.json");
       const raw = JSON.parse(fs.readFileSync(file, "utf8"));
-      delete raw.conversations[0].collaborationProjectId;
+      raw.conversations[0].collaborationProjectId = "legacy-project";
       fs.writeFileSync(file, JSON.stringify(raw));
       const reRead = await readConversation(f.home, "business", conversation.id);
-      assert.equal(reRead.collaborationProjectId, null, "a legacy record parses to the unset collaboration target");
+      assert.equal("collaborationProjectId" in reRead, false, "a legacy record parses with the legacy field stripped");
+      assert.equal(reRead.storageProjectId, "business");
       conversation = reRead;
       assert.equal((await findConversation(f.home, conversation.id)).storageProjectId, "business");
     }

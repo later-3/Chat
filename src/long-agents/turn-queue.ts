@@ -2,7 +2,6 @@ import { agentDate } from "./calendar.js";
 import { settleConsumedSteering } from "./turn-controls.js";
 import { getLiveRoundHandle, getLiveTurn } from "./live-turn.js";
 import { createHash, randomUUID } from "node:crypto";
-import { readLongAgentInteractionProject } from "./interaction-project.js";
 import { SessionManager, type DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
@@ -41,9 +40,9 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     if (input.images?.length && selected.supportsImageInput !== true) throw new Error(`Workflow ${input.workflow} 不支持图片输入`);
   }
   return withFileLock(`${home}/runtime/friend-accept`, async () => {
-    // Resolve and freeze the collaboration target inside the accept lock. For the owner-facing private
-    // chat the association is authoritative; a declared revision that no longer matches is a conflict,
-    // and a per-turn projectId may not silently override the persisted association.
+    // Resolve and freeze the execution project inside the accept lock (unified project contract):
+    // chat-web private chat freezes the per-turn project the Frontend selected; a work session keeps
+    // its own frozen target; channel/scheduled turns carry no project and run in the Agent container.
     const prior = (await readLongAgentState(home)).turns.find((turn) => turn.longAgentId === input.longAgentId && turn.source === source && turn.requestId === requestId);
     let contextProjectId = input.contextProjectId ?? null;
     let interactionRevision: number | null = null;
@@ -60,20 +59,6 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
         if (input.contextProjectId !== undefined && (input.contextProjectId ?? null) !== work.contextProjectId)
           throw new LongAgentRequestConflict("后台工作的项目已固定，请在原项目继续或创建新工作");
         contextProjectId = work.contextProjectId;
-      } else if (input.interactionRevision !== undefined) {
-        // Ordinary private chat: the association is authoritative and a stale/divergent request conflicts.
-        const association = await readLongAgentInteractionProject(home, input.longAgentId);
-        if (association.revision !== input.interactionRevision)
-          throw new LongAgentRequestConflict("项目关联已变化，请刷新后重新发送");
-        if (association.effective.availability === "unavailable")
-          throw new LongAgentRequestConflict(`关联项目不可用：${association.effective.reason ?? "请重新选择"}`);
-        if (input.contextProjectId !== undefined && (input.contextProjectId ?? null) !== association.effective.projectId)
-          throw new LongAgentRequestConflict("请求携带的项目与 Friend 关联不一致，请刷新后重试");
-        contextProjectId = association.effective.projectId;
-        interactionRevision = association.revision;
-      } else if (input.requireInteractionRevision === true) {
-        // The owner-facing private-chat entry must not bypass the persisted association.
-        throw new LongAgentRequestConflict("私聊消息必须携带 Friend 项目关联 revision");
       }
     }
     // Resolve the node's FROZEN project context BEFORE the request digest: a replay must compare the
@@ -111,24 +96,25 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     // JSON.stringify is key-order sensitive, so each historical format keeps its exact field order.
     const digest = (body: Record<string, unknown>) => createHash("sha256").update(JSON.stringify(body)).digest("hex");
     // v1 used the requested project; v2 used the resolved association when a revision was supplied.
+    // `interactionRevision` is retired (unified project contract) and stays null for new acceptances;
+    // retries of older records reuse the recorded revision so their historical digests still match.
     const requestedContextProjectId = input.contextProjectId ?? null;
-    const requestedInteractionRevision = input.interactionRevision ?? null;
     const v1 = digest({ text: input.text, images: input.images ?? [], contextProjectId: requestedContextProjectId,
       longAgentId: input.longAgentId, source, summaryDraft: input.summaryDraft ?? false,
       channelType: input.channelType ?? null, inboundEventId: input.inboundEventId ?? null });
-    const legacyV2Project = input.contextProjectId === undefined && input.interactionRevision !== undefined
+    const legacyV2Project = input.contextProjectId === undefined && interactionRevision !== null
       ? contextProjectId : requestedContextProjectId;
     const v2 = digest({ text: input.text, images: input.images ?? [], contextProjectId: legacyV2Project,
       longAgentId: input.longAgentId, source, summaryDraft: input.summaryDraft ?? false,
       channelType: input.channelType ?? null, inboundEventId: input.inboundEventId ?? null,
-      interactionRevision: requestedInteractionRevision });
-    const payloadHashV3 = digest({ text: input.text, images: input.images ?? [], requestedContextProjectId: input.contextProjectId ?? null,
-      requestedInteractionRevision: input.interactionRevision ?? null, frozenContextProjectId: contextProjectId,
+      interactionRevision });
+    const payloadHashV3 = digest({ text: input.text, images: input.images ?? [], requestedContextProjectId,
+      requestedInteractionRevision: interactionRevision, frozenContextProjectId: contextProjectId,
       frozenInteractionRevision: interactionRevision, longAgentId: input.longAgentId, source, summaryDraft: input.summaryDraft ?? false,
       channelType: input.channelType ?? null, inboundEventId: input.inboundEventId ?? null });
     // An explicit format is authoritative. Unversioned records may match historical formats, but
     // v1 cannot attest to a revision that did not exist when that request was accepted.
-    const v1Candidates = input.interactionRevision === undefined && (prior?.interactionRevision ?? null) === null ? [v1] : [];
+    const v1Candidates = interactionRevision === null ? [v1] : [];
     const payloadHashCandidates = prior?.payloadHashVersion === 3 ? [payloadHashV3]
       : prior?.payloadHashVersion === 2 ? [v2]
       : prior?.payloadHashVersion === 1 ? v1Candidates

@@ -105,8 +105,8 @@ export function renderTopicCreationPreview(draft: TopicCreationDraft): string {
     draft.purpose,
     "## 整合摘要",
     draft.integrationSummary,
-    "## 协作项目",
-    draft.frozenProjectContext === null ? "无协作项目" : draft.frozenProjectContext,
+    "## 项目",
+    draft.frozenProjectContext === null ? "无项目" : draft.frozenProjectContext,
     "## 来源与初始记忆",
   ];
   if (draft.initialMemory.length === 0) lines.push("- 无可引用的既有记忆");

@@ -63,7 +63,7 @@ test("Friend keeps its Pi Session while switching default -> reviewed Workflow -
     const response = await fetch(`${base}/api/long-agents/friend/turns`, { method: "POST",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ schemaVersion: 1,
         requestId: `${workflow}-${f.requests.length}`, ...(workflow === undefined ? {} : {workflow}), text,
-        sessionMemory: memory, interactionRevision: 0, contextProjectId: null, ...(sessionId ? { sessionId } : {}) }) });
+        sessionMemory: memory, contextProjectId: null, ...(sessionId ? { sessionId } : {}) }) });
     const value = await response.json();
     assert.equal(response.status, 202, JSON.stringify(value));
     if (sessionId) assert.equal(value.sessionId, sessionId); else sessionId = value.sessionId;

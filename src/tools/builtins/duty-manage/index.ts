@@ -97,7 +97,7 @@ export const DUTY_MANAGE_TOOL_PROVIDER = defineChatSystemTool(
             ? {
                 definition: {
                   ...params.definition,
-                  contextProjectId: context.collaborationProjectId ?? null,
+                  contextProjectId: context.contextProjectId ?? null,
                 },
               }
             : {}),

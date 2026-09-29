@@ -888,7 +888,6 @@ test("Tool catalog and Project Agent Tool policy use the production Pi assembly 
     "system:tool/conversation_manage",
     "system:tool/session_memory",
     "system:tool/topic_manage",
-    "system:tool/collaboration_project",
     ],
   );
   const projectTool = catalog.tools.find((tool) => tool.name === "built_project_lookup");

@@ -94,11 +94,11 @@ test("LA5 conversations: the trusted scope comes from the record, not from the c
   const resolved = await resolveParticipationScope({ chatHome: f.home, storageProjectId: "a", conversationId: created.id, longAgentId: "friend", sessionId: bound.sessionId });
   assert.equal(resolved.scope.kind, "conversation");
   assert.deepEqual(resolved.scope.allowedTools, { systemToolAddresses: [], nativeTools: [], extensionTools: [] }, "default deny without explicit grants");
-  assert.deepEqual(resolved.scope.authorization.collaborationProjectId, null, "the storage Project is not the collaboration target by default");
+  assert.deepEqual(resolved.scope.authorization.contextProjectId, "a", "a group turn is frozen to the conversation's storage Project");
   assert.equal(resolved.scope.authorization.participationEpoch, 1);
   verifyLongAgentScope(resolved.scope, {
     grantsDigest: resolved.grantsDigest, longAgentId: "friend", sessionId: bound.sessionId,
-    storageProjectId: "a", collaborationProjectId: null, conversationId: created.id, participationEpoch: 1,
+    storageProjectId: "a", contextProjectId: "a", conversationId: created.id, participationEpoch: 1,
     authorizationRevision: resolved.conversation.authorizationRevision,
   });
   // An explicit grant is reflected in the frozen scope and its commitment. Only capabilities with a
