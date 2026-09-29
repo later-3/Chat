@@ -9,7 +9,7 @@ const WRITER_MARK = "维护**本会话**的会话记忆";
 
 /**
  * The Workflow's LAST node is the session-memory writer, and an ordinary Project session is not an Agent
- * home: this proves the tail writes to `projects/<id>/session-memory/`, i.e. that "every interactive
+ * home: this proves the tail writes to `projects/<id>/sessions/session-memory/`, i.e. that "every interactive
  * Workflow ends with the memory node" holds for Project sessions too (not only Long Agent homes).
  */
 function handlerFor(memoryContent) {
@@ -53,7 +53,7 @@ test("the Workflow tail writes session memory for an ordinary Project session", 
   assert.equal(memory.entries[0].content, "项目会话自己的记忆条目");
   assert.equal(memory.entries[0].purpose, "finding");
   const file = sessionMemoryFile(f.home, "a", sessionId);
-  assert.equal(file.includes("/projects/a/session-memory/"), true, `memory must live in the project data dir: ${file}`);
+  assert.equal(file.includes("/projects/a/sessions/session-memory/"), true, `memory must live in the project data dir: ${file}`);
 });
 
 test("with the switch off the Project round runs without the memory node", { concurrency: false }, async (t) => {

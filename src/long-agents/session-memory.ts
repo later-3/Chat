@@ -136,10 +136,16 @@ function parseEntry(value: unknown): SessionMemoryEntry {
 }
 
 /**
- * A session's memory lives beside its own project data: a Long Agent home keeps
- * `<chatHome>/long-agents/<id>/session-memory/`, every other project `<chatHome>/projects/<id>/session-memory/`.
- * The kind of an id never changes, and a Long Agent home exists before it can own a session, so the
- * directory that exists is the authoritative one — no registry read on this hot path.
+ * A session's memory lives inside the session directory: `<storageRoot>/sessions/session-memory/<sessionId>.json`,
+ * where `<storageRoot>` is `<chatHome>/long-agents/<id>` for a Long Agent and `<chatHome>/projects/<id>`
+ * otherwise. Pi's session files (`<timestamp>_<id>.jsonl`) stay in `sessions/` itself, in a flat listing
+ * owned by Pi, while Chat's memory keeps its own subdirectory.
+ * id never changes, and a Long Agent home exists before it can own a session, so the directory that
+ * exists is the authoritative one — no registry read on this hot path.
+ *
+ * Earlier releases stored it one directory up, `<storageRoot>/session-memory/<sessionId>.json`. That
+ * layout is still read as a fallback, `changeSessionMemory` migrates the file on the next write, and
+ * `migrateSessionMemoryLayout` moves the rest at startup (see the migration's marker).
  */
 function sessionMemoryDir(chatHome: string, storageProjectId: string): string {
   const paths = getChatHomePaths(chatHome);
@@ -148,21 +154,36 @@ function sessionMemoryDir(chatHome: string, storageProjectId: string): string {
 }
 
 export function sessionMemoryFile(chatHome: string, storageProjectId: string, sessionId: string): string {
+  return resolve(sessionMemoryRoot(chatHome, storageProjectId, sessionId), "sessions", "session-memory", `${sessionId}.json`);
+}
+
+/** Pre-0.5.3 layout: memory sat one directory above the session files. Read-only fallback. */
+export function legacySessionMemoryFile(chatHome: string, storageProjectId: string, sessionId: string): string {
+  return resolve(sessionMemoryRoot(chatHome, storageProjectId, sessionId), "session-memory", `${sessionId}.json`);
+}
+
+function sessionMemoryRoot(chatHome: string, storageProjectId: string, sessionId: string): string {
   if (!SESSION_ID_PATTERN.test(sessionId)) throw new SessionMemoryError(400, `sessionId无效：${sessionId}`);
-  return resolve(sessionMemoryDir(chatHome, storageProjectId), "session-memory", `${sessionId}.json`);
+  return sessionMemoryDir(chatHome, storageProjectId);
+}
+
+async function readSessionMemoryFile(file: string): Promise<unknown | null> {
+  try {
+    return JSON.parse(await readFile(file, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 export async function readSessionMemory(chatHome: string, longAgentId: string, sessionId: string): Promise<SessionMemoryState> {
   const file = sessionMemoryFile(chatHome, longAgentId, sessionId);
   await assertFileWithin(file, chatHome);
-  let value: unknown;
-  try {
-    value = JSON.parse(await readFile(file, "utf8"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT")
-      return { schemaVersion: SESSION_MEMORY_SCHEMA_VERSION, sessionId, orphan: false, revision: 0, entries: [] };
-    throw error;
-  }
+  // Pre-0.5.3 locations keep loading until the migration moves them.
+  const value = await readSessionMemoryFile(file)
+    ?? await readSessionMemoryFile(legacySessionMemoryFile(chatHome, longAgentId, sessionId));
+  if (value === null)
+    return { schemaVersion: SESSION_MEMORY_SCHEMA_VERSION, sessionId, orphan: false, revision: 0, entries: [] };
   record(value);
   const keys = ["schemaVersion", "sessionId", "orphan", "revision", "entries"];
   if (Object.keys(value).some((key) => !keys.includes(key))) throw new SessionMemoryError(500, "会话记忆存储包含未知字段");
@@ -185,6 +206,11 @@ async function changeSessionMemory<T>(
     const result = await change(state);
     await assertFileWithin(file, chatHome);
     await atomicWriteJson(file, state);
+    // The write just published the state under the session; the legacy copy is stale.
+    const legacy = legacySessionMemoryFile(chatHome, longAgentId, sessionId);
+    await unlink(legacy).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    });
     return result;
   });
 }
@@ -324,9 +350,12 @@ export async function clearSessionMemoryOrphan(chatHome: string, longAgentId: st
 export async function purgeSessionMemory(chatHome: string, longAgentId: string, sessionId: string): Promise<void> {
   const file = sessionMemoryFile(chatHome, longAgentId, sessionId);
   await assertFileWithin(file, chatHome);
-  await unlink(file).catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== "ENOENT") throw error;
-  });
+  // A purge must not leave a pre-0.5.3 copy behind that a later read would resurrect.
+  for (const target of [file, legacySessionMemoryFile(chatHome, longAgentId, sessionId)]) {
+    await unlink(target).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+  }
 }
 
 /**

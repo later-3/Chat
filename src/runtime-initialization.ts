@@ -56,6 +56,9 @@ export function ensureChatRuntimeInitialized(options: {
       // 无损建立 Agent Home；保留旧项目/历史/渠道来源，不创建空的每日 Session。
       const { migrateAgentHomeNormalization } = await import("./migrations/agent-home-normalization.js");
       await migrateAgentHomeNormalization(paths.root);
+      // Session memory moved next to the session files; the pass is idempotent and marked per root.
+      const { migrateSessionMemoryLayout } = await import("./migrations/session-memory-layout.js");
+      await migrateSessionMemoryLayout(paths.root);
       // 启动时确保每个 Agent 的配置根与资源目录就绪。
       const { readLongAgentRegistry, ensureLongAgentResourceDirs } = await import("./long-agents/storage.js");
       const { reconcileDefaultLongAgentTools } = await import("./long-agents/definition-defaults.js");

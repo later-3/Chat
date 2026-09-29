@@ -18,7 +18,7 @@
 
 **开工前置（checklist，不是阶段）**：核对 `chat-long-agent-engineering-baseline.md`；schema 与工具签名随本阶段代码进机制合同（不先写空合同）。
 
-**① 存储（范围：底座部分交付——检视 23）** `src/long-agents/session-memory.ts`：路径 `<agent home>/session-memory/<sessionId>.json`；原语 `withFileLock` + `atomicWriteJson` + CAS（同 `duties/storage.ts`）。**来源绑定在业务 workflow 派发链上的盖章与嵌套继承属 P2 门槛**（`sessionMemoryTarget` 字段与解析已在本阶段就绪并测试）。
+**① 存储（范围：底座部分交付——检视 23；2026-09-29 起路径变更为 `<agent home>/sessions/session-memory/<sessionId>.json`，见 `src/migrations/session-memory-layout.ts`）** `src/long-agents/session-memory.ts`：路径 `<agent home>/sessions/session-memory/<sessionId>.json`；原语 `withFileLock` + `atomicWriteJson` + CAS（同 `duties/storage.ts`）。**来源绑定在业务 workflow 派发链上的盖章与嵌套继承属 P2 门槛**（`sessionMemoryTarget` 字段与解析已在本阶段就绪并测试）。
 **② 统一 schema（一个解析器）**：`{ schemaVersion, sessionId, orphan, revision, entries:[{ entryId, purpose, author, content, originEntryId, supersedes, status, createdAt, updatedAt }] }`；`purpose` = 五类 `background|goal|experience|rule|finding` + 白名单自定义标签；`status = active|superseded`；**不设 archive**（推翻即 superseded）；条目只增不改，编辑/修正 = 新条目 + `supersedes`。
 **③ 目标绑定（修正：单个 sessionId 不够）**：可信绑定 `{ storageProjectId, sessionId }`。由节点发起服务解析，经 `workflow-call-tool.ts → workflow-call.ts → ChatWorkflowInput → step → createWorkflowAgentSession → ChatToolRuntimeContext` 传递并持久化；**嵌套调用继承原绑定**，不重盖成中间子会话；HTTP/模型参数不可自填；无绑定时回退前必须校验当前会话属于受支持的 agent home。
 **④ 工具与读取入口**：`src/tools/builtins/session-memory/`（manifest + provider）加入 `CHAT_SYSTEM_TOOL_PROVIDERS`（`src/tools/registry.ts`），地址 `system:tool/session_memory`（下划线，取自 manifest.name）；操作 `list | write | supersede`；另提供**服务端绑定目标会话的历史读取入口**：工具操作 `history { afterEntryId?, limit? }`，返回该绑定会话的分页条目（不暴露其他会话）。

@@ -10,6 +10,7 @@ import {
   readSessionMemory,
   readSessionMemoryHistory,
   resolveSessionMemoryTarget,
+  legacySessionMemoryFile,
   sessionMemoryFile,
   writeSessionMemoryEntry,
 } from "../../src/long-agents/session-memory.ts";
@@ -102,7 +103,7 @@ test("P1 session memory: an ordinary project session has its own memory, stored 
     purpose: "finding", author: "agent", content: "项目会话也有自己的会话记忆", expectedRevision: 0 });
   assert.equal((await readSessionMemory(f.home, "a", sessionId)).entries.length, 1);
   const file = sessionMemoryFile(f.home, "a", sessionId);
-  assert.equal(file.includes("/projects/a/session-memory/"), true, `memory must live in the project data dir: ${file}`);
+  assert.equal(file.includes("/projects/a/sessions/session-memory/"), true, `memory must live in the project data dir: ${file}`);
   assert.equal(fs.existsSync(file), true);
 });
 
@@ -420,7 +421,7 @@ test("P1 review 28: convergeSessionMemoryWithLifecycle heals a crash-before-comp
 // --- Review 31/32: an interrupted lifecycle operation must be converged by ANY recovering read, and
 // --- the pending intent must survive until the companion memory actually converges.
 
-const readOnlyMemoryDir = (f) => `${f.home}/long-agents/friend/session-memory`;
+const readOnlyMemoryDir = (f) => `${f.home}/long-agents/friend/sessions/session-memory`;
 
 test("P1 review 31: an interrupted remove is converged by a recovering read (list and state check)", async (t) => {
   const f = await fixture(t);
@@ -546,4 +547,72 @@ test("session_memory purpose is an OPEN label: defaults are described and a cust
       purpose: "Not A Label!", author: "agent", content: "x", expectedRevision: 1 }),
     (error) => /Not A Label!/.test(error.message) && /background/.test(error.message) && /open-question/.test(error.message),
   );
+});
+
+test("session memory moved next to the session files", async (t) => {
+  const f = await fixture(t);
+  const turn = await executeLongAgentTurn(f.input("smem-move"));
+  const sessionId = turn.sessionId;
+  await writeSessionMemoryEntry({
+    chatHome: f.home, longAgentId: "friend", sessionId, operation: "write",
+    purpose: "background", author: "agent", content: "记录在会话旁边", expectedRevision: 0,
+  });
+  const current = sessionMemoryFile(f.home, "friend", sessionId);
+  assert.equal(current, `${f.home}/long-agents/friend/sessions/session-memory/${sessionId}.json`);
+
+  // The pre-0.5.3 location keeps loading until that session is written again.
+  const legacy = legacySessionMemoryFile(f.home, "friend", sessionId);
+  fs.mkdirSync(legacy.slice(0, legacy.lastIndexOf("/")), { recursive: true });
+  fs.renameSync(current, legacy);
+  const migrated = await readSessionMemory(f.home, "friend", sessionId);
+  assert.equal(migrated.entries[0].content, "记录在会话旁边", "the legacy copy still reads");
+
+  // Writing publishes the new location and retires the legacy copy.
+  await writeSessionMemoryEntry({
+    chatHome: f.home, longAgentId: "friend", sessionId, operation: "write",
+    purpose: "finding", author: "agent", content: "迁移后继续追加", expectedRevision: migrated.revision,
+  });
+  assert.equal(fs.existsSync(current), true, "the new location holds the state");
+  assert.equal(fs.existsSync(legacy), false, "the legacy copy is gone after the write");
+  const after = await readSessionMemory(f.home, "friend", sessionId);
+  assert.deepEqual(after.entries.map((entry) => entry.content), ["记录在会话旁边", "迁移后继续追加"]);
+});
+
+test("the startup pass moves every leftover session memory into the session directory", async (t) => {
+  const f = await fixture(t);
+  const { migrateSessionMemoryLayout } = await import("../../src/migrations/session-memory-layout.ts");
+  const sessionId = "sess-migrate-1";
+  const root = `${f.home}/long-agents/friend`;
+  const legacyDir = `${root}/session-memory`;
+  fs.mkdirSync(legacyDir, { recursive: true });
+  fs.writeFileSync(`${legacyDir}/${sessionId}.json`, JSON.stringify({
+    schemaVersion: 1, sessionId, orphan: false, revision: 3,
+    entries: [{ entryId: "e1", purpose: "finding", author: "agent", content: "迁移前就存在", originEntryId: null, supersedes: null, status: "active", writeRequestId: null, writeRequestFingerprint: null, createdAt: "2026-09-29T00:00:00.000Z", updatedAt: "2026-09-29T00:00:00.000Z" }],
+  }));
+
+  const first = await migrateSessionMemoryLayout(f.home);
+  assert.equal(first.moved, 1);
+  const moved = sessionMemoryFile(f.home, "friend", sessionId);
+  assert.equal(fs.existsSync(moved), true, "the file now sits in the session directory");
+  assert.equal(fs.existsSync(`${legacyDir}/${sessionId}.json`), false, "the legacy copy moved rather than copied");
+  const state = await readSessionMemory(f.home, "friend", sessionId);
+  assert.equal(state.revision, 3, "revision survives the move");
+  assert.equal(state.entries[0].content, "迁移前就存在");
+
+  // Marked: a second pass is a no-op and never re-creates or renames anything.
+  const second = await migrateSessionMemoryLayout(f.home);
+  assert.equal(second.completedAt, first.completedAt, "the marker short-circuits the next pass");
+  assert.equal(fs.existsSync(moved), true);
+
+  // An existing target is authoritative and is never overwritten by a leftover legacy file.
+  const other = "sess-migrate-2";
+  fs.mkdirSync(`${root}/sessions/session-memory`, { recursive: true });
+  fs.writeFileSync(`${root}/sessions/session-memory/${other}.json`, JSON.stringify({ schemaVersion: 1, sessionId: other, orphan: false, revision: 9, entries: [] }));
+  fs.mkdirSync(legacyDir, { recursive: true });
+  fs.writeFileSync(`${legacyDir}/${other}.json`, JSON.stringify({ schemaVersion: 1, sessionId: other, orphan: false, revision: 1, entries: [] }));
+  fs.rmSync(`${f.home}/migrations/session-memory-layout-v1.json`);
+  const third = await migrateSessionMemoryLayout(f.home);
+  assert.equal(third.keptExisting, 1);
+  assert.equal((await readSessionMemory(f.home, "friend", other)).revision, 9, "the newer copy wins");
+  assert.equal(fs.existsSync(`${legacyDir}/${other}.json`), true, "the leftover legacy file is left untouched rather than destroyed");
 });
