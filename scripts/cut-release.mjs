@@ -49,10 +49,14 @@ function write(path, contents) {
   console.log(`  write ${path}`);
   if (!dryRun) writeFileSync(resolve(repositoryRoot, path), contents);
 }
-function replaceAll(path, pairs) {
+function replaceAll(path, pairs, options = {}) {
+  const { optional = false } = options;
   let body = read(path);
   for (const [from, to] of pairs) {
-    if (!body.includes(from)) throw new Error(`${path}: expected text not found: ${from.slice(0, 80)}`);
+    if (!body.includes(from)) {
+      if (optional) continue;
+      throw new Error(`${path}: expected text not found: ${from.slice(0, 80)}`);
+    }
     body = body.split(from).join(to);
   }
   write(path, body);
@@ -114,7 +118,7 @@ for (const [label, path, tag] of [["parent", ".", `v${chatVersion}`], ["frontend
   if (run("git", ["-C", path, "tag", "--list", tag]) !== "") throw new Error(`${label} tag ${tag} already exists; pick another version`);
 }
 
-const reviewFile = `release-${chatVersion}.md`;
+const reviewFile = `${new Date().toISOString().slice(0, 10)}-release-${chatVersion}.md`;
 const chatSubjects = subjectsSince(".", lastTag(".")).filter((subject) => !/^chore\(release\)|^chore: frontend submodule/.test(subject));
 const pins = run("git", ["ls-tree", "HEAD", "frontend", "pi", "nanoclaw"]).split("\n")
   .map((line) => line.split(/\s+/)).map(([, , sha, name]) => [name, sha.slice(0, 9)]);
@@ -149,7 +153,9 @@ write(`docs/operations/${nextRelease}`, renderReleasePage());
 write(`docs/history/reviews/${reviewFile}`, renderReview());
 replaceAll("package.json", [[`"version": "${previousChatVersion}"`, `"version": "${chatVersion}"`]]);
 for (const path of ENTRY_DOCUMENTS) {
-  replaceAll(path, [[previousRelease, nextRelease], [`v${previousChatVersion}`, `v${chatVersion}`], [previousChatVersion, chatVersion]]);
+  replaceAll(path, [[previousRelease, nextRelease]], { optional: false });
+  // Version strings appear in different shapes per entry document; replace what exists.
+  replaceAll(path, [[`v${previousChatVersion}`, `v${chatVersion}`], [previousChatVersion, chatVersion]], { optional: true });
 }
 const previousBody = read(`docs/operations/${previousRelease}`);
 if (!previousBody.includes("历史版本页")) {
@@ -158,12 +164,9 @@ if (!previousBody.includes("历史版本页")) {
 }
 replaceAll("docs/history/README.md", [[
   "| 主题 | 记录 |\n|---|---|",
-  `| 主题 | 记录 |\n|---|---|\n| ${chatVersion} 版本与交付核对 | [${today() === "" ? "2026-09-29" : today()}](./reviews/${reviewFile}) |`,
+  `| 主题 | 记录 |\n|---|---|\n| ${chatVersion} 版本与交付核对 | [${new Date().toISOString().slice(0, 10)}](./reviews/${reviewFile}) |`,
 ]]);
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
 function renderReleasePage() {
   return `# Chat ${chatVersion}：Linux release 与 VS Code 调试交付
 
