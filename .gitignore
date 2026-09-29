@@ -24,3 +24,6 @@ deploy/cloudflared/config.yml
 deploy/cloudflared/cloud-relay.yml
 deploy/nginx/chat.local.conf
 deploy/macos/*.plist
+
+# Local agent workspace
+.trae/
