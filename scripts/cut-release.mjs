@@ -32,6 +32,7 @@ const positional = args.filter((argument) => !argument.startsWith("--"));
 const dryRun = flags.has("--dry-run");
 const pushEnabled = !dryRun && !flags.has("--no-push");
 const runTests = !flags.has("--skip-tests");
+const runBuild = !flags.has("--skip-build");
 const runGates = !flags.has("--skip-gates") && !dryRun;
 
 /** Runs a command. `mutating` commands are skipped (and printed) in a dry run. */
@@ -90,7 +91,7 @@ function bodyOf(subjects) {
 
 // ------------------------------------------------------------------ plan -----
 if (positional.length === 0 || flags.has("--help")) {
-  console.log("usage: pnpm release:cut -- <chat-version> [frontend-version] [--dry-run] [--no-push] [--skip-tests] [--skip-gates]");
+  console.log("usage: pnpm release:cut -- <chat-version> [frontend-version] [--dry-run] [--no-push] [--skip-tests] [--skip-build] [--skip-gates]");
   process.exit(positional.length === 0 ? 1 : 0);
 }
 
@@ -138,8 +139,8 @@ if (runTests) {
   run("pnpm", ["--dir", "frontend", "test"], { mutating: true });
   run("pnpm", ["--dir", "frontend", "typecheck"], { mutating: true });
 }
-run("pnpm", ["--dir", "frontend", "build"], { mutating: true });
-if (!dryRun) {
+if (runBuild) run("pnpm", ["--dir", "frontend", "build"], { mutating: true });
+if (!dryRun && runBuild) {
   const hit = execFileSync("grep", ["-rl", frontendVersion, "frontend/dist/assets"], { cwd: repositoryRoot, encoding: "utf8" }).trim();
   if (hit === "") throw new Error(`the built bundle does not carry ${frontendVersion}`);
   console.log(`  bundle carries ${frontendVersion}`);
