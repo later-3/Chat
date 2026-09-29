@@ -239,3 +239,24 @@ test("deployment doctor is offline and assembles an in-memory AgentSession", () 
     rmSync(tempDirectory, { recursive: true, force: true });
   }
 });
+
+test("release page, entry documents and the package version stay in sync", () => {
+  const version = JSON.parse(read("package.json")).version;
+  const release = read(`docs/operations/release-${version}.md`);
+
+  assert.ok(release.includes("Chat `" + version + "`"), "release page states the current Chat version");
+  assert.ok(release.includes("--ref v" + version), "release page installs the current tag");
+  assert.ok(release.includes("Chat/v" + version + "/deploy/chatctl"), "release page downloads chatctl from the current tag");
+  const review = release.match(/\[发布核对\]\(\.\.\/history\/reviews\/([^)]+)\)/);
+  assert.ok(review, "release page links its local verification record");
+  assert.doesNotThrow(() => read(`docs/history/reviews/${review[1]}`), "the linked verification record exists");
+
+  // Entry documents must not send a new machine to an older release page: the
+  // 0.5.0 page shipped with a tag that was never pushed, and nothing caught it.
+  for (const entry of ["README.md", "docs/README.md", "docs/operations/README.md", "docs/operations/installation.md", "docs/development/debugging/first-install.md"]) {
+    const body = read(entry);
+    for (const [, referenced] of body.matchAll(/release-(\d+\.\d+\.\d+)\.md/g)) {
+      assert.equal(referenced, version, `${entry} points at release-${referenced}.md while package.json is ${version}`);
+    }
+  }
+});

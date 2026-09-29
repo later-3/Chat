@@ -88,7 +88,7 @@ F=功能/状态；I=交互、信息架构、文案与可访问操作；V=颜色�
 
 **I01：对象名称与类型不清楚（#2/#24）。** 工作列表仍以机器任务 ID 为主标题；项目列表中的群公共记录与成员参与记录缺少类型。建议优先名称/任务目的，再展示开始时间、执行状态和来源；详情保留稳定 ID。群记录应明确“群公共历史/某成员参与记录”并提供进入群工作区的路径。是否调整普通列表的收录范围需核对后端 owner 合同；本轮没有证据证明存在越权读取，不把它写成权限漏洞。
 
-源码：[FriendWorkPanel](../../../frontend/components/FriendWorkPanel.tsx) 第 124 行直接显示 `work.title`；[SessionSidebar](../../../frontend/components/SessionSidebar.tsx) 第 896 行按 ordinary owner 过滤；[session-owner](../../../src/session-owner.ts) 当前索引不表达群公共/参与类型。改变后端 owner 不能靠前端按标题猜测。
+源码：`frontend/components/FriendWorkPanel.tsx`（该组件已在任务与归档区域重建时删除，Frontend `e8d6b08`）第 124 行直接显示 `work.title`；[SessionSidebar](../../../frontend/components/SessionSidebar.tsx) 第 896 行按 ordinary owner 过滤；[session-owner](../../../src/session-owner.ts) 当前索引不表达群公共/参与类型。改变后端 owner 不能靠前端按标题猜测。
 
 ### 步骤 2：进入群聊 → 看消息 → 理解如何让成员响应
 

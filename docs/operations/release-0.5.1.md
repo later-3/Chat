@@ -1,15 +1,17 @@
-# Chat 0.5.0：Linux release 与 VS Code 调试交付
+# Chat 0.5.1：Linux release 与 VS Code 调试交付
 
-> 历史版本页：该版本的 `v0.5.0` 标签未推送，安装请使用[当前 0.5.1 交付步骤](./release-0.5.1.md)。
+本版为 Chat `0.5.1`、Frontend `0.10.0`。从父仓库标签 `v0.5.1` 递归取得三个固定子模块；Pi 使用受管 Fork 的精确提交 `5b580155b`，基础包版本仍为 `0.85.1`，没有发布新的 Pi npm 包。NanoClaw 保持 `v2.5.0` 的固定提交 `c14d98d`。不要用子模块远端最新分支代替 gitlink。
 
-本版为 Chat `0.5.0`、Frontend `0.9.2`。从父仓库标签 `v0.5.0` 递归取得三个固定子模块；Pi 使用受管 Fork 的精确提交，基础包版本仍为 `0.85.1`，没有发布新的 Pi npm 包。NanoClaw 保持 `v2.5.0` 的固定提交。不要用子模块远端最新分支代替 gitlink。
+Frontend 版本号会显示在页面上（侧栏标题、会话标题栏的 `web v0.10.0`），并作为 Service Worker 的缓存键；CLI 本版未改版。
 
 ## 本版变化
 
-- Friend、后台工作、群参与和主题的新轮次通过 Backend 接受记录启动 Workflow，继续使用公共 Pi AgentSession；既有 Session 的归属不因导航改变。
-- 接通手动压缩、取消、原生统计和历史继续；摘要请求进入公共预算准入，覆盖失败、取消和恢复。
-- 日期直接进入当日工作区，任务产物回到对应任务，后台任务通过对话创建；共用返回、按钮和模态组件。默认英语，设置可切换完整中文界面。
-- Linux 浏览器回归可发现 PATH 中的 Chrome/Chromium，或通过绝对路径 `CHROME_BIN` 指定；CI 无浏览器时明确失败。
+- Friend 会话顶栏按用途显示「任务与归档」动作，不再显示会话标题；会话名（`<agent> · <date>`）只出现在会话列表与历史里。
+- 任务与归档区域重建为按日分块：今天恒定第一且不可移除、块头给该日会话与任务计数、会话直接列出名称·类型·时间、执行行可点开；历史日期在日历浏览后按需加入（最多 7 天，按 Friend 持久化），当天没有会话时给一行幂等的「打开这一天的日常会话」。
+- 导航列表、项目资料、任务与归档三个侧面板共用一个停靠原语：同一条宽度过渡、内层固定宽不重排、class 开合（关闭时 `inert` 且不发起读取）。修复了此前任务与归档瞬现无过渡、以及相对宽度把内容压窄的缺陷；Compact 统一改为覆盖会话列滑入。
+- 主导航、会话顶栏与分支导航动作默认只显示图标，名称由 Hint 与 `aria-label` 提供，设置可切为「图标与文字」；Compact 无 hover，保留可见名称。
+- 动效统一到 Token：遮罩与浮层淡入淡出、按压态使用语义色；新增门禁覆盖停靠面板、工具栏动作、遮罩与动效 Token，避免同一效果分裂成多份实现。
+- Backend 缓存长期 Agent 状态、日历重扫与日期格式化；Linux 浏览器回归修复 768–959px 媒体断点的深链接遮挡；调试启停修复僵尸进程组被误判为存活；CI 拆分具名验证阶段并给生命周期检查加上限；Pi 异步队列回归用例按实际完成时机固定（仅测试）。
 
 升级已有数据前停止服务并备份，按 [Friend 迁移合同](./friend-migration.md)处理版本化索引和迁移标记。新机器空安装不需要搬迁旧电脑数据。
 
@@ -20,8 +22,8 @@
 ```bash
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl
-curl --fail --location https://raw.githubusercontent.com/later-3/Chat/v0.5.0/deploy/chatctl -o /tmp/chatctl-0.5.0
-sudo bash /tmp/chatctl-0.5.0 install --ref v0.5.0 --with-nanoclaw
+curl --fail --location https://raw.githubusercontent.com/later-3/Chat/v0.5.1/deploy/chatctl -o /tmp/chatctl-0.5.1
+sudo bash /tmp/chatctl-0.5.1 install --ref v0.5.1 --with-nanoclaw
 ```
 
 脚本安装固定 Node/pnpm、拉取子模块、恢复 Pi 固定模型快照、验证并构建 Backend/Web，另准备 Nano Host。只用普通 Workflow 可以去掉 `--with-nanoclaw`；使用 Friend、助手记忆或群聊时保留它。
@@ -47,7 +49,7 @@ sudo /opt/chat/deploy/chatctl start
 
 ```bash
 mkdir -p ~/Code
-git clone --branch v0.5.0 --recurse-submodules https://github.com/later-3/Chat.git ~/Code/Chat
+git clone --branch v0.5.1 --recurse-submodules https://github.com/later-3/Chat.git ~/Code/Chat
 cd ~/Code/Chat
 git switch -c codex/linux-development
 corepack enable
@@ -85,6 +87,8 @@ pnpm debug:stop -- --check
 
 ## 5. 验收边界
 
-本地验证记录见[发布核对](../history/reviews/2026-09-27-release-0.5.0.md)。安装脚本会在目标平台执行 `pnpm verify`；无 Chrome 的纯服务器会明确跳过浏览器场景，不能把这种结果当作浏览器验收。安装 Chrome/Chromium 后由普通用户在开发 checkout 运行 `pnpm verify` 可补齐；自定义路径使用 `CHROME_BIN=/absolute/path/to/chrome pnpm verify`。生产服务本身不依赖浏览器。
+本地验证记录见[发布核对](../history/reviews/2026-09-29-release-0.5.1.md)。安装脚本会在目标平台执行 `pnpm verify`；无 Chrome 的纯服务器会明确跳过浏览器场景，不能把这种结果当作浏览器验收。安装 Chrome/Chromium 后由普通用户在开发 checkout 运行 `pnpm verify` 可补齐；自定义路径使用 `CHROME_BIN=/absolute/path/to/chrome pnpm verify`。生产服务本身不依赖浏览器。
 
 新 Linux 上仍需记录：OS/架构、`git -C /opt/chat rev-parse HEAD`、`git -C /opt/chat submodule status`、release 与 debug 各两次启停、停止 debug 后 release 仍可访问，以及 Session/Memory 保留。真实 Provider 调用、真实渠道收发、Linux systemd 和 VS Code GUI 断点分别验收；本机假模型和服务适配器通过不能替代这些结果。
+
+上一版交付步骤见 [0.5.0](./release-0.5.0.md)（历史记录；该版本的 `v0.5.0` 标签未推送，安装请用本文命令）。

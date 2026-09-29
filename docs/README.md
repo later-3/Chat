@@ -17,7 +17,7 @@
 
 - 选择启动脚本：[正式使用 / 源码热更新 / 隔离调试对照](./operations/running.md)。
 
-- 新电脑安装：[本次 0.5.0 release / VS Code 交付](./operations/release-0.5.0.md) → [Linux / WSL2 通用安装](./operations/installation.md) → [拉起与维护](./operations/running.md)。
+- 新电脑安装：[本次 0.5.1 release / VS Code 交付](./operations/release-0.5.1.md) → [Linux / WSL2 通用安装](./operations/installation.md) → [拉起与维护](./operations/running.md)。
 - 开发调试：[首次准备](./development/debugging/first-install.md) → [环境与 F5](./development/debugging/environment.md)。
 - 修改前端：[对象与交互](./modules/web/chat-web.md) → [Frontend 开发](../frontend/docs/development.md) / [UI 规范](../frontend/docs/ui-ux-guidelines.md)。
 - Friend 后台任务、长期任务、定时任务与群聊：[LA0–LA6 计划与验收](./development/long-agent-functionality-plan.md)。
