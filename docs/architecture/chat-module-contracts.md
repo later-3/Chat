@@ -141,7 +141,7 @@ P3 已在现有 Long Agent 状态中实现耐久接受信封、顺序 Worker、�
 
 执行引用新增可选 `workflow:{id,invocationId,runId?}`；新接受默认 `minimal-pi-coding-agent`，同 requestId 不得改变 Workflow。绑定前 runId 缺省，客户端读取同一回执直到绑定，不重新 POST。旧记录无此字段仍按旧合同读取。
 
-执行引用为 schema 1：kind=friend、id、longAgentId、存储 projectId、sessionId、协作 contextProjectId、status、error、acceptedAt、capabilities。Session 详情通过可选 friendExecution 提供同一结构。原 `/messages` 同步 API 保留兼容，当前 Web 不再使用。
+执行引用为 schema 1：kind=friend、id、longAgentId、存储 projectId、sessionId、本轮冻结的 contextProjectId、status、error、acceptedAt、capabilities。Session 详情通过可选 friendExecution 提供同一结构。原 `/messages` 同步 API 保留兼容，当前 Web 不再使用。
 
 `src/agents/session-events.ts` 是唯一 Pi 显示投影；`live-turn.ts` 只保留当前进程 Pi 句柄、瞬时显示状态和最近 256 条事件，不是耐久事件数据库。快照与 seq 同步捕获；过期游标返回 reset。前端按执行身份与 seq 去重，丢段重取快照，15 秒无流数据则重连；只执行 GET，不自动重发 POST。流关闭不能推导 completed。最后重读原生 Pi 历史；重启未落盘 Token 允许丢失，原生已落盘消息及中断结果保留。
 
@@ -191,7 +191,7 @@ Friend 节点轮次在已有 live snapshot/Agent envelope 增加可选 `roundPha
 用户已要求统一 Long Agent、Project 和 Topic Session 后端。实现复用 `startChatWorkflow`、Workflow SDK、公共装配和 Pi Session，不改变存储归属，不新增调度器。群聊参与者的专用调度不在本次单聊统一范围。
 
 - Project 沿用 `/runs`；Friend、节点、渠道和后台工作的接受入口保留来源校验、requestId 与单 Session 排序，所有**新**接受记录保存 workflow id、invocationId，再启动同一个 SDK。切换 Workflow 只影响下一轮，不执行模型、不复制 Session。
-- 最小 Workflow 的工作 Step 使用 Friend 原有冻结装配；其他 Workflow 保留自己的 Agent 角色、模型和工具，公共 factory 叠加受理时冻结的 owner 身份与协作项目文件。Agent home 始终存储原 Session。Workflow 并不把 Friend 的全部工具复制给 writer；已解析配置的 sources 等检查元数据不能写成 capability 配置。
+- 最小 Workflow 的工作 Step 使用 Friend 原有冻结装配；其他 Workflow 保留自己的 Agent 角色、模型和工具，公共 factory 叠加受理时冻结的 owner 身份与本轮项目上下文文件。Agent home 始终存储原 Session。Workflow 并不把 Friend 的全部工具复制给 writer；已解析配置的 sources 等检查元数据不能写成 capability 配置。
 - `acceptedLongAgentTurn` 是后端序列化引用，HTTP Parser 不接受它。启动和每一阶段都校验耐久 turn、Session、Agent home 与 invocation；普通 `/runs` 不能绕过 Friend/节点入口。审核使用原 Run 的持久 Hook。
 - 接受记录的 `launch-binding.ts` 包装 SDK **公开 World.queue**：先原子保存原样队列参数，再写 Run/receipt 绑定，最后准许派发。日志位于存储项目 `workflows/dispatch/<invocationId>.bin`，0600，不是新运行账本；重启使用同一个 runId 重派。SDK 当前 queue 的 runInput 保留原生 run_created 并行失败恢复语义，不自己生成/解析 SDK 参数。启动确认后删除日志。
 - work/remember 都属于同一 Run。SDK 终态后再幂等写主题 completed/cancelled/failed 标记及接受回执，浏览器等回执 settled 后才报告节点完成。review 尚未批准、取消或结果不明的轮次不可分叉。

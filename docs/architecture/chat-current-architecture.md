@@ -127,7 +127,7 @@ Run被接受后，浏览器立即使用返回的Session ID更新地址栏、当�
 ```text
 POST /api/long-agents/:id/turns
 或 POST /api/long-agents/:id/topics/:topicId/nodes/:nodeId/messages
-  → 校验来源、节点归属、requestId，冻结协作项目、装配和所选 Workflow
+  → 校验来源、节点归属、requestId，冻结本轮项目、装配和所选 Workflow
   → 耐久 AcceptedTurn（workflowId / invocationId），202
   → 原队列按 Session 排序
   → startChatWorkflow()，绑定同一 SDK Run

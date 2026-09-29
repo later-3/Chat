@@ -247,11 +247,11 @@ Markdown Agent Memory与Chat Personal/Project Memory保持不同领域服务和�
 | 输入 | 字段与事实源 | 信任和生效点 |
 |---|---|---|
 | AgentDefinition | agentId、definitionRevision、模型/Thinking、System Prompt、自定义区域、tools/resources；现有配置 Resolver | Workflow 使用其有效定义；Friend 使用自身定义与 Personal 模型默认，不受浏览项目的 Workflow 或 `.pi/settings.json` 隐式覆盖 |
-| SessionRef | ownerKind、ownerId、storageProjectId、sessionId、dailyDate/timeZone（Friend）；Session 定位服务 | 路径仅服务端解析；projectId 兼容字段表示存储归属，不再同时代表本轮协作目标 |
+| SessionRef | ownerKind、ownerId、storageProjectId、sessionId、dailyDate/timeZone（Friend）；Session 定位服务 | 路径仅服务端解析；projectId 兼容字段表示存储归属，不再同时代表本轮执行项目 |
 | AgentWorkspace | longAgentId、workspaceRoot、自有资源引用；配置根和受控 Nano 资源服务 | 固定身份；不因项目切换搬家；Nano Group 资源不等于可任意挂载的本地目录 |
-| CollaborationContext | projectId 或 null、projectRoot、effectiveCwd、selectionSource、selectionRevision；Project Resolver | Web 明确选择、通道绑定或受控切换 Tool；null 明确表示无项目，不能漏字段后猜最近项目 |
+| 本轮项目上下文 | projectId 或 null、projectRoot、effectiveCwd；Project Resolver | 统一项目合同按入口唯一确定并在受理时冻结：Web 私聊携带顶栏"项目"选择器的注册项目 id，群聊轮次取会话 storageProjectId，后台工作/任务/职责沿用创建时冻结目标，通道与定时为 null；null 明确表示无项目（Agent 容器），不能漏字段后猜最近项目，也不存在第二个可写的"项目关联"存储 |
 | Invocation | requestId、turnId、acceptedAt、序号、可信来源/发送者/回复目的地、运行用途 | 服务端校验后耐久接收；客户端不能指定其他 Agent 或 Session 权限 |
-| AssemblySnapshot | schemaVersion、definitionRevision、区域正文/资源引用与 hash、授权来源、SessionRef、CollaborationContext、交接 revision | 接受时冻结配置、规则和资源输入；出队时接入最新有序 Session 历史并再次校验权限，不能换目标 |
+| AssemblySnapshot | schemaVersion、definitionRevision、区域正文/资源引用与 hash、授权来源、SessionRef、本轮项目上下文、交接 revision | 接受时冻结配置、规则和资源输入；出队时接入最新有序 Session 历史并再次校验权限，不能换目标 |
 
 解析顺序：可信入口 → 身份/项目授权 → Session 定位 → 配置与资源快照 → 耐久接受 → 同 Session 排序 → 读取历史/校验授权 → 公共装配 → Pi 执行。资源或规则读取失败不返回已接受；瞬时离线的 Nano 身份快照只按既有带 stale 标记的缓存合同处理。
 
@@ -276,9 +276,9 @@ Markdown Agent Memory与Chat Personal/Project Memory保持不同领域服务和�
 
 ### 15.3 默认工作位置与能力边界
 
-普通 Workflow 默认 storageProjectId = collaboration.projectId，保持现有行为；Friend 的 storageProjectId 永远指其 Home 容器，effectiveCwd 为本轮协作项目根，无项目时为专属 Workspace。Pi Session header 的 cwd 保留创建事实，不能从它推断当前轮次 cwd。
+普通 Workflow 默认 storageProjectId = 所属项目，保持现有行为；Friend 的 storageProjectId 永远指其 Home 容器，effectiveCwd 为本轮冻结项目根，无项目时为专属 Workspace。群聊会话只有一个项目字段 storageProjectId：会话存储与轮次执行项目一致，记录不再保存独立的执行项目字段。Pi Session header 的 cwd 保留创建事实，不能从它推断当前轮次 cwd。
 
-Chat 系统工具上下文必须同时带 SessionRef 和 CollaborationContext：会话查找/审计来源用前者；默认项目读写/配置/Memory 用后者。没有协作项目时，Project Memory 写入必须要求明确目标，不能把 Agent Home 当普通用户项目库；Personal 和 Agent Memory 仍走各自工具。`workflow_call` 保留父 Home Session 来源，目标子 Workflow 使用经授权的协作项目并建立原生父子关系；该子 Session 属于 Workflow，不是 Friend 的第二条直接交流。
+Chat 系统工具上下文必须同时带 SessionRef 和本轮冻结项目（contextProjectId）：会话查找/审计来源用前者；默认项目读写/配置/Memory 用后者。没有冻结项目时，Project Memory 写入必须要求明确目标，不能把 Agent Home 当普通用户项目库；Personal 和 Agent Memory 仍走各自工具。`workflow_call` 保留父 Home Session 来源，目标子 Workflow 使用经授权的冻结项目并建立原生父子关系；该子 Session 属于 Workflow，不是 Friend 的第二条直接交流。
 
 跨项目的 read/write 等受管文件操作经真实路径和授权范围校验；专属空间只通过已授权自身资源路径/工具访问。**Pi 原生 cwd 不是沙箱**：绝对路径、`..`、bash 和扩展代码不由 cwd 限制。P1 实验只证明相对路径解析正确，不证明进程隔离。P2 已通过受管原生文件工具的真实路径校验验证文件越界；shell/任意代码继续明确为已有可信宿主能力，不能宣称具有项目沙箱，也不能给原本受限调用方隐式启用。要求严格进程隔离而无执行环境时明确不支持；本轮不通过命令文本检查冒充 Docker 隔离。
 
@@ -299,7 +299,7 @@ Chat 系统工具上下文必须同时带 SessionRef 和 CollaborationContext：
 ### 15.6 P2 实现边界与恢复
 
 - `src/agents/assembly-context.ts` 解析可信 `invocation`，将身份、存储 Project、本轮目标、cwd、有效定义及根规则正文写入 `chat.agent-assembly.v1`。P3 已在统一耐久接受点冻结，执行安装同一 seed；P4 Web turns API 耐久接受后返回引用，再订阅实时事件，旧 messages API 保留同步兼容。
-- Web `contextProjectId` 为已登记用户项目 ID 或 null；省略兼容为 null。Agent Home 不能作为协作项目。Nano/调度适配显式传入绑定的用户项目，绑定 Home 时为 null，不读取浏览器最后选择。
+- Web `contextProjectId` 为已登记用户项目 ID 或 null（统一项目合同：私聊按顶栏选择每轮携带并冻结，群聊取会话 storageProjectId，通道/定时为 null）；省略兼容为 null。Agent Home 不能作为执行项目。Nano/调度适配显式传入绑定的用户项目，绑定 Home 时为 null，不读取浏览器最后选择。
 - Friend 模型/Thinking 从自身定义 → Personal 设置解析；项目设置只参与资源等 Pi 设置。`prepareLongAgentAssembly` 供执行和检查共用身份/交接输入，检查为当前配置预览，不修改真实历史。
 - 原生 `read` 对选中规则/Skill 等文本返回本轮快照，其他文本和图片保留 Pi 行为。普通 Workflow 与 Friend 共用 `read/write/edit/ls/find/grep` 作用域检查：普通 Workflow 以当前项目为边界，Friend 额外允许自身 Workspace；选中资源保留声明的只读范围。自定义同名工具仍由其能力提供方负责，不声称对任意扩展代码实施沙箱。
 - `chat.agent-assembly-resources.v1` 保存加载的 Skill/Prompt/扩展入口源内容与版本。恢复前校验，再交给 Pi；修改或缺失明确失败。运行中的扩展保留已加载实例。重建带可执行扩展的旧轮次一律失败并要求新轮次，因为入口文件 hash 无法证明其任意依赖代码未变化；不以重新导入最新代码冒充恢复。

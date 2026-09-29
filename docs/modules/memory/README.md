@@ -26,7 +26,7 @@ Memory 保存需要跨 Session 继续使用的稳定事实。它由 Agent 主动
 
 Memory 与 Session 历史、Rule、Experience 和 Skill 各自保留独立职责：Session 保存会话过程，Rule/Experience 是可版本化的 Prompt 资源，Skill 描述任务方法，Memory 保存长期事实。Agent 在一次执行中可以同时装配并使用这些资源。
 
-Friend 的默认 Project Memory Target 来自本轮协作项目，不来自 Session 的 Home 存储项目；无协作项目时默认搜索只包含 Personal，Project 写入须显式给出目标。Memory 的来源 sessionId/projectId 仍标记真实存储归属。普通 Workflow 默认目标与存储 Project 相同。详见 [公共装配 §15](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)。
+Friend 的默认 Project Memory Target 来自本轮冻结项目，不来自 Session 的 Home 存储项目；无项目时默认搜索只包含 Personal，Project 写入须显式给出目标。Memory 的来源 sessionId/projectId 仍标记真实存储归属。普通 Workflow 默认目标与存储 Project 相同。详见 [公共装配 §15](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)。
 
 ### Long Agent的Agent Memory边界
 

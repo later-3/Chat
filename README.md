@@ -9,7 +9,7 @@ Chat以Workflow作为一级管理对象。每个Workflow目录归拢自己的Wor
 
 Chat新增需求必须先遵守[Agent第一性原理与架构约束](./docs/architecture/chat-agent-first-principles.md)，再进入具体需求和详细设计。Pi、Pi Web与Chat的源码分析、需求推导和详细设计按顺序维护在[架构、需求与详细设计文档](./docs/architecture/README.md)中。当前README只描述已经实现并验证的运行方式，不替代上游架构分析。
 
-Chat同时选择NanoClaw作为长期Agent Host、Agent Group与Channel生态的源码和演进基线。长期Agent面向IM、长期在线、独立Workspace、Agent Memory、主动与定时工作和后续多Agent场景；Workflow继续组织一次执行。当前开发基线已经完成公开Fork、`chat`长期分支、`nanoclaw/` Submodule、系统管理的Daily Project、本机单Host常驻部署，以及Chat管理的Pi LongAgent Runtime。该Host承载多个Agent Group与Telegram Bot；当Instance运行于`chat-pi`模式时，NanoClaw通过服务认证HTTP提交耐久Channel Event，所有长期Agent统一进入Chat的Pi Runtime。NanoClaw不再启动第二套Agent Session Runtime或Docker容器，但继续拥有Agent Group身份、Workspace、Markdown Agent Memory、Channel、调度、Destination和生态资源；这些能力通过版本化合同逐步接入Chat Pi。当前 Friend 每日直接交流 Session 固定保存在自己的 Agent Home；每轮协作项目独立冻结，切项目不迁移会话。后台工作、群参与和主题保留各自绑定，新轮次统一通过 Workflow 执行。当前支持和迁移差距统一见[Long Agent实施状态](./docs/modules/long-agents/chat-long-agent-roadmap.md)。
+Chat同时选择NanoClaw作为长期Agent Host、Agent Group与Channel生态的源码和演进基线。长期Agent面向IM、长期在线、独立Workspace、Agent Memory、主动与定时工作和后续多Agent场景；Workflow继续组织一次执行。当前开发基线已经完成公开Fork、`chat`长期分支、`nanoclaw/` Submodule、系统管理的Daily Project、本机单Host常驻部署，以及Chat管理的Pi LongAgent Runtime。该Host承载多个Agent Group与Telegram Bot；当Instance运行于`chat-pi`模式时，NanoClaw通过服务认证HTTP提交耐久Channel Event，所有长期Agent统一进入Chat的Pi Runtime。NanoClaw不再启动第二套Agent Session Runtime或Docker容器，但继续拥有Agent Group身份、Workspace、Markdown Agent Memory、Channel、调度、Destination和生态资源；这些能力通过版本化合同逐步接入Chat Pi。当前 Friend 每日直接交流 Session 固定保存在自己的 Agent Home；每轮执行项目按统一项目合同唯一确定并受理冻结，切项目不迁移会话。后台工作、群参与和主题保留各自绑定，新轮次统一通过 Workflow 执行。当前支持和迁移差距统一见[Long Agent实施状态](./docs/modules/long-agents/chat-long-agent-roadmap.md)。
 
 ## 文档
 

@@ -4,7 +4,7 @@
 
 ## 1. 范围
 
-实现：用户与多个现有 Friend 组成群；指定/@、圆桌、并行、主持、自由讨论与一次 A→B 请教；群内研究任务；群管理（成员、协作项目、策略、预算、启动/停止/归档）；公共实时展示与受权历史；撤权/退群/重置的授权期语义。
+实现：用户与多个现有 Friend 组成群；指定/@、圆桌、并行、主持、自由讨论与一次 A→B 请教；群内研究任务；群管理（成员、项目、策略、预算、启动/停止/归档）；公共实时展示与受权历史；撤权/退群/重置的授权期语义。
 
 不做：第二套 Agent Runtime、模型客户端、调度器或聊天前端；不复制 Friend 身份（群成员是同一 Friend 的独立参与 Session）；不把 NanoClaw Agent Group 当群；LA5 不做外部平台真实群投递与 24h 运行（LA6）。
 
@@ -28,7 +28,7 @@
 
 | 对象 | 关键字段 | 存储 |
 |---|---|---|
-| Conversation | `conversationId`（`conv-<hash(创建 requestId)>`）、`title`、`storageProjectId`、`collaborationProjectId`（冻结协作目标，默认 `null`，**不等于存储 Project**）、`publicSessionId`、`lifecycle`(active/archived)、`members[]`、`authorizationRevision`、`policy`、`budget`、`createdAt/updatedAt` | `CHAT_HOME/projects/<storageProjectId>/conversations.json`（注册表，文件锁 + 原子写） |
+| Conversation | `conversationId`（`conv-<hash(创建 requestId)>`）、`title`、`storageProjectId`（唯一项目字段：会话存储与轮次执行项目一致）、`publicSessionId`、`lifecycle`(active/archived)、`members[]`、`authorizationRevision`、`policy`、`budget`、`createdAt/updatedAt` | `CHAT_HOME/projects/<storageProjectId>/conversations.json`（注册表，文件锁 + 原子写） |
 | Participation | `conversationId`、`longAgentId`、`authorizationEpoch`（加入次数）、`sessionId`、`joinedAt`、`revokedAt` | 上表 `members[]` 内；Session 文件在 `projects/<storageProjectId>/sessions/` |
 | Discussion / Run | `discussionId`、`conversationId`、`policy`、`round`、`inputCutoffEntryId`、`budgetSnapshot`、`status`(planned/running/waiting/completed/stopped/failed/interrupted)、`stopReason`、`workflowRunId` | `CHAT_HOME/projects/<storageProjectId>/conversations/<conversationId>/discussions.json` |
 | SpeechAttempt | `attemptId`、`discussionId`、`round`、`speakerLongAgentId`、`participationEpoch`、`inputCutoffEntryId`、`replyToEntryId`、`causationId`、`definitionRevision`、`authorizationRevision`、`status`(queued/running/published/failed/skipped/cancelled)、`reason`、`publicationId` | 同上（`discussions.json` 内嵌） |
@@ -39,7 +39,7 @@
 
 ## 4. 权限与模型输入
 
-1. **Scope 由服务端解析**：每轮执行冻结 `LongAgentScope`（`kind`=direct/background/conversation、`conversationId`、`storageProjectId`、`collaborationProjectId`、允许/禁止项、`excludedCapabilities[]`、`revision`）。浏览器与 Agent 不能通过 `sessionId`/`projectId`/`author` 伪造绑定。
+1. **Scope 由服务端解析**：每轮执行冻结 `LongAgentScope`（`kind`=direct/background/conversation、`conversationId`、`storageProjectId`（即本轮执行项目，统一项目合同）、允许/禁止项、`excludedCapabilities[]`、`revision`）。浏览器与 Agent 不能通过 `sessionId`/`projectId`/`author` 伪造绑定。
 2. **默认拒绝**（group scope）：不注入日终交接、不注入 Agent Group/Standing Instructions、不注入 Personal/Project 上下文文件与 Personal Prompt 资源（Extension/Skill/Prompt 模板整类不加载）、不注册任何 Tool——包括 Chat 系统 Tool（`social_manage`、`project_read`、`project_search`、Memory、`workflow_call`、`friend_work`、`channel_send` 等）、原生 Pi Tool（`read`/`bash`/…）与 Extension/MCP Tool。能力只能由会话记录里的显式授权放宽；放宽后仍在注册处过滤，并在创建后校验“实际注册集 ⊆ 授权集”，越权即中止本轮。
    - **硬拒绝**：没有群范围校验的能力即使显式授权也不注册，并在授权写入时直接拒绝（`assertConversationGrantsAllowed`）。原生 Tool 仅允许 `read/write/edit/ls/find/grep`（已按本轮项目/自身工作空间裁剪）；Extension/MCP Tool 与 `bash` 等可在本地执行任意命令、可能访问私有 owner API/其他群/私有 Session 的能力一律不可授权。Chat 系统 Tool 当前允许集为空，包括只读的 `conversation_manage`（它跨该 Friend 的多个群，只作私聊能力）。
 3. **裁剪发生在读取/注册/装配之前**：`resolveChatAssemblyContext` 冻结 scope 并据此过滤 contextFiles、资源目录、系统 Tool 地址；被排除项进入 `excludedCapabilities` 并可在能力检查页说明原因。
@@ -81,7 +81,7 @@
 
 - HTTP:`/api/long-agents/[longAgentId]/conversations*`:`POST/GET` 创建/列表;`[conversationId]` 的 `GET`(详情 + 讨论/尝试状态)与 `PATCH`(CAS 配置);`[conversationId]/members`(revoke/rejoin/setGrants/add)、`[conversationId]/archive`、`[conversationId]/messages`(GET 公共投影 + 用户消息;POST 幂等用户消息)、`[conversationId]/discussions`（POST 启动耐久编排，202+runId）、`[conversationId]/consult`（POST 启动一次耐久 A→B→A 请教，202+runId）、`[conversationId]/works`（GET 任务列表；POST start/cancel 群内后台任务）、`[conversationId]/stop`。所有写入口拒绝未知字段,不接受内联身份/scope。实时公共流为 `.../conversations/[conversationId]/stream`(SSE)。**身份是入口属性,不来自请求**:该路由是 owner 面(与其余本地 owner API 同一信任级,产品无浏览器登录),不接受任何身份参数,未知查询参数(含任何 viewer 提示)在流建立前直接 400;Friend 侧读取不走该路由,而是由服务函数用 Backend 已解析的群作用域构造成员 viewer(`memberConversationStreamViewerFromScope`),绑定到该群并每 tick 复核。执行状态、Agent Tool 与 Web 管理面板归 D(后端 API 已完成,Tool/Web 待续)。
 - Tool：`conversation_manage`（Agent 侧只读 + 受权提议；不能自行扩大成员或授权）。
-- Web：交流区可创建/选择群；中央复用现有聊天组件与事件流；顶栏显示群名/成员/协作项目/讨论状态；管理区承载成员、策略、预算；状态含等待模型/选人/排队/并行/待发布/已完成/失败与终止原因，结束汇总显示实际调用量。
+- Web：交流区可创建/选择群；中央复用现有聊天组件与事件流；顶栏显示群名/成员/项目/讨论状态；管理区承载成员、策略、预算；状态含等待模型/选人/排队/并行/待发布/已完成/失败与终止原因，结束汇总显示实际调用量。
 
 ## 8. 状态机
 

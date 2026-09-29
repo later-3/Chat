@@ -6,7 +6,7 @@
 
 查看统计不启动 Agent、不加载扩展、不修改 Session。Pi `getSessionStats` 汇总全文件（含旧分支、压缩、分支摘要与工具 usage）；`getSessionContextUsage` 是当前分支占用，压缩后没有新有效模型响应时 tokens/percent 为 null，不能显示为零。两者不是同一口径。
 
-手动压缩用于空闲可写普通会话与私有 Friend 会话。Backend 通过 `createChatPiAgentSession` 装配并调用 `compact(instructions)`，不发伪造 prompt、不运行工具循环、不创建新 Session。普通会话解析最近工作节点及当前配置，排除 remember；未显式选模型时使用最近工作模型。Friend 使用自身有效定义与最近装配的协作项目。维护装配将 tools 设为 none，因为摘要不执行工具且没有 Workflow 调用身份；保留资源与扩展压缩钩子，不伪造 Workflow invocation。
+手动压缩用于空闲可写普通会话与私有 Friend 会话。Backend 通过 `createChatPiAgentSession` 装配并调用 `compact(instructions)`，不发伪造 prompt、不运行工具循环、不创建新 Session。普通会话解析最近工作节点及当前配置，排除 remember；未显式选模型时使用最近工作模型。Friend 使用自身有效定义与最近装配的本轮项目。维护装配将 tools 设为 none，因为摘要不执行工具且没有 Workflow 调用身份；保留资源与扩展压缩钩子，不伪造 Workflow invocation。
 
 历史 GET 始终只读。显式继续选择 user 则分支到其父节点并返回编辑文本；选择完整 assistant 则分支到该节点。复用 Pi `branch/resetLeaf` 并追加纯元数据，使重开后的叶位置有效。原文和旧分支全保留。未结束响应、工具调用中间位置、群公开/参与/群工作及 Topic 的通用继续均拒绝。此版本不运行 CLI tree-navigation 扩展钩子，不自动生成 branch summary，不调用 `resumePendingTurn` 重放未知工具。
 

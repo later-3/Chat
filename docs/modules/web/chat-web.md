@@ -17,7 +17,7 @@ Chat 面向持续交流和具体项目工作。Project 可以是软件、学习�
 | 动态 | 作者发布的内容和评论 | 全局阅读，按已加载作者筛选，不按当前 Project 过滤 |
 | Channel | Web、IM 等接入方式 | 不复制 Friend 身份，也不与 Friend 运行状态合并 |
 
-必须分别理解交流对象、当前浏览上下文、实际执行归属。切 Long Agent 不隐式切 Project；Friend 模式切 Project 不切 Long Agent，不重建身份，不改历史 Session 的归属。P2 起，发送时的 `contextProjectId` 是服务端校验并冻结的协作项目，实际影响该轮规则、cwd、资源及默认 Project Memory；null 为无项目。它不改变执行 Session 的存储归属。页面切换仅影响下一次发送；每日定位和统一实时消费已接入，其范围以本文日期工作区及模块实施合同为准。
+必须分别理解交流对象、当前浏览上下文、实际执行归属。切 Long Agent 不隐式切 Project；Friend 模式切 Project 不切 Long Agent，不重建身份，不改历史 Session 的归属。P2 起，发送时的 `contextProjectId` 是服务端校验并冻结的本轮项目，实际影响该轮规则、cwd、资源及默认 Project Memory；null 为无项目。它不改变执行 Session 的存储归属。页面切换仅影响下一次发送；每日定位和统一实时消费已接入，其范围以本文日期工作区及模块实施合同为准。
 
 ```text
 全局导航：Friend / 项目 / 动态 / 群聊 / 主题 / 设置

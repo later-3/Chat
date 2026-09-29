@@ -2,7 +2,7 @@
 
 ## 1. 状态与文档职责
 
-状态：目标架构；2026-09-19 P1 将直接交流收敛为每 Friend 每日唯一 Session，并明确本轮协作上下文。P2 公共装配与本轮协作目标已实现（Context §15.6），P3 每日索引/总结及 P4 统一实时交互已实现；P5 已完成旧数据兼容与本地全链验收，真实 Telegram 外部收发及最终审核待完成。本文定义运行、数据与恢复机制；配置能力以[定义与配置模型](./chat-long-agent-capability-model.md)为准，使用要求以[场景与验收](./chat-long-agent-scenarios.md)为准。
+状态：目标架构；2026-09-19 P1 将直接交流收敛为每 Friend 每日唯一 Session，并明确本轮项目上下文。P2 公共装配与本轮冻结项目已实现（Context §15.6），P3 每日索引/总结及 P4 统一实时交互已实现；P5 已完成旧数据兼容与本地全链验收，真实 Telegram 外部收发及最终审核待完成。2026-09-28 统一项目合同生效：每轮执行项目按入口唯一确定并受理冻结，LA6-A 的 per-Friend 关联已移除（见[机制合同 §10](./chat-long-agent-mechanism-contract.md#10-已退役la6-afriend-协作项目关联--统一项目合同)）。本文定义运行、数据与恢复机制；配置能力以[定义与配置模型](./chat-long-agent-capability-model.md)为准，使用要求以[场景与验收](./chat-long-agent-scenarios.md)为准。
 
 [当前集成基线](./chat-nanoclaw-pi-integration.md)保留旧接口与实现证据，[实施状态](./chat-long-agent-roadmap.md)明确差距。不能把目标目录、Daily 轮换、历史 Tool、定时执行或 Docker 写成已经可用。
 
@@ -50,11 +50,11 @@ Task/Run 不替代已有 Workflow Run；任务调用 Workflow 时保存其 ID、
 
 ## 4. Project-first 与会话选择
 
-### 4.1 项目是每轮协作上下文
+### 4.1 项目是每轮冻结的执行上下文
 
-Friend 的直接交流始终使用自己的每日 Session。业务项目通过本轮结构化 CollaborationContext 进入公共装配，不因此新建项目 Friend Session。查询其他项目的概览也不自动切换协作目标。Session 存储不迁移、原项目授权不扩大。
+Friend 的直接交流始终使用自己的每日 Session。业务项目通过本轮冻结的项目上下文（统一项目合同：Web 私聊取顶栏"项目"选择，群聊取会话 storageProjectId）进入公共装配，不因此新建项目 Friend Session。查询其他项目的概览也不自动切换执行项目。Session 存储不迁移、原项目授权不扩大。
 
-项目展示与 Agent Home 分开；旧 API 的 projectId 兼容表示存储归属，新消费者明确使用 SessionRef 与 CollaborationContext，精确字段以[公共装配合同](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)为准。项目页只列普通项目 Session；Friend 的项目活动可引用相关轮次，不复制私有每日对话或授权其他参与者读取整天历史。
+项目展示与 Agent Home 分开；旧 API 的 projectId 兼容表示存储归属，新消费者明确使用 SessionRef 与本轮冻结的 `contextProjectId`，精确字段以[公共装配合同](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)为准。项目页只列普通项目 Session；Friend 的项目活动可引用相关轮次，不复制私有每日对话或授权其他参与者读取整天历史。
 
 ### 日历历史入口（2026-09-27 实现）
 

@@ -221,46 +221,22 @@ Occurrence 采用可重算键：周期任务用定义 revision + IANA 计划时�
 
 共同保存 round、输入截止点、回复目标、成员 revision、取消/等待及终止原因。必须有有限轮数、时间/Token/调用预算、重复/无进展终止与用户停止入口；数值是可配置运行策略，执行前必须有上限。触发链保留 causationId，不允许 A→B→A 无限反弹。无用户在场不扩大权限。确定性轮询不需要额外模型，只有决定本身需要推理时才由 Agent 参与。
 
-## 10. LA6-A：Friend 协作项目关联短设计
+## 10. （已退役）LA6-A：Friend 协作项目关联 → 统一项目合同
 
-场景：用户私聊 A 时选择项目 P，随后切到 B 选择 Q，再回到 A 应仍是 P；群、后台任务、普通 Project Session 各自的目标不受影响。现状缺陷是私聊目标来自全局顶栏选择，会串到其他 Friend。
-
-### 10.1 数据归属
-
-- 关联主体是稳定 `longAgentId`，属于当前本地 Chat Home 的用户范围；存储为 `longAgentConfigRoot(chatHome, longAgentId)/interaction.json` 独立文件，**不写** Agent definition、registry 或 NanoClaw。
-- 记录：`{ schemaVersion: 1, projectId: string|null, revision, updatedAt }`。文件不存在即 `unset`；`projectId:null` 是显式清空；非空但项目不再可解析是 `unavailable`（保留原值与 revision，解析结果带原因）。有效状态由 Backend 计算，前端不得自行推断。
-- 路径授权、原子写与 revision CAS 沿用既有持久化原语；Friend 删除时随 `longAgentConfigRoot` 一并移除。
-
-### 10.2 解析优先级与冻结
+LA6-A 的 per-Friend 关联已整体移除（2026-09-28）：`interaction.json` 存储、`interactionRevision` 强制、`GET/PUT /api/long-agents/[id]/interaction-project`、Chat 系统 Tool `collaboration_project` 及 Friend 私聊头部独立下拉均不复存在。全产品只有一个项目上下文（UI 文案为"项目"），每轮执行项目按入口唯一确定并在受理时冻结，不存在第二个可写的"项目关联"存储：
 
 | 入口 | 目标来源 |
 |---|---|
-| 私聊 `chat-web`（声明 `interactionRevision`） | **关联服务**；revision 不匹配 → 409 冲突；携带的 `contextProjectId` 与有效项目不一致 → 409；`unavailable` → 拒绝接受 |
-| 私聊 legacy 调用（无 `interactionRevision`） | 保持既有显式 `contextProjectId`（兼容内部/测试调用，不是产品 UI 路径） |
-| 渠道事件 | 已接受事件沿用冻结值；新事件用 binding 的显式目标；已验证的 owner 私聊绑定可选 `follow-friend`，未验证来源不得继承 owner 私有项目 |
-| 后台 Task/Occurrence/群/Discussion | 各自记录中的明确目标；触发时不重读 Friend 私聊偏好 |
-| 普通 Project Session/TUI 项目会话 | 自身项目，不读写 Friend 关联 |
+| Web 私聊 `chat-web` | 请求显式 `contextProjectId`（顶栏"项目"选择器的注册项目 id 或 null）；受理锁内冻结，null 表示 Agent 容器 |
+| 渠道事件 | 已接受事件沿用冻结值；新事件用 binding 的显式目标；未验证来源不得继承 owner 私有项目 |
+| 后台 Task/Occurrence/Discussion | 创建该工作轮次冻结的 `contextProjectId`；工作 Session 续聊由服务端从 `sessionId` 派生冻结目标（不信任客户端声明），改投其他项目拒绝 |
+| 群聊会话 | 会话自身 `storageProjectId`（唯一项目字段，记录无独立执行项目字段） |
+| 普通 Project Session/TUI 项目会话 | 自身项目 |
 
-关联写入与接受共用 `friend-accept` 仲裁（写入锁序为 friend-accept → interaction 文件锁），接受在锁内解析并冻结关联 revision 与项目。已接受 requestId 重试先按原冻结项目校验输入摘要，不因最新关联变化而重新路由或拒绝原回执；同 ID 异载荷仍冲突。unset 的 revision=0 是合法发送版本。切换页面/发送后刷新不改变已接受轮次。
+已接受 requestId 重试先按原冻结项目校验输入摘要，不因页面当前选择变化而重新路由或拒绝原回执；同 ID 异载荷仍冲突。切换页面/发送后刷新不改变已接受轮次。
 
-### 10.3 迁移
+入口同源：选中 Friend 时，侧栏 cwd/项目选择、文件浏览器、资源区与窗口标题取自全局"项目"选择器（同一 `activeProjectId`）；显式无项目时使用 Friend 自身 Workspace。
 
-当前代码没有独立、明确且唯一的旧 per-Friend 选择来源，因此保持 `unset`（首次默认无协作项目）；不从 `agent.defaultProjectId`、历史轮次或全局导航猜测。旧渠道固定绑定、群、任务与既有 Session 目标不改属。
+摘要版本兼容：接受摘要按格式版本核对——v1（LA6-A 前）、v2（LA6-A，含 interactionRevision）、v3（requested+frozen 两组字段）保留各自精确字段顺序；旧记录逐版本比对以保持原样重试幂等，改正文/项目在所有版本下仍拒绝。新记录写 `payloadHashVersion=3`，`interactionRevision` 恒为 null（仅为旧记录重试兼容保留解析）。显式摘要版本只核对对应格式，未知版本拒绝读取；不能通过遍历历史候选绕过已声明版本。
 
-### 10.4 入口与验证
-
-- HTTP：`GET/PUT /api/long-agents/[id]/interaction-project`（owner 面向，PUT 带 `expectedRevision`）。
-- Web：Friend 私聊头部的协作项目控件读写同一服务；发送新私聊轮次携带关联 revision。
-- 证据：`test/long-agents/interaction-project.test.mjs`（三态/并发 CAS/A↔B 独立/接受冻结与冲突/真实模型请求项目哨兵）、`scripts/friend-project-browser.test.mjs`（HTTP 关联隔离、真实浏览器选择控件/刷新/显式清空、旧 revision 冲突；尚未覆盖 UI A→B→A 快切）。
-
-A 独立复核发现入口兼容绕过、文件资源区未同源、慢响应身份串线和 Agent 管理入口缺失；实施与目标差距见 [LA6 验收记录](../../history/reviews/2026-09-21-long-agent-la6.md)，不得将本节目标合同视为整包已验收。
-
-### 10.5 关联不被绕过的入口与同源
-
-- **HTTP 私聊入口**：`/turns` 与 legacy `/messages` 对 `chat-web` 普通私聊强制要求 `interactionRevision`；缺失或与关联有效项目不一致一律 409。**工作 Session 的续聊**由服务端从 `sessionId` 派生冻结目标（不信任客户端声明），不需要也不携带私聊 revision；已接受轮次的重试先按冻结目标识别原输入。旧版裸 `contextProjectId` 仅保留给测试/内部调用，产品入口不可达。
-- **同源**：选中 Friend 时，侧栏 cwd/项目选择、文件浏览器、资源区（Tools/Skills/Prompts/Plugins/Extensions）与窗口标题都取自该 Friend 的关联项目或 Friend Workspace；全局上下文项目不再参与。显式无项目时仍使用 Friend 自身 Workspace。
-- **慢响应与身份**：切换 Friend 立即清空旧关联并递增请求代次；关联读写响应只有属于当前 Friend 才生效；关联未加载或 `unavailable` 时拒绝发送新私聊轮次，而不是降级成无 revision 请求。
-- **Agent 入口与授权**：Chat 系统 Tool `collaboration_project`（read/set/clear）与 Web 调用同一 `interaction-project` 服务。`longAgentId` 只证明 Friend 身份；管理资格由 **Backend 权威接受记录**解析：只有 `source=chat-web`、无 `workId`、无 `inboundEventId`（非渠道/定时/后台）的那一轮才是 owner 私聊授权，否则连 `read` 都拒绝。群参与 scope 不注册任何 Chat 系统 Tool。
-- **摘要版本**：接受摘要按格式版本核对——v1（LA6-A 前）、v2（首版 LA6-A，含 interactionRevision）、v3（requested+frozen 两组字段）保留各自精确字段顺序；已接受记录缺少版本时逐版本比对，原样重试保持幂等，改正文/项目/revision 在所有版本下仍拒绝。新记录写 `payloadHashVersion=3`。
-
-摘要兼容补充：v2 的项目字段在关联轮次中是已解析项目，不是原始可选参数；无项目参数的原样重试用原冻结值核对。v1 不得匹配新增关联 revision 的请求。显式摘要版本只核对对应格式，未知版本拒绝读取；不能通过遍历历史候选绕过已声明版本。
+实施与验收历史见 [LA6 验收记录](../../history/reviews/2026-09-21-long-agent-la6.md)（历史事实，描述的入口已按本节退役）。

@@ -14,7 +14,7 @@ IM → Nano 耐久事件 → Backend → 同一 Friend ┘
 
 - Pi 是唯一模型执行与原生 Session Runtime；Workflow 组织 Node/Stage，Nano 负责长期 Group、Markdown Memory、Channel、Inbox/Outbox、调度和投递。
 - 一个 Nano Host 可承载多个 Friend。Agent Group 是一个 Friend 的长期实体，不是 Agent Team。
-- Agent Workspace、Session 所属根与本轮用户 Project 分开。Web 显式传协作项目或 null；渠道使用自己的绑定；调度使用可信任务上下文，不读取浏览器最近选择。
+- Agent Workspace、Session 所属根与本轮用户 Project 分开。Web 按统一项目合同显式传本轮冻结项目或 null；渠道使用自己的绑定；调度使用可信任务上下文，不读取浏览器最近选择。
 - Friend 的每个直接交流入口使用同一天原生 Session，有序接受和执行；普通用户项目可以创建多个普通 Workflow Session。两者共用装配与前端事件投影。
 
 ## 2. 原生接缝与源码证据
@@ -55,7 +55,7 @@ Web 和 IM 不自动互相广播。Web 能读取同一每日历史；渠道回�
 
 配置字段与服务环境变量只在[配置合同](../../configuration/README.md)维护；Group/OKF Memory API 只在[模块合同](../../architecture/chat-module-contracts.md)维护。有效身份快照与 revision 在请求接受时冻结；认证失败、对象不存在及合同不匹配不能用过期缓存掩盖。
 
-Friend 可经受控 Tool 调用 Workflow；子 Session 属于显式协作项目并保留父来源，不能直接读 Chat 数据库或任意覆盖 projectId。Personal/Project Memory 与 Nano Agent Markdown Memory 保持不同域。
+Friend 可经受控 Tool 调用 Workflow；子 Session 属于本轮冻结项目并保留父来源，不能直接读 Chat 数据库或任意覆盖 projectId。Personal/Project Memory 与 Nano Agent Markdown Memory 保持不同域。
 
 P5 保留旧项目和原生历史、精确旧 URL 与渠道上下文，迁移不把 Memory 提升到 Personal。恢复标记、冲突和回退步骤见[升级手册](../../operations/friend-migration.md)。旧 messages API 保留同步兼容；新 Web 使用 turns/事件流。历史出站投影仅用于旧事件恢复，不是第二个模型执行入口。
 

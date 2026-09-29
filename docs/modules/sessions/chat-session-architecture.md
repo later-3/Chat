@@ -201,9 +201,9 @@ Session详情的`workflowCallStatistics`是上述关系的只读聚合：`direct
 
 ### 10.1 原生记录与模型输入
 
-- 版本化 `chat.long_agent_turn` 扩展 SessionRef、协作目标、装配 snapshot revision、可信来源、接受序号和回复关联；旧 schema 继续可读，不猜失踪的目标字段。未知新版本停止执行并提示升级，不能默认成 Home。
+- 版本化 `chat.long_agent_turn` 扩展 SessionRef、本轮项目、装配 snapshot revision、可信来源、接受序号和回复关联；旧 schema 继续可读，不猜失踪的目标字段。未知新版本停止执行并提示升级，不能默认成 Home。
 - 用户/助手/工具仍各存原生消息。CustomEntry 只保存关联和证据，不能认为模型自动看到它。
-- 在首轮及协作项目变更时，追加一条原生隐藏 custom_message，说明“以下轮次属于项目 A/无项目”的历史事实；包含稳定项目 ID、名称和关联 turnId，不复制 AGENTS.md 正文，不伪装成用户原话。同一 turnId 幂等；中断恢复检查标记，不能重复追加。
+- 在首轮及项目上下文变更时，追加一条原生隐藏 custom_message，说明“以下轮次属于项目 A/无项目”的历史事实；包含稳定项目 ID、名称和关联 turnId，不复制 AGENTS.md 正文，不伪装成用户原话。同一 turnId 幂等；中断恢复检查标记，不能重复追加。
 - 当前有效规则仅在本轮系统装配区域替换；历史项目标记只解释过去。它进入 Pi 原生 compaction 输入，压缩要求保留项目归属和未完成事项。CustomEntry 仍保存可核对的范围，模型摘要不能取代事实。
 - transformContext 可作只读上下文投影，不能改持久角色，也不能独自承担 compaction 的项目归属；原生压缩读取 Session 分支，不保证使用普通 prompt 的 transformContext。
 - 每日交接按 revision 每轮装配恢复，不只在首次创建时添加一条可能丢失的系统提示。日内压缩与跨日交接分开，不能删除原 Entry 来模拟压缩。

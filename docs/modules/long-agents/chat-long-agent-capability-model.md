@@ -29,7 +29,7 @@ Long Agent 与 Workflow 共用 Pi 底座：Workflow 组织一次执行，Long Ag
 
 1. 每个 Long Agent 有独立配置根、工作空间、自有资源、Agent Memory 和 Daily Project。
 2. 所有 Session、主动任务、定时任务和 Workflow Run 必须归属 Project。
-3. Friend 协作项目逐轮解析，不因业务 Project 切换创建新 Session；固定的会话存储归属与经授权的工作目标分别记录。
+3. Friend 每轮执行项目按统一项目合同确定并受理冻结（Web 私聊取顶栏"项目"选择，群聊取会话 storageProjectId），不因业务 Project 切换创建新 Session；固定的会话存储归属与本轮工作目标分别记录。
 4. Agent Home 存储根稳定，每个 Friend 每天只有一个直接交流 Session；普通项目 Session 和显式 Workflow 子 Session 仍遵循自己的生命周期。
 5. 换 Daily Session、换 Project、换 Channel、换模型和重建容器不能导致工作失忆。
 6. 模型目录、认证和模型配置由 Chat 管理；Pi 的用户目录不是 Long Agent 的配置事实源。
@@ -98,7 +98,7 @@ Long Agent 与 Workflow 共用 Pi 底座：Workflow 组织一次执行，Long Ag
 
 身份、人格和职责以文件配置为准，不能在 Memory 中另藏一份覆盖身份的定义；Memory 可以保存事实与记忆维护方法，发生冲突时应修正并保留来源。
 
-Project 源码保持原位置，使用 .chat/project.json 与 .chat/config.json。**Long Agent 只有一个根**：`long-agents/<id>/workspace` 是其自身空间和无协作项目时的默认 cwd；项目协作轮次使用单独解析的 effectiveCwd；业务 Project 的文件不会因为 Agent 参与而搬入它的私有目录。
+Project 源码保持原位置，使用 .chat/project.json 与 .chat/config.json。**Long Agent 只有一个根**：`long-agents/<id>/workspace` 是其自身空间和无项目轮次的默认 cwd；项目轮次使用本轮冻结项目单独解析的 effectiveCwd；业务 Project 的文件不会因为 Agent 参与而搬入它的私有目录。
 
 Agent Memory 保留 NanoClaw Markdown/OKF 的领域合同，通过受控 Resource API 管理。迁移后必须只有一个可写事实位置；不能同时维护 `groups/<folder>/memory` 与 Chat Home 中一份双向同步的副本。NanoClaw 路径适配及迁移顺序见实施状态，尚未实现。
 

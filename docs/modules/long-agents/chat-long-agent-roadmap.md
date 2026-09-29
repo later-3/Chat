@@ -6,12 +6,12 @@
 
 ## 1. 当前交付范围
 
-2026-09-20 校正。P1–P4 已实现公共装配、每轮协作项目、每日 Session 与共同聊天反馈；P5 完成情况与验收证据以[开发计划](../../development/agent-unification-plan.md)及其阶段审计为准。这里记录能力边界，未提交工作区不等于已部署版本。
+2026-09-20 校正。P1–P4 已实现公共装配、每轮冻结项目、每日 Session 与共同聊天反馈；P5 完成情况与验收证据以[开发计划](../../development/agent-unification-plan.md)及其阶段审计为准。这里记录能力边界，未提交工作区不等于已部署版本。2026-09-28 起统一项目合同生效：全产品只有一个项目上下文（UI 文案"项目"），每轮执行项目按入口唯一确定并受理冻结；LA6-A 的 per-Friend `interaction.json` 关联已整体移除（见[机制合同 §10](./chat-long-agent-mechanism-contract.md#10-已退役la6-afriend-协作项目关联--统一项目合同)）。
 
 | 能力 | 实现事实 | 限制 |
 |---|---|---|
 | 身份与配置 | 稳定 Friend ID、独立 definition、Web 配置与有效模型查询 | Chat 运行定义与 Nano Group 身份仍按现行管理合同分域 |
-| Workspace / Project | Home 与协作项目分离，每条消息冻结规则和工具目标 | 自然语言切换入口绑定服务尚未交付，不把模型说“已切换”当成程序状态 |
+| Workspace / Project | Home 与本轮冻结项目分离，每条消息冻结规则和工具目标；项目目标由顶栏"项目"选择器逐轮提供 | 自然语言切换入口绑定服务尚未交付，不把模型说“已切换”当成程序状态 |
 | Pi 装配 | Workflow/Friend 复用 createChatPiAgentSession | explicit 策略不会偷偷增加资源；重启无法恢复旧资源版本时明确失败 |
 | 每日会话 | 每 Friend、IANA 日期一条直接交流 Session，换日总结/交接 | 不支持同一 Friend 同时写多个直接交流 Session；显式 Workflow 子任务另行隔离 |
 | 独立后台工作（LA1） | 同 Friend 独立 Session、按 Session 排队、持久句柄与冻结项目、侧栏和 friend_work Tool | 当前固定最多 4 条活跃后台 Session；任务周期已由 LA2 接入；职责与群聊仍属 LA3–LA5 |
@@ -27,7 +27,7 @@
 
 2026-09-07～10 文档中的“共享 daily 是默认交流容器”“每业务 Project 建 Friend 主 Session”“启动迁移立即创建当天 Session”“把旧 Agent Catalog 合入 Personal”“同一个 Friend 可开多条直接交流主题”不再作为现行施工要求。
 
-最新用户定义是：Friend 稳定存在，用户与它协作项目；切项目不换 Friend/当日 Session，只影响下一轮上下文。普通项目仍可以自行创建多个 Workflow Session。旧历史保持原生事实，不为了表现统一而改写来源。
+最新用户定义是：Friend 稳定存在，用户在统一项目上下文下与它协作；切项目不换 Friend/当日 Session，只影响下一轮冻结的项目。普通项目仍可以自行创建多个 Workflow Session。旧历史保持原生事实，不为了表现统一而改写来源。
 
 ## 3. 迁移边界
 
