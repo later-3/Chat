@@ -56,6 +56,8 @@
 
 - [朋友圈被侧栏约束与缺失翻译](./social-feed-surface-and-translations.md)
 
+- [前端已停发的字段，后端不得仍是必填](./frontend-backend-field-contract-drift.md)：跨仓字段退役必须同时改发送与准入，并用真实入口做对偶准入回归。
+
 - [模态焦点与层级归属](./modal-focus-and-layer-ownership.md)
 
 - [发送确认前的草稿保护](./submission-draft-recovery.md)：乐观清空与持久输入分开，确认不能清掉后续草稿。

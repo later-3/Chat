@@ -212,6 +212,20 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
   },
   {
     schemaVersion: 1,
+    id: "frontend-backend-field-contract-drift",
+    revisions: [{
+      schemaVersion: 1, id: "frontend-backend-field-contract-drift", revision: 1, kind: "experience",
+      title: "前端已停发的字段，后端不得仍是必填",
+      purpose: "避免退役字段只改一侧，让用户的整个入口在准入处被拒。",
+      content: "退役一个请求字段要同时改发送端与接收端：前端停止携带，后端同批次停止要求或校验；跨仓时明确以哪一侧为准，不能靠时间差兜底。接收端的必填校验只对当前契约生效，历史兼容只放在读取或摘要校验路径（旧 scope 按历史 checksum 校验后按新键重算、旧记录读时剥字段、旧定义剥退役 Tool），不得继续作为新请求的必填项。发布前对真实 HTTP 入口跑一次以“前端当前请求体”为准的对偶准入，并用 git ls-tree <tag> 核对标签内前后端是否同一契约。只断言“缺失必填应当报错”的用例与只断言“自己不再发送”的前端用例各自都会通过，组合才会红。门禁：test/long-agents/turn-feedback.test.mjs 的 bare contextProjectId 准入用例与 frontend lib/long-agents-browser.test.mjs 的字段断言。",
+      tags: ["development", "incident", "contract", "api", "frontend", "release"],
+      status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/frontend-backend-field-contract-drift.md", capturedAt: "2026-09-29T18:30:00.000+08:00" }],
+      author: { type: "user" }, createdAt: "2026-09-29T18:30:00.000+08:00",
+    }],
+  },
+  {
+    schemaVersion: 1,
     id: AGENT_CAPABILITY_DESIGN_RULE_ID,
     revisions: [{
       schemaVersion: 1,
