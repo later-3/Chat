@@ -12,7 +12,7 @@
  * Every step prints what it does and aborts on the first failure; nothing is forced.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -30,7 +30,12 @@ const args = process.argv.slice(2);
 const flags = new Set(args.filter((argument) => argument.startsWith("--")));
 const positional = args.filter((argument) => !argument.startsWith("--"));
 const dryRun = flags.has("--dry-run");
-const pushEnabled = !dryRun && !flags.has("--no-push");
+/** `--scratch <dir>`: render every generated file into that directory instead of the
+    repository, so the template and the pointer rewrites can be reviewed without a
+    release (git steps are skipped). */
+const scratchIndex = args.indexOf("--scratch");
+const scratchDir = scratchIndex >= 0 ? args[scratchIndex + 1] : null;
+const pushEnabled = !dryRun && scratchDir === null && !flags.has("--no-push");
 const runTests = !flags.has("--skip-tests");
 const runBuild = !flags.has("--skip-build");
 const runGates = !flags.has("--skip-gates") && !dryRun;
@@ -47,6 +52,13 @@ function run(command, commandArgs, options = {}) {
 }
 function read(path) { return readFileSync(resolve(repositoryRoot, path), "utf8"); }
 function write(path, contents) {
+  if (scratchDir !== null) {
+    const target = resolve(scratchDir, path);
+    mkdirSync(resolve(target, ".."), { recursive: true });
+    writeFileSync(target, contents);
+    console.log(`  render ${path} -> ${target}`);
+    return;
+  }
   console.log(`  write ${path}`);
   if (!dryRun) writeFileSync(resolve(repositoryRoot, path), contents);
 }
@@ -285,6 +297,11 @@ Linux systemd 空机安装、两套环境同时运行、GUI 断点、真实 Prov
 }
 
 // ------------------------------------------------------------------ gates ----
+if (scratchDir !== null) {
+  console.log(`\nrendered into ${scratchDir}; nothing was committed, tagged or pushed\n`);
+  process.exit(0);
+}
+
 if (runGates) {
   console.log("gates");
   run("node", ["scripts/check-architecture.mjs"], { mutating: true });
