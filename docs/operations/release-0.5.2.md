@@ -1,19 +1,17 @@
-# Chat 0.5.1：Linux release 与 VS Code 调试交付
+# Chat 0.5.2：Linux release 与 VS Code 调试交付
 
-> ⚠️ 历史版本页，不要安装：本版把已停止发送 `interactionRevision` 的 Frontend 0.10.0 与仍强制该字段的后端捆在一起，Friend 私聊会 409。请使用[当前 0.5.2 交付步骤](./release-0.5.2.md)。
+本版为 Chat `0.5.2`、Frontend `0.11.0`。从父仓库标签 `v0.5.2` 递归取得三个固定子模块；Pi 使用受管 Fork 的精确提交 `5b580155b`，基础包版本仍为 `0.85.1`，没有发布新的 Pi npm 包。NanoClaw 保持 `v2.5.0` 的固定提交 `c14d98d`。不要用子模块远端最新分支代替 gitlink。
 
-本版为 Chat `0.5.1`、Frontend `0.10.0`。从父仓库标签 `v0.5.1` 递归取得三个固定子模块；Pi 使用受管 Fork 的精确提交 `5b580155b`，基础包版本仍为 `0.85.1`，没有发布新的 Pi npm 包。NanoClaw 保持 `v2.5.0` 的固定提交 `c14d98d`。不要用子模块远端最新分支代替 gitlink。
-
-Frontend 版本号会显示在页面上（侧栏标题、会话标题栏的 `web v0.10.0`），并作为 Service Worker 的缓存键；CLI 本版未改版。
+本版修复 `v0.5.1` 的阻断缺陷：那版把「已停止发送 `interactionRevision`」的 Frontend 0.10.0 与仍强制该字段的后端捆在一起，Friend 私聊发消息会 409「私聊消息必须携带 Friend 项目关联 revision」。**不要安装 `v0.5.1`**，使用本页命令。
 
 ## 本版变化
 
-- Friend 会话顶栏按用途显示「任务与归档」动作，不再显示会话标题；会话名（`<agent> · <date>`）只出现在会话列表与历史里。
-- 任务与归档区域重建为按日分块：今天恒定第一且不可移除、块头给该日会话与任务计数、会话直接列出名称·类型·时间、执行行可点开；历史日期在日历浏览后按需加入（最多 7 天，按 Friend 持久化），当天没有会话时给一行幂等的「打开这一天的日常会话」。
-- 导航列表、项目资料、任务与归档三个侧面板共用一个停靠原语：同一条宽度过渡、内层固定宽不重排、class 开合（关闭时 `inert` 且不发起读取）。修复了此前任务与归档瞬现无过渡、以及相对宽度把内容压窄的缺陷；Compact 统一改为覆盖会话列滑入。
-- 主导航、会话顶栏与分支导航动作默认只显示图标，名称由 Hint 与 `aria-label` 提供，设置可切为「图标与文字」；Compact 无 hover，保留可见名称。
-- 动效统一到 Token：遮罩与浮层淡入淡出、按压态使用语义色；新增门禁覆盖停靠面板、工具栏动作、遮罩与动效 Token，避免同一效果分裂成多份实现。
-- Backend 缓存长期 Agent 状态、日历重扫与日期格式化；Linux 浏览器回归修复 768–959px 媒体断点的深链接遮挡；调试启停修复僵尸进程组被误判为存活；CI 拆分具名验证阶段并给生命周期检查加上限；Pi 异步队列回归用例按实际完成时机固定（仅测试）。
+- **统一项目合同生效**：LA6-A 的 per-Friend 协作项目关联整体退役——`interaction.json` 存储、`GET/PUT /api/long-agents/[id]/interaction-project`、Chat 系统 Tool `collaboration_project`、私聊头部的独立项目下拉、`interactionRevision` 必填与 409 分支全部移除。每轮执行项目按入口唯一确定并在受理时冻结：Web 私聊取顶栏选中的注册项目（无选中为 Agent 容器）、群聊取会话 `storageProjectId`、后台工作/任务/职责沿用创建时冻结的目标、IM 与定时轮次在 Agent 容器执行。
+- **旧数据只读兼容**：旧 scope 仍以历史 checksum 校验后按新键重算，旧群记录读时剥离 `collaborationProjectId`，旧 Agent 定义里被退役的 Tool 读时剥离，`interactionRevision` 仅保留给旧轮次重试的摘要比对（新受理恒为 `null`）。
+- **会话宽度滑杆（Frontend 0.11.0）**：会话顶栏右侧可拖动调整会话阅读宽度，消息列、运行状态、输入框与正文共用一个 `--conversation-measure`，可达上限跟随当前会话列并保留两侧余量；宽度滑杆基于既有 Radix 原语，不改变鼠标指针样式。
+- **对齐与正文修复**：消息列与输入框曾各自硬编码像素宽度而错位；assistant 正文另有 42rem/800px 静态上限，拉宽后不跟随。两处已统一到同一变量并加门禁。
+- **停靠面板统一**：导航列表、项目资料、任务与归档区域共用同一个开合原语（同宽度过渡、内层固定宽、class 开合），Compact 统一覆盖滑入。
+- 文档：UI/UX 规范 3.7（§20.6 停靠面板、§20.7 会话宽度、§20.8 门禁）、机制合同 §10 标注 LA6-A 已退役。
 
 升级已有数据前停止服务并备份，按 [Friend 迁移合同](./friend-migration.md)处理版本化索引和迁移标记。新机器空安装不需要搬迁旧电脑数据。
 
@@ -24,8 +22,8 @@ Frontend 版本号会显示在页面上（侧栏标题、会话标题栏的 `web
 ```bash
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl
-curl --fail --location https://raw.githubusercontent.com/later-3/Chat/v0.5.1/deploy/chatctl -o /tmp/chatctl-0.5.1
-sudo bash /tmp/chatctl-0.5.1 install --ref v0.5.1 --with-nanoclaw
+curl --fail --location https://raw.githubusercontent.com/later-3/Chat/v0.5.2/deploy/chatctl -o /tmp/chatctl-0.5.2
+sudo bash /tmp/chatctl-0.5.2 install --ref v0.5.2 --with-nanoclaw
 ```
 
 脚本安装固定 Node/pnpm、拉取子模块、恢复 Pi 固定模型快照、验证并构建 Backend/Web，另准备 Nano Host。只用普通 Workflow 可以去掉 `--with-nanoclaw`；使用 Friend、助手记忆或群聊时保留它。
@@ -51,7 +49,7 @@ sudo /opt/chat/deploy/chatctl start
 
 ```bash
 mkdir -p ~/Code
-git clone --branch v0.5.1 --recurse-submodules https://github.com/later-3/Chat.git ~/Code/Chat
+git clone --branch v0.5.2 --recurse-submodules https://github.com/later-3/Chat.git ~/Code/Chat
 cd ~/Code/Chat
 git switch -c codex/linux-development
 corepack enable
@@ -89,8 +87,8 @@ pnpm debug:stop -- --check
 
 ## 5. 验收边界
 
-本地验证记录见[发布核对](../history/reviews/2026-09-29-release-0.5.1.md)。安装脚本会在目标平台执行 `pnpm verify`；无 Chrome 的纯服务器会明确跳过浏览器场景，不能把这种结果当作浏览器验收。安装 Chrome/Chromium 后由普通用户在开发 checkout 运行 `pnpm verify` 可补齐；自定义路径使用 `CHROME_BIN=/absolute/path/to/chrome pnpm verify`。生产服务本身不依赖浏览器。
+本地验证记录见[发布核对](../history/reviews/2026-09-29-release-0.5.2.md)。安装脚本会在目标平台执行 `pnpm verify`；无 Chrome 的纯服务器会明确跳过浏览器场景，不能把这种结果当作浏览器验收。安装 Chrome/Chromium 后由普通用户在开发 checkout 运行 `pnpm verify` 可补齐；自定义路径使用 `CHROME_BIN=/absolute/path/to/chrome pnpm verify`。生产服务本身不依赖浏览器。
 
 新 Linux 上仍需记录：OS/架构、`git -C /opt/chat rev-parse HEAD`、`git -C /opt/chat submodule status`、release 与 debug 各两次启停、停止 debug 后 release 仍可访问，以及 Session/Memory 保留。真实 Provider 调用、真实渠道收发、Linux systemd 和 VS Code GUI 断点分别验收；本机假模型和服务适配器通过不能替代这些结果。
 
-上一版交付步骤见 [0.5.0](./release-0.5.0.md)（历史记录；该版本的 `v0.5.0` 标签未推送，安装请用本文命令）。
+上一版交付步骤见 [0.5.1](./release-0.5.1.md)（该标签的前后端字段契约错配会使 Friend 私聊 409，仅作历史记录）。

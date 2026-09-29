@@ -4,6 +4,7 @@
 
 | 主题 | 记录 |
 |---|---|
+| 0.5.2 版本、统一项目合同与前后端字段契约修复核对 | [2026-09-29](./reviews/2026-09-29-release-0.5.2.md) |
 | 0.5.1 版本、Frontend 0.10.0 与界面统一批次核对 | [2026-09-29](./reviews/2026-09-29-release-0.5.1.md) |
 | 0.5.0 版本、Linux release 与 VS Code 调试交付核对 | [2026-09-27](./reviews/2026-09-27-release-0.5.0.md) |
 | Long Agent 设置 9 个入口：实现、可用性与测试盲区 | [2026-09-27](./reviews/2026-09-27-long-agent-settings-capability-audit.md) |

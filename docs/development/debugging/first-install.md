@@ -49,7 +49,7 @@ corepack enable
 corepack prepare pnpm@10.13.1 --activate
 ```
 
-校验或下载失败时停止，不继续安装。把上面的 `export PATH=…` 一行加入自己的 shell 启动文件，然后重新打开终端；VS Code 集成终端也必须显示该 Node 与 `pnpm 10.13.1`。需要自动启动浏览器的桌面 F5 组合另安装 Chrome；无桌面 Remote SSH 的具体组合见 [0.5.1 交付步骤](../../operations/release-0.5.1.md)。
+校验或下载失败时停止，不继续安装。把上面的 `export PATH=…` 一行加入自己的 shell 启动文件，然后重新打开终端；VS Code 集成终端也必须显示该 Node 与 `pnpm 10.13.1`。需要自动启动浏览器的桌面 F5 组合另安装 Chrome；无桌面 Remote SSH 的具体组合见 [0.5.2 交付步骤](../../operations/release-0.5.2.md)。
 
 ## 启动、检查、停止
 

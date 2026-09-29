@@ -4,7 +4,7 @@
 
 | 目的 | 入口 |
 |---|---|
-| 本次 0.5.1 固定版本：release / VS Code 安装、启动和关闭 | [Linux 交付步骤](./release-0.5.1.md) |
+| 本次 0.5.2 固定版本：release / VS Code 安装、启动和关闭 | [Linux 交付步骤](./release-0.5.2.md) |
 | 新 Linux / WSL2 电脑从零安装 | [安装指南](./installation.md) |
 | 选择脚本、启动/停止、正式服务维护 | [运行手册](./running.md) |
 | Friend 旧数据迁移、升级冲突、回退 | [Friend 升级](./friend-migration.md) |
@@ -36,4 +36,4 @@ Docker 不是基础依赖。Nano 固定为 `chat-pi`，Chat 不启动 Nano 原�
 
 安装/服务控制逻辑由隔离 shell 适配测试验证，Nano 配置与认证健康由本地 HTTP 回归验证；真实生产构建另测试“无 Provider 凭据也可打开 Web 与模型配置”。本次开发机为 macOS，尚未在空白 WSL2/Linux 主机上实际执行系统包安装与 systemd 启停；不能把上述本机测试记为目标平台真机验收。
 
-本次交付使用父仓库 `v0.5.1` 标签及其三个固定 Submodule Commit；安装脚本和源码使用同一标签，具体步骤见[版本交付页](./release-0.5.1.md)。未提交工作区不属于远端安装内容。
+本次交付使用父仓库 `v0.5.2` 标签及其三个固定 Submodule Commit；安装脚本和源码使用同一标签，具体步骤见[版本交付页](./release-0.5.2.md)。未提交工作区不属于远端安装内容。
