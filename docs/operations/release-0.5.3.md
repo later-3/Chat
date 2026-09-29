@@ -1,21 +1,15 @@
-# Chat 0.5.2：Linux release 与 VS Code 调试交付
+# Chat 0.5.3：Linux release 与 VS Code 调试交付
 
-> 历史版本页：当前版本见[0.5.3 交付步骤](./release-0.5.3.md)。
-
-本版为 Chat `0.5.2`、Frontend `0.11.0`。从父仓库标签 `v0.5.2` 递归取得三个固定子模块；Pi 使用受管 Fork 的精确提交 `5b580155b`，基础包版本仍为 `0.85.1`，没有发布新的 Pi npm 包。NanoClaw 保持 `v2.5.0` 的固定提交 `c14d98d`。不要用子模块远端最新分支代替 gitlink。
-
-本版修复 `v0.5.1` 的阻断缺陷：那版把「已停止发送 `interactionRevision`」的 Frontend 0.10.0 与仍强制该字段的后端捆在一起，Friend 私聊发消息会 409「私聊消息必须携带 Friend 项目关联 revision」。**不要安装 `v0.5.1`**，使用本页命令。
+本版为 Chat `0.5.3`、Frontend `0.12.0`。从父仓库标签 `v0.5.3` 递归取得三个固定子模块；Pi 使用受管 Fork 的精确提交 `5b580155b`，基础包版本仍为 `0.85.1`，没有发布新的 Pi npm 包。NanoClaw 保持 `v2.5.0` 的固定提交 `c14d98d`。不要用子模块远端最新分支代替 gitlink。
 
 ## 本版变化
 
-- **统一项目合同生效**：LA6-A 的 per-Friend 协作项目关联整体退役——`interaction.json` 存储、`GET/PUT /api/long-agents/[id]/interaction-project`、Chat 系统 Tool `collaboration_project`、私聊头部的独立项目下拉、`interactionRevision` 必填与 409 分支全部移除。每轮执行项目按入口唯一确定并在受理时冻结：Web 私聊取顶栏选中的注册项目（无选中为 Agent 容器）、群聊取会话 `storageProjectId`、后台工作/任务/职责沿用创建时冻结的目标、IM 与定时轮次在 Agent 容器执行。
-- **旧数据只读兼容**：旧 scope 仍以历史 checksum 校验后按新键重算，旧群记录读时剥离 `collaborationProjectId`，旧 Agent 定义里被退役的 Tool 读时剥离，`interactionRevision` 仅保留给旧轮次重试的摘要比对（新受理恒为 `null`）。
-- **会话宽度滑杆（Frontend 0.11.0）**：会话顶栏右侧可拖动调整会话阅读宽度，消息列、运行状态、输入框与正文共用一个 `--conversation-measure`，可达上限跟随当前会话列并保留两侧余量；宽度滑杆基于既有 Radix 原语，不改变鼠标指针样式。
-- **对齐与正文修复**：消息列与输入框曾各自硬编码像素宽度而错位；assistant 正文另有 42rem/800px 静态上限，拉宽后不跟随。两处已统一到同一变量并加门禁。
-- **停靠面板统一**：导航列表、项目资料、任务与归档区域共用同一个开合原语（同宽度过渡、内层固定宽、class 开合），Compact 统一覆盖滑入。
-- 文档：UI/UX 规范 3.7（§20.6 停靠面板、§20.7 会话宽度、§20.8 门禁）、机制合同 §10 标注 LA6-A 已退役。
+- **会话记忆存放位置与迁移**：记忆文件从 `<存储根>/session-memory/<sessionId>.json` 移到**会话目录内**的 `<存储根>/sessions/session-memory/<sessionId>.json`（Pi 的 `sessions/*.jsonl` 仍只归 Pi）。读取仍回退到旧路径；写入时发布新路径并清除旧副本；purge 同时删除两者；启动时由 `src/migrations/session-memory-layout.ts` 在同一存储根内 rename 迁移（保留 revision/entries/orphan），带 per-root 标记可重试，目标已存在时不覆盖。
+- **浮层统一为一套语言**：所有浮层页面（会话记忆、完整历史、模型、技能、插件、扩展、记忆管理、目录选择、移除会话、Provider 请求）现在是**同一个组件、同一个尺寸、同一个位置**；尺寸只有一档 `min(1120px, 100vw−48) × min(860px, 100dvh−48)` 居中，只有用户点“全屏”才最大化。动画统一为遮罩淡入 + 内容浮现（`layer-in`）、底部动作面板统一为 `SurfaceSheet`（同一遮罩/层级/上滑动效，只有位置在底部），层级收敛为 `--layer-sheet/modal/float/tooltip/toast`；iOS 独立模式的安全区内边距对所有模态生效。手写模态从 12 个收敛到 1 个已文档化例外（命令面板）。
+- **输入框与顶栏**：输入框改成**一个框内单行**（textarea 与附件/Workflow/Agents/发送同排），Workflow 选择器为“图标 + 名称”并复用共享菜单；**会话记忆（带计数）、压缩、声音、推送**移到会话顶栏；声音/推送不再单独占输入区。会话记忆徽标由记忆接口直接驱动，一轮结束即时刷新，不再等对话框打开。
+- **开发体验**：`ChatInput` 不再导出纯函数，因此可被 Vite 热替换；此前 composer 改动必须手动刷新页面才能看到。
 
-升级已有数据前停止服务并备份，按 [Friend 迁移合同](./friend-migration.md)处理版本化索引和迁移标记。新机器空安装不需要搬迁旧电脑数据。
+升级已有数据前停止服务并备份，按 [Friend 迁移合同](./friend-migration.md)处理版本化索引和迁移标记。会话记忆的目录迁移是自动的、幂等的，不需要手工搬文件；新机器空安装不需要搬迁旧电脑数据。
 
 ## 1. 安装 release
 
@@ -24,8 +18,8 @@
 ```bash
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl
-curl --fail --location https://raw.githubusercontent.com/later-3/Chat/v0.5.2/deploy/chatctl -o /tmp/chatctl-0.5.2
-sudo bash /tmp/chatctl-0.5.2 install --ref v0.5.2 --with-nanoclaw
+curl --fail --location https://raw.githubusercontent.com/later-3/Chat/v0.5.3/deploy/chatctl -o /tmp/chatctl-0.5.3
+sudo bash /tmp/chatctl-0.5.3 install --ref v0.5.3 --with-nanoclaw
 ```
 
 脚本安装固定 Node/pnpm、拉取子模块、恢复 Pi 固定模型快照、验证并构建 Backend/Web，另准备 Nano Host。只用普通 Workflow 可以去掉 `--with-nanoclaw`；使用 Friend、助手记忆或群聊时保留它。
@@ -51,7 +45,7 @@ sudo /opt/chat/deploy/chatctl start
 
 ```bash
 mkdir -p ~/Code
-git clone --branch v0.5.2 --recurse-submodules https://github.com/later-3/Chat.git ~/Code/Chat
+git clone --branch v0.5.3 --recurse-submodules https://github.com/later-3/Chat.git ~/Code/Chat
 cd ~/Code/Chat
 git switch -c codex/linux-development
 corepack enable
@@ -89,8 +83,8 @@ pnpm debug:stop -- --check
 
 ## 5. 验收边界
 
-本地验证记录见[发布核对](../history/reviews/2026-09-29-release-0.5.2.md)。安装脚本会在目标平台执行 `pnpm verify`；无 Chrome 的纯服务器会明确跳过浏览器场景，不能把这种结果当作浏览器验收。安装 Chrome/Chromium 后由普通用户在开发 checkout 运行 `pnpm verify` 可补齐；自定义路径使用 `CHROME_BIN=/absolute/path/to/chrome pnpm verify`。生产服务本身不依赖浏览器。
+本地验证记录见[发布核对](../history/reviews/2026-09-29-release-0.5.3.md)。安装脚本会在目标平台执行 `pnpm verify`；无 Chrome 的纯服务器会明确跳过浏览器场景，不能把这种结果当作浏览器验收。安装 Chrome/Chromium 后由普通用户在开发 checkout 运行 `pnpm verify` 可补齐；自定义路径使用 `CHROME_BIN=/absolute/path/to/chrome pnpm verify`。生产服务本身不依赖浏览器。
 
 新 Linux 上仍需记录：OS/架构、`git -C /opt/chat rev-parse HEAD`、`git -C /opt/chat submodule status`、release 与 debug 各两次启停、停止 debug 后 release 仍可访问，以及 Session/Memory 保留。真实 Provider 调用、真实渠道收发、Linux systemd 和 VS Code GUI 断点分别验收；本机假模型和服务适配器通过不能替代这些结果。
 
-上一版交付步骤见 [0.5.1](./release-0.5.1.md)（该标签的前后端字段契约错配会使 Friend 私聊 409，仅作历史记录）。
+上一版交付步骤见 [0.5.2](./release-0.5.2.md)（统一项目合同与宽度滑杆）。
