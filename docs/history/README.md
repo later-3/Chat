@@ -5,7 +5,8 @@
 | 主题 | 记录 |
 |---|---|
 | 0.5.4 版本与交付核对 | [2026-09-30](./reviews/2026-09-30-release-0.5.4.md) |
-| Frontend / Backend / NanoClaw 架构：职责、依赖、状态与跨端合同 | [2026-09-30 架构复核](./reviews/2026-09-30-frontend-backend-nanoclaw-architecture-review.md) |
+| Chat 业务与功能架构：整体协同、模块内部功能与业务闭环 | [2026-09-30 两层检视](./reviews/2026-09-30-chat-business-functional-architecture-review.md) |
+| Frontend / Backend / NanoClaw 代码架构：职责、依赖、状态与跨端合同 | [2026-09-30 代码架构复核](./reviews/2026-09-30-frontend-backend-nanoclaw-architecture-review.md) |
 | 工作区代码缺陷与文档一致性：8 项问题及复现证据 | [2026-09-30 问题记录](./reviews/2026-09-30-project-code-documentation-review.md) |
 | 0.5.3 版本、会话记忆迁移与浮层统一核对 | [2026-09-29](./reviews/2026-09-29-release-0.5.3.md) |
 | 0.5.2 版本、统一项目合同与前后端字段契约修复核对 | [2026-09-29](./reviews/2026-09-29-release-0.5.2.md) |
