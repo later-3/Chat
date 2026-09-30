@@ -249,12 +249,26 @@ test("the session-memory switch reaches the real send and really gates the memor
   };
 
   await ready();
+  assert.equal(await page.evaluate("document.querySelector('.chat-welcome h2')?.textContent"), "Start with a thought.", "an empty Friend Session explains how to begin");
+  assert.equal(await page.evaluate("document.querySelector('[data-chat-composer]').getBoundingClientRect().bottom <= document.querySelector('[data-chat-toolbar]').getBoundingClientRect().top + 1"), true, "writing and controls have separate rows within the same frame");
+  for (const [width, height] of [[390, 844], [390, 420], [1440, 900]]) {
+    await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+    await page.waitFor(`innerWidth === ${width}`);
+    await page.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+    const controls = await page.evaluate(`['[data-chat-composer]', '[data-chat-toolbar]'].map(selector => {
+      const box = document.querySelector(selector).getBoundingClientRect();
+      return {selector, left:box.left, right:box.right, top:box.top, bottom:box.bottom, width:box.width, height:box.height, vw:innerWidth, vh:innerHeight};
+    })`);
+    for (const box of controls) assert.ok(box.width > 0 && box.height > 0 && box.top >= 0 && box.left >= 0 && box.right <= box.vw + 1 && box.bottom <= box.vh + 1,
+      `empty Session remains writable without scrolling at ${width}x${height}: ${JSON.stringify(box)}`);
+  }
   // All sends share the SAME page and Session; only the explicit refresh reloads it.
   assert.equal(await memorySetting(), true);
   beforeWriter = async () => {
     assert.equal(await page.evaluate("window.__completionNotes"), 0, "the work Agent finishing must not chime while the memory Agent runs");
   };
   const first = await send("switch-on", true);
+  assert.equal(await page.evaluate("document.querySelector('.chat-welcome') === null"), true, "accepted messages replace the welcome surface");
   beforeWriter = undefined;
   await page.waitFor("window.__completionNotes === 2", { label: "one chime after both Workflow Agents complete" });
   await setMemory(false);
@@ -421,6 +435,18 @@ test("the session-memory switch reaches the real send and really gates the memor
   for (const [width,height] of [[390,844],[768,1024],[1440,900],[720,450],[390,420]]) {
     await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
     await page.waitFor(`innerWidth === ${width}`);
+    // innerWidth changes before React's resize/media-query subscriptions commit;
+    // dock widths then transition for one panel duration. Measure the resting
+    // layout, without polling the desired bounds or weakening the assertion.
+    await page.evaluate(`(async () => {
+      const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+      await frame(); await frame();
+      const transitions = [...document.querySelectorAll('.workspace-dock')]
+        .flatMap(dock => dock.getAnimations())
+        .filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime));
+      await Promise.all(transitions.map(animation => animation.finished.catch(() => {})));
+      await frame();
+    })()`);
     const bounds = await page.evaluate(`(() => {
       const selectors = ['[data-chat-composer]', '[data-chat-toolbar]', '[data-chat-settings]'];
       return selectors.map(selector => {const r=document.querySelector(selector).getBoundingClientRect();

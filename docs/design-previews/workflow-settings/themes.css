@@ -1,0 +1,92 @@
+/* Each preset supplies semantic roles. Components share structure and behavior. */
+:root, .theme-sample {
+  --canvas: #f1f0ed; --bg: #faf9f7; --bg-panel: #f2f1ee; --bg-hover: #eae8e5;
+  --bg-selected: #eeeaf9; --bg-subtle: var(--bg-panel); --text: #29272e; --text-muted: #605c69; --text-dim: #6c6673;
+  --border: #dbd7df; --border-control: #898290; --accent: #6551b8; --accent-hover: #5743a4; --accent-pressed: #49378f; --on-accent: #fff;
+  --success: #187044; --success-bg: #eaf7ef; --warning: #8a5700; --warning-bg: #fff4d6; --danger: #b42332; --danger-bg: #fdecef;
+  --radius-control: 10px; --radius-panel: 16px; --radius-dialog: 22px; --button-radius: var(--radius-control);
+  --field-surface: var(--bg); --surface: var(--bg); --portal: var(--bg); --navigation: var(--bg-panel);
+  --button-fill: var(--accent); --button-ink: var(--on-accent); --button-hover: var(--accent-hover); --button-pressed: var(--accent-pressed);
+  --edge-light: #ffffffbf; --glass-edge: #ffffffa3; --scrim: #19162559; --glass-blur: 24px;
+  --ambient-a: #e7e1d9; --ambient-b: #e3e0eb; --ambient-c: #efede8;
+  --wallpaper: radial-gradient(ellipse at 8% 15%,var(--ambient-a),transparent 58%),radial-gradient(ellipse at 94% 85%,var(--ambient-b),transparent 60%),var(--canvas);
+  --shadow-popover: 0 1px 2px #1711210c, 0 8px 24px #1711211a, 0 24px 70px -24px #1711213d;
+  --shadow-dialog: 0 1px 2px #17112112, 0 18px 52px #17112126, 0 44px 100px -30px #17112138;
+  --workspace-shadow: 0 1px 2px #20152905, 0 16px 50px -30px #20152935;
+  --control-shadow: inset 0 1px 0 var(--edge-light), 0 1px 2px #20152905;
+}
+:root[data-preset=paper], .theme-sample[data-preset=paper] { color-scheme:light; }
+:root[data-preset=graphite], .theme-sample[data-preset=graphite] {
+  color-scheme:dark; --canvas:#19191d; --bg:#232327; --bg-panel:#2b2b30; --bg-hover:#36353c; --bg-selected:#3f394e;
+  --text:#efedf4; --text-muted:#c1bdc8; --text-dim:#ada6b8; --border:#424047; --border-control:#86808f;
+  --accent:#c5b7f0; --accent-hover:#d7c9ff; --accent-pressed:#b2a0df; --on-accent:#292037;
+  --success:#8ed9ad; --success-bg:#243b2e; --warning:#f1ca82; --warning-bg:#423523; --danger:#ffa4b3; --danger-bg:#472832;
+  --edge-light:#ffffff0c; --glass-edge:#ffffff26; --scrim:#08080dad;
+  --ambient-a:#343039; --ambient-b:#20252c; --ambient-c:#28232b;
+  --shadow-popover:0 1px 1px #0004,0 10px 30px #0004,0 28px 65px -22px #0009;
+  --shadow-dialog:0 2px 8px #0004,0 20px 60px #0006,0 40px 110px -30px #0008;
+  --workspace-shadow:inset 0 1px 0 #ffffff06,0 18px 50px -26px #0009;
+}
+:root[data-preset=glacier], .theme-sample[data-preset=glacier] {
+  color-scheme:light; --canvas:#d9e6f1; --bg:#f5f9fc; --bg-panel:#eaf0f6; --bg-hover:#dfeaf5; --bg-selected:#dceaf9;
+  --text:#202c40; --text-muted:#506178; --text-dim:#5b6980; --border:#c4d2e2; --border-control:#7c91ae;
+  --accent:#1559ba; --accent-hover:#124a9d; --accent-pressed:#103f86; --on-accent:#fff;
+  --radius-control:14px; --radius-panel:24px; --radius-dialog:28px; --button-radius:999px;
+  --surface:#f7faffec; --navigation:#f1f7ff55; --field-surface:#ffffffd9; --portal:#f8fbfff0;
+  --edge-light:#ffffffed; --glass-edge:#ffffffb3; --scrim:#172d4b38;
+  --ambient-a:#9bb7e5; --ambient-b:#79b9d0; --ambient-c:#eacbda;
+  --wallpaper:radial-gradient(ellipse 42% 55% at 8% 18%,#bad0f8 20%,transparent 100%),radial-gradient(ellipse 40% 55% at 96% 68%,#83b9cb 8%,transparent 90%),radial-gradient(ellipse 75% 90% at 80% -35%,#f1e4ff 50%,transparent 51%),radial-gradient(ellipse 65% 85% at 5% 120%,#e7c5dc 48%,transparent 49%),linear-gradient(135deg,#cadbed,#dcebf5 45%,#b2cbdc);
+  --workspace-shadow:inset 0 1px 0 #ffffffeb,0 3px 8px #2949780b,0 28px 80px -30px #2949785c;
+  --control-shadow:inset 0 1px 0 #fff,0 1px 2px #234e7812,0 4px 10px -6px #234e7820;
+}
+:root[data-preset=obsidian], .theme-sample[data-preset=obsidian] {
+  color-scheme:dark; --canvas:#111d32; --bg:#19263a; --bg-panel:#23334c; --bg-hover:#304565; --bg-selected:#2c496b;
+  --text:#f1f5fc; --text-muted:#bdcbe0; --text-dim:#aebed6; --border:#455a75; --border-control:#8599b3;
+  --accent:#a9ceff; --accent-hover:#c5ddff; --accent-pressed:#91baf2; --on-accent:#122841;
+  --success:#86dfb2; --success-bg:#1c3d39; --warning:#f5d18d; --warning-bg:#443b2b; --danger:#ffadbc; --danger-bg:#492d42;
+  --radius-control:14px; --radius-panel:24px; --radius-dialog:28px; --button-radius:999px;
+  --surface:#162338eb; --navigation:#20354c69; --field-surface:#2a3c55d9; --portal:#203149f5;
+  --edge-light:#d5e6ff29; --glass-edge:#d5e6ff38; --scrim:#050b196b;
+  --ambient-a:#26336a; --ambient-b:#1d6675; --ambient-c:#614260;
+  --wallpaper:radial-gradient(ellipse 55% 60% at 0% 0%,#41477d 5%,transparent 90%),radial-gradient(ellipse 45% 60% at 100% 65%,#1c697b 0%,transparent 95%),radial-gradient(ellipse 70% 80% at 80% -45%,#26304f 65%,transparent 66%),radial-gradient(ellipse 65% 80% at 0% 122%,#694060 45%,transparent 46%),linear-gradient(135deg,#182236,#111e32 50%,#18283e);
+  --shadow-popover:inset 0 1px 0 #ffffff16,0 10px 35px #0006,0 30px 80px -20px #0008;
+  --shadow-dialog:inset 0 1px 0 #ffffff24,0 20px 60px #0006,0 45px 110px -25px #0008;
+  --workspace-shadow:inset 0 1px 0 #ffffff24,0 2px 8px #0002,0 32px 90px -32px #0009;
+  --control-shadow:inset 0 1px 0 #ffffff12,0 2px 5px #0002;
+}
+:root[data-preset=peach], .theme-sample[data-preset=peach] {
+  color-scheme:light; --canvas:#f5e9e5; --bg:#fff9f6; --bg-panel:#f5e9e4; --bg-hover:#edded8; --bg-selected:#f2dbe4;
+  --text:#392d34; --text-muted:#71555f; --text-dim:#775b65; --border:#ddc8ca; --border-control:#a2838a;
+  --accent:#8b3f60; --accent-hover:#76314f; --accent-pressed:#64263f; --on-accent:#fff;
+  --radius-control:16px; --radius-panel:24px; --radius-dialog:28px; --button-radius:999px;
+  --field-surface:#f5e9e5; --surface:#fff9f6; --navigation:#f4e8e5; --portal:#fff7f3;
+  --ambient-a:#f6cfc2; --ambient-b:#e4d8ed; --ambient-c:#ffe9cb;
+  --wallpaper:radial-gradient(ellipse at 5% 20%,var(--ambient-a),transparent 62%),radial-gradient(ellipse at 97% 95%,var(--ambient-b),transparent 70%),var(--canvas);
+  --workspace-shadow:0 2px 4px #72445608,0 18px 50px -28px #7244562e;
+  --control-shadow:none;
+}
+:root[data-preset=dracula], .theme-sample[data-preset=dracula] {
+  color-scheme:dark; --canvas:#21222c; --bg:#282a36; --bg-panel:#30323f; --bg-hover:#44475a; --bg-selected:#403951;
+  --text:#f8f8f2; --text-muted:#c5c5d8; --text-dim:#b4b4ce; --border:#4a4d62; --border-control:#8185a3;
+  --accent:#bd93f9; --accent-hover:#d2b0ff; --accent-pressed:#ac80e8; --on-accent:#251c33;
+  --success:#8aefaa; --success-bg:#253c34; --warning:#f1d98b; --warning-bg:#403a2f; --danger:#ff9da9; --danger-bg:#492b3a;
+  --radius-control:8px; --radius-panel:12px; --radius-dialog:16px;
+  --edge-light:#ffffff0a; --glass-edge:#ffffff26; --scrim:#171722a6;
+  --ambient-a:#383148; --ambient-b:#253b47; --ambient-c:#342c44;
+  --shadow-popover:0 1px 2px #0003,0 10px 35px #0005,0 25px 65px -20px #0008;
+  --shadow-dialog:0 2px 8px #0004,0 20px 60px #0005,0 40px 100px -25px #0009;
+  --workspace-shadow:0 1px 3px #0003,0 20px 60px -30px #0008;
+  --control-shadow:inset 0 1px 0 #ffffff05;
+}
+:root[data-preset=instagram], .theme-sample[data-preset=instagram] {
+  color-scheme:light; --canvas:#fafafa; --bg:#fff; --bg-panel:#f5f5f5; --bg-hover:#ededed; --bg-selected:#fceaf3;
+  --text:#171717; --text-muted:#626262; --text-dim:#707070; --border:#dedede; --border-control:#898989;
+  --accent:#b31770; --accent-hover:#941059; --accent-pressed:#7d0d4a; --on-accent:#fff;
+  --button-fill:#191919; --button-hover:#343434; --button-pressed:#080808; --button-ink:#fff;
+  --radius-control:12px; --radius-panel:18px; --radius-dialog:24px;
+  --ambient-a:#ffe2d2; --ambient-b:#f3dbea; --ambient-c:#e9e0fa;
+  --social-gradient:linear-gradient(125deg,#e8a63d,#dc5950 32%,#c72587 64%,#7049bf);
+  --wallpaper:radial-gradient(ellipse 45% 50% at 0% 0%,#ffe7db,transparent 95%),radial-gradient(ellipse 40% 55% at 100% 100%,#f6daee,transparent 100%),#fafafa;
+  --workspace-shadow:0 1px 2px #00000004,0 15px 45px -28px #41102622;
+  --control-shadow:none;
+}

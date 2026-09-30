@@ -14,6 +14,8 @@
 
 当前案例：
 
+- [响应式布局的测量就绪](./responsive-layout-readiness.md)：尺寸更新、React 提交和面板过渡有先后，最终几何断言需等待布局完成。
+
 - [配置、能力与 Memory 闭环](./configuration-capability-memory-contract.md)：模型可见 CAS 版本、自定义系统提示下的工具说明，以及设置页保存/检查与布局回归。
 
 - [历史消息归属与加载就绪](./session-history-provenance-and-readiness.md)：日终维护与用户轮次分开，过程保持原顺序，异步历史响应直接触发呈现。

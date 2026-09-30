@@ -40,6 +40,26 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
   };
   await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
   await page.send("Network.enable");
+  // Appearance is orthogonal: changing palette never silently changes material or mode.
+  await click("Appearance");
+  for (const mode of ["Light", "Dark"]) {
+    await click(mode);
+    for (const material of ["Paper", "Glass"]) {
+      await click(material);
+      for (const [label, palette] of [["Classic","classic"],["Ocean","ocean"],["Peach","rose"],["Orchid","orchid"],["Instagram","instagram"]]) {
+        await click(label);
+        assert.deepEqual(await page.evaluate("({material:document.documentElement.dataset.material,palette:document.documentElement.dataset.palette,dark:document.documentElement.classList.contains('dark')})"),
+          {material:material.toLowerCase(),palette,dark:mode === "Dark"});
+      }
+    }
+  }
+  await page.send("Page.navigate", { url: `${f.base}/?view=settings&settings=appearance` });
+  await ready("document.querySelector('[data-palette-choice=instagram][aria-pressed=true]')");
+  assert.equal(await page.evaluate("document.documentElement.dataset.material"), "glass");
+  assert.equal(await page.evaluate("document.documentElement.classList.contains('dark')"), true);
+  await screenshot("appearance-dark-glass");
+  await click("Paper"); await click("Classic"); await click("System");
+  await click("Personal resources");
   await click("Models");
   await ready("document.querySelector('[role=dialog]')?.textContent.includes('Manual provider and model configuration')");
   assert.equal(await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find(e=>e.textContent.trim()==='Import models…').disabled"), true);
@@ -86,9 +106,9 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
   await ready("Array.from(document.querySelectorAll('[role=dialog] dl')).some(e=>e.textContent.includes('Supported'))");
   assert.equal(await page.evaluate("document.querySelector('[role=dialog]').classList.contains('surface-dialog')"), true);
   await screenshot("workflow-desktop");
-  await click("Tool permissions");
+  await click("Tools & resources");
   await ready("document.querySelector('[role=dialog] input[type=checkbox]')");
-  await page.evaluate("document.querySelector('[role=dialog] [role=tab]').focus()");
+  await page.evaluate("document.querySelector('[role=dialog] [role=tab][aria-selected=true]').focus()");
   for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
   await ready("document.querySelector('[role=dialog] [role=tab][aria-selected=true]')?.textContent.includes('Session overrides')");
   for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
@@ -126,7 +146,7 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
   await page.evaluate("Array.from(document.querySelectorAll('[role=dialog]')).at(-1).querySelector('header button[aria-label=Close]').click()");
   await ready("document.querySelectorAll('[role=dialog]').length === 2");
   await ready("Array.from(document.querySelectorAll('[role=dialog]')).at(-1)?.textContent.includes('Not supported')");
-  await click("Tool permissions", "Array.from(document.querySelectorAll('[role=dialog]')).at(-1)");
+  await click("Tools & resources", "Array.from(document.querySelectorAll('[role=dialog]')).at(-1)");
   await page.evaluate("Array.from(Array.from(document.querySelectorAll('[role=dialog]')).at(-1).querySelectorAll('label')).find(e => e.querySelector('span > strong')?.textContent === 'agent_memory_write').querySelector('input').click()");
   await ready("Array.from(Array.from(document.querySelectorAll('[role=dialog]')).at(-1).querySelectorAll('label')).find(e => e.querySelector('span > strong')?.textContent === 'agent_memory_write')?.querySelector('input')?.checked === false");
   await page.evaluate("Array.from(document.querySelectorAll('[role=dialog]')).at(-1).querySelector('header button[aria-label=Close]').click()");

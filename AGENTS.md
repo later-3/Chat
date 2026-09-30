@@ -6,6 +6,7 @@
 - `docs/README.md`是项目文档索引。开始任务时按修改范围读取对应模块文档，不要求无差别读取全部文档。
 - 修改模型、Workflow、Agent、Project配置、目录、Schema、继承顺序或配置API前，必须完整阅读`docs/configuration/README.md`。
 - 修改Backend、通用编码约束或测试时，分别阅读`docs/development/backend.md`、`docs/development/coding-standards.md`和`docs/development/testing.md`。
+- 涉及任何Frontend功能开发、优化或评审前，必须遵守[前端设计方法与案例](frontend/docs/frontend-design-method.md)，先在仓库文档记录任务、信息清单和关系推导，再实施并回写真实验收。
 - 修改Frontend时，同时遵守`frontend/AGENTS.md`及其文档索引；修改架构敏感机制时从`docs/architecture/README.md`选择相关文档。
 - Long Agent定义、配置、连续性、Docker和主动工作设计从`docs/modules/long-agents/README.md`及`docs/modules/long-agents/chat-long-agent-capability-model.md`进入；新增场景按`docs/modules/long-agents/chat-long-agent-mechanism-contract.md`归类和评审扩展，实现差距见`docs/modules/long-agents/chat-long-agent-roadmap.md`。目标设计不能写成已发布能力，具体实现合同仍需审核。
 - Long Agent详细设计与实施前须核对`docs/modules/long-agents/chat-long-agent-engineering-baseline.md`中的原生接入证据、Skill生效合同、Session扩展、约束与测试门槛、场景依赖及待确认决策；状态为建议的部分先完成评审，不能当作已实现事实。

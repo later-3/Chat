@@ -4,6 +4,7 @@
 
 | 主题 | 记录 |
 |---|---|
+| Agent 配置打样：节点、参数、范围与交互（待审核） | [2026-09-30 信息设计方案](./reviews/2026-09-30-agent-configuration-information-design.md) |
 | Workflow 配置统一、节点展示、Memory 链接与完整历史 | [2026-09-30 后续 7 项复核](./reviews/2026-09-30-workflow-configuration-and-session-presentation.md) |
 | 每日默认会话与额外直接会话（产品方向已确认，待实施） | [2026-09-30 现场复核与方案](./reviews/2026-09-30-default-and-additional-friend-sessions.md) |
 | 配置表面、模型能力、Long Agent 自我认知与 Memory 闭环 | [2026-09-30 专项排查](./reviews/2026-09-30-configuration-capability-audit.md) |
