@@ -319,7 +319,7 @@ if (dryRun) {
   console.log("\ndry run: nothing was written, committed, tagged or pushed\n");
   process.exit(0);
 }
-run("git", ["add", "package.json", "docs", "frontend"], { mutating: true });
+run("git", ["add", "package.json", "README.md", "docs", "frontend"], { mutating: true });
 run("git", ["commit", "-m", `chore(release): ${chatVersion}`, "-m", bodyOf(chatSubjects)], { mutating: true });
 if (pushEnabled) {
   run("git", ["-C", "frontend", "push", "origin", "main"], { mutating: true });
