@@ -240,23 +240,29 @@ test("deployment doctor is offline and assembles an in-memory AgentSession", () 
   }
 });
 
-test("release page, entry documents and the package version stay in sync", () => {
-  const version = JSON.parse(read("package.json")).version;
-  const release = read(`docs/operations/release-${version}.md`);
-
-  assert.ok(release.includes("Chat `" + version + "`"), "release page states the current Chat version");
-  assert.ok(release.includes("--ref v" + version), "release page installs the current tag");
-  assert.ok(release.includes("Chat/v" + version + "/deploy/chatctl"), "release page downloads chatctl from the current tag");
-  const review = release.match(/\[发布核对\]\(\.\.\/history\/reviews\/([^)]+)\)/);
-  assert.ok(review, "release page links its local verification record");
-  assert.doesNotThrow(() => read(`docs/history/reviews/${review[1]}`), "the linked verification record exists");
-
-  // Entry documents must not send a new machine to an older release page: the
-  // 0.5.0 page shipped with a tag that was never pushed, and nothing caught it.
-  for (const entry of ["README.md", "docs/README.md", "docs/operations/README.md", "docs/operations/installation.md", "docs/development/debugging/first-install.md"]) {
-    const body = read(entry);
-    for (const [, referenced] of body.matchAll(/release-(\d+\.\d+\.\d+)\.md/g)) {
-      assert.equal(referenced, version, `${entry} points at release-${referenced}.md while package.json is ${version}`);
+test("delivery pages stay self-consistent and entry documents never dangle", () => {
+  // A version bump and a Linux delivery are separate acts: package.json may be ahead of the
+  // newest delivery page, and bumping it must never require touching documentation. What the
+  // gate still refuses is a BROKEN delivery: a page whose own tag/install references disagree
+  // with its filename, a missing verification record, or an entry document that points at a
+  // page which does not exist (0.5.0 shipped with a tag that was never pushed).
+  const entries = ["README.md", "docs/README.md", "docs/operations/README.md", "docs/operations/installation.md", "docs/development/debugging/first-install.md"];
+  const referenced = new Set();
+  for (const entry of entries) {
+    for (const [, version] of read(entry).matchAll(/release-(\d+\.\d+\.\d+)\.md/g)) {
+      assert.doesNotThrow(() => read(`docs/operations/release-${version}.md`), `${entry} points at a missing delivery page: release-${version}.md`);
+      referenced.add(version);
     }
+  }
+  // All entry documents describe the same delivery, so a new machine cannot be sent to two different releases.
+  assert.ok(referenced.size <= 1, `entry documents disagree about the delivered release: ${[...referenced].join(", ")}`);
+  for (const version of referenced) {
+    const release = read(`docs/operations/release-${version}.md`);
+    assert.ok(release.includes("Chat `" + version + "`"), `release-${version}.md states its own version`);
+    assert.ok(release.includes("--ref v" + version), `release-${version}.md installs its own tag`);
+    assert.ok(release.includes("Chat/v" + version + "/deploy/chatctl"), `release-${version}.md downloads chatctl from its own tag`);
+    const review = release.match(/\[发布核对\]\(\.\.\/history\/reviews\/([^)]+)\)/);
+    assert.ok(review, `release-${version}.md links its local verification record`);
+    assert.doesNotThrow(() => read(`docs/history/reviews/${review[1]}`), `the record linked by release-${version}.md exists`);
   }
 });

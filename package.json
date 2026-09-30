@@ -46,7 +46,8 @@
     "chat:stop": "node scripts/chat-stop.mjs",
     "dev:tui": "bash scripts/dev-start.sh tui",
     "debug:tui": "node scripts/debug-launch.mjs tui",
-    "chat:start": "node scripts/chat-start.mjs"
+    "chat:start": "node scripts/chat-start.mjs",
+    "release:deliver": "node scripts/cut-release.mjs --deliver"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "link:./pi/packages/agent",

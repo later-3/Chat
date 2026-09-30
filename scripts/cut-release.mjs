@@ -39,6 +39,13 @@ const pushEnabled = !dryRun && scratchDir === null && !flags.has("--no-push");
 const runTests = !flags.has("--skip-tests");
 const runBuild = !flags.has("--skip-build");
 const runGates = !flags.has("--skip-gates") && !dryRun;
+/**
+ * Bumping a version and cutting a Linux delivery are different acts. By default this command
+ * only bumps both package versions, verifies the build, commits, tags and pushes — no
+ * documentation is touched. `--deliver` additionally writes the delivery page, its verification
+ * record and the entry-document pointers (the full chain a new machine needs).
+ */
+const deliver = flags.has("--deliver");
 
 /** Runs a command. `mutating` commands are skipped (and printed) in a dry run. */
 function run(command, commandArgs, options = {}) {
@@ -146,7 +153,9 @@ console.log(`  current: chat ${previousChatVersion}, frontend ${frontendPackage.
 console.log(`  frontend commits since ${frontendTag || "(no tag)"}: ${frontendSubjects.length}`);
 console.log(`  chat commits since ${lastTag(".") || "(no tag)"}: ${chatSubjects.length}`);
 console.log(`  pinned: ${pins.map(([name, sha]) => `${name} ${sha}`).join(", ")} (frontend moves to the release commit)`);
-console.log(`  files: frontend/package.json, package.json, docs/operations/${nextRelease}, docs/history/reviews/${reviewFile}, ${ENTRY_DOCUMENTS.length} entry documents\n`);
+console.log(deliver
+  ? `  files: frontend/package.json, package.json, docs/operations/${nextRelease}, docs/history/reviews/${reviewFile}, ${ENTRY_DOCUMENTS.length} entry documents\n`
+  : `  files: frontend/package.json, package.json (version only; add --deliver for a Linux delivery)\n`);
 
 // -------------------------------------------------------------- frontend -----
 console.log("frontend");
@@ -168,6 +177,9 @@ if (scratchDir === null) {
 
 // ------------------------------------------------------------- chat files ----
 console.log("chat");
+if (!deliver) {
+  replaceAll("package.json", [[`"version": "${previousChatVersion}"`, `"version": "${chatVersion}"`]]);
+} else {
 write(`docs/operations/${nextRelease}`, renderReleasePage());
 write(`docs/history/reviews/${reviewFile}`, renderReview());
 replaceAll("package.json", [[`"version": "${previousChatVersion}"`, `"version": "${chatVersion}"`]]);
@@ -185,6 +197,7 @@ replaceAll("docs/history/README.md", [[
   "| 主题 | 记录 |\n|---|---|",
   `| 主题 | 记录 |\n|---|---|\n| ${chatVersion} 版本与交付核对 | [${new Date().toISOString().slice(0, 10)}](./reviews/${reviewFile}) |`,
 ]]);
+}
 
 function renderReleasePage() {
   return `# Chat ${chatVersion}：Linux release 与 VS Code 调试交付
@@ -320,7 +333,10 @@ if (dryRun) {
   process.exit(0);
 }
 run("git", ["add", "package.json", "README.md", "docs", "frontend"], { mutating: true });
-run("git", ["commit", "-m", `chore(release): ${chatVersion}`, "-m", bodyOf(chatSubjects)], { mutating: true });
+run("git", ["commit",
+  "-m", deliver ? `chore(release): ${chatVersion}` : `chore(version): ${chatVersion} (frontend ${frontendVersion})`,
+  "-m", deliver ? bodyOf(chatSubjects) : `Version bump only; no delivery documents are touched.`,
+], { mutating: true });
 if (pushEnabled) {
   run("git", ["-C", "frontend", "push", "origin", "main"], { mutating: true });
   run("git", ["-C", "frontend", "tag", "-a", `v${frontendVersion}`, "-m", `Frontend ${frontendVersion}`], { mutating: true });
@@ -329,4 +345,6 @@ if (pushEnabled) {
   run("git", ["tag", "-a", `v${chatVersion}`, "-m", `Chat ${chatVersion} (Frontend ${frontendVersion})`], { mutating: true });
   run("git", ["push", "origin", `v${chatVersion}`], { mutating: true });
 }
-console.log(`\nrelease ${chatVersion} prepared. Verify the raw install URL for v${chatVersion} and fill in the verification record's judgement.\n`);
+console.log(deliver
+  ? `\nrelease ${chatVersion} prepared. Verify the raw install URL for v${chatVersion} and fill in the verification record's judgement.\n`
+  : `\nversion ${chatVersion} bumped, tagged and pushed.\n`);
