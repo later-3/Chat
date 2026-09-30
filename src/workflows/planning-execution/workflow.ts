@@ -37,6 +37,7 @@ export async function planningExecutionWorkflow(
       ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
       ...(input.sessionMemoryEnabled === undefined ? {} : { sessionMemoryEnabled: input.sessionMemoryEnabled }),
       ...(input.sessionMemoryOwnerWorkflowId === undefined ? {} : { sessionMemoryOwnerWorkflowId: input.sessionMemoryOwnerWorkflowId }),
+      ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     };
     const initial = await runPlanningStep(input);
     let planRevision = 1;
@@ -103,6 +104,7 @@ export async function planningExecutionWorkflow(
         planRevision += 1;
         const revised = await runPlanningRevisionStep({
           ...common,
+          ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
           sessionId: initial.sessionId,
           planRevision,
           previousPlan: plan,

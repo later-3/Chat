@@ -70,6 +70,7 @@ export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<C
     },
   });
   const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
+    ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     chatSession,
     sessionManager: chatSession.manager,
     agent,

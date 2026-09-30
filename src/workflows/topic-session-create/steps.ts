@@ -54,6 +54,7 @@ export interface TopicCreateStepInput {
   /** The round's memory switch: the work stage only releases the stream when no memory node follows. */
   readonly sessionMemoryEnabled?: boolean;
   readonly sessionMemoryOwnerWorkflowId?: string;
+  readonly promptCaptureEnabled?: boolean;
 }
 
 export async function runTopicCollectStep(input: ChatWorkflowInput): Promise<TopicCollectStepResult> {
@@ -130,6 +131,7 @@ export async function runTopicCreateStep(input: TopicCreateStepInput): Promise<C
     invocationId: input.workflowInvocationId, workflowId: TOPIC_SESSION_CREATE_WORKFLOW_ID, stageId: "create", agentId: TOPIC_CREATOR_AGENT.id, inputEntryIds: input.inputEntryIds,
   });
   const { session, toolResources } = await createWorkflowAgentSession({
+    ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     chatSession,
     sessionManager: chatSession.manager,
     agent: creator,

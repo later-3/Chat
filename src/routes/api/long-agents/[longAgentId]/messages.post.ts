@@ -29,7 +29,10 @@ export default defineEventHandler(async (event) => {
   if (body.sessionMemory !== undefined && body.sessionMemory !== "on" && body.sessionMemory !== "off") {
     throw createError({ statusCode: 400, statusMessage: "sessionMemory必须是on或off" });
   }
-  if (Object.keys(body).some((key) => !["projectId", "sessionId", "text", "contextProjectId", "requestId", "sessionMemory"].includes(key))) throw createError({ statusCode: 400, statusMessage: "未知消息字段" });
+  if (body.promptCapture !== undefined && body.promptCapture !== "on" && body.promptCapture !== "off") {
+    throw createError({ statusCode: 400, statusMessage: "promptCapture必须是on或off" });
+  }
+  if (Object.keys(body).some((key) => !["projectId", "sessionId", "text", "contextProjectId", "requestId", "sessionMemory", "promptCapture"].includes(key))) throw createError({ statusCode: 400, statusMessage: "未知消息字段" });
   try {
     return await executeLongAgentTurn({
       ...(typeof body.requestId === "string" ? { turnId: body.requestId } : {}),
@@ -37,6 +40,7 @@ export default defineEventHandler(async (event) => {
       projectId: body.projectId,
       ...(typeof body.sessionId === "string" ? { sessionId: body.sessionId } : {}),
       ...(body.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}),
+      ...(body.promptCapture === "on" ? { promptCapture: "on" as const } : {}),
       text: body.text,
       contextProjectId: typeof body.contextProjectId === "string" ? body.contextProjectId : null,
     });

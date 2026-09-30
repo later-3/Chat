@@ -28,6 +28,12 @@ export interface ChatWorkflowInput {
    */
   readonly sessionMemoryEnabled?: boolean;
   /**
+   * Backend-internal「完整 Prompt 记录」switch for this round (node-level, resolved at the HTTP
+   * acceptance boundary — never from an HTTP client of nested calls). When true every final
+   * provider payload of the round's agent sessions is captured to gzip sidecars.
+   */
+  readonly promptCaptureEnabled?: boolean;
+  /**
    * Backend-internal: the Workflow that OWNS this round's `remember` node. The writer implementation is
    * shared, but its stage/invocation provenance must stay that of the calling Workflow so execution,
    * inspection and the frontend all read the same identity. Only the tail sets it.

@@ -35,6 +35,7 @@ export async function plannerOrchestratorWorkflow(
       ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
       ...(input.sessionMemoryEnabled === undefined ? {} : { sessionMemoryEnabled: input.sessionMemoryEnabled }),
       ...(input.sessionMemoryOwnerWorkflowId === undefined ? {} : { sessionMemoryOwnerWorkflowId: input.sessionMemoryOwnerWorkflowId }),
+      ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     };
     const initial = await runOrchestrationPlanningStep(input);
     const coordinatorAgent = initial.agents[COORDINATOR_AGENT_ID];

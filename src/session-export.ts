@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { getPackageDir, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -796,12 +796,42 @@ export function patchChatWorkflowHistory(
   );
 }
 
+export interface ChatSessionHtmlExportTimings {
+  readonly cliMs: number;
+  readonly patchMs: number;
+  readonly delegationMs: number;
+  readonly totalMs: number;
+}
+
+export interface ChatSessionHtmlExportResult extends ChatSessionHtmlExport {
+  readonly timings: ChatSessionHtmlExportTimings;
+  readonly cacheHit: boolean;
+}
+
+// Full-history export is deterministic per session-file revision (Pi appends; it never rewrites
+// history), so mtime+size is a sound cache key: one new message invalidates, re-reading the same
+// branch is free. Unbounded per-file growth is impossible; entries are capped by revision count.
+const EXPORT_CACHE_LIMIT = 8;
+const exportCache = new Map<string, ChatSessionHtmlExportResult>();
+
 /** Uses Pi's supported CLI export command and returns the standalone HTML. */
-export async function exportChatSessionHtml(sessionFile: string): Promise<ChatSessionHtmlExport> {
+export async function exportChatSessionHtml(sessionFile: string, options: { readonly useCache?: boolean } = {}): Promise<ChatSessionHtmlExportResult> {
+  const startedAt = Date.now();
+  const resolvedFile = resolve(sessionFile);
+  const cacheKey = options.useCache === false ? null : await exportCacheKey(resolvedFile);
+  if (cacheKey !== null) {
+    const cached = exportCache.get(cacheKey);
+    if (cached !== undefined) {
+      exportCache.delete(cacheKey);
+      exportCache.set(cacheKey, cached);
+      return { ...cached, timings: cached.timings, cacheHit: true };
+    }
+  }
   const exportDir = await mkdtemp(join(tmpdir(), "chat-session-export-"));
   const outputPath = join(exportDir, "session.html");
   try {
-    await execFileAsync(process.execPath, [requirePiCliPath(), "--export", sessionFile, outputPath], {
+    const cliStartedAt = Date.now();
+    await execFileAsync(process.execPath, [requirePiCliPath(), "--export", resolvedFile, outputPath], {
       cwd: process.cwd(),
       timeout: 30_000,
       maxBuffer: 1024 * 1024,
@@ -811,16 +841,38 @@ export async function exportChatSessionHtml(sessionFile: string): Promise<ChatSe
         PI_SKIP_VERSION_CHECK: "1",
       },
     });
-    const sessionManager = SessionManager.open(sessionFile, dirname(sessionFile));
+    const cliMs = Date.now() - cliStartedAt;
+    const sessionManager = SessionManager.open(resolvedFile, dirname(resolvedFile));
+    const delegationStartedAt = Date.now();
+    const delegationOrigins = await resolveChatWorkflowDelegationOrigins(sessionManager);
+    const delegationMs = Date.now() - delegationStartedAt;
+    const patchStartedAt = Date.now();
     const html = patchChatWorkflowHistory(
       patchDeepSessionTraversal(await readFile(outputPath, "utf8")),
-      await resolveChatWorkflowDelegationOrigins(sessionManager),
+      delegationOrigins,
     );
-    return {
-      fileName: `pi-session-${basename(sessionFile, ".jsonl")}.html`,
+    const patchMs = Date.now() - patchStartedAt;
+    const result: ChatSessionHtmlExportResult = {
+      fileName: `pi-session-${basename(resolvedFile, ".jsonl")}.html`,
       html,
+      cacheHit: false,
+      timings: { cliMs, patchMs, delegationMs, totalMs: Date.now() - startedAt },
     };
+    if (cacheKey !== null) {
+      exportCache.set(cacheKey, result);
+      while (exportCache.size > EXPORT_CACHE_LIMIT) {
+        const oldest = exportCache.keys().next().value;
+        if (oldest === undefined) break;
+        exportCache.delete(oldest);
+      }
+    }
+    return result;
   } finally {
     await rm(exportDir, { recursive: true, force: true });
   }
+}
+
+async function exportCacheKey(sessionFile: string): Promise<string> {
+  const stats = await stat(sessionFile);
+  return `${sessionFile}:${stats.mtimeMs}:${stats.size}`;
 }

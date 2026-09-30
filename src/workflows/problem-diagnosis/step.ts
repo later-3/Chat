@@ -43,6 +43,7 @@ export async function runProblemDiagnosisStep(input: ChatWorkflowInput): Promise
   const agent = prepared.agents[PROBLEM_DIAGNOSER_AGENT.id];
   if (agent === undefined) throw new Error(`本轮配置缺少Agent: ${PROBLEM_DIAGNOSER_AGENT.id}`);
   const { session, toolResources } = await createWorkflowAgentSession({
+    ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     chatSession,
     sessionManager: chatSession.manager,
     agent,

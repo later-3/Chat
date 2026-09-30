@@ -119,6 +119,7 @@ async function runSessionMemoryStage(
       : { capabilitySource: "workflow_call" as const, capabilitySelection: prepared.agentConfigs[agentId] ?? {} }),
   }, { memoryEnabled });
   const { session, toolResources } = await createWorkflowAgentSession({
+    ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     chatSession,
     sessionManager: chatSession.manager,
     agent: agentDefinition,

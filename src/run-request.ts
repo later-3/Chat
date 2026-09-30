@@ -109,6 +109,10 @@ export function parseChatWorkflowHttpInput(
   if (sessionMemory !== undefined && sessionMemory !== "on" && sessionMemory !== "off") {
     throw new Error("sessionMemory必须是on或off");
   }
+  const promptCapture = value.promptCapture;
+  if (promptCapture !== undefined && promptCapture !== "on" && promptCapture !== "off") {
+    throw new Error("promptCapture必须是on或off");
+  }
   if (hasImages && definition.supportsImageInput !== true) {
     throw new Error(`Workflow ${workflow}暂不支持图片输入，请移除图片或切换Workflow后重试`);
   }
@@ -134,5 +138,6 @@ export function parseChatWorkflowHttpInput(
     ...(defaults.defaultAgentConfigs === undefined ? {} : { defaultAgentConfigs: defaults.defaultAgentConfigs }),
     ...(agentConfigs === undefined ? {} : { agentConfigs }),
     ...(sessionMemory === undefined ? {} : { sessionMemoryEnabled: sessionMemory !== "off" }),
+    ...(promptCapture === undefined ? {} : { promptCaptureEnabled: promptCapture !== "off" }),
   };
 }

@@ -26,6 +26,7 @@ import type {
 } from "../tools/framework.js";
 import { resolveChatSystemTools } from "../tools/registry.js";
 import type { WorkflowAgentDefinition } from "../workflows/agent-config.js";
+import { createPromptCaptureRecorder, PROMPT_CAPTURE_SCHEMA_VERSION, type PromptCaptureRecorder } from "../session-prompt-capture.js";
 
 /**
  * Agent capability definition shared by Workflow and Long Agent callers.
@@ -52,6 +53,12 @@ export interface CreateChatPiAgentSessionOptions {
    * model call — not just the first one in a prompt — is checked and counted at the request boundary.
    */
   readonly providerRequestGate?: NonNullable<CreateAgentSessionOptions["providerRequestGate"]>;
+  /**
+   * Send-time switch (per round, resolved at the HTTP acceptance boundary like sessionMemory):
+   * records every final provider payload of this assembled session as gzip sidecars plus a
+   * region-decomposed index. Off by default; never changes what the model receives.
+   */
+  readonly promptCaptureEnabled?: boolean;
   readonly toolContext?: Omit<
     ChatToolRuntimeContext,
     "projectId" | "chatHome" | "cwd" | "sessionManager" | "sessionId"
@@ -269,6 +276,52 @@ export async function createChatPiAgentSession(
   if (assembly !== undefined && options.toolContext?.purpose === "execution") {
     persistAssemblySnapshot(options.sessionManager, assembly.snapshot);
   }
+  // Prompt capture composes at this single boundary: budget/gates run first, then the final
+  // effective payload is recorded. Denied requests are never recorded; nothing here changes
+  // what the model receives.
+  const promptCapture = options.promptCaptureEnabled === true && chatSession.projectContext !== undefined
+    ? createPromptCaptureRecorder({
+        sessionDir: chatSession.projectContext.sessionDir,
+        storageProjectId: chatSession.projectContext.projectId,
+        sessionId: options.sessionManager.getSessionId(),
+        turn: (() => {
+          const toolContext = options.toolContext;
+          const turnKey = assemblyKey ?? toolContext?.longAgentTurnId;
+          return {
+            source: toolContext?.workflowId === undefined ? "direct" as const : "workflow" as const,
+            ...(toolContext?.workflowId === undefined ? {} : { workflowId: toolContext.workflowId }),
+            ...(toolContext?.workflowInvocationId === undefined ? {} : { workflowInvocationId: toolContext.workflowInvocationId }),
+            ...(toolContext?.stageId === undefined ? {} : { stageId: toolContext.stageId }),
+            ...(turnKey === undefined ? {} : { turnKey }),
+          };
+        })(),
+        agent: {
+          agentId: agent.id,
+          ...(agent.name === undefined ? {} : { agentName: agent.name }),
+          ...(options.toolContext?.longAgentId === undefined ? {} : { longAgentId: options.toolContext.longAgentId }),
+        },
+      })
+    : undefined;
+  const effectiveTransformContext: AgentContextTransform | undefined = promptCapture === undefined
+    ? options.transformContext
+    : async (messages, signal) => {
+        const result = options.transformContext === undefined ? messages : await options.transformContext(messages, signal);
+        promptCapture.pushNeutralContext(result);
+        return result;
+      };
+  const effectiveProviderRequestGate = promptCapture === undefined
+    ? options.providerRequestGate
+    : async (...gateArguments: Parameters<NonNullable<CreateAgentSessionOptions["providerRequestGate"]>>) => {
+        const [payload, model] = gateArguments;
+        const result = options.providerRequestGate === undefined ? undefined : await options.providerRequestGate(payload, model);
+        const effective = result ?? payload;
+        try {
+          await promptCapture.record(effective, { provider: model.provider, modelId: model.id, api: model.api });
+        } catch (error) {
+          console.error(`[prompt-capture] 记录失败 sessionId=${options.sessionManager.getSessionId()}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        return result;
+      };
   const created = await createAgentSession({
     cwd,
     agentDir: chatSession.agentDir,
@@ -279,7 +332,7 @@ export async function createChatPiAgentSession(
     ...(modelRuntime === undefined ? {} : { modelRuntime }),
     ...(model === undefined ? {} : { model }),
     ...(agent.thinkingLevel === undefined ? {} : { thinkingLevel: agent.thinkingLevel }),
-    ...(options.providerRequestGate === undefined ? {} : { providerRequestGate: options.providerRequestGate }),
+    ...(effectiveProviderRequestGate === undefined ? {} : { providerRequestGate: effectiveProviderRequestGate }),
     ...(applied !== null
       ? (() => {
           const allowedNames = [...new Set([...applied.nativeTools, ...applied.systemToolNames, ...applied.extensionTools])];
@@ -295,10 +348,40 @@ export async function createChatPiAgentSession(
             excludeTools: [...agent.tools.exclude],
           }
         : {}),
-    ...(options.transformContext === undefined
+    ...(effectiveTransformContext === undefined
       ? {}
-      : { transformContext: options.transformContext }),
+      : { transformContext: effectiveTransformContext }),
   });
+
+  // Region ①/⑤ durable source of truth: the assembled system prompt and the active tool
+  // schemas, frozen once per execution turn even when payload recording is off.
+  if (options.toolContext?.purpose === "execution" && created.session.model !== undefined) {
+    const promptAssembly = {
+      schemaVersion: PROMPT_CAPTURE_SCHEMA_VERSION,
+      ...(assemblyKey === undefined ? {} : { turnKey: assemblyKey }),
+      workflowId: options.toolContext?.workflowId ?? null,
+      workflowInvocationId: options.toolContext?.workflowInvocationId ?? null,
+      stageId: options.toolContext?.stageId ?? null,
+      agentId: agent.id,
+      ...(agent.name === undefined ? {} : { agentName: agent.name }),
+      ...(options.toolContext?.longAgentId === undefined ? {} : { longAgentId: options.toolContext.longAgentId }),
+      systemPrompt: created.session.systemPrompt,
+      tools: created.session.getActiveToolNames().map((name) => {
+        const tool = created.session.getAllTools().find((candidate) => candidate.name === name);
+        return { name, ...(tool?.description === undefined ? {} : { description: tool.description }), parameters: tool?.parameters ?? {} };
+      }),
+    };
+    const promptAssemblyType = "chat.prompt-assembly.v1";
+    const existingAssembly = options.sessionManager.getEntries().findLast((entry) => entry.type === "custom"
+      && entry.customType === promptAssemblyType
+      && typeof entry.data === "object" && entry.data !== null
+      && "turnKey" in entry.data && entry.data.turnKey === promptAssembly.turnKey
+      && "agentId" in entry.data && entry.data.agentId === agent.id);
+    if (existingAssembly === undefined) {
+      options.sessionManager.appendCustomEntry(promptAssemblyType, promptAssembly);
+      options.sessionManager.flush();
+    }
+  }
 
   // UTF-8 bytes are a conservative upper bound, not a provider-specific token count.
   // Reserve Pi's runtime/output allowance; history compaction cannot shrink system rules.

@@ -188,7 +188,7 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
           const active = new Set(state.turns.filter(t => t.longAgentId === agent.id && t.workId && ["queued", "running"].includes(t.status)).map(t => t.workId));
           if (!active.has(work.id) && active.size >= 4) throw new Error("此Friend已有4项后台工作，请等待完成或取消后重试");
         }
-        const turn: AcceptedTurn = { workflow: { id: input.workflow ?? "minimal-pi-coding-agent", invocationId: randomUUID() }, ...(work ? { workId: work.id } : {}), ...(input.topicNode === undefined ? {} : { topicNode: { topicId: input.topicNode.topicId, nodeId: input.topicNode.nodeId } }), ...(input.relayIntentEntryId === undefined ? {} : { relayIntentEntryId: input.relayIntentEntryId }), ...(input.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
+        const turn: AcceptedTurn = { workflow: { id: input.workflow ?? "minimal-pi-coding-agent", invocationId: randomUUID() }, ...(work ? { workId: work.id } : {}), ...(input.topicNode === undefined ? {} : { topicNode: { topicId: input.topicNode.topicId, nodeId: input.topicNode.nodeId } }), ...(input.relayIntentEntryId === undefined ? {} : { relayIntentEntryId: input.relayIntentEntryId }), ...(input.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}), ...(input.promptCapture === "on" ? { promptCapture: "on" as const } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
           channelType: input.channelType ?? (source === "chat-web" ? "chat-web" : null), inboundEventId: input.inboundEventId ?? null,
           contextProjectId, interactionRevision, payloadHashVersion: 3, sessionId: located.day.sessionId, date: located.day.date, timeZone: calendar.timeZone,
           acceptedAt: acceptedAt.toISOString(), sequence: state.turns.reduce((max, item) => Math.max(max, item.sequence), 0) + 1,
@@ -311,6 +311,7 @@ export function drainLongAgentTurns(home: string, longAgentId: string, sessionId
               chatHome: home, projectId: longAgentId,
               sessionId: turn.sessionId, workflowInvocationId: `turn:${turn.turnId}`, stageId: "remember",
               ...(liveRound === undefined ? {} : { live: liveRound }),
+              ...(turn.promptCapture === "on" ? { promptCaptureEnabled: true } : {}),
             });
           } catch (error) {
             // The Friend path records the SAME durable notice as the Workflow tail before rethrowing, so a

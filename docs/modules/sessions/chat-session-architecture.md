@@ -64,6 +64,24 @@ Workflow/Agent身份与消息角色正交：同样是`assistant`，可以由Plan
 | `chat.workflow_delegation_origin` | `callId`、目标Invocation、父Workflow/Stage/Agent身份 | 任务正文，或改写原生User Message的role/content |
 
 人工审核是`nodeKind=human`，没有虚假的Agent ID。没有人也没有Agent的确定性节点可使用`task`或`tool`元数据；只有它真的产生话语时，才追加对应的原生消息。
+| `chat.prompt-assembly.v1` | 每个执行轮装配后的最终 System Prompt 全文与实际启用的 Tool Schema，附 Workflow/Stage/Agent 身份 | 会话消息正文；不记录任何凭据 |
+
+### Prompt 捕获（`sessions/prompt-captures/`）
+
+发送开关 `promptCapture: "on"`（HTTP 接受边界解析，与 `sessionMemory` 同一套路，默认关）打开后，本轮每个 Agent Session 的**每次最终 Provider 请求**都记录为完整历史的一部分。抓取点只有一处：公共装配 `createChatPiAgentSession` 包装 Pi SDK 共用的 Provider 请求边界；预算等既有 gate 先行，被拒绝的请求不记录，抓取本身不改变发送内容。Workflow 多 Agent 天然覆盖——每个 Stage 的每次请求（工作轮、工具续跑、压缩摘要）都过同一边界。
+
+存储与读取：
+
+```text
+<project>/sessions/prompt-captures/<sessionId>/
+├── index.jsonl            # 每请求一条记录：requestId/序号/时间/Workflow/Stage/Agent身份/模型/区域摘要/payload哈希
+└── <requestId>.json.gz    # 最终 Provider payload 原文（gzip）
+```
+
+- payload 是发送事实的唯一权威；`index.jsonl` 的区域摘要来自 payload 解析（openai-completions 的首条 system / anthropic 的顶层 `system`），System Prompt 再按 Chat 标签切子区（`chat_current_project`、`chat_project_collaboration`、`chat_agent_custom_instructions`），消息区按中性上下文快照对齐分类为注入指令/本轮用户消息/历史/工具结果；未知 API 形态 fail-open 存原文并标"未解析"。
+- 不设轮数或单文件大小上限（产品决策：全量保留）；gzip 旁路文件不进入 Session JSONL，`chat.prompt-assembly.v1` 只存小体积的装配快照。
+- 生命周期跟随 Session：移除/恢复不移动捕获目录（读取被 Session 生命周期检查挡住），彻底删除（purge）时同步删除捕获目录。
+- 读取 API：`GET /api/sessions/:id/prompt-captures`（索引摘要）与 `GET /api/sessions/:id/prompt-captures/:requestId`（单请求全文），均要求 owner 读取权限。
 
 ## 5. Planning Execution正例
 

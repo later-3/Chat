@@ -51,6 +51,7 @@ export interface ExecuteLongAgentTurnInput {
   readonly relayIntentEntryId?: string;
   /** Send-time switch: "off" runs this round WITHOUT the session-memory tail node. */
   readonly sessionMemory?: "off";
+  readonly promptCapture?: "on";
   readonly text: unknown;
   /** Channel-provided image attachments; text may be empty when present. */
   readonly images?: readonly ImageContent[];
@@ -272,6 +273,7 @@ export async function executeAcceptedLongAgentTurn(
           chatSession,
           sessionManager: chatSession.manager,
           ...prepared,
+          ...(accepted.promptCapture === "on" ? { promptCaptureEnabled: true } : {}),
           ...(preparedResourceLoader === undefined ? {} : { preparedResourceLoader }),
           toolContext: {
             purpose: "execution",

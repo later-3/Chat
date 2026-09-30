@@ -45,6 +45,7 @@ export interface OrchestrationExecutionStepInput {
   /** The round's memory switch: the work stage only releases the stream when no memory node follows. */
   readonly sessionMemoryEnabled?: boolean;
   readonly sessionMemoryOwnerWorkflowId?: string;
+  readonly promptCaptureEnabled?: boolean;
 }
 
 function requireProjectContext(chatSession: ChatSession) {
@@ -162,6 +163,7 @@ export async function runWorkflowDelegationStep(
     userPrompt: input.prompt,
   });
   const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
+    ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     chatSession,
     sessionManager: chatSession.manager,
     agent: input.agent,

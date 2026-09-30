@@ -48,6 +48,7 @@ export async function runPiCodingAgentPromptStep(
   const agent = prepared.agents[PI_CODING_AGENT.id];
   if (agent === undefined) throw new Error(`本轮配置缺少Agent: ${PI_CODING_AGENT.id}`);
   const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
+    ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     chatSession,
     sessionManager: chatSession.manager,
     agent,

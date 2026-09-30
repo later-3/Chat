@@ -76,6 +76,7 @@ export interface PlanningRevisionStepInput {
   readonly agent: ResolvedWorkflowAgentDefinition;
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
   readonly longAgentId?: string;
+  readonly promptCaptureEnabled?: boolean;
 }
 
 export interface PlanningRevisionStepResult {
@@ -130,6 +131,7 @@ export interface PlanningExecutionStepInput {
   /** The round's memory switch: the work stage only releases the stream when no memory node follows. */
   readonly sessionMemoryEnabled?: boolean;
   readonly sessionMemoryOwnerWorkflowId?: string;
+  readonly promptCaptureEnabled?: boolean;
 }
 
 function requireProjectContext(chatSession: ChatSession) {
@@ -222,6 +224,7 @@ export async function runPlanningExecutionStep(
   console.log(`${localTimestamp()} [pi] planning execution step starting cwd=${chatSession.cwd}`);
 
   const { session, toolResources, modelFallbackMessage } = await createWorkflowAgentSession({
+    ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     chatSession,
     sessionManager: chatSession.manager,
     agent: input.agent,

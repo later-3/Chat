@@ -43,6 +43,7 @@ export async function executeAcceptedWorkflowTurn(home: string, turn: AcceptedTu
       workflow: workflow.id as ChatWorkflowId, prompt: turn.text ?? "", ...(turn.images === undefined ? {} : { images: turn.images }),
       acceptedLongAgentTurn: { longAgentId: turn.longAgentId, turnId: turn.turnId },
       sessionMemoryEnabled: memoryEnabled,
+      ...(turn.promptCapture === "on" ? { promptCaptureEnabled: true } : {}),
       sessionMemoryTarget: { storageProjectId: project.projectId, sessionId: turn.sessionId },
     }, { workflowInvocationId: workflow.invocationId, onRunBound: bind });
     runId = started.run.runId;

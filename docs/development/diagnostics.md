@@ -11,6 +11,7 @@
 | 对话、Tool 调用和结果 | Project 下的 Pi Session；路径由 [Session 架构](../modules/sessions/chat-session-architecture.md)与配置服务解析 | 保存原生消息，不把 UI 事件或摘要当原始对话 |
 | Workflow 状态和阶段 | Workflow Run、关联 Session CustomEntry、Run 事件流 | 刷新/重连读耐久状态，流用于过程展示 |
 | 配置/资源变更审计 | `<CHAT_HOME>/logs/audit.jsonl`，`src/audit-log.ts` | 当前为追加 JSONL，进程内串行；`actor` 固定 `local-user`，不能声称已有完整多 Agent 审计身份 |
+| 最终 Provider 请求（完整 Prompt） | `<project>/sessions/prompt-captures/<sessionId>/`（`src/session-prompt-capture.ts`），发送开关 `promptCapture` 默认关 | gzip payload + `index.jsonl` 区域索引；抓取在公共装配的 Provider 请求边界，被预算拒绝的请求不记录；Session purge 时同步删除 |
 | Backend 运行错误 | 控制台/启动服务捕获的日志；`src/runtime-log.ts`负责时间格式 | 当前没有统一全链 Trace/日志索引服务 |
 | Nano 入站、投递、回执 | Nano 自己维护的事实，经认证 API/受控诊断访问 | Chat 不直接读数据库；Nano ACK 不等于模型执行成功 |
 | 本地开发启动 | `.data/dev-logs/<启动标识>/` | 后端、前端分文件，不进 Git；不是业务持久状态 |

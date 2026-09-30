@@ -41,6 +41,7 @@ export async function topicSessionCreateWorkflow(input: ChatWorkflowInput): Prom
       prompt: input.prompt,
       ...(input.sessionMemoryEnabled === undefined ? {} : { sessionMemoryEnabled: input.sessionMemoryEnabled }),
       ...(input.sessionMemoryOwnerWorkflowId === undefined ? {} : { sessionMemoryOwnerWorkflowId: input.sessionMemoryOwnerWorkflowId }),
+      ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     };
     const initial = await runTopicCollectStep({ ...input, prompt: collectionBrief });
     let planRevision = 1;
@@ -76,7 +77,8 @@ export async function topicSessionCreateWorkflow(input: ChatWorkflowInput): Prom
         feedbackEntryIds.push(recorded.feedbackEntryId);
         planRevision += 1;
         const revised = await runTopicCollectRevisionStep({
-          ...common, sessionId: initial.sessionId, planRevision, previousPlan: plan, feedback: decision.feedback,
+          ...common, ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
+          sessionId: initial.sessionId, planRevision, previousPlan: plan, feedback: decision.feedback,
           inputEntryIds: [initial.userEntryId, planEntryId, recorded.feedbackEntryId],
           agent: initial.plannerAgent, longAgentId: topicCreation.longAgentId,
         });

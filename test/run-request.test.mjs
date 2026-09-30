@@ -160,6 +160,19 @@ test("Workflows without image support reject image input with a friendly error",
   );
 });
 
+test("promptCapture is a caller preference parsed like sessionMemory", () => {
+  const on = parseChatWorkflowHttpInput({ prompt: "x", promptCapture: "on" }, defaults);
+  assert.equal(on.promptCaptureEnabled, true);
+  const off = parseChatWorkflowHttpInput({ prompt: "x", promptCapture: "off" }, defaults);
+  assert.equal(off.promptCaptureEnabled, false);
+  const absent = parseChatWorkflowHttpInput({ prompt: "x" }, defaults);
+  assert.equal(absent.promptCaptureEnabled, undefined);
+  assert.throws(
+    () => parseChatWorkflowHttpInput({ prompt: "x", promptCapture: "yes" }, defaults),
+    /promptCapture必须是on或off/,
+  );
+});
+
 test("malformed image attachments are rejected at the HTTP boundary", () => {
   assert.throws(
     () => parseChatWorkflowHttpInput({ prompt: "x", images: [{ type: "file", data: VALID_IMAGE.data, mimeType: "image/png" }] }, defaults),

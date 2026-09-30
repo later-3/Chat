@@ -32,6 +32,7 @@ export interface CreateWorkflowAgentSessionOptions {
   readonly additionalSkillPaths?: readonly string[];
   readonly customTools?: readonly ToolDefinition[];
   readonly transformContext?: AgentContextTransform;
+  readonly promptCaptureEnabled?: boolean;
   readonly toolContext?: Omit<
     ChatToolRuntimeContext,
     "projectId" | "chatHome" | "cwd" | "sessionManager" | "sessionId"
@@ -83,6 +84,7 @@ export async function createWorkflowAgentSession(
     : { ...options, toolContext: { ...context, sessionMemoryTarget: inheritedTarget } };
   const created = await createChatPiAgentSession({
     ...withTarget,
+    ...(options.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: options.promptCaptureEnabled }),
     ...(owned.invocation === undefined ? {} : { invocation: owned.invocation }),
     transformContext: async (messages, signal) => {
       const current = prepareWorkflowTurnContext(messages, turn);

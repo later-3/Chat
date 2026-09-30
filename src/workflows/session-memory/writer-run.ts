@@ -56,6 +56,7 @@ export async function runSessionMemoryWriterTurn(input: {
   readonly workflowId?: string;
   /** The round's live handle: the writer swaps its Session in so stop and events span both phases. */
   readonly live?: LiveRoundHandle;
+  readonly promptCaptureEnabled?: boolean;
 }): Promise<Pick<ChatWorkflowResult, "text" | "sessionId" | "sessionFile" | "model">> {
   const stageId = input.stageId ?? "remember";
   // Everything recorded about this turn carries the OWNING Workflow so the check pages and the frontend
@@ -94,6 +95,7 @@ export async function runSessionMemoryWriterTurn(input: {
     userPrompt: "",
   });
   const { session, toolResources } = await createWorkflowAgentSession({
+    ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     chatSession,
     sessionManager: chatSession.manager,
     agent,

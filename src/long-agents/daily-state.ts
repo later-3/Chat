@@ -30,6 +30,7 @@ export interface AcceptedTurn {
    * this round only; absent means the default (on). It is a send preference, not request identity.
    */
   readonly sessionMemory?: "off";
+  readonly promptCapture?: "on";
   /**
    * A relay round consumes a durable relay intent: the native user message is appended on the active
    * branch when the round runs, so N queued relays become sequential rounds with one message each.
@@ -77,7 +78,7 @@ export function parseDailySession(value: unknown): DailySession {
   return value as unknown as DailySession;
 }
 export function parseAcceptedTurn(value: unknown): AcceptedTurn {
-  record(value); fields(value, ["workflow", "turnId", "requestId", "payloadHash", "summaryDraft", "isNewSession", "longAgentId", "source", "channelType", "inboundEventId", "contextProjectId", "interactionRevision", "payloadHashVersion", "sessionId", "date", "timeZone", "acceptedAt", "settledAt", "sequence", "status", "error", "text", "images", "seed", "groupContext", "workId", "cancelRequested", "topicNode", "relayIntentEntryId", "sessionMemory"]);
+  record(value); fields(value, ["workflow", "turnId", "requestId", "payloadHash", "summaryDraft", "isNewSession", "longAgentId", "source", "channelType", "inboundEventId", "contextProjectId", "interactionRevision", "payloadHashVersion", "sessionId", "date", "timeZone", "acceptedAt", "settledAt", "sequence", "status", "error", "text", "images", "seed", "groupContext", "workId", "cancelRequested", "topicNode", "relayIntentEntryId", "sessionMemory", "promptCapture"]);
   if (value.workflow !== undefined) {
     record(value.workflow); fields(value.workflow, ["id", "invocationId", "runId"]);
     string(value.workflow.id); string(value.workflow.invocationId);
@@ -85,6 +86,7 @@ export function parseAcceptedTurn(value: unknown): AcceptedTurn {
     if (value.workflow.runId !== undefined) string(value.workflow.runId);
   }
   if (value.sessionMemory !== undefined && value.sessionMemory !== "off") throw new Error("无效会话记忆开关");
+  if (value.promptCapture !== undefined && value.promptCapture !== "on") throw new Error("无效Prompt记录开关");
   if (value.relayIntentEntryId !== undefined && (typeof value.relayIntentEntryId !== "string" || value.relayIntentEntryId.trim() === "")) throw new Error("无效代传意图条目");
   if (value.cancelRequested !== undefined && typeof value.cancelRequested !== "boolean") throw new Error("无效取消请求");
   if (value.workId !== undefined) { string(value.workId); if (!/^work-[a-f0-9]{32}$/.test(value.workId)) throw new Error("后台工作ID无效"); }
