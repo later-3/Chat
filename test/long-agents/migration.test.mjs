@@ -151,11 +151,11 @@ test('P5 definition split refuses conflicting files and serializes concurrent re
 
 test('P5 state v3 upgrade repairs a missing completion receipt after interruption without replacing the backup', async t => {
   const f = await fixture(t);
-  const { dailySessions, turns, works, nodeSessions, ...old } = await readLongAgentState(f.home);
+  const { dailySessions, turns, works, nodeSessions, additionalSessions, ...old } = await readLongAgentState(f.home);
   assert.deepEqual(nodeSessions, []);
   const stateFile = path.join(f.home, 'runtime/long-agent-state.json');
   fs.writeFileSync(stateFile, JSON.stringify({ ...old, schemaVersion: 3 }));
-  const upgraded = await readLongAgentState(f.home); assert.equal(upgraded.schemaVersion, 6);
+  const upgraded = await readLongAgentState(f.home); assert.equal(upgraded.schemaVersion, 7);
   const dir = path.join(f.home, 'runtime/migrations/long-agent-daily-v4');
   const backup = fs.readFileSync(path.join(dir, 'source.json'));
   fs.unlinkSync(path.join(dir, 'complete.json'));
@@ -201,11 +201,11 @@ test('P5 v5 -> v6 keeps no v5 backup or completion receipt of its own', async t 
   const stateFile = path.join(f.home, 'runtime/long-agent-state.json');
   const current = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
   // A genuine v5 state: the version that the long-agent-work-v5 migration produces.
-  const { nodeSessions, ...v5 } = current;
+  const { nodeSessions, additionalSessions, ...v5 } = current;
   assert.deepEqual(nodeSessions, []);
   fs.writeFileSync(stateFile, JSON.stringify({ ...v5, schemaVersion: 5 }));
   const upgraded = await readLongAgentState(f.home);
-  assert.equal(upgraded.schemaVersion, 6);
+  assert.equal(upgraded.schemaVersion, 7);
   assert.deepEqual(upgraded.nodeSessions, []);
   const migrations = path.join(f.home, 'runtime/migrations');
   // The v5 source is NOT recorded as a source of the v5 migration (it IS the v5 target).

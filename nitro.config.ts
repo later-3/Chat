@@ -35,6 +35,9 @@ export default defineConfig({
     ignore: ["**/index.html", "**/*.test.mjs"],
   }],
   serverAssets: [
+    // Native Pi export assets are explicit build inputs; runtime never depends on checkout paths.
+    { baseName: "pi-export", dir: "pi/packages/coding-agent/src/core/export-html", pattern: "**/*.{html,css,js}" },
+    { baseName: "pi-export-theme", dir: "pi/packages/coding-agent/src/modes/interactive/theme", pattern: "dark.json" },
     { baseName: "builtin-skills", dir: "src/resources/builtin-skills", pattern: "**/*.md" },
     { baseName: "frontend", dir: "frontend/dist", pattern: "index.html" },
     // Workflow-owned Markdown remains the source of truth while built output

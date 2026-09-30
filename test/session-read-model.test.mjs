@@ -93,6 +93,22 @@ function assistantEntry(id, parentId, content) {
   };
 }
 
+test("a Friend Workflow stage and its identity coexist across the lifecycle boundary", () => {
+  const manager = SessionManager.inMemory("/workspace");
+  const stage = { invocationId: "invocation", workflowId: "minimal-pi-coding-agent", stageId: "execute", agentId: "pi-coding-agent" };
+  appendChatWorkflowStage(manager, stage);
+  manager.appendCustomEntry("chat.long_agent_turn", {
+    schemaVersion: 1, turnId: "turn", longAgentId: "friend", bindingId: "binding", source: "chat-web",
+    channelType: null, inboundEventId: null, status: "running", startedAt: new Date(0).toISOString(), completedAt: null, error: null,
+  });
+  manager.appendMessage({ role: "user", content: "hi", timestamp: 1 });
+  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "answer" }], timestamp: 2 });
+  const view = projectSessionContext(manager.getEntries());
+  assert.equal(view.messages[1].chatLongAgent.longAgentId, "friend");
+  assert.deepEqual(view.messages[1].chatWorkflow, stage);
+  assert.equal(manager.buildSessionContext().messages[1].chatWorkflow, undefined, "projection does not rewrite Pi messages");
+});
+
 test("daily maintenance after a memory stage has independent provenance without rewriting native history", () => {
   const manager = SessionManager.inMemory("/workspace");
   manager.appendMessage({ role: "user", content: "hello", timestamp: 1000 });

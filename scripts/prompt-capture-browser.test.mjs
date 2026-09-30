@@ -216,6 +216,7 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     assert.equal(await page.evaluate("document.querySelector('[data-session-activity=\"daily-summary\"]') === null"), true);
 
     // The full-history Prompt panel renders the recorded regions from the payload API.
+    const historyOpenedAt = Date.now();
     const historyButton = await page.evaluate(`(() => {
       const button = [...document.querySelectorAll('button')].find(candidate =>
         /完整历史|Full history/i.test(candidate.getAttribute('aria-label') ?? '') && !candidate.disabled);
@@ -259,6 +260,7 @@ test("the prompt-capture switch reaches the send, records regions and drives the
       if (!historyReady) await pause(100);
     }
     assert.equal(historyReady, true, `完整历史首帧包含实际消息和分支树：${JSON.stringify(historyDiagnostic)}`);
+    console.log(`Full history cold first readable: ${Date.now() - historyOpenedAt} ms`);
     if (historySessionId) await page.send("Target.detachFromTarget", { sessionId: historySessionId });
     await page.evaluate("document.querySelector('[data-prompt-captures-view]').click()");
     await page.waitFor("document.querySelector('[data-prompt-captures-panel]') !== null", { label: "Prompt 请求面板渲染" });
@@ -271,6 +273,46 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     // plus the system prompt; the assistant answer only appears as history in the NEXT request.
     assert.ok(panelText.includes("pc-on"), `面板展示记录的请求内容: ${panelText.slice(0, 400)}`);
     assert.ok(panelText.toLowerCase().includes("system prompt"), `面板展示系统提示区域: ${panelText.slice(0, 400)}`);
+    // Exercise a real failed request, retry, and cancellation at the browser network boundary.
+    const closeHistory = () => page.evaluate("document.querySelector('[data-prompt-captures-view]').closest('[role=dialog]').querySelector('header button[aria-label=Close]').click()");
+    const openHistory = () => page.evaluate("[...document.querySelectorAll('button')].find(button => /完整历史|Full history/i.test(button.getAttribute('aria-label') ?? '') && !button.disabled).click()");
+    const pausedHistory = async start => {
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        const event = page.events.slice(start).find(item => item.method === "Fetch.requestPaused");
+        if (event) return event.params;
+        await pause(25);
+      }
+      throw new Error("history request was not intercepted");
+    };
+    await closeHistory();
+    await page.send("Fetch.enable", { patterns: [{ urlPattern: "*/api/sessions/*/export*", requestStage: "Request" }] });
+    let requestStart = page.events.length;
+    await openHistory();
+    const failedHistory = await pausedHistory(requestStart);
+    await page.send("Fetch.fulfillRequest", { requestId: failedHistory.requestId, responseCode: 503,
+      responseHeaders: [{ name: "Content-Type", value: "text/plain" }], body: Buffer.from("Temporary failure").toString("base64") });
+    await page.waitFor("document.querySelector('[role=dialog] [role=alert]') !== null", { label: "历史请求失败可见" });
+    requestStart = page.events.length;
+    await page.evaluate("document.querySelector('[role=dialog] [role=alert] > button').click()");
+    await page.send("Fetch.continueRequest", { requestId: (await pausedHistory(requestStart)).requestId });
+    await page.waitFor("document.querySelector('iframe.full-history-frame')?.srcdoc.includes('session-data') === true", { label: "完整历史重试成功" });
+    await closeHistory();
+    await page.evaluate(`(() => {
+      const originalFetch = window.fetch;
+      window.__historyAborted = false;
+      window.fetch = (...args) => {
+        if (String(args[0]).includes('/export?')) args[1]?.signal?.addEventListener('abort', () => { window.__historyAborted = true; }, { once: true });
+        return originalFetch(...args);
+      };
+    })()`);
+    requestStart = page.events.length;
+    await openHistory();
+    await pausedHistory(requestStart);
+    await closeHistory();
+    await page.waitFor("window.__historyAborted === true", { label: "关闭完整历史中止未完成的请求" });
+    await page.send("Fetch.disable");
+    assert.equal(await page.evaluate("document.querySelector('iframe.full-history-frame') === null"), true);
     await page.send("Page.reload");
     await page.waitFor("document.querySelector('[data-chat-composer]:not([disabled])') !== null");
     for (const width of [390, 768, 1440]) {

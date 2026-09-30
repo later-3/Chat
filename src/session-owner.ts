@@ -50,7 +50,7 @@ export async function readChatSessionOwnerIndex(
     for (const entry of state.projectAgents) {
       if (entry.projectId === projectId) add(entry.primarySessionId, entry.longAgentId, entry.id);
     }
-    for (const day of state.dailySessions) {
+    for (const day of [...state.dailySessions, ...state.additionalSessions]) {
       if (day.longAgentId === projectId) add(day.sessionId, day.longAgentId, projectLongAgentId(projectId, day.longAgentId));
     }
     for (const node of state.nodeSessions) {
@@ -76,7 +76,7 @@ export function chatSessionOwner(
 /** Native Home history remains conversational; business-project migration archives stay separate. */
 export async function readWritableFriendSessionIds(chatHome?: string, snapshot?: SessionOwnershipFacts): Promise<ReadonlySet<string>> {
   const { state, legacy } = snapshot ?? await readSessionOwnershipFacts(chatHome);
-  return new Set([...state.dailySessions.map(day => day.sessionId), ...state.works.map(work => work.sessionId),
+  return new Set([...state.dailySessions.map(day => day.sessionId), ...state.additionalSessions.map(session => session.sessionId), ...state.works.map(work => work.sessionId),
     ...state.nodeSessions.map(node => node.sessionId),
     ...legacy.filter(entry => entry.longAgentId !== null && entry.targetProjectId === entry.longAgentId).map(entry => entry.sessionId)]);
 }

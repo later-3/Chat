@@ -129,7 +129,7 @@ export async function runSessionMemoryWriterTurn(input: {
     await triggerChatWorkflowAgentHandoff(session, {
       workflowId: WORKFLOW_ID, invocationId: input.workflowInvocationId, stageId, agentId: SESSION_MEMORY_WRITER_AGENT.id,
       inputEntryIds: [],
-      content: "本轮工作阶段已完成。请只依据本轮（本轮用户消息与工作阶段产物）维护本会话的会话记忆；需要更早的上下文或既有条目时用 session_memory 工具按需读取。",
+      content: "本轮工作阶段已完成，用户已得到执行 Agent 的答复。你是内部会话记忆维护节点，不再回答用户问题或重复主答复。只依据本轮用户消息与工作阶段产物判断是否维护会话记忆；已有写入不要重复记账。需要核对既有条目时用 session_memory 的 list/history。只汇报本节点实际新增/修订的 entryId 与 revision，未写入则简短返回‘本轮无需写入’。",
     });
     const text = observer.getLastAssistantText() || lastAssistantTextOf(session);
     if (text === "") throw new Error(`会话记忆 ${stageId} 阶段没有返回Assistant文本`);

@@ -1,11 +1,8 @@
-import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
-import { getPackageDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { exportSessionToHtml, SessionManager } from "@earendil-works/pi-coding-agent";
+import { materializeSessionExportAssets } from "./session-export-assets.js";
 import { sessionActivityTrigger } from "./session-history-activity.js";
 import {
   collectChatWorkflowAgentInputs,
@@ -24,28 +21,9 @@ import {
   planReviewDecisionMessage,
 } from "./workflows/planning-execution/review-state.js";
 
-const execFileAsync = promisify(execFile);
-
 export interface ChatSessionHtmlExport {
   readonly fileName: string;
   readonly html: string;
-}
-
-function piCliCandidates(): string[] {
-  const candidates = new Set<string>([join(getPackageDir(), "dist", "cli.js")]);
-  try {
-    const indexUrl = import.meta.resolve("@earendil-works/pi-coding-agent");
-    candidates.add(join(dirname(fileURLToPath(indexUrl)), "cli.js"));
-  } catch {
-    // getPackageDir() remains the primary package-owned resolution path.
-  }
-  return [...candidates];
-}
-
-function requirePiCliPath(): string {
-  const cliPath = piCliCandidates().find(existsSync);
-  if (cliPath === undefined) throw new Error("找不到Pi Coding Agent CLI");
-  return cliPath;
 }
 
 function replaceOnce(source: string, name: string, expected: string, replacement: string): string {
@@ -837,15 +815,18 @@ export function patchChatWorkflowHistory(
 }
 
 export interface ChatSessionHtmlExportTimings {
-  readonly cliMs: number;
+  readonly exportMs: number;
   readonly patchMs: number;
   readonly delegationMs: number;
+  readonly waitMs: number;
   readonly totalMs: number;
 }
 
 export interface ChatSessionHtmlExportResult extends ChatSessionHtmlExport {
   readonly timings: ChatSessionHtmlExportTimings;
+  readonly generationTimings: ChatSessionHtmlExportTimings;
   readonly cacheHit: boolean;
+  readonly sharedGeneration: boolean;
 }
 
 // Full-history export is deterministic per session-file revision (Pi appends; it never rewrites
@@ -853,8 +834,9 @@ export interface ChatSessionHtmlExportResult extends ChatSessionHtmlExport {
 // branch is free. Unbounded per-file growth is impossible; entries are capped by revision count.
 const EXPORT_CACHE_LIMIT = 8;
 const exportCache = new Map<string, ChatSessionHtmlExportResult>();
+const pendingExports = new Map<string, Promise<ChatSessionHtmlExportResult>>();
 
-/** Uses Pi's supported CLI export command and returns the standalone HTML. */
+/** Uses Pi's public native export, without starting another CLI/runtime. */
 export async function exportChatSessionHtml(sessionFile: string, options: { readonly useCache?: boolean } = {}): Promise<ChatSessionHtmlExportResult> {
   const startedAt = Date.now();
   const resolvedFile = resolve(sessionFile);
@@ -864,41 +846,22 @@ export async function exportChatSessionHtml(sessionFile: string, options: { read
     if (cached !== undefined) {
       exportCache.delete(cacheKey);
       exportCache.set(cacheKey, cached);
-      return { ...cached, timings: cached.timings, cacheHit: true };
+      return { ...cached, timings: { exportMs: 0, patchMs: 0, delegationMs: 0, waitMs: 0, totalMs: Date.now() - startedAt }, cacheHit: true };
+    }
+    const pending = pendingExports.get(cacheKey);
+    if (pending !== undefined) {
+      const result = await pending;
+      const waitMs = Date.now() - startedAt;
+      return { ...result, sharedGeneration: true,
+        timings: { exportMs: 0, patchMs: 0, delegationMs: 0, waitMs, totalMs: waitMs } };
     }
   }
-  const exportDir = await mkdtemp(join(tmpdir(), "chat-session-export-"));
-  const outputPath = join(exportDir, "session.html");
+  const generate = generateSessionHtml(resolvedFile, startedAt);
+  if (cacheKey !== null) pendingExports.set(cacheKey, generate);
   try {
-    const cliStartedAt = Date.now();
-    await execFileAsync(process.execPath, [requirePiCliPath(), "--export", resolvedFile, outputPath], {
-      cwd: process.cwd(),
-      timeout: 30_000,
-      maxBuffer: 1024 * 1024,
-      env: {
-        ...process.env,
-        PI_OFFLINE: "1",
-        PI_SKIP_VERSION_CHECK: "1",
-      },
-    });
-    const cliMs = Date.now() - cliStartedAt;
-    const sessionManager = SessionManager.open(resolvedFile, dirname(resolvedFile));
-    const delegationStartedAt = Date.now();
-    const delegationOrigins = await resolveChatWorkflowDelegationOrigins(sessionManager);
-    const delegationMs = Date.now() - delegationStartedAt;
-    const patchStartedAt = Date.now();
-    const html = patchChatWorkflowHistory(
-      patchDeepSessionTraversal(await readFile(outputPath, "utf8")),
-      delegationOrigins,
-    );
-    const patchMs = Date.now() - patchStartedAt;
-    const result: ChatSessionHtmlExportResult = {
-      fileName: `pi-session-${basename(resolvedFile, ".jsonl")}.html`,
-      html,
-      cacheHit: false,
-      timings: { cliMs, patchMs, delegationMs, totalMs: Date.now() - startedAt },
-    };
-    if (cacheKey !== null) {
+    const result = await generate;
+    // A concurrent append must never cache a result under the wrong source revision.
+    if (cacheKey !== null && await exportCacheKey(resolvedFile) === cacheKey) {
       exportCache.set(cacheKey, result);
       while (exportCache.size > EXPORT_CACHE_LIMIT) {
         const oldest = exportCache.keys().next().value;
@@ -908,11 +871,43 @@ export async function exportChatSessionHtml(sessionFile: string, options: { read
     }
     return result;
   } finally {
+    if (cacheKey !== null && pendingExports.get(cacheKey) === generate) pendingExports.delete(cacheKey);
+  }
+}
+
+async function generateSessionHtml(resolvedFile: string, startedAt: number): Promise<ChatSessionHtmlExportResult> {
+  const exportDir = await mkdtemp(join(tmpdir(), "chat-session-export-"));
+  const outputPath = join(exportDir, "session.html");
+  try {
+    const exportStartedAt = Date.now();
+    const sessionManager = SessionManager.open(resolvedFile, dirname(resolvedFile));
+    const assets = await materializeSessionExportAssets(exportDir);
+    await exportSessionToHtml(sessionManager, undefined, { outputPath, ...assets });
+    const exportMs = Date.now() - exportStartedAt;
+    const delegationStartedAt = Date.now();
+    const delegationOrigins = await resolveChatWorkflowDelegationOrigins(sessionManager);
+    const delegationMs = Date.now() - delegationStartedAt;
+    const patchStartedAt = Date.now();
+    const html = patchChatWorkflowHistory(
+      patchDeepSessionTraversal(await readFile(outputPath, "utf8")),
+      delegationOrigins,
+    );
+    const patchMs = Date.now() - patchStartedAt;
+    const timings = { exportMs, patchMs, delegationMs, waitMs: 0, totalMs: Date.now() - startedAt };
+    return {
+      fileName: `pi-session-${basename(resolvedFile, ".jsonl")}.html`,
+      html,
+      cacheHit: false,
+      sharedGeneration: false,
+      timings,
+      generationTimings: timings,
+    };
+  } finally {
     await rm(exportDir, { recursive: true, force: true });
   }
 }
 
 async function exportCacheKey(sessionFile: string): Promise<string> {
   const stats = await stat(sessionFile);
-  return `${sessionFile}:${stats.mtimeMs}:${stats.size}`;
+  return `${sessionFile}:${stats.ino}:${stats.mtimeMs}:${stats.size}`;
 }

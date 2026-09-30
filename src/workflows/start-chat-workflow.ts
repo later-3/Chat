@@ -30,6 +30,11 @@ export async function startChatWorkflow(
       const { requireAcceptedWorkflowTurn } = await import("./long-agent-context.js");
       const accepted = await requireAcceptedWorkflowTurn(chatWorkflowInput);
       if (accepted.workflow?.id !== workflow) throw new Error("Workflow选择与接受记录不匹配");
+      const { openChatSession } = await import("../chat-session.js");
+      const { installAcceptedAssembly } = await import("../long-agents/turn-queue.js");
+      const session = await openChatSession(input);
+      installAcceptedAssembly(session.manager, accepted, { skipCollaborationHistory: true });
+      session.manager.flush();
     } else if (owner.type !== "ordinary") throw new Error("Friend会话不能通过普通Workflow入口继续；请进入Friend今天的会话");
   }
   const bind = async (runId: string) => {

@@ -1,3 +1,4 @@
+import { resolveLongAgentWorkflowAgent } from "./workflow-configuration.js";
 import { openChatSession } from "../chat-session.js";
 import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
@@ -17,7 +18,7 @@ export async function readLongAgentInputCapabilities(chatHome: string, longAgent
   const agent = (await readLongAgentRegistry(chatHome)).agents.find(candidate => candidate.id === longAgentId);
   if (agent === undefined) throw new LongAgentScopeError("找不到 Friend");
   const { agentDir } = getChatHomePaths(chatHome);
-  const definition = resolvePersonalAgentDefinition(agent.definition, personalAgentSettings(agentDir));
+  const definition = resolvePersonalAgentDefinition((await resolveLongAgentWorkflowAgent(agent, chatHome)).agent, personalAgentSettings(agentDir));
   const runtime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
   const model = definition.model === undefined ? undefined : runtime.getModel(definition.model.provider, definition.model.modelId);
   return { schemaVersion: 1 as const, longAgentId, images: model?.input.includes("image") ?? false,

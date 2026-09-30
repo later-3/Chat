@@ -22,6 +22,36 @@ function exportedSessionData(html) {
   return JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
 }
 
+test("history generation is shared by revision, reports request timings, and retries failures", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-history-cache-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = SessionManager.create(root, root);
+  manager.appendMessage({ role: "user", content: "first", timestamp: 1 });
+  manager.flush();
+  const file = manager.getSessionFile();
+  const before = fs.readFileSync(file, "utf8");
+  const results = await Promise.all(Array.from({ length: 4 }, () => exportChatSessionHtml(file)));
+  assert.equal(results.filter(result => !result.sharedGeneration && !result.cacheHit).length, 1);
+  assert.equal(results.filter(result => result.sharedGeneration).length, 3);
+  assert.ok(results.every(result => result.html === results[0].html));
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+  const cached = await exportChatSessionHtml(file);
+  assert.equal(cached.cacheHit, true);
+  assert.equal(cached.timings.exportMs, 0);
+  assert.equal(cached.timings.patchMs, 0);
+  assert.equal(cached.timings.waitMs, 0);
+  assert.deepEqual(cached.generationTimings, results[0].generationTimings);
+  manager.appendMessage({ role: "user", content: "new revision", timestamp: 2 });
+  manager.flush();
+  const changed = await exportChatSessionHtml(file);
+  assert.equal(changed.cacheHit, false);
+  assert.equal(exportedSessionData(changed.html).entries.length, manager.getEntries().length);
+  const failed = path.join(root, "missing.jsonl");
+  await assert.rejects(exportChatSessionHtml(failed), /ENOENT/);
+  fs.copyFileSync(file, failed);
+  assert.match((await exportChatSessionHtml(failed)).html, /^<!DOCTYPE html>/);
+});
+
 test("exports a Pi Session as standalone HTML with iterative tree traversal", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-session-export-test-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -426,4 +456,21 @@ test("a legacy review decision appears as a user item in the full-history tree",
   ]);
   assert.equal(sessionData.chatPlanReviewDecisions[0].entryId, decisionEntryId);
   assert.match(exported.html, /region\.id = "entry-" \+ decision\.entryId/);
+});
+
+test("large native histories retain every entry and branch with bounded cold generation", async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-history-large-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = SessionManager.create(root, root);
+  const anchor = manager.appendMessage({ role: "user", content: "branch origin", timestamp: 1 });
+  for (let i = 0; i < 500; i++) manager.appendMessage({ role: "user", content: `large ${i} ${"test ".repeat(1000)}`, timestamp: i + 2 });
+  manager.branch(anchor);
+  manager.appendMessage({ role: "user", content: "active alternate branch", timestamp: 1000 });
+  manager.flush();
+  const cold = await exportChatSessionHtml(manager.getSessionFile());
+  const warm = await exportChatSessionHtml(manager.getSessionFile());
+  assert.equal(exportedSessionData(cold.html).entries.length, manager.getEntries().length);
+  assert.equal(exportedSessionData(cold.html).leafId, manager.getLeafId());
+  assert.equal(warm.cacheHit, true);
+  console.log(`Large history ${fs.statSync(manager.getSessionFile()).size} bytes: cold ${cold.timings.totalMs} ms; warm ${warm.timings.totalMs} ms`);
 });

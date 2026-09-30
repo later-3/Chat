@@ -1333,7 +1333,7 @@ test("full history exports the managed Chat Session as standalone HTML", async (
   const inlineResponse = await serverFetch(
     `/api/sessions/${encodeURIComponent(sessionId)}/export?inline=1&projectId=${projectId}`,
   );
-  assert.equal(inlineResponse.status, 200);
+  assert.equal(inlineResponse.status, 200, inlineResponse.ok ? undefined : await inlineResponse.clone().text());
   assert.match(inlineResponse.headers.get("content-type") ?? "", /text\/html/);
   assert.match(inlineResponse.headers.get("content-disposition") ?? "", /^inline;/);
   assert.equal(inlineResponse.headers.get("x-frame-options"), "SAMEORIGIN");

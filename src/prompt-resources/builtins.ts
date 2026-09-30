@@ -133,6 +133,18 @@ const PLANNER_READINESS_CONTRACT_EXPERIENCE_V1 = [
  */
 export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
   {
+    schemaVersion: 1, id: "settings-density-and-execution-completion",
+    revisions: [{
+      schemaVersion: 1, id: "settings-density-and-execution-completion", revision: 1, kind: "experience",
+      title: "配置密度与整轮完成提示的真实浏览器验收",
+      purpose: "避免共用弹窗后仍残留巨大折叠空白、全局模型入口不清，以及把节点或运行列表变化误报为任务完成。",
+      content: "模型定义参数与 Agent 选择的作用域必须明确；从 Agent 进入全局模型编辑时定位当前模型，保留父级草稿，保存后重读目录与检查。配置折叠用共享原语，关闭时只保留一行，内部 padding/gap 属于展开内容，禁止用 details 的 flex 布局保留关闭后的空白。用真实浏览器测量关闭行高度、宽窄屏溢出和子弹窗草稿恢复，不能只断言 CSS 类存在。完成通知属于完整 Workflow Run/Friend turn；Pi agent_end、Stage 完成、流结束和运行列表消失都不等于成功。后台需重读终态，前后台按项目、Session、执行 ID 去重，失败/取消不播放成功音。单次提示包含多个音符不等于多次通知。门禁：configuration-browser、session-memory-switch-browser 与 execution-completion，使用隔离数据和本地假模型。",
+      tags: ["development", "frontend", "workflow"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/history/reviews/2026-09-30-settings-density-and-completion.md", capturedAt: "2026-09-30T18:00:00.000+08:00" }],
+      author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-30T18:00:00.000+08:00",
+    }],
+  },
+  {
     schemaVersion: 1, id: "configuration-capability-memory-contract",
     revisions: [{
       schemaVersion: 1, id: "configuration-capability-memory-contract", revision: 1, kind: "experience",
@@ -142,6 +154,18 @@ export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
       tags: ["development", "long-agent", "memory", "frontend"], status: "active",
       sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/configuration-capability-memory-contract.md", capturedAt: "2026-09-30T00:00:00.000+08:00" }],
       author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-30T00:00:00.000+08:00",
+    }],
+  },
+  {
+    schemaVersion: 1, id: "native-sdk-bundled-assets",
+    revisions: [{
+      schemaVersion: 1, id: "native-sdk-bundled-assets", revision: 1, kind: "experience",
+      title: "原生 SDK 成功不代表打包资源齐全",
+      purpose: "防止源码导出成功但生产模板/主题路径丢失。",
+      content: "原生 SDK 的相对资源目录会受服务端打包影响；受管源码链接即使列入 trace 仍可能被内联。模板、vendor 和主题必须作为同版构建输入，通过 SDK 明确的局部资源参数加载，不改全局包目录或复制渲染器。源码用例之外必须验证生产 HTTP 与开发 Runtime；完整历史必须观察 iframe 中的实际消息和分支，覆盖失败重试、取消与缓存耗时，不以响应成功代替首屏可读。门禁：Pi sdk-session-export、Chat built-server 与 prompt-capture-browser。",
+      tags: ["development", "pi", "build", "history"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/configuration-capability-memory-contract.md", capturedAt: "2026-09-30T20:20:00.000+08:00" }],
+      author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-30T20:20:00.000+08:00",
     }],
   },
   {

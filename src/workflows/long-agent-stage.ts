@@ -26,15 +26,21 @@ export async function attachLongAgentWorkflowContext(options: CreateWorkflowAgen
   if (owner === undefined) throw new Error("接受轮次缺少装配快照");
   const stageTurnId = `workflow:${invocationId}:${context.stageId}:${options.agent.id}`;
   const role = options.agent;
+  const memoryMaintenance = role.id === "session-memory-writer";
+  const identityEntry = options.sessionManager.getEntries().find(entry => entry.type === "custom" && entry.customType === "chat.agent-assembly-identity.v1"
+    && typeof entry.data === "object" && entry.data !== null && "turnId" in entry.data && entry.data.turnId === turn.turnId);
+  const identity = identityEntry?.type === "custom" && typeof identityEntry.data === "object" && identityEntry.data !== null && "instructions" in identityEntry.data
+    ? parseWorkflowAgentDefinition({ schemaVersion: 1, id: role.id, name: role.name, description: role.description, systemPrompt: { mode: "pi-default" }, tools: { mode: "none" }, customInstructions: identityEntry.data.instructions }).customInstructions
+    : [...(owner.agent.systemPrompt.mode === "replace" ? [{ text: owner.agent.systemPrompt.text }] : []), ...owner.agent.customInstructions];
   // Resolved definitions also carry inspection provenance. Only capability fields belong in an assembly snapshot.
   const agent = parseWorkflowAgentDefinition({
     schemaVersion: role.schemaVersion, id: role.id, name: role.name, description: role.description,
     model: role.model, thinkingLevel: role.thinkingLevel, systemPrompt: role.systemPrompt,
     tools: role.tools, resources: role.resources, customInstructions: [
-    ...(owner.agent.systemPrompt.mode === "replace" ? [{ text: owner.agent.systemPrompt.text }] : []),
-    ...owner.agent.customInstructions, ...role.customInstructions,
+    ...(memoryMaintenance ? [] : identity), ...role.customInstructions,
   ] });
-  const { revision: _revision, ...body } = { ...owner, turnId: stageTurnId, agent };
+  const { revision: _revision, ...body } = { ...owner, turnId: stageTurnId, agent,
+    ...(memoryMaintenance ? { contextFiles: [] } : {}) };
   if (context.purpose === "execution")
     persistAssemblySnapshot(options.sessionManager, { ...body, revision: assemblyRevision(body) }, { skipCollaborationHistory: true });
   return {

@@ -80,12 +80,14 @@ const run = (input) => sessionMemoryWorkflowDefinition.run(input);
 
 test("session-memory workflow: work then remember with the current-round projection", { concurrency: false }, async (t) => {
   const { faux, workspace, project } = await fixture(t, "chat-smem-workflow");
+  fs.writeFileSync(path.join(workspace, "AGENTS.md"), "BUSINESS_IDENTITY_ONLY: act as the project worker.");
   const writerInputs = [];
   const workerTools = [];
   const workerWorkflowCalls = [];
   faux.setResponses([
     // The worker does ordinary work AND actually calls a business Workflow once (P2: work may delegate).
     (context) => {
+      assert.match(context.systemPrompt, /BUSINESS_IDENTITY_ONLY/);
       workerTools.push((context.tools ?? []).map((tool) => tool.name));
       return fauxAssistantMessage(fauxToolCall("workflow_call", {
         action: "start",
@@ -105,6 +107,7 @@ test("session-memory workflow: work then remember with the current-round project
       return fauxAssistantMessage(`work 阶段：子工作流${result.includes("completed") ? "已完成" : "未完成"}：${String(child.text ?? result)}`.slice(0, 200));
     },
     (context) => {
+      assert.doesNotMatch(context.systemPrompt, /BUSINESS_IDENTITY_ONLY/, "maintenance must not inherit business identity instructions");
       writerInputs.push(context.messages.map((message) => `${message.role}:${textOf(message)}`).join("\n---\n"));
       return fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "空指针根因在第 42 行", expectedRevision: 0 }));
     },

@@ -1,5 +1,8 @@
 # Chat Long Agent 定义与配置模型
 
+2026-09-30 配置修订：长期身份继续归 Long Agent；执行能力统一由 Home 中的 Workflow 节点配置解析、冻结、检查和编辑。`definition.json` 不再持久保存模型/工具/资源副本，旧 API 仅作兼容投影。迁移及优先级见[配置指南](../../configuration/README.md)和[架构 §4](./chat-long-agent-architecture.md#4-project-first-与会话选择)。下文早期独立能力定义描述被此合同取代。每日默认也允许额外独立直接 Session。
+
+
 ## 1. 状态与阅读范围
 
 状态：2026-09-07 用户确认的目标架构。本文规定 Long Agent 是什么、拥有哪些能力、配置和资源如何管理；不表示这些能力已经实现。

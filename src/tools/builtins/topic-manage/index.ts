@@ -272,7 +272,7 @@ export const TOPIC_MANAGE_TOOL_PROVIDER: ChatToolProvider = defineChatSystemTool
         // go through request_topic so the background integration creates the node as well.
         const { readLongAgentState } = await import("../../../long-agents/storage.js");
         const state = await readLongAgentState(chatHome);
-        if (context.sessionId !== undefined && state.dailySessions.some((day) => day.sessionId === context.sessionId))
+        if (context.sessionId !== undefined && [...state.dailySessions, ...state.additionalSessions].some((day) => day.sessionId === context.sessionId))
           throw new Error("日常对话里不能直接用 create_topic；请用 request_topic 发起建题，由后台整合后建节点");
         const requestId = text(record.requestId, "requestId", 200);
         const title = text(record.title, "title", 200);

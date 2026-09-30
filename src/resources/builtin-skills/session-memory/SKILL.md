@@ -18,3 +18,7 @@ description: 维护本会话的会话记忆（session memory）：按需读取�
 - **推翻旧结论用 `supersede`**，不要堆叠新条目。
 - 写之前先 `list` 看既有条目；需要前文时用 `history` 按需读取。
 - 写完后可见回复必须引用工具实际返回的 `entryId` 与 `revision`；没有可写内容就说"本轮无需写入"。
+- 维护节点不重新回答用户、不重复执行 Agent 的主答复；主阶段已完成的记忆写入只核对，不算维护节点的新写入。
+- `author=user` 只用于用户明确说过的事实/要求，不混入 Agent 推断；推断单独标为 `agent` 并注明依据与不确定性。
+- `originEntryId` 是原生消息 Entry ID，不是 Session ID、turnId、requestId 或工具回执的记忆 entryId。Session 归属由工具绑定，不能从日志编号猜测。
+- 计划、尝试和成功分开记录：有成功工具回执才描述为已执行；尚未发送的答复不能记为已回复。

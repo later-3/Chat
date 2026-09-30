@@ -45,6 +45,8 @@ export interface CreateChatPiAgentSessionOptions {
   /** Trusted, already loaded resources retained by the acceptance worker for this exact turn. */
   readonly preparedResourceLoader?: DefaultResourceLoader;
   readonly additionalSkillPaths?: readonly string[];
+  /** Trusted internal roles can exclude unrelated identity/context instructions. */
+  readonly contextFilesPolicy?: "none";
   readonly customTools?: readonly ToolDefinition[];
   readonly transformContext?: AgentContextTransform;
   /**
@@ -66,6 +68,7 @@ export interface CreateChatPiAgentSessionOptions {
 }
 
 export interface ChatPiAgentSessionExtensions {
+  readonly contextFilesPolicy?: "none";
   readonly additionalSkillPaths?: readonly string[];
   readonly customTools?: readonly ToolDefinition[];
   readonly transformContext?: AgentContextTransform;
@@ -132,7 +135,7 @@ export async function createChatPiAgentSession(
   const declaredContextFiles = assembly?.snapshot.contextFiles ?? workflowContext?.files ?? [];
   // A conversation turn only reads the Friend's own identity files; Personal files of any other
   // origin are excluded before the resource loader can read them.
-  const contextFiles = scope === null || scope.include.personalContextFiles
+  const contextFiles = options.contextFilesPolicy === "none" ? [] : scope === null || scope.include.personalContextFiles
     ? declaredContextFiles
     : declaredContextFiles.filter((file) =>
         assembly !== undefined && file.path.startsWith(`${assembly.snapshot.ownWorkspace}/`));

@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { parseWorkflowAgentDefinition } from "./agent-config.js";
+import { personalAgentSettings, resolvePersonalAgentDefinition } from "../agents/assembly-context.js";
+import { getChatHomePaths, resolveChatHome } from "../chat-home.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import { getPromptResourceStore } from "../prompt-resources/store.js";
 import {
@@ -8,6 +12,38 @@ import {
   type WorkflowAgentDefinition,
 } from "./agent-definition.js";
 import { resolveWorkflowAgentDefinition } from "./agent-config-loader.js";
+
+export const CHAT_WORKFLOW_RESOLVED_AGENTS = "chat.workflow_resolved_agents.v1";
+const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+/** Immutable effective capabilities, in addition to the existing selected-resource revision snapshot. */
+function readFrozenAgents(manager: SessionManager, invocationId: string, workflowId: string): PreparedChatWorkflowTurnConfiguration | undefined {
+  for (const entry of manager.getEntries()) {
+    if (entry.type !== "custom" || entry.customType !== CHAT_WORKFLOW_RESOLVED_AGENTS || !isRecord(entry.data)) continue;
+    const { revision, ...body } = entry.data;
+    if (body.invocationId !== invocationId || body.workflowId !== workflowId) continue;
+    if (body.schemaVersion !== 1 || revision !== digest(body) || !isRecord(body.agents)) throw new Error("Workflow冻结配置损坏");
+    const agentConfigs = parseAgentConfigs(body.agentConfigs);
+    if (agentConfigs === undefined) throw new Error("Workflow冻结选择无效");
+    const agents: Record<string, ResolvedWorkflowAgentDefinition> = {};
+    for (const [id, raw] of Object.entries(body.agents)) {
+      const agent = parseWorkflowAgentDefinition(raw);
+      if (agent.id !== id) throw new Error("Workflow冻结Agent身份不一致");
+      agents[id] = { ...agent, sources: [] };
+    }
+    return { agentConfigs, agents };
+  }
+  return undefined;
+}
+function freezeResolvedAgents(manager: SessionManager, input: PrepareChatWorkflowTurnConfigurationInput, result: PreparedChatWorkflowTurnConfiguration) {
+  const settings = personalAgentSettings(getChatHomePaths(resolveChatHome(input.chatHome)).agentDir);
+  const agents = Object.fromEntries(Object.entries(result.agents).map(([id, resolved]) => {
+    const { sources: _sources, modelSource: _model, thinkingSource: _thinking, ...core } = resolved;
+    return [id, resolvePersonalAgentDefinition(core, settings)];
+  }));
+  const body = { schemaVersion: 1, invocationId: input.invocationId, workflowId: input.workflowId, agents, agentConfigs: result.agentConfigs };
+  manager.appendCustomEntry(CHAT_WORKFLOW_RESOLVED_AGENTS, { ...body, revision: digest(body) });
+  return { ...result, agents: Object.fromEntries(Object.entries(agents).map(([id, core]) => [id, { ...result.agents[id], ...core, sources: result.agents[id]?.sources ?? [] }])) };
+}
 
 export const CHAT_WORKFLOW_CONFIGURATION_CUSTOM_TYPE = "chat.workflow_configuration";
 export const CHAT_WORKFLOW_TURN_CONFIGURATION_CUSTOM_TYPE = "chat.workflow_turn_configuration";
@@ -305,6 +341,8 @@ export async function prepareChatWorkflowAgentsFromRound(input: {
   readonly chatHome?: string;
   readonly projectDataDir?: string;
 }): Promise<PreparedChatWorkflowTurnConfiguration> {
+  const frozen = readFrozenAgents(input.sessionManager, input.invocationId, input.workflowId);
+  if (frozen && input.agents.every(agent => frozen.agents[agent.id] !== undefined)) return frozen;
   const entries = input.sessionManager.getEntries();
   const snapshot = collectChatWorkflowTurnConfigurations(entries)
     .find((candidate) => candidate.invocationId === input.invocationId && candidate.workflowId === input.workflowId);
@@ -340,6 +378,11 @@ export async function prepareChatWorkflowTurnConfiguration(
   sessionManager: SessionManager,
   input: PrepareChatWorkflowTurnConfigurationInput,
 ): Promise<PreparedChatWorkflowTurnConfiguration> {
+  const existing = readFrozenAgents(sessionManager, input.invocationId, input.workflowId);
+  if (existing) {
+    if (input.agents.some(agent => !existing.agents[agent.id])) throw new Error("Workflow节点不在受理快照中");
+    return existing;
+  }
   const agentsById = new Map(input.agents.map((agent) => [agent.id, agent]));
   const knownAgentIds = new Set(agentsById.keys());
   const defaults = knownSelections(input.defaults, knownAgentIds, "Workflow默认配置");
@@ -403,7 +446,7 @@ export async function prepareChatWorkflowTurnConfiguration(
     workflowId: input.workflowId,
     agentConfigs: structuredClone(frozen),
   } satisfies ChatWorkflowTurnConfigurationData);
+  const result = freezeResolvedAgents(sessionManager, input, { agentConfigs: frozen, agents: Object.fromEntries(resolvedEntries) });
   sessionManager.flush();
-
-  return { agentConfigs: frozen, agents: Object.fromEntries(resolvedEntries) };
+  return result;
 }

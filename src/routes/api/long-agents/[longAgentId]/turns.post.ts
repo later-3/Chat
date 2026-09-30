@@ -1,3 +1,4 @@
+import { parseAgentConfigSelection } from "../../../../workflows/agent-config.js";
 import {
   createError,
   defineEventHandler,
@@ -20,7 +21,7 @@ export default defineEventHandler(async (event) => {
     const v = body as Record<string, unknown>;
     if (
       Object.keys(v).some(
-        (k) => !["workflow", "schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId", "sessionMemory", "promptCapture"].includes(k),
+        (k) => !["agentConfigs", "workflow", "schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId", "sessionMemory", "promptCapture"].includes(k),
       ) ||
       (v.sessionMemory !== undefined && v.sessionMemory !== "on" && v.sessionMemory !== "off") ||
       (v.promptCapture !== undefined && v.promptCapture !== "on" && v.promptCapture !== "off") ||
@@ -31,11 +32,15 @@ export default defineEventHandler(async (event) => {
       (v.contextProjectId !== undefined && !(v.contextProjectId === null || (typeof v.contextProjectId === "string" && v.contextProjectId.trim())))
     )
       throw new Error("无效Friend消息合同");
+    if (v.agentConfigs !== undefined && (typeof v.agentConfigs !== "object" || v.agentConfigs === null || Array.isArray(v.agentConfigs))) throw new Error("无效Agent选择");
+    const agentConfigs = v.agentConfigs === undefined ? undefined
+      : Object.fromEntries(Object.entries(v.agentConfigs as Record<string, unknown>).map(([id, value]) => [id, parseAgentConfigSelection(value)]));
     const home = resolveChatHome();
     const images = parseWorkflowImages(v.images);
     if (v.workflow !== undefined && typeof v.workflow !== "string") throw new Error("无效Workflow选择");
     const accepted = await acceptLongAgentTurn({
       ...(v.workflow === undefined ? {} : { workflow: v.workflow as string }),
+      ...(agentConfigs === undefined ? {} : { agentConfigs }),
       chatHome: home,
       longAgentId,
       projectId: longAgentId,

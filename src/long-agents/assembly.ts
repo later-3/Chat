@@ -1,3 +1,5 @@
+import type { WorkflowAgentDefinition } from "../workflows/agent-config.js";
+import { resolveLongAgentWorkflowAgent } from "./workflow-configuration.js";
 import { ensureAgentCalendar } from "./project-agent.js";
 import { DAILY_ARCHIVE_INSTRUCTIONS } from "./daily-summary-task.js";
 import { agentDate } from "./calendar.js";
@@ -12,6 +14,7 @@ import type { LongAgentConfig } from "./types.js";
 /** Lifecycle and inspection share Friend-owned inputs; public assembly owns project rules/tools/settings. */
 export async function prepareLongAgentAssembly(input: {
   readonly agent: LongAgentConfig;
+  readonly executionAgent?: WorkflowAgentDefinition;
   readonly chatHome: string;
   readonly projectId: string | null;
   readonly turnId: string;
@@ -40,23 +43,35 @@ export async function prepareLongAgentAssembly(input: {
   const format = buildReplyFormatInstruction(agent.responseTemplate, {
     project: project?.name ?? "无项目", agentName: agent.name, date: input.today ?? localDate(),
   });
-  return {
+  const execution = input.executionAgent ?? (scope === undefined
+    ? (await resolveLongAgentWorkflowAgent(agent, chatHome)).agent : agent.definition);
+  const identityInstructions = [
+    ...(agent.definition.systemPrompt.mode === "replace" ? [{ text: agent.definition.systemPrompt.text }] : []),
+    ...agent.definition.customInstructions,
+  ];
+  const prepared = {
     invocation: {
       turnId: input.turnId, projectId: input.projectId,
       ownWorkspace: own.cwd, ownResourceRoot: longAgentConfigRoot(chatHome, agent.id),
       ...(scope === undefined ? {} : { scope, ...(input.scopeGrantsDigest === undefined ? {} : { scopeGrantsDigest: input.scopeGrantsDigest }) }),
     },
     agent: {
-      ...agent.definition,
+      schemaVersion: execution.schemaVersion, id: execution.id, name: execution.name, description: execution.description,
+      ...(execution.model === undefined ? {} : { model: execution.model }),
+      ...(execution.thinkingLevel === undefined ? {} : { thinkingLevel: execution.thinkingLevel }),
+      systemPrompt: execution.systemPrompt, tools: execution.tools, resources: execution.resources,
       customInstructions: [
-        ...agent.definition.customInstructions,
+        ...execution.customInstructions,
+        ...(execution === agent.definition ? [] : identityInstructions),
         ...(group === undefined ? [] : [{ text: buildAgentGroupContextInstructions(group) }]),
         ...(format === null ? [] : [{ text: format }]),
         ...(includeHandoff ? [{ text: DAILY_ARCHIVE_INSTRUCTIONS }] : []),
         ...(handoff === null ? [] : [{ text: handoff }]),
         ...(scope === undefined ? [] : [{ text: longAgentScopeInstructions(scope, { agentName: agent.name }) }]),
+        { text: "<memory_fact_contract>记忆只保存有依据的事实：用户明确说过的内容才可归为 user，Agent 的推断须单独归为 agent 并标明不确定性；计划、尝试、成功分别表述，只有真实成功回执才能声称已完成，不把尚未发送的回复记为已回复。Session、轮次、请求、原生消息 Entry 和记忆条目是不同标识，来源以工具和服务端上下文为准，禁止互换。发现旧事实错误时以可追踪修订纠正，不覆盖用户原始发言。</memory_fact_contract>" },
         { text: "<chat_runtime_capability_contract>你是由 Chat 公共 Pi 装配执行的长期助手。当前 Agent、Project、Session 与授权范围由本轮服务端上下文确定。平台能力以本轮实际激活的 Tool 名称、Schema 和使用说明为准；身份职责、旧记忆或历史中的功能上线状态和容器路径不能覆盖当前能力事实。工具已提供表示允许尝试，不表示网关或外部服务必然可达；失败须报告真实原因，不能说成记忆不存在。NanoClaw Agent Memory 通过 agent_memory_* 访问，不能猜测其宿主或原生容器路径；Chat Personal/Project 共享事实用 memory_*，会话要点用 session_memory，每日总结和历史归档用 summary_manage。只使用本轮存在的工具，未提供则明确说明能力未装配；不要修改身份定义或扩大权限来绕过。身份和职责仍沿用已配置来源。</chat_runtime_capability_contract>" },
       ],
     },
   };
+  return { ...prepared, identityInstructions: prepared.agent.customInstructions.slice(execution.customInstructions.length) };
 }

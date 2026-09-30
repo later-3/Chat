@@ -11,7 +11,7 @@ export const SESSION_MEMORY_TOOL_PROVIDER = defineChatSystemTool(
     defineTool({
       name: manifest.name,
       label: manifest.label,
-      description: manifest.description,
+      description: `${manifest.description}\nUse list first: the result contains the host-bound memory Session ID. Never substitute a turnId/requestId or a native message Entry ID for it. author=user requires a real user statement; inference belongs to agent. Record completed actions only after successful receipts, never a planned or unsent reply.`,
       executionMode: "sequential",
       parameters: Type.Object({
         operation: Type.Union([
@@ -28,7 +28,7 @@ export const SESSION_MEMORY_TOOL_PROVIDER = defineChatSystemTool(
         })),
         author: Type.Optional(Type.Union([Type.Literal("agent"), Type.Literal("user")])),
         content: Type.Optional(Type.String({ maxLength: 4000 })),
-        originEntryId: Type.Optional(Type.String({ maxLength: 200 })),
+        originEntryId: Type.Optional(Type.String({ maxLength: 200, description: "Native message Entry ID in the memory-owning Session, obtained from history. Not a Session, turn, request or memory-entry ID. Omit to bind the latest matching source message." })),
         supersedes: Type.Optional(Type.String({ maxLength: 120 })),
         expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })),
         afterEntryId: Type.Optional(Type.String({ maxLength: 200 })),
@@ -59,6 +59,17 @@ export const SESSION_MEMORY_TOOL_PROVIDER = defineChatSystemTool(
           }
           if (params.purpose === undefined || params.author === undefined || params.content === undefined || params.expectedRevision === undefined)
             throw new Error("write/supersede 需要 purpose、author、content 与 expectedRevision（先 list 读取 revision）");
+          const source = target.sessionId === context.sessionId ? context.sessionManager
+            : (await (await import("../../../chat-session.js")).openChatSession({ chatHome: context.chatHome,
+              projectId: target.longAgentId, sessionId: target.sessionId })).manager;
+          const branch = source.getBranch();
+          const matchesAuthor = (entry: typeof branch[number]) => entry.type === "message"
+            && (params.author === "user" ? entry.message.role === "user" : ["assistant", "toolResult"].includes(entry.message.role));
+          const origin = params.originEntryId === undefined ? branch.findLast(matchesAuthor)
+            : branch.find(entry => entry.id === params.originEntryId);
+          if (params.originEntryId !== undefined && (!origin || !matchesAuthor(origin)))
+            throw new Error("originEntryId 必须引用本会话当前分支中与 author 一致的原生消息；请用 history 核对，不能填轮次或请求标识");
+          if (params.author === "user" && !origin) throw new Error("author=user 需要可核验的用户消息来源");
           return await memory.writeSessionMemoryEntry({
             chatHome: context.chatHome,
             longAgentId: target.longAgentId,
@@ -67,7 +78,7 @@ export const SESSION_MEMORY_TOOL_PROVIDER = defineChatSystemTool(
             purpose: params.purpose,
             author: params.author,
             content: params.content,
-            ...(params.originEntryId === undefined ? {} : { originEntryId: params.originEntryId }),
+            ...(origin === undefined ? {} : { originEntryId: origin.id }),
             ...(params.supersedes === undefined ? {} : { supersedes: params.supersedes }),
             expectedRevision: params.expectedRevision,
           });

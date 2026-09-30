@@ -1,3 +1,4 @@
+import { mutateAgentDurableConfig, readAgentDurableConfig } from "../workflows/agent-model-config.js";
 import { withFileLock } from "../persistence/versioned-file.js";
 import { randomUUID } from "node:crypto";
 import { link, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
@@ -86,6 +87,44 @@ function longAgentMigrationDir(root: string): string {
   return resolve(root, "runtime", "migrations", "long-agent-definition-split");
 }
 
+const executionFields = ["model", "thinkingLevel", "tools", "resources"] as const;
+const migratedWorkflow = "minimal-pi-coding-agent";
+const migratedRole = "pi-coding-agent";
+function identityDefinition(definition: WorkflowAgentDefinition) {
+  const { model: _model, thinkingLevel: _thinking, tools: _tools, resources: _resources, ...identity } = definition;
+  return identity;
+}
+function executionDefinition(definition: WorkflowAgentDefinition, base: string) {
+  const resources = definition.resources.mode === "inherit" ? definition.resources : {
+    ...definition.resources,
+    skillPaths: definition.resources.skillPaths.map(path => resolve(base, path)),
+    extensionPaths: definition.resources.extensionPaths.map(path => resolve(base, path)),
+    pluginSources: definition.resources.pluginSources.map(path => path.startsWith(".") ? resolve(base, path) : path),
+  };
+  return { schemaVersion: 1 as const, model: definition.model, thinkingLevel: definition.thinkingLevel, tools: definition.tools, resources };
+}
+/** Idempotent transfer into the existing Workflow store. The backup is a migration record, never read as live config. */
+async function migrateExecutionDefinition(root: string, agent: LongAgentConfig, raw: unknown) {
+  const base = longAgentConfigRoot(root, agent.id);
+  const path = longAgentDefinitionPath(root, agent.id);
+  return withFileLock(path, async () => {
+    const current = await optionalJson(path) ?? raw;
+    const definition = parseWorkflowAgentDefinition(isRecord(current) ? { tools: { mode: "pi-default" }, ...current } : current);
+    if (isRecord(current) && executionFields.some(field => Object.hasOwn(current, field))) {
+      const migration = resolve(root, "runtime/migrations/long-agent-workflow-config", agent.id);
+      await writeJsonOnce(resolve(migration, "definition.json"), current);
+      const legacy = executionDefinition(definition, base);
+      await mutateAgentDurableConfig(base, migratedWorkflow, migratedRole, existing => ({ ...legacy, ...existing }));
+      await atomicWriteJson(path, identityDefinition(definition));
+      await atomicWriteJson(resolve(migration, "done.json"), { schemaVersion: 1, workflowId: migratedWorkflow, agentId: migratedRole });
+    }
+    const durable = await readAgentDurableConfig(base, migratedWorkflow, migratedRole);
+    return parseWorkflowAgentDefinition({ tools: { mode: "pi-default" }, ...identityDefinition(definition), ...(durable === undefined ? {} : {
+      model: durable.model, thinkingLevel: durable.thinkingLevel, tools: durable.tools ?? { mode: "pi-default" }, resources: durable.resources,
+    }) });
+  });
+}
+
 /** 读取 Agent 的 definition.json；不存在返回 undefined（使用默认定义）。 */
 async function readLongAgentDefinitionFile(
   root: string,
@@ -99,13 +138,13 @@ async function readLongAgentDefinitionFile(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
-  const definition = parseWorkflowAgentDefinition(raw);
+  const definition = parseWorkflowAgentDefinition(isRecord(raw) ? { tools: { mode: "pi-default" }, ...raw } : raw);
   // 与 types.ts parseAgent 一致：空 description 回退为 "Chat Long Agent"。
   const expectedDescription = agent.description === "" ? "Chat Long Agent" : agent.description;
   if (definition.id !== agent.id || definition.name !== agent.name || definition.description !== expectedDescription) {
     throw new Error(`Long Agent ${agent.id} 的definition.json与登记身份不一致: ${path}`);
   }
-  return definition;
+  return migrateExecutionDefinition(root, agent, raw);
 }
 
 /**
@@ -143,9 +182,24 @@ async function migrateDefinitionSplit(root: string): Promise<void> {
 }
 
 /** 拆分写入：definition 进 long-agents/<id>/definition.json，Registry 只保留索引字段。 */
-async function writeRegistrySplit(root: string, registry: LongAgentRegistry): Promise<void> {
+async function writeRegistrySplit(root: string, registry: LongAgentRegistry, previous: LongAgentRegistry): Promise<void> {
   for (const agent of registry.agents) {
-    await atomicWriteJson(longAgentDefinitionPath(root, agent.id), agent.definition);
+    const old = previous.agents.find(item => item.id === agent.id)?.definition;
+    const base = longAgentConfigRoot(root, agent.id);
+    await mkdir(base, { recursive: true, mode: 0o700 });
+    const next = executionDefinition(agent.definition, base);
+    const changed = executionFields.filter(field => old === undefined || JSON.stringify(old[field]) !== JSON.stringify(agent.definition[field]));
+    if (changed.length) await mutateAgentDurableConfig(base, migratedWorkflow, migratedRole, current => {
+      const merged: Record<string, unknown> = { ...current, schemaVersion: 1 };
+      for (const field of changed) {
+        const effectiveCurrent = current?.[field] ?? (field === "tools" ? { mode: "pi-default" } : field === "resources" ? { mode: "inherit" } : undefined);
+        if (old !== undefined && JSON.stringify(effectiveCurrent) !== JSON.stringify(old[field]))
+          throw new Error("Workflow配置已变化，请刷新后重试");
+        if (next[field] === undefined) delete merged[field]; else merged[field] = next[field];
+      }
+      return Object.keys(merged).length === 1 ? undefined : merged;
+    });
+    await atomicWriteJson(longAgentDefinitionPath(root, agent.id), identityDefinition(agent.definition));
   }
   const index = {
     schemaVersion: registry.schemaVersion,
@@ -270,9 +324,10 @@ export async function updateLongAgentRegistry<T>(
   const previous = registryWrites.get(root) ?? Promise.resolve();
   let result: T | undefined;
   const current = previous.catch(() => undefined).then(async () => {
-    const changed = await update(await readLongAgentRegistry(root));
+    const original = await readLongAgentRegistry(root);
+    const changed = await update(original);
     const parsed = parseLongAgentRegistry(changed.registry);
-    await writeRegistrySplit(root, parsed);
+    await writeRegistrySplit(root, parsed, original);
     result = changed.result;
   });
   registryWrites.set(root, current);

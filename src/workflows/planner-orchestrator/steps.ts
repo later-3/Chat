@@ -1,3 +1,4 @@
+import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
 import { openChatSession, type ChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
@@ -95,7 +96,7 @@ export async function runOrchestrationPlanningStep(input: ChatWorkflowInput) {
   return runReviewedPlanningStep(input, {
     workflowId: WORKFLOW_ID,
     plannerAgent: ORCHESTRATION_PLANNER_AGENT,
-    agents: [ORCHESTRATION_PLANNER_AGENT, WORKFLOW_COORDINATOR_AGENT],
+    agents: [ORCHESTRATION_PLANNER_AGENT, WORKFLOW_COORDINATOR_AGENT, SESSION_MEMORY_WRITER_AGENT],
   });
 }
 

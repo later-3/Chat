@@ -251,10 +251,11 @@ function nativeMessageForFrontend(
   longAgentTurn?: ChatLongAgentTurnMarker,
   activity?: ChatSessionActivity,
 ): unknown {
-  const normalized = normalizeMessageForFrontend(message);
-  if (!isRecord(normalized)) {
-    return normalized;
+  const value = normalizeMessageForFrontend(message);
+  if (!isRecord(value)) {
+    return value;
   }
+  let normalized: Record<string, unknown> = value;
   if (normalized.role === "assistant" && activity !== undefined) {
     return { ...normalized, chatSessionActivity: activity };
   }
@@ -265,7 +266,7 @@ function nativeMessageForFrontend(
   if ((normalized.role === "user" || normalized.role === "assistant")
     && longAgentTurn !== undefined
     && !isRecord(normalized.chatLongAgent)) {
-    return {
+    normalized = {
       ...normalized,
       chatLongAgent: {
         source: "chat.long_agent",
@@ -402,7 +403,7 @@ export function projectSessionContext(
   let activeLongAgentTurn = undefined as ChatLongAgentTurnMarker | undefined;
   let activeActivity: ChatSessionActivity | undefined;
 
-  for (const entry of contextEntries) {
+  for (const [entryIndex, entry] of contextEntries.entries()) {
     const stage = stageByEntryId.get(entry.id);
     // Future stage schemas are also boundaries; do not inherit an earlier Agent label.
     if (stageEntryIds.has(entry.id)) {
@@ -414,7 +415,9 @@ export function projectSessionContext(
     if (longAgentTurn !== undefined) {
       activeLongAgentTurn = longAgentTurn.status === "running" ? longAgentTurn : undefined;
       if (longAgentTurn.status === "running") {
-        activeStage = undefined;
+        // The default Workflow persists its stage immediately before the Friend
+        // lifecycle starts. Preserve that boundary, but never inherit an older turn.
+        if (contextEntries[entryIndex - 1]?.id !== activeStage?.entryId) activeStage = undefined;
         activeActivity = undefined;
       }
       continue;

@@ -3,6 +3,23 @@ import { validateTimeZone } from "./calendar.js";
 import { parseWorkflowImages } from "../workflows/image-input.js";
 import type { ImageContent } from "@earendil-works/pi-ai";
 
+export interface AdditionalSession {
+  readonly longAgentId: string;
+  readonly sessionId: string;
+  readonly requestId: string;
+  readonly date: string;
+  readonly timeZone: string;
+  readonly createdAt: string;
+}
+
+export function parseAdditionalSession(value: unknown): AdditionalSession {
+  record(value); fields(value, ["longAgentId", "sessionId", "requestId", "date", "timeZone", "createdAt"]);
+  string(value.longAgentId); string(value.sessionId); string(value.requestId);
+  if (value.requestId.length > 256 || value.requestId.trim() !== value.requestId) throw new Error("无效会话创建请求ID");
+  date(value.date); timestamp(value.createdAt); validateTimeZone(value.timeZone);
+  return value as unknown as AdditionalSession;
+}
+
 export interface DailySession {
   readonly longAgentId: string;
   readonly date: string;
@@ -127,7 +144,7 @@ export function parseAcceptedTurn(value: unknown): AcceptedTurn {
   if (typeof value.groupContext.stale !== "boolean") throw new Error("无效身份快照状态");
   if (value.seed !== undefined) {
     if (!Array.isArray(value.seed)) throw new Error("装配快照必须是数组");
-    for (const entry of value.seed) { record(entry); fields(entry, ["customType", "data"]); string(entry.customType); if (!entry.customType.startsWith("chat.agent-assembly")) throw new Error("未知装配快照"); }
+    for (const entry of value.seed) { record(entry); fields(entry, ["customType", "data"]); string(entry.customType); if (!entry.customType.startsWith("chat.agent-assembly") && !["chat.workflow_configuration", "chat.workflow_turn_configuration", "chat.workflow_resolved_agents.v1"].includes(entry.customType)) throw new Error("未知装配快照"); }
   }
   if ((value.status === "queued" || value.status === "running") && (value.text === undefined || value.seed === undefined)) throw new Error("待执行请求缺少冻结输入");
   return value as unknown as AcceptedTurn;

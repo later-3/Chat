@@ -76,7 +76,7 @@ pi/：Pi Coding Agent
 
 父仓库已经通过`nanoclaw/` gitlink固定公开Fork `later-3/nanoclaw`的`chat`分支，官方只读上游是`nanocoai/nanoclaw`。NanoClaw具备Agent Group身份与Workspace、Markdown Memory、Channel、调度、Destination、权限、模板与多Agent生态；Chat保留这些长期Agent能力，只把Agent Loop、Model执行和用户可见Session统一交给Chat Pi。当前已经完成Channel文本链路、Agent Group身份/Standing Instructions/Core Memory上下文和Agent Memory管理Tool；定时/主动Trigger、完整Workspace/Skill快照与其他生态资源继续接入。
 
-当前本机使用一个独立LaunchAgent常驻一个NanoClaw Channel Gateway。该Gateway承载Nexus、Architecture Muse、Coder Muse、Planner Muse、PUA Muse和Reviewer Muse共6个内部路由；6个Telegram Bot分别通过独立Adapter、Messaging Group和Wiring连接到对应Long Agent。Instance以`chat-pi`模式运行：Inbox落盘后统一交给Chat Pi，NanoClaw Session仅作为Channel坐标，Gateway不初始化Agent Session Runtime、不启动或监听Agent容器。Friend 日常交流按该 Friend 时区解析每日唯一 Session；Web 与 IM 共用受理与执行链，显式后台工作、主题节点和子调用保留各自 Session。协作 Project 与 Session 的固定存储归属分离。
+当前本机使用一个独立LaunchAgent常驻一个NanoClaw Channel Gateway。该Gateway承载Nexus、Architecture Muse、Coder Muse、Planner Muse、PUA Muse和Reviewer Muse共6个内部路由；6个Telegram Bot分别通过独立Adapter、Messaging Group和Wiring连接到对应Long Agent。Instance以`chat-pi`模式运行：Inbox落盘后统一交给Chat Pi，NanoClaw Session仅作为Channel坐标，Gateway不初始化Agent Session Runtime、不启动或监听Agent容器。Friend 日常交流按该 Friend 时区解析每日默认 Session；用户还可创建额外独立直接 Session；Web 与 IM 共用受理与执行链，显式后台工作、主题节点和子调用保留各自 Session。协作 Project 与 Session 的固定存储归属分离。
 
 NanoClaw继续是独立长期Agent Host和Channel Gateway：保留Agent Group身份、Workspace、Markdown Agent Memory、Standing Instructions、Skill与Template生态、Nano Session、耐久Inbox、Channel、调度、Destination、权限和Outbound投递；Chat拥有Model与Pi Tool运行策略、Project、Pi Session、Workflow、Mem0和用户可见历史。NanoClaw像Chat Web一样是Chat Backend的客户端，通过带服务认证的版本化HTTP Event API提交消息；Chat通过NanoClaw的窄HTTP Gateway完成Delivery与Ack。后续Agent Group资源通过单独的Management与Resource合同接入；Chat不直接读取NanoClaw数据库，也不依赖NanoClaw的全权限本地CLI Socket。
 

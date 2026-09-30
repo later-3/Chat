@@ -16,7 +16,9 @@ export default defineEventHandler(async (event) => {
   if (!longAgentId) throw createError({ statusCode: 400, statusMessage: "缺少longAgentId" });
   const body = await readBody<unknown>(event);
   if (!isRecord(body) || typeof body.projectId !== "string" || body.projectId.trim() === ""
-    || Object.keys(body).some(key => !["projectId", "date"].includes(key))
+    || Object.keys(body).some(key => !["projectId", "date", "mode", "requestId"].includes(key))
+    || (body.mode !== undefined && body.mode !== "new")
+    || (body.mode === "new" ? typeof body.requestId !== "string" || !body.requestId.trim() : body.requestId !== undefined)
     || (body.date !== undefined && typeof body.date !== "string")) {
     throw createError({ statusCode: 400, statusMessage: "projectId必须是非空字符串" });
   }
@@ -35,6 +37,7 @@ export default defineEventHandler(async (event) => {
       chatHome: resolveChatHome(),
       projectId,
       agent,
+      ...(body.mode === "new" ? { createRequestId: body.requestId as string } : {}),
       ...(body.date === undefined ? {} : { date: body.date as string }),
     });
     return {

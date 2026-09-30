@@ -246,7 +246,7 @@ Markdown Agent Memory与Chat Personal/Project Memory保持不同领域服务和�
 
 | 输入 | 字段与事实源 | 信任和生效点 |
 |---|---|---|
-| AgentDefinition | agentId、definitionRevision、模型/Thinking、System Prompt、自定义区域、tools/resources；现有配置 Resolver | Workflow 使用其有效定义；Friend 使用自身定义与 Personal 模型默认，不受浏览项目的 Workflow 或 `.pi/settings.json` 隐式覆盖 |
+| AgentDefinition | agentId、definitionRevision、模型/Thinking、System Prompt、自定义区域、tools/resources；现有配置 Resolver | Workflow 与 Friend 共用有效节点定义 Resolver；Friend 使用 Home 配置并叠加长期身份，不受浏览项目的 Workflow 或 `.pi/settings.json` 隐式覆盖 |
 | SessionRef | ownerKind、ownerId、storageProjectId、sessionId、dailyDate/timeZone（Friend）；Session 定位服务 | 路径仅服务端解析；projectId 兼容字段表示存储归属，不再同时代表本轮执行项目 |
 | AgentWorkspace | longAgentId、workspaceRoot、自有资源引用；配置根和受控 Nano 资源服务 | 固定身份；不因项目切换搬家；Nano Group 资源不等于可任意挂载的本地目录 |
 | 本轮项目上下文 | projectId 或 null、projectRoot、effectiveCwd；Project Resolver | 统一项目合同按入口唯一确定并在受理时冻结：Web 私聊携带顶栏"项目"选择器的注册项目 id，群聊轮次取会话 storageProjectId，后台工作/任务/职责沿用创建时冻结目标，通道与定时为 null；null 明确表示无项目（Agent 容器），不能漏字段后猜最近项目，也不存在第二个可写的"项目关联"存储 |
@@ -300,7 +300,7 @@ Chat 系统工具上下文必须同时带 SessionRef 和本轮冻结项目（con
 
 - `src/agents/assembly-context.ts` 解析可信 `invocation`，将身份、存储 Project、本轮目标、cwd、有效定义及根规则正文写入 `chat.agent-assembly.v1`。P3 已在统一耐久接受点冻结，执行安装同一 seed；P4 Web turns API 耐久接受后返回引用，再订阅实时事件，旧 messages API 保留同步兼容。
 - Web `contextProjectId` 为已登记用户项目 ID 或 null（统一项目合同：私聊按顶栏选择每轮携带并冻结，群聊取会话 storageProjectId，通道/定时为 null）；省略兼容为 null。Agent Home 不能作为执行项目。Nano/调度适配显式传入绑定的用户项目，绑定 Home 时为 null，不读取浏览器最后选择。
-- Friend 模型/Thinking 从自身定义 → Personal 设置解析；项目设置只参与资源等 Pi 设置。`prepareLongAgentAssembly` 供执行和检查共用身份/交接输入，检查为当前配置预览，不修改真实历史。
+- Friend 模型/Thinking 从 Home 公共 Workflow 配置及本轮选择解析，缺省沿用 Personal；项目设置只参与资源等 Pi 设置。`prepareLongAgentAssembly` 供执行和检查共用身份/交接输入，检查为当前配置预览，不修改真实历史。
 - 原生 `read` 对选中规则/Skill 等文本返回本轮快照，其他文本和图片保留 Pi 行为。普通 Workflow 与 Friend 共用 `read/write/edit/ls/find/grep` 作用域检查：普通 Workflow 以当前项目为边界，Friend 额外允许自身 Workspace；选中资源保留声明的只读范围。自定义同名工具仍由其能力提供方负责，不声称对任意扩展代码实施沙箱。
 - `chat.agent-assembly-resources.v1` 保存加载的 Skill/Prompt/扩展入口源内容与版本。恢复前校验，再交给 Pi；修改或缺失明确失败。运行中的扩展保留已加载实例。重建带可执行扩展的旧轮次一律失败并要求新轮次，因为入口文件 hash 无法证明其任意依赖代码未变化；不以重新导入最新代码冒充恢复。
 - `chat.agent-assembly-tools.v1` 固定实际启用工具、Schema 与资源版本；恢复时默认工具设置变化会明确失败，新轮次才采用新设置。

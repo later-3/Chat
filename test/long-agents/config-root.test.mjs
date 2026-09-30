@@ -74,7 +74,9 @@ test("legacy inline definitions migrate to per-Agent roots with backup and marke
 
   // 拆分落盘：definition 文件存在，Registry 只剩索引字段。
   const definitionPath = path.join(longAgentConfigRoot(chatHome, "nexus"), "definition.json");
-  assert.equal(JSON.parse(fs.readFileSync(definitionPath, "utf8")).tools.addresses[0], "system:tool/memory_search");
+  assert.equal(JSON.parse(fs.readFileSync(definitionPath, "utf8")).tools, undefined);
+  const workflowPath = path.join(longAgentConfigRoot(chatHome, "nexus"), "workflows/minimal-pi-coding-agent/agents/pi-coding-agent.json");
+  assert.equal(JSON.parse(fs.readFileSync(workflowPath, "utf8")).tools.addresses[0], "system:tool/memory_search");
   const onDisk = JSON.parse(fs.readFileSync(registryPath, "utf8"));
   assert.equal(onDisk.agents[0].definition, undefined);
   assert.equal(onDisk.agents[0].nanoclawAgentGroupId, "private-agent-group");

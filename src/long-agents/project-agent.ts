@@ -7,6 +7,7 @@ import { findActiveSessionFile } from "../session-files.js";
 import { agentDate, validateCalendarDate, validateTimeZone } from "./calendar.js";
 import type { DailySession } from "./daily-state.js";
 import type { LongAgentConfig, ProjectLongAgent } from "./types.js";
+import { additionalSessionDay, createAdditionalSession, discoverAdditionalSessions } from "./direct-sessions.js";
 
 export function projectLongAgentId(projectId: string, longAgentId: string): string {
   return `project-long-agent:${projectId}:${longAgentId}`;
@@ -33,6 +34,7 @@ async function openLegacyHomeSession(chatHome: string, longAgentId: string, sess
 export async function ensureProjectLongAgent(input: {
   readonly chatHome: string; readonly projectId: string; readonly agent: LongAgentConfig;
   readonly requestedSessionId?: string;
+  readonly createRequestId?: string;
   /** Explicit calendar creation/opening. Date groups the Session; it never backdates messages or schedules execution. */
   readonly date?: string;
   /**
@@ -49,6 +51,14 @@ export async function ensureProjectLongAgent(input: {
   const today = agentDate(agent.timeZone, now);
   if (input.date !== undefined && (input.requestedSessionId !== undefined || input.topicNode !== undefined)) throw new Error("日历日期不能与另一会话目标同时指定");
   let date = input.date === undefined ? today : validateCalendarDate(input.date);
+  if (input.createRequestId !== undefined) {
+    if (input.requestedSessionId !== undefined || input.topicNode !== undefined) throw new Error("新建会话不能同时指定已有目标");
+    const result = await createAdditionalSession({ project: own, name: agent.name, requestId: input.createRequestId,
+      date, explicitDate: input.date !== undefined, timeZone: agent.timeZone, now });
+    return { ...result, projectAgent: { id: projectLongAgentId(own.projectId, agent.id), projectId: own.projectId,
+      longAgentId: agent.id, primarySessionId: result.day.sessionId, sessionDate: result.day.date, status: "active",
+      createdAt: result.day.createdAt, updatedAt: result.day.createdAt } };
+  }
   // READ-ONLY FAST PATH: the requested Session and its binding exist and the file is really there, so
   // opening the same Friend again must not bump `updatedAt` or rewrite the whole state file. Only the
   // "nothing to change" case short-circuits; first creation, a new day and every repair still go through
@@ -57,6 +67,13 @@ export async function ensureProjectLongAgent(input: {
     const settled = await readLongAgentState(input.chatHome);
     const existingAgent = settled.projectAgents.find((candidate) => candidate.projectId === own.projectId && candidate.longAgentId === agent.id);
     if (input.requestedSessionId !== undefined) {
+      const additional = settled.additionalSessions.find(session => session.longAgentId === agent.id && session.sessionId === input.requestedSessionId);
+      if (additional !== undefined) {
+        await openChatSession({ chatHome: input.chatHome, projectId: own.projectId, sessionId: additional.sessionId });
+        return { projectAgent: { id: projectLongAgentId(own.projectId, agent.id), projectId: own.projectId,
+          longAgentId: agent.id, primarySessionId: additional.sessionId, sessionDate: additional.date, status: "active",
+          createdAt: additional.createdAt, updatedAt: additional.createdAt }, day: additionalSessionDay(additional), isNewSession: false };
+      }
       const requested = settled.dailySessions.find(day => day.longAgentId === agent.id && day.sessionId === input.requestedSessionId);
       if (requested === undefined) {
         const legacy = await openLegacyHomeSession(input.chatHome, agent.id, input.requestedSessionId);
@@ -147,7 +164,7 @@ export async function ensureProjectLongAgent(input: {
 /** Resolve an already accepted day without ever rotating it at execution time. */
 export async function openAcceptedDay(chatHome: string, longAgentId: string, sessionId: string): Promise<ProjectLongAgent> {
   const state = await readLongAgentState(chatHome);
-  const day = state.dailySessions.find((item) => item.longAgentId === longAgentId && item.sessionId === sessionId);
+  const day = [...state.dailySessions, ...state.additionalSessions].find((item) => item.longAgentId === longAgentId && item.sessionId === sessionId);
   if (day !== undefined) {
     return { id: projectLongAgentId(longAgentId, longAgentId), projectId: longAgentId, longAgentId, primarySessionId: sessionId,
       sessionDate: day.date, status: "active", createdAt: day.createdAt, updatedAt: day.createdAt };
@@ -184,7 +201,12 @@ async function calendarScanFingerprint(sessionDir: string): Promise<string> {
 
 export async function recoverFriendCalendar(chatHome: string, agent: LongAgentConfig & { timeZone: string }): Promise<void> {
   const own = await ensureAgentHomeProject(agent.id, agent.name, chatHome);
-  const fingerprint = await calendarScanFingerprint(own.sessionDir);
+  const bindingFingerprint = (state: Awaited<ReturnType<typeof readLongAgentState>>) => JSON.stringify([
+    state.dailySessions.filter(day => day.longAgentId === agent.id).map(day => [day.date, day.sessionId]),
+    state.additionalSessions.filter(session => session.longAgentId === agent.id),
+  ]);
+  const filesFingerprint = await calendarScanFingerprint(own.sessionDir);
+  const fingerprint = filesFingerprint + bindingFingerprint(await readLongAgentState(chatHome));
   const cacheKey = `${chatHome}\0${agent.id}`;
   if (calendarScanFingerprints.get(cacheKey) === fingerprint) return;
   await updateLongAgentState(chatHome, async (state) => {
@@ -209,9 +231,15 @@ export async function recoverFriendCalendar(chatHome: string, agent: LongAgentCo
         add(data.date, validateTimeZone(data.timeZone), info.id, entry.timestamp);
       }
     }
-    return { state: { ...state, dailySessions: days }, result: undefined };
+    const additionalSessions = [...state.additionalSessions];
+    for (const binding of await discoverAdditionalSessions(own)) {
+      const previous = additionalSessions.find(item => item.longAgentId === agent.id && item.requestId === binding.requestId);
+      if (previous && JSON.stringify(previous) !== JSON.stringify(binding)) throw new Error("额外会话索引与原生绑定冲突");
+      if (!previous) additionalSessions.push(binding);
+    }
+    return { state: { ...state, dailySessions: days, additionalSessions }, result: undefined };
   });
-  calendarScanFingerprints.set(cacheKey, fingerprint);
+  calendarScanFingerprints.set(cacheKey, filesFingerprint + bindingFingerprint(await readLongAgentState(chatHome)));
 }
 
 /** A timer alone is not daily activity. Do not allocate a Session just to summarize nothing. */

@@ -39,7 +39,7 @@ export async function startFriendWork(input: {
       if (existing.payloadHash !== payloadHash) throw new Error("同一后台工作请求包含不同输入，不能重复创建");
       return existing;
     }
-    if (!state.dailySessions.some(day => day.longAgentId === agent.id && day.sessionId === input.originSessionId))
+    if (![...state.dailySessions, ...state.additionalSessions].some(day => day.longAgentId === agent.id && day.sessionId === input.originSessionId))
       throw new Error("后台工作必须从此Friend的日常会话发起，不能递归创建或伪造来源");
     if (state.works.filter(w => w.longAgentId === agent.id && state.turns.some(turn => turn.workId === w.id && ["queued", "running"].includes(turn.status))).length >= MAX_FRIEND_BACKGROUND_WORK)
       throw new FriendWorkCapacityError("此Friend已有4项后台工作，请等待完成或取消后重试");
@@ -114,17 +114,19 @@ export async function deliverFriendWorkReturns(home: string): Promise<void> {
     const work = state.works.find(w => w.id === turn.workId);
     if (!work) throw new Error("后台工作绑定缺失");
     const { readTaskState } = await import("./tasks/storage.js");
-    if ((await readTaskState(home, work.longAgentId)).occurrences.some(item => item.id === work.requestId && item.definition.purpose === "daily-summary")) continue;
-    // Do not append to yesterday's closed direct conversation. The work list
-    // remains the durable result inbox, with the immutable origin link.
+    const occurrence = (await readTaskState(home, work.longAgentId)).occurrences.find(item => item.id === work.requestId);
+    if (occurrence?.definition.purpose === "daily-summary") continue;
+    // Explicit work always returns to its actual source, including a continued older session.
+    // Scheduled notifications retain their existing day policy pending the separate product review.
     const { agentDate } = await import("./calendar.js");
     const day = state.dailySessions.find(d => d.sessionId === work.originSessionId && d.longAgentId === work.longAgentId);
-    if (!day || day.date !== agentDate(day.timeZone) || day.summary.status !== "pending") continue;
+    if (occurrence && (!day || day.date !== agentDate(day.timeZone) || day.summary.status !== "pending")) continue;
     try { await withChatSessionOperationLock(chatSessionOperationKey(work.longAgentId, work.originSessionId), async () => {
       const latest = await readLongAgentState(home);
       if (latest.turns.filter(t => t.workId === work.id).at(-1)?.turnId !== turn.turnId) return;
       const currentDay = latest.dailySessions.find(d => d.sessionId === work.originSessionId);
-      if (!currentDay || currentDay.date !== agentDate(currentDay.timeZone) || currentDay.summary.status !== "pending") return;
+      if (occurrence && (!currentDay || currentDay.date !== agentDate(currentDay.timeZone) || currentDay.summary.status !== "pending")) return;
+      if (![...latest.dailySessions, ...latest.additionalSessions].some(item => item.longAgentId === work.longAgentId && item.sessionId === work.originSessionId)) return;
       const parent = await openChatSession({ chatHome: home, projectId: work.longAgentId, sessionId: work.originSessionId });
       if (parent.manager.getEntries().some(e => e.type === "custom_message" && e.customType === WORK_RETURN
         && typeof e.details === "object" && e.details !== null && "turnId" in e.details && e.details.turnId === turn.turnId)) return;

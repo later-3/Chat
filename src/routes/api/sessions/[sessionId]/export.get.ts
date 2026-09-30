@@ -4,7 +4,6 @@ import {
   getQuery,
   getRouterParam,
   getHeader,
-  setResponseHeader,
 } from "nitro/h3";
 import { createHash } from "node:crypto";
 import { exportChatSessionHtml } from "../../../../session-export.js";
@@ -50,14 +49,13 @@ export default defineEventHandler(async (event) => {
   try {
     const exported = await exportChatSessionHtml(session.path, { useCache: true });
     const etag = `"${createHash("sha256").update(exported.html).digest("hex").slice(0, 32)}"`;
-    setResponseHeader(event, "Server-Timing",
-      `cli;dur=${exported.timings.cliMs}, patch;dur=${exported.timings.patchMs}, delegation;dur=${exported.timings.delegationMs}, total;dur=${exported.timings.totalMs}${exported.cacheHit ? ", cache;desc=hit" : ""}`);
+    const serverTiming = `export;dur=${exported.timings.exportMs}, patch;dur=${exported.timings.patchMs}, delegation;dur=${exported.timings.delegationMs}, wait;dur=${exported.timings.waitMs}, total;dur=${exported.timings.totalMs}, generation;dur=${exported.generationTimings.totalMs};desc="original generation"${exported.cacheHit ? ", cache;desc=hit" : exported.sharedGeneration ? ", cache;desc=shared" : ", cache;desc=miss"}`;
     if (getHeader(event, "if-none-match") === etag) {
       return new Response(null, {
         status: 304,
         headers: {
           ETag: etag,
-          "Server-Timing": `total;dur=${exported.timings.totalMs}${exported.cacheHit ? ", cache;desc=hit" : ""}`,
+          "Server-Timing": serverTiming,
         },
       });
     }
@@ -65,6 +63,7 @@ export default defineEventHandler(async (event) => {
     return new Response(exported.html, {
       headers: {
         "Cache-Control": "no-cache",
+        "Server-Timing": serverTiming,
         ETag: etag,
         "Content-Disposition": contentDisposition(exported.fileName, inline),
         "Content-Security-Policy": "frame-ancestors 'self'",

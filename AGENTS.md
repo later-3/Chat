@@ -41,7 +41,7 @@ IM → NanoClaw Channel → Backend → LongAgent适配 ────────
 ## Project与数据边界
 
 - 用户级事实位于`~/.chat`，测试和部署只能通过`CHAT_HOME`覆盖，业务代码不能用`process.cwd()`推断Chat Home。
-- Chat 保留固定的 Session 存储归属。Friend 最新目标为每日唯一直接交流 Session，其 Home 是内部 Agent 容器，不是用户项目；全产品只有统一项目合同：每轮执行项目按入口唯一确定并在受理时冻结——Web 私聊携带顶栏"项目"选择器的注册项目 id（无选中则 Agent 容器），群聊轮次固定为会话 `storageProjectId`，后台工作/任务/职责沿用创建时冻结的项目，IM 与定时轮次在 Agent 容器执行；切项目不迁移 Session，不存在第二个可写的"项目关联"存储。普通项目会话与显式 Workflow 子会话保留自身合同；当前差距见 Long Agent 实施状态，已绑定目标失败不得静默回退。公共装配与生命周期规范见 `docs/architecture/chat-context-resource-model.md` §15 和 `docs/modules/long-agents/chat-long-agent-architecture.md` §4。
+- Chat 保留固定的 Session 存储归属。Friend 每日有一个默认直接交流 Session，并允许用户创建额外独立直接会话，其 Home 是内部 Agent 容器，不是用户项目；全产品只有统一项目合同：每轮执行项目按入口唯一确定并在受理时冻结——Web 私聊携带顶栏"项目"选择器的注册项目 id（无选中则 Agent 容器），群聊轮次固定为会话 `storageProjectId`，后台工作/任务/职责沿用创建时冻结的项目，IM 与定时轮次在 Agent 容器执行；切项目不迁移 Session，不存在第二个可写的"项目关联"存储。普通项目会话与显式 Workflow 子会话保留自身合同；当前差距见 Long Agent 实施状态，已绑定目标失败不得静默回退。公共装配与生命周期规范见 `docs/architecture/chat-context-resource-model.md` §15 和 `docs/modules/long-agents/chat-long-agent-architecture.md` §4。
 - 每个Project在源码根目录使用`.chat/project.json`和`.chat/config.json`声明身份与配置；Session、Memory和Prompt资源按稳定`projectId`保存到`~/.chat/projects/<projectId>`。
 - Daily Project使用Chat Home中的稳定Managed Workspace作为Project根，但进入`ChatProjectContext`后与其他Project共用同一套配置、Session、Memory、资源和权限合同，不能增加Daily专用运行旁路。
 - Agent上下文通过公共装配读取已授权的Personal、当前Project及Long Agent自身资源；Pi Context文件（`AGENTS.override.md`、`AGENTS.md`或`CLAUDE.md`变体）不自动继承父目录或子目录。Long Agent独立根的接入属于已确认目标，不能以此声称当前运行时已支持。

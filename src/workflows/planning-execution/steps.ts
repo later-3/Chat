@@ -1,3 +1,4 @@
+import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
 import { openChatSession, type ChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
@@ -167,7 +168,7 @@ export async function runPlanningStep(input: ChatWorkflowInput): Promise<Plannin
   const result = await runReviewedPlanningStep(input, {
     workflowId: "planning-execution",
     plannerAgent: PLANNER_AGENT,
-    agents: [PLANNER_AGENT, PLANNING_EXECUTION_AGENT],
+    agents: [PLANNER_AGENT, PLANNING_EXECUTION_AGENT, SESSION_MEMORY_WRITER_AGENT],
   });
   const executionAgent = result.agents[PLANNING_EXECUTION_AGENT.id];
   if (executionAgent === undefined) throw new Error("本轮配置缺少Planning Execution Agent");

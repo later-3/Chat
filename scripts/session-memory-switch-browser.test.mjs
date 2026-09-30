@@ -91,12 +91,15 @@ test("the session-memory switch reaches the real send and really gates the memor
   let writerFails = false;
   let forceCompaction = false;
   const writerCalls = [];
-  const modelHandler = (body) => {
+  let beforeWriter;
+
+  const modelHandler = async (body) => {
     if (body.messages.some(message => message.role === "system"
       && JSON.stringify(message.content).includes("You are a context summarization assistant"))) {
       return { content: "BROWSER_NATIVE_COMPACTION: earlier work preserved in native history." };
     }
     if (isWriter(body)) {
+      if (beforeWriter) await beforeWriter();
       writerCalls.push(body);
       if (writerFails) return { error: "switch-test memory provider failed" };
       if (body.messages.at(-1)?.role === "tool") return { content: "本轮无需写入" };
@@ -154,6 +157,14 @@ test("the session-memory switch reaches the real send and really gates the memor
   const page = await browser.newPage(`${baseUrl}/`);
   await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await page.send("Network.enable");
+  // Observe the public audio boundary; a completion chime has two musical notes.
+  const audioProbe = `window.__completionNotes = 0;
+    const originalOscillator = AudioContext.prototype.createOscillator;
+    AudioContext.prototype.createOscillator = function(...args) {
+      window.__completionNotes++; return originalOscillator.apply(this, args);
+    };`;
+  await page.send("Page.addScriptToEvaluateOnNewDocument", { source: audioProbe });
+  await page.evaluate(audioProbe);
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const visibleChat = "document.querySelector('[data-workspace-chat]')?.hidden === false";
   const ready = async () => {
@@ -240,9 +251,15 @@ test("the session-memory switch reaches the real send and really gates the memor
   await ready();
   // All sends share the SAME page and Session; only the explicit refresh reloads it.
   assert.equal(await memorySetting(), true);
+  beforeWriter = async () => {
+    assert.equal(await page.evaluate("window.__completionNotes"), 0, "the work Agent finishing must not chime while the memory Agent runs");
+  };
   const first = await send("switch-on", true);
+  beforeWriter = undefined;
+  await page.waitFor("window.__completionNotes === 2", { label: "one chime after both Workflow Agents complete" });
   await setMemory(false);
   const off = await send("switch-off", false);
+  await page.waitFor("window.__completionNotes === 4", { label: "a second Run in the same Session gets exactly one new chime" });
   assert.equal(off.sessionId, first.sessionId);
 
   await page.send("Page.reload");
@@ -292,8 +309,37 @@ test("the session-memory switch reaches the real send and really gates the memor
   assert.equal(continuity.dimmed, 0, "点击联系人不能使整列闪灰");
   assert.equal(await page.evaluate(`document.querySelector('[data-workspace-chat]').innerText.includes(${JSON.stringify(`${WORK_TEXT} switch-on-again`)})`), true);
 
+  // Additional direct Sessions preserve the daily default and survive an actual page reload.
+  if (await page.evaluate("document.querySelector('.workspace-friend-panel.is-open') === null"))
+    await page.evaluate("document.querySelector('[data-friend-panel-toggle]').click()");
+  await page.waitFor("document.querySelector('[data-friend-new-session]:not([disabled])') !== null");
+  const defaultBefore = first.sessionId;
+  const requestCount = f.requests.length;
+  await page.evaluate("document.querySelector('[data-friend-new-session]').click()");
+  await page.waitFor(`new URL(location.href).searchParams.get('session') !== '${defaultBefore}'`);
+  await ready();
+  const additionalId = await page.evaluate("new URL(location.href).searchParams.get('session')");
+  assert.ok(additionalId);
+  await page.send("Page.reload");
+  await ready();
+  assert.equal(await page.evaluate("new URL(location.href).searchParams.get('session')"), additionalId);
+  if (await page.evaluate("document.querySelector('.workspace-friend-panel.is-open') === null"))
+    await page.evaluate("document.querySelector('[data-friend-panel-toggle]').click()");
+  await page.waitFor("document.querySelector('[data-friend-default-session]:not([disabled])') !== null");
+  await page.evaluate("document.querySelector('[data-friend-default-session]').click()");
+  await page.waitFor(`document.querySelector('[data-rendered-session="${defaultBefore}"] [data-chat-composer]') !== null`);
+  assert.equal(f.requests.length, requestCount, "opening extra/default chats never runs a model");
+  // Native stage provenance survives the same refresh and groups work plus maintenance.
+  await page.evaluate("document.querySelectorAll('.turn-summary-toggle[aria-expanded=false]').forEach(element => element.click())");
+  assert.equal(await page.evaluate("document.querySelector('[data-workflow-node=execute]') !== null"), true);
+  assert.equal(await page.evaluate("document.querySelector('[data-workflow-node=remember]') !== null"), true);
+  await page.evaluate("document.querySelector('[data-friend-panel-toggle]').click()");
+  await page.waitFor("document.querySelector('.workspace-friend-panel.is-open') === null");
+
   writerFails = true;
+  const notesBeforeFailure = await page.evaluate("window.__completionNotes");
   const failed = await send("switch-fail", true, "failed");
+  assert.equal(await page.evaluate("window.__completionNotes"), notesBeforeFailure, "a failed memory tail must not play a success chime");
   assert.equal(failed.sessionId, first.sessionId);
   const payload = await (await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(failed.sessionId)}?projectId=friend`)).json();
   assert.equal(payload.context.messages.some((message) => message.role === "custom" && message.customType === "chat.session_memory_notice"), true);
@@ -409,7 +455,7 @@ test("the session-memory switch reaches the real send and really gates the memor
     // idempotent "open this day's daily session" row.
     const clicked = await page.evaluate(`(() => {
       const row = ${expectedSessionId === undefined}
-        ? document.querySelector('[data-friend-enter-day="${day}"]') ?? document.querySelector('[data-friend-day="${day}"] [data-day-session]')
+        ? document.querySelector('[data-friend-default-session="${day}"]') ?? document.querySelector('[data-friend-enter-day="${day}"]') ?? document.querySelector('[data-friend-day="${day}"] [data-day-session]')
         : document.querySelector('[data-friend-day="${day}"] [data-day-session="${expectedSessionId}"]');
       if (!row) return false;
       row.click();

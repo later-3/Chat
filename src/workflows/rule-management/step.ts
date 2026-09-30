@@ -1,3 +1,4 @@
+import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
 import { openChatSession } from "../../chat-session.js";
 import { getStoredAgentConfigs, resolveChatConfig } from "../../chat-config.js";
 import { localTimestamp } from "../../runtime-log.js";
@@ -22,7 +23,7 @@ export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<C
   const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: "rule-management",
-    agents: [RULE_CURATOR_AGENT],
+    agents: [RULE_CURATOR_AGENT, SESSION_MEMORY_WRITER_AGENT],
     cwd: chatSession.cwd,
     ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
     ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),

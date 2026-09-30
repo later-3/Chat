@@ -1,0 +1,74 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { fixture } from "./daily-fixture.mjs";
+import { ensureProjectLongAgent, recoverFriendCalendar } from "../../src/long-agents/project-agent.ts";
+import { readLongAgentRegistry, readLongAgentState, updateLongAgentState } from "../../src/long-agents/storage.ts";
+import { readChatSessionOwnerIndex } from "../../src/session-owner.ts";
+import { readFriendDays } from "../../src/long-agents/daily-service.ts";
+import { executeLongAgentTurn } from "../../src/long-agents/runtime.ts";
+import { readAgentDaySources } from "../../src/long-agents/day-archive.ts";
+import { openChatSession } from "../../src/chat-session.ts";
+import { removeChatSession } from "../../src/session-removal.ts";
+import { startFriendWork, deliverFriendWorkReturns, WORK_RETURN } from "../../src/long-agents/work.ts";
+import { drainLongAgentTurns } from "../../src/long-agents/turn-queue.ts";
+
+test("daily default and independent chats retain ownership, idempotency and crash recovery", async t => {
+  const f = await fixture(t);
+  const agent = (await readLongAgentRegistry(f.home)).agents[0];
+  const base = { chatHome: f.home, projectId: "friend", agent, date: "2026-09-30" };
+  const daily = await ensureProjectLongAgent(base);
+  const [a, retry, b] = await Promise.all(["extra-a", "extra-a", "extra-b"].map(createRequestId => ensureProjectLongAgent({ ...base, createRequestId })));
+  assert.equal(a.day.sessionId, retry.day.sessionId);
+  assert.equal(new Set([a.day.sessionId, b.day.sessionId, daily.day.sessionId]).size, 3);
+  assert.equal((await ensureProjectLongAgent(base)).day.sessionId, daily.day.sessionId);
+  assert.equal(f.requests.length, 0, "opening never calls a model");
+  const calendar = await readFriendDays(f.home, "friend", 2026);
+  assert.equal(calendar.sessions.length, 2, "empty independent chats remain findable");
+  assert.ok(calendar.sessions.every(session => session.creationDate === base.date && session.dates.length === 0));
+  await assert.rejects(ensureProjectLongAgent({ ...base, createRequestId: "extra-a", date: "2026-10-01" }), /requestId不能改变日期/);
+  // Simulate loss of the index after the native file commit. The same native sessions are recovered.
+  await updateLongAgentState(f.home, state => ({ state: { ...state, additionalSessions: [] }, result: undefined }));
+  assert.equal((await ensureProjectLongAgent({ ...base, createRequestId: "extra-a" })).day.sessionId, a.day.sessionId);
+  await recoverFriendCalendar(f.home, agent);
+  assert.equal((await readLongAgentState(f.home)).additionalSessions.length, 2);
+  const owners = await readChatSessionOwnerIndex("friend", f.home);
+  assert.equal(owners.get(b.day.sessionId).longAgentId, "friend");
+  const ordinary = await openChatSession({ chatHome: f.home, projectId: "a" });
+  ordinary.manager.appendSessionInfo("Ordinary"); ordinary.manager.flush();
+  await assert.rejects(ensureProjectLongAgent({ chatHome: f.home, projectId: "friend", agent, requestedSessionId: ordinary.manager.getSessionId() }), /不能接管/);
+  await removeChatSession("friend", a.day.sessionId, f.home);
+  await assert.rejects(ensureProjectLongAgent({ ...base, createRequestId: "extra-a" }));
+  assert.equal((await readLongAgentState(f.home)).additionalSessions.length, 2, "retry cannot replace a removed session");
+});
+
+test("independent chats continue across days and work returns to the true origin", async t => {
+  const f = await fixture(t);
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-09-29T10:00:00Z") });
+  const agent = (await readLongAgentRegistry(f.home)).agents[0];
+  const base = { chatHome: f.home, projectId: "friend", agent };
+  const first = await ensureProjectLongAgent({ ...base, createRequestId: "one" });
+  const second = await ensureProjectLongAgent({ ...base, createRequestId: "two" });
+  await executeLongAgentTurn({ ...f.input("ONLY_FIRST", "a"), sessionId: first.day.sessionId, sessionMemory: "off" });
+  await executeLongAgentTurn({ ...f.input("ONLY_SECOND", "b"), sessionId: second.day.sessionId, sessionMemory: "off" });
+  assert.doesNotMatch(JSON.stringify(f.requests.at(-1)), /ONLY_FIRST/);
+  t.mock.timers.setTime(new Date("2026-09-30T10:00:00Z").getTime());
+  const daily = await ensureProjectLongAgent(base);
+  const continued = await executeLongAgentTurn({ ...f.input("CONTINUE_FIRST", "a"), sessionId: first.day.sessionId, sessionMemory: "off" });
+  assert.equal(continued.sessionId, first.day.sessionId);
+  assert.match(JSON.stringify(f.requests.at(-1)), /ONLY_FIRST/);
+  assert.equal((await ensureProjectLongAgent(base)).day.sessionId, daily.day.sessionId);
+  const yesterday = await readAgentDaySources(f.home, "friend", "2026-09-29");
+  const today = await readAgentDaySources(f.home, "friend", "2026-09-30");
+  assert.ok(yesterday.sessions.some(session => session.sessionId === first.day.sessionId));
+  assert.ok(yesterday.sessions.some(session => session.sessionId === second.day.sessionId));
+  assert.ok(today.sessions.some(session => session.sessionId === first.day.sessionId));
+  assert.ok(!today.sessions.some(session => session.sessionId === second.day.sessionId));
+  const work = await startFriendWork({ chatHome: f.home, longAgentId: "friend", requestId: "from-extra",
+    originSessionId: first.day.sessionId, contextProjectId: "a", title: "Research", text: "Work from extra chat" });
+  await drainLongAgentTurns(f.home, "friend", work.work.sessionId);
+  await deliverFriendWorkReturns(f.home);
+  const origin = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: first.day.sessionId });
+  const defaultSession = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: daily.day.sessionId });
+  assert.equal(origin.manager.getEntries().filter(entry => entry.type === "custom_message" && entry.customType === WORK_RETURN).length, 1);
+  assert.equal(defaultSession.manager.getEntries().some(entry => entry.type === "custom_message" && entry.customType === WORK_RETURN), false);
+});

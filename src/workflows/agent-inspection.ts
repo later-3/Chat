@@ -100,44 +100,45 @@ type CreatedInspectionSession = Awaited<ReturnType<typeof createWorkflowAgentSes
 
 /** Resolves and creates the same Pi AgentSession used by Workflow execution, without sending a Prompt. */
 export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
-  const friend = options.longAgentId === undefined ? undefined : (await readLongAgentRegistry(options.chatHome)).agents.find((agent) => agent.id === options.longAgentId);
+  const requestedProject = options.projectId === undefined ? undefined : await resolveProjectContext(options.projectId, options.chatHome);
+  const longAgentId = options.longAgentId ?? (requestedProject?.kind === "agent" ? requestedProject.projectId : undefined);
+  const friend = longAgentId === undefined ? undefined : (await readLongAgentRegistry(options.chatHome)).agents.find((agent) => agent.id === longAgentId);
   if (options.longAgentId !== undefined && friend === undefined) throw new Error("找不到Long Agent");
   const projectContext = friend !== undefined ? await ensureAgentHomeProject(friend.id, friend.name, options.chatHome) : options.projectId === undefined
     ? undefined
     : await resolveProjectContext(options.projectId, options.chatHome);
   const home = projectContext === undefined ? await ensureChatHome(options.chatHome) : undefined;
-  const prepared = friend === undefined ? undefined : await prepareLongAgentAssembly({
-    agent: friend, chatHome: projectContext!.chatHome, projectId: options.contextProjectId ?? null,
+  const configuration = friend === undefined || options.workflowId !== undefined ? undefined
+    : await (await import("../long-agents/workflow-configuration.js")).resolveLongAgentWorkflowAgent(friend, projectContext!.chatHome);
+  const workflowIdForConfig = options.workflowId ?? configuration?.workflow.id;
+  const defaultAgent = configuration?.agent ?? options.defaultAgent;
+  const resolved = configuration?.agent ?? await resolveWorkflowAgentDefinition({
+    defaultAgent, cwd: projectContext?.cwd ?? options.cwd,
+    ...(projectContext === undefined ? {} : { chatHome: projectContext.chatHome }),
+    ...(projectContext === undefined || workflowIdForConfig === undefined ? {} : { durableModelConfig: {
+      projectDataDir: projectContext.projectDataDir, workflowId: workflowIdForConfig, agentId: defaultAgent.id,
+    } }),
+    ...(options.selection === undefined ? {} : { selection: options.selection }),
+  });
+  const maintenance = resolved.id === "session-memory-writer";
+  const prepared = friend === undefined || maintenance ? undefined : await prepareLongAgentAssembly({
+    agent: friend, executionAgent: resolved, chatHome: projectContext!.chatHome, projectId: options.contextProjectId ?? null,
     turnId: `inspection:${friend.id}`,
   });
   const collaboration = prepared?.invocation.projectId == null ? undefined : await resolveProjectContext(prepared.invocation.projectId, options.chatHome);
   const resourceProject = prepared === undefined ? projectContext : collaboration;
   const cwd = prepared?.invocation.ownWorkspace === undefined ? projectContext?.cwd ?? options.cwd : collaboration?.cwd ?? prepared.invocation.ownWorkspace;
-  const agent = prepared === undefined ? await resolveWorkflowAgentDefinition({
-    defaultAgent: options.defaultAgent,
-    cwd,
-    ...(projectContext === undefined ? {} : { chatHome: projectContext.chatHome }),
-    ...(projectContext !== undefined && options.workflowId !== undefined
-      ? {
-          durableModelConfig: {
-            projectDataDir: projectContext.projectDataDir,
-            workflowId: options.workflowId,
-            agentId: options.agentId ?? options.defaultAgent.id,
-          },
-        }
-      : {}),
-    ...(options.selection === undefined ? {} : { selection: options.selection }),
-  }) : { ...prepared.agent, sources: [] };
-  const durableConfig = projectContext === undefined || options.workflowId === undefined
+  const agent = { ...resolved, ...(prepared?.agent ?? {}) };
+  const durableConfig = projectContext === undefined || workflowIdForConfig === undefined
     ? undefined
     : await readAgentDurableConfig(
         projectContext.projectDataDir,
-        options.workflowId,
-        options.agentId ?? options.defaultAgent.id,
+        workflowIdForConfig,
+        resolved.id,
       );
   const sessionManager = SessionManager.inMemory(cwd);
-  const workflowId = options.workflowId ?? "agent-inspection";
-  const agentId = options.agentId ?? options.defaultAgent.id;
+  const workflowId = workflowIdForConfig ?? "agent-inspection";
+  const agentId = resolved.id;
   const sessionExtensions = await options.prepareAgentSession?.({
     purpose: "inspection",
     ...(projectContext === undefined ? {} : { projectId: projectContext.projectId, chatHome: projectContext.chatHome }),
@@ -152,9 +153,9 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
   const agentDir = projectContext?.agentDir ?? home!.agentDir;
   // S4：Long Agent 自有 Skill 目录与执行路径同样接入。
   const chatHomeRoot = projectContext?.chatHome ?? home!.root;
-  const longAgentSkillsDir = options.longAgentId === undefined
+  const longAgentSkillsDir = friend === undefined
     ? undefined
-    : resolve(longAgentConfigRoot(chatHomeRoot, options.longAgentId), "skills");
+    : resolve(longAgentConfigRoot(chatHomeRoot, friend.id), "skills");
   const created = await (prepared === undefined ? createWorkflowAgentSession : createChatPiAgentSession)({
     chatSession: {
       ...(projectContext === undefined ? {} : { projectId: projectContext.projectId, projectContext }),
@@ -278,8 +279,8 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
         effectiveThinkingLevel: session.thinkingLevel,
         // The definition never set a model/thinking level but the session still
         // resolved one from the Chat settings chain, so the source is Chat default.
-        modelSource: (friend?.definition.model === undefined ? agent.modelSource : "config-file") ?? (session.model === undefined ? null : "chat-default"),
-        thinkingSource: (friend?.definition.thinkingLevel === undefined ? agent.thinkingSource : "config-file") ?? (session.thinkingLevel === undefined ? null : "chat-default"),
+        modelSource: agent.modelSource ?? (session.model === undefined ? null : "chat-default"),
+        thinkingSource: agent.thinkingSource ?? (session.thinkingLevel === undefined ? null : "chat-default"),
         durableConfig: durableConfig ?? null,
       },
       prompt: {

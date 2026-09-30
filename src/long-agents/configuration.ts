@@ -197,8 +197,10 @@ export async function resolveEffectiveConfiguration(
   chatHome = resolveChatHome(),
 ): Promise<LongAgentConfigurationDocument> {
   const home = await ensureChatHome(chatHome);
-  const definition = document.agent.definition;
-  const effective = resolvePersonalAgentDefinition(parseWorkflowAgentDefinition({ ...definition, model: definition.model ?? undefined, thinkingLevel: definition.thinkingLevel ?? undefined }), personalAgentSettings(home.agentDir));
+  const owner = (await readLongAgentRegistry(chatHome)).agents.find(agent => agent.id === document.agent.id);
+  if (!owner) throw new Error("找不到Long Agent");
+  const definition = (await (await import("./workflow-configuration.js")).resolveLongAgentWorkflowAgent(owner, chatHome)).agent;
+  const effective = resolvePersonalAgentDefinition(definition, personalAgentSettings(home.agentDir));
   return {
     ...document,
     agent: {

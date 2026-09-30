@@ -616,3 +616,21 @@ test("the startup pass moves every leftover session memory into the session dire
   assert.equal((await readSessionMemory(f.home, "friend", other)).revision, 9, "the newer copy wins");
   assert.equal(fs.existsSync(`${legacyDir}/${other}.json`), true, "the leftover legacy file is left untouched rather than destroyed");
 });
+
+test("memory tool binds native provenance and refuses turn IDs or mismatched authors", async (t) => {
+  const f = await fixture(t);
+  const turn = await executeLongAgentTurn(f.input("provenance-turn"));
+  const { openChatSession } = await import("../../src/chat-session.ts");
+  const { SESSION_MEMORY_TOOL_PROVIDER } = await import("../../src/tools/builtins/session-memory/index.ts");
+  const session = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: turn.sessionId });
+  const user = session.manager.getBranch().findLast(e => e.type === "message" && e.message.role === "user");
+  const assistant = session.manager.getBranch().findLast(e => e.type === "message" && e.message.role === "assistant");
+  const tool = SESSION_MEMORY_TOOL_PROVIDER.create({ purpose: "execution", chatHome: f.home, projectId: "friend",
+    longAgentId: "friend", cwd: session.cwd, sessionId: turn.sessionId, sessionManager: session.manager });
+  const input = { operation: "write", purpose: "background", author: "user", content: "用户提出了请求", expectedRevision: 0 };
+  await assert.rejects(tool.execute("c1", { ...input, originEntryId: "provenance-turn" }), /originEntryId/);
+  await assert.rejects(tool.execute("c2", { ...input, originEntryId: assistant.id }), /originEntryId/);
+  const receipt = await tool.execute("c3", input);
+  assert.equal(receipt.details.entries[0].originEntryId, user.id);
+  assert.equal(receipt.details.sessionId, turn.sessionId);
+});

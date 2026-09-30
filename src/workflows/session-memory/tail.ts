@@ -2,7 +2,7 @@ import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 // STATIC import: the Workflow runtime registers Steps by static analysis of the Workflow module graph.
 // The Workflow BODY may not import Node built-ins (the Builder rejects it), so the tail only decides and
 // delegates; everything that touches the filesystem lives inside the Step.
-import { runSessionMemoryRememberStep } from "./step.js";
+import { runSessionMemoryRememberStep, recordSessionMemorySkippedStep } from "./step.js";
 import { memoryTailFollows } from "./tail-policy.js";
 
 /**
@@ -17,7 +17,10 @@ export async function runSessionMemoryTail(
   result: ChatWorkflowResult,
   ownerWorkflowId: string,
 ): Promise<ChatWorkflowResult> {
-  if (!memoryTailFollows(input)) return result;
+  if (!memoryTailFollows(input)) {
+    await recordSessionMemorySkippedStep({ ...input, sessionId: result.sessionId }, ownerWorkflowId);
+    return result;
+  }
   await runSessionMemoryRememberStep({ ...input, sessionId: result.sessionId, sessionMemoryOwnerWorkflowId: ownerWorkflowId });
   return result;
 }

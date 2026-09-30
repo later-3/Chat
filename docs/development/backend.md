@@ -111,6 +111,10 @@ git -C frontend diff --check
 
 `pnpm verify`包含 Backend 与 Frontend 测试、类型检查、生产构建、Built Server 和 Nitro 开发运行链验证。Workflow、Step bundle 或 Agent 装配改动还有额外场景要求，见 [测试指南](./testing.md)。
 
+## 完整历史导出
+
+完整历史使用 Pi 的公开 `exportSessionToHtml()`，不启动 CLI 或 AgentSession。Nitro 会改变 SDK 模块位置，因此模板/vendor JS 与主题 JSON 作为 `serverAssets` 随包携带，按次物化到私有临时目录，通过 SDK 的 `templateDir`/`themeFile` 显式传入并清理；不得改写全局 `PI_PACKAGE_DIR` 或复制一套 HTML 渲染器。源码、生产构建和 Nitro 开发入口都要验证。导出按 Session 文件 revision 合并并发生成，缓存命中响应报告本次请求时间，原始生成耗时另列。
+
 ## 继续阅读
 
 - [开发文档索引](./README.md)：按修改范围选择模块文档。

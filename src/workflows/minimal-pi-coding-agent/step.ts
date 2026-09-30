@@ -1,3 +1,4 @@
+import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
 import { openChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
@@ -26,7 +27,7 @@ export async function runPiCodingAgentPromptStep(
   const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: "minimal-pi-coding-agent",
-    agents: [PI_CODING_AGENT],
+    agents: [PI_CODING_AGENT, SESSION_MEMORY_WRITER_AGENT],
     cwd: chatSession.cwd,
     ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
     ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),

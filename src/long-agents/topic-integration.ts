@@ -70,7 +70,7 @@ export async function resolveDailySource(home: string, longAgentId: string, sour
   const state = await readLongAgentState(home);
   if (sourceSessionId !== undefined) {
     const requested = text(sourceSessionId, "sourceSessionId", 200);
-    const day = state.dailySessions.find((candidate) => candidate.longAgentId === longAgentId && candidate.sessionId === requested);
+    const day = [...state.dailySessions, ...state.additionalSessions].find((candidate) => candidate.longAgentId === longAgentId && candidate.sessionId === requested);
     if (day === undefined) throw new Error("来源会话不是该Friend的日常会话，不能作为整合来源");
     return day.sessionId;
   }

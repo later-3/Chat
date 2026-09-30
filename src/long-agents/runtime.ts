@@ -34,6 +34,7 @@ const MAX_LONG_AGENT_MESSAGE_CHARS = 100_000;
 
 export interface ExecuteLongAgentTurnInput {
   readonly workflow?: string;
+  readonly agentConfigs?: Readonly<Record<string, import("../workflows/agent-config.js").AgentConfigSelection>>;
   /** Set only by the Workflow Step adapter, never by an HTTP request. */
   readonly workflowExecution?: { readonly invocationId: string; readonly workflowId: string; readonly memoryEnabled: boolean };
   readonly longAgentId: string;
@@ -267,6 +268,7 @@ export async function executeAcceptedLongAgentTurn(
         const frozen = readAssemblySnapshot(chatSession.manager, turnId);
         const prepared = await prepareLongAgentAssembly({
           agent, chatHome, turnId, groupContext, today: accepted.date,
+          ...(frozen === undefined ? {} : { executionAgent: frozen.agent }),
           projectId: frozen === undefined ? input.contextProjectId ?? null : frozen.projectId,
         });
         created = await createChatPiAgentSession({
@@ -277,7 +279,9 @@ export async function executeAcceptedLongAgentTurn(
           ...(preparedResourceLoader === undefined ? {} : { preparedResourceLoader }),
           toolContext: {
             purpose: "execution",
-            agentId: agent.id,
+            agentId: frozen?.agent.id ?? agent.id,
+            ...(accepted.workflow !== undefined && accepted.seed?.some(entry => entry.customType === "chat.workflow_resolved_agents.v1")
+              ? { workflowId: accepted.workflow.id, workflowInvocationId: accepted.workflow.invocationId, stageId: "execute" } : {}),
             longAgentId: agent.id,
             longAgentTurnId: turnId,
           },

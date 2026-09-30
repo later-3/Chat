@@ -193,3 +193,13 @@ export async function runSessionMemoryRememberStep(input: ChatWorkflowInput): Pr
   return runSessionMemoryStage(input, "remember");
 }
 runSessionMemoryRememberStep.maxRetries = 0;
+
+/** Persist a deliberate skip as a process fact; no model is created. */
+export async function recordSessionMemorySkippedStep(input: ChatWorkflowInput, ownerWorkflowId: string): Promise<void> {
+  "use step";
+  const session = await openChatSession(input);
+  session.manager.appendCustomMessageEntry("chat.session_memory_notice", "本轮已关闭会话记忆维护。", true,
+    { status: "skipped", workflowId: ownerWorkflowId, invocationId: input.workflowInvocationId });
+  session.manager.flush();
+}
+recordSessionMemorySkippedStep.maxRetries = 0;

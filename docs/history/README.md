@@ -4,6 +4,8 @@
 
 | 主题 | 记录 |
 |---|---|
+| Workflow 配置统一、节点展示、Memory 链接与完整历史 | [2026-09-30 后续 7 项复核](./reviews/2026-09-30-workflow-configuration-and-session-presentation.md) |
+| 每日默认会话与额外直接会话（产品方向已确认，待实施） | [2026-09-30 现场复核与方案](./reviews/2026-09-30-default-and-additional-friend-sessions.md) |
 | 配置表面、模型能力、Long Agent 自我认知与 Memory 闭环 | [2026-09-30 专项排查](./reviews/2026-09-30-configuration-capability-audit.md) |
 | 0.5.4 版本与交付核对 | [2026-09-30](./reviews/2026-09-30-release-0.5.4.md) |
 | Chat 业务与功能架构：整体协同、模块内部功能与业务闭环 | [2026-09-30 两层检视](./reviews/2026-09-30-chat-business-functional-architecture-review.md) |
@@ -13,6 +15,7 @@
 | 0.5.2 版本、统一项目合同与前后端字段契约修复核对 | [2026-09-29](./reviews/2026-09-29-release-0.5.2.md) |
 | 0.5.1 版本、Frontend 0.10.0 与界面统一批次核对 | [2026-09-29](./reviews/2026-09-29-release-0.5.1.md) |
 | 0.5.0 版本、Linux release 与 VS Code 调试交付核对 | [2026-09-27](./reviews/2026-09-27-release-0.5.0.md) |
+| 设置密度、模型参数入口与 Workflow 完成提示 | [2026-09-30](./reviews/2026-09-30-settings-density-and-completion.md) |
 | Long Agent 设置 9 个入口：实现、可用性与测试盲区 | [2026-09-27](./reviews/2026-09-27-long-agent-settings-capability-audit.md) |
 | Pi 摘要准入、取消恢复与原生会话入口 | [2026-09-27](./reviews/2026-09-27-pi-session-controls.md) |
 | Pi 会话能力盘点、压缩适配与剩余缺口 | [2026-09-27](./reviews/2026-09-27-pi-session-capabilities.md) |

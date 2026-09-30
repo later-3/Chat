@@ -36,7 +36,7 @@ Chat 统一管理产品配置、Project、会话选择、Pi 执行和前端合�
 | Project | 工作数据、上下文、资源和授权边界 | 长期 |
 | Agent Home 容器（旧称 Daily Project） | 专属空间和每日 Session 的内部存储归属，不是用户项目 | 长期稳定，不按日新建 |
 | Agent/Project 协作关系 | 参与权限和各轮次工作目标 | 不内嵌第二份 Agent Definition，不另建 Friend 项目会话 |
-| Chat Session | 原生交流历史，固定存储归属 | Friend 直接交流每日唯一；独立任务/群参与目标见 LA0 合同；普通项目会话按用户创建规则延续 |
+| Chat Session | 原生交流历史，固定存储归属 | Friend 每日默认与额外独立直接会话；独立任务/群参与目标见 LA0 合同；普通项目会话按用户创建规则延续 |
 | Pi AgentSession | 一次 Turn 或执行阶段的运行对象 | 临时，可恢复持久 Session |
 | 长期职责 | Agent 持续承担的工作范围及自主安排约束，关联明确 Project | 长期；一项工作完成不终止职责 |
 | Task | 一项具体工作定义及触发策略，可关联长期职责 | 一次性、周期或事件驱动 |
@@ -50,9 +50,21 @@ Task/Run 不替代已有 Workflow Run；任务调用 Workflow 时保存其 ID、
 
 ## 4. Project-first 与会话选择
 
+### 2026-09-30：每日默认与额外直接会话（本批实施合同）
+
+用户确认“每日默认不等于每日唯一”。本节替代下文旧 P1 中对所有直接会话的唯一性限制。架构审核：归属仍由 Chat 持久绑定，消息仍由 Pi 保存，公共 Workflow/装配和每 Session 队列不变；没有新增运行时或前端事实源。
+
+- `dailySessions` 只保存 `(longAgentId,date)` 的默认引用；状态 schema 7 新增 `additionalSessions`，保存额外会话的 owner、Session ID、创建日期/时区、时间和创建 requestId。v6 升级仅添加空数组，既有 ID/历史/默认指针不改；旧版本状态解析仍受支持。
+- `POST /api/long-agents/:id/start` 新增 `mode:"new",requestId`，可带有效 `date`；缺省继续幂等打开日期默认会话。相同 owner/requestId 返回同一额外会话，显式日期冲突拒绝；不执行模型。原生 `chat.long-agent-direct.v1` 标记先 flush，再提交绑定，重试/恢复据标记补索引。重复或损坏绑定报错，不合并历史。
+- 新建与显式继续额外会话均不更新 primary 默认指针；归属检查、工作来源、回传使用固定 Session ID。默认项被移除时沿用明确的已移除错误，恢复原项或另建额外会话；不偷偷新建替代默认项。已移除的额外请求重试也不创建替代项。
+- 日历活动日期仍来自实际消息；额外空会话以 `creationDate` 出现在日期会话列表，不点亮活动格。跨日继续保持原 Session 和请求来源；日档案与总结按实际活动日期汇总。
+- 用户委派工作向真实来源直接会话追加现有隐藏回执，即使跨日也不改投默认会话；来源移除时保留工作结果，不复活来源。定时工作的通知策略不在本批重定。
+
+验收：同日默认+两条额外会话、创建重试/索引恢复、非法归属、跨日继续、独立队列、真实来源回传和日档案聚合，均走既有 API/公共装配；浏览器验证创建、刷新与默认入口不变。
+
 ### 4.1 项目是每轮冻结的执行上下文
 
-Friend 的直接交流始终使用自己的每日 Session。业务项目通过本轮冻结的项目上下文（统一项目合同：Web 私聊取顶栏"项目"选择，群聊取会话 storageProjectId）进入公共装配，不因此新建项目 Friend Session。查询其他项目的概览也不自动切换执行项目。Session 存储不迁移、原项目授权不扩大。
+Friend 的直接交流使用自己的每日默认或用户选择的额外直接 Session。业务项目通过本轮冻结的项目上下文（统一项目合同：Web 私聊取顶栏"项目"选择，群聊取会话 storageProjectId）进入公共装配，不因此新建项目 Friend Session。查询其他项目的概览也不自动切换执行项目。Session 存储不迁移、原项目授权不扩大。
 
 项目展示与 Agent Home 分开；旧 API 的 projectId 兼容表示存储归属，新消费者明确使用 SessionRef 与本轮冻结的 `contextProjectId`，精确字段以[公共装配合同](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)为准。项目页只列普通项目 Session；Friend 的项目活动可引用相关轮次，不复制私有每日对话或授权其他参与者读取整天历史。
 
@@ -68,9 +80,9 @@ Friend 列表每行的日历按钮打开历史阅读器：全年格子按周排�
 
 回归：`test/long-agents/daily-lifecycle.test.mjs` 覆盖超过 60 条/闰日/空年、空绑定、多会话、跨日、移除、作用域和只读查询；`frontend/lib/friend-calendar.test.mjs` 覆盖日期布局与同日多会话；`scripts/session-memory-switch-browser.test.mjs` 覆盖空日期不点亮、选择两个不同历史会话、实际消息可见、在原历史续聊及读取旧上下文、空日期幂等创建而不执行模型、刷新和默认今日目标不变。
 
-### 4.2 每日唯一性、日期与排队（P1 实施决策）
+### 4.2 默认入口唯一性、日期与排队（P1 实施决策及 2026-09-30 修订）
 
-2026-09-20 LA0 补充：以下描述现有每日入口。目标将独立任务/群参与分离到各自 Session，“每日唯一”仅适用于直接交流；不能继续将新后台任务默认送入日常主会话。目标合同见[机制 §9](./chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)，LA1 已扩展明确后台工作绑定；每日唯一性只约束直接交流，工作按独立 Session 排队。
+2026-09-20 LA0 补充：以下描述现有每日入口。目标将独立任务/群参与分离到各自 Session，“每日唯一”仅适用于直接交流；不能继续将新后台任务默认送入日常主会话。目标合同见[机制 §9](./chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)，LA1 已扩展明确后台工作绑定；每日唯一性现仅约束默认直接入口，额外直接会话和工作均按各自 Session 排队。
 
 - 唯一键为 `(longAgentId, localDate)`，不含业务 projectId、Channel 或浏览器 ID。默认日期由 Backend 耐久接受时间及 Agent 的持久 IANA timeZone 计算；迟到渠道消息保留原发送时间，但新接受请求进入接受日。2026-09-27 用户明确选择日历日期或已有 Session 时例外：Backend 验证日期/归属后定位该 Session，不改变消息时间和模型所见当前时间。
 - 老配置首次迁移时把 Backend 的有效 IANA 时区持久固定，并在检查中展示；以后不随服务器时区漂移。改时区从下一轮接受生效，历史不改；遇到同一日期复用原 Session，不能因时区更名再建一个。同一执行保存其 timeZone revision。
@@ -249,3 +261,9 @@ Frontend 只消费 Backend：Agent 详情、配置编辑、有效 Prompt、资�
 HTTP v1：`GET/POST /api/long-agents/:id/work`。POST 为 `{schemaVersion:1,requestId,originSessionId,contextProjectId,title,text}`，202 返回 `{schemaVersion:1,work,execution}`；GET 返回 `{schemaVersion:1,works:[{work,execution}]}`，未完成接受的绑定 execution 为 null。取消和过程订阅使用现有 turns API。`friend_work` 支持 start/list/get/cancel，身份与来源由可信工具上下文提供；cancel 需 workId 与 expectedTurnId，防止过期操作取消后续执行。
 
 创建失败或网络丢回执时，页面保留原请求在本标签页 sessionStorage，提供明确“确认上次提交”入口；不会自动重发、生成新 ID 或把未确认当作运行成功。工作输入和实际结果始终由 Backend/原生 Pi 保存。来源、日常列表和工作列表分离，日历不把后台工作当作当天主聊。
+
+### 2026-09-30：统一 Workflow 执行配置合同
+
+用户确认的 A6 修复采用现有 Workflow 配置服务：Long Agent Home 是 Session 的配置归属，执行项目只决定本轮工作上下文，不复制模型设置。`definition.json` 保留长期身份提示词；模型、思考等级、工具及资源迁到 Home 的 `workflows/minimal-pi-coding-agent/agents/pi-coding-agent.json`。迁移留存不可变原件，已有 Workflow 字段优先，缺失字段从旧定义补齐；重试不覆盖迁移后编辑。旧配置 API 仅作为同一持久配置的兼容投影，不再保存第二份执行字段。
+
+Web、IM、定时工作均在受理时读取 Home 的默认/显式 Workflow，经公共 Resolver 冻结全部节点及 Session 选择；执行和记忆节点消费同一调用快照。检查与设置复用普通项目的 Workflow API。长期身份作为工作节点的附加上下文；记忆维护节点不继承身份职责、日报指引或项目上下文文件。旧已受理轮次继续使用原冻结快照。

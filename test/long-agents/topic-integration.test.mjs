@@ -420,7 +420,7 @@ test("topic integration: a node turn delegates the diagnosis workflow into its f
   assert.equal(calls[0].targetWorkflowId, "problem-diagnosis");
   assert.equal(calls[0].projectId, frozenProject, "the child Workflow runs in the node's frozen collaboration project");
   assert.equal(calls[0].parentProjectId, "friend", "the parent storage project stays the Long Agent home");
-  assert.equal(calls[0].parentWorkflowId, "long-agent:friend");
+  assert.equal(calls[0].parentWorkflowId, "minimal-pi-coding-agent", "the parent uses the shared Workflow identity");
 });
 
 test("topic integration: two queued relays each execute their own frozen message", async (t) => {

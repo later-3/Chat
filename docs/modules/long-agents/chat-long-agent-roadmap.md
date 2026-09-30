@@ -1,5 +1,8 @@
 # Chat Long Agent 实施状态与迁移要求
 
+2026-09-30 本批新增：每日默认外的独立直接 Session、跨日继续与来源回传；Long Agent 执行配置迁入公共 Workflow；Agent Memory 回执直接打开资源查看器；执行与记忆节点按真实阶段呈现。代码、迁移及测试状态见[本批修复记录](../../history/reviews/2026-09-30-workflow-configuration-and-session-presentation.md)，未部署不得当作生产现状。
+
+
 ## 2026-09-27 统一执行补充
 
 当前开发分支的新 Friend 日常、独立后台工作、Topic 节点轮次，均经原有受理/排序/身份冻结后进入 `startChatWorkflow` 与同一 Workflow SDK。Frontend 可在原 Pi Session 内选择下一轮 Workflow，历史与存储 Home 不变。旧无 workflow 字段的请求保留兼容执行；群聊专用调度不在这次单聊统一范围。精确合同与进程中断语义见[模块合同](../../architecture/chat-module-contracts.md#三类会话的统一执行与导航2026-09-26)，导航读取与失效见[性能文档](../../development/session-navigation-performance.md)。本条为未发布开发分支事实，不意味着正式服务已升级。

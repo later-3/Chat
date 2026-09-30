@@ -248,7 +248,7 @@ P5 归属查询同时读取当前主会话、全部 dailySessions 和经过校�
 
 ## 11. LA0：独立工作与群聊的原生 Session 合同
 
-2026-09-20 目标合同；LA0 证明原生接缝，生产接入分别属于 LA1/LA5。每日唯一性只约束默认直接交流，不限制任务/群参与上下文。对象与生命周期以[Long Agent 机制 §9](../long-agents/chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)为准。
+2026-09-20 目标合同；LA0 证明原生接缝，生产接入分别属于 LA1/LA5。每日唯一性只约束默认入口引用；显式额外直接 Session、任务及群参与各有独立上下文。额外 Session 的创建/恢复/归档合同见 Long Agent 架构 §4 的 2026-09-30 更新。对象与生命周期以[Long Agent 机制 §9](../long-agents/chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)为准。
 
 ### 11.1 存储与模型输入
 

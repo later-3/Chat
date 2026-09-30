@@ -41,6 +41,7 @@ export async function prepareSessionMemoryWriterSession(
     agentId: SESSION_MEMORY_WRITER_AGENT_ID,
   };
   return {
+    contextFilesPolicy: "none",
     additionalSkillPaths: [sessionMemorySkillPath()],
     transformContext: () => {
       // Resolve the round from durable stage identities, then respect Pi's active compaction boundary.

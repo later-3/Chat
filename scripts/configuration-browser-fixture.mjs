@@ -8,6 +8,7 @@ import { fixture } from "../test/long-agents/daily-fixture.mjs";
 import { ensureProjectLongAgent } from "../src/long-agents/project-agent.ts";
 import { agentDate } from "../src/long-agents/calendar.ts";
 import { readLongAgentRegistry, writeLongAgentRegistry } from "../src/long-agents/storage.ts";
+import { ensureChatSessionWithId } from "../src/chat-session.ts";
 
 /** Isolated product fixture: real HTTP/config/Pi assembly; local models and Nano resources only. */
 export async function configurationFixture(t) {
@@ -75,5 +76,15 @@ export async function configurationFixture(t) {
   }
   const date = agentDate(agent.timeZone);
   const day = await ensureProjectLongAgent({ chatHome: f.home, agent, projectId: agent.id, date });
+  const seeded = await ensureChatSessionWithId({ chatHome: f.home, projectId: agent.id }, day.day.sessionId);
+  const manager = seeded.session.manager;
+  manager.appendMessage({ role: "user", content: [{ type: "text", text: "Save the working memory." }], timestamp: Date.now() });
+  const assistant = content => ({ role: "assistant", content, timestamp: Date.now(), api: "openai-completions", provider: "p3-local", model: "daily-model", stopReason: "stop",
+    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
+  manager.appendMessage(assistant([{ type: "toolCall", id: "memory-receipt", name: "agent_memory_write", arguments: { path: file.path, content: file.content, expectedRevision: null } }]));
+  manager.appendMessage({ role: "toolResult", toolCallId: "memory-receipt", toolName: "agent_memory_write", content: [{ type: "text", text: "Memory saved." }],
+    details: { longAgentId: agent.id, file }, isError: false, timestamp: Date.now() });
+  manager.appendMessage(assistant([{ type: "text", text: "Saved." }]));
+  manager.flush();
   return { ...f, base, modelPath, diagnostics: () => output, friendUrl: `${base}/?projectId=friend&session=${day.day.sessionId}&friendDate=${date}` };
 }

@@ -22,6 +22,15 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
     await page.evaluate(`${query}.focus(); ${query}.select()`);
     await page.send("Input.insertText", { text: value });
   };
+  const waitEvent = async (predicate, label) => {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const event = page.events.find(predicate);
+      if (event) return event.params;
+      assert.ok(Date.now() < deadline, label);
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  };
   const screenshot = async name => {
     if (!process.env.CHAT_UI_EVIDENCE_DIR) return;
     await ready("document.getAnimations().every(animation => animation.playState !== 'running' || animation.effect?.getComputedTiming().iterations === Infinity)");
@@ -89,36 +98,62 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
   await screenshot("workflow-mobile");
   await page.send("Page.navigate", { url: f.friendUrl });
   await page.send("Network.enable");
+  await ready("document.querySelector('.turn-written-resources button[title=\"index.md\"]')");
+  const memoryRequestStart = page.events.length;
+  await page.evaluate("document.querySelector('.turn-written-resources button[title=\"index.md\"]').click()");
+  await ready("document.querySelector('[role=dialog]')?.textContent.includes('Private memory')");
+  assert.equal(page.events.slice(memoryRequestStart).some(event => event.method === "Network.requestWillBeSent" && event.params.request.url.includes('/api/long-agents/friend/agent-memory?operation=read')), true, "memory receipt opens the owner-bound resource");
+  assert.equal(page.events.slice(memoryRequestStart).some(event => event.method === "Network.requestWillBeSent" && /\/api\/files/.test(event.params.request.url)), false, "Agent memory never falls through to project files");
+  await page.evaluate("document.querySelector('[role=dialog] header button[aria-label=Close]').click()");
   await ready("document.querySelector('button[aria-label=\"Open Friend settings\"]')");
   await page.evaluate("document.querySelector('button[aria-label=\"Open Friend settings\"]').click()");
   await ready("document.querySelector('[role=dialog] form')");
   await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
+  assert.equal(await page.evaluate("document.querySelector('[role=dialog] input[type=radio]') === null"), true);
+  assert.equal(await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] details:not([open])')).every(e => e.getBoundingClientRect().height <= 60)"), true, "collapsed sections remain compact");
   await click("Effective assembly");
   await ready("document.querySelector('[role=dialog]')?.textContent.includes('agent_memory_write')");
-  const inspectionsBefore = page.events.filter(event => event.method === "Network.requestWillBeSent" && event.params.request.url.includes("/inspection")).length;
-  await click("Chat Memory, Workflow, and Project Tools");
-  await page.evaluate("Array.from(document.querySelectorAll('label')).find(e => e.textContent.includes('Write Agent Memory')).querySelector('input').click()");
-  await click("Save", "document.querySelector('[role=dialog] form')");
-  await ready("document.querySelector('[role=dialog]')?.textContent.includes('Long Agent configuration saved.')");
-  try {
-    await ready("(() => { const text = Array.from(document.querySelectorAll('[role=dialog] details')).find(e=>e.querySelector('summary')?.textContent==='Effective assembly')?.textContent; return text?.includes('agent_memory_read') && !text.includes('agent_memory_write'); })()");
-  } catch (error) {
-    console.error(f.diagnostics());
-    console.error(await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] details')).find(e=>e.querySelector('summary')?.textContent==='Effective assembly')?.textContent"));
-    throw error;
-  }
-  const inspectionsAfter = page.events.filter(event => event.method === "Network.requestWillBeSent" && event.params.request.url.includes("/inspection")).length;
-  assert.ok(inspectionsAfter > inspectionsBefore, "saving refreshes the effective assembly");
+  await fill("Chat display alias", "Nested editor draft");
+  await click("Configure workflow");
+  await ready("document.querySelectorAll('[role=dialog]').length === 2");
+  await ready("Array.from(document.querySelectorAll('[role=dialog]')).at(-1)?.textContent.includes('Model parameters')");
+  await click("Model parameters", "Array.from(document.querySelectorAll('[role=dialog]')).at(-1)");
+  await ready("document.querySelectorAll('[role=dialog]').length === 3");
+  await ready("Array.from(document.querySelectorAll('[role=dialog]')).at(-1)?.textContent.includes('Shared by every agent')");
+  await page.evaluate("Array.from(Array.from(document.querySelectorAll('[role=dialog]')).at(-1).querySelectorAll('label')).find(e => e.textContent.includes('Image input')).querySelector('input').click()");
+  await click("Save", "Array.from(document.querySelectorAll('[role=dialog]')).at(-1)");
+  await ready("Array.from(document.querySelectorAll('[role=dialog]')).at(-1)?.textContent.includes('Saved')");
+  await page.evaluate("Array.from(document.querySelectorAll('[role=dialog]')).at(-1).querySelector('header button[aria-label=Close]').click()");
+  await ready("document.querySelectorAll('[role=dialog]').length === 2");
+  await ready("Array.from(document.querySelectorAll('[role=dialog]')).at(-1)?.textContent.includes('Not supported')");
+  await click("Tool permissions", "Array.from(document.querySelectorAll('[role=dialog]')).at(-1)");
+  await page.evaluate("Array.from(Array.from(document.querySelectorAll('[role=dialog]')).at(-1).querySelectorAll('label')).find(e => e.querySelector('span > strong')?.textContent === 'agent_memory_write').querySelector('input').click()");
+  await ready("Array.from(Array.from(document.querySelectorAll('[role=dialog]')).at(-1).querySelectorAll('label')).find(e => e.querySelector('span > strong')?.textContent === 'agent_memory_write')?.querySelector('input')?.checked === false");
+  await page.evaluate("Array.from(document.querySelectorAll('[role=dialog]')).at(-1).querySelector('header button[aria-label=Close]').click()");
+  await ready("document.querySelectorAll('[role=dialog]').length === 1");
+  assert.equal(await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] input')).some(e => e.value === 'Nested editor draft')"), true);
+  await ready("(() => { const text = Array.from(document.querySelectorAll('[role=dialog] details')).find(e=>e.querySelector('summary')?.textContent==='Effective assembly')?.textContent; return text?.includes('agent_memory_read') && !text.includes('agent_memory_write'); })()");
   const savedAgent = await (await fetch(`${f.base}/api/long-agents/friend/config`)).json();
   assert.equal(savedAgent.agent.definition.tools.addresses.includes("system:tool/agent_memory_write"), false);
+  await click("Save", "document.querySelector('[role=dialog] form')");
+  await ready("document.querySelector('[role=dialog]')?.textContent.includes('Long Agent configuration saved.')");
   await fill("Chat display alias", "Unsaved preview");
   await click("Refresh", "document.querySelector('[role=dialog] header')");
   await ready("document.querySelector('[role=alertdialog]')");
   await click("Cancel", "document.querySelector('[role=alertdialog]')");
   assert.equal(await page.evaluate("Array.from(document.querySelectorAll('input')).some(e=>e.value==='Unsaved preview')"), true);
   await click("Discard changes", "document.querySelector('[role=dialog] form')");
+  await click("Effective assembly");
   await page.evaluate("document.querySelector('[role=dialog] main').scrollTop = 0");
   await screenshot("friend-desktop");
+  await page.evaluate("document.querySelector('[role=dialog] main').scrollTop = document.querySelector('[role=dialog] main').scrollHeight");
+  await screenshot("friend-model-desktop");
+  await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+  await ready("document.documentElement.classList.contains('dark')");
+  await screenshot("friend-model-dark");
+  await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
+  await ready("!document.documentElement.classList.contains('dark')");
+  await page.evaluate("document.querySelector('[role=dialog] main').scrollTop = 0");
   await page.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   assert.equal(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
   assert.ok(await page.evaluate("document.querySelector('[role=dialog] header h1').getBoundingClientRect().width >= window.innerWidth - 110"), "mobile title retains readable width beside header actions");

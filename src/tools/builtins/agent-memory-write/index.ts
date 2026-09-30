@@ -56,7 +56,7 @@ export const AGENT_MEMORY_WRITE_TOOL_PROVIDER = defineChatSystemTool(manifestJso
       }, context.chatHome);
       return {
         content: [{ type: "text", text: `Agent memory saved: ${file.path} (${file.revision})` }],
-        details: { file },
+        details: { longAgentId: target.agent.id, file },
       };
     },
   });

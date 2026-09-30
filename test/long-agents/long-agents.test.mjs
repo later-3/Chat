@@ -302,7 +302,7 @@ test("legacy per-session bindings migrate to one Project Long Agent primary sess
   }));
 
   const state = await readLongAgentState(chatHome);
-  assert.equal(state.schemaVersion, 6);
+  assert.equal(state.schemaVersion, 7);
   assert.deepEqual(state.nodeSessions, [], "a legacy state upgrades with no node bindings");
   assert.deepEqual(state.projectAgents, [{
     id: "project-long-agent:nexus:nexus",
@@ -316,7 +316,7 @@ test("legacy per-session bindings migrate to one Project Long Agent primary sess
   assert.equal(state.bindings.length, 1);
   assert.equal(state.bindings[0].projectLongAgentId, state.projectAgents[0].id);
   assert.equal(state.bindings[0].nanoclawSessionId, "nano-session-1");
-  assert.equal(JSON.parse(fs.readFileSync(path.join(chatHome, "runtime", "long-agent-state.json"), "utf8")).schemaVersion, 6);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(chatHome, "runtime", "long-agent-state.json"), "utf8")).schemaVersion, 7);
 });
 
 test("LongAgent default definition grants every registered Chat system Tool", async (t) => {
@@ -410,7 +410,7 @@ test("LongAgent inspection resolves effective Skills through the execution path 
   const response = await router.fetch(new Request("http://chat.test/api/long-agents/nexus/inspection"));
   assert.equal(response.status, 200);
   const inspection = await response.json();
-  assert.equal(inspection.agent.id, "nexus");
+  assert.equal(inspection.agent.id, "pi-coding-agent");
   const personalSkill = inspection.skills.find((skill) => skill.name === "personal-note");
   assert.equal(personalSkill?.owner, "personal");
   // S4：自有目录的 Skill 默认生效并按 agent 归属分类。

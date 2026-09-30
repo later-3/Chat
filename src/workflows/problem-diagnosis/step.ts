@@ -1,3 +1,4 @@
+import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
 import { openChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import { createWorkflowAgentSession } from "../agent-definition.js";
@@ -23,7 +24,7 @@ export async function runProblemDiagnosisStep(input: ChatWorkflowInput): Promise
   const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: PROBLEM_DIAGNOSIS_WORKFLOW_ID,
-    agents: [PROBLEM_DIAGNOSER_AGENT],
+    agents: [PROBLEM_DIAGNOSER_AGENT, SESSION_MEMORY_WRITER_AGENT],
     cwd: chatSession.cwd,
     ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
     ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),

@@ -30,6 +30,7 @@ export interface CreateWorkflowAgentSessionOptions {
   readonly sessionManager: SessionManager;
   readonly agent: WorkflowAgentDefinition;
   readonly additionalSkillPaths?: readonly string[];
+  readonly contextFilesPolicy?: "none";
   readonly customTools?: readonly ToolDefinition[];
   readonly transformContext?: AgentContextTransform;
   readonly promptCaptureEnabled?: boolean;
@@ -41,6 +42,7 @@ export interface CreateWorkflowAgentSessionOptions {
 
 /** Workflow-owned additions applied identically during execution and inspection. */
 export interface WorkflowAgentSessionExtensions {
+  readonly contextFilesPolicy?: "none";
   readonly additionalSkillPaths?: readonly string[];
   readonly customTools?: readonly ToolDefinition[];
   readonly transformContext?: AgentContextTransform;

@@ -339,3 +339,9 @@ DELETE /api/sessions/:parentSessionId/workflow-calls/:callId
 ## 2026-09-17 SDK 维护
 
 Workflow 依赖固定为 `4.8.9`，通过包管理更新，不维护 Workflow 源码 Fork。`@workflow/builders` 补丁迁移到 `4.1.14`，继续保留 JSON import attribute、开发 Step 本地 JSON 内联和 source map。不能只更新包版本而移除补丁或跳过 `pnpm test:dev`。本轮范围与架构审核见 [上游维护记录](../../history/reviews/2026-09-17-upstream-maintenance.md)。
+
+### 2026-09-30：执行配置冻结与记忆尾节点
+
+公共配置准备阶段同时持久保存 `chat.workflow_turn_configuration` 的资源选择 revision 和 `chat.workflow_resolved_agents.v1` 的节点有效定义。后续阶段按 invocation 重用快照，不能重新读取已修改的模型/工具/Prompt 配置。Long Agent 在受理时准备同一快照，经耐久接受记录转存原生 Session；身份适配与 NanoClaw Memory 所有权不变。
+
+记忆尾节点只维护本轮会话记忆，不重复工作答案；其输入排除长期身份职责与项目上下文文件。该内部角色通过公共装配的 `contextFilesPolicy: "none"` 排除上下文文件，执行与检查共用，普通项目和 Long Agent 一致。关闭、失败、取消由 `chat.session_memory_notice` 记录，主答案保留，整体成功状态遵从 Workflow 结果。

@@ -1,3 +1,5 @@
+import { longAgentWorkflowConfiguration } from "./workflow-configuration.js";
+import { prepareChatWorkflowTurnConfiguration } from "../workflows/workflow-configuration.js";
 import { agentDate } from "./calendar.js";
 import { settleConsumedSteering } from "./turn-controls.js";
 import { getLiveRoundHandle, getLiveTurn } from "./live-turn.js";
@@ -111,7 +113,8 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     const payloadHashV3 = digest({ text: input.text, images: input.images ?? [], requestedContextProjectId,
       requestedInteractionRevision: interactionRevision, frozenContextProjectId: contextProjectId,
       frozenInteractionRevision: interactionRevision, longAgentId: input.longAgentId, source, summaryDraft: input.summaryDraft ?? false,
-      channelType: input.channelType ?? null, inboundEventId: input.inboundEventId ?? null });
+      channelType: input.channelType ?? null, inboundEventId: input.inboundEventId ?? null,
+      ...(input.agentConfigs === undefined ? {} : { agentConfigs: input.agentConfigs }) });
     // An explicit format is authoritative. Unversioned records may match historical formats, but
     // v1 cannot attest to a revision that did not exist when that request was accepted.
     const v1Candidates = interactionRevision === null ? [v1] : [];
@@ -121,7 +124,7 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
       : [...v1Candidates, v2, payloadHashV3];
     const payloadHash = payloadHashV3;
     if (prior !== undefined) {
-      if ((prior.workflow?.id ?? "minimal-pi-coding-agent") !== (input.workflow ?? "minimal-pi-coding-agent"))
+      if ((prior.workflow?.id ?? "minimal-pi-coding-agent") !== (input.workflow ?? prior.workflow?.id ?? "minimal-pi-coding-agent"))
         throw new LongAgentRequestConflict("同一requestId不能改变Workflow");
       if (prior.workId !== undefined && prior.sessionId !== input.sessionId) throw new LongAgentRequestConflict("后台工作请求不能改投其他会话");
       // The round KIND is part of the request identity: a node round and an ordinary round are not
@@ -157,20 +160,36 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
       ...(nodeSessionId === undefined && input.topicNode === undefined ? {} : { topicNode: { ...input.topicNode!, sessionId: nodeSessionId! } }) });
     const chatSession = await openChatSession({ projectId: agent.id, chatHome: home, sessionId: located.day.sessionId });
     const memory = SessionManager.inMemory(chatSession.cwd);
+    for (const entry of chatSession.manager.getEntries()) if (entry.type === "custom" && entry.customType === "chat.workflow_configuration") memory.appendCustomEntry(entry.customType, entry.data);
+    const configured = await longAgentWorkflowConfiguration(agent, home, input.workflow);
+    const workflowInvocationId = randomUUID();
+    if (input.images?.length && configured.workflow.supportsImageInput !== true) throw new Error("所选Workflow不支持图片输入");
+    const workflowAgents = await prepareChatWorkflowTurnConfiguration(memory, {
+      invocationId: workflowInvocationId, workflowId: configured.workflow.id, agents: configured.workflow.agents,
+      cwd: configured.project.cwd, chatHome: home, projectDataDir: configured.project.projectDataDir,
+      ...(configured.defaults === undefined ? {} : { defaults: configured.defaults }),
+      ...(input.agentConfigs === undefined ? {} : { adjustments: input.agentConfigs }),
+    });
+    const primary = configured.workflow.agents[0];
+    if (!primary) throw new Error("Workflow缺少执行Agent");
+    const executionAgent = workflowAgents.agents[primary.id];
+    if (!executionAgent) throw new Error("Workflow缺少冻结执行Agent");
     // The temporary Session is solely an assembly preview; only its custom snapshots are retained.
     const turnId = `${source}:${agent.id}:${requestId}`;
     const group = await readLongAgentAgentGroup(agent.id, home);
-    const prepared = await prepareLongAgentAssembly({ agent, chatHome: home, projectId: contextProjectId, turnId, groupContext: group, today: agentDate(calendar.timeZone, acceptedAt) });
+    const prepared = await prepareLongAgentAssembly({ agent, chatHome: home, projectId: contextProjectId, turnId, executionAgent, groupContext: group, today: agentDate(calendar.timeZone, acceptedAt) });
+    memory.appendCustomEntry("chat.agent-assembly-identity.v1", { turnId, instructions: prepared.identityInstructions });
     const created = await createChatPiAgentSession({ chatSession, sessionManager: memory, ...prepared,
       ...(input.summaryDraft ? { agent: { ...prepared.agent, tools: { mode: "none" as const }, resources: { mode: "explicit" as const, skillPaths: [], extensionPaths: [], pluginSources: [] } } } : {}),
-      toolContext: { purpose: "execution", agentId: agent.id, longAgentId: agent.id, longAgentTurnId: turnId } });
+      toolContext: { purpose: "execution", agentId: executionAgent.id, longAgentId: agent.id, longAgentTurnId: turnId,
+        workflowId: configured.workflow.id, workflowInvocationId, stageId: configured.workflow.nodes.find(node => node.kind === "agent" && node.agentId === executionAgent.id)?.id ?? executionAgent.id } });
     try {
       if (source === "chat-web") assertModelSupportsImages(created.session.model, input.images);
       const snapshot = readAssemblySnapshot(memory, turnId);
       if (snapshot === undefined) throw new Error("缺少公共装配快照");
       const { revision: _revision, ...body } = { ...snapshot, sessionId: located.day.sessionId, agent: { ...snapshot.agent,
         tools: snapshot.agent.tools.mode === "pi-default" ? { ...snapshot.agent.tools, mode: "explicit" as const, names: created.session.getActiveToolNames(), exclude: [] } : snapshot.agent.tools } };
-      const seed = memory.getEntries().filter((entry) => entry.type === "custom" && entry.customType.startsWith("chat.agent-assembly"))
+      const seed = memory.getEntries().filter((entry) => entry.type === "custom" && (entry.customType.startsWith("chat.agent-assembly") || entry.customType.startsWith("chat.workflow_")))
         .map((entry) => { if (entry.type !== "custom") throw new Error("无效装配记录");
           return { customType: entry.customType, data: entry.customType === CHAT_ASSEMBLY_CONTEXT ? { ...body, revision: assemblyRevision(body) } : entry.data }; });
       const turn = await updateLongAgentState(home, (state) => {
@@ -186,7 +205,7 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
           const active = new Set(state.turns.filter(t => t.longAgentId === agent.id && t.workId && ["queued", "running"].includes(t.status)).map(t => t.workId));
           if (!active.has(work.id) && active.size >= 4) throw new Error("此Friend已有4项后台工作，请等待完成或取消后重试");
         }
-        const turn: AcceptedTurn = { workflow: { id: input.workflow ?? "minimal-pi-coding-agent", invocationId: randomUUID() }, ...(work ? { workId: work.id } : {}), ...(input.topicNode === undefined ? {} : { topicNode: { topicId: input.topicNode.topicId, nodeId: input.topicNode.nodeId } }), ...(input.relayIntentEntryId === undefined ? {} : { relayIntentEntryId: input.relayIntentEntryId }), ...(input.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}), ...(input.promptCapture === "on" ? { promptCapture: "on" as const } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
+        const turn: AcceptedTurn = { workflow: { id: configured.workflow.id, invocationId: workflowInvocationId }, ...(work ? { workId: work.id } : {}), ...(input.topicNode === undefined ? {} : { topicNode: { topicId: input.topicNode.topicId, nodeId: input.topicNode.nodeId } }), ...(input.relayIntentEntryId === undefined ? {} : { relayIntentEntryId: input.relayIntentEntryId }), ...(input.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}), ...(input.promptCapture === "on" ? { promptCapture: "on" as const } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
           channelType: input.channelType ?? (source === "chat-web" ? "chat-web" : null), inboundEventId: input.inboundEventId ?? null,
           contextProjectId, interactionRevision, payloadHashVersion: 3, sessionId: located.day.sessionId, date: located.day.date, timeZone: calendar.timeZone,
           acceptedAt: acceptedAt.toISOString(), sequence: state.turns.reduce((max, item) => Math.max(max, item.sequence), 0) + 1,
@@ -203,13 +222,17 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
 }
 
 export function installAcceptedAssembly(manager: SessionManager, turn: AcceptedTurn, options: { readonly skipCollaborationHistory?: boolean } = {}): void {
-  if (readAssemblySnapshot(manager, turn.turnId) !== undefined) return;
+  const installed = readAssemblySnapshot(manager, turn.turnId) !== undefined;
   const memory = SessionManager.inMemory(manager.getCwd());
   for (const entry of turn.seed ?? []) memory.appendCustomEntry(entry.customType, entry.data);
   const snapshot = readAssemblySnapshot(memory, turn.turnId);
   if (snapshot === undefined || snapshot.sessionId !== manager.getSessionId()) throw new Error("已接受快照不属于当前Session");
-  for (const entry of turn.seed ?? []) if (entry.customType !== CHAT_ASSEMBLY_CONTEXT) manager.appendCustomEntry(entry.customType, entry.data);
-  persistAssemblySnapshot(manager, snapshot, options);
+  for (const entry of turn.seed ?? []) {
+    if (entry.customType === CHAT_ASSEMBLY_CONTEXT || installed && entry.customType === "chat.workflow_configuration") continue;
+    if (!manager.getEntries().some(saved => saved.type === "custom" && saved.customType === entry.customType && JSON.stringify(saved.data) === JSON.stringify(entry.data)))
+      manager.appendCustomEntry(entry.customType, entry.data);
+  }
+  if (!installed) persistAssemblySnapshot(manager, snapshot, options);
 }
 
 export async function updateTurnStatus(home: string, turnId: string, status: AcceptedTurn["status"], error: string | null = null): Promise<void> {
@@ -394,8 +417,18 @@ export async function controlQueuedRequest(home: string, longAgentId: string, tu
     return { state: { ...state, dailySessions: action !== "retry" ? state.dailySessions : state.dailySessions.map((day) => day.sessionId === turn.sessionId
       ? { ...day, summary: { status: "pending" as const, attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } } : day), turns: state.turns.map((item) => {
       if (item.turnId !== turnId) return item;
-      if (action === "retry") return { ...item,
-        ...(item.workflow === undefined ? {} : { workflow: { id: item.workflow.id, invocationId: randomUUID() } }), cancelRequested: false, status: "queued" as const, settledAt: null, error: null };
+      if (action === "retry") {
+        const invocationId = randomUUID();
+        const seed = item.seed?.map(entry => {
+          if (!["chat.workflow_turn_configuration", "chat.workflow_resolved_agents.v1"].includes(entry.customType)
+            || typeof entry.data !== "object" || entry.data === null || !("invocationId" in entry.data)) return entry;
+          const { revision: _revision, ...data } = entry.data as Record<string, unknown>;
+          const body = { ...data, invocationId };
+          return { customType: entry.customType, data: entry.customType === "chat.workflow_resolved_agents.v1" ? { ...body, revision: assemblyRevision(body) } : body };
+        });
+        return { ...item, ...(seed === undefined ? {} : { seed }),
+          ...(item.workflow === undefined ? {} : { workflow: { id: item.workflow.id, invocationId } }), cancelRequested: false, status: "queued" as const, settledAt: null, error: null };
+      }
       const { text: _text, images: _images, seed: _seed, ...receipt } = item;
       loaders.delete(key(home, turnId));
       return { ...receipt, status: "cancelled" as const, settledAt: new Date().toISOString(), error: null };

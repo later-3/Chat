@@ -27,7 +27,8 @@ export async function readAgentDaySources(home: string, id: string, date: string
   ]);
   const sessions = ownSessions.filter(info => sessionMessageDates(info, timeZone).includes(date)).map(info => {
     const work = state.works.find(work => work.longAgentId === id && work.sessionId === info.id);
-    return { sessionId: info.id, projectId: id, kind: work ? "work" : state.dailySessions.some(day => day.sessionId === info.id) ? "daily" : "session",
+    return { sessionId: info.id, projectId: id, kind: work ? "work" : state.dailySessions.some(day => day.sessionId === info.id) ? "daily"
+      : state.additionalSessions.some(session => session.sessionId === info.id) ? "direct" : "session",
       title: info.name ?? work?.title ?? firstSessionUtterance(info).slice(0, 120), readable: true };
   });
   const usedGroups = new Set<string>();

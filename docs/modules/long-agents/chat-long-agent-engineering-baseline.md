@@ -1,5 +1,8 @@
 # Long Agent 实施前约束、验证与场景依赖
 
+2026-09-30 用户确认修订：每日唯一性只约束默认入口；支持额外独立直接 Session。执行配置统一到公共 Workflow，具体迁移、受理冻结、旧轮次兼容及验证以[架构 §4](./chat-long-agent-architecture.md#4-project-first-与会话选择)和[本批修复记录](../../history/reviews/2026-09-30-workflow-configuration-and-session-presentation.md)为准。以下历史 P1/LA0 范围不覆盖此修订。
+
+
 2026-09-19 P1 范围修订：每 Friend 每日唯一直接交流 Session，业务项目逐轮装配；下文旧的按业务项目拆分/独立整理 Session 及其并发假设不再作为本轮实现依据，统一以[生命周期合同](./chat-long-agent-architecture.md#4-project-first-与会话选择)和[开发计划](../../development/agent-unification-plan.md)为准。其余长期能力不因本轮合同自动成为已实现。
 
 2026-09-20 LA0 补充：后台任务和群参与各自使用独立 Session，不改变直接交流每日唯一性。新实施合同见[机制 §9](./chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)及[Session §11](../sessions/chat-session-architecture.md#11-la0独立工作与群聊的原生-session-合同)，场景依赖/阶段门槛以[LA0–LA6 计划](../../development/long-agent-functionality-plan.md)为准；本基线的原生接入、资源和代码质量红线继续有效。

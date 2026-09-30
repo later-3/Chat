@@ -20,12 +20,15 @@ export async function readFriendDays(home: string, longAgentId: string, year?: n
   const sessions = year === undefined ? undefined : (await listActiveSessionFiles(await resolveProjectContext(agent.id, home)))
     .flatMap(info => {
       const dates = sessionMessageDates(info, agent.timeZone).filter(date => date.startsWith(`${year}-`));
-      if (dates.length === 0) return [];
+      const direct = state.additionalSessions.find(session => session.longAgentId === agent.id && session.sessionId === info.id);
+      if (dates.length === 0 && !direct?.date.startsWith(`${year}-`)) return [];
       const work = state.works.find(item => item.longAgentId === agent.id && item.sessionId === info.id);
       const kind = state.dailySessions.some(day => day.longAgentId === agent.id && day.sessionId === info.id) ? "daily" as const
+        : direct !== undefined ? "direct" as const
         : work !== undefined ? "work" as const
         : state.nodeSessions.some(node => node.longAgentId === agent.id && node.sessionId === info.id) ? "topic" as const : "session" as const;
       return [{ sessionId: info.id, projectId: agent.id, dates, kind,
+        ...(direct === undefined ? {} : { creationDate: direct.date }),
         title: info.name ?? work?.title ?? firstSessionUtterance(info).slice(0, 120), createdAt: info.created.toISOString() }];
     });
   // Future token heatmap: aggregate native assistant usage for each Agent-local date across its
