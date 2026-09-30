@@ -4,7 +4,7 @@
 
 | 目的 | 入口 |
 |---|---|
-| 本次 0.5.3 固定版本：release / VS Code 安装、启动和关闭 | [Linux 交付步骤](./release-0.5.3.md) |
+| 本次 0.5.4 固定版本：release / VS Code 安装、启动和关闭 | [Linux 交付步骤](./release-0.5.4.md) |
 | 新 Linux / WSL2 电脑从零安装 | [安装指南](./installation.md) |
 | 选择脚本、启动/停止、正式服务维护 | [运行手册](./running.md) |
 | Friend 旧数据迁移、升级冲突、回退 | [Friend 升级](./friend-migration.md) |
@@ -49,4 +49,4 @@ pnpm release:cut -- 0.5.4 0.12.1 --scratch /tmp/render  # 只渲染生成的文�
 
 脚本要求两个仓库工作区干净，依次抬前端与父仓库版本、按模板生成交付页与验证记录、替换入口文档指针、把上一版交付页标为历史、跑 `check:architecture` 与发布一致性门禁，然后提交、推送并打 `v<frontend>` / `v<chat>` 标签。`--dry-run` 与 `--scratch` 都可先复核生成内容；生成内容仍是草稿：发布前必须人工复核"本版变化"与验证结论，并确认浏览器场景（`pnpm test:dev`）是否真跑过。
 
-本次交付使用父仓库 `v0.5.3` 标签及其三个固定 Submodule Commit；安装脚本和源码使用同一标签，具体步骤见[版本交付页](./release-0.5.3.md)。未提交工作区不属于远端安装内容。
+本次交付使用父仓库 `v0.5.4` 标签及其三个固定 Submodule Commit；安装脚本和源码使用同一标签，具体步骤见[版本交付页](./release-0.5.4.md)。未提交工作区不属于远端安装内容。
