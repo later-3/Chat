@@ -537,6 +537,30 @@ export async function assertChatSessionReadable(input: {
   });
 }
 
+/** Shared open path for single-entry reads (tool-result media, deferred thinking): resolve, authorize, open. */
+async function openReadableChatSession(
+  sessionId: string,
+  projectId: string | undefined,
+  chatHome: string | undefined,
+  requester: import("./long-agents/conversations/access.js").SessionRequester | null,
+): Promise<SessionManager> {
+  const info = await requireChatSession(sessionId, projectId, chatHome);
+  // The storage project is always known from the resolved session file, so the topic decision is
+  // consulted even when the caller did not pass projectId explicitly.
+  const storageProjectId = (info as { projectId?: string }).projectId ?? projectId;
+  await assertSessionFileReadable({ ...(chatHome === undefined ? {} : { chatHome }), sessionPath: info.path, sessionId,
+    ...(storageProjectId === undefined ? {} : { storageProjectId }), requester });
+  try {
+    const manager = SessionManager.open(info.path, dirname(info.path));
+    if (manager.getSessionId() !== sessionId) {
+      throw new Error(`Session文件在读取时不可用: ${sessionId}`);
+    }
+    return manager;
+  } catch (error) {
+    return rethrowWithCurrentSessionState(info.projectId as string, chatHome, sessionId, error);
+  }
+}
+
 /** Reads one image only from a concrete tool-result entry in an active Chat Session. */
 export async function readChatToolResultImage(
   sessionId: string,
@@ -546,21 +570,7 @@ export async function readChatToolResultImage(
   chatHome?: string,
   requester: import("./long-agents/conversations/access.js").SessionRequester | null = null,
 ): Promise<ChatToolResultImageRead> {
-  const info = await requireChatSession(sessionId, projectId, chatHome);
-  // The storage project is always known from the resolved session file, so the topic decision is
-  // consulted even when the caller did not pass projectId explicitly.
-  const storageProjectId = (info as { projectId?: string }).projectId ?? projectId;
-  await assertSessionFileReadable({ ...(chatHome === undefined ? {} : { chatHome }), sessionPath: info.path, sessionId,
-    ...(storageProjectId === undefined ? {} : { storageProjectId }), requester });
-  let manager: SessionManager;
-  try {
-    manager = SessionManager.open(info.path, dirname(info.path));
-    if (manager.getSessionId() !== sessionId) {
-      throw new Error(`Session文件在读取时不可用: ${sessionId}`);
-    }
-  } catch (error) {
-    return rethrowWithCurrentSessionState(info.projectId as string, chatHome, sessionId, error);
-  }
+  const manager = await openReadableChatSession(sessionId, projectId, chatHome, requester);
 
   const entry = manager.getEntry(entryId);
   if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) {
@@ -576,6 +586,40 @@ export async function readChatToolResultImage(
   const bytes = decodeBoundedToolResultImage(image.data);
   if (bytes === null) return { status: "invalid-or-oversized" };
   return { status: "ok", bytes, mime: image.mime };
+}
+
+export type ChatDeferredThinkingRead =
+  | { readonly status: "ok"; readonly thinking: string }
+  | { readonly status: "not-found" };
+
+/**
+ * Reads one deferred thinking block from an assistant entry in an active Chat Session. Thinking
+ * content stays in the Session file; `deferThinking` projections only strip the browser copy, so
+ * expansion refetches it through this guarded read instead of guessing another route.
+ */
+export async function readChatDeferredThinking(
+  sessionId: string,
+  entryId: string,
+  blockIndex: number,
+  projectId?: string,
+  chatHome?: string,
+  requester: import("./long-agents/conversations/access.js").SessionRequester | null = null,
+): Promise<ChatDeferredThinkingRead> {
+  const manager = await openReadableChatSession(sessionId, projectId, chatHome, requester);
+
+  const entry = manager.getEntry(entryId);
+  if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) {
+    return { status: "not-found" };
+  }
+  const message = entry.message;
+  if (message.role !== "assistant" || !Array.isArray(message.content)) {
+    return { status: "not-found" };
+  }
+  const block = message.content[blockIndex];
+  if (!isRecord(block) || block.type !== "thinking" || typeof block.thinking !== "string" || block.thinking.trim() === "") {
+    return { status: "not-found" };
+  }
+  return { status: "ok", thinking: block.thinking };
 }
 
 export async function readChatSession(

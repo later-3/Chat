@@ -655,7 +655,9 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     // The Workflow's LAST node is the memory writer: it must really run after the work answer, and the
     // round must settle only after it did.
     assert.ok(sessionMemoryRequests.length > 0, "the memory writer stage must run");
-    const memoryFile = path.join(chatHome, "projects", "dev-e2e-project", "session-memory", `${status.result.sessionId}.json`);
+    // Session memory lives inside the session directory since the layout refactor
+    // (8a31f5665): <storageRoot>/sessions/session-memory/<id>.json.
+    const memoryFile = path.join(chatHome, "projects", "dev-e2e-project", "sessions", "session-memory", `${status.result.sessionId}.json`);
     assert.equal(fs.existsSync(memoryFile), true, `the writer must persist session memory: ${memoryFile}`);
     assert.match(fs.readFileSync(memoryFile, "utf8"), /DEV_E2E 会话记忆条目/);
     assert.match(JSON.stringify(modelRequests[1]), /Add an explicit rollback step before execution\./);

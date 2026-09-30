@@ -64,3 +64,6 @@
 - [Friend 日期导航与输入区遮挡](./friend-date-navigation-and-composer.md)：日期、会话、工作列表与完整工具栏沿真实用户入口验证。
 
 - [合并控件时保留领域策略事实](./shared-control-server-policy.md)：共享记忆入口必须保留主题节点的持久化、冲突和刷新恢复合同。
+
+- [侧栏轮询拖垮事件循环](./periodic-event-loop-stall-session-list-polling.md)：周期任务的全量解析会阻塞事件循环，指纹缓存与一次解析共同消除切换卡顿。
+- [CSS Modules 动画 keyframes 必须与引用同文件](./css-modules-keyframes-must-stay-in-module.md)：模块内 animation 引用指向全局 keyframes 会因哈希失配静默失效，关闭动画挂起。

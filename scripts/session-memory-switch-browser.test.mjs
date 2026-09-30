@@ -396,6 +396,9 @@ test("the session-memory switch reaches the real send and really gates the memor
   // pick the day; entering the day is a separate, explicit action.
   const openDayPicker = async () => {
     await openDayPanel();
+    // The control stays disabled while the calendar data is still loading; under a loaded
+    // machine the fetch loses the race against this click, so wait for it to be enabled.
+    await page.waitFor("document.querySelector('[data-friend-add-day]') !== null && !document.querySelector('[data-friend-add-day]').disabled", { label: "add-a-date control is ready" });
     await page.evaluate("document.querySelector('[data-friend-add-day]').click()");
     await page.waitFor("document.querySelector('[data-friend-calendar]') !== null", {label:'calendar opens in add-a-date mode'});
   };
@@ -417,7 +420,9 @@ test("the session-memory switch reaches the real send and really gates the memor
   await openDayPicker();
   await page.waitFor(`document.querySelector('[data-friend-calendar="friend"][aria-busy="false"] [data-calendar-heat-date="${historical.day.date}"][data-active]') !== null`);
   const cellSize = await page.evaluate(`(() => { const r = document.querySelector('[data-calendar-heat-date="${historical.day.date}"]').getBoundingClientRect(); return {width:r.width,height:r.height}; })()`);
-  assert.equal(cellSize.width, cellSize.height, "shared form button minimum height must not stretch heatmap squares");
+  // Sub-pixel rounding differs run to run; the layout regression this guards against
+  // (button min-height stretching a square into a tall rectangle) is whole pixels.
+  assert.ok(Math.abs(cellSize.width - cellSize.height) < 0.5, `heatmap cell must stay square, got ${JSON.stringify(cellSize)}`);
   for (const width of [390, 768, 1440]) {
     await page.send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
     await page.waitFor(`window.innerWidth === ${width}`);
@@ -485,7 +490,9 @@ test("the session-memory switch reaches the real send and really gates the memor
     await enterDay(date);
   };
   await openEmptyDate(emptyHistory.day.date);
-  assert.equal(await page.evaluate(`document.querySelector('[data-rendered-session]').getAttribute('data-rendered-session')`),emptyHistory.day.sessionId);
+  // The session switch behind a day click is async and ready() cannot tell the old and
+  // new sessions apart, so wait for the target session to actually render.
+  await page.waitFor(`document.querySelector('[data-rendered-session="${emptyHistory.day.sessionId}"]') !== null`, { label: "empty day opens its own session" });
   await openDayPanel();
   await page.waitFor(`document.querySelector('[data-friend-day="${emptyHistory.day.date}"]') !== null`);
   await page.send('Page.reload'); await ready();
@@ -493,9 +500,18 @@ test("the session-memory switch reaches the real send and really gates the memor
   await page.waitFor(`document.querySelector('[data-friend-day="${emptyHistory.day.date}"]') !== null`);
   const callsBeforeCreate = f.requests.length;
   await openEmptyDate(freshDate);
-  const fresh = (await (await fetch(`${baseUrl}/api/long-agents/friend/daily`)).json()).days.find(day=>day.date===freshDate);
+  const fresh = await (async () => {
+    // Creating the empty day's Session is async; the daily listing can lag the click.
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const day = (await (await fetch(`${baseUrl}/api/long-agents/friend/daily`)).json()).days.find(item=>item.date===freshDate);
+      if (day !== undefined) return day;
+      assert.ok(Date.now() < deadline, `fresh date ${freshDate} never appeared in the daily listing`);
+      await pause(200);
+    }
+  })();
   assert.ok(fresh);
-  assert.equal(await page.evaluate(`document.querySelector('[data-rendered-session]').getAttribute('data-rendered-session')`),fresh.sessionId);
+  await page.waitFor(`document.querySelector('[data-rendered-session="${fresh.sessionId}"]') !== null`, { label: "fresh date opens its session" });
   assert.equal(f.requests.length,callsBeforeCreate,'creation is not an execution or schedule');
   await openEmptyDate(freshDate);
   assert.equal((await (await fetch(`${baseUrl}/api/long-agents/friend/daily`)).json()).days.filter(day=>day.date===freshDate).length,1);
@@ -599,9 +615,10 @@ test("the session-memory switch reaches the real send and really gates the memor
   assert.equal(await page.evaluate("document.documentElement.lang"), "zh-CN");
   await page.evaluate("document.querySelector('[data-settings-section=personal]').click()");
   await page.evaluate("[...document.querySelectorAll('.workspace-settings-group button')].find(b => b.querySelector('strong')?.textContent === '模型').click()");
-  await page.waitFor("document.querySelector('[role=dialog][aria-label=模型]') !== null");
-  assert.equal(await page.evaluate("document.querySelector('[role=dialog][aria-label=模型] button[aria-label=关闭]') !== null"), true);
-  await page.evaluate("document.querySelector('[role=dialog][aria-label=模型] button[aria-label=关闭]').click()");
+  // SurfaceDialog names the dialog through Dialog.Title (aria-labelledby), not an aria-label attribute.
+  await page.waitFor("document.querySelector('[role=dialog][data-ui-dialog] h1')?.textContent === '模型'");
+  assert.equal(await page.evaluate("document.querySelector('[role=dialog][data-ui-dialog] button[aria-label=关闭]') !== null"), true);
+  await page.evaluate("document.querySelector('[role=dialog][data-ui-dialog] button[aria-label=关闭]').click()");
   await page.evaluate("document.querySelector('[data-settings-section=appearance]').click()");
   await page.evaluate("[...document.querySelectorAll('[role=group][aria-label=语言] button')].find(b => b.textContent === '英语').click()");
   await page.waitFor("document.documentElement.lang === 'en' && document.querySelector('[role=group][aria-label=Language]') !== null");

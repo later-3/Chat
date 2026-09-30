@@ -8,6 +8,12 @@
 
 自动门禁 `frontend/lib/dialog-layer.test.mjs` 覆盖先打开设置、后激活低层抽屉、嵌套编辑器及逐层关闭；浏览器回归覆盖未保存取消离开、409 保留草稿、保存失败后 Escape、Medium 抽屉退出。层级单测不冒充真实键盘/浏览器验收。
 
+## 补充（2026-09-29）：共享确认框的 Escape 所有权兜底
+
+负载下浏览器回归曾出现 Escape"死键"：共享确认框停在 `open`、无任何异常、`preventDefault` 只有一次。取证（fiber `rootProps.open`、DismissableLayer `layers` Set 顺序、事件猴补丁）证明 keydown 被下层的 Radix DismissableLayer handler 消费，其 `onDismiss` 走到表单未保存守卫后又被 pending 的确认框挡成无操作——Radix 的 `isHighestLayer` 是渲染期 Set 快照且监听只在 effect 增减，注册/重挂载时序在负载下可短暂错位。
+
+修复在 `ConfirmationProvider`：确认框打开期间监听 document capture 的 Escape，一个 microtask 后若决策仍 pending 则 `settle(false)`。正常路径 Radix 已同步 settle，兜底为无操作；误路由路径由它救回，草稿不受影响。结论：拥有 Escape 的顶层模态要对"事件被别人吃掉"自愈，不能只依赖层级路由正确。
+
 ## Experience Prompt 资源
 
 供显式导入，不自动注入运行 Agent。

@@ -4,6 +4,8 @@
 
 | 主题 | 记录 |
 |---|---|
+| Frontend / Backend / NanoClaw 架构：职责、依赖、状态与跨端合同 | [2026-09-30 架构复核](./reviews/2026-09-30-frontend-backend-nanoclaw-architecture-review.md) |
+| 工作区代码缺陷与文档一致性：8 项问题及复现证据 | [2026-09-30 问题记录](./reviews/2026-09-30-project-code-documentation-review.md) |
 | 0.5.3 版本、会话记忆迁移与浮层统一核对 | [2026-09-29](./reviews/2026-09-29-release-0.5.3.md) |
 | 0.5.2 版本、统一项目合同与前后端字段契约修复核对 | [2026-09-29](./reviews/2026-09-29-release-0.5.2.md) |
 | 0.5.1 版本、Frontend 0.10.0 与界面统一批次核对 | [2026-09-29](./reviews/2026-09-29-release-0.5.1.md) |

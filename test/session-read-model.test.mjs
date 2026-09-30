@@ -9,6 +9,7 @@ import {
   listChatSessions,
   normalizeMessageForFrontend,
   projectSessionContext,
+  readChatDeferredThinking,
   readChatSession,
   readChatToolResultImage,
 } from "../src/session-read-model.ts";
@@ -590,6 +591,60 @@ test("tool-result image reads stay inside the active Project Session", { concurr
   );
   await assert.rejects(
     readChatToolResultImage(manager.getSessionId(), entryId, 1, "another-project", chatHome),
+    /Project尚未登记/,
+  );
+});
+
+test("deferred thinking reads return the block only from its own assistant entry", { concurrency: false }, async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "chat-deferred-thinking-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const workspace = path.join(base, "workspace");
+  fs.mkdirSync(workspace, { recursive: true });
+  const chatHome = path.join(base, "home");
+  const project = await openProject({
+    path: workspace,
+    chatHome,
+    id: "deferred-thinking",
+    name: "Deferred Thinking",
+  });
+  const manager = SessionManager.create(workspace, project.sessionDir);
+  manager.appendMessage({ role: "user", content: "think about it", timestamp: Date.now() });
+  const assistantEntryId = manager.appendMessage({
+    role: "assistant",
+    api: "test",
+    provider: "test",
+    model: "test-model",
+    content: [
+      { type: "thinking", thinking: "secret reasoning path" },
+      { type: "text", text: "answer" },
+    ],
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  });
+
+  assert.deepEqual(
+    await readChatDeferredThinking(manager.getSessionId(), assistantEntryId, 0, project.projectId, chatHome),
+    { status: "ok", thinking: "secret reasoning path" },
+  );
+  // Text blocks, missing blocks and non-assistant entries never become thinking reads.
+  assert.deepEqual(
+    await readChatDeferredThinking(manager.getSessionId(), assistantEntryId, 1, project.projectId, chatHome),
+    { status: "not-found" },
+  );
+  assert.deepEqual(
+    await readChatDeferredThinking(manager.getSessionId(), assistantEntryId, 9, project.projectId, chatHome),
+    { status: "not-found" },
+  );
+  await assert.rejects(
+    readChatDeferredThinking(manager.getSessionId(), assistantEntryId, 0, "another-project", chatHome),
     /Project尚未登记/,
   );
 });
