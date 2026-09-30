@@ -1,3 +1,7 @@
+import { systemToolAddress } from "../../tools/framework.js";
+import { agentDate } from "../calendar.js";
+import { assertSummaryDate, previousDate } from "../summaries.js";
+import { ensureDailySummaryTask, summaryTaskInstruction } from "../daily-summary-task.js";
 import { createHash } from "node:crypto";
 import { readLongAgentRegistry } from "../storage.js";
 import { requestTaskProjection } from "../nanoclaw-client.js";
@@ -389,7 +393,7 @@ export async function manageFriendTask(
   );
   return { ...(await listFriendTasks(home, id)), applied };
 }
-export async function acceptTaskTrigger(home: string, value: unknown) {
+export async function acceptTaskTrigger(home: string, value: unknown, summaryDateOverride?: string) {
   record(value);
   exact(value, [
     "schemaVersion",
@@ -427,6 +431,7 @@ export async function acceptTaskTrigger(home: string, value: unknown) {
     source,
     sourceId,
     source === "manual" ? null : scheduledAt,
+    summaryDateOverride ?? null,
   ]);
   await changeTaskState(home, agent.id, async (state) => {
     const old = state.occurrences.find((o) => o.id === id);
@@ -487,6 +492,10 @@ export async function acceptTaskTrigger(home: string, value: unknown) {
       const instruction = artifacts.describeArtifactInstruction({ definition: task });
       if (instruction !== null) workText = `${workText ?? task.prompt}\n${instruction}`;
     }
+    const summaryDate = task.purpose === "daily-summary"
+      ? assertSummaryDate(summaryDateOverride ?? previousDate(agentDate(task.timeZone, new Date(scheduledAt)))) : undefined;
+    if (summaryDateOverride !== undefined && (source !== "manual" || summaryDate === undefined)) throw new FriendTaskError(400, "仅每日总结手动执行可以指定覆盖日期");
+    if (summaryDate !== undefined) workText = `${task.prompt}\n${summaryTaskInstruction(summaryDate)}`;
     const inProgress = state.occurrences.filter(
       (o) => o.taskId === taskId && o.state === "accepted",
     );
@@ -508,6 +517,7 @@ export async function acceptTaskTrigger(home: string, value: unknown) {
       ...(dutyGoalRevision === null ? {} : { dutyGoalRevision }),
       ...(dutyDispatchRevision === null ? {} : { dutyDispatchRevision }),
       ...(workText === null ? {} : { workText }),
+      ...(summaryDate === undefined ? {} : { summaryDate }),
     });
   });
   void dispatchTaskOccurrences(home, agent.id).catch((error) =>
@@ -546,6 +556,15 @@ export async function dispatchTaskOccurrences(
         continue;
       }
       if (active.length >= MAX_FRIEND_BACKGROUND_WORK) continue;
+      if (occurrence.definition.purpose === "daily-summary" && (agent.definition.tools.mode === "none"
+        || !agent.definition.tools.addresses?.includes(systemToolAddress("summary_manage")))) {
+        await changeTaskState(home, id, state => {
+          const current = state.occurrences.find(item => item.id === occurrence.id)!;
+          current.state = "blocked";
+          current.reason = "每日总结需要已授权的 summary_manage 工具；请在 Agent 能力设置中检查工具后重新执行";
+        });
+        continue;
+      }
       // A queued advancement may have gone stale while waiting: re-check budget, clock, goal and lifecycle.
       if (occurrence.definition.dutyId) {
         const duties = await import("../duties/service.js");
@@ -617,6 +636,7 @@ export function reconcileFriendTasks(home: string): Promise<void> {
     for (const agent of (await readLongAgentRegistry(home)).agents) {
       try {
         await migrateFriendTasks(home, agent.id);
+        await ensureDailySummaryTask(home, agent);
         const state = await readTaskState(home, agent.id);
         for (const task of state.tasks) {
           try {

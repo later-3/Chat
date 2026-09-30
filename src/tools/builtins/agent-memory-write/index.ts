@@ -11,12 +11,15 @@ import {
   throwIfAgentMemoryToolAborted,
 } from "../agent-memory/runtime.js";
 
+const promptGuidelines = ["Use agent_memory_write for your own durable working knowledge. Read the existing file with agent_memory_read first and pass its revision; use expectedRevision=null only for a new file. Maintain relevant index links. A failed write is not a saved memory; a conflict requires re-reading and merging, not inventing a revision."];
+
 export const AGENT_MEMORY_WRITE_TOOL_PROVIDER = defineChatSystemTool(manifestJson, (baseContext) => {
   const context = bindAgentMemoryToolRuntime(baseContext);
   return defineTool({
     name: manifestJson.name,
     label: manifestJson.label,
-    description: manifestJson.description,
+    description: [manifestJson.description, ...promptGuidelines].join("\n"),
+    promptGuidelines,
     executionMode: "sequential",
     parameters: Type.Object({
       path: Type.String({ minLength: 1, description: "OKF Markdown path relative to this Agent Group's memory root." }),

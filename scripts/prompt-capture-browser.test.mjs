@@ -87,6 +87,7 @@ test("the prompt-capture switch reaches the send, records regions and drives the
 
   browser = await launchBrowser();
   page = await browser.newPage(`${baseUrl}/`);
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await page.send("Network.enable");
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const visibleChat = "document.querySelector('[data-workspace-chat]')?.hidden === false";
@@ -94,7 +95,7 @@ test("the prompt-capture switch reaches the send, records regions and drives the
   try {
     const readyDeadline = Date.now() + 60_000;
     for (;;) {
-      const ok = await page.evaluate(`${visibleChat} && document.querySelector('[data-prompt-capture-toggle]') !== null && document.querySelector('[data-chat-composer]:not([disabled])') !== null`).catch(() => false);
+      const ok = await page.evaluate(`${visibleChat} && document.querySelector('[data-chat-settings]') !== null && document.querySelector('[data-chat-composer]:not([disabled])') !== null`).catch(() => false);
       if (ok === true) break;
       if (Date.now() > readyDeadline) throw new Error("当前会话没有进入可输入状态");
       await pause(250);
@@ -154,8 +155,21 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     await page.evaluate("document.querySelector('[data-session-memory-toggle]').closest('[role=dialog]').querySelector('header button').click()");
     await page.waitFor("document.querySelector('[data-session-memory-toggle]') === null");
 
-    const active = await page.evaluate("document.querySelector('[data-prompt-capture-toggle]').classList.contains('is-active') || document.querySelector('[data-prompt-capture-toggle]').getAttribute('aria-pressed') === 'true'");
+    const openSettings = async () => {
+      await page.evaluate("document.querySelector('[data-chat-settings]').focus()");
+      await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+      await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+      await page.waitFor("document.querySelector('[data-prompt-capture-toggle]') !== null");
+    };
+    const closeSettings = async () => {
+      await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+      await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+      await page.waitFor("document.querySelector('[data-prompt-capture-toggle]') === null");
+    };
+    await openSettings();
+    const active = await page.evaluate("document.querySelector('[data-prompt-capture-toggle]').getAttribute('aria-checked') === 'true'");
     assert.equal(active, false, "默认关闭");
+    await closeSettings();
 
     // Off: a full round writes NOTHING.
     const offRound = await send("pc-off", false);
@@ -163,9 +177,11 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     assert.equal(indexOff.count, 0, `关闭时不得写入: ${JSON.stringify(indexOff)}`);
 
     // On: the switch reaches the request and the captures index gains records with regions.
+    await openSettings();
     await page.evaluate("document.querySelector('[data-prompt-capture-toggle]').click()");
-    await page.waitFor("document.querySelector('[data-prompt-capture-toggle]').classList.contains('is-active') || document.querySelector('[data-prompt-capture-toggle]').getAttribute('aria-pressed') === 'true'",
+    await page.waitFor("document.querySelector('[data-prompt-capture-toggle]').getAttribute('aria-checked') === 'true'",
       { label: "开关变为开启" });
+    await closeSettings();
     const onRound = await send("pc-on", true);
     assert.equal(onRound.sessionId, offRound.sessionId);
     const indexOn = await capturesIndex(onRound.sessionId);
@@ -178,8 +194,10 @@ test("the prompt-capture switch reaches the send, records regions and drives the
 
     // Refresh keeps the switch on (per-session preference).
     await page.send("Page.reload");
-    await page.waitFor("document.querySelector('[data-prompt-capture-toggle]') !== null && document.querySelector('[data-chat-composer]:not([disabled])') !== null", { label: "刷新后可输入", timeoutMs: 60_000 });
-    assert.equal(await page.evaluate("document.querySelector('[data-prompt-capture-toggle]').classList.contains('is-active') || document.querySelector('[data-prompt-capture-toggle]').getAttribute('aria-pressed') === 'true'"), true, "刷新保留开启状态");
+    await page.waitFor("document.querySelector('[data-chat-settings]') !== null && document.querySelector('[data-chat-composer]:not([disabled])') !== null", { label: "刷新后可输入", timeoutMs: 60_000 });
+    await openSettings();
+    assert.equal(await page.evaluate("document.querySelector('[data-prompt-capture-toggle]').getAttribute('aria-checked') === 'true'"), true, "刷新保留开启状态");
+    await closeSettings();
 
     // A later native daily summary must stay outside the earlier memory Agent, in
     // both the main conversation and the standalone reader. Only seed the idle fixture.
@@ -194,7 +212,8 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     native.appendCustomMessageEntry("chat.daily-summary.v1", "internal summary fixture", false, {date:"2026-09-29"});
     appendAssistant(JSON.stringify({did:["DAILY_ACTIVITY_FIXTURE"], reflections:[], handoff:""}));
     await page.send("Page.reload");
-    await page.waitFor("document.querySelector('[data-session-activity=\"daily-summary\"]') !== null", { label: "日终维护独立展示", timeoutMs: 20_000 });
+    await page.waitFor("document.querySelector('[data-chat-composer]:not([disabled])') !== null", { label: "旧历史载入", timeoutMs: 20_000 });
+    assert.equal(await page.evaluate("document.querySelector('[data-session-activity=\"daily-summary\"]') === null"), true);
 
     // The full-history Prompt panel renders the recorded regions from the payload API.
     const historyButton = await page.evaluate(`(() => {
@@ -252,6 +271,30 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     // plus the system prompt; the assistant answer only appears as history in the NEXT request.
     assert.ok(panelText.includes("pc-on"), `面板展示记录的请求内容: ${panelText.slice(0, 400)}`);
     assert.ok(panelText.toLowerCase().includes("system prompt"), `面板展示系统提示区域: ${panelText.slice(0, 400)}`);
+    await page.send("Page.reload");
+    await page.waitFor("document.querySelector('[data-chat-composer]:not([disabled])') !== null");
+    for (const width of [390, 768, 1440]) {
+      await page.send("Emulation.setDeviceMetricsOverride", { width, height: 844, deviceScaleFactor: 1, mobile: false });
+      await page.waitFor(`window.innerWidth === ${width}`);
+      await pause(150);
+      const layout = await page.evaluate(`(() => {
+        const buttons = [...document.querySelectorAll('.workspace-context-bar button')].filter(el => {const r=el.getBoundingClientRect(); return r.width > 0 && r.height > 0;});
+        const rects = buttons.map(el => {const r=el.getBoundingClientRect(); return {label:el.getAttribute('aria-label'),left:r.left,right:r.right,top:r.top,bottom:r.bottom};});
+        const input = document.querySelector('[data-chat-composer]').getBoundingClientRect();
+        const frame = document.querySelector('.composer-frame').getBoundingClientRect();
+        return {rects,inputWidth:input.width,frameWidth:frame.width};
+      })()`);
+      for (const [i, rect] of layout.rects.entries()) {
+        assert.ok(rect.left >= 0 && rect.right <= width, `toolbar action fits ${width}px: ${JSON.stringify(rect)}`);
+        for (const other of layout.rects.slice(i + 1)) assert.ok(rect.right <= other.left + 1 || other.right <= rect.left + 1 || rect.bottom <= other.top + 1 || other.bottom <= rect.top + 1, `toolbar actions overlap at ${width}px: ${JSON.stringify([rect,other])}`);
+      }
+      if (width === 390) {
+        assert.ok(layout.inputWidth >= layout.frameWidth - 40, "mobile composer retains a full text row");
+        await openSettings();
+        await page.waitFor("document.querySelector('[role=menuitem][data-session-memory-open]') !== null");
+        await closeSettings();
+      }
+    }
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }

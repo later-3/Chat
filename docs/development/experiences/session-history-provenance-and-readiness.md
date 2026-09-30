@@ -18,7 +18,7 @@
 ## 修正机制与边界
 
 - 聊天读模型与 HTML 导出共用 `src/session-history-activity.ts` 从原生维护 CustomMessage 投影来源及 triggerEntryId，原始 Session 不迁移、不改写；新轮次/阶段/压缩清除临时归属。未识别的阶段版本同样形成边界，避免继承旧 Agent。
-- 维护结果在公共聊天组件中独立显示；普通对话中的 JSON 不自动分类。有效结构按业务段落展示，异常/扩展格式完整回退原文。
+- 初次修复将维护结果独立显示。随后按每日工作业务合同调整为普通聊天隐藏旧维护输出，完整原生历史仍保留来源和原文；普通对话中的 JSON 不自动分类。
 - 用户轮次统计排除后台维护，过程顺序遵循原记录。没有可靠起止事件的历史 Thinking/工具不展示推测时间。
 - 历史文档用 React state 表达成功就绪，缓存按 Project/Session 绑定；保留超时、重试与取消；使用稳定的 srcDoc，避免内嵌浏览器的 sandbox Blob 导航空白。延迟 Thinking 请求也有界。
 
@@ -37,6 +37,14 @@
 - `frontend/lib/history-document.test.mjs`：Pi 原始数据、分支脚本与样式投影隔离。
 
 本案例的 `experience` 资源为 `session-history-provenance-and-readiness`，通过既有 Prompt 资源机制发布并显式选择，不自动注入所有 Agent。
+
+## 后续业务纠偏：每日归档属于工作
+
+独立卡片只修复了显示来源，没有解决业务归属。每日总结应走既有 Task → 独立 Work → Workflow，由 Agent 汇总当天会话、所有工作和任务发生记录，原子写入独立 Markdown；NanoClaw 继续负责定时触发。新私聊只注入昨天总结，普通聊天不承载归档产物。具体合同见 [每日归档](../../modules/long-agents/daily-archive.md)。
+
+前端在加载年度历史期间曾先显示“打开当天会话”，用户可在真实历史返回前点击并打开另一会话。修复后未就绪日期明确加载，禁止空目录推断；日历史就绪后才允许导航。手机端真实 390px 验收还发现顶栏动作重叠、输入框被压成几个字符宽，已将次要动作收进菜单，并给正文独占一行。
+
+新增门禁：`test/long-agents/day-archive.test.mjs` 覆盖真实 Pi Tool 保存、任务幂等、权限、分页、CAS、旧资料与缺失交接；`scripts/session-memory-switch-browser.test.mjs` 等待归档就绪后打开真实历史；`scripts/prompt-capture-browser.test.mjs` 在 390/768/1440px 检查控件不相交及手机完整输入行。可复用约束记录为 `daily-archive-task-ownership` experience 资源，仍由用户显式选择。
 
 ## 本次验证记录
 

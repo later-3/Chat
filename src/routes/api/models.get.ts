@@ -22,7 +22,7 @@ export default defineEventHandler(async () => {
     const authPath = join(home.agentDir, "auth.json");
     const modelsPath = join(home.agentDir, "models.json");
     const config = await readChatModelsConfig();
-    const runtime = await ModelRuntime.create({ authPath, modelsPath });
+    const runtime = await ModelRuntime.create({ authPath, modelsPath, refreshOnCreate: false });
 
     const providers: Array<{ id: string; name: string; authConfigured: boolean }> = [];
     const models: Array<{
@@ -30,6 +30,7 @@ export default defineEventHandler(async () => {
       modelId: string;
       name: string;
       reasoning: boolean;
+      input: readonly ("text" | "image")[];
       contextWindow: number;
       maxTokens: number;
       authConfigured: boolean;
@@ -52,6 +53,7 @@ export default defineEventHandler(async () => {
           modelId,
           name: model?.name ?? modelId,
           reasoning: model?.reasoning ?? false,
+          input: model?.input ?? [],
           contextWindow: model?.contextWindow ?? 0,
           maxTokens: model?.maxTokens ?? 0,
           authConfigured,

@@ -18,7 +18,7 @@ function fixture(t) {
   return { chatHome };
 }
 
-test("summary write/read/list/search keep the JSON fact and a readable Markdown copy", async (t) => {
+test("summary write/read/list/search keep an atomic independent Markdown artifact", async (t) => {
   const { chatHome } = fixture(t);
   await writeLongAgentSummary({
     chatHome, longAgentId: "nexus", date: "2026-09-09",
@@ -33,7 +33,7 @@ test("summary write/read/list/search keep the JSON fact and a readable Markdown 
   assert.equal(read?.did[0], "推进了 D");
   assert.equal((await readLongAgentSummary(chatHome, "nexus", "2026-09-01")), undefined);
 
-  const md = fs.readFileSync(path.join(chatHome, "long-agents", "nexus", "summaries", "2026-09-09.md"), "utf8");
+  const md = fs.readFileSync(path.join(chatHome, "long-agents", "nexus", "days", "2026-09-09", "summary.md"), "utf8");
   assert.match(md, /## 做了什么/);
   assert.match(md, /B 做得不好/);
 
@@ -56,6 +56,5 @@ test("handoff injects the previous days' summaries for the new day and excludes 
   assert.match(handoff, /2026-09-07 的工作/);
   assert.equal(handoff.includes("2026-09-10 的工作"), false, "today's own summary must not be injected as history");
 
-  // 没有任何历史 → 不注入
-  assert.equal(await buildLongAgentHandoff({ chatHome, longAgentId: "ghost", today: "2026-09-10" }), null);
+  assert.match(await buildLongAgentHandoff({ chatHome, longAgentId: "ghost", today: "2026-09-10" }), /昨天（2026-09-09）.*尚未生成/);
 });

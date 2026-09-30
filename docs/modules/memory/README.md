@@ -44,6 +44,11 @@ NanoClaw Agent Group Memory
 
 `chat-pi`执行链同时装配两类Memory。Chat `memory_search`与`memory_record`访问Personal/Project共享事实；`agent_memory_search`、`agent_memory_read`与`agent_memory_write`访问当前Long Agent自己的NanoClaw OKF Markdown。Host依据可信`longAgentId`绑定`agentGroupId`，模型参数不能选择其他Group。每轮Pi装配前读取Standing Instructions、`index.md`与`system/definition.md`；最后有效Snapshot只在网络错误、超时或NanoClaw 5xx时作为标记为stale的派生缓存，认证、对象或响应合同错误不回退缓存。Agent Memory写入限制为900 KiB UTF-8数据，并使用Revision乐观并发与Chat审计记录。
 
+`agent_memory_read({})` 列出本 Agent 文件；指定 path 返回模型可见的 `{file:{path,content,revision,...}}`，revision 不能只放在 Pi UI 的 details。更新必须先读再以该 revision 写入，null 仅用于新建；冲突后重读合并。工具自身描述包含访问方法、作用域与失败语义，即使 System Prompt 被替换也可由模型读取；原生 promptGuidelines 仅作默认提示补充。核心 Markdown 中旧容器路径不是 Chat 授权路径，须使用已激活的 agent_memory_* 窄接口。工具存在与网关可达分别判断，搜索无结果不等于没有文件。
+
+运行时能力事实以公共装配中的本轮激活工具与 Schema 为准；旧身份文本的“功能未上线”不能覆盖当前能力。平台只说明执行环境与领域边界，不自动改写用户 Standing Instructions、不扩大 explicit/none 策略、不将私有记忆注入群聊。`session_memory` 管理会话要点，`summary_manage` 管理每日归档，两者也不等于 Nano Agent Memory。
+
+
 公开Pi Extension的评估结论如下：
 
 - [`pi-memory`](https://pi.dev/packages/pi-memory)的Markdown、Daily Log、Scratchpad、可恢复删除、Compaction Handoff、稳定Context Snapshot和可选qmd检索值得复用；但其默认全局目录、固定Collection、Tool命名和进程级状态不满足同一Chat进程中多个Long Agent的并发隔离，不能原样全局安装。

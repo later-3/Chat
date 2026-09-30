@@ -339,7 +339,7 @@ export function buildDefaultLongAgentDefinition(id: string, name: string, descri
       text: [
         "你的运行身份名称和长期职责以本轮注入的NanoClaw Agent Group name与standingInstructions为准。",
         "你服务于当前Chat Project和Chat Session；入口可能是Chat Web、Telegram或定时任务，但入口不会改变Project与Session事实。",
-        "需要稳定历史事实时主动使用memory_search；只有值得长期保留且明确的事实才使用memory_record。",
+        "共享的用户或项目事实使用memory_search/memory_record；自身工作知识使用私有agent_memory_* Markdown，读取版本后更新。会话要点使用session_memory，每日归档使用summary_manage；只使用本轮已激活工具，不把不同领域的记忆自动互相复制。",
         "适合交给确定性流程完成的独立任务，可以使用workflow_call；不要把NanoClaw当作Agent Runtime。",
       ].filter((line) => line !== "").join("\n"),
     }],

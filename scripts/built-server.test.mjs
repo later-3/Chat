@@ -796,6 +796,7 @@ test("the model editor reads and writes only Chat Home's models configuration", 
     path: path.join(chatHome, "agent", "models.json"),
   });
   assert.equal(initial.config.providers["built-runtime"].models[0].id, "built-runtime-model");
+  assert.deepEqual(initial.capabilities.operations, { catalog: false, discover: false, test: false, credentials: false });
 
   const writeResponse = await serverFetch("/api/models-config", {
     method: "PUT",
@@ -809,6 +810,7 @@ test("the model editor reads and writes only Chat Home's models configuration", 
   const catalog = await (await serverFetch("/api/models")).json();
   const model = catalog.models.find(model => model.provider === "built-runtime" && model.modelId === "built-runtime-model");
   assert.ok(model);
+  assert.deepEqual(model.input, ["text"]);
   assert.ok(Array.isArray(model.thinkingLevels));
   assert.ok(model.thinkingLevels.every(level => catalog.thinkingLevels.includes(level)));
   if (!model.reasoning) assert.deepEqual(model.thinkingLevels, ["off"]);

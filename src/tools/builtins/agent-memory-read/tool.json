@@ -3,8 +3,8 @@
   "id": "agent-memory-read",
   "name": "agent_memory_read",
   "label": "Read agent memory",
-  "description": "Read one Markdown file from this Long Agent's NanoClaw OKF memory. Paths are relative to the current Agent Group memory root; the Agent Group is bound by the host and cannot be selected in arguments.",
-  "implementationVersion": 1,
+  "description": "List this Long Agent's private NanoClaw OKF memory files by omitting path, or read a relative Markdown path. Returns content and revision needed for safe updates. This store is separate from shared Chat memory and is accessed through these tools, not filesystem paths. The host binds the Agent Group.",
+  "implementationVersion": 2,
   "risk": "read-only",
   "permissions": ["agent-memory:read"]
 }

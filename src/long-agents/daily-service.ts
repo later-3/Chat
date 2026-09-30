@@ -1,7 +1,7 @@
 import { readLongAgentRegistry, readLongAgentState } from "./storage.js";
 import { ensureAgentCalendar } from "./project-agent.js";
 import { agentDate } from "./calendar.js";
-import { retryDailySummary } from "./daily-maintenance.js";
+import { requestDailySummary } from "./daily-summary-task.js";
 import { controlQueuedRequest } from "./turn-queue.js";
 import { resolveProjectContext } from "../projects/registry.js";
 import { firstSessionUtterance, listActiveSessionFiles, sessionMessageDates } from "../session-files.js";
@@ -45,7 +45,7 @@ export async function actOnFriendDay(home: string, longAgentId: string, value: u
   await readFriendDays(home, longAgentId);
   if (typeof value !== "object" || value === null || Array.isArray(value) || !("action" in value)) throw new Error("无效日历操作");
   if (value.action === "retry-summary" && "date" in value && typeof value.date === "string" && Object.keys(value).every((key) => ["action", "date"].includes(key))) {
-    await retryDailySummary(home, longAgentId, value.date);
+    await requestDailySummary(home, longAgentId, value.date);
   } else if ((value.action === "cancel-request" || value.action === "retry-request") && "turnId" in value && typeof value.turnId === "string" && Object.keys(value).every((key) => ["action", "turnId"].includes(key))) {
     await controlQueuedRequest(home, longAgentId, value.turnId, value.action === "cancel-request" ? "cancel" : "retry");
   } else throw new Error("不支持的日历操作");

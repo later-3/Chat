@@ -31,16 +31,8 @@ export interface FriendTask extends FriendTaskInput {
   updatedAt: string;
   legacyId?: string;
   migrationNote?: string;
-}
-export interface FriendTask extends FriendTaskInput {
-  id: string;
-  longAgentId: string;
-  revision: number;
-  status: "active" | "paused" | "cancelled";
-  createdAt: string;
-  updatedAt: string;
-  legacyId?: string;
-  migrationNote?: string;
+  /** System-provisioned daily work; preserved by edits, never inferred from a prompt. */
+  purpose?: "daily-summary";
   /** Set only by the duty service; links this task to its long-term duty. */
   dutyId?: string;
 }
@@ -64,6 +56,8 @@ export interface TaskOccurrence {
   dutyDispatchRevision?: number;
   /** Composed advancement text frozen at durable acceptance; absent for non-duty tasks. */
   workText?: string;
+  /** Agent-local date frozen when this summary occurrence was accepted. */
+  summaryDate?: string;
 }
 export class FriendTaskError extends Error {
   readonly statusCode: number;
@@ -176,7 +170,9 @@ export function parseTask(value: unknown): FriendTask {
     "legacyId",
     "migrationNote",
     "dutyId",
+    "purpose",
   ]);
+  if (value.purpose !== undefined && value.purpose !== "daily-summary") throw new FriendTaskError(400, "无效任务用途");
   const input = Object.fromEntries(inputKeys.map((key) => [key, value[key]]));
   if (
     !Number.isSafeInteger(value.revision) ||
@@ -186,6 +182,7 @@ export function parseTask(value: unknown): FriendTask {
     throw new FriendTaskError(400, "任务版本或状态无效");
   return {
     ...parseTaskInput(input),
+    ...(value.purpose === "daily-summary" ? { purpose: "daily-summary" as const } : {}),
     id: string(value.id),
     longAgentId: string(value.longAgentId),
     revision: Number(value.revision),
@@ -233,8 +230,10 @@ export function parseOccurrence(value: unknown): TaskOccurrence {
     "dutyGoalRevision",
     "dutyDispatchRevision",
     "workText",
+    "summaryDate",
   ]);
   const definition = parseTask(value.definition);
+  if (value.summaryDate !== undefined && (definition.purpose !== "daily-summary" || typeof value.summaryDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value.summaryDate) || new Date(value.summaryDate).toISOString().slice(0, 10) !== value.summaryDate)) throw new FriendTaskError(400, "总结日期无效");
   if (
     value.taskId !== definition.id ||
     value.revision !== definition.revision ||
@@ -247,6 +246,7 @@ export function parseOccurrence(value: unknown): TaskOccurrence {
     taskId: definition.id,
     revision: definition.revision,
     definition,
+    ...(typeof value.summaryDate === "string" ? { summaryDate: value.summaryDate } : {}),
     source: value.source as TaskOccurrence["source"],
     sourceId: string(value.sourceId),
     scheduledAt: timestamp(value.scheduledAt),

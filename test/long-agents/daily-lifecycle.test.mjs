@@ -14,8 +14,8 @@ import { readLongAgentRegistry, writeLongAgentRegistry, readLongAgentState, upda
 import { ensureProjectLongAgent, recoverFriendCalendar } from "../../src/long-agents/project-agent.ts";
 import { acceptLongAgentTurn, drainLongAgentTurns, controlQueuedRequest, installAcceptedAssembly } from "../../src/long-agents/turn-queue.ts";
 import { executeLongAgentTurn } from "../../src/long-agents/runtime.ts";
-import { maintainLongAgentDays, recoverLongAgentTurns, retryDailySummary } from "../../src/long-agents/daily-maintenance.ts";
-import { readLongAgentSummary, buildLongAgentHandoff } from "../../src/long-agents/summaries.ts";
+import { maintainLongAgentDays, recoverLongAgentTurns } from "../../src/long-agents/daily-maintenance.ts";
+import { readLongAgentSummary, buildLongAgentHandoff, writeLongAgentSummary } from "../../src/long-agents/summaries.ts";
 import { appendChatLongAgentTurn } from "../../src/long-agents/session-turn.ts";
 import { readFriendDays, actOnFriendDay } from "../../src/long-agents/daily-service.ts";
 import { agentDate, validateTimeZone } from "../../src/long-agents/calendar.ts";
@@ -116,49 +116,19 @@ test("P3 crossing midnight keeps accepted work in yesterday, closes without an e
   t.mock.timers.setTime(new Date("2026-09-19T16:00:01Z").getTime());
   await drainLongAgentTurns(f.home, "friend");
   assert.equal((await readLongAgentState(f.home)).turns[0].date, "2026-09-19");
-  f.setHandler(() => ({ content: JSON.stringify(summary) }));
+  const count = f.requests.length;
   await maintainLongAgentDays(f.home);
+  assert.equal(f.requests.length, count, "calendar recovery no longer starts a model in yesterday's chat");
   let state = await readLongAgentState(f.home); assert.equal(state.dailySessions.length, 1);
-  assert.equal(state.dailySessions[0].summary.status, "completed");
-  const saved = await readLongAgentSummary(f.home, "friend", "2026-09-19"); assert.equal(saved.source.sessionId, queued.sessionId); assert.ok(saved.source.cutoff);
-  assert.equal(f.requests.at(-1).tools?.length ?? 0, 0, "summaries cannot execute write tools");
   const old = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: queued.sessionId });
-  assert.equal(old.manager.getEntries().filter((e) => e.type === "message" && e.message.role === "user").length, 1);
-  assert.ok(old.manager.getEntries().some((e) => e.type === "custom_message" && e.customType === "chat.daily-summary.v1" && !e.display));
-  const count = f.requests.length; await maintainLongAgentDays(f.home); assert.equal(f.requests.length, count);
+  assert.equal(old.manager.getEntries().filter(e => e.type === "message" && e.message.role === "user").length, 1);
+  assert.equal(old.manager.getEntries().some(e => e.customType === "chat.daily-summary.v1"), false);
+  await writeLongAgentSummary({ chatHome: f.home, longAgentId: "friend", date: "2026-09-19", ...summary });
   f.setHandler(() => ({ content: "next day" }));
   const next = await executeLongAgentTurn(f.input("next-day", "b")); await executeLongAgentTurn(f.input("next-day-again", "b"));
   assert.notEqual(next.sessionId, queued.sessionId); assert.match(system(f.requests.at(-2)), /HANDOFF_PROJECT_B_NEXT/);
   assert.doesNotMatch(system(f.requests.at(-2)), /RULE_a/); assert.match(system(f.requests.at(-2)), /RULE_b/);
   state = await readLongAgentState(f.home); assert.equal(state.dailySessions.length, 2);
-});
-
-test("P3 summary failure stays visible, explicit retry repairs it without adding a fake user message", async (t) => {
-  const f = await fixture(t); await executeLongAgentTurn(f.input("one"));
-  f.setHandler(() => ({ content: "network timeout (invalid JSON output, not a transport failure)" }));
-  await maintainLongAgentDays(f.home, tomorrow());
-  const day = (await readLongAgentState(f.home)).dailySessions[0]; assert.equal(day.summary.status, "failed"); assert.equal(day.summary.nextAttemptAt, null);
-  const handoff = await buildLongAgentHandoff({ chatHome: f.home, longAgentId: "friend", today: agentDate("Asia/Shanghai", tomorrow()) });
-  assert.match(handoff, /交接未就绪/);
-  const count = f.requests.length; await maintainLongAgentDays(f.home, tomorrow()); assert.equal(f.requests.length, count);
-  f.setHandler(() => ({ content: JSON.stringify(summary) }));
-  t.mock.timers.enable({ apis: ["Date"], now: tomorrow() });
-  await retryDailySummary(f.home, "friend", day.date);
-  assert.equal((await readLongAgentState(f.home)).dailySessions[0].summary.status, "completed");
-  assert.equal((await readLongAgentSummary(f.home, "friend", day.date)).handoff, summary.handoff);
-});
-
-test("P3 transient summary retries are capped at two without fabricating completion", async (t) => {
-  const f = await fixture(t); await executeLongAgentTurn(f.input("one"));
-  f.setHandler(() => ({ error: "network timeout" }));
-  let now = tomorrow(); await maintainLongAgentDays(f.home, now);
-  for (const delay of [60_000, 300_000]) {
-    const pending = (await readLongAgentState(f.home)).dailySessions[0]; assert.equal(pending.summary.status, "failed"); assert.ok(pending.summary.nextAttemptAt);
-    const count = f.requests.length; await maintainLongAgentDays(f.home, now); assert.equal(f.requests.length, count);
-    now = new Date(now.getTime() + delay); await maintainLongAgentDays(f.home, now);
-  }
-  const exhausted = (await readLongAgentState(f.home)).dailySessions[0]; assert.equal(exhausted.summary.attempts, 3); assert.equal(exhausted.summary.nextAttemptAt, null);
-  assert.equal(await readLongAgentSummary(f.home, "friend", exhausted.date), undefined);
 });
 
 test("P3 restart recovery resumes queued work, records unknown in-flight writes as interrupted and recovers proven completion", async (t) => {
@@ -189,7 +159,7 @@ test("P3 queued cancellation and failed retries cannot rewind subsequent convers
   await assert.rejects(controlQueuedRequest(f.home, "friend", "chat-web:friend:failed", "retry"), /不能回退历史/);
 });
 
-test("P3 real Pi compaction restores historical project labels, runs file tools, then summarizes the same day", async (t) => {
+test("P3 real Pi compaction restores historical project labels, runs file tools, and calendar recovery leaves chat untouched", async (t) => {
   const f = await fixture(t); await executeLongAgentTurn({ ...f.input("work A", "a"), text: "A facts ".repeat(400) }); await executeLongAgentTurn({ ...f.input("work B", "b"), text: "B facts ".repeat(400) });
   const agent = (await readLongAgentRegistry(f.home)).agents[0]; const day = (await readLongAgentState(f.home)).dailySessions[0];
   const chatSession = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: day.sessionId });
@@ -202,34 +172,8 @@ test("P3 real Pi compaction restores historical project labels, runs file tools,
   f.setHandler((body) => body.messages.at(-1).role === "tool" ? { content: "wrote" } : { tool_calls: [{ index: 0, id: "write-after-compact", type: "function", function: { name: "write", arguments: JSON.stringify({ path: "continued.txt", content: "b" }) } }] });
   await executeLongAgentTurn(f.input("continue", "b")); assert.equal(fs.readFileSync(path.join(f.projects[1].cwd, "continued.txt"), "utf8"), "b"); assert.equal(fs.existsSync(path.join(f.projects[0].cwd, "continued.txt")), false);
   const reopened = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: day.sessionId }); assert.equal(reopened.manager.getEntries().filter((e) => e.type === "compaction").length, 1);
-  f.setHandler(() => ({ content: JSON.stringify(summary) })); await maintainLongAgentDays(f.home, tomorrow());
-  assert.equal((await readLongAgentState(f.home)).dailySessions[0].summary.status, "completed"); assert.match(JSON.stringify(f.requests.at(-1)), /COMPACTED/);
-});
-
-test("P3 summary JSON commit survives derived Markdown failure; retry repairs without a second model call", async (t) => {
-  const f = await fixture(t); await executeLongAgentTurn(f.input("work"));
-  const day = (await readLongAgentState(f.home)).dailySessions[0];
-  const summaries = path.join(f.home, "long-agents/friend/summaries"); fs.mkdirSync(path.join(summaries, `${day.date}.md`), { recursive: true });
-  f.setHandler(() => ({ content: JSON.stringify(summary) }));
-  await maintainLongAgentDays(f.home, tomorrow());
-  assert.equal((await readLongAgentState(f.home)).dailySessions[0].summary.status, "failed");
-  assert.ok((await readLongAgentSummary(f.home, "friend", day.date)).source.entryId);
-  fs.rmdirSync(path.join(summaries, `${day.date}.md`));
-  const count = f.requests.length; t.mock.timers.enable({ apis: ["Date"], now: tomorrow() });
-  await retryDailySummary(f.home, "friend", day.date);
-  assert.equal(f.requests.length, count); assert.match(fs.readFileSync(path.join(summaries, `${day.date}.md`), "utf8"), /HANDOFF_PROJECT_B_NEXT/);
-  assert.equal((await readLongAgentState(f.home)).dailySessions[0].summary.status, "completed");
-});
-
-test("P3 recovery reuses a native summary output written before the final state commit", async (t) => {
-  const f = await fixture(t); await executeLongAgentTurn(f.input("work")); f.setHandler(() => ({ content: JSON.stringify(summary) }));
-  await maintainLongAgentDays(f.home, tomorrow());
-  const day = (await readLongAgentState(f.home)).dailySessions[0];
-  const summaries = path.join(f.home, "long-agents/friend/summaries");
-  fs.unlinkSync(path.join(summaries, `${day.date}.json`)); fs.unlinkSync(path.join(summaries, `${day.date}.md`));
-  await updateLongAgentState(f.home, (state) => ({ state: { ...state, dailySessions: state.dailySessions.map((entry) => ({ ...entry, summary: { ...entry.summary, status: "running", entryId: null, revision: null } })) }, result: undefined }));
-  const count = f.requests.length; await maintainLongAgentDays(f.home, tomorrow());
-  assert.equal(f.requests.length, count); assert.equal((await readLongAgentSummary(f.home, "friend", day.date)).source.entryId, day.summary.entryId);
+  const calls = f.requests.length; await maintainLongAgentDays(f.home, tomorrow());
+  assert.equal(f.requests.length, calls);
 });
 
 test("P3 an accepted queue resumes in a fresh Backend process from its persisted assembly", async (t) => {
@@ -280,15 +224,6 @@ test("P3 HTTP daily projection/actions and revision-protected timezone settings 
   assert.equal((await readLongAgentState(f.home)).turns[0].timeZone, "Asia/Shanghai");
 });
 
-test("P3 missing summary credentials stay failed and visible without a fabricated handoff", async (t) => {
-  const f = await fixture(t); await executeLongAgentTurn(f.input("work"));
-  const modelsPath = path.join(f.home, "agent/models.json"); const models = JSON.parse(fs.readFileSync(modelsPath, "utf8"));
-  delete models.providers['p3-local'].apiKey; fs.writeFileSync(modelsPath, JSON.stringify(models));
-  await maintainLongAgentDays(f.home, tomorrow());
-  const day = (await readLongAgentState(f.home)).dailySessions[0]; assert.equal(day.summary.status, 'failed'); assert.equal(day.summary.nextAttemptAt, null);
-  assert.match(day.summary.error, /key|auth|认证/i); assert.equal(await readLongAgentSummary(f.home, 'friend', day.date), undefined); assert.equal(f.requests.length, 2);
-});
-
 test("P3 changing timezone freezes the new zone per request without duplicating an existing local date", async (t) => {
   const f = await fixture(t); t.mock.timers.enable({ apis:['Date'], now:new Date('2026-09-19T12:00:00Z') });
   const first = await acceptLongAgentTurn(f.input('zone-first'));
@@ -324,11 +259,9 @@ test("calendar creates an empty chosen date idempotently and continues a settled
   assert.equal((await readLongAgentState(f.home)).projectAgents[0].primarySessionId,today.day.sessionId);
   const history = await readChatSession(one.day.sessionId,undefined,{},'friend',f.home);
   assert.match(JSON.stringify(history.context.messages),/CONTINUE_PAST_SESSION/);
-  f.setHandler(()=>({content:JSON.stringify(summary)}));
+  const calls = f.requests.length;
   await maintainLongAgentDays(f.home);
-  const settled = (await readLongAgentState(f.home)).dailySessions.find(day=>day.date===date);
-  assert.equal(settled.summary.status,'completed');
-  assert.notEqual(settled.summary.cutoff,old.manager.getLeafId(),'continuing invalidates the old summary cutoff');
+  assert.equal(f.requests.length, calls, "past-session continuation does not secretly re-run a summary");
   for (const invalid of ['2026-02-30','not-a-date','1969-12-31']) await assert.rejects(ensureProjectLongAgent({...input,date:invalid}),/日期/);
   const other = await openChatSession({chatHome:f.home,projectId:'a'});
   await assert.rejects(ensureProjectLongAgent({...input,date:undefined,requestedSessionId:other.manager.getSessionId()}),/不属于/);

@@ -23,6 +23,8 @@ async function fixture(t) {
     fs.writeFileSync(path.join(dir, "AGENTS.md"), `PROJECT_${index}_RULE`);
   }
   const requests = [];
+  const modelHandlerErrors = [];
+  t.after(() => { if (modelHandlerErrors.length) throw new AggregateError(modelHandlerErrors, "Local model assertions must fail the test"); });
   let handler = () => ({ content: "ack" });
   const server = http.createServer(async (req, res) => {
     try {
@@ -41,7 +43,7 @@ async function fixture(t) {
       res.write(`data: ${JSON.stringify({ ...frame({}, delta.tool_calls ? "tool_calls" : "stop"),
         usage: { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60 } })}\n\n`);
       res.end("data: [DONE]\n\n");
-    } catch (error) { res.writeHead(500).end(String(error)); }
+    } catch (error) { modelHandlerErrors.push(error); res.writeHead(500).end(String(error)); }
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(async () => {
@@ -371,4 +373,87 @@ test("retry cannot silently change active tools through Personal defaults", asyn
   await assert.rejects(f.assemble(f.projects[0], f.manager, { agent, turnId: "tool-frozen" }), /工具选择或版本已变化/);
   const next = await f.assemble(f.projects[0], f.manager, { agent });
   assert.ok(next.getActiveToolNames().includes("write"));
+});
+
+test("Agent Memory crosses the real Pi model boundary with list, revision-safe update and conflict rejection", async (t) => {
+  const f = await fixture(t);
+  const { writeLongAgentRegistry } = await import("../../src/long-agents/storage.ts");
+  const token = "isolated-agent-memory-contract-token-123456";
+  const previousToken = process.env.CHAT_CHANNEL_GATEWAY_TOKEN;
+  process.env.CHAT_CHANNEL_GATEWAY_TOKEN = token;
+  t.after(() => {
+    if (previousToken === undefined) delete process.env.CHAT_CHANNEL_GATEWAY_TOKEN;
+    else process.env.CHAT_CHANNEL_GATEWAY_TOKEN = previousToken;
+  });
+  const revision = `sha256:${"b".repeat(64)}`;
+  let file = { path: "notes/preferences.md", content: "---\ntype: fact\n---\nPrefers concise updates.", revision,
+    size: Buffer.byteLength("---\ntype: fact\n---\nPrefers concise updates."), updatedAt: "2026-09-30T00:00:00.000Z" };
+  let writes = 0;
+  const gateway = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const input = JSON.parse(Buffer.concat(chunks).toString());
+    assert.equal(req.headers.authorization, `Bearer ${token}`);
+    assert.equal(input.agentGroupId, "friend-native");
+    let output;
+    if (req.url.endsWith("/memory/list")) output = { files: [{ ...file, content: undefined }] };
+    else if (req.url.endsWith("/memory/read")) output = { file };
+    else if (req.url.endsWith("/memory/write")) {
+      if (input.expectedRevision !== file.revision) {
+        res.writeHead(409, { "Content-Type": "application/json" }).end(JSON.stringify({ schemaVersion: 1, error: "memory revision conflict" }));
+        return;
+      }
+      writes++;
+      file = { ...file, content: input.content, size: Buffer.byteLength(input.content), revision: `sha256:${"c".repeat(64)}` };
+      output = { file };
+    } else { res.writeHead(404).end(); return; }
+    res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ schemaVersion: 1, agentGroupId: "friend-native", ...output }));
+  });
+  await new Promise(resolve => gateway.listen(0, "127.0.0.1", resolve));
+  t.after(async () => { gateway.closeAllConnections(); await new Promise(resolve => gateway.close(resolve)); });
+  await writeLongAgentRegistry({ schemaVersion: 1,
+    instances: [{ id: "local", name: "Isolated Nano", executionMode: "chat-pi", gatewayBaseUrl: `http://127.0.0.1:${gateway.address().port}/webhook/chat-backend` }],
+    agents: [{ id: "friend", name: "Friend", description: "Memory fixture", enabled: true, instanceId: "local",
+      nanoclawAgentGroupId: "friend-native", defaultProjectId: "friend" }],
+  }, f.chatHome);
+  const agent = { ...f.definition, tools: { mode: "explicit", names: [], exclude: [],
+    addresses: ["system:tool/agent_memory_read", "system:tool/agent_memory_write"] } };
+  const session = await f.assemble(f.home, f.manager, { agent });
+  assert.match(session.getToolDefinition("agent_memory_read").description, /private NanoClaw OKF Markdown store/);
+  assert.match(session.getToolDefinition("agent_memory_write").description, /expectedRevision/);
+  let step = 0;
+  f.setHandler(body => {
+    step++;
+    if (step === 1) {
+      assert.match(body.tools.find(tool => tool.function.name === "agent_memory_read").function.description, /private NanoClaw OKF Markdown store/);
+      return call("agent_memory_read", {});
+    }
+    const result = step <= 3 ? JSON.parse(body.messages.at(-1).content) : null;
+    if (step === 2) {
+      assert.equal(result.files[0].path, file.path);
+      return call("agent_memory_read", { path: result.files[0].path });
+    }
+    if (step === 3) {
+      assert.equal(result.file.revision, revision, "the model must see the CAS token in tool content");
+      return call("agent_memory_write", { path: result.file.path, content: `${result.file.content}\nUse Chinese.`, expectedRevision: result.file.revision });
+    }
+    assert.match(body.messages.at(-1).content, /Agent memory saved/);
+    assert.ok(body.messages.at(-1).content.includes(file.revision));
+    return { content: "Saved private memory." };
+  });
+  await session.prompt("Update my existing preference memory, keeping its frontmatter.");
+  assert.equal(step, 4, JSON.stringify(session.messages ?? f.requests.at(-1)?.messages.slice(-2)));
+  assert.equal(writes, 1);
+  assert.equal(session.messages.at(-1).stopReason, "stop");
+  assert.match(JSON.stringify(session.messages.at(-1).content), /Saved private memory/);
+  assert.match(file.content, /^---\ntype: fact\n---/);
+  assert.match(file.content, /Use Chinese\./);
+  await assert.rejects(session.getToolDefinition("agent_memory_write").execute("stale", {
+    path: file.path, content: "Must not overwrite", expectedRevision: revision,
+  }), /409|conflict/);
+  assert.equal(writes, 1);
+  session.dispose();
+  const restricted = await f.assemble(f.home, f.manager, { agent: { ...agent, tools: { mode: "none", names: [], exclude: [], addresses: [] } } });
+  assert.equal(restricted.getActiveToolNames().includes("agent_memory_write"), false);
+  assert.doesNotMatch(restricted.systemPrompt, /private NanoClaw OKF Markdown store/);
 });

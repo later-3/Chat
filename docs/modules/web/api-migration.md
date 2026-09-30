@@ -69,7 +69,7 @@ Chat/frontend（纯浏览器）
 
 | 接口 | 前端用途 | 状态 | 后续实现方向 |
 |---|---|---|---|
-| `GET/PUT /api/models-config` | 模型配置 | 已接入 | 只读写Chat Home的`agent/models.json`，由Pi ModelRuntime校验，不读取`~/.pi`；响应携带 `capabilities`（`thinkingLevels`/`modelApis`），编辑器选项不允许在 Frontend 硬编码 |
+| `GET/PUT /api/models-config` | 模型配置 | 已接入 | 只读写Chat Home的`agent/models.json`，由Pi ModelRuntime校验，不读取`~/.pi`；响应携带 `capabilities`（`thinkingLevels`/`modelApis`/`operations`），编辑器选项不允许在 Frontend 硬编码 |
 | `GET /api/models-config/catalog` | 模型目录 | 待迁移 | 复用Pi模型目录 |
 | `POST /api/models-config/discover` | Provider模型发现 | 待迁移 | 后端执行网络发现，不暴露Credential |
 | `POST /api/models-config/test` | 模型连接测试 | 待迁移 | 后端执行显式Provider测试 |
@@ -78,6 +78,8 @@ Chat/frontend（纯浏览器）
 | `POST /api/auth/login/:provider` | OAuth登录 | 待迁移 | Chat后端持有流程和回调状态 |
 | `POST /api/auth/logout/:provider` | 退出Provider | 待迁移 | Chat清理对应Credential |
 | `POST/DELETE /api/auth/api-key/:provider` | API Key配置 | 待迁移 | 密钥只进入Chat后端安全存储 |
+
+上述待迁移的发现、补全、连接测试和授权动作由 Backend `capabilities.operations` 标为不可用，Frontend 禁用或隐藏入口，不自动请求不存在的 API。此处“待迁移”不是可用能力。
 
 ### 4.4 Skills、Plugins与Extensions
 

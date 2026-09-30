@@ -43,7 +43,7 @@ async function stopProcess(process) {
  */
 test("group round runs through the real configured model", {
   timeout: 180_000,
-  skip: fs.existsSync(path.join(realAgentDir, "models.json")) ? false : "没有可用的真实模型配置",
+  skip: process.env.CHAT_TEST_REAL_MODEL !== "1" ? "真实付费模型测试需显式 CHAT_TEST_REAL_MODEL=1" : fs.existsSync(path.join(realAgentDir, "models.json")) ? false : "没有可用的真实模型配置",
 }, async (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-la5-realmodel-")));
   const home = path.join(root, "home");

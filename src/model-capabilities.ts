@@ -42,4 +42,6 @@ export type ChatModelApi = typeof CHAT_MODEL_APIS[number];
 export const CHAT_MODEL_CAPABILITIES = {
   thinkingLevels: CHAT_THINKING_LEVELS,
   modelApis: CHAT_MODEL_APIS,
+  // Advertise only operations implemented by Chat, not inherited Pi Web UI.
+  operations: { catalog: false, discover: false, test: false, credentials: false },
 } as const;

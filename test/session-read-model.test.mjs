@@ -104,14 +104,9 @@ test("daily maintenance after a memory stage has independent provenance without 
   const summaryId = manager.appendMessage({ role: "assistant", content: [{ type: "thinking", thinking: "review" }, { type: "text", text: body }], timestamp: 30_000_000 });
   const native = JSON.stringify(manager.getEntries());
   const view = projectSessionContext(manager.getEntries(), undefined, { deferThinking: true });
-  assert.equal(view.messages.length, 3, "internal maintenance request stays hidden");
+  assert.equal(view.messages.length, 2, "legacy summary and its thinking stay out of ordinary chat");
   assert.equal(view.messages[1].chatWorkflow.agentId, "session-memory-writer");
-  assert.equal(view.messages[2].chatWorkflow, undefined, "summary cannot inherit the writer label");
-  assert.equal(view.messages[2].chatLongAgent, undefined);
-  assert.deepEqual(view.messages[2].chatSessionActivity, { kind: "daily-summary", triggerEntryId: trigger, date: "2026-09-29" });
-  assert.equal(view.messages[2].content[1].text, body);
-  assert.equal(view.messages[2].content[0].deferred, true);
-  assert.equal(view.entryIds[2], summaryId);
+  assert.equal(view.entryIds.includes(summaryId), false);
   assert.equal(JSON.stringify(manager.getEntries()), native, "no migration or stored-message rewrite");
   manager.appendMessage({ role: "user", content: "continue this old day", timestamp: 31_000_000 });
   manager.appendMessage({ role: "assistant", content: [{ type: "text", text: body }], timestamp: 31_001_000 });
@@ -126,10 +121,9 @@ test("summary drafts and unknown stage boundaries do not inherit earlier workflo
   manager.appendCustomEntry("chat.workflow_stage", { schemaVersion: 999, invocationId: "future" });
   manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "unknown future stage" }], timestamp: 2 });
   const view = projectSessionContext(manager.getEntries());
-  assert.equal(view.messages[0].chatSessionActivity.kind, "daily-summary-draft");
+  assert.equal(view.messages.length, 1);
   assert.equal(view.messages[0].chatWorkflow, undefined);
-  assert.equal(view.messages[1].chatWorkflow, undefined);
-  assert.equal(view.messages[1].chatSessionActivity, undefined);
+  assert.equal(view.messages[0].chatSessionActivity, undefined);
 });
 
 test("Pi toolCall fields are projected to the frontend contract", () => {

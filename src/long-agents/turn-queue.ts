@@ -155,7 +155,6 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
       : await ensureProjectLongAgent({ chatHome: home, projectId: input.projectId, agent, now: acceptedAt,
       ...(source !== "chat-web" || input.sessionId === undefined ? {} : { requestedSessionId: input.sessionId }),
       ...(nodeSessionId === undefined && input.topicNode === undefined ? {} : { topicNode: { ...input.topicNode!, sessionId: nodeSessionId! } }) });
-    if (located.day.summary.status === "running") throw new Error("该日期正在收尾，请稍后重试；原历史保留");
     const chatSession = await openChatSession({ projectId: agent.id, chatHome: home, sessionId: located.day.sessionId });
     const memory = SessionManager.inMemory(chatSession.cwd);
     // The temporary Session is solely an assembly preview; only its custom snapshots are retained.
@@ -175,7 +174,6 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
         .map((entry) => { if (entry.type !== "custom") throw new Error("无效装配记录");
           return { customType: entry.customType, data: entry.customType === CHAT_ASSEMBLY_CONTEXT ? { ...body, revision: assemblyRevision(body) } : entry.data }; });
       const turn = await updateLongAgentState(home, (state) => {
-        if (state.dailySessions.some((day) => day.sessionId === located.day.sessionId && day.summary.status === "running")) throw new Error("该日期正在收尾，请稍后重试；原历史保留");
         // The node binding lands in the SAME write as the turn it serves: the state never holds a turn
         // whose node session has no binding, and never a binding without a cause.
         let nodeSessions = state.nodeSessions;
@@ -392,7 +390,6 @@ export async function controlQueuedRequest(home: string, longAgentId: string, tu
     const turn = state.turns.find((item) => item.longAgentId === longAgentId && item.turnId === turnId);
     if (turn === undefined || (action === "cancel" ? turn.status !== "queued" : turn.status !== "failed")) throw new Error("请求状态不支持该操作；结果不明的中断须检查后发起新消息");
     if (action === "cancel" && state.turns.some(item => getLiveTurn(home, item.turnId)?.steering.has(turnId))) throw new Error("引导已进入原生队列，不能单独撤回；可以取消当前执行");
-    if (action === "retry" && state.dailySessions.some((day) => day.sessionId === turn.sessionId && (day.summary.status === "completed" || day.summary.status === "running"))) throw new Error("该日期已收尾或正在收尾，请在今天发起新消息");
     if (action === "retry" && state.turns.some((item) => item.sessionId === turn.sessionId && item.sequence > turn.sequence && item.status !== "queued" && item.status !== "cancelled")) throw new Error("该请求后已有对话，不能回退历史；请在当前会话发起新消息");
     return { state: { ...state, dailySessions: action !== "retry" ? state.dailySessions : state.dailySessions.map((day) => day.sessionId === turn.sessionId
       ? { ...day, summary: { status: "pending" as const, attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } } : day), turns: state.turns.map((item) => {

@@ -6,7 +6,7 @@
 
 ## 1. 当前交付范围
 
-2026-09-20 校正。P1–P4 已实现公共装配、每轮冻结项目、每日 Session 与共同聊天反馈；P5 完成情况与验收证据以[开发计划](../../development/agent-unification-plan.md)及其阶段审计为准。这里记录能力边界，未提交工作区不等于已部署版本。2026-09-28 起统一项目合同生效：全产品只有一个项目上下文（UI 文案"项目"），每轮执行项目按入口唯一确定并受理冻结；LA6-A 的 per-Friend `interaction.json` 关联已整体移除（见[机制合同 §10](./chat-long-agent-mechanism-contract.md#10-已退役la6-afriend-协作项目关联--统一项目合同)）。
+2026-09-30 校正。P1–P4 已实现公共装配、每轮冻结项目、每日 Session 与共同聊天反馈；P5 完成情况与验收证据以[开发计划](../../development/agent-unification-plan.md)及其阶段审计为准。这里记录能力边界，未提交工作区不等于已部署版本。2026-09-28 起统一项目合同生效：全产品只有一个项目上下文（UI 文案"项目"），每轮执行项目按入口唯一确定并受理冻结；LA6-A 的 per-Friend `interaction.json` 关联已整体移除（见[机制合同 §10](./chat-long-agent-mechanism-contract.md#10-已退役la6-afriend-协作项目关联--统一项目合同)）。
 
 | 能力 | 实现事实 | 限制 |
 |---|---|---|
@@ -14,14 +14,14 @@
 | Workspace / Project | Home 与本轮冻结项目分离，每条消息冻结规则和工具目标；项目目标由顶栏"项目"选择器逐轮提供 | 自然语言切换入口绑定服务尚未交付，不把模型说“已切换”当成程序状态 |
 | Pi 装配 | Workflow/Friend 复用 createChatPiAgentSession | explicit 策略不会偷偷增加资源；重启无法恢复旧资源版本时明确失败 |
 | 每日会话 | 每 Friend、IANA 日期一条直接交流 Session，换日总结/交接 | 不支持同一 Friend 同时写多个直接交流 Session；显式 Workflow 子任务另行隔离 |
-| 独立后台工作（LA1） | 同 Friend 独立 Session、按 Session 排队、持久句柄与冻结项目、侧栏和 friend_work Tool | 当前固定最多 4 条活跃后台 Session；任务周期已由 LA2 接入；职责与群聊仍属 LA3–LA5 |
+| 独立后台工作（LA1） | 同 Friend 独立 Session、按 Session 排队、持久句柄与冻结项目、侧栏和 friend_work Tool | 当前固定最多 4 条活跃后台 Session；任务、职责、产物、本地群聊已分别由 LA2–LA5 接入，各阶段验收范围见开发计划 |
 | 实时展示 | 普通/Friend 共用事件消费、消息、工具与终态 | Workflow 暂无引导/后续队列；Friend 按实际能力提供 |
 | Channel | 耐久 Event、私聊授权、同日排序、Delivery/Ack 重试 | 真实外部收发验收须单独记录；不支持群聊接入私有每日历史 |
-| 调度 | 既有 Nano schedule 事件接入 Chat Pi，默认日常任务可管理 | 完整主动工作、订阅和任务产品仍未交付 |
+| 调度 | Nano 触发、任务修订、Occurrence、独立 Work、职责及产物闭环已接入 | 真实外部平台和至少 24h 自然运行必须独立验收；日终归档本次工作区改动不等于正式服务已更新 |
 | Memory | Chat Personal/Project Catalog 与 Nano OKF Agent Memory | 物理根统一迁移（旧 S5b）仍未实施，不自动互相复制 |
 | 历史升级 | 旧数据、渠道上下文、归属、精确链接与可重试标记 | v1 已删除且没有备份的数据不能凭空恢复 |
 | Docker | chat-pi 不依赖原生 Agent 容器 | 受控工具/脚本/MCP Docker 环境仍待设计实施 |
-| Social / 多 Agent | 既有动态阅读、post/comment 写入原语与单 Agent 管理 | 群聊、跨 Agent 参与及任务驱动的幂等发布尚未交付 |
+| Social / 多 Agent | 任务产物幂等发布、本地单 Backend 群聊与多 Friend 策略已实现 | 外部平台群投递、跨进程写入与完整 LA6 联合验收不能由本地通过推断 |
 
 ## 2. 已取代的旧设计
 
@@ -39,14 +39,16 @@
 
 ## 4. 后续能力的实施前提
 
-2026-09-20 用户认可 LA0–LA6 分阶段方向，当前完成范围为 LA0 合同与接缝验证；后续实施按阶段推进。计划及每阶段场景、验证、自检见[Friend 功能计划](../../development/long-agent-functionality-plan.md)，证据见[LA0 审计](../../history/reviews/2026-09-20-long-agent-la0.md)。这些合同不代表下列目标已经上线：
+LA0–LA5 已形成分阶段验收记录，范围与限制以[Friend 功能计划](../../development/long-agent-functionality-plan.md)末节和所链接审计为准；[LA5](../../history/reviews/2026-09-21-long-agent-la5-acceptance.md)仅覆盖本地单 Backend 群聊。LA6-A 旧项目关联后来已退役，不能把其历史验收作为现行项目合同证据。仍需后续实施或独立验收的方向：
 
-1. Agent 身份与资源的完整单源管理、公共自我管理 Skill 的发布和生效证据。
+1. Agent 身份与资源的完整单源管理仍需后续切片。公共 `long-agent-management` Skill 已进入内置资源发布链；是否对某个 Agent 生效仍以资源策略、解析检查和本轮实际装配为准，不能由源码存在推断。
 2. 统一可见项目概览、活动查询、受授权的历史发现与共享认知。
-3. 任务/职责/订阅/自主工作及受控 Docker 工具环境。
-4. Agent 间协作、群聊和多用户参与，先定义身份、受众、历史权限和消息/工作关联。
+3. 现有任务/职责/产物之外的完整自主工作与订阅场景，以及受控 Docker 工具环境。
+4. 现有本地群聊范围之外的外部真实群投递、多用户/多进程协作和长期联合运行。
 
 按[机制合同](./chat-long-agent-mechanism-contract.md)识别扩展层级，并核对[实施前基线](./chat-long-agent-engineering-baseline.md)的原生接缝、Skill 生效、Session 扩展、资源权限及验证门槛。不能通过新建模型 Runtime、直接读 Nano 数据库或全域共享 Memory 快速拼接功能。
+
+当前仍有项目合同差距：新 IM 绑定及旧 schedule 兼容路径在 `bridge.ts` 中读取 `defaultProjectId`，已有绑定保留 `contextProjectId`；它们尚未全部收敛到目标的“IM/定时在 Agent Home 执行”。UI 中“新建渠道交流的默认项目”反映现行实现，不代表已满足统一项目目标。修复须一并处理既有绑定、已受理事件和任务迁移，不能只删除表单字段。见[2026-09-30 专项排查](../../history/reviews/2026-09-30-configuration-capability-audit.md)。
 
 ## 5. 验收与交接
 

@@ -3,8 +3,8 @@
   "id": "summary-manage",
   "name": "summary_manage",
   "label": "Summary manage",
-  "description": "管理自己的每日总结：write 写入某天的总结（做了什么/反思与改进/交接上下文），read 读取某天，list 列出最近几天，search 按关键词检索历史总结。交接上下文会在新一天的会话里自动注入。",
-  "implementationVersion": 1,
+  "description": "管理自己的每日工作归档：day 分页列出当天会话和各种任务；session 分页读取自己的授权历史；write 用 expectedRevision 保存独立 Markdown 总结；read/list/search 读取任意日期的总结。新一天加载昨天交接，总结不发送到用户聊天。",
+  "implementationVersion": 2,
   "risk": "write",
   "permissions": [
     "long-agent:summary"

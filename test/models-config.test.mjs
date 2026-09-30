@@ -94,3 +94,24 @@ test("Chat models configuration accepts Pi's comments and trailing commas on rea
 
   assert.equal((await readChatModelsConfig(root)).config.providers.local.models[0].id, "jsonc-model");
 });
+
+test("model capabilities and advanced settings survive config save and Pi resolution", async t => {
+  const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-model-capabilities-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const input = { providers: { custom: { name: "Local models", baseUrl: "http://127.0.0.1:1/v1",
+    api: "openai-completions", apiKey: "fixture", authHeader: true,
+    models: [{ id: "vision", name: "Vision", input: ["text", "image"], reasoning: false,
+      baseUrl: "http://127.0.0.1:2/v1", samplingParams: { temperature: 0.2, top_p: 0.8 },
+      compat: { supportsDeveloperRole: false, supportsStore: false }, contextWindow: 64000, maxTokens: 2048 }] } } };
+  const saved = await writeChatModelsConfig(input, root);
+  assert.deepEqual((await readChatModelsConfig(root)).config, input);
+  const runtime = await ModelRuntime.create({ modelsPath: saved.source.path, authPath: path.join(root, "agent/auth.json"), refreshOnCreate: false });
+  const model = runtime.getModel("custom", "vision");
+  assert.deepEqual(model.input, ["text", "image"]);
+  assert.equal(model.baseUrl, "http://127.0.0.1:2/v1");
+  assert.deepEqual(model.samplingParams, { temperature: 0.2, top_p: 0.8 });
+  assert.equal(model.compat.supportsDeveloperRole, false);
+  assert.equal(model.contextWindow, 64000);
+  assert.equal(model.maxTokens, 2048);
+});

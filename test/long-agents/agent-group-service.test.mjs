@@ -372,12 +372,23 @@ test("agent_memory tools bind the Nano Agent Group from host LongAgent context",
   });
   const searched = await searchTool.definition.execute("call-1", { query: "continuity", limit: 2 });
   assert.match(searched.content[0].text, /continuity/);
+  const listed = await readTool.definition.execute("call-list", {});
+  assert.equal(JSON.parse(listed.content[0].text).files[0].path, "index.md");
   const read = await readTool.definition.execute("call-2", { path: "index.md" });
-  assert.match(read.content[0].text, /continuity/);
+  // Pi sends content to the model, not UI-only details. The model must receive
+  // the version needed to update an existing file without guessing a revision.
+  const memory = JSON.parse(read.content[0].text).file;
+  assert.match(memory.content, /continuity/);
+  assert.equal(memory.revision, REVISION_B);
+  await writeTool.definition.execute("call-update", {
+    path: memory.path, content: `${memory.content}\n- Updated today.`, expectedRevision: memory.revision,
+  });
   await writeTool.definition.execute("call-3", { path: "log.md", content: "# Log", expectedRevision: null });
 
   const toolRequests = requests.filter((item) => item.path.includes("/memory/"));
-  assert.deepEqual(toolRequests.map((item) => item.body.agentGroupId), ["nano-agent-1", "nano-agent-1", "nano-agent-1"]);
+  assert.equal(toolRequests.length, 5);
+  assert.ok(toolRequests.every((item) => item.body.agentGroupId === "nano-agent-1"));
+  assert.equal(toolRequests.find(item => item.path.endsWith("/write")).body.expectedRevision, memory.revision);
   await assert.rejects(
     writeTool.definition.execute("call-4", {
       path: "oversized.md",
@@ -386,7 +397,7 @@ test("agent_memory tools bind the Nano Agent Group from host LongAgent context",
     }),
     /900 KiB/,
   );
-  assert.equal(requests.filter((item) => item.path.endsWith("/memory/write")).length, 1);
+  assert.equal(requests.filter((item) => item.path.endsWith("/memory/write")).length, 2);
   assert.equal(toolRequests.some((item) => Object.hasOwn(item.body, "longAgentId")), false);
   assert.equal(JSON.stringify(searchTool.definition.parameters).includes("agentGroupId"), false);
   const audit = fs.readFileSync(path.join(chatHome, "logs", "audit.jsonl"), "utf8");

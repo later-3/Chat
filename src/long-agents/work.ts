@@ -113,6 +113,8 @@ export async function deliverFriendWorkReturns(home: string): Promise<void> {
   for (const turn of state.turns.filter(t => t.workId !== undefined && !["queued", "running"].includes(t.status))) {
     const work = state.works.find(w => w.id === turn.workId);
     if (!work) throw new Error("后台工作绑定缺失");
+    const { readTaskState } = await import("./tasks/storage.js");
+    if ((await readTaskState(home, work.longAgentId)).occurrences.some(item => item.id === work.requestId && item.definition.purpose === "daily-summary")) continue;
     // Do not append to yesterday's closed direct conversation. The work list
     // remains the durable result inbox, with the immutable origin link.
     const { agentDate } = await import("./calendar.js");

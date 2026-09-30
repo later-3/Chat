@@ -234,3 +234,7 @@ P1 只修改合同与实验测试，无产品执行代码变更；运行上述�
 ## Friend 任务导航与摘要计量门禁（2026-09-27）
 
 `test/long-agents/task-usage.test.mjs` 从 Duty → Task → Work → 原生 Pi 压缩 → 本地 HTTP 模型验证全部已记录摘要用量进入预算和助手汇总，同时覆盖 UTC 主机/Asia-Shanghai Friend 跨日、缓存与分支摘要用量。`frontend/lib/task-results.test.mjs` 验证同任务多次执行、长期任务多项成果和无关任务过滤。真实浏览器门禁在 `scripts/group-browser.test.mjs` 与 `scripts/session-memory-switch-browser.test.mjs`：成员参与记录深链/刷新回群、共享 Dialog 焦点/Escape、聊天工具创建后台任务、侧栏无创建表单、确认取消不丢草稿及中英文/主题/视口恢复。设置 `CHAT_UI_EVIDENCE_DIR` 可保留截图；这些检查随 `pnpm verify` 执行。
+
+真实模型群聊验收只在显式设置 `CHAT_TEST_REAL_MODEL=1` 时执行；普通 `pnpm verify` / `pnpm test:dev` 使用隔离假模型，不能因机器上存在正式认证就自动消费真实模型。
+
+2026-09-30 配置与能力门禁：`pnpm test:built` 包含 `scripts/configuration-browser.test.mjs`，使用隔离 CHAT_HOME、构建产物与本地假服务验证真实模型表单、非法 JSON、保存回读和 1440/768/390 视口。Memory 需经过 `test/agents/public-assembly.test.mjs` 的实际 Pi Tool Calling 完成已有文件的读取/版本写回，不能用直接调用 Tool 或只新建文件替代。经验归档见 [配置、能力与 Memory 闭环](./experiences/configuration-capability-memory-contract.md)。

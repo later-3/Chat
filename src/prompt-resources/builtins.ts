@@ -133,6 +133,30 @@ const PLANNER_READINESS_CONTRACT_EXPERIENCE_V1 = [
  */
 export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
   {
+    schemaVersion: 1, id: "configuration-capability-memory-contract",
+    revisions: [{
+      schemaVersion: 1, id: "configuration-capability-memory-contract", revision: 1, kind: "experience",
+      title: "配置、装配与 Memory 的模型可见闭环",
+      purpose: "排查工具已存在但 Agent 不会使用、读改写缺少版本，以及配置页面与实际能力不一致。",
+      content: "按配置→授权→装配→模型输入→执行→界面逐层取证。Pi 工具 details 不发给模型，CAS 所需 revision 必须在 content；回归须通过真实 Pi 的本地假模型完成 list/read/update 并拒绝旧版本覆盖。替换 System Prompt 会绕过 Pi 默认工具指南，关键规则需进入实际工具 description/Schema。以本轮激活工具为运行能力事实，旧身份和原生容器路径不能替代 Chat 窄接口；不自动改用户身份、不扩张 explicit/none 权限、不混合私有 Agent Memory 与 Personal/Project 共享事实。保存配置后重新检查且注明项目范围，迟到响应不能替换当前目标。目录规格不是供应商在线实测。弹窗只保留一个共用外壳，真实浏览器验证长名和宽窄屏。门禁见 public-assembly、agent-group-service、models-config 与 configuration-browser。",
+      tags: ["development", "long-agent", "memory", "frontend"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/configuration-capability-memory-contract.md", capturedAt: "2026-09-30T00:00:00.000+08:00" }],
+      author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-30T00:00:00.000+08:00",
+    }],
+  },
+  {
+    schemaVersion: 1, id: "daily-archive-task-ownership",
+    revisions: [{
+      schemaVersion: 1, id: "daily-archive-task-ownership", revision: 1, kind: "experience",
+      title: "每日归档属于 Agent 工作，不属于私聊尾阶段",
+      purpose: "避免后台总结占用私聊、遗漏任务事项，以及归档加载期间误建新会话。",
+      content: "每日总结复用 Task→Occurrence→独立 Work→Workflow→公共 Pi 装配，NanoClaw 负责时钟；不能在维护循环另建模型执行。以冻结时区和覆盖日期查询当天会话、工作与任务发生记录，独立 Markdown 用原子 CAS 保存，执行 completed 不等于文件存在。次日默认只注入昨天总结；损坏、缺失或来源权限失效必须明确表达，不能阻塞新会话或扩大群历史权限。普通聊天隐藏历史维护输出而保留原生审计。日目录读取就绪前不显示可创建空日会话的入口；前端必须等待真实历史后导航。移动端应实测按钮边界不相交、输入正文有完整一行。门禁：day-archive、session-memory-switch-browser、prompt-capture-browser，均使用隔离资料与本地假模型。",
+      tags: ["development", "long-agent", "archive", "frontend"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/session-history-provenance-and-readiness.md", capturedAt: "2026-09-30T00:00:00.000+08:00" }],
+      author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-30T00:00:00.000+08:00",
+    }],
+  },
+  {
     schemaVersion: 1, id: "session-history-provenance-and-readiness",
     revisions: [{
       schemaVersion: 1, id: "session-history-provenance-and-readiness", revision: 1, kind: "experience",

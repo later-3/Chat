@@ -133,13 +133,11 @@ Agent Memory 保存该 Agent 的长期事实与协作知识；Personal Memory �
 - 对开放事项和自身 Memory 的授权维护。
 - 需要更新 Project/共享资源时遵守对应 Policy 的操作或建议。
 
-整理具有覆盖日期、截止 Entry/Turn、来源清单和 revision。旧日已接受轮次全部终态后才最终整理；现有 23:30 daily-summary 作为草稿触发，不冒充日终完整总结，按同一截止点去重。恢复 Worker 负责日界完整性，不要求 Nano 未接通的通用调度先可用。
+2026-09-30 起，日终整理改为可管理的独立 Task，通过 Nano 触发 → Occurrence → Work → Workflow / 公共 Pi 执行。默认次日 00:10 总结前一天，覆盖日期在受理时冻结。来源覆盖该 Agent 的日会话、独立工作、任务、职责和当前授权群活动；跨项目历史仍按原权限读取。完整合同见[每日工作与归档](./daily-archive.md)。
 
-内部整理使用非人类来源的原生 custom_message 触发、公共 Agent 装配及原生 assistant 输出；只读总结用途关闭业务写工具，不悄悄增加 Agent 未选能力。Backend 校验结构后原子写入现有总结库并保存原 Entry 引用；记录不是复制成第二套聊天。状态为 pending/running/completed/failed，并以 `(agentId,date,cutoff)` 幂等；语义总结完成不自动发布 Social、发送消息或晋升 Memory。
+总结保存为 `long-agents/<id>/days/<date>/summary.md`，包含覆盖日期、来源目录和 revision；这是独立记忆文件，不向用户聊天追加 assistant 消息、不自动发帖或投递。旧原生维护记录保留审计，但普通聊天隐藏其输出。`daily-maintenance.ts` 只恢复队列和同步任务，不再直接运行日终模型。旧 `summaries/<date>.json` 只读兼容。
 
-P3 由 `daily-maintenance.ts` 在旧日所有已接受请求终态后执行正式总结；schema 1 隐藏 custom_message `chat.daily-summary.v1` 标明日期和 cutoff，工具、Skill 与 Extension 关闭。总结 JSON 保存 source 的 sessionId/cutoff/entryId/revision；JSON 原子提交后派生 Markdown，派生写入失败可从已提交 JSON 修复，不再调用模型。原生回复已落盘但总结未提交时复用同 cutoff 的完整回复。23:30 任务通过 `chat.daily-summary-draft.v1` 只读草稿触发，不写正式日终总结；当日没有实际活动时只持久标记定时事件已处理，不创建空 Session、不调用模型。LA2 不再新建这两项隐藏任务；旧已接受事件继续走草稿收尾，迁移后的任务按明确说明在独立工作 Session 执行，具体见任务合同。
-
-每个截止点初次尝试后最多自动重试 2 次（1 分钟、5 分钟），认证/权限/格式错误不盲重试；失败可显式重试。进程中断按原执行记录核实是否已写出结果，再恢复或标记不确定，不重复不明外部副作用。失败不阻止新日聊天，注入“交接未就绪”和旧历史/任务入口，不伪造总结；旧日完成后下一轮采用新 revision。未变化的日期不调用模型，无数据的空闲日不生成假总结。
+新日默认加载昨天的总结，更早资料由 `summary_manage` 按日期读取。缺失总结明确标记，任务失败不阻断交流；用户可核对任务执行记录后补写。原生执行是否结束和总结文件是否保存是两项独立事实，不能仅据模型答复宣称归档完成。
 
 日常活动卡片按“Agent + 日期”聚合，提供时间流与日历、全部 Agent 或单 Agent 视图；Social 帖子使用独立 postId，同日允许多条，不能将日卡身份当成发帖唯一性。当天没有 Daily 聊天但做了项目工作，也可有卡片。无总结时显示实际活动和缺失状态，不伪造回顾。
 

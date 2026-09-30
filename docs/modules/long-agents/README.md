@@ -14,7 +14,7 @@ Long Agent 是 Chat 中长期陪伴用户工作的助手。每个 Agent 有自�
 
 当前已有 Chat Web 与 NanoClaw 文本对话、Telegram/微信接入路径、Long Agent 的部分配置管理、Agent 身份和 Standing Instructions 注入、Markdown Agent Memory 管理、Chat Personal/Project Memory、Workflow 调用，以及 Project 管理 Skill 和 6 个 Tool。
 
-当前已支持独立 Agent home 与日常主 Session 按日轮换；换日总结与交接已实现；任务管理（LA2）、长期任务（LA3）与产物闭环（LA4：笔记与动态）已接入，合同见[Friend 任务](./tasks.md)、[Friend 长期任务](./duties.md)和[Friend 产物闭环](./deliverables.md)；Docker 工具环境及完整资源自我管理仍有实施差距，逐项以[实施状态](./chat-long-agent-roadmap.md)为准。旧界面或旧配置不能代表新目标已经生效。
+当前已支持独立 Agent home 与日常主 Session 按日轮换；每日总结通过独立 Task 归档，次日交接按[每日工作与归档](./daily-archive.md)执行；任务管理（LA2）、长期任务（LA3）与产物闭环（LA4：笔记与动态）已接入，合同见[Friend 任务](./tasks.md)、[Friend 长期任务](./duties.md)和[Friend 产物闭环](./deliverables.md)；Docker 工具环境及完整资源自我管理仍有实施差距，逐项以[实施状态](./chat-long-agent-roadmap.md)为准。旧界面或旧配置不能代表新目标已经生效。
 
 2026-09-19 P1：以下目标已收敛为每 Friend 每日唯一直接交流 Session，项目逐轮装配；[公共装配](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)与[生命周期](./chat-long-agent-architecture.md#4-project-first-与会话选择)是实施合同，P2 公共装配和协作目标已接入，P3 每日生命周期已实现；P4 实时交互与 P5 本地迁移验收已完成，实际外部渠道验收边界见实施状态。
 

@@ -152,6 +152,7 @@ test("the session-memory switch reaches the real send and really gates the memor
 
   browser = await launchBrowser();
   const page = await browser.newPage(`${baseUrl}/`);
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await page.send("Network.enable");
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const visibleChat = "document.querySelector('[data-workspace-chat]')?.hidden === false";
@@ -375,7 +376,7 @@ test("the session-memory switch reaches the real send and really gates the memor
     await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
     await page.waitFor(`innerWidth === ${width}`);
     const bounds = await page.evaluate(`(() => {
-      const selectors = ['[data-chat-composer]', '[data-chat-toolbar]', '[data-session-memory-open]'];
+      const selectors = ['[data-chat-composer]', '[data-chat-toolbar]', '[data-chat-settings]'];
       return selectors.map(selector => {const r=document.querySelector(selector).getBoundingClientRect();
         return {selector,top:r.top,bottom:r.bottom,left:r.left,right:r.right,width:r.width,height:r.height,vw:innerWidth,vh:innerHeight};});
     })()`);
@@ -402,13 +403,14 @@ test("the session-memory switch reaches the real send and really gates the memor
     await page.evaluate("document.querySelector('[data-friend-add-day]').click()");
     await page.waitFor("document.querySelector('[data-friend-calendar]') !== null", {label:'calendar opens in add-a-date mode'});
   };
-  const enterDay = async day => {
-    await page.waitFor(`document.querySelector('[data-friend-day="${day}"]') !== null`, {label:'the picked day is added to the archive area'});
+  const enterDay = async (day, expectedSessionId) => {
+    await page.waitFor(`document.querySelector('[data-friend-day="${day}"][aria-busy="false"]') !== null`, {label:'the picked day has loaded its native history before opening'});
     // A day with history opens through its listed Session; an empty day through the
     // idempotent "open this day's daily session" row.
     const clicked = await page.evaluate(`(() => {
-      const row = document.querySelector('[data-friend-enter-day="${day}"]')
-        ?? document.querySelector('[data-friend-day="${day}"] [data-day-session]');
+      const row = ${expectedSessionId === undefined}
+        ? document.querySelector('[data-friend-enter-day="${day}"]') ?? document.querySelector('[data-friend-day="${day}"] [data-day-session]')
+        : document.querySelector('[data-friend-day="${day}"] [data-day-session="${expectedSessionId}"]');
       if (!row) return false;
       row.click();
       return true;
@@ -436,7 +438,7 @@ test("the session-memory switch reaches the real send and really gates the memor
   await page.evaluate(`document.querySelector('[data-calendar-month="${Number(historical.day.date.slice(5,7))}"]').click()`);
   await page.evaluate(`document.querySelector('[data-calendar-date="${historical.day.date}"]').click()`);
   await page.waitFor("document.querySelector('[data-friend-calendar]') === null");
-  await enterDay(historical.day.date);
+  await enterDay(historical.day.date, historical.day.sessionId);
   await page.waitFor(`document.querySelector('[data-rendered-session="${historical.day.sessionId}"]')?.innerText.includes('CALENDAR_HISTORY_CONTENT')`);
   await ready();
   writerFails = false;

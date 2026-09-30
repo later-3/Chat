@@ -429,6 +429,8 @@ export function projectSessionContext(
     if ((entry.type === "message" && entry.message.role === "user") || entry.type === "compaction") {
       activeActivity = undefined;
     }
+    // Legacy maintenance remains in native/full history; it is not a conversational message.
+    if (activeActivity !== undefined) continue;
     const reviewDecision = reviewDecisionByEntryId.get(entry.id);
     const reviewMessageEntryId = reviewDecision?.messageEntryId ?? reviewDecision?.feedbackEntryId;
     if (reviewDecision !== undefined && reviewMessageEntryId === undefined) {

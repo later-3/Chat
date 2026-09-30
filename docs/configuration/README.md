@@ -129,6 +129,8 @@ Long Agent配置入口位于“Friend”列表的设置按钮，优先选中当�
 
 `PUT`会先离线刷新本地模型与认证快照，再校验`defaultProjectId`、Model与Provider认证、Tool地址以及完整Agent Definition，不接受未知字段。保存成功后以返回的新`revision`替换页面基线；冲突时重新读取，不得用过期表单覆盖新配置。
 
+Friend 设置中的基础能力检查固定在该助手自身 Home 解析，并明确标注预览范围；不会拿“新建渠道默认项目”冒充本轮项目。业务项目执行仍在受理时冻结项目并重新解析资源。保存后重新读取检查，检查失败单独展示；未保存的配置不混入“已生效”列表。切换对象时清空旧检查并忽略旧请求返回，刷新须保护未保存草稿。身份/长期指令、运行配置和 Agent Memory 保留各自领域的 revision 与保存入口。
+
 `ProjectLongAgent`不复制 Agent Definition。新直接交流的当前投影位于 Home，完整日历在 state 的 dailySessions；旧业务绑定保留作历史来源。全局 enabled 控制新执行，用户切换项目不会改变 Friend 身份或其每日 Session。
 
 `<CHAT_HOME>/runtime/long-agent-state.json` schema 5 保存独立工作绑定、日历、耐久请求、当前投影、渠道绑定、待投递事件与幂等收据。202 前冻结并持久化接受输入，执行/Delivery/Ack 由恢复 Worker 负责；Session 读取不触发渠道重放。Web 用 `POST /api/long-agents/:id/turns` 接受文本/模型支持的图片，再按执行引用订阅；旧 messages API 仅同步兼容。失败重试与不明中断不能混淆，完整合同见[Friend 生命周期](../modules/long-agents/chat-long-agent-architecture.md#421-p3-实现合同2026-09-19)。
@@ -202,6 +204,12 @@ Long Agent 的模型是其自身定义的一部分，与头像/身份一样可�
   }
 }
 ```
+
+`/api/models-config` 的 `capabilities.operations` 明确列出 `catalog/discover/test/credentials` 是否接入。当前均为 false；Frontend 禁用对应动作，不请求缺失的授权接口，旧 Backend 未提供标记时同样按不可用处理。手动模型和 Provider 配置仍通过现有 GET/PUT 保存。
+
+模型编辑页支持图片输入、推理、上下文/输出上限、费用、模型级 API/baseUrl、headers、samplingParams、compat 和 thinkingLevelMap；Provider 支持显示名称、authHeader 与 compat。高级 JSON 必须为对象，错误草稿阻止保存。`samplingParams` 沿用 Pi 合同，仅 OpenAI-compatible adapters 使用；声明图片支持不等于供应商实测。未触达的原生字段（包括分段价格等）保存时保留。
+
+`GET /api/models` 从相同 Pi ModelRuntime 离线解析自定义目录，响应的 `input: ("text" | "image")[]` 与 contextWindow/maxTokens/thinkingLevels 供 Friend 和 Workflow 共用选择器显示能力，不维护前端规格表。旧 Backend 缺少 input 时显示“未提供”，不能解释为“不支持”。Workflow 设置采用统一弹窗，将项目持久配置、当前 Session 覆盖和实际检查分开；模型/工具/资源修改从下一轮生效。
 
 `models.json` 可能包含 API Key、自定义请求头或读取密钥的命令，应视为敏感文件。能使用环境变量或 Chat 认证流程时，不要写入明文 Credential。
 
@@ -435,3 +443,7 @@ Friend 配置 GET/PUT 的可选 `timeZone` 为 IANA 时区（例如 `Asia/Shangh
 `GET /api/models` 保留全局 thinkingLevels，并在每个已配置模型返回 `thinkingLevels:string[]`，由同一个 Pi ModelRuntime 解析模型后调用 Pi 的 `getSupportedThinkingLevels()`，再限制到 Chat 已支持的枚举。非推理模型仅支持 off；不能给每个模型无条件展示全局最高等级。Frontend 验证响应，在缺少 per-model 字段的旧 Backend 上只展示继承与当前配置提示，不自行猜测。
 
 Friend 与 Workflow Agent 采用共用可搜索模型选择和思考等级单选。继承、显式配置、不可用当前值分别呈现；未认证模型不可新选，已经保存的不可用值不会静默替换。保存持久配置对下一次运行生效，不能改变在途执行冻结的配置。Provider 编辑仍保存 `models.json`，模型高级 thinkingLevelMap 的 default/null/string 语义不变。
+
+### Long Agent 每日归档
+
+每日总结复用统一 Task：系统生成的 `purpose: "daily-summary"` 由 Backend 管理，默认 cron `10 0 * * *`、Agent 时区、`missed: latest`、`overlap: queue-one`。可通过既有任务 API 编辑时间/暂停/取消，不存在第二个日终调度开关。Occurrence 额外冻结 `summaryDate`。每日文件保存到 `long-agents/<id>/days/<YYYY-MM-DD>/summary.md`；Markdown 是单文件原子事实源，注释头携带版本和来源引用，旧 summaries JSON 仅兼容读取。不得迁移原生 Session 来模拟“放在一起”。API `GET /api/long-agents/:id/daily?date=YYYY-MM-DD` 提供同源日目录及总结文件正文；旧 year 参数仍提供年度会话日历。详见[每日工作与归档](../modules/long-agents/daily-archive.md)。

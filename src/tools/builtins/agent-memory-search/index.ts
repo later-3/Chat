@@ -9,12 +9,15 @@ import {
   throwIfAgentMemoryToolAborted,
 } from "../agent-memory/runtime.js";
 
+const promptGuidelines = ["agent_memory_search searches your private NanoClaw Markdown memory. memory_search searches shared Chat Personal/Project facts; the two stores are independent. No matches does not mean there are no files: use agent_memory_read without path to inspect the file index when available."];
+
 export const AGENT_MEMORY_SEARCH_TOOL_PROVIDER = defineChatSystemTool(manifestJson, (baseContext) => {
   const context = bindAgentMemoryToolRuntime(baseContext);
   return defineTool({
     name: manifestJson.name,
     label: manifestJson.label,
-    description: manifestJson.description,
+    description: [manifestJson.description, ...promptGuidelines].join("\n"),
+    promptGuidelines,
     parameters: Type.Object({
       query: Type.String({ minLength: 1, maxLength: 512, description: "At most 32 whitespace-delimited tokens." }),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
