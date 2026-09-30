@@ -48,7 +48,9 @@ function run(command, commandArgs, options = {}) {
     return "";
   }
   if (mutating) console.log(`  $ ${command} ${commandArgs.join(" ")}`);
-  return execFileSync(command, commandArgs, { cwd, encoding: "utf8", stdio: mutating ? "inherit" : "pipe" }).trim();
+  const output = execFileSync(command, commandArgs, { cwd, encoding: "utf8", stdio: mutating ? "inherit" : "pipe" });
+  // A mutating command inherits stdio, so it returns nothing to parse.
+  return typeof output === "string" ? output.trim() : "";
 }
 /** Writes generated content: into the scratch dir when set, else into the repository. */
 function renderTo(path, contents) { write(path, contents); }
