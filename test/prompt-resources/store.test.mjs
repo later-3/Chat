@@ -223,6 +223,9 @@ test("built-in rules and experiences are seeded once into the Personal Prompt li
     (await secondStore.history(WORKFLOW_RUNTIME_VALIDATION_EXPERIENCE_ID)).length,
     5,
   );
+  const historyExperience = await secondStore.get("session-history-provenance-and-readiness");
+  assert.equal(historyExperience?.kind, "experience");
+  assert.equal((await secondStore.history("session-history-provenance-and-readiness")).length, 1);
   const plannerExperience = await secondStore.get(PLANNER_READINESS_CONTRACT_EXPERIENCE_ID);
   assert.equal(plannerExperience?.kind, "experience");
   assert.equal(plannerExperience?.revision, 1);

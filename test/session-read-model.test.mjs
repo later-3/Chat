@@ -93,6 +93,45 @@ function assistantEntry(id, parentId, content) {
   };
 }
 
+test("daily maintenance after a memory stage has independent provenance without rewriting native history", () => {
+  const manager = SessionManager.inMemory("/workspace");
+  manager.appendMessage({ role: "user", content: "hello", timestamp: 1000 });
+  const stage = { invocationId: "turn-1", workflowId: "direct", stageId: "remember", agentId: "session-memory-writer" };
+  appendChatWorkflowStage(manager, stage);
+  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "memory receipt" }], timestamp: 2000 });
+  const trigger = manager.appendCustomMessageEntry("chat.daily-summary.v1", "internal prompt", false, { date: "2026-09-29", cutoff: manager.getLeafId() });
+  const body = JSON.stringify({ did: ["recorded work"], reflections: [], handoff: "continue tomorrow" });
+  const summaryId = manager.appendMessage({ role: "assistant", content: [{ type: "thinking", thinking: "review" }, { type: "text", text: body }], timestamp: 30_000_000 });
+  const native = JSON.stringify(manager.getEntries());
+  const view = projectSessionContext(manager.getEntries(), undefined, { deferThinking: true });
+  assert.equal(view.messages.length, 3, "internal maintenance request stays hidden");
+  assert.equal(view.messages[1].chatWorkflow.agentId, "session-memory-writer");
+  assert.equal(view.messages[2].chatWorkflow, undefined, "summary cannot inherit the writer label");
+  assert.equal(view.messages[2].chatLongAgent, undefined);
+  assert.deepEqual(view.messages[2].chatSessionActivity, { kind: "daily-summary", triggerEntryId: trigger, date: "2026-09-29" });
+  assert.equal(view.messages[2].content[1].text, body);
+  assert.equal(view.messages[2].content[0].deferred, true);
+  assert.equal(view.entryIds[2], summaryId);
+  assert.equal(JSON.stringify(manager.getEntries()), native, "no migration or stored-message rewrite");
+  manager.appendMessage({ role: "user", content: "continue this old day", timestamp: 31_000_000 });
+  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: body }], timestamp: 31_001_000 });
+  assert.equal(projectSessionContext(manager.getEntries()).messages.at(-1).chatSessionActivity, undefined, "matching JSON alone is never maintenance provenance");
+});
+
+test("summary drafts and unknown stage boundaries do not inherit earlier workflow authorship", () => {
+  const manager = SessionManager.inMemory("/workspace");
+  appendChatWorkflowStage(manager, { invocationId: "i", workflowId: "w", stageId: "remember", agentId: "writer" });
+  manager.appendCustomMessageEntry("chat.daily-summary-draft.v1", "internal draft", false);
+  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "draft" }], timestamp: 1 });
+  manager.appendCustomEntry("chat.workflow_stage", { schemaVersion: 999, invocationId: "future" });
+  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "unknown future stage" }], timestamp: 2 });
+  const view = projectSessionContext(manager.getEntries());
+  assert.equal(view.messages[0].chatSessionActivity.kind, "daily-summary-draft");
+  assert.equal(view.messages[0].chatWorkflow, undefined);
+  assert.equal(view.messages[1].chatWorkflow, undefined);
+  assert.equal(view.messages[1].chatSessionActivity, undefined);
+});
+
 test("Pi toolCall fields are projected to the frontend contract", () => {
   assert.deepEqual(
     normalizeMessageForFrontend({

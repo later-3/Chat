@@ -1,3 +1,4 @@
+import { sessionActivityTrigger, type ChatSessionActivity } from "./session-history-activity.js";
 import { readConversationState } from "./long-agents/conversations/storage.js";
 import { projectNavigationTree } from "./session-tree-projection.js";
 import { readLegacyFriendSessions } from "./migrations/agent-home-normalization.js";
@@ -27,6 +28,7 @@ import {
 } from "./session-owner.js";
 import { requireActiveChatSessionFile } from "./session-state.js";
 import {
+  collectChatWorkflowStageEntryIds,
   collectChatWorkflowStageMarkers,
 } from "./workflows/workflow-stage.js";
 import {
@@ -247,10 +249,14 @@ function nativeMessageForFrontend(
   stage: ReturnType<typeof collectChatWorkflowStageMarkers>[number] | undefined,
   delegationOrigin?: ChatWorkflowDelegationOrigin,
   longAgentTurn?: ChatLongAgentTurnMarker,
+  activity?: ChatSessionActivity,
 ): unknown {
   const normalized = normalizeMessageForFrontend(message);
   if (!isRecord(normalized)) {
     return normalized;
+  }
+  if (normalized.role === "assistant" && activity !== undefined) {
+    return { ...normalized, chatSessionActivity: activity };
   }
   // A relayed native user message keeps its Chat-owned association so the frontend can show the source.
   if (normalized.role === "user" && isRecord((message as Record<string, unknown>).chatTopicRelay)) {
@@ -380,6 +386,7 @@ export function projectSessionContext(
   const stageByEntryId = new Map(
     collectChatWorkflowStageMarkers(contextEntries).map((stage) => [stage.entryId, stage]),
   );
+  const stageEntryIds = new Set(collectChatWorkflowStageEntryIds(contextEntries));
   const longAgentTurnByEntryId = new Map(
     collectChatLongAgentTurnMarkers(contextEntries).map((turn) => [turn.entryId, turn]),
   );
@@ -393,18 +400,34 @@ export function projectSessionContext(
   const projectedDelegationInvocations = new Set<string>();
   let activeStage = undefined as ReturnType<typeof collectChatWorkflowStageMarkers>[number] | undefined;
   let activeLongAgentTurn = undefined as ChatLongAgentTurnMarker | undefined;
+  let activeActivity: ChatSessionActivity | undefined;
 
   for (const entry of contextEntries) {
     const stage = stageByEntryId.get(entry.id);
-    if (stage !== undefined) {
+    // Future stage schemas are also boundaries; do not inherit an earlier Agent label.
+    if (stageEntryIds.has(entry.id)) {
       activeStage = stage;
+      activeActivity = undefined;
       continue;
     }
     const longAgentTurn = longAgentTurnByEntryId.get(entry.id);
     if (longAgentTurn !== undefined) {
       activeLongAgentTurn = longAgentTurn.status === "running" ? longAgentTurn : undefined;
-      if (longAgentTurn.status === "running") activeStage = undefined;
+      if (longAgentTurn.status === "running") {
+        activeStage = undefined;
+        activeActivity = undefined;
+      }
       continue;
+    }
+    const activity = sessionActivityTrigger(entry);
+    if (activity !== undefined) {
+      activeActivity = activity;
+      activeStage = undefined;
+      activeLongAgentTurn = undefined;
+      continue; // Internal prompt stays hidden; the assistant result carries its provenance.
+    }
+    if ((entry.type === "message" && entry.message.role === "user") || entry.type === "compaction") {
+      activeActivity = undefined;
     }
     const reviewDecision = reviewDecisionByEntryId.get(entry.id);
     const reviewMessageEntryId = reviewDecision?.messageEntryId ?? reviewDecision?.feedbackEntryId;
@@ -436,7 +459,7 @@ export function projectSessionContext(
         projectedDelegationInvocations.add(activeStage.invocationId);
       }
       messages.push(applyProjectionOptions(
-        nativeMessageForFrontend(message, activeStage, delegationOrigin, activeLongAgentTurn),
+        nativeMessageForFrontend(message, activeStage, delegationOrigin, activeLongAgentTurn, activeActivity),
         entry.id,
         options,
       ));

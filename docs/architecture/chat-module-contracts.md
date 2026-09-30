@@ -90,6 +90,10 @@ Web 通过同一 Session 响应的 `friendExecution` 恢复稳定执行引用，
 
 原生 `compactionSummary` / `branchSummary` 经公共读模型转换为已有 `custom` 消息（compaction / branch-summary），保留摘要和元数据；Pi 原记录不变。Session 详情及 context 响应的 `context.entryTimes` 是与 `messages/entryIds` 同长度的只读数组，元素为原生 Pi Entry 的入库 Unix 毫秒或 null。分支、压缩与审核插入沿用 `projectSessionContext` 的选择结果，不能把其他分支时间混入；不新增时间数据库或执行状态。Frontend 检查长度/数值，旧服务缺字段时不展示耗时。结尾用量从可见轮次的模型 usage 和工具调用身份汇总，用时为输入至末条回复/工具结果入库的跨度，包含等待，不冒充 CPU/模型推理净时长。
 
+日终维护由原生 `chat.daily-summary.v1` / `chat.daily-summary-draft.v1` CustomMessage 标识。公共读模型为其后 assistant 消息增加可选 `chatSessionActivity: {kind: "daily-summary" | "daily-summary-draft", triggerEntryId: string, date?: string}`；date 为 `YYYY-MM-DD`。维护触发清除前一 Workflow/Long Agent 阶段归属，后续用户消息、Workflow 阶段（含未知版本）、新 Long Agent 轮次或压缩终止该维护投影。Frontend 在 Session/Topic HTTP 边界校验，单独展示并排除在前一用户轮次的答案、用量与用时之外；不按正文是否为 JSON 猜测来源。聊天详情与 HTML 导出共用原生触发识别，导出将维护展示为独立区域。此字段只作读投影，不改原始 Pi 消息、执行或存储归属。
+
+历史 Thinking/Tool 没有独立起止事件时不显示推算秒数：相邻 message.timestamp 的差可能包含空闲、等待及其他阶段。页面观察到的流式 Thinking 计时须标明观察口径。过程展开保持原消息顺序，最终回答的 Thinking 位于记忆回执之前。
+
 ## 统一请求、执行反馈与入口适配（P1–P4）
 
 公共装配输入见 [Context §15](./chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)。Frontend/TUI/Nano 只能提交意图，Backend 负责解析身份、目标和每日 Session；不引入另一套模型 Runtime。

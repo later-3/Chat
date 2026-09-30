@@ -14,6 +14,8 @@
 
 当前案例：
 
+- [历史消息归属与加载就绪](./session-history-provenance-and-readiness.md)：日终维护与用户轮次分开，过程保持原顺序，异步历史响应直接触发呈现。
+
 - [中等视口的抽屉与会话深链接](./medium-sidebar-deep-links.md)：统一覆盖断点，真实指针与显式视口共同验收。
 
 - [Linux 调试僵尸进程组](./linux-debug-zombie-process-groups.md)：退出不等于 PID 立即回收，暂停启动器恢复和失败清理必须有界。

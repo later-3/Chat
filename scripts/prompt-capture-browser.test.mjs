@@ -5,6 +5,8 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { appendChatWorkflowStage } from "../src/workflows/workflow-stage.ts";
 import { fixture } from "../test/long-agents/daily-fixture.mjs";
 import { launchBrowser } from "./cdp.mjs";
 
@@ -40,7 +42,7 @@ async function stopProcess(process) {
   if (process.exitCode === null) process.kill("SIGKILL");
 }
 
-test("the prompt-capture switch reaches the send, records regions and drives the full-history panel", { concurrency: false }, async (t) => {
+test("the prompt-capture switch reaches the send, records regions and drives the full-history panel", { concurrency: false, timeout: 180_000 }, async (t) => {
   const cleanups = [];
   const f = await fixture({ after: (register) => cleanups.push(register) });
   const modelHandler = (body) => {
@@ -179,6 +181,21 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     await page.waitFor("document.querySelector('[data-prompt-capture-toggle]') !== null && document.querySelector('[data-chat-composer]:not([disabled])') !== null", { label: "刷新后可输入", timeoutMs: 60_000 });
     assert.equal(await page.evaluate("document.querySelector('[data-prompt-capture-toggle]').classList.contains('is-active') || document.querySelector('[data-prompt-capture-toggle]').getAttribute('aria-pressed') === 'true'"), true, "刷新保留开启状态");
 
+    // A later native daily summary must stay outside the earlier memory Agent, in
+    // both the main conversation and the standalone reader. Only seed the idle fixture.
+    const detail = await (await fetch(`${baseUrl}/api/sessions/${onRound.sessionId}?projectId=friend&view=chat`)).json();
+    assert.ok(path.resolve(detail.filePath).startsWith(path.resolve(f.home) + path.sep));
+    const native = SessionManager.open(detail.filePath, path.dirname(detail.filePath));
+    appendChatWorkflowStage(native, { invocationId: "history-fixture", workflowId: "minimal-pi-coding-agent", stageId: "remember", agentId: "session-memory-writer" });
+    const appendAssistant = text => native.appendMessage({ role: "assistant", content: [{ type: "text", text }], timestamp: Date.now(),
+      api: "openai-completions", provider: "fixture", model: "fixture", stopReason: "stop",
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
+    appendAssistant("MEMORY_RECEIPT_FIXTURE");
+    native.appendCustomMessageEntry("chat.daily-summary.v1", "internal summary fixture", false, {date:"2026-09-29"});
+    appendAssistant(JSON.stringify({did:["DAILY_ACTIVITY_FIXTURE"], reflections:[], handoff:""}));
+    await page.send("Page.reload");
+    await page.waitFor("document.querySelector('[data-session-activity=\"daily-summary\"]') !== null", { label: "日终维护独立展示", timeoutMs: 20_000 });
+
     // The full-history Prompt panel renders the recorded regions from the payload API.
     const historyButton = await page.evaluate(`(() => {
       const button = [...document.querySelectorAll('button')].find(candidate =>
@@ -189,6 +206,41 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     })()`);
     assert.equal(historyButton, true, "完整历史入口存在");
     await page.waitFor("document.querySelector('[data-prompt-captures-view]') !== null", { label: "完整历史对话框打开" });
+    // The first successful HTML response must leave loading without a tab/theme change.
+    await page.waitFor("document.querySelector('iframe.full-history-frame')?.srcdoc.includes('session-data') === true", { label: "完整历史首次响应直接显示", timeoutMs: 20_000 });
+    // Check the child document, not just the existence of an empty iframe.
+    let historyReady = false;
+    let historyDiagnostic;
+    let historySessionId;
+    const historyDeadline = Date.now() + 20_000;
+    while (!historyReady && Date.now() < historyDeadline) {
+      const { frameTree } = await page.send("Page.getFrameTree");
+      historyDiagnostic = frameTree.childFrames?.map(child => child.frame.url);
+      const frame = frameTree.childFrames?.find(child => child.frame.url === "about:srcdoc")?.frame;
+      let executionContextId;
+      if (frame) ({ executionContextId } = await page.send("Page.createIsolatedWorld", { frameId: frame.id, worldName: "history-readiness-test" }));
+      else if (!historySessionId) {
+        // Chrome may isolate the sandbox in another renderer process. It is then
+        // a separate CDP target, absent from the parent Page.getFrameTree.
+        const { targetInfos } = await page.send("Target.getTargets");
+        const target = targetInfos.find(info => info.type === "iframe" && info.url === "about:srcdoc");
+        if (target) ({ sessionId: historySessionId } = await page.send("Target.attachToTarget", { targetId: target.targetId, flatten: true }));
+      }
+      if (executionContextId || historySessionId) {
+        const result = await page.send("Runtime.evaluate", { ...(executionContextId ? { contextId: executionContextId } : {}), returnByValue: true,
+          expression: `(() => { const activity = document.querySelector('[data-chat-session-activity="daily-summary"]');
+            return { tree:document.querySelector('#tree-container')?.children.length ?? 0,
+              conversation:document.querySelector('#messages')?.textContent.includes('pc-on') ?? false,
+              maintenance:activity?.textContent.includes('DAILY_ACTIVITY_FIXTURE') ?? false,
+              writer:!!activity?.closest('[data-agent-id="session-memory-writer"]') }; })()` }, historySessionId);
+        historyDiagnostic = result.result?.value ?? result.exceptionDetails;
+        historyReady = historyDiagnostic?.tree > 0 && historyDiagnostic?.conversation === true
+          && historyDiagnostic?.maintenance === true && historyDiagnostic?.writer === false;
+      }
+      if (!historyReady) await pause(100);
+    }
+    assert.equal(historyReady, true, `完整历史首帧包含实际消息和分支树：${JSON.stringify(historyDiagnostic)}`);
+    if (historySessionId) await page.send("Target.detachFromTarget", { sessionId: historySessionId });
     await page.evaluate("document.querySelector('[data-prompt-captures-view]').click()");
     await page.waitFor("document.querySelector('[data-prompt-captures-panel]') !== null", { label: "Prompt 请求面板渲染" });
     await page.waitFor(`document.querySelectorAll('[data-prompt-capture-record]').length >= ${countAfterOn}`, { label: "面板列出全部记录" });

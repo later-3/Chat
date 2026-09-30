@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { getPackageDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { sessionActivityTrigger } from "./session-history-activity.js";
 import {
   collectChatWorkflowAgentInputs,
   collectChatWorkflowStageEntryIds,
@@ -184,6 +185,10 @@ function embedChatWorkflowStages(
     chatWorkflowAgentInputs,
     chatWorkflowStageEntryIds: collectChatWorkflowStageEntryIds(decoded.entries),
     chatWorkflowStages: collectChatWorkflowStageMarkers(decoded.entries),
+    chatSessionActivities: decoded.entries.flatMap((entry) => {
+      const activity = sessionActivityTrigger(entry);
+      return activity === undefined ? [] : [activity];
+    }),
     chatWorkflowCalls: collectChatWorkflowCalls(decoded.entries),
     chatWorkflowDelegationOrigins: delegationOrigins ?? collectChatWorkflowDelegationOrigins(decoded.entries),
     chatWorkflowTurnConfigurations: collectChatWorkflowTurnConfigurations(decoded.entries),
@@ -393,6 +398,10 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
       );
       const chatWorkflowStageEntryIds = new Set(
         Array.isArray(data.chatWorkflowStageEntryIds) ? data.chatWorkflowStageEntryIds : []
+      );
+      const chatSessionActivityByEntryId = new Map(
+        (Array.isArray(data.chatSessionActivities) ? data.chatSessionActivities : [])
+          .map((activity) => [activity.triggerEntryId, activity])
       );
       const chatToolExecutionByEntryId = new Map(
         (Array.isArray(data.chatToolExecutions) ? data.chatToolExecutions : [])
@@ -719,10 +728,41 @@ export function patchChatWorkflowHistory(
         let activeWorkflowStages = null;
         let activeStageContent = null;
         let activeAgentId = null;
+        let activeSessionActivity = false;
         const renderedAgentInputEntryIds = new Set();
         const renderedDelegationInvocations = new Set();
 
         for (const entry of path) {
+          const sessionActivity = chatSessionActivityByEntryId.get(entry.id);
+          if (sessionActivity || activeSessionActivity && (
+            chatWorkflowStageEntryIds.has(entry.id) || entry.type === "compaction"
+            || entry.type === "message" && entry.message && entry.message.role === "user"
+            || entry.type === "custom" && entry.customType === "chat.long_agent_turn" && entry.data && entry.data.status === "running"
+          )) {
+            activeInvocationId = null;
+            activeWorkflowStages = null;
+            activeStageContent = null;
+            activeAgentId = null;
+            activeSessionActivity = false;
+          }
+          if (sessionActivity) {
+            const section = document.createElement("section");
+            section.className = "chat-agent-stage";
+            section.dataset.chatSessionActivity = sessionActivity.kind;
+            const header = document.createElement("div");
+            header.className = "chat-agent-stage-header";
+            const label = document.createElement("span");
+            label.textContent = sessionActivity.kind === "daily-summary" ? "Daily summary" : "Daily summary draft";
+            header.appendChild(label);
+            if (sessionActivity.date) header.appendChild(document.createTextNode(" · " + sessionActivity.date));
+            const content = document.createElement("div");
+            content.className = "chat-agent-stage-content";
+            section.append(header, content);
+            fragment.appendChild(section);
+            activeStageContent = content;
+            activeSessionActivity = true;
+            continue;
+          }
           const workflowStage = chatWorkflowStageByEntryId.get(entry.id);
           if (workflowStage) {
             if (workflowStage.invocationId !== activeInvocationId) {

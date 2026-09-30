@@ -108,10 +108,10 @@ function openPage(wsUrl) {
     });
     socket.addEventListener("error", (event) => reject(new Error(`CDP socket error: ${String(event)}`)));
     socket.addEventListener("open", () => {
-      const send = (method, params = {}) => new Promise((done, fail) => {
+      const send = (method, params = {}, sessionId) => new Promise((done, fail) => {
         const id = nextId++;
         pending.set(id, { resolve: done, reject: fail });
-        socket.send(JSON.stringify({ id, method, params }));
+        socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
       });
       const evaluate = async (expression) => {
         const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });

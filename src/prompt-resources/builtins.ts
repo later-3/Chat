@@ -133,6 +133,18 @@ const PLANNER_READINESS_CONTRACT_EXPERIENCE_V1 = [
  */
 export const BUILT_IN_PERSONAL_PROMPT_RESOURCES = [
   {
+    schemaVersion: 1, id: "session-history-provenance-and-readiness",
+    revisions: [{
+      schemaVersion: 1, id: "session-history-provenance-and-readiness", revision: 1, kind: "experience",
+      title: "历史消息归属与异步加载就绪",
+      purpose: "避免日终维护混入用户轮次，以及网络成功后界面仍永久加载。",
+      content: "排查 Session 展示时先对齐原生 Entry、隐藏业务触发、Backend 来源投影和前端轮次边界。日终维护应由明确 CustomMessage 识别，不能继承数小时前的 Workflow Agent 标签，也不能按正文是否为 JSON 猜测身份。维护统计与用户轮次分开；拆出最终答案时，过程块仍保持原始顺序。相邻 message.timestamp 不等于 Thinking 或工具起止时间，没有证据就不显示推测秒数。异步文档成功必须进入可观察 state，缓存按 Project/Session 隔离，旧请求取消；测试首次点击后直接呈现，不借切标签或主题触发重渲染。门禁：session-read-model、session-activity、prompt-capture-browser 与 group-browser；保留原生历史与原始输出，不靠迁移或删消息修饰读模型错误。",
+      tags: ["development", "session", "frontend", "provenance"], status: "active",
+      sources: [{ type: "manual", entryIds: [], context: "docs/development/experiences/session-history-provenance-and-readiness.md", capturedAt: "2026-09-30T00:00:00.000+08:00" }],
+      author: { type: "agent", agentId: "codex" }, createdAt: "2026-09-30T00:00:00.000+08:00",
+    }],
+  },
+  {
     schemaVersion: 1,
     id: "web-readiness-build-parity",
     revisions: [{
