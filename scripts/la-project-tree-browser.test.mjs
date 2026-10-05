@@ -203,7 +203,37 @@ test("the LA→Project→Session tree creates project-owned sessions and survive
   assert.equal(fs.existsSync(removedDir) && fs.readdirSync(removedDir).some((name) => name.includes(binding.sessionId)), true, "会话文件进入其归属项目树的移除区");
   const listed = await listRemovedChatSessions("a", home);
   assert.equal(listed.sessions.some((item) => item.id === binding.sessionId), true, "项目移除区能看到该会话");
-  // 恢复，保证后续刷新验收仍然可用（移除区 UI 验收单独进行）。
+  // 移除区：项目树入口打开弹层，会话在列，点“恢复”回到活跃列表。
+  await page.evaluate("document.querySelector('[data-project-tree-removed]').click()");
+  await page.waitFor(`document.querySelector('[data-session-restore="${binding.sessionId}"]') !== null`, { label: "移除区列出该会话", timeoutMs: 30_000 });
+  await page.evaluate(`document.querySelector('[data-session-restore="${binding.sessionId}"]').click()`);
+  await page.waitFor(`document.querySelector('[data-project-tree-session="${binding.sessionId}"]') !== null`, { label: "恢复后回到项目列表", timeoutMs: 30_000 });
+  await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find((b) => b.getAttribute('aria-label') === 'Close' || b.textContent.trim() === '✕')?.click()");
+
+  // 搜索浮层：按钮触发 → 关键词命中全文 → 预览显示命中证据 → 打开
+  await page.evaluate("document.querySelector('[data-project-tree-search]').click()");
+  await page.waitFor("document.querySelector('[data-session-search-input]') !== null", { label: "搜索浮层", timeoutMs: 30_000 });
+  await page.evaluate(`(() => {
+    const input = document.querySelector('[data-session-search-input]');
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, ${JSON.stringify(WORK_TEXT)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await page.waitFor(`document.querySelector('[data-session-search-result="${binding.sessionId}"]') !== null`, { label: "搜索结果命中全文", timeoutMs: 30_000 });
+  await page.waitFor("document.querySelector('[data-session-search-hit]') !== null", { label: "预览显示命中证据", timeoutMs: 15_000 });
+  await clickBySelector("[data-session-search-open]", "打开搜索结果");
+  await page.waitFor(`document.querySelector('[data-workspace-chat]').innerText.includes(${JSON.stringify(WORK_TEXT)})`, { label: "从搜索打开会话", timeoutMs: 30_000 });
+
+  // 批量操作模式：顶部开关 → 行首勾选 → 底部操作条一次移除
+  await page.evaluate("document.querySelector('[data-project-tree-select]').click()");
+  await page.waitFor(`document.querySelector('[data-session-select="${binding.sessionId}"]') !== null`, { label: "批量勾选框", timeoutMs: 15_000 });
+  await page.evaluate(`document.querySelector('[data-session-select="${binding.sessionId}"]').click()`);
+  await page.waitFor("document.querySelector('[data-session-bulk-remove]') !== null && !document.querySelector('[data-session-bulk-remove]').disabled", { label: "批量操作条就绪" });
+  await page.evaluate("document.querySelector('[data-session-bulk-remove]').click()");
+  await page.waitFor("document.querySelector('[role=alertdialog]') !== null", { label: "批量移除确认" });
+  await page.evaluate("Array.from(document.querySelectorAll('[role=alertdialog] button')).at(-1).click()");
+  await page.waitFor(`document.querySelector('[data-project-tree-session="${binding.sessionId}"]') === null`, { label: "批量移除后列表不再显示", timeoutMs: 30_000 });
+  // 恢复，保证后续刷新验收仍然可用。
   const { restoreRemovedChatSession } = await import("../src/session-removal.ts");
   await restoreRemovedChatSession("a", binding.sessionId, home);
 
