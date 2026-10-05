@@ -59,7 +59,7 @@
    移除区列表接口新增可选 `owner` 查询参数。
 3. **附属数据**：会话记忆走 owner 参数；prompt captures 位于 `sessionDir` 下随解析正确；
    主题节点生命周期仅在 Agent Home 触发（现状合理）。
-4. **搜索**：`GET /api/sessions?scope=project|agent|all&projectId=…&query=…&createdFrom=…&createdTo=…&includeRemoved=…`；
+4. **搜索**：`GET /api/sessions?scope=project|agent|all&projectId=…&owner=…&query=…&createdFrom=…&createdTo=…&includeRemoved=…`；
    匹配标题、第一句话与 `allMessagesText`；`scope` 决定遍历哪个存储根，`includeRemoved` 决定是否包含移除区。
 5. **绑定索引**：移除后绑定记录保留（用于恢复识别），列表侧已跳过缺失文件，无需新增逻辑。
 

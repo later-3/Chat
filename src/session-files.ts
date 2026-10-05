@@ -28,6 +28,20 @@ function messageUtteranceText(message: unknown): string {
   )).join("\n").trim();
 }
 
+/**
+ * 全文搜索用的会话文本：与 Pi 的 `buildSessionInfo` 一致，拼接所有 user / assistant 消息文本
+ * （toolResult 与 custom entry 不计入）。列表接口不返回该字段，只在后端匹配时使用。
+ */
+function allUtteranceText(entries: readonly SessionEntry[]): string {
+  return entries.flatMap((entry) => {
+    if (entry.type !== "message") return [];
+    const role = (entry.message as { role?: unknown }).role;
+    if (role !== "user" && role !== "assistant") return [];
+    const text = messageUtteranceText(entry.message);
+    return text === "" ? [] : [text];
+  }).join(" ");
+}
+
 /** Pi's list sentinel is first-user-only; Chat uses the first human or Agent utterance. */
 function firstUtterance(entries: readonly SessionEntry[]): string {
   for (const entry of entries) {
@@ -75,8 +89,8 @@ async function readFileSummary(path: string): Promise<SessionFileSummary> {
     modified: new Date(Number.isFinite(activity) ? activity : Number(file.mtimeMs)),
     messageCount: messages.length,
     firstMessage: firstUtterance(entries),
-    // Preserve the full first utterance for the existing sidebar search, not only its visual preview.
-    allMessagesText: "",
+    // Pi 同款语义：全部 user / assistant 消息文本，供全文搜索使用（列表响应不携带该字段）。
+    allMessagesText: allUtteranceText(entries),
   };
   const parentSessionId = collectChatSubsessionRelation(entries)?.parentSessionId;
   if (parentSessionId !== undefined) summaryParents.set(info, parentSessionId);
