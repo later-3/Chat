@@ -17,7 +17,7 @@ export interface ChatSessionRunBinding {
   readonly acceptedLongAgentTurn?: { readonly longAgentId: string; readonly turnId: string };
   readonly topicCreation?: TopicCreationBinding;
   /** The session whose session memory this run's agents write to (absent for non-agent homes). */
-  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string } | undefined;
+  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string; readonly ownerLongAgentId?: string } | undefined;
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -38,7 +38,9 @@ function parseBinding(value: unknown): ChatSessionRunBinding {
       || typeof value.sessionMemoryTarget.sessionId !== "string" || value.sessionMemoryTarget.sessionId === "") {
       throw new Error("Workflow Run绑定sessionMemoryTarget无效");
     }
-    sessionMemoryTarget = { storageProjectId: value.sessionMemoryTarget.storageProjectId, sessionId: value.sessionMemoryTarget.sessionId };
+    const targetOwner = value.sessionMemoryTarget.ownerLongAgentId;
+    sessionMemoryTarget = { storageProjectId: value.sessionMemoryTarget.storageProjectId, sessionId: value.sessionMemoryTarget.sessionId,
+      ...(typeof targetOwner === "string" && targetOwner !== "" ? { ownerLongAgentId: targetOwner } : {}) };
   }
   const owner = value.acceptedLongAgentTurn;
   if (owner !== undefined && (!isRecord(owner) || typeof owner.longAgentId !== "string" || !owner.longAgentId

@@ -11,9 +11,10 @@ import { readChatSessionRunBinding, recordChatSessionRunBinding } from "../../sr
 
 test("P2 pre-req: the workflow session-memory target is derived from the trusted context only", () => {
   // An agent-home session (storage project == long agent id) qualifies.
+  // 2026-10-04 per-agent 项目树：Agent Workspace（projectId === agent id）的目标同样携带 owner。
   assert.deepEqual(
     sessionMemoryTargetForToolContext({ projectId: "friend", longAgentId: "friend", sessionId: "s1" }),
-    { storageProjectId: "friend", sessionId: "s1" },
+    { storageProjectId: "friend", sessionId: "s1", ownerLongAgentId: "friend" },
   );
   // An ordinary project session never gains agent-home memory access.
   assert.equal(sessionMemoryTargetForToolContext({ projectId: "a", sessionId: "s1" }), undefined);

@@ -19,7 +19,8 @@ function fixture(t) {
 }
 
 function writeSession(chatHome, sessionFile, date, { turns, input, output, tools }) {
-  const dir = path.join(chatHome, "long-agents", "friend", "sessions");
+  // 2026-10-04 会话事实在 per-agent 项目树（workspace 也是项目）。
+  const dir = path.join(chatHome, "long-agents", "friend", "projects", "friend", "sessions");
   fs.mkdirSync(dir, { recursive: true });
   const lines = [JSON.stringify({ type: "session", id: sessionFile, timestamp: `${date}T00:00:00.000Z` })];
   for (const turnId of turns) {

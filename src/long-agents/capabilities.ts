@@ -73,7 +73,8 @@ export async function inspectLongAgentTurnCapabilities(input: {
   readonly sessionId: string;
   readonly turnId: string;
 }): Promise<LongAgentTurnCapabilities> {
-  const session = await openChatSession({ chatHome: input.chatHome, projectId: input.longAgentId, sessionId: input.sessionId });
+  const { storageProjectOfSession } = await import("./project-sessions.js");
+  const session = await openChatSession({ chatHome: input.chatHome, projectId: await storageProjectOfSession(input.chatHome, input.longAgentId, input.sessionId), sessionId: input.sessionId, ownerLongAgentId: input.longAgentId });
   const snapshot = readAssemblySnapshot(session.manager, input.turnId);
   if (snapshot === undefined) throw new LongAgentScopeError("找不到该轮次的装配快照，无法检查能力");
   const registeredTools = readFrozenToolNames(session.manager.getEntries(), input.turnId);

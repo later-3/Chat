@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { realpath } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import {
   type SessionEntry,
   SessionManager,
@@ -20,6 +20,10 @@ export interface ChatSessionInput {
   readonly cwd?: string;
   readonly chatHome?: string;
   readonly sessionId?: string;
+  /** Backend-internal Long Agent owner: session storage lives at
+   *  <chatHome>/long-agents/<ownerLongAgentId>/projects/<projectId>/ for every Long Agent session
+   *  (its Workspace is the owner's own projectId). Never parsed from HTTP clients. */
+  readonly ownerLongAgentId?: string;
 }
 
 export interface ChatSession {
@@ -106,7 +110,8 @@ async function resolveChatSessionProject(input: ChatSessionInput): Promise<ChatP
         path: input.cwd as string,
         ...(input.chatHome === undefined ? {} : { chatHome: input.chatHome }),
       })
-    : await resolveProjectContext(input.projectId, input.chatHome);
+    : await resolveProjectContext(input.projectId, input.chatHome,
+      input.ownerLongAgentId === undefined ? {} : { ownerLongAgentId: input.ownerLongAgentId });
   const { cwd } = projectContext;
   if (input.cwd !== undefined && await realpath(resolve(input.cwd)) !== cwd) {
     throw new Error(`Project ${projectContext.projectId}与工作目录不一致`);
@@ -155,6 +160,7 @@ export async function ensureChatSessionWithId(
       throw new SessionLifecycleError("SESSION_REMOVED", `Session已移除，不能按同一 ID 重建: ${sessionId}`);
     if (inactive === "purged")
       throw new SessionLifecycleError("SESSION_PURGED", `Session已被永久删除: ${sessionId}`);
+    await mkdir(sessionDir, { recursive: true, mode: 0o700 });
     const manager = configureChatSessionManager(SessionManager.create(cwd, sessionDir, { id: sessionId }));
     const normalizedDisplayName = initialDisplayName?.replace(/\s+/g, " ").trim();
     if (normalizedDisplayName !== undefined && normalizedDisplayName !== "") {
@@ -170,6 +176,8 @@ export async function openChatSession(input: ChatSessionInput): Promise<ChatSess
   const { cwd, agentDir, sessionDir } = projectContext;
 
   if (input.sessionId === undefined) {
+    // 只有真正创建会话才建立存储目录；只读解析不产生空目录。
+    await mkdir(sessionDir, { recursive: true, mode: 0o700 });
     return {
       projectId: projectContext.projectId,
       projectContext,

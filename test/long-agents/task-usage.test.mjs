@@ -60,7 +60,7 @@ test('activity day uses the configured Friend timezone', async t => {
   const previousTz = process.env.TZ;
   process.env.TZ = 'UTC';
   t.after(() => { if (previousTz === undefined) delete process.env.TZ; else process.env.TZ = previousTz; });
-  const dir = path.join(f.home, 'long-agents/friend/sessions');
+  const dir = path.join(f.home, 'long-agents/friend/projects/friend/sessions'); // 2026-10-04 会话事实随 per-agent 项目树
   fs.writeFileSync(path.join(dir, 'audit-zone.jsonl'), JSON.stringify({
     type: 'message', timestamp: '2026-09-26T20:00:00.000Z',
     message: { role: 'assistant', provider: 'test', model: 'test', usage: { input: 5, output: 5, totalTokens: 10 } },

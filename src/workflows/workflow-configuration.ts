@@ -37,7 +37,7 @@ function readFrozenAgents(manager: SessionManager, invocationId: string, workflo
 function freezeResolvedAgents(manager: SessionManager, input: PrepareChatWorkflowTurnConfigurationInput, result: PreparedChatWorkflowTurnConfiguration) {
   const settings = personalAgentSettings(getChatHomePaths(resolveChatHome(input.chatHome)).agentDir);
   const agents = Object.fromEntries(Object.entries(result.agents).map(([id, resolved]) => {
-    const { sources: _sources, modelSource: _model, thinkingSource: _thinking, ...core } = resolved;
+    const { sources: _sources, modelSource: _model, thinkingSource: _thinking, generationSource: _generation, ...core } = resolved;
     return [id, resolvePersonalAgentDefinition(core, settings)];
   }));
   const body = { schemaVersion: 1, invocationId: input.invocationId, workflowId: input.workflowId, agents, agentConfigs: result.agentConfigs };
@@ -100,7 +100,10 @@ function isEmptySelection(selection: AgentConfigSelection): boolean {
     && selection.promptFiles === undefined
     && selection.promptResources === undefined
     && selection.tools === undefined
-    && selection.resources === undefined;
+    && selection.resources === undefined
+    && selection.model === undefined
+    && selection.thinkingLevel === undefined
+    && selection.generation === undefined;
 }
 
 function cloneSelection(selection: AgentConfigSelection): AgentConfigSelection {

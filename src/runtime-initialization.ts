@@ -59,6 +59,12 @@ export function ensureChatRuntimeInitialized(options: {
       // Session memory moved next to the session files; the pass is idempotent and marked per root.
       const { migrateSessionMemoryLayout } = await import("./migrations/session-memory-layout.js");
       await migrateSessionMemoryLayout(paths.root);
+      // 存储合同 2026-10-04：Agent 根下 projects/<projectId>/ 承载全部项目数据（workspace 也是项目）。
+      const { migrateAgentProjectsLayout } = await import("./migrations/agent-projects-layout.js");
+      await migrateAgentProjectsLayout(paths.root);
+      // 标题合同 2026-10-05：清除历史遗留的系统占位名，让列表回退到会话第一句话。
+      const { migrateSessionTitleCleanup } = await import("./migrations/session-title-cleanup.js");
+      await migrateSessionTitleCleanup(paths.root);
       // 启动时确保每个 Agent 的配置根与资源目录就绪。
       const { readLongAgentRegistry, ensureLongAgentResourceDirs } = await import("./long-agents/storage.js");
       const { reconcileDefaultLongAgentTools } = await import("./long-agents/definition-defaults.js");

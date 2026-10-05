@@ -46,13 +46,14 @@ export const SESSION_MEMORY_TOOL_PROVIDER = defineChatSystemTool(
         });
         const result: unknown = await (async () => {
           if (params.operation === "list") {
-            return await memory.readSessionMemory(context.chatHome, target.longAgentId, target.sessionId);
+            return await memory.readSessionMemory(context.chatHome, target.longAgentId, target.sessionId, target.ownerLongAgentId);
           }
           if (params.operation === "history") {
             return await memory.readSessionMemoryHistory({
               chatHome: context.chatHome,
               longAgentId: target.longAgentId,
               sessionId: target.sessionId,
+              ...(target.ownerLongAgentId === undefined ? {} : { ownerLongAgentId: target.ownerLongAgentId }),
               ...(params.afterEntryId === undefined ? {} : { afterEntryId: params.afterEntryId }),
               ...(params.limit === undefined ? {} : { limit: params.limit }),
             });
@@ -61,7 +62,8 @@ export const SESSION_MEMORY_TOOL_PROVIDER = defineChatSystemTool(
             throw new Error("write/supersede 需要 purpose、author、content 与 expectedRevision（先 list 读取 revision）");
           const source = target.sessionId === context.sessionId ? context.sessionManager
             : (await (await import("../../../chat-session.js")).openChatSession({ chatHome: context.chatHome,
-              projectId: target.longAgentId, sessionId: target.sessionId })).manager;
+              projectId: target.longAgentId, sessionId: target.sessionId,
+              ...(target.ownerLongAgentId === undefined ? {} : { ownerLongAgentId: target.ownerLongAgentId }) })).manager;
           const branch = source.getBranch();
           const matchesAuthor = (entry: typeof branch[number]) => entry.type === "message"
             && (params.author === "user" ? entry.message.role === "user" : ["assistant", "toolResult"].includes(entry.message.role));

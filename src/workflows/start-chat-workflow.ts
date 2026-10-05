@@ -22,7 +22,8 @@ export async function startChatWorkflow(
   if (definition === undefined) throw new Error(`找不到Workflow: ${workflow}`);
   const project = input.projectId === undefined
     ? undefined
-    : await resolveProjectContext(input.projectId, input.chatHome);
+    : await resolveProjectContext(input.projectId, input.chatHome,
+      input.ownerLongAgentId === undefined ? {} : { ownerLongAgentId: input.ownerLongAgentId });
   if (project !== undefined && input.sessionId !== undefined) {
     await requireActiveChatSessionFile(project, input.sessionId);
     const owner = chatSessionOwner(await readChatSessionOwnerIndex(project.projectId, input.chatHome), input.sessionId);

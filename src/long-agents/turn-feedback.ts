@@ -13,7 +13,7 @@ export function friendExecution(home: string, turn: AcceptedTurn) {
     ...(turn.workflow === undefined ? {} : { workflow: turn.workflow }),
     id: turn.turnId,
     longAgentId: turn.longAgentId,
-    projectId: turn.longAgentId,
+    projectId: turn.storageProjectId ?? turn.longAgentId,
     sessionId: turn.sessionId,
     contextProjectId: turn.contextProjectId,
     status: turn.status,
@@ -38,7 +38,7 @@ export async function readFriendFeedback(home: string, longAgentId: string, id: 
   const turn = await findFriendTurn(home, longAgentId, id);
   const snapshot = liveTurnSnapshot(home, id);
   if (snapshot !== undefined) return { execution: friendExecution(home, turn), snapshot };
-  const session = await openChatSession({ projectId: longAgentId, sessionId: turn.sessionId, chatHome: home });
+  const session = await openChatSession({ projectId: turn.storageProjectId ?? longAgentId, sessionId: turn.sessionId, chatHome: home, ownerLongAgentId: turn.longAgentId });
   // Check again after I/O: the worker may have started while the native Session was opening.
   return {
     execution: friendExecution(home, await findFriendTurn(home, longAgentId, id)),

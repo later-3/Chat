@@ -40,7 +40,9 @@ export async function buildLongAgentActivity(input: {
   const to = validateCalendarDate(input.to ?? agentDate(timeZone));
   const from = validateCalendarDate(input.from ?? new Date(Date.parse(to) - 13 * 86400000).toISOString().slice(0, 10));
   if (from > to) throw new Error("from不能晚于to");
-  const sessionDir = resolve(longAgentConfigRoot(home.root, input.longAgentId), "sessions");
+  // 会话事实在 per-agent 项目树（workspace 也是项目）；旧布局目录存在时回退可读。
+  const agentRoot = longAgentConfigRoot(home.root, input.longAgentId);
+  const sessionDir = resolve(agentRoot, "projects", input.longAgentId, "sessions");
   const files = (await readdir(sessionDir).catch(() => [] as string[])).filter((file) => file.endsWith(".jsonl"));
 
   const days = new Map<string, {

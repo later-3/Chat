@@ -421,7 +421,7 @@ test("P1 review 28: convergeSessionMemoryWithLifecycle heals a crash-before-comp
 // --- Review 31/32: an interrupted lifecycle operation must be converged by ANY recovering read, and
 // --- the pending intent must survive until the companion memory actually converges.
 
-const readOnlyMemoryDir = (f) => `${f.home}/long-agents/friend/sessions/session-memory`;
+const readOnlyMemoryDir = (f) => `${f.home}/long-agents/friend/projects/friend/sessions/session-memory`; // 2026-10-04 会话附属随 per-agent 项目树
 
 test("P1 review 31: an interrupted remove is converged by a recovering read (list and state check)", async (t) => {
   const f = await fixture(t);
@@ -558,7 +558,7 @@ test("session memory moved next to the session files", async (t) => {
     purpose: "background", author: "agent", content: "记录在会话旁边", expectedRevision: 0,
   });
   const current = sessionMemoryFile(f.home, "friend", sessionId);
-  assert.equal(current, `${f.home}/long-agents/friend/sessions/session-memory/${sessionId}.json`);
+  assert.equal(current, `${f.home}/long-agents/friend/projects/friend/sessions/session-memory/${sessionId}.json`); // 2026-10-04 会话附属随项目树
 
   // The pre-0.5.3 location keeps loading until that session is written again.
   const legacy = legacySessionMemoryFile(f.home, "friend", sessionId);
@@ -606,8 +606,8 @@ test("the startup pass moves every leftover session memory into the session dire
 
   // An existing target is authoritative and is never overwritten by a leftover legacy file.
   const other = "sess-migrate-2";
-  fs.mkdirSync(`${root}/sessions/session-memory`, { recursive: true });
-  fs.writeFileSync(`${root}/sessions/session-memory/${other}.json`, JSON.stringify({ schemaVersion: 1, sessionId: other, orphan: false, revision: 9, entries: [] }));
+  fs.mkdirSync(`${root}/projects/friend/sessions/session-memory`, { recursive: true }); // 2026-10-04 会话附属随 per-agent 项目树
+  fs.writeFileSync(`${root}/projects/friend/sessions/session-memory/${other}.json`, JSON.stringify({ schemaVersion: 1, sessionId: other, orphan: false, revision: 9, entries: [] }));
   fs.mkdirSync(legacyDir, { recursive: true });
   fs.writeFileSync(`${legacyDir}/${other}.json`, JSON.stringify({ schemaVersion: 1, sessionId: other, orphan: false, revision: 1, entries: [] }));
   fs.rmSync(`${f.home}/migrations/session-memory-layout-v1.json`);

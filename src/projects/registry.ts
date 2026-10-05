@@ -368,17 +368,38 @@ export async function ensureProjectDataLayout(
   projectId: string,
   chatHome = resolveChatHome(),
   kind: ChatProjectKind = "project",
+  options: { readonly ownerLongAgentId?: string; readonly create?: boolean } = {},
 ) {
   if (!PROJECT_ID_PATTERN.test(projectId)) throw new Error(`Project id无效: ${projectId}`);
   const home = await ensureChatHome(chatHome);
-  // Agent home 的全部事实（会话、资源、memory、workspace）都在 long-agents/<id>/ 下。
-  const projectDataDir = kind === "agent"
-    ? resolve(home.root, "long-agents", projectId)
-    : resolve(home.projectsDir, projectId);
-  const sessionDir = resolve(projectDataDir, "sessions");
+  // 2026-10-04 存储合同：Long Agent 的「会话事实」按位置=归属落在它的 Agent 根下
+  // projects/<projectId>/sessions/（workspace 自身是一个 projectId = agent id）。
+  // 身份/配置层（durable workflow 配置、memory、prompt-resources）留在 Agent 根
+  // long-agents/<agent>/，属于单一 Agent 的身份事实，不按项目拆分。
+  // 普通用户在项目里的会话（无 Long Agent 归属）仍按 shared projects/<projectId>/ 读。
+  const ownerLongAgentId = options.ownerLongAgentId;
+  const isAgentHome = ownerLongAgentId === undefined
+    ? kind === "agent"
+    : ownerLongAgentId === projectId;
+  const projectDataDir = ownerLongAgentId !== undefined && ownerLongAgentId !== projectId
+    ? resolve(home.root, "long-agents", ownerLongAgentId, "projects", projectId)
+    : kind === "agent"
+      ? resolve(home.root, "long-agents", projectId)
+      : resolve(home.projectsDir, projectId);
+  const sessionDir = isAgentHome && kind === "agent"
+    ? resolve(projectDataDir, "projects", projectId, "sessions")
+    : resolve(projectDataDir, "sessions");
   const memoryDir = resolve(projectDataDir, "memory");
   const promptResourceDir = resolve(projectDataDir, "prompt-resources");
   const workflowsDir = resolve(projectDataDir, "workflows");
+  // per-agent 项目树（owner ≠ 项目自身）只在真正写入时创建：只读解析（列目录、校验、归属推导）
+  // 不得为了读一个列表就在磁盘上留下空项目目录。写入方各自确保目录（会话创建、run 绑定写入等）。
+  const ownerProjectTree = ownerLongAgentId !== undefined && ownerLongAgentId !== projectId;
+  if (options.create === false || ownerProjectTree) {
+    if (options.create !== true) {
+      return { projectDataDir, sessionDir, memoryDir, promptResourceDir, workflowsDir };
+    }
+  }
   await Promise.all([
     mkdir(projectDataDir, { recursive: true, mode: 0o700 }),
     mkdir(sessionDir, { recursive: true, mode: 0o700 }),
@@ -392,6 +413,7 @@ export async function ensureProjectDataLayout(
 export async function resolveProjectContext(
   projectId: string,
   chatHome = resolveChatHome(),
+  options: { readonly ownerLongAgentId?: string } = {},
 ): Promise<ChatProjectContext> {
   if (!PROJECT_ID_PATTERN.test(projectId)) throw new Error(`Project id无效: ${projectId}`);
   const registry = await readProjectRegistry(chatHome);
@@ -402,7 +424,7 @@ export async function resolveProjectContext(
   if (manifest.id !== projectId) throw new Error(`Project Manifest与Registry不一致: ${projectId}`);
   const home = await ensureChatHome(chatHome);
   const kind: ChatProjectKind = entry.kind ?? "project";
-  const data = await ensureProjectDataLayout(projectId, home.root, kind);
+  const data = await ensureProjectDataLayout(projectId, home.root, kind, options);
   const projectConfigDir = resolve(root, ".chat");
   return {
     projectId,

@@ -72,7 +72,7 @@ test("real task → Work → Workflow → Pi tool writes an independent day arti
   assert.notEqual(work.sessionId, old.day.sessionId);
   const summary = await readLongAgentSummary(f.home, "friend", date);
   assert.equal(summary.handoff, "NEXT_DAY_HANDOFF"); assert.equal(summary.archive.occurrenceId, receipt.occurrenceId);
-  assert.match(await fs.readFile(path.join(f.home, "long-agents/friend/days", date, "summary.md"), "utf8"), /ARCHIVED_ACTIVITY/);
+  assert.match(await fs.readFile(path.join(f.home, "long-agents/friend/projects/friend/days", date, "summary.md"), "utf8"), /ARCHIVED_ACTIVITY/);
   await deliverFriendWorkReturns(f.home);
   const reopened = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: old.day.sessionId });
   assert.equal(JSON.stringify(reopened.manager.getEntries()), before, "day closing never appends to the original conversation");
@@ -141,7 +141,7 @@ test("unreadable or unauthorized summaries cannot break a new day or inject priv
   await writeLongAgentSummary(input);
   let handoff = await buildLongAgentHandoff({ chatHome: f.home, longAgentId: "friend", today: "2026-09-30" });
   assert.match(handoff, /暂不可读取/); assert.doesNotMatch(handoff, /SECRET_SOURCE/);
-  await fs.writeFile(path.join(f.home, "long-agents/friend/days/2026-09-29/summary.md"), "corrupt header");
+  await fs.writeFile(path.join(f.home, "long-agents/friend/projects/friend/days/2026-09-29/summary.md"), "corrupt header");
   handoff = await buildLongAgentHandoff({ chatHome: f.home, longAgentId: "friend", today: "2026-09-30" });
   assert.match(handoff, /正常交流不受影响/);
 });

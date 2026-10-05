@@ -33,7 +33,8 @@ test("summary write/read/list/search keep an atomic independent Markdown artifac
   assert.equal(read?.did[0], "推进了 D");
   assert.equal((await readLongAgentSummary(chatHome, "nexus", "2026-09-01")), undefined);
 
-  const md = fs.readFileSync(path.join(chatHome, "long-agents", "nexus", "days", "2026-09-09", "summary.md"), "utf8");
+  // 2026-10-04 存储合同：每日总结归档跟随会话事实，位于 Agent 根的 per-agent 项目树。
+  const md = fs.readFileSync(path.join(chatHome, "long-agents", "nexus", "projects", "nexus", "days", "2026-09-09", "summary.md"), "utf8");
   assert.match(md, /## 做了什么/);
   assert.match(md, /B 做得不好/);
 

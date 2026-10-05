@@ -15,7 +15,7 @@ export async function recoverLongAgentTurns(home: string, workerOwnsSession?: st
     // New receipts are governed by the Workflow World. A completed work marker cannot settle a
     // suspended review or unfinished memory Step; the ordered worker reattaches to that same Run.
     if (turn.workflow !== undefined) continue;
-    const session = await openChatSession({ projectId: turn.longAgentId, sessionId: turn.sessionId, chatHome: home });
+    const session = await openChatSession({ projectId: turn.storageProjectId ?? turn.longAgentId, sessionId: turn.sessionId, chatHome: home, ownerLongAgentId: turn.longAgentId });
     const entries = session.manager.getBranch();
     const marker = latestChatLongAgentTurn(entries, turn.turnId);
     const error = "Backend中断，工具结果可能未知；已保留原始历史，不自动重放，请检查后发起新消息";

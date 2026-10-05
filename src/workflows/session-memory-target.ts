@@ -8,6 +8,8 @@ import { readChatSessionRunBinding } from "./session-run-registry.js";
 export interface WorkflowSessionMemoryTarget {
   readonly storageProjectId: string;
   readonly sessionId: string;
+  /** Long Agent owner of the target session's storage; omitted for non-agent (shared) targets. */
+  readonly ownerLongAgentId?: string;
 }
 
 /**
@@ -23,7 +25,8 @@ export function sessionMemoryTargetForToolContext(context: {
 }): WorkflowSessionMemoryTarget | undefined {
   if (context.sessionMemoryTarget !== undefined) return context.sessionMemoryTarget;
   if (context.longAgentId === undefined || context.projectId !== context.longAgentId) return undefined;
-  return { storageProjectId: context.projectId, sessionId: context.sessionId };
+  // Agent Workspace（projectId === agent id）也按 owner 记录，指向 per-agent 项目树。
+  return { storageProjectId: context.projectId, sessionId: context.sessionId, ownerLongAgentId: context.longAgentId };
 }
 
 /**

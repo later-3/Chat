@@ -52,7 +52,8 @@ function assertText(value: unknown, field: string, required = false): string {
 
 async function rootFor(chatHome: string, longAgentId: string): Promise<string> {
   const home = await ensureChatHome(chatHome);
-  const dir = resolve(longAgentConfigRoot(home.root, longAgentId), "summaries");
+  // 每日总结归档属于 workspace 项目（per-agent 项目树）。
+  const dir = resolve(longAgentConfigRoot(home.root, longAgentId), "projects", longAgentId, "summaries");
   await mkdir(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
@@ -127,7 +128,7 @@ export async function writeLongAgentSummary(input: {
   });
 }
 async function summaryFile(home: string, id: string, date: string): Promise<string> {
-  const file = resolve(longAgentConfigRoot((await ensureChatHome(home)).root, id), "days", assertSummaryDate(date), "summary.md");
+  const file = resolve(longAgentConfigRoot((await ensureChatHome(home)).root, id), "projects", id, "days", assertSummaryDate(date), "summary.md");
   await assertFileWithin(file, home);
   return file;
 }
@@ -183,7 +184,7 @@ export async function listLongAgentSummaries(input: {
   const dir = await rootFor(input.chatHome, input.longAgentId);
   const files = (await readdir(dir)).filter((file) => file.endsWith(".json"));
   let archived: string[];
-  try { archived = await readdir(resolve(longAgentConfigRoot(input.chatHome, input.longAgentId), "days")); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; archived = []; }
+  try { archived = await readdir(resolve(longAgentConfigRoot(input.chatHome, input.longAgentId), "projects", input.longAgentId, "days")); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; archived = []; }
   const dates = [...new Set([...archived, ...files.map((file) => file.slice(0, -".json".length))])].filter((date) => DATE_PATTERN.test(date));
   const filtered = dates
     .filter((date) => (input.from === undefined || date >= input.from) && (input.to === undefined || date <= input.to))

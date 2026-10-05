@@ -16,7 +16,7 @@ import { resolveProjectContext } from "../projects/registry.js";
 import { chatSessionOperationKey, withChatSessionOperationLock } from "../session-operation-lock.js";
 import { assertModelSupportsImages } from "../workflows/image-input.js";
 import { readLongAgentState, readLongAgentRegistry } from "./storage.js";
-import { openAcceptedDay } from "./project-agent.js";
+import { openAcceptedDay, projectLongAgentId } from "./project-agent.js";
 import {
   appendChatLongAgentTurn,
   collectChatLongAgentTurnMarkers,
@@ -36,7 +36,7 @@ export interface ExecuteLongAgentTurnInput {
   readonly workflow?: string;
   readonly agentConfigs?: Readonly<Record<string, import("../workflows/agent-config.js").AgentConfigSelection>>;
   /** Set only by the Workflow Step adapter, never by an HTTP request. */
-  readonly workflowExecution?: { readonly invocationId: string; readonly workflowId: string; readonly memoryEnabled: boolean };
+  readonly workflowExecution?: { readonly invocationId: string; readonly workflowId: string };
   readonly longAgentId: string;
   readonly projectId: string;
   readonly sessionId?: string;
@@ -50,8 +50,6 @@ export interface ExecuteLongAgentTurnInput {
    * this node) and appended as a native user message on the active branch when the round runs.
    */
   readonly relayIntentEntryId?: string;
-  /** Send-time switch: "off" runs this round WITHOUT the session-memory tail node. */
-  readonly sessionMemory?: "off";
   readonly promptCapture?: "on";
   readonly text: unknown;
   /** Channel-provided image attachments; text may be empty when present. */
@@ -156,7 +154,17 @@ export async function executeAcceptedLongAgentTurn(
   const work = accepted.workId === undefined ? undefined : (await readLongAgentState(chatHome)).works.find(w =>
     w.id === accepted.workId && w.longAgentId === agent.id && w.sessionId === accepted.sessionId);
   if (accepted.workId !== undefined && !work) throw new Error("后台工作执行绑定无效");
+  // 项目归属会话（LA→Project→Session）：turn 记录带 storageProjectId，绑定必须真实存在。
+  const projectSessionBinding = accepted.workId === undefined && accepted.storageProjectId !== undefined
+    ? (await readLongAgentState(chatHome)).projectSessions.find(binding => binding.longAgentId === agent.id
+      && binding.projectId === accepted.storageProjectId && binding.sessionId === accepted.sessionId)
+    : undefined;
+  if (accepted.workId === undefined && accepted.storageProjectId !== undefined && projectSessionBinding === undefined) {
+    throw new Error("项目归属会话绑定无效");
+  }
   const projectAgent = work ? { id: work.id, projectId: agent.id, primarySessionId: work.sessionId }
+    : projectSessionBinding ? { id: projectLongAgentId(projectSessionBinding.projectId, agent.id),
+      projectId: projectSessionBinding.projectId, primarySessionId: projectSessionBinding.sessionId }
     : await openAcceptedDay(chatHome, agent.id, accepted.sessionId);
   const isNewSession = accepted.isNewSession;
   const source = input.source ?? "chat-web";
@@ -171,6 +179,7 @@ export async function executeAcceptedLongAgentTurn(
         projectId: projectAgent.projectId,
         chatHome,
         sessionId: projectAgent.primarySessionId,
+        ownerLongAgentId: agent.id,
       });
       if (accepted.status !== "completed" && accepted.relayIntentEntryId !== undefined) {
         // Append the relayed native user message ON THE ACTIVE BRANCH when the round runs. N queued
@@ -300,7 +309,7 @@ export async function executeAcceptedLongAgentTurn(
         const workflowObserver = input.workflowExecution === undefined ? undefined
           : (await import("../workflows/agent-session-log.js")).subscribeAgentSessionLog(created.session, "pi", {
             workflowId: input.workflowExecution.workflowId, stageId: "execute", nodeKind: "agent", agentId: "pi-coding-agent",
-          }, { sessionManager: chatSession.manager, projectId: agent.id,
+          }, { sessionManager: chatSession.manager, projectId: projectAgent.projectId,
             workflowInvocationId: input.workflowExecution.invocationId, toolResources: created.toolResources });
         const feedback = registerLiveTurn(chatHome, accepted, created.session, projectSessionContext(chatSession.manager.getEntries(), chatSession.manager.getLeafId()).messages);
         // A topic node round continues into `remember`; the queue keeps ONE live reference across both
@@ -329,7 +338,7 @@ export async function executeAcceptedLongAgentTurn(
           keepLiveAfterWork = (accepted.topicNode !== undefined || input.workflowExecution !== undefined) && !feedback.cancelled;
         } finally {
           unsubscribe();
-          await workflowObserver?.finish(input.workflowExecution?.memoryEnabled === false);
+          await workflowObserver?.finish(true);
           if (!keepLiveAfterWork) feedback.close();
         }
         if (feedback.cancelled) throw new FriendCancelledError();

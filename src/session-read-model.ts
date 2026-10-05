@@ -4,7 +4,8 @@ import { projectNavigationTree } from "./session-tree-projection.js";
 import { readLegacyFriendSessions } from "./migrations/agent-home-normalization.js";
 import { readWritableFriendSessionIds, readSessionOwnershipFacts } from "./session-owner.js";
 import { readSessionFriendExecution } from "./long-agents/turn-feedback.js";
-import { resolveChatHome } from "./chat-home.js";
+import { ensureChatHome, resolveChatHome } from "./chat-home.js";
+import { SessionLifecycleError } from "./session-errors.js";
 import { projectLongAgentActivity } from "./long-agents/session-activity.js";
 import { isChatSessionOperationBusy } from "./session-operation-lock.js";
 import { dirname, resolve } from "node:path";
@@ -156,13 +157,14 @@ async function toListItems(
   }));
 }
 
-async function resolveSessionProject(projectId?: string, chatHome?: string) {
+async function resolveSessionProject(projectId?: string, chatHome?: string, ownerLongAgentId?: string) {
   return projectId === undefined
     ? openProject({
         path: process.cwd(),
         ...(chatHome === undefined ? {} : { chatHome }),
       })
-    : resolveProjectContext(projectId, chatHome);
+    : resolveProjectContext(projectId, chatHome,
+      ownerLongAgentId === undefined ? {} : { ownerLongAgentId });
 }
 
 async function rethrowWithCurrentSessionState(
@@ -176,8 +178,9 @@ async function rethrowWithCurrentSessionState(
 }
 
 /** Lists one registered Project; cwd is resolved through its Project Manifest when omitted. */
-export async function listChatSessions(projectId?: string, chatHome?: string, ownership?: SessionOwnershipFacts): Promise<ChatSessionListItem[]> {
-  const project = await resolveSessionProject(projectId, chatHome);
+export async function listChatSessions(projectId?: string, chatHome?: string, ownership?: SessionOwnershipFacts,
+  ownerLongAgentId?: string): Promise<ChatSessionListItem[]> {
+  const project = await resolveSessionProject(projectId, chatHome, ownerLongAgentId);
   const [infos, activePlanning] = await Promise.all([
     listActiveSessionFiles(project),
     listActivePlanningExecutionRuns(project.projectDataDir),
@@ -491,8 +494,21 @@ export async function requireChatSession(
   // Resolve only an exact migration receipt, never search another Project after an error.
   const legacy = projectId === undefined ? undefined : (await readLegacyFriendSessions(resolveChatHome(chatHome)))
     .find((entry) => entry.sourceProjectId === projectId && entry.sessionId === sessionId);
-  const project = await resolveSessionProject(legacy?.targetProjectId ?? projectId, chatHome);
-  const active = await requireActiveChatSessionFile(project, sessionId);
+  let project = await resolveSessionProject(legacy?.targetProjectId ?? projectId, chatHome);
+  let active: Awaited<ReturnType<typeof requireActiveChatSessionFile>>;
+  try {
+    active = await requireActiveChatSessionFile(project, sessionId);
+  } catch (error) {
+    // 目录位置即归属：Agent 在绑定项目里创建的会话存在其 Agent 根的 per-agent 项目树，
+    // shared 目录读不到时按绑定登记（projectSessions）从该 Agent 树读取，绝不猜并行目录。
+    if (!(error instanceof SessionLifecycleError) || error.code !== "SESSION_NOT_FOUND") throw error;
+    const home = await ensureChatHome(chatHome).then((paths) => paths.root);
+    const { readLongAgentState } = await import("./long-agents/storage.js");
+    const binding = (await readLongAgentState(home)).projectSessions.find((item) => item.sessionId === sessionId);
+    if (binding === undefined) throw error;
+    project = await resolveProjectContext(binding.projectId, home, { ownerLongAgentId: binding.longAgentId });
+    active = await requireActiveChatSessionFile(project, sessionId);
+  }
   try {
     const [session] = await toListItems([active], project.projectId, chatHome);
     if (session === undefined) throw new Error(`找不到Session: ${sessionId}`);

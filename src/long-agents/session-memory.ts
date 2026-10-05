@@ -147,24 +147,34 @@ function parseEntry(value: unknown): SessionMemoryEntry {
  * layout is still read as a fallback, `changeSessionMemory` migrates the file on the next write, and
  * `migrateSessionMemoryLayout` moves the rest at startup (see the migration's marker).
  */
-function sessionMemoryDir(chatHome: string, storageProjectId: string): string {
+function sessionMemoryDir(chatHome: string, storageProjectId: string, ownerLongAgentId?: string): string {
   const paths = getChatHomePaths(chatHome);
-  const agentHome = longAgentConfigRoot(paths.root, storageProjectId);
-  return existsSync(agentHome) ? agentHome : resolve(paths.projectsDir, storageProjectId);
+  // 2026-10-04 per-agent 项目树：显式 owner（项目归属会话，owner ≠ storage）优先；
+  // Agent Home（workspace 项目 = agent id）也在 long-agents/<agent>/projects/<agent> 下；
+  // 迁移期的旧布局（long-agents/<agent>/sessions）保留为回退；普通项目数据仍按 projects/<id>。
+  if (ownerLongAgentId !== undefined && ownerLongAgentId !== storageProjectId) {
+    return resolve(paths.root, "long-agents", ownerLongAgentId, "projects", storageProjectId);
+  }
+  const agentRoot = longAgentConfigRoot(paths.root, storageProjectId);
+  const agentProjects = resolve(agentRoot, "projects", storageProjectId);
+  if (existsSync(resolve(agentRoot, "definition.json")) || existsSync(resolve(agentRoot, "sessions"))) {
+    return agentProjects;
+  }
+  return resolve(paths.projectsDir, storageProjectId);
 }
 
-export function sessionMemoryFile(chatHome: string, storageProjectId: string, sessionId: string): string {
-  return resolve(sessionMemoryRoot(chatHome, storageProjectId, sessionId), "sessions", "session-memory", `${sessionId}.json`);
+export function sessionMemoryFile(chatHome: string, storageProjectId: string, sessionId: string, ownerLongAgentId?: string): string {
+  return resolve(sessionMemoryRoot(chatHome, storageProjectId, sessionId, ownerLongAgentId), "sessions", "session-memory", `${sessionId}.json`);
 }
 
 /** Pre-0.5.3 layout: memory sat one directory above the session files. Read-only fallback. */
-export function legacySessionMemoryFile(chatHome: string, storageProjectId: string, sessionId: string): string {
-  return resolve(sessionMemoryRoot(chatHome, storageProjectId, sessionId), "session-memory", `${sessionId}.json`);
+export function legacySessionMemoryFile(chatHome: string, storageProjectId: string, sessionId: string, ownerLongAgentId?: string): string {
+  return resolve(sessionMemoryRoot(chatHome, storageProjectId, sessionId, ownerLongAgentId), "session-memory", `${sessionId}.json`);
 }
 
-function sessionMemoryRoot(chatHome: string, storageProjectId: string, sessionId: string): string {
+function sessionMemoryRoot(chatHome: string, storageProjectId: string, sessionId: string, ownerLongAgentId?: string): string {
   if (!SESSION_ID_PATTERN.test(sessionId)) throw new SessionMemoryError(400, `sessionId无效：${sessionId}`);
-  return sessionMemoryDir(chatHome, storageProjectId);
+  return sessionMemoryDir(chatHome, storageProjectId, ownerLongAgentId);
 }
 
 async function readSessionMemoryFile(file: string): Promise<unknown | null> {
@@ -176,12 +186,12 @@ async function readSessionMemoryFile(file: string): Promise<unknown | null> {
   }
 }
 
-export async function readSessionMemory(chatHome: string, longAgentId: string, sessionId: string): Promise<SessionMemoryState> {
-  const file = sessionMemoryFile(chatHome, longAgentId, sessionId);
+export async function readSessionMemory(chatHome: string, longAgentId: string, sessionId: string, ownerLongAgentId?: string): Promise<SessionMemoryState> {
+  const file = sessionMemoryFile(chatHome, longAgentId, sessionId, ownerLongAgentId);
   await assertFileWithin(file, chatHome);
   // Pre-0.5.3 locations keep loading until the migration moves them.
   const value = await readSessionMemoryFile(file)
-    ?? await readSessionMemoryFile(legacySessionMemoryFile(chatHome, longAgentId, sessionId));
+    ?? await readSessionMemoryFile(legacySessionMemoryFile(chatHome, longAgentId, sessionId, ownerLongAgentId));
   if (value === null)
     return { schemaVersion: SESSION_MEMORY_SCHEMA_VERSION, sessionId, orphan: false, revision: 0, entries: [] };
   record(value);
@@ -198,8 +208,9 @@ async function changeSessionMemory<T>(
   longAgentId: string,
   sessionId: string,
   change: (state: { schemaVersion: 1; sessionId: string; orphan: boolean; revision: number; entries: MutableSessionMemoryEntry[] }) => T | Promise<T>,
+  ownerLongAgentId?: string,
 ): Promise<T> {
-  const file = sessionMemoryFile(chatHome, longAgentId, sessionId);
+  const file = sessionMemoryFile(chatHome, longAgentId, sessionId, ownerLongAgentId);
   return withFileLock(file, async () => {
     const current = await readSessionMemory(chatHome, longAgentId, sessionId);
     const state: { schemaVersion: 1; sessionId: string; orphan: boolean; revision: number; entries: MutableSessionMemoryEntry[] } = { schemaVersion: SESSION_MEMORY_SCHEMA_VERSION, sessionId: current.sessionId, orphan: current.orphan, revision: current.revision, entries: current.entries.map((entry): MutableSessionMemoryEntry => ({ ...entry })) };
@@ -207,7 +218,7 @@ async function changeSessionMemory<T>(
     await assertFileWithin(file, chatHome);
     await atomicWriteJson(file, state);
     // The write just published the state under the session; the legacy copy is stale.
-    const legacy = legacySessionMemoryFile(chatHome, longAgentId, sessionId);
+    const legacy = legacySessionMemoryFile(chatHome, longAgentId, sessionId, ownerLongAgentId);
     await unlink(legacy).catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     });
@@ -327,31 +338,31 @@ function snapshot(state: { schemaVersion: 1; sessionId: string; orphan: boolean;
 }
 
 /** A removed session keeps its memory for traceability; only purge deletes it. Storage errors propagate. */
-export async function markSessionMemoryOrphan(chatHome: string, longAgentId: string, sessionId: string): Promise<void> {
-  const file = sessionMemoryFile(chatHome, longAgentId, sessionId);
+export async function markSessionMemoryOrphan(chatHome: string, longAgentId: string, sessionId: string, ownerLongAgentId?: string): Promise<void> {
+  const file = sessionMemoryFile(chatHome, longAgentId, sessionId, ownerLongAgentId);
   await withFileLock(file, async () => {
-    const current = await readSessionMemory(chatHome, longAgentId, sessionId);
+    const current = await readSessionMemory(chatHome, longAgentId, sessionId, ownerLongAgentId);
     if (current.orphan || (current.revision === 0 && current.entries.length === 0)) return;
     await atomicWriteJson(file, { ...current, orphan: true });
   });
 }
 
 /** A restored session becomes writable again: clear the orphan marker and advance the revision. */
-export async function clearSessionMemoryOrphan(chatHome: string, longAgentId: string, sessionId: string): Promise<void> {
-  const file = sessionMemoryFile(chatHome, longAgentId, sessionId);
+export async function clearSessionMemoryOrphan(chatHome: string, longAgentId: string, sessionId: string, ownerLongAgentId?: string): Promise<void> {
+  const file = sessionMemoryFile(chatHome, longAgentId, sessionId, ownerLongAgentId);
   await withFileLock(file, async () => {
-    const current = await readSessionMemory(chatHome, longAgentId, sessionId);
+    const current = await readSessionMemory(chatHome, longAgentId, sessionId, ownerLongAgentId);
     if (current.revision === 0 && current.entries.length === 0) return;
     if (!current.orphan) return;
     await atomicWriteJson(file, { ...current, orphan: false, revision: current.revision + 1 });
   });
 }
 
-export async function purgeSessionMemory(chatHome: string, longAgentId: string, sessionId: string): Promise<void> {
-  const file = sessionMemoryFile(chatHome, longAgentId, sessionId);
+export async function purgeSessionMemory(chatHome: string, longAgentId: string, sessionId: string, ownerLongAgentId?: string): Promise<void> {
+  const file = sessionMemoryFile(chatHome, longAgentId, sessionId, ownerLongAgentId);
   await assertFileWithin(file, chatHome);
   // A purge must not leave a pre-0.5.3 copy behind that a later read would resurrect.
-  for (const target of [file, legacySessionMemoryFile(chatHome, longAgentId, sessionId)]) {
+  for (const target of [file, legacySessionMemoryFile(chatHome, longAgentId, sessionId, ownerLongAgentId)]) {
     await unlink(target).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
     });
@@ -366,12 +377,14 @@ export async function readSessionMemoryHistory(input: {
   readonly chatHome: string;
   readonly longAgentId: string;
   readonly sessionId: string;
+  readonly ownerLongAgentId?: string;
   readonly afterEntryId?: string;
   readonly limit?: number;
 }): Promise<{ schemaVersion: 1; sessionId: string; entries: readonly { entryId: string; role: string | null; text: string }[]; nextAfterEntryId: string | null }> {
   const limit = Number.isSafeInteger(input.limit) ? Math.min(Math.max(Number(input.limit), 1), 100) : 40;
   const { openChatSession } = await import("../chat-session.js");
-  const session = await openChatSession({ chatHome: input.chatHome, projectId: input.longAgentId, sessionId: input.sessionId });
+  const session = await openChatSession({ chatHome: input.chatHome, projectId: input.longAgentId, sessionId: input.sessionId,
+    ...(input.ownerLongAgentId === undefined ? {} : { ownerLongAgentId: input.ownerLongAgentId }) });
   const all = session.manager.getEntries().flatMap((entry) => {
     // Real user/assistant turns.
     if (entry.type === "message") {
@@ -437,6 +450,8 @@ export async function convergeSessionMemoryWithLifecycle(
 export interface SessionMemoryTarget {
   readonly longAgentId: string;
   readonly sessionId: string;
+  /** Long Agent owner when the target session belongs to a bound project's per-agent tree. */
+  readonly ownerLongAgentId?: string;
 }
 
 /**
@@ -453,17 +468,20 @@ export async function resolveSessionMemoryTarget(input: {
   projectId: string;
   sessionId: string;
   longAgentId?: string;
-  binding?: { readonly storageProjectId: string; readonly sessionId: string } | null;
+  binding?: { readonly storageProjectId: string; readonly sessionId: string; readonly ownerLongAgentId?: string } | null;
 }): Promise<SessionMemoryTarget> {
-  const storageProjectId = input.binding?.storageProjectId ?? input.longAgentId ?? input.projectId;
-  const sessionId = input.binding?.sessionId ?? input.sessionId;
+  const binding = input.binding ?? null;
+  const storageProjectId = binding?.storageProjectId ?? input.longAgentId ?? input.projectId;
+  const sessionId = binding?.sessionId ?? input.sessionId;
   if (sessionId.trim() === "") throw new SessionMemoryError(400, "会话记忆需要sessionId");
-  const project = await resolveProjectContext(storageProjectId, input.chatHome).catch(() => null);
+  const ownerLongAgentId = binding?.ownerLongAgentId
+    ?? (storageProjectId === input.longAgentId && input.longAgentId !== undefined ? input.longAgentId : undefined);
+  const project = await resolveProjectContext(storageProjectId, input.chatHome, ownerLongAgentId === undefined ? {} : { ownerLongAgentId }).catch(() => null);
   if (project === null) throw new SessionMemoryError(403, `找不到会话记忆归属的项目：${storageProjectId}`);
   try {
     await requireActiveSessionFile(project, sessionId);
   } catch {
     throw new SessionMemoryError(404, `找不到会话记忆归属的会话：${sessionId}`);
   }
-  return { longAgentId: storageProjectId, sessionId };
+  return { longAgentId: storageProjectId, sessionId, ...(ownerLongAgentId === undefined ? {} : { ownerLongAgentId }) };
 }

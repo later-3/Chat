@@ -208,3 +208,28 @@ test("system-managed directories cannot be opened as user Projects", async (t) =
   const opened = await openProject({ path: normal, chatHome });
   assert.equal(opened.kind, "project");
 });
+
+test("只读解析绝不创建 per-agent 项目目录（防止幽灵项目目录）", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chat-projects-owner-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const chatHome = path.join(root, "home");
+  const bind = path.join(root, "repos", "chat");
+  fs.mkdirSync(bind, { recursive: true });
+  await createProjectManifest({ root: bind, id: "chat", name: "Chat", description: "用户项目" });
+  await openProject({ path: bind, chatHome });
+  const { ensureAgentHomeProject } = await import("../../src/projects/registry.ts");
+  await ensureAgentHomeProject("friend", "Friend", chatHome);
+
+  // 2026-10-04 合同：绑定项目的会话存在 long-agents/<agent>/projects/<projectId>/sessions。
+  // 读列表/校验这类只读解析不会在磁盘留下目录；只有真正创建会话时才建立存储目录。
+  const ownerTree = path.join(chatHome, "long-agents", "friend", "projects", "chat");
+  const read = await resolveProjectContext("chat", chatHome, { ownerLongAgentId: "friend" });
+  assert.equal(read.sessionDir, path.join(ownerTree, "sessions"));
+  assert.equal(fs.existsSync(ownerTree), false, "只读解析不得创建 per-agent 项目目录");
+
+  const { openChatSession } = await import("../../src/chat-session.ts");
+  const created = await openChatSession({ projectId: "chat", chatHome, ownerLongAgentId: "friend" });
+  assert.equal(fs.existsSync(read.sessionDir), true, "创建会话时才建立存储目录");
+  created.manager.flush();
+  assert.ok(fs.readdirSync(read.sessionDir).some((name) => name.includes(created.manager.getSessionId())));
+});

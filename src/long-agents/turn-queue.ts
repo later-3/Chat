@@ -49,6 +49,7 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     let contextProjectId = input.contextProjectId ?? null;
     let interactionRevision: number | null = null;
     let work: Awaited<ReturnType<typeof readLongAgentState>>["works"][number] | undefined;
+    let projectSession: Awaited<ReturnType<typeof readLongAgentState>>["projectSessions"][number] | undefined;
     if (prior !== undefined) {
       // A retry identifies the already accepted input and its frozen target, never today's selection.
       contextProjectId = prior.contextProjectId;
@@ -61,6 +62,15 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
         if (input.contextProjectId !== undefined && (input.contextProjectId ?? null) !== work.contextProjectId)
           throw new LongAgentRequestConflict("后台工作的项目已固定，请在原项目继续或创建新工作");
         contextProjectId = work.contextProjectId;
+      } else if (input.sessionId !== undefined) {
+        // 项目归属会话（LA→Project→Session）：存储与执行项目由绑定服务端推导，同 work。
+        projectSession = (await readLongAgentState(home)).projectSessions.find((binding) =>
+          binding.longAgentId === input.longAgentId && binding.sessionId === input.sessionId);
+        if (projectSession !== undefined) {
+          if (input.contextProjectId !== undefined && (input.contextProjectId ?? null) !== projectSession.projectId)
+            throw new LongAgentRequestConflict("项目归属会话的项目已固定，请在原项目继续");
+          contextProjectId = projectSession.projectId;
+        }
       }
     }
     // Resolve the node's FROZEN project context BEFORE the request digest: a replay must compare the
@@ -155,10 +165,13 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     if (work && work.contextProjectId !== contextProjectId) throw new Error("后台工作的项目已固定，请在原项目继续或创建新工作");
     const located = work ? { isNewSession: !(await readLongAgentState(home)).turns.some(t => t.workId === work.id),
       day: { sessionId: work.sessionId, date: agentDate(calendar.timeZone), summary: { status: "pending" } } }
+      : projectSession ? { isNewSession: false,
+        day: { sessionId: projectSession.sessionId, date: agentDate(calendar.timeZone), summary: { status: "pending" } } }
       : await ensureProjectLongAgent({ chatHome: home, projectId: input.projectId, agent, now: acceptedAt,
       ...(source !== "chat-web" || input.sessionId === undefined ? {} : { requestedSessionId: input.sessionId }),
       ...(nodeSessionId === undefined && input.topicNode === undefined ? {} : { topicNode: { ...input.topicNode!, sessionId: nodeSessionId! } }) });
-    const chatSession = await openChatSession({ projectId: agent.id, chatHome: home, sessionId: located.day.sessionId });
+    const chatSession = await openChatSession({ projectId: projectSession?.projectId ?? agent.id, chatHome: home, sessionId: located.day.sessionId,
+      ownerLongAgentId: agent.id });
     const memory = SessionManager.inMemory(chatSession.cwd);
     for (const entry of chatSession.manager.getEntries()) if (entry.type === "custom" && entry.customType === "chat.workflow_configuration") memory.appendCustomEntry(entry.customType, entry.data);
     const configured = await longAgentWorkflowConfiguration(agent, home, input.workflow);
@@ -205,7 +218,7 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
           const active = new Set(state.turns.filter(t => t.longAgentId === agent.id && t.workId && ["queued", "running"].includes(t.status)).map(t => t.workId));
           if (!active.has(work.id) && active.size >= 4) throw new Error("此Friend已有4项后台工作，请等待完成或取消后重试");
         }
-        const turn: AcceptedTurn = { workflow: { id: configured.workflow.id, invocationId: workflowInvocationId }, ...(work ? { workId: work.id } : {}), ...(input.topicNode === undefined ? {} : { topicNode: { topicId: input.topicNode.topicId, nodeId: input.topicNode.nodeId } }), ...(input.relayIntentEntryId === undefined ? {} : { relayIntentEntryId: input.relayIntentEntryId }), ...(input.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}), ...(input.promptCapture === "on" ? { promptCapture: "on" as const } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
+        const turn: AcceptedTurn = { workflow: { id: configured.workflow.id, invocationId: workflowInvocationId }, ...(work ? { workId: work.id } : {}), ...(projectSession === undefined ? {} : { storageProjectId: projectSession.projectId }), ...(input.topicNode === undefined ? {} : { topicNode: { topicId: input.topicNode.topicId, nodeId: input.topicNode.nodeId } }), ...(input.relayIntentEntryId === undefined ? {} : { relayIntentEntryId: input.relayIntentEntryId }), ...(input.promptCapture === "on" ? { promptCapture: "on" as const } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
           channelType: input.channelType ?? (source === "chat-web" ? "chat-web" : null), inboundEventId: input.inboundEventId ?? null,
           contextProjectId, interactionRevision, payloadHashVersion: 3, sessionId: located.day.sessionId, date: located.day.date, timeZone: calendar.timeZone,
           acceptedAt: acceptedAt.toISOString(), sequence: state.turns.reduce((max, item) => Math.max(max, item.sequence), 0) + 1,
@@ -257,12 +270,13 @@ export async function updateTurnStatus(home: string, turnId: string, status: Acc
  * work continues. The lock is released before the work segment runs (the work acquires it itself);
  * nesting it here would self-deadlock, because the lock is not re-entrant.
  */
-export async function markTopicRoundRunning(home: string, projectId: string, turn: AcceptedTurn): Promise<void> {
+export async function markTopicRoundRunning(home: string, projectId: string, turn: AcceptedTurn, ownerLongAgentId?: string): Promise<void> {
   const [{ openChatSession }, { ensureTopicRoundRunningMarker }] = await Promise.all([
     import("../chat-session.js"), import("./topic-anchor.js"),
   ]);
   await withChatSessionOperationLock(chatSessionOperationKey(projectId, turn.sessionId), async () => {
-    const session = await openChatSession({ projectId, chatHome: home, sessionId: turn.sessionId });
+    const session = await openChatSession({ projectId, chatHome: home, sessionId: turn.sessionId,
+      ...(ownerLongAgentId === undefined ? {} : { ownerLongAgentId }) });
     if (ensureTopicRoundRunningMarker(session.manager, { roundId: turn.turnId })) session.manager.flush();
   });
 }
@@ -295,62 +309,31 @@ export function drainLongAgentTurns(home: string, longAgentId: string, sessionId
         // marker can never settle it while `remember` is still running. Acceptance only queues the turn;
         // the marker is written here (idempotently, same turnId as the completed marker) so an
         // interruption between accept and work cannot open that window.
-        if (turn.topicNode !== undefined) await markTopicRoundRunning(home, longAgentId, turn);
+        if (turn.topicNode !== undefined) await markTopicRoundRunning(home, longAgentId, turn, longAgentId);
         if (turn.workflow !== undefined) {
           const { executeAcceptedWorkflowTurn } = await import("./workflow-execution.js");
           await executeAcceptedWorkflowTurn(home, turn);
           continue;
         }
-        await executeAcceptedLongAgentTurn({ longAgentId, projectId: longAgentId, sessionId: turn.sessionId, text: turn.text,
+        await executeAcceptedLongAgentTurn({ longAgentId, projectId: turn.storageProjectId ?? longAgentId, sessionId: turn.sessionId, text: turn.text,
           ...(turn.images === undefined ? {} : { images: turn.images }), chatHome: home, turnId: turn.turnId, source: turn.source, channelType: turn.channelType,
           ...(turn.inboundEventId === null ? {} : { inboundEventId: turn.inboundEventId }), contextProjectId: turn.contextProjectId }, turn, loaders.get(key(home, turn.turnId)));
-        // A topic node round is the OUTER chain: the reusable Long Agent work segment above is `work`,
-        // then (memory on) the session-memory writer runs in the same Session, and only then is the round
-        // complete. The turn is settled after BOTH, so "work finished, remember still writing" is not a
-        // settled round and cannot be forked.
+        // A topic node round is the OUTER chain: after the reusable Long Agent work segment above
+        // completes, the round marker is appended in the same Session and only then is the round
+        // settled, so a partially-run round can never be forked.
         let roundCancelled = false;
-        // EVERY interactive turn ends with the session-memory writer (the workflow's last node); the
-        // send-time switch only decides whether that node runs. A topic round keeps the round live across
-        // it, so `remember` belongs to the same execution (one monotonic event seq; stop aborts it).
         const topicRoundImports = turn.topicNode === undefined
           ? undefined
           : await Promise.all([import("./topics.js"), import("./topic-anchor.js"), import("../chat-session.js")]);
         const liveRound = getLiveRoundHandle(home, turn.turnId);
-        const topicNodeRecord = topicRoundImports === undefined || turn.topicNode === undefined
-          ? undefined
-          : (await topicRoundImports[0].readTopicGraph(home, longAgentId)).nodes.find((candidate) => candidate.nodeId === turn.topicNode!.nodeId);
-        const memoryEnabled = turn.topicNode === undefined
-          ? turn.sessionMemory !== "off"
-          : topicNodeRecord?.sessionMemory !== "off";
-        if (memoryEnabled) {
-          // Lazy: a static import would pull the Workflow agent-definition graph into the Long Agent
-          // runtime graph and break Nitro's dev Step worker initialization (circular import).
-          const { runSessionMemoryWriterTurn } = await import("../workflows/session-memory/writer-run.js");
-          const { recordSessionMemoryNotice } = await import("../workflows/session-memory/writer-notice.js");
-          try {
-            await runSessionMemoryWriterTurn({
-              chatHome: home, projectId: longAgentId,
-              sessionId: turn.sessionId, workflowInvocationId: `turn:${turn.turnId}`, stageId: "remember",
-              ...(liveRound === undefined ? {} : { live: liveRound }),
-              ...(turn.promptCapture === "on" ? { promptCaptureEnabled: true } : {}),
-            });
-          } catch (error) {
-            // The Friend path records the SAME durable notice as the Workflow tail before rethrowing, so a
-            // failed/cancelled memory round is visible here too (and never reported as a success).
-            await recordSessionMemoryNotice({
-              chatHome: home, projectId: longAgentId, sessionId: turn.sessionId,
-              ownerWorkflowId: "session-memory", workflowInvocationId: `turn:${turn.turnId}`, error,
-            });
-            throw error;
-          }
-        }
         if (topicRoundImports !== undefined) {
           const [, { appendTopicRoundMarker }, { openChatSession }] = topicRoundImports;
-          // A cancellation that arrived while `remember` ran must never be rewritten as a success: the
-          // tail would otherwise mark a stopped round completed and publish a forkable anchor.
+          // A cancellation that arrived while the work segment ran must never be rewritten as a success:
+          // the tail would otherwise mark a stopped round completed and publish a forkable anchor.
           const currentTurn = (await readLongAgentState(home)).turns.find((candidate) => candidate.turnId === turn.turnId);
           roundCancelled = currentTurn?.status === "cancelled" || currentTurn?.cancelRequested === true || liveRound?.cancelled === true;
-          const session = await openChatSession({ projectId: longAgentId, chatHome: home, sessionId: turn.sessionId });
+          const session = await openChatSession({ projectId: turn.storageProjectId ?? longAgentId, chatHome: home, sessionId: turn.sessionId,
+            ownerLongAgentId: longAgentId });
           const userEntryId = [...session.manager.getBranch()].reverse()
             .find((entry) => entry.type === "message" && entry.message?.role === "user")?.id;
           if (userEntryId !== undefined) {
@@ -361,8 +344,8 @@ export function drainLongAgentTurns(home: string, longAgentId: string, sessionId
         }
         await updateTurnStatus(home, turn.turnId, roundCancelled ? "cancelled" : "completed");
       } catch (error) {
-        // A stop that aborts the writer surfaces as a provider/abort error; the durable cancel intent is
-        // the authority, so the round ends `cancelled`, never a failed-looking success.
+        // A stop that aborts the work segment surfaces as a provider/abort error; the durable cancel
+        // intent is the authority, so the round ends `cancelled`, never a failed-looking success.
         const cancelRequested = (await readLongAgentState(home)).turns.find((candidate) => candidate.turnId === turn.turnId)?.cancelRequested === true;
         await updateTurnStatus(home, turn.turnId, cancelRequested || error instanceof FriendCancelledError ? "cancelled" : "failed", error instanceof Error ? error.message : String(error));
       }
@@ -400,7 +383,7 @@ export async function executeQueuedLongAgentTurn(input: ExecuteLongAgentTurnInpu
       messageId: turn.turnId, turnId: turn.turnId, isNewSession: turn.isNewSession, text: result.text, model: result.model };
   }
   const { executeAcceptedLongAgentTurn } = await import("./runtime.js");
-  return executeAcceptedLongAgentTurn({ ...input, projectId: input.longAgentId, sessionId: turn.sessionId, turnId: turn.turnId }, turn);
+  return executeAcceptedLongAgentTurn({ ...input, projectId: turn.storageProjectId ?? input.longAgentId, sessionId: turn.sessionId, turnId: turn.turnId }, turn);
 }
 
 export function isFriendWorkerActive(home: string, longAgentId: string, sessionId?: string): boolean {

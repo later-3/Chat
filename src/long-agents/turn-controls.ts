@@ -91,7 +91,7 @@ export async function steerFriendTurn(
 
 /** A consumed steering message must never become a second prompt, including after restart. */
 export async function settleConsumedSteering(home: string, turn: AcceptedTurn): Promise<boolean> {
-  const session = await openChatSession({ projectId: turn.longAgentId, sessionId: turn.sessionId, chatHome: home });
+  const session = await openChatSession({ projectId: turn.storageProjectId ?? turn.longAgentId, sessionId: turn.sessionId, chatHome: home, ownerLongAgentId: turn.longAgentId });
   const marker = session.manager
     .getEntries()
     .find(

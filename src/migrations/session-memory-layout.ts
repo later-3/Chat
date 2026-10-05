@@ -1,5 +1,5 @@
 import { mkdir, readFile, readdir, rename, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { atomicWriteJson } from "../persistence/versioned-file.js";
 
 export const SESSION_MEMORY_LAYOUT_MIGRATION_VERSION = 1;
@@ -45,12 +45,17 @@ export async function migrateSessionMemoryLayout(root: string): Promise<SessionM
 
   let moved = 0;
   let keptExisting = 0;
+  const agentRoots = await directoriesOf(resolve(root, "long-agents"));
+  const projectRoots = await directoriesOf(resolve(root, "projects"));
+  // kind=agent 的 legacy 会话记忆归位到 per-agent 项目树（<agentRoot>/projects/<agentId>/sessions/session-memory）；
+  // 普通项目的 memory 仍在 shared 目录。
   const storageRoots = [
-    ...(await directoriesOf(resolve(root, "long-agents"))),
-    ...(await directoriesOf(resolve(root, "projects"))),
+    ...agentRoots.map((agentRoot) => ({ legacyDir: resolve(agentRoot, "session-memory"), targetDir: resolve(agentRoot, "projects", basename(agentRoot)) })),
+    ...projectRoots.map((projectRoot) => ({ legacyDir: resolve(projectRoot, "session-memory"), targetDir: projectRoot })),
   ];
-  for (const storageRoot of storageRoots) {
-    const legacyDir = resolve(storageRoot, "session-memory");
+  for (const item of storageRoots) {
+    const storageRoot = item.targetDir;
+    const legacyDir = item.legacyDir;
     const targetDir = resolve(storageRoot, "sessions", "session-memory");
     for (const file of await readdir(legacyDir).catch(() => [] as string[])) {
       if (!file.endsWith(".json")) continue;
