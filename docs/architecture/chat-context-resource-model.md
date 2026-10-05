@@ -249,7 +249,7 @@ Markdown Agent Memory与Chat Personal/Project Memory保持不同领域服务和�
 | AgentDefinition | agentId、definitionRevision、模型/Thinking、System Prompt、自定义区域、tools/resources；现有配置 Resolver | Workflow 与 Friend 共用有效节点定义 Resolver；Friend 使用 Home 配置并叠加长期身份，不受浏览项目的 Workflow 或 `.pi/settings.json` 隐式覆盖 |
 | SessionRef | ownerKind、ownerId、storageProjectId、sessionId、dailyDate/timeZone（Friend）；Session 定位服务 | 路径仅服务端解析；projectId 兼容字段表示存储归属，不再同时代表本轮执行项目 |
 | AgentWorkspace | longAgentId、workspaceRoot、自有资源引用；配置根和受控 Nano 资源服务 | 固定身份；不因项目切换搬家；Nano Group 资源不等于可任意挂载的本地目录 |
-| 本轮项目上下文 | projectId 或 null、projectRoot、effectiveCwd；Project Resolver | 统一项目合同按入口唯一确定并在受理时冻结：Web 私聊携带顶栏"项目"选择器的注册项目 id，群聊轮次取会话 storageProjectId，后台工作/任务/职责沿用创建时冻结目标，通道与定时为 null；null 明确表示无项目（Agent 容器），不能漏字段后猜最近项目，也不存在第二个可写的"项目关联"存储 |
+| 本轮项目上下文 | projectId 或 null、projectRoot、effectiveCwd；Project Resolver | 统一项目合同按入口唯一确定并在受理时冻结：Web 私聊携带顶栏"项目"选择器的注册项目 id，群聊轮次取会话 storageProjectId，后台工作/任务/职责沿用创建时冻结目标，通道与定时为 null；null 明确表示无项目（Agent 容器），不能漏字段后猜最近项目，也不存在第二个可写的"项目关联"存储。2026-10-01 三级导航修订：Web 私聊的 Long Agent 会话改由会话归属项目决定执行项目（见 §15.6），顶栏选择器退役 |
 | Invocation | requestId、turnId、acceptedAt、序号、可信来源/发送者/回复目的地、运行用途 | 服务端校验后耐久接收；客户端不能指定其他 Agent 或 Session 权限 |
 | AssemblySnapshot | schemaVersion、definitionRevision、区域正文/资源引用与 hash、授权来源、SessionRef、本轮项目上下文、交接 revision | 接受时冻结配置、规则和资源输入；出队时接入最新有序 Session 历史并再次校验权限，不能换目标 |
 
@@ -300,6 +300,7 @@ Chat 系统工具上下文必须同时带 SessionRef 和本轮冻结项目（con
 
 - `src/agents/assembly-context.ts` 解析可信 `invocation`，将身份、存储 Project、本轮目标、cwd、有效定义及根规则正文写入 `chat.agent-assembly.v1`。P3 已在统一耐久接受点冻结，执行安装同一 seed；P4 Web turns API 耐久接受后返回引用，再订阅实时事件，旧 messages API 保留同步兼容。
 - Web `contextProjectId` 为已登记用户项目 ID 或 null（统一项目合同：私聊按顶栏选择每轮携带并冻结，群聊取会话 storageProjectId，通道/定时为 null）；省略兼容为 null。Agent Home 不能作为执行项目。Nano/调度适配显式传入绑定的用户项目，绑定 Home 时为 null，不读取浏览器最后选择。
+- 2026-10-01 已确认目标合同（实施完成，见[评审记录](../history/reviews/2026-10-01-la-project-session-tree.md)）：Web 私聊的 Long Agent 会话改为项目归属——从 Long Agent 绑定项目新建的会话 storageProjectId 为该项目，执行项目 = 会话归属（与群聊现行规则一致）；每日默认、额外直接会话、定时与通道轮次仍归 Agent Home；顶栏"项目"选择器在 coworker 模式退役（workspace 普通会话的选项目继续存在）。实现事实：`LongAgentConfig.boundProjectIds`、状态 `projectSessions`（schema 8，原生标记 `chat.long-agent-project-session.v1` + requestId 幂等）、turn 记录可选 `storageProjectId` 驱动执行链（turn-queue/runtime/workflow-execution/live-turn/turn-feedback 全部跟随真实存储项目）、owner 索引与可写集合纳入 projectSessions；前端项目树（`LongAgentProjectTree`）+ 顶栏选择器 coworker 隐藏 + `contextProjectId` 派生改为会话归属。回归：`test/long-agents/long-agents.test.mjs`（绑定 + 项目会话全链）、`scripts/la-project-tree-browser.test.mjs`（真实浏览器，已入 `pnpm test:dev`）。
 - Friend 模型/Thinking 从 Home 公共 Workflow 配置及本轮选择解析，缺省沿用 Personal；项目设置只参与资源等 Pi 设置。`prepareLongAgentAssembly` 供执行和检查共用身份/交接输入，检查为当前配置预览，不修改真实历史。
 - 原生 `read` 对选中规则/Skill 等文本返回本轮快照，其他文本和图片保留 Pi 行为。普通 Workflow 与 Friend 共用 `read/write/edit/ls/find/grep` 作用域检查：普通 Workflow 以当前项目为边界，Friend 额外允许自身 Workspace；选中资源保留声明的只读范围。自定义同名工具仍由其能力提供方负责，不声称对任意扩展代码实施沙箱。
 - `chat.agent-assembly-resources.v1` 保存加载的 Skill/Prompt/扩展入口源内容与版本。恢复前校验，再交给 Pi；修改或缺失明确失败。运行中的扩展保留已加载实例。重建带可执行扩展的旧轮次一律失败并要求新轮次，因为入口文件 hash 无法证明其任意依赖代码未变化；不以重新导入最新代码冒充恢复。

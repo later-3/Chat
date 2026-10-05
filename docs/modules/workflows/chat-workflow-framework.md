@@ -312,13 +312,15 @@ DELETE /api/sessions/:parentSessionId/workflow-calls/:callId
 
 ## 9.1 尾阶段：会话记忆节点
 
-每个交互 Workflow 的最后一个节点都是会话记忆写入（`session-memory-writer`，节点 id 固定为 `remember`）。它由 `runSessionMemoryTail(input, result, ownerWorkflowId)` 调用，语义固定如下：
-
-- **共享实现，不共享身份**：writer 的组装、阶段记录和事件都使用**调用方 Workflow** 的 id、Invocation 与 Stage；Long Agent 队列复用同一个普通函数 `runSessionMemoryWriterTurn`，保留自身的轮次语义。
-- **整轮完成 = 工作阶段 + 记忆阶段**：工作答案先产生并可显示，`remember` 仍属于同一轮，只有它也结束，这一轮才算结算；调用方必须 `await`，不得提前完成 Run 或跳过该节点。
-- **事件流归属**：`memoryTailFollows` 判断本轮是否有记忆节点；工作阶段在有尾节点时只释放自己的观察器（`stageFinishClosesStream = false`），由记忆阶段关闭整轮事件流。这样工作答案先可见，记忆过程继续可见，且一个阶段只关闭一次。
-- **失败与取消**：记忆失败不撤回工作答案，但必须在该会话写入 `chat.session_memory_notice`（含 `failed`/`cancelled` 与 Invocation）后再抛出；取消只记录为取消，绝不改写成成功。开关 `sessionMemoryEnabled === false` 时节点正常跳过。
-- **Workflow body 约束**：尾节点本身不能引入 Node 内置模块（Builder 会拒绝），需要文件系统的工作全部在 Step 内完成。
+> **2026-10-03 合同变更（已实施）**：会话记忆不再作为每个交互 Workflow 的尾节点。
+> 「会话记忆」是**独立 Workflow**（`src/workflows/session-memory/`，单节点 `remember`）：
+> 由用户在会话里主动选择并发起（按上下文提示词驱动），或由 Agent 通过 workflow_call 目标资质
+> 单独调用；读取的是**整个会话**（尊重原生压缩边界，不恢复归档原文）。
+> `agentCallable: false`（Agent 不在既有业务轮里自动把它挂进子会话调用）。
+> 旧的 `work→remember` 尾节点、`runSessionMemoryTail`、每轮 `sessionMemory`/`sessionMemoryEnabled`
+> 开关、节点级会话记忆 PATCH 端点均已退役；HTTP 边界不再接受 `sessionMemory` 字段。
+> 失败/取消仍以 `chat.session_memory_notice` 落盘可见，绝不写成功。发起方式与验收见
+> [主题模式计划 §2](../../development/topic-mode-plan.md)与本仓库 `test/workflows/session-memory-*.test.mjs` 回归。
 
 ## 10. 新增Workflow检查表
 
@@ -340,8 +342,8 @@ DELETE /api/sessions/:parentSessionId/workflow-calls/:callId
 
 Workflow 依赖固定为 `4.8.9`，通过包管理更新，不维护 Workflow 源码 Fork。`@workflow/builders` 补丁迁移到 `4.1.14`，继续保留 JSON import attribute、开发 Step 本地 JSON 内联和 source map。不能只更新包版本而移除补丁或跳过 `pnpm test:dev`。本轮范围与架构审核见 [上游维护记录](../../history/reviews/2026-09-17-upstream-maintenance.md)。
 
-### 2026-09-30：执行配置冻结与记忆尾节点
+### 2026-09-30：执行配置冻结（记忆尾节点部分已由 2026-10-03 合同取代）
 
 公共配置准备阶段同时持久保存 `chat.workflow_turn_configuration` 的资源选择 revision 和 `chat.workflow_resolved_agents.v1` 的节点有效定义。后续阶段按 invocation 重用快照，不能重新读取已修改的模型/工具/Prompt 配置。Long Agent 在受理时准备同一快照，经耐久接受记录转存原生 Session；身份适配与 NanoClaw Memory 所有权不变。
 
-记忆尾节点只维护本轮会话记忆，不重复工作答案；其输入排除长期身份职责与项目上下文文件。该内部角色通过公共装配的 `contextFilesPolicy: "none"` 排除上下文文件，执行与检查共用，普通项目和 Long Agent 一致。关闭、失败、取消由 `chat.session_memory_notice` 记录，主答案保留，整体成功状态遵从 Workflow 结果。
+配置冻结机制仍适用于所有 Workflow 阶段。原"记忆尾节点"概念已退役（见 §9.1 的 2026-10-03 合同）：`contextFilesPolicy: "none"` 与 `chat.session_memory_notice` 现在由独立的「会话记忆」Workflow（单节点 remember，整轮会话投影）承接。

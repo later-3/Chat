@@ -21,7 +21,7 @@ async function port() {
 test("Friend keeps its Pi Session while switching default -> reviewed Workflow -> default through real Runtime", { timeout: 240_000 }, async t => {
   const cleanup = [];
   const f = await fixture({ after: fn => cleanup.push(fn) });
-  const buildDir = fs.mkdtempSync(path.join(root, "node_modules/.nitro-unified-session-"));
+  const buildDir = fs.mkdtempSync(path.join(root, "node_modules", ".nitro-unified-session-runtime-"));
   const selectedPort = await port();
   const base = `http://127.0.0.1:${selectedPort}`;
   let output = "";
@@ -45,7 +45,6 @@ test("Friend keeps its Pi Session while switching default -> reviewed Workflow -
     await Promise.race([new Promise(resolve => server.once("exit", resolve)), pause(5_000)]);
     if (server.exitCode === null) server.kill("SIGKILL");
     if (process.env.UNIFIED_DEBUG === "1") console.log(output);
-    fs.rmSync(buildDir, { recursive: true, force: true });
     for (const fn of cleanup) await fn();
   });
   async function wait(read, predicate, timeout = 30_000) {
@@ -59,18 +58,18 @@ test("Friend keeps its Pi Session while switching default -> reviewed Workflow -
   }
   await wait(async () => (await fetch(`${base}/api/health`)).status, value => value === 200, 90_000);
   let sessionId;
-  const post = async (workflow, memory = "off", text = `Continue ${workflow}`) => {
+  const post = async (workflow, text = `Continue ${workflow}`) => {
     const response = await fetch(`${base}/api/long-agents/friend/turns`, { method: "POST",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ schemaVersion: 1,
         requestId: `${workflow}-${f.requests.length}`, ...(workflow === undefined ? {} : {workflow}), text,
-        sessionMemory: memory, contextProjectId: null, ...(sessionId ? { sessionId } : {}) }) });
+        contextProjectId: null, ...(sessionId ? { sessionId } : {}) }) });
     const value = await response.json();
     assert.equal(response.status, 202, JSON.stringify(value));
     if (sessionId) assert.equal(value.sessionId, sessionId); else sessionId = value.sessionId;
     return value;
   };
   const receipt = ref => fetch(`${base}/api/long-agents/friend/turns/${encodeURIComponent(ref.id)}`).then(r => r.json());
-  const first = await post(undefined, "off", "Continue minimal-pi-coding-agent");
+  const first = await post(undefined, "Continue minimal-pi-coding-agent");
   const finished = await wait(() => receipt(first), v => ["completed", "failed", "interrupted"].includes(v.execution?.status));
   assert.equal(finished.execution.status, "completed", JSON.stringify(finished.execution) + output.slice(-10000));
   assert.ok(finished.execution.workflow.runId.startsWith("wrun_"));
@@ -99,33 +98,27 @@ test("Friend keeps its Pi Session while switching default -> reviewed Workflow -
   assert.ok(decision.ok, await decision.text());
   const secondDone = await wait(() => receipt(second), v => ["completed", "failed"].includes(v.execution?.status));
   assert.equal(secondDone.execution.status, "completed", JSON.stringify(secondDone.execution) + output.slice(-10000));
-  const third = await post("minimal-pi-coding-agent", "on");
+  const third = await post("minimal-pi-coding-agent");
   const thirdDone = await wait(() => receipt(third), v => ["completed", "failed"].includes(v.execution?.status));
   assert.equal(thirdDone.execution.status, "completed", JSON.stringify(thirdDone.execution));
   const detail = await fetch(`${base}/api/sessions/${sessionId}?projectId=friend`).then(r => r.json());
   assert.equal(detail.sessionId, sessionId);
   assert.equal(detail.context.messages.filter(m => m.role === "user" && JSON.stringify(m.content).includes("Continue ")).length, 3);
-  const workRequests = f.requests.filter(body => !isSessionMemoryWriterRequest(body.messages));
-  assert.match(JSON.stringify(workRequests.at(-1)), /Continue planning-execution/);
-  const memory = f.requests.filter(body => isSessionMemoryWriterRequest(body.messages));
-  assert.equal(memory.length, 1);
-  assert.match(JSON.stringify(memory[0]), /Continue minimal-pi-coding-agent/);
-  assert.doesNotMatch(JSON.stringify(memory[0]), /Continue planning-execution/);
+  // Memory rounds are a separate user-triggered Workflow: no per-round writer requests exist.
+  assert.equal(f.requests.filter(body => isSessionMemoryWriterRequest(body.messages)).length, 0);
 
-  // Cancellation uses the public Friend control while Pi is inside the shared memory Step.
+  // Cancellation uses the public Friend control while Pi is streaming the single work round.
   let writerStarted;
   const arrived = new Promise(resolve => { writerStarted = resolve; });
   let releaseWriter;
   const release = new Promise(resolve => { releaseWriter = resolve; });
-  f.setHandler(async body => {
-    if (isSessionMemoryWriterRequest(body.messages)) { writerStarted(); await release; return {content:"unused memory"}; }
-    return {content:"ANSWER_BEFORE_MEMORY"};
-  });
-  const cancelling = await post("minimal-pi-coding-agent", "on", "Stop in memory");
+  f.setHandler(async () => { writerStarted(); await release; return {content:"ANSWER_STREAMING"}; });
+  const cancelling = await post("minimal-pi-coding-agent", "Stop while streaming");
   let deadline;
-  try { await Promise.race([arrived, new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error("writer not reached"+output.slice(-8000))),30000);})]); }
+  try { await Promise.race([arrived, new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error("work not reached"+output.slice(-8000))),30000);})]); }
   finally { clearTimeout(deadline); }
-  assert.equal((await receipt(cancelling)).execution.capabilities.steer,false,"memory cannot consume work steering");
+  // The writer phase is gone: during the single streaming work round steering is VALID (it feeds the live request).
+  assert.equal((await receipt(cancelling)).execution.capabilities.steer,true,"streaming work accepts steering");
   const stop = await fetch(`${base}/api/long-agents/friend/turns/${encodeURIComponent(cancelling.id)}`, {method:"DELETE"});
   releaseWriter();
   assert.ok(stop.ok, await stop.text());
@@ -140,24 +133,24 @@ test("Friend keeps its Pi Session while switching default -> reviewed Workflow -
   compactingSettings.compaction.enabled = true;
   fs.writeFileSync(settingsPath, JSON.stringify(compactingSettings));
   let workResponded = false;
-  let writerRequest;
+  let workRequest;
   f.setHandler(body => {
-    if (isSessionMemoryWriterRequest(body.messages)) {
-      writerRequest = body;
-      return { content: "本轮无需写入" };
-    }
     if (!workResponded) {
       workResponded = true;
+      workRequest = body;
       return { content: "WORK_BEFORE_NATIVE_COMPACTION", usage: { prompt_tokens: 127000, completion_tokens: 10, total_tokens: 127010 } };
     }
     return { content: "NATIVE_COMPACTED_ROUND: preserve the current task conclusion and distinguish prior history." };
   });
-  const compacting = await post("minimal-pi-coding-agent", "on", "RAW_ROUND_TEXT_MUST_NOT_RETURN " + "long round context ".repeat(1000));
+  const compacting = await post("minimal-pi-coding-agent", "RAW_ROUND_TEXT_MUST_NOT_RETURN " + "long round context ".repeat(1000));
   const compacted = await wait(() => receipt(compacting), v => ["completed", "failed"].includes(v.execution?.status));
   assert.equal(compacted.execution.status, "completed", JSON.stringify(compacted.execution) + output.slice(-8000));
-  assert.ok(writerRequest, "the actual writer provider request was observed");
-  assert.match(JSON.stringify(writerRequest.messages), /NATIVE_COMPACTED_ROUND/);
-  assert.doesNotMatch(JSON.stringify(writerRequest.messages), /RAW_ROUND_TEXT_MUST_NOT_RETURN/,
+  assert.ok(workRequest, "the actual work provider request was observed");
+  // There is no second (writer) stage: a FOLLOW-UP round must respect the compaction boundary.
+  const followUp = await post("minimal-pi-coding-agent", "Continue after native compaction");
+  await wait(() => receipt(followUp), v => ["completed", "failed"].includes(v.execution?.status));
+  assert.match(JSON.stringify(f.requests.at(-1).messages), /NATIVE_COMPACTED_ROUND/);
+  assert.doesNotMatch(JSON.stringify(f.requests.at(-1).messages), /RAW_ROUND_TEXT_MUST_NOT_RETURN/,
     "a transform must not restore archived user text after native compaction");
   const afterCompaction = await fetch(`${base}/api/sessions/${sessionId}?projectId=friend`).then(r => r.json());
   assert.equal(afterCompaction.sessionId, sessionId);
@@ -184,7 +177,7 @@ test("Friend keeps its Pi Session while switching default -> reviewed Workflow -
       if (scenario === "length") return {content:"UNSAFE_TRUNCATED_CHECKPOINT",finishReason:"length"};
       return {error:scenario === "cancel" ? "terminated" : "insufficient_quota"};
     });
-    const ref = await post("minimal-pi-coding-agent", "off", `PRESERVE_${scenario}_HISTORY ` + "history ".repeat(100));
+    const ref = await post("minimal-pi-coding-agent", `PRESERVE_${scenario}_HISTORY ` + "history ".repeat(100));
     const streamed = scenario === "crash" ? null : fetch(`${base}/api/long-agents/friend/turns/${encodeURIComponent(ref.id)}/events?after=0`).then(r=>r.text());
     await wait(async()=>summaryArrived, Boolean);
     if (scenario === "cancel") {
@@ -215,7 +208,7 @@ test("Friend keeps its Pi Session while switching default -> reviewed Workflow -
     // Restore settings and continue through a NEW accepted turn of the SAME Session.
     fs.writeFileSync(settingsPath, originalSettings);
     f.setHandler(()=>({content:`RECOVERED_${scenario}`}));
-    const continuation = await post("minimal-pi-coding-agent","off",`Continue after ${scenario}`);
+    const continuation = await post("minimal-pi-coding-agent",`Continue after ${scenario}`);
     const resumed = await wait(()=>receipt(continuation),v=>["completed","failed"].includes(v.execution?.status));
     assert.equal(resumed.execution.status,"completed",JSON.stringify(resumed));
     assert.match(JSON.stringify(f.requests.at(-1)),new RegExp(`PRESERVE_${scenario}_HISTORY`));
@@ -245,7 +238,7 @@ test("Friend keeps its Pi Session while switching default -> reviewed Workflow -
   assert.doesNotMatch(JSON.stringify((await readNative()).buildSessionContext().messages),/RECOVERED_crash/);
   assert.match(JSON.stringify((await readNative()).getEntries()),/RECOVERED_crash/);
   f.setHandler(()=>({content:"CONTINUED_NATIVE_BRANCH"}));
-  const branchTurn=await post("minimal-pi-coding-agent","off","Continue selected historical branch");
+  const branchTurn=await post("minimal-pi-coding-agent","Continue selected historical branch");
   assert.equal((await wait(()=>receipt(branchTurn),v=>["completed","failed"].includes(v.execution?.status))).execution.status,"completed");
   assert.doesNotMatch(JSON.stringify(f.requests.at(-1)),/RECOVERED_crash/);
 
@@ -282,7 +275,7 @@ test("Friend keeps its Pi Session while switching default -> reviewed Workflow -
   f.setHandler(() => ({content:"DIAGNOSIS_IN_NODE"}));
   const {createTopic,createTopicNodeWithSession} = await import("../src/long-agents/topics.ts");
   const topic = (await createTopic({chatHome:f.home,longAgentId:"friend",title:"Runtime topic",purpose:"test",requestId:"sdk-topic",expectedRevision:0})).topic;
-  const node = (await createTopicNodeWithSession({chatHome:f.home,longAgentId:"friend",topicId:topic.topicId,title:"SDK node",requestId:"sdk-topic",createdBy:"agent",sessionMemory:"off"})).node;
+  const node = (await createTopicNodeWithSession({chatHome:f.home,longAgentId:"friend",topicId:topic.topicId,title:"SDK node",requestId:"sdk-topic",createdBy:"agent"})).node;
   const nodeResponse = await fetch(`${base}/api/long-agents/friend/topics/${topic.topicId}/nodes/${node.nodeId}/messages`, {
     method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({schemaVersion:1,requestId:"node-diagnosis",workflow:"problem-diagnosis",text:"Diagnose this problem"})});
   assert.equal(nodeResponse.status,202);
@@ -296,16 +289,14 @@ test("Friend keeps its Pi Session while switching default -> reviewed Workflow -
 
   // Losing an executing Pi Step is not permission to replay tools. Both stages become interrupted;
   // a waiting review above, in contrast, resumed the same durable hook after process replacement.
-  for (const phase of ["work","remember"]) {
+  {
+    // The round is ONE uncertain model step: recovery must not replay it.
     let entered = false, releaseModel;
     const modelGate = new Promise(resolve=>{releaseModel=resolve});
-    f.setHandler(async body => {
-      if ((phase === "remember") === isSessionMemoryWriterRequest(body.messages)) {
-        entered=true; await modelGate; return {content:"IGNORED_AFTER_CRASH"};
-      }
-      return {content:"WORK_BEFORE_CRASH"};
+    f.setHandler(async () => {
+      entered=true; await modelGate; return {content:"IGNORED_AFTER_CRASH"};
     });
-    const crashed = await post("minimal-pi-coding-agent",phase === "remember" ? "on" : "off",`Crash ${phase}`);
+    const crashed = await post("minimal-pi-coding-agent",`Crash the round`);
     await wait(async()=>entered,v=>v===true);
     const requestsBefore = f.requests.length;
     const dead = new Promise(resolve=>server.once("exit",resolve));

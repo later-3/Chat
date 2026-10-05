@@ -23,7 +23,6 @@ import { publishLongAgentPost } from "../src/long-agents/social.ts";
  */
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const nitroCli = path.join(projectRoot, "node_modules", "nitro", "dist", "cli", "index.mjs");
-const WRITER_MARK = "你只负责维护";
 const WORK_TEXT = "SWITCH_WORK_OK";
 
 function reservePort() {
@@ -47,10 +46,7 @@ async function stopProcess(process) {
   if (process.exitCode === null) process.kill("SIGKILL");
 }
 
-const isWriter = (body) => body.messages.some((message) => message.role === "system"
-  && (typeof message.content === "string" ? message.content : JSON.stringify(message.content)).includes(WRITER_MARK));
-
-test("the session-memory switch reaches the real send and really gates the memory node", { concurrency: false }, async (t) => {
+test("an ordinary round is one work request; memory rounds live in the separate Workflow", { concurrency: false }, async (t) => {
   const cleanups = [];
   const f = await fixture({ after: (register) => cleanups.push(register) });
   // A second contact exercises an actual keyed chat switch, not a hidden/revealed same Session.
@@ -88,23 +84,12 @@ test("the session-memory switch reaches the real send and really gates the memor
     ...template, id: "other", name: "Other", defaultProjectId: "other", nanoclawAgentGroupId: "other-group",
     definition: { ...template.definition, id: "other", name: "Other" },
   }] }, f.home);
-  let writerFails = false;
   let forceCompaction = false;
-  const writerCalls = [];
-  let beforeWriter;
 
   const modelHandler = async (body) => {
     if (body.messages.some(message => message.role === "system"
       && JSON.stringify(message.content).includes("You are a context summarization assistant"))) {
       return { content: "BROWSER_NATIVE_COMPACTION: earlier work preserved in native history." };
-    }
-    if (isWriter(body)) {
-      if (beforeWriter) await beforeWriter();
-      writerCalls.push(body);
-      if (writerFails) return { error: "switch-test memory provider failed" };
-      if (body.messages.at(-1)?.role === "tool") return { content: "本轮无需写入" };
-      return { tool_calls: [{ index: 0, id: "switch-smem", type: "function", function: { name: "session_memory",
-        arguments: JSON.stringify({ operation: "write", purpose: "finding", author: "agent", content: "SWITCH_MEMORY_ENTRY", expectedRevision: 0 }) } }] };
     }
     const user = body.messages.filter((message) => message.role === "user").at(-1);
     const text = typeof user?.content === "string" ? user.content
@@ -124,7 +109,7 @@ test("the session-memory switch reaches the real send and really gates the memor
 
   const port = await reservePort();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const buildDir = fs.mkdtempSync(path.join(projectRoot, ".data/switch-browser-"));
+  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-session-memory-switch-browser-"));
   const server = spawn(process.execPath, [nitroCli, "dev", "--host", "127.0.0.1", "--port", String(port)], {
     cwd: projectRoot,
     env: { ...process.env, CHAT_HOME: f.home, CHAT_NITRO_BUILD_DIR: buildDir,
@@ -139,7 +124,6 @@ test("the session-memory switch reaches the real send and really gates the memor
   t.after(async () => {
     await browser?.close().catch(() => undefined);
     await stopProcess(server);
-    fs.rmSync(buildDir, { recursive: true, force: true });
     for (const cleanup of cleanups.reverse()) await cleanup();
   });
 
@@ -171,38 +155,14 @@ test("the session-memory switch reaches the real send and really gates the memor
     await page.waitFor(`${visibleChat} && document.querySelector('[data-session-memory-open]') !== null && document.querySelector('[data-chat-composer]:not([disabled])') !== null`,
       { label: "当前会话可见且可输入", timeoutMs: 60_000 });
   };
-  const screenshot = async (name) => {
-    const evidenceDir = process.env.CHAT_UI_EVIDENCE_DIR
-      ?? (name === "native-compaction-feedback" ? path.join(projectRoot, ".data/verification/pi-capabilities") : undefined);
-    if (!evidenceDir) return;
-    fs.mkdirSync(evidenceDir, { recursive: true });
-    // Theme colors transition for 120–200ms; retain the settled UI, not an intermediate frame.
-    await page.evaluate("new Promise(resolve => setTimeout(resolve, 300))");
-    const { data } = await page.send("Page.captureScreenshot", { format: "png" });
-    fs.writeFileSync(path.join(evidenceDir, `${name}.png`), Buffer.from(data, "base64"));
-  };
-  const memorySetting = async (enabled) => {
-    await page.evaluate("document.querySelector('[data-session-memory-open]').click()");
-    await page.waitFor("document.querySelector('[data-session-memory-toggle]') !== null");
-    if (enabled !== undefined) {
-      await page.evaluate(`(() => { const toggle = document.querySelector('[data-session-memory-toggle]'); if (toggle.checked !== ${enabled}) toggle.click(); })()`);
-      await page.waitFor(`document.querySelector('[data-session-memory-toggle]').checked === ${enabled}`);
-    }
-    const value = await page.evaluate("document.querySelector('[data-session-memory-toggle]').checked");
-    await page.evaluate("document.querySelector('[data-session-memory-toggle]').closest('[role=dialog]').querySelector('header button').click()");
-    await page.waitFor("document.querySelector('[data-session-memory-toggle]') === null");
-    return value;
-  };
-  const setMemory = async enabled => { assert.equal(await memorySetting(enabled), enabled); };
   const requestEvent = (from, text) => page.events.slice(from).find((event) => {
     if (event.method !== "Network.requestWillBeSent" || event.params.request.method !== "POST") return false;
     if (!/\/api\/long-agents\/[^/]+\/(turns|messages)$/.test(event.params.request.url)) return false;
     return JSON.parse(event.params.request.postData ?? "{}").text === text;
   });
-  const send = async (text, memoryEnabled, expectedStatus = "completed") => {
+  const send = async (text, expectedStatus = "completed") => {
     await ready();
     const before = page.events.length;
-    const writersBefore = writerCalls.length;
     await page.evaluate("document.querySelector('[data-chat-composer]').focus(); document.querySelector('[data-chat-composer]').select()");
     await page.send("Input.insertText", { text });
     assert.equal(await page.evaluate("document.querySelector('[data-chat-composer]').value"), text);
@@ -216,7 +176,7 @@ test("the session-memory switch reaches the real send and really gates the memor
       await pause(50);
     }
     const body = JSON.parse(request.params.request.postData);
-    assert.equal(body.sessionMemory, memoryEnabled ? undefined : "off", `${text} 的真实请求开关`);
+    assert.equal(body.sessionMemory, undefined, "the retired field must not be sent");
     while (!page.events.some((event) => event.method === "Network.loadingFinished" && event.params.requestId === request.params.requestId)) {
       if (Date.now() > deadline) throw new Error(`接受请求没有完成 ${text}`);
       await pause(50);
@@ -234,11 +194,8 @@ test("the session-memory switch reaches the real send and really gates the memor
     }
     assert.equal(execution.status, expectedStatus, text);
     await page.waitFor("document.querySelector('[data-chat-stop]') === null", { label: `${text} UI 已终结` });
-    if (memoryEnabled) assert.equal(writerCalls.length > writersBefore, true, `${text} writer 必须运行`);
-    else assert.equal(writerCalls.length, writersBefore, `${text} writer 不得运行`);
 
     // Completion must re-read durable history even for a fast model inside the opening cache lifetime.
-    // A missing read cannot be masked by opening a fresh page or waiting for the periodic poll.
     const finalReads = page.events.slice(before).filter((event) => event.method === "Network.requestWillBeSent"
       && event.params.request.method === "GET"
       && new URL(event.params.request.url).pathname === `/api/sessions/${accepted.sessionId}`);
@@ -246,6 +203,16 @@ test("the session-memory switch reaches the real send and really gates the memor
     await page.waitFor(`${visibleChat} && document.querySelector('[data-workspace-chat]').innerText.includes(${JSON.stringify(`${WORK_TEXT} ${text}`)})`,
       { label: `${text} 答案在原页面保留` });
     return accepted;
+  };
+  const screenshot = async (name) => {
+    const evidenceDir = process.env.CHAT_UI_EVIDENCE_DIR
+      ?? (name === "native-compaction-feedback" ? path.join(projectRoot, ".data/verification/pi-capabilities") : undefined);
+    if (!evidenceDir) return;
+    fs.mkdirSync(evidenceDir, { recursive: true });
+    // Theme colors transition for 120–200ms; retain the settled UI, not an intermediate frame.
+    await page.evaluate("new Promise(resolve => setTimeout(resolve, 300))");
+    const { data } = await page.send("Page.captureScreenshot", { format: "png" });
+    fs.writeFileSync(path.join(evidenceDir, `${name}.png`), Buffer.from(data, "base64"));
   };
 
   await ready();
@@ -263,26 +230,21 @@ test("the session-memory switch reaches the real send and really gates the memor
       `empty Session remains writable without scrolling at ${width}x${height}: ${JSON.stringify(box)}`);
   }
   // All sends share the SAME page and Session; only the explicit refresh reloads it.
-  assert.equal(await memorySetting(), true);
-  beforeWriter = async () => {
-    assert.equal(await page.evaluate("window.__completionNotes"), 0, "the work Agent finishing must not chime while the memory Agent runs");
-  };
-  const first = await send("switch-on", true);
+  const first = await send("switch-on");
   assert.equal(await page.evaluate("document.querySelector('.chat-welcome') === null"), true, "accepted messages replace the welcome surface");
-  beforeWriter = undefined;
-  await page.waitFor("window.__completionNotes === 2", { label: "one chime after both Workflow Agents complete" });
-  await setMemory(false);
-  const off = await send("switch-off", false);
-  await page.waitFor("window.__completionNotes === 4", { label: "a second Run in the same Session gets exactly one new chime" });
+  // The chime = two musical notes (two oscillators), so a finished round advances the probe by 2.
+  await page.waitFor("window.__completionNotes >= 2", { label: "a finished round plays exactly one chime" });
+  const notesAfterFirst = await page.evaluate("window.__completionNotes");
+  assert.equal(notesAfterFirst, 2, "one chime per round (two oscillators)");
+  const off = await send("switch-off");
+  await page.waitFor(`window.__completionNotes === ${notesAfterFirst + 2}`, { label: "a second Run adds exactly one chime" });
   assert.equal(off.sessionId, first.sessionId);
 
   await page.send("Page.reload");
   await ready();
-  assert.equal(await memorySetting(), false, "刷新保留关闭状态");
-  const afterRefresh = await send("switch-off-after-refresh", false);
+  const afterRefresh = await send("switch-off-after-refresh");
   assert.equal(afterRefresh.sessionId, first.sessionId);
-  await setMemory(true);
-  const enabled = await send("switch-on-again", true);
+  const enabled = await send("switch-on-again");
   assert.equal(enabled.sessionId, first.sessionId);
 
   // Reusing an already-open Session must still reveal its chat after leaving the chat workspace.
@@ -346,21 +308,8 @@ test("the session-memory switch reaches the real send and really gates the memor
   // Native stage provenance survives the same refresh and groups work plus maintenance.
   await page.evaluate("document.querySelectorAll('.turn-summary-toggle[aria-expanded=false]').forEach(element => element.click())");
   assert.equal(await page.evaluate("document.querySelector('[data-workflow-node=execute]') !== null"), true);
-  assert.equal(await page.evaluate("document.querySelector('[data-workflow-node=remember]') !== null"), true);
   await page.evaluate("document.querySelector('[data-friend-panel-toggle]').click()");
   await page.waitFor("document.querySelector('.workspace-friend-panel.is-open') === null");
-
-  writerFails = true;
-  const notesBeforeFailure = await page.evaluate("window.__completionNotes");
-  const failed = await send("switch-fail", true, "failed");
-  assert.equal(await page.evaluate("window.__completionNotes"), notesBeforeFailure, "a failed memory tail must not play a success chime");
-  assert.equal(failed.sessionId, first.sessionId);
-  const payload = await (await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(failed.sessionId)}?projectId=friend`)).json();
-  assert.equal(payload.context.messages.some((message) => message.role === "custom" && message.customType === "chat.session_memory_notice"), true);
-  await page.send("Page.reload");
-  await ready();
-  await page.waitFor("document.querySelector('[data-workspace-chat]').innerText.includes('会话记忆本轮未写入')", { label: "刷新后失败通知可见" });
-  assert.equal(await page.evaluate(`document.querySelector('[data-workspace-chat]').innerText.includes(${JSON.stringify(`${WORK_TEXT} switch-fail`)})`), true);
 
   // The visible completion feedback comes from real Pi events, not fabricated component props.
   const settingsPath = path.join(f.home, "agent/settings.json");
@@ -368,9 +317,8 @@ test("the session-memory switch reaches the real send and really gates the memor
   const settings = JSON.parse(originalSettings);
   settings.compaction.enabled = true;
   fs.writeFileSync(settingsPath, JSON.stringify(settings));
-  await setMemory(false);
   forceCompaction = true;
-  await send("switch-compact", false);
+  await send("switch-compact");
   await page.waitFor("document.querySelector('[data-compaction-status=completed]') !== null", { label: "原生压缩结果可见" });
   const compactionFeedback = await page.evaluate("document.querySelector('[data-compaction-status=completed]').textContent");
   assert.match(compactionFeedback, /Context compacted\./);
@@ -382,7 +330,7 @@ test("the session-memory switch reaches the real send and really gates the memor
   fs.writeFileSync(settingsPath, originalSettings);
 
   // Native controls must work from the actual composer, not only from API calls.
-  await send("switch-before-manual", false);
+  await send("switch-before-manual");
   const controlsUrl = `${baseUrl}/api/sessions/${first.sessionId}/maintenance?projectId=friend`;
   const beforeNativeControls = await (await fetch(controlsUrl)).json();
   await page.waitFor("document.querySelector('[data-session-compact=idle]') !== null");
@@ -403,7 +351,7 @@ test("the session-memory switch reaches the real send and really gates the memor
   await page.waitFor(`document.body.innerText.includes(${JSON.stringify(first.sessionId)})`);
   await screenshot('native-session-statistics');
   await page.evaluate("document.querySelector('[data-session-stats-open]').click()");
-  await send('switch-edit-history',false);
+  await send('switch-edit-history');
   await page.waitFor("document.querySelector('[data-session-continue]') !== null");
   await page.evaluate("[...document.querySelectorAll('[data-session-continue]')].at(-1).click()");
   await page.waitFor("document.querySelector('[data-chat-composer]')?.value === 'switch-edit-history'");
@@ -414,7 +362,7 @@ test("the session-memory switch reaches the real send and really gates the memor
   await page.send('Page.reload'); await ready();
   assert.equal(f.requests.length,callsBeforeHistoryRefresh,'history continuation and refresh must not run a model');
   assert.equal(await page.evaluate("document.querySelector('[data-chat-composer]').value"),'switch-edit-history');
-  await send('switch-after-history',false);
+  await send('switch-after-history');
   let releaseManualSummary, manualHttpStarted = false;
   const heldManualSummary = new Promise(resolve => { releaseManualSummary = resolve; });
   f.setHandler(async () => { manualHttpStarted = true; await heldManualSummary; return {content:'CANCELLED_MANUAL_PARTIAL'}; });
@@ -461,6 +409,9 @@ test("the session-memory switch reaches the real send and really gates the memor
   // The region stays mounted (that is what makes the reveal animate), so "open" is
   // the dock state, not the presence of its rows.
   const openDayPanel = async () => {
+    if (await page.evaluate("!!document.querySelector('.workspace-friend-panel.is-open')")) return;
+    // 视口切换后 React 的 isMobile 状态有一次提交延迟；等工具栏动作真实出现再点。
+    await page.waitFor("document.querySelector('[data-friend-panel-toggle]') !== null || document.querySelector('.workspace-friend-panel.is-open') !== null", { label: "day panel entry ready", timeoutMs: 15_000 });
     if (await page.evaluate("!!document.querySelector('.workspace-friend-panel.is-open')")) return;
     await page.evaluate("document.querySelector('[data-friend-panel-toggle]').click()");
     await page.waitFor("!!document.querySelector('.workspace-friend-panel.is-open')", {label:'tasks & archive region opens from the top bar action'});
@@ -513,9 +464,7 @@ test("the session-memory switch reaches the real send and really gates the memor
   await enterDay(historical.day.date, historical.day.sessionId);
   await page.waitFor(`document.querySelector('[data-rendered-session="${historical.day.sessionId}"]')?.innerText.includes('CALENDAR_HISTORY_CONTENT')`);
   await ready();
-  writerFails = false;
-  await setMemory(false);
-  const continued = await send('switch-history-continue',false);
+  const continued = await send('switch-history-continue');
   assert.equal(continued.sessionId,historical.day.sessionId,'continue the selected history, never reroute to today');
   assert.ok(f.requests.some(request => JSON.stringify(request.messages).includes('CALENDAR_HISTORY_CONTENT')
     && JSON.stringify(request.messages).includes('switch-history-continue')),'the model really received prior history');
@@ -589,8 +538,7 @@ test("the session-memory switch reaches the real send and really gates the memor
   assert.equal(f.requests.length,callsBeforeCreate,'creation is not an execution or schedule');
   await openEmptyDate(freshDate);
   assert.equal((await (await fetch(`${baseUrl}/api/long-agents/friend/daily`)).json()).days.filter(day=>day.date===freshDate).length,1);
-  await setMemory(true);
-  const arranged = await send('switch-arrange-background', true);
+  const arranged = await send('switch-arrange-background');
   assert.equal(arranged.sessionId, fresh.sessionId);
   const createdWorks = (await (await fetch(`${baseUrl}/api/long-agents/friend/work`)).json()).works;
   const createdWork = createdWorks.find(item => item.work.title === 'BROWSER_CHAT_TASK');
@@ -605,8 +553,7 @@ test("the session-memory switch reaches the real send and really gates the memor
     assert.ok(Date.now() < childDeadline, JSON.stringify(child));
     await pause(100);
   }
-  await setMemory(false);
-  assert.equal((await send('switch-calendar-new',false)).sessionId,fresh.sessionId);
+  assert.equal((await send('switch-calendar-new')).sessionId,fresh.sessionId);
   await page.send('Page.reload'); await ready();
   await page.waitFor(`document.querySelector('[data-rendered-session="${fresh.sessionId}"]')?.innerText.includes('switch-calendar-new')`);
 

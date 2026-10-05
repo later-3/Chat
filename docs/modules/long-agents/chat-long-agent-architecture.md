@@ -64,9 +64,11 @@ Task/Run 不替代已有 Workflow Run；任务调用 Workflow 时保存其 ID、
 
 ### 4.1 项目是每轮冻结的执行上下文
 
-Friend 的直接交流使用自己的每日默认或用户选择的额外直接 Session。业务项目通过本轮冻结的项目上下文（统一项目合同：Web 私聊取顶栏"项目"选择，群聊取会话 storageProjectId）进入公共装配，不因此新建项目 Friend Session。查询其他项目的概览也不自动切换执行项目。Session 存储不迁移、原项目授权不扩大。
+Friend 的直接交流使用自己的每日默认或用户选择的额外直接 Session。业务项目通过本轮冻结的项目上下文进入公共装配：2026-10-01 起项目归属会话执行项目 = 会话归属，每日/额外直接会话在 Agent 容器执行（历史合同：Web 私聊曾取顶栏"项目"选择，群聊取会话 storageProjectId）；不因此新建项目 Friend Session。查询其他项目的概览也不自动切换执行项目。Session 存储不迁移、原项目授权不扩大。
 
 项目展示与 Agent Home 分开；旧 API 的 projectId 兼容表示存储归属，新消费者明确使用 SessionRef 与本轮冻结的 `contextProjectId`，精确字段以[公共装配合同](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)为准。项目页只列普通项目 Session；Friend 的项目活动可引用相关轮次，不复制私有每日对话或授权其他参与者读取整天历史。
+
+2026-10-01 已确认目标合同（实施完成，见[评审记录](../../history/reviews/2026-10-01-la-project-session-tree.md)）：Web 端入口重构为 Long Agent → Project → Session 三级导航。Long Agent 通过有序 `boundProjectIds` 显式绑定多个项目（增删走配置 API，Workspace 固定首位不可解绑，解绑不删 Session）；从绑定项目新建的会话 storageProjectId 为该项目，执行项目 = 会话归属；每日默认、额外直接会话、定时与 IM 轮次仍归 Agent Home，Session 不迁移。多 Agent 进入同一项目的身份区分复用现有机制：SessionRef owner 归属校验、各 LA 独立配置根冻结的身份区/当前项目区、导航路径标注，不新增运行时。顶栏项目选择器在 coworker 模式退役；主题模式本期只在项目下展示现有图，跨项目来源放宽后置。
 
 ### 日历历史入口（2026-09-27 实现）
 

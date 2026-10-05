@@ -1,5 +1,12 @@
 # 主题模式开发计划（Topic Mode Development Plan）
 
+> **2026-10-03 合同修订（已实施）**：「会话记忆」改为**独立 Workflow**（单节点 `remember`，
+> 由用户在该会话里主动发起；`agentCallable: false`），读取**整个会话**并按需写入；
+> 节点轮次（work→remember 双段）与每轮/每节点的记忆开关（`sessionMemory`、writer 阶段、
+> 节点 PATCH 记忆开关端点）全部退役。锚点分叉改为在工作轮整轮终态后即可用；
+> theme 节点仍默认可被独立记忆 Workflow 读取与整理。
+> 下文的 `work`+`remember` 两段描述为历史背景，现状以本批与 §2 顶端状态为准。
+
 状态：**P1 及大量 P2 领域能力已有实现；当前主题会话体验未达标，不能宣称整体完成。** 2026-09-25 用户明确新建题采用“整理 → 用户审核/修订 → 创建”的真实 Workflow。当前唯一执行安排为[纠偏方案](./topic-mode-correction-plan.md) §5 的 A–C 工作包与 §6 统一退出表；不再逐项修复后反复请求进入下一阶段。下文保留原 P1–P4 机制与历史记录，旧“已交付”不覆盖本次新目标和已确认缺陷。[P1 实施记录](../history/reviews/2026-09-22-topic-mode-p1.md)，合同依据：[主题模式任务书](./topic-mode-taskbook.md)。
 
 ## 0. 基准：Pi 的沟通链

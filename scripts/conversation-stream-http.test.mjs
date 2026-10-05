@@ -102,7 +102,7 @@ async function appendMessage(home, projectId, sessionId, message) {
 test("conversation stream over real HTTP: incremental delivery, revocation close, cursor reconnect", { timeout: 120_000 }, async (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-la5-stream-")));
   const home = path.join(root, "home");
-  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-la5-http-"));
+  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-conversation-stream-http-"));
   const workspace = path.join(root, "workspace");
   fs.mkdirSync(workspace, { recursive: true });
   fs.writeFileSync(path.join(workspace, "AGENTS.md"), "RULE_HTTP\n");
@@ -160,7 +160,6 @@ test("conversation stream over real HTTP: incremental delivery, revocation close
   server.stderr.on("data", (chunk) => { output += chunk.toString(); });
   t.after(async () => {
     await stopProcess(server);
-    fs.rmSync(buildDir, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   });
   const ready = async () => {

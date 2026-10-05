@@ -831,24 +831,24 @@ test("Workflow containers and their Agents come from the backend registry", asyn
     "topic-session-create",
   ]);
   assert.deepEqual(body.workflows.map((workflow) => workflow.agents.map((agent) => agent.id)), [
-    ["pi-coding-agent", "session-memory-writer"],
-    ["planner", "pi-coding-agent", "session-memory-writer"],
-    ["planner", "coordinator", "session-memory-writer"],
-    ["memory-agent", "session-memory-writer"],
-    ["rule-curator-agent", "session-memory-writer"],
-    ["session-memory-worker", "session-memory-writer"],
-    ["problem-diagnoser", "session-memory-writer"],
-    ["topic-collector", "topic-creator", "session-memory-writer"],
+    ["pi-coding-agent"],
+    ["planner", "pi-coding-agent"],
+    ["planner", "coordinator"],
+    ["memory-agent"],
+    ["rule-curator-agent"],
+    ["session-memory-writer"],
+    ["problem-diagnoser"],
+    ["topic-collector", "topic-creator"],
   ]);
   assert.deepEqual(body.workflows.map((workflow) => workflow.nodes.map((node) => node.agentId)), [
-    ["pi-coding-agent", "session-memory-writer"],
-    ["planner", undefined, "pi-coding-agent", "session-memory-writer"],
-    ["planner", undefined, "coordinator", "session-memory-writer"],
-    ["memory-agent", "session-memory-writer"],
-    ["rule-curator-agent", "session-memory-writer"],
-    ["session-memory-worker", "session-memory-writer"],
-    ["problem-diagnoser", "session-memory-writer"],
-    ["topic-collector", undefined, "topic-creator", "session-memory-writer"],
+    ["pi-coding-agent"],
+    ["planner", undefined, "pi-coding-agent"],
+    ["planner", undefined, "coordinator"],
+    ["memory-agent"],
+    ["rule-curator-agent"],
+    ["session-memory-writer"],
+    ["problem-diagnoser"],
+    ["topic-collector", undefined, "topic-creator"],
   ]);
   assert.equal(body.workflows[0].agentCallable, true);
   assert.equal(body.workflows[1].planReview, true);
@@ -1111,9 +1111,9 @@ test("the built planning Workflow survives review and resumes the same Session",
   const completedSession = await completedSessionResponse.json();
   assert.equal(completedSessionResponse.status, 200, JSON.stringify(completedSession));
   assert.deepEqual(
-    // work answer + the session-memory writer's own reply (the Workflow's LAST node).
+    // 记忆轮独立后：业务轮只保留 user 与 work answer 的原生消息。
     completedSession.context.messages.map((message) => message.role),
-    ["user", "assistant", "user", "assistant", "assistant"],
+    ["user", "assistant", "user", "assistant"],
   );
   assert.deepEqual(completedSession.context.messages[2].content, [
     { type: "text", text: "已通过执行计划 v1，开始执行。" },

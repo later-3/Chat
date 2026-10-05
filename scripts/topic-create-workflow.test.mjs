@@ -37,7 +37,7 @@ const plannerOutput = (title, sourceSessionId, entryId) => [
 test("topic creation over the REAL Workflow runtime: collect -> revise -> approve -> exactly one node", { timeout: 300_000 }, async (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-topic-create-")));
   const home = path.join(root, "home");
-  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-topic-create-"));
+  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-topic-create-workflow-"));
   const workspace = path.join(root, "workspace");
   fs.mkdirSync(workspace, { recursive: true });
   fs.writeFileSync(path.join(workspace, "AGENTS.md"), "RULE\n");
@@ -148,7 +148,6 @@ test("topic creation over the REAL Workflow runtime: collect -> revise -> approv
     await stopProcess(server);
     modelServer.closeAllConnections();
     await new Promise((resolve) => modelServer.close(resolve));
-    fs.rmSync(buildDir, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   });
   const deadline = Date.now() + 60_000;

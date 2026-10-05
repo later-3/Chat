@@ -90,7 +90,7 @@ test("LA6 Chat+Nano joint acceptance runs the full external channel chain", {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-la6-joint-")));
   const home = path.join(root, "home");
   const nanoCwd = path.join(root, "nano");
-  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-la6-joint-"));
+  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-la6-joint-acceptance-"));
   const workspace = path.join(root, "workspace");
   fs.mkdirSync(nanoCwd, { recursive: true });
   fs.mkdirSync(workspace, { recursive: true });
@@ -158,7 +158,6 @@ test("LA6 Chat+Nano joint acceptance runs the full external channel chain", {
     await stopProcess(chat);
     modelServer.closeAllConnections();
     await new Promise((resolve) => modelServer.close(resolve));
-    fs.rmSync(buildDir, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   });
 

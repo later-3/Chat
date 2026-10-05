@@ -71,7 +71,7 @@ async function jsonFetch(url, init) {
 test("group conversation over real HTTP: management, durable round, public projection", { timeout: 180_000 }, async (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-la5-group-")));
   const home = path.join(root, "home");
-  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-la5-group-"));
+  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-group-conversation-http-"));
   const workspace = path.join(root, "workspace");
   fs.mkdirSync(workspace, { recursive: true });
   fs.writeFileSync(path.join(workspace, "AGENTS.md"), "RULE_GROUP\n");
@@ -125,7 +125,6 @@ test("group conversation over real HTTP: management, durable round, public proje
     await stopProcess(server);
     modelServer.closeAllConnections();
     await new Promise((resolve) => modelServer.close(resolve));
-    fs.rmSync(buildDir, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   });
   const ready = async () => {

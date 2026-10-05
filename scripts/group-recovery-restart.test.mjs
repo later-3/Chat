@@ -44,7 +44,7 @@ async function jsonFetch(url, init) {
 test("group state survives a real process kill: running is interrupted, queued resumes", { timeout: 240_000 }, async (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-la5-restart-")));
   const home = path.join(root, "home");
-  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-la5-restart-"));
+  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-group-recovery-restart-"));
   const workspace = path.join(root, "workspace");
   fs.mkdirSync(workspace, { recursive: true });
   fs.writeFileSync(path.join(workspace, "AGENTS.md"), "RULE_RESTART\n");
@@ -120,7 +120,6 @@ test("group state survives a real process kill: running is interrupted, queued r
     if (server !== undefined) await stopProcess(server, "SIGKILL").catch(() => undefined);
     modelServer.closeAllConnections();
     await new Promise((resolve) => modelServer.close(resolve));
-    fs.rmSync(buildDir, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   });
 

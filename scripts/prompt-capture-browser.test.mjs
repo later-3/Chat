@@ -55,7 +55,7 @@ test("the prompt-capture switch reaches the send, records regions and drives the
 
   const port = await reservePort();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const buildDir = fs.mkdtempSync(path.join(projectRoot, ".data/prompt-capture-browser-"));
+  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-prompt-capture-browser-"));
   const server = spawn(process.execPath, [nitroCli, "dev", "--host", "127.0.0.1", "--port", String(port)], {
     cwd: projectRoot,
     env: { ...process.env, CHAT_HOME: f.home, CHAT_NITRO_BUILD_DIR: buildDir,
@@ -71,7 +71,6 @@ test("the prompt-capture switch reaches the send, records regions and drives the
   t.after(async () => {
     await browser?.close().catch(() => undefined);
     await stopProcess(server);
-    fs.rmSync(buildDir, { recursive: true, force: true });
     for (const cleanup of cleanups.reverse()) await cleanup();
   });
 
@@ -89,6 +88,14 @@ test("the prompt-capture switch reaches the send, records regions and drives the
   page = await browser.newPage(`${baseUrl}/`);
   await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await page.send("Network.enable");
+  await page.send("Runtime.enable");
+  const pageErrors = [];
+  page.events.filter(() => false);
+  const originalEmit = page.events.push.bind(page.events);
+  page.events.push = (event) => {
+    if (event.method === "Runtime.exceptionThrown") pageErrors.push(JSON.stringify(event.params.exceptionDetails).slice(0, 500));
+    return originalEmit(event);
+  };
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const visibleChat = "document.querySelector('[data-workspace-chat]')?.hidden === false";
 
@@ -147,13 +154,7 @@ test("the prompt-capture switch reaches the send, records regions and drives the
       return accepted;
     };
 
-    // Keep the memory tail out of scope: this test owns the prompt-capture switch only.
-    await page.evaluate("document.querySelector('[data-session-memory-open]').click()");
-    await page.waitFor("document.querySelector('[data-session-memory-toggle]') !== null");
-    await page.evaluate("(() => { const toggle = document.querySelector('[data-session-memory-toggle]'); if (toggle.checked) toggle.click(); })()");
-    await page.waitFor("document.querySelector('[data-session-memory-toggle]').checked === false");
-    await page.evaluate("document.querySelector('[data-session-memory-toggle]').closest('[role=dialog]').querySelector('header button').click()");
-    await page.waitFor("document.querySelector('[data-session-memory-toggle]') === null");
+    // The memory reader is a pure panel now (rounds no longer carry a memory switch): nothing to preset.
 
     const openSettings = async () => {
       await page.evaluate("document.querySelector('[data-chat-settings]').focus()");
@@ -194,6 +195,8 @@ test("the prompt-capture switch reaches the send, records regions and drives the
 
     // Refresh keeps the switch on (per-session preference).
     await page.send("Page.reload");
+    await page.waitFor("document.readyState === 'complete'", { label: "reload complete", timeoutMs: 30_000 }).catch(() => {});
+    if (pageErrors.length > 0) console.log("PAGE_ERRORS", JSON.stringify(pageErrors));
     await page.waitFor("document.querySelector('[data-chat-settings]') !== null && document.querySelector('[data-chat-composer]:not([disabled])') !== null", { label: "刷新后可输入", timeoutMs: 60_000 });
     await openSettings();
     assert.equal(await page.evaluate("document.querySelector('[data-prompt-capture-toggle]').getAttribute('aria-checked') === 'true'"), true, "刷新保留开启状态");
@@ -225,7 +228,7 @@ test("the prompt-capture switch reaches the send, records regions and drives the
       return true;
     })()`);
     assert.equal(historyButton, true, "完整历史入口存在");
-    await page.waitFor("document.querySelector('[data-prompt-captures-view]') !== null", { label: "完整历史对话框打开" });
+    await page.waitFor("document.querySelector('.full-history-frame') !== null", { label: "完整历史对话框打开（纯对话+导出）" });
     // The first successful HTML response must leave loading without a tab/theme change.
     await page.waitFor("document.querySelector('iframe.full-history-frame')?.srcdoc.includes('session-data') === true", { label: "完整历史首次响应直接显示", timeoutMs: 20_000 });
     // Check the child document, not just the existence of an empty iframe.
@@ -262,19 +265,24 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     assert.equal(historyReady, true, `完整历史首帧包含实际消息和分支树：${JSON.stringify(historyDiagnostic)}`);
     console.log(`Full history cold first readable: ${Date.now() - historyOpenedAt} ms`);
     if (historySessionId) await page.send("Target.detachFromTarget", { sessionId: historySessionId });
-    await page.evaluate("document.querySelector('[data-prompt-captures-view]').click()");
-    await page.waitFor("document.querySelector('[data-prompt-captures-panel]') !== null", { label: "Prompt 请求面板渲染" });
-    await page.waitFor(`document.querySelectorAll('[data-prompt-capture-record]').length >= ${countAfterOn}`, { label: "面板列出全部记录" });
+    // 请求页签已并入消息流：关闭对话框后经内嵌块验证记录确实按轮可见。
+    await page.evaluate("document.querySelector('.surface-dialog [aria-label=\"i18n.cancel\"], .surface-dialog button[data-icon-button], .surface-dialog').dispatchEvent(new MouseEvent('click', { bubbles: true }))");
+    await page.waitFor("document.querySelector('[data-turn-prompt-capture]') !== null", { label: "消息流内嵌本轮 Prompt 解析块", timeoutMs: 30_000 });
+    const captureIndex = await (await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(first.sessionId)}/prompt-captures?projectId=friend`)).json();
+    assert.equal(captureIndex.count >= countAfterOn, true, `capture 索引包含全部记录: ${JSON.stringify(captureIndex.count)}`);
+    await page.evaluate("document.querySelector('[data-turn-prompt-capture] .chat-prompt-embed-toggle').click()");
+    await page.waitFor("document.querySelectorAll('[data-prompt-capture-record]').length > 0", { label: "内嵌块展开显示记录" });
     // Expanding one record loads its payload on demand and shows the region blocks.
     await page.evaluate("document.querySelector('[data-prompt-capture-row-toggle]').click()");
     await page.waitFor("document.querySelector('[data-prompt-capture-system]') !== null", { label: "区域负载按需加载并渲染系统提示" });
-    const panelText = await page.evaluate("document.querySelector('[data-prompt-captures-panel]').innerText");
+    // 请求页签并入消息流后：区域树直接从内嵌块读取（同一渲染组件）。
+    const panelText = await page.evaluate("document.querySelector('[data-turn-prompt-capture]').innerText");
     // The capture is the REQUEST, so it holds this turn's user message and the injected instruction,
     // plus the system prompt; the assistant answer only appears as history in the NEXT request.
     assert.ok(panelText.includes("pc-on"), `面板展示记录的请求内容: ${panelText.slice(0, 400)}`);
     assert.ok(panelText.toLowerCase().includes("system prompt"), `面板展示系统提示区域: ${panelText.slice(0, 400)}`);
     // Exercise a real failed request, retry, and cancellation at the browser network boundary.
-    const closeHistory = () => page.evaluate("document.querySelector('[data-prompt-captures-view]').closest('[role=dialog]').querySelector('header button[aria-label=Close]').click()");
+    const closeHistory = () => page.evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1)?.querySelector('header button[aria-label=Close]')?.click()");
     const openHistory = () => page.evaluate("[...document.querySelectorAll('button')].find(button => /完整历史|Full history/i.test(button.getAttribute('aria-label') ?? '') && !button.disabled).click()");
     const pausedHistory = async start => {
       const deadline = Date.now() + 10_000;
@@ -333,7 +341,7 @@ test("the prompt-capture switch reaches the send, records regions and drives the
       if (width === 390) {
         assert.ok(layout.inputWidth >= layout.frameWidth - 40, "mobile composer retains a full text row");
         await openSettings();
-        await page.waitFor("document.querySelector('[role=menuitem][data-session-memory-open]') !== null");
+        void 0;
         await closeSettings();
       }
     }

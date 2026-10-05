@@ -127,7 +127,6 @@ test("LA6 Chat+Nano joint acceptance runs the chain through the real model", {
   t.after(async () => {
     await stopProcess(nano);
     await stopProcess(chat);
-    fs.rmSync(buildDir, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   });
 

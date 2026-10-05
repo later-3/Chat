@@ -353,13 +353,14 @@ Long Agent 未提供自定义 Definition 时，默认拥有 `project_search`、`
   "schemaVersion": 1,
   "model": { "provider": "anthropic", "modelId": "claude-sonnet-4-5" },
   "thinkingLevel": "high",
+  "generation": { "temperature": 0.7, "topP": 0.9, "maxOutputTokens": 8192 },
   "tools": { "mode": "pi-default" }
 }
 ```
 
-模型必须已存在于内置或自定义模型目录中，并具有有效认证。该文件至少包含 `model`、`thinkingLevel`、`tools` 或 `resources` 之一。通常应通过 Chat 界面或 API 修改，以便保存前验证模型、认证和 Tool；不要提交到项目 Git。`resources` 保存该 Agent 在当前 Project 的持久资源策略（`inherit` 或含 `skillPaths`/`extensionPaths`/`pluginSources` 的 `explicit`），路径在加载时重新经过授权边界校验；`PUT /api/workflows/:workflowId/agents/:agentId/resource-config` 写入，`DELETE` 同路径恢复 Workflow 默认。
+模型必须已存在于内置或自定义模型目录中，并具有有效认证。该文件至少包含 `model`、`thinkingLevel`、`generation`、`tools` 或 `resources` 之一。`generation` 是可选采样参数：`temperature`（0–2）、`topP`（0–1）、`maxOutputTokens`（1–32000 整数），至少提供一项；生效时经 Pi Agent state 透传为请求的 `temperature`/`maxTokens`/`samplingParams.top_p`（`top_p` 仅 OpenAI-compatible 适配层使用）。通常应通过 Chat 界面或 API 修改，以便保存前验证模型、认证和 Tool；不要提交到项目 Git。`resources` 保存该 Agent 在当前 Project 的持久资源策略（`inherit` 或含 `skillPaths`/`extensionPaths`/`pluginSources` 的 `explicit`），路径在加载时重新经过授权边界校验；`PUT /api/workflows/:workflowId/agents/:agentId/resource-config` 写入，`DELETE` 同路径恢复 Workflow 默认。
 
-`PUT /api/workflows/:workflowId/agents/:agentId/model-config` 只覆盖请求中出现的字段：传对象或字符串表示设置，传 `null` 表示只清除该字段并保留其他覆盖，省略的字段保持不变；`model`、`thinkingLevel` 和 `tools` 全部移除后该文件自动删除。`DELETE` 一次清除 `model` 和 `thinkingLevel`，保留 `tools`。界面上“使用Workflow默认”对应逐字段清除，“恢复Workflow默认模型与思考等级”对应 `DELETE`。
+`PUT /api/workflows/:workflowId/agents/:agentId/model-config` 只覆盖请求中出现的字段：传对象或字符串表示设置，传 `null` 表示只清除该字段并保留其他覆盖，省略的字段保持不变；`model`、`thinkingLevel`、`generation`、`tools` 和 `resources` 全部移除后该文件自动删除。`DELETE` 一次清除 `model` 和 `thinkingLevel`，保留 `generation`、`tools` 与 `resources`。界面上“使用Workflow默认”对应逐字段清除，“恢复Workflow默认模型与思考等级”对应 `DELETE`。
 
 ## 8. Session、本轮调整与优先级
 
@@ -377,7 +378,7 @@ Session 位于 `<CHAT_HOME>/projects/<projectId>/sessions/*.jsonl`。它会记�
 → 本轮明确调整
 ```
 
-Project 私有 Agent 文件单独覆盖该 Agent 的模型、Thinking Level 和 Tool；Session 或本轮若明确选择 Tool，则以更具体的选择为准。Agent 没有指定模型时，才使用 Session 恢复结果或 `agent/settings.json` 的默认模型。
+Project 私有 Agent 文件单独覆盖该 Agent 的模型、Thinking Level、生成参数和 Tool；Session 或本轮若明确选择，则以更具体的选择为准。会话级覆盖还支持 `model`/`thinkingLevel`/`generation` 三档（“当前会话”档，优先于持久配置），只随 Session 流动，不写入 Personal 或 Project `config.json`。Agent 没有指定模型时，才使用 Session 恢复结果或 `agent/settings.json` 的默认模型。
 
 修改 Personal 默认不会重写已有 Session 的最近选择。若要立即恢复新默认，请在界面中重置对应 Agent，或新建 Session。
 
@@ -424,7 +425,7 @@ src/workflows/<workflowId>/agents/<agentId>/agent.json
 
 约定的 Project `.chat/extensions` 是可选资源目录，未创建时不作为扩展加载错误；工具目录与公共 Pi 装配使用相同发现规则。显式配置的扩展路径继续由 Pi 校验，实际诊断不会因此隐藏。
 
-Friend 的简介在配置保存时也允许空串（最多 500 字符）；底层 Agent Definition 保留 `Chat Long Agent` 默认描述，列表仍显示用户的空简介。`responseTemplate` 可省略以保留当前值、传 null 恢复默认，或传最多 2000 字符的字符串；Registry 读取保留该字段。revision 按规范化配置计算，避免保存后因字段顺序不同产生虚假冲突。
+Friend 的简介在配置保存时也允许空串（最多 500 字符）；底层 Agent Definition 保留 `Chat Long Agent` 默认描述，列表仍显示用户的空简介。revision 按规范化配置计算，避免保存后因字段顺序不同产生虚假冲突。原 `responseTemplate` 回复尾注模板已废弃；更旧配置或客户端传入的该字段会被读取时忽略，下次保存写入后即移除。
 
 ## 公共装配与后续格式迁移
 

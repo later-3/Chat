@@ -114,11 +114,11 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
       : Array.isArray(lastUser?.content) ? lastUser.content.filter((block) => block?.type === "text").map((block) => block.text).join("\n")
         : "";
     modelCalls.push({ userText: userText.slice(0, 200), system: systemText.slice(0, 120), tools });
-    // A controlled slow writer lets the browser prove the answer is visible before memory finishes.
-    if (systemText.includes("只负责维护") && JSON.stringify(messages).includes("UI_WAIT_REMEMBER")) {
+    // A controlled slow work stream (after the read tool result) lets the browser prove reconnect+stop.
+    if (userText.includes("UI_WAIT_REMEMBER") && hasToolResult) {
       rememberWaiting = true;
       response.writeHead(200, { "Content-Type": "text/event-stream" });
-      response.write(`data: ${JSON.stringify({ id: "slow-writer", object: "chat.completion.chunk", model: "browser-model", choices: [{ index: 0, delta: { role: "assistant", content: "MEMORY_STILL_RUNNING" }, finish_reason: null }] })}\n\n`);
+      response.write(`data: ${JSON.stringify({ id: "slow-work", object: "chat.completion.chunk", model: "browser-model", choices: [{ index: 0, delta: { role: "assistant", content: "WORK_STILL_RUNNING" }, finish_reason: null }] })}\n\n`);
       return; // The user's real Stop action must abort this stream.
     }
     if (systemText.includes("Stable Friend") && userText.includes("帮我把这个问题建成一个主题会话")) {
@@ -210,7 +210,6 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
     await stopProcess(server);
     modelServer.closeAllConnections();
     await new Promise((resolve) => modelServer.close(resolve));
-    fs.rmSync(buildDir, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   });
   const ready = async () => {
@@ -419,29 +418,14 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
   const memoryAfterEdit = await (await fetch(`${baseUrl}/api/long-agents/friend/sessions/${rootNode.sessionId}/memory`)).json();
   assert.equal(memoryAfterEdit.entries.some((entry) => entry.content === "UI_EDITED_MEMORY" && entry.purpose === "experience" && entry.status === "active"), true, JSON.stringify(memoryAfterEdit.entries));
 
-  // 6) Toggle the node's session-memory switch; poll the SERVER fact (the write is asynchronous).
-  const nodeMemoryState = async () => (await (await fetch(`${baseUrl}/api/long-agents/friend/topics/${topic.topicId}`)).json())
-    .nodes.find((node) => node.nodeId === rootNode.nodeId).sessionMemory;
-  const waitForMemoryState = async (expected, label) => {
-    const deadline = Date.now() + 30_000;
-    while (Date.now() < deadline) {
-      if (await nodeMemoryState() === expected) return;
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    }
-    assert.fail(`${label}: session memory never became ${expected}`);
-  };
-  await page.evaluate("document.querySelector('[data-session-memory-toggle]')?.click()");
-  await waitForMemoryState("off", "toggling memory off");
-  await page.waitFor("document.querySelector('[data-session-memory-toggle]')?.disabled === false", { label: "记忆策略保存完成", timeoutMs: 10_000 });
-  // Opening the same node through a direct Session/calendar entry must restore its persisted policy.
+  // 6) The node dialog is a PURE reader now: no per-node memory toggle exists anywhere.
   await page.send("Page.navigate", { url: `${baseUrl}/?session=${rootNode.sessionId}&projectId=friend` });
   await page.waitFor("document.querySelector('[data-session-memory-open]') !== null", { label: "直接进入节点会话", timeoutMs: 20_000 });
   await click('[data-session-memory-open]');
-  await page.waitFor("document.querySelector('[data-session-memory-toggle]')?.checked === false", { label: "跨入口恢复关闭的节点记忆策略", timeoutMs: 20_000 });
-
-  await page.evaluate("document.querySelector('[data-session-memory-toggle]')?.click()");
-  await waitForMemoryState("on", "toggling memory on");
-  await page.waitFor("document.body.innerText.includes('UI_EDITED_MEMORY')", { label: "切换记忆后重载", timeoutMs: 30_000 });
+  assert.equal(await page.evaluate("document.querySelector('[data-session-memory-toggle]') === null"), true,
+    "the reader has no memory switch; memory rounds are the separate Workflow");
+  await page.waitFor("document.querySelector('[data-session-memory-open]').closest('[role=dialog], dialog, .surface-dialog')?.innerText.includes('UI_EDITED_MEMORY') || document.body.innerText.includes('UI_EDITED_MEMORY')",
+    { label: "阅读器展示已编辑条目", timeoutMs: 30_000 });
 
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
@@ -586,7 +570,6 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
   await page.waitFor("document.querySelector('[data-topic-session]')?.innerText.includes('UI_TOPIC_MESSAGE')", { label: "刷新后消息恢复", timeoutMs: 40_000 });
   await click('[data-session-memory-open]');
   await page.waitFor("document.body.innerText.includes('UI_EDITED_MEMORY')", { label: "刷新后记忆恢复", timeoutMs: 30_000 });
-  assert.equal(await page.evaluate("document.querySelector('[data-session-memory-toggle]')?.checked"), true, "node policy is restored from the server");
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await openAux();
@@ -651,18 +634,18 @@ test("topic mode is usable in a real browser: enter a node, see structured execu
   await click('[data-topic-creation-enter]');
   await page.waitFor("document.querySelector('[data-topic-session] textarea') !== null", { label: "从日常创建进入节点会话" });
 
-  // T4/T7: show the answer while writer is held open, reconnect, and stop via the real shared composer.
+  // T4/T7: stream the single work round, reconnect mid-round, and stop via the real shared composer.
   await type('[data-topic-session] textarea', 'UI_WAIT_REMEMBER');
   await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", modifiers: 2, windowsVirtualKeyCode: 13 });
   await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", modifiers: 2, windowsVirtualKeyCode: 13 });
-  await page.waitFor("document.querySelector('[data-round-phase=remember]') !== null && document.querySelector('[data-topic-session]').innerText.includes('BROWSER_TOPIC_REPLY')", { label: "答案先出且记忆阶段可见", timeoutMs: 90_000 });
-  assert.equal(rememberWaiting, true);
-  await screenshot('answer-and-memory-running');
+  // 轮在运行中（read 工具真实执行后 stream 被夹住）但没有可见答案：这轮将被用户_stop 掉。
+  await page.waitFor("document.querySelector('[data-topic-session] [data-chat-stop]') !== null", { label: "轮次运行中可停止", timeoutMs: 90_000 });
+  await screenshot('round-streaming');
   await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
   await new Promise(resolve => setTimeout(resolve, 1200));
   await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   await reloadPage();
-  await page.waitFor("document.querySelector('[data-round-phase=remember]') !== null", { label: "运行中刷新恢复记忆阶段", timeoutMs: 30_000 });
+  await page.waitFor("document.querySelector('[data-topic-session]') !== null", { label: "刷新后回到节点会话", timeoutMs: 30_000 });
   await click('[data-topic-session] [data-chat-stop]');
   await page.waitFor("document.querySelector('[data-run-status]')?.innerText.includes('Stopped')", { label: "真实停止确认", timeoutMs: 30_000 });
   const turns = (await readLongAgentState(home)).turns.filter(turn => turn.sessionId === naturalCreation.node.sessionId);

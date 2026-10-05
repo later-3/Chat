@@ -93,7 +93,8 @@ Chat/frontend（纯浏览器）
 | `POST /api/skills/update` | Skill更新 | 待迁移 | 明确升级与失败恢复 |
 | `GET/POST /api/plugins` | Plugin列表、安装、删除、更新和启停 | 已接入 | 直接使用Pi SettingsManager与DefaultPackageManager |
 | `GET/POST /api/extensions` | Extension列表与文件级启停 | 已接入 | 使用Pi Package解析；本地单文件通过`.disabled`切换 |
-| `POST /api/workflows/:workflowId/agents/:agentId/resolve` | 查看Agent最终能力 | 已接入 | 从Registry调用与执行相同的Workflow `prepareAgentSession`，再创建不发送Prompt的内存Pi AgentSession，返回最终Prompt、Tool和资源事实；Skill带`owner`归属分类（personal/project/plugin/injected），前端按归属分组展示当前生效Skill |
+| `POST /api/workflows/:workflowId/agents/:agentId/resolve` | 查看Agent最终能力 | 已接入 | 从Registry调用与执行相同的Workflow `prepareAgentSession`，再创建不发送Prompt的内存Pi AgentSession，返回最终Prompt、Tool和资源事实；Skill带`owner`归属分类（personal/project/plugin/injected），前端按归属分组展示当前生效Skill；`agent`投影含`effectiveGeneration`与`generationSource`（`workflow-default`/`config-file`/`durable`/`selection`/`chat-default`） |
+| `PUT/DELETE /api/workflows/:workflowId/agents/:agentId/model-config` | 项目私有Agent模型配置 | 已接入 | 只写`<CHAT_HOME>/projects/<projectId>/workflows/<workflowId>/agents/<agentId>.json`；`PUT`逐字段覆盖（省略不动、`null`清除），字段为`model`/`thinkingLevel`/`generation`/`tools`/`resources`，其中`generation`是采样参数对象（`temperature` 0–2、`topP` 0–1、`maxOutputTokens` 1–32000整数，至少一项），全部字段清除后自动删文件；`DELETE`一次清除`model`与`thinkingLevel`，保留其余字段 |
 
 ### 4.5 长期记忆
 

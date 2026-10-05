@@ -46,7 +46,7 @@ test("group chat is usable in a real browser: two groups, five policies, backgro
 }, async (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-la5-browser-")));
   const home = path.join(root, "home");
-  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-la5-browser-"));
+  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-group-browser-"));
   const workspace = path.join(root, "workspace");
   fs.mkdirSync(workspace, { recursive: true });
   fs.writeFileSync(path.join(workspace, "AGENTS.md"), "RULE_BROWSER\n");
@@ -113,7 +113,6 @@ test("group chat is usable in a real browser: two groups, five policies, backgro
     await stopProcess(server);
     modelServer.closeAllConnections();
     await new Promise((resolve) => modelServer.close(resolve));
-    fs.rmSync(buildDir, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   });
   const ready = async () => {

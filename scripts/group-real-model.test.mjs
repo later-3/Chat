@@ -47,7 +47,7 @@ test("group round runs through the real configured model", {
 }, async (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "chat-la5-realmodel-")));
   const home = path.join(root, "home");
-  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-la5-realmodel-"));
+  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-group-real-model-"));
   const workspace = path.join(root, "workspace");
   fs.mkdirSync(workspace, { recursive: true });
   fs.writeFileSync(path.join(workspace, "AGENTS.md"), "RULE_REAL\n");
@@ -88,7 +88,6 @@ test("group round runs through the real configured model", {
   server.stderr.on("data", (chunk) => { output += chunk.toString(); });
   t.after(async () => {
     await stopProcess(server);
-    fs.rmSync(buildDir, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   });
   const ready = async () => {

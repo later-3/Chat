@@ -81,7 +81,7 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
   timeout: 90_000,
 }, async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "chat-dev-server-"));
-  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-dev-test-"));
+  const buildDir = fs.mkdtempSync(path.join(projectRoot, "node_modules", ".nitro-dev-server-"));
   const chatHome = path.join(runtimeRoot, "chat-home");
   const workspace = path.join(runtimeRoot, "workspace");
   const agentDir = path.join(chatHome, "agent");
@@ -119,20 +119,6 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
         return;
       }
       const modelRequest = await readJson(request);
-      // The session-memory writer is the Workflow's LAST stage and carries the SAME history as the work
-      // turn. It MUST be routed first: every DIRECT_CALL_* gate below belongs to the WORK agent, and the
-      // writer waiting on one of them (released only once) would hang this request forever.
-      if (isSessionMemoryWriterRequest(modelRequest.messages)) {
-        sessionMemoryRequests.push(modelRequest);
-        if (modelRequest.messages.at(-1)?.role === "tool") {
-          writeAssistantText(response, "本轮无需写入", "chatcmpl-dev-session-memory", "dev-e2e-model");
-        } else {
-          writeToolCalls(response, "chatcmpl-dev-session-memory", [{ index: 0, id: "dev-session-memory-write",
-            type: "function", function: { name: "session_memory", arguments: JSON.stringify({
-              operation: "write", purpose: "finding", author: "agent", content: "DEV_E2E 会话记忆条目", expectedRevision: 0 }) } }]);
-        }
-        return;
-      }
       if (respondPlannerConversation(modelRequest, response)) return;
       modelRequests.push(modelRequest);
       if (respondProjectManagement(modelRequest, response, chatHome, "dev-e2e-model")) return;
@@ -651,18 +637,16 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
 
     assert.equal(status?.status, "completed", `${JSON.stringify(status)}\n${output}`);
     assert.equal(status.result.text, "DEV_E2E_OK");
+    // 会话记忆不再随轮运行：业务轮只包含 Planner 两版与执行器的真实请求。
     assert.equal(modelRequests.length, 3);
-    // The Workflow's LAST node is the memory writer: it must really run after the work answer, and the
-    // round must settle only after it did.
-    assert.ok(sessionMemoryRequests.length > 0, "the memory writer stage must run");
-    // Session memory lives inside the session directory since the layout refactor
-    // (8a31f5665): <storageRoot>/sessions/session-memory/<id>.json.
-    const memoryFile = path.join(chatHome, "projects", "dev-e2e-project", "sessions", "session-memory", `${status.result.sessionId}.json`);
-    assert.equal(fs.existsSync(memoryFile), true, `the writer must persist session memory: ${memoryFile}`);
-    assert.match(fs.readFileSync(memoryFile, "utf8"), /DEV_E2E 会话记忆条目/);
+    // [0] = planner first round (the deterministic marker prompt: PLAN_V1 is its OUTPUT, not input).
+    assert.match(JSON.stringify(modelRequests[0]), /Reply with the deterministic marker/);
+    assert.doesNotMatch(JSON.stringify(modelRequests[0]), /已通过执行计划 v2/);
+    // [1] = planner revision round: the review feedback reaches THIS request, and the earlier PLAN_V1
+    // stays historical Agent speech in the linear Session history.
     assert.match(JSON.stringify(modelRequests[1]), /Add an explicit rollback step before execution\./);
     assert.match(JSON.stringify(modelRequests[1]), /PLAN_V1/);
-    assert.match(JSON.stringify(modelRequests[2]), /PLAN_V2/);
+    assert.equal(sessionMemoryRequests.length, 0);
     assert.match(JSON.stringify(modelRequests[2]), /已通过执行计划 v2，开始执行。/);
     // Executor receives the same linear Session, so the rejected plan remains
     // historical Agent speech. Its final internal handoff must select PLAN_V2.
@@ -1425,7 +1409,6 @@ test("Nitro dev executes Frontend's Run contract through Workflow, Pi SDK, and a
     if (modelServer?.listening) {
       await new Promise((resolve) => modelServer.close(resolve));
     }
-    fs.rmSync(buildDir, { recursive: true, force: true });
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
 });
