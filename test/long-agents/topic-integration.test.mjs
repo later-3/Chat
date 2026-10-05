@@ -325,8 +325,6 @@ test("topic integration: a relay round resumes the relayed message and never wri
     longAgentTurnId: "chat-web:friend:relay-caller" });
   faux.setResponses([
     fauxAssistantMessage("work：已按代传内容继续排查"),
-    fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "代传轮次结论", expectedRevision: 0 })),
-    (context) => fauxAssistantMessage(`已写入 ${/"entryId":"([^"]+)"/.exec(context.messages.filter((message) => message.role === "toolResult").map((message) => JSON.stringify(message)).join("\n"))?.[1] ?? "missing"}`),
   ]);
   const relayed = (await definition.execute("call-1", { operation: "relay", targetNodeId: root.nodeId, requestId: "relay-1", text: "请继续排查这个分支" })).details;
   assert.equal(relayed.created, true);
@@ -345,8 +343,9 @@ test("topic integration: a relay round resumes the relayed message and never wri
   const replay = (await definition.execute("call-1b", { operation: "relay", targetNodeId: root.nodeId, requestId: "relay-1", text: "请继续排查这个分支" })).details;
   assert.equal(replay.created, false);
   assert.equal(replay.userEntryId, userMessages[0].id);
+  // Node rounds no longer maintain memory: the separate session-memory Workflow owns that.
   const memory = await readSessionMemory(base.home, "friend", root.sessionId);
-  assert.equal(memory.entries.some((entry) => entry.content === "代传轮次结论"), true, "the whole work+remember round finished");
+  assert.equal(memory.entries.length, 0, "a node round writes no memory");
 
   // The settled anchor is forkable.
   const anchors = readTopicSettledAnchors(session.manager);
@@ -398,7 +397,7 @@ test("topic integration: a node turn delegates the diagnosis workflow into its f
   const frozenProject = base.projects[0].projectId;
   const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "诊断", purpose: "诊断", requestId: "pd-topic", expectedRevision: 0 })).topic;
   const node = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "pd-topic", title: "定位节点", createdBy: "agent", frozenProjectContext: frozenProject, sessionMemory: "off" })).node;
+    requestId: "pd-topic", title: "定位节点", createdBy: "agent", frozenProjectContext: frozenProject })).node;
 
   faux.setResponses([
     fauxAssistantMessage(fauxToolCall("workflow_call", { action: "start", workflowId: "problem-diagnosis",
@@ -448,7 +447,7 @@ test("topic integration: two queued relays each execute their own frozen message
   const { collectTopicRoundMarkers } = await import("../../src/long-agents/topic-anchor.ts");
   const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "双代传", purpose: "双代传", requestId: "two-relay-topic", expectedRevision: 0 })).topic;
   const node = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "two-relay-topic", title: "根节点", createdBy: "agent", sessionMemory: "off" })).node;
+    requestId: "two-relay-topic", title: "根节点", createdBy: "agent" })).node;
 
   // Write-only relay staging (no longAgentTurnId): both requests persist as durable INTENTS before any
   // round runs; no native message exists yet.
@@ -522,7 +521,7 @@ test("topic integration: a node POST with a frozen project replays instead of co
   const frozenProject = base.projects[0].projectId;
   const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "冻结项目", purpose: "冻结项目", requestId: "frozen-topic", expectedRevision: 0 })).topic;
   const node = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "frozen-topic", title: "根节点", createdBy: "agent", frozenProjectContext: frozenProject, sessionMemory: "off" })).node;
+    requestId: "frozen-topic", title: "根节点", createdBy: "agent", frozenProjectContext: frozenProject })).node;
 
   const app = await router();
   const call = (requestPath, init) => app.fetch(new Request(`http://chat.test${requestPath}`, init));
@@ -564,11 +563,11 @@ test("R4 supplemental integration: one confirmed action writes the product and t
   const { openChatSession } = await import("../../src/chat-session.ts");
   const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "补充整合", purpose: "补充整合", requestId: "r4-topic", expectedRevision: 0 })).topic;
   const root = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "r4-topic", title: "根节点", createdBy: "agent", sessionMemory: "off" })).node;
+    requestId: "r4-topic", title: "根节点", createdBy: "agent" })).node;
   const parent = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "r4-parent", title: "父节点", createdBy: "agent", sessionMemory: "off", parents: [{ parentNodeId: root.nodeId }] })).node;
+    requestId: "r4-parent", title: "父节点", createdBy: "agent", parents: [{ parentNodeId: root.nodeId }] })).node;
   const child = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "r4-child", title: "子节点", createdBy: "agent", sessionMemory: "off", parents: [{ parentNodeId: root.nodeId }] })).node;
+    requestId: "r4-child", title: "子节点", createdBy: "agent", parents: [{ parentNodeId: root.nodeId }] })).node;
 
   // A real settled anchor on the parent.
   faux.setResponses([fauxAssistantMessage("父节点第一轮")]);
@@ -618,7 +617,7 @@ test("R4 supplemental integration: one confirmed action writes the product and t
 
   // A relay product on a different child is also idempotent (durable intent).
   const relayChild = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "r4-child-2", title: "子节点2", createdBy: "agent", sessionMemory: "off", parents: [{ parentNodeId: root.nodeId }] })).node;
+    requestId: "r4-child-2", title: "子节点2", createdBy: "agent", parents: [{ parentNodeId: root.nodeId }] })).node;
   const relayed = await supplementTopicChildIntegration({ chatHome: base.home, longAgentId: "friend", childNodeId: relayChild.nodeId,
     parentNodeId: parent.nodeId, anchorEntryId: anchor.anchorEntryId, anchorSequence: anchor.anchorSequence,
     requestId: "r4-supp-2", product: { kind: "relay", text: "补充代传" }, confirmedBy: "user" });
@@ -656,22 +655,22 @@ test("R4 relay: the confirmed action RUNS the node round, settles an anchor, and
 
   const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "R4代传", purpose: "R4代传", requestId: "r4r-topic", expectedRevision: 0 })).topic;
   const root = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "r4r-topic", title: "根节点", createdBy: "agent", sessionMemory: "off" })).node;
+    requestId: "r4r-topic", title: "根节点", createdBy: "agent" })).node;
   const parent = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "r4r-parent", title: "父节点", createdBy: "agent", sessionMemory: "off", parents: [{ parentNodeId: root.nodeId }] })).node;
+    requestId: "r4r-parent", title: "父节点", createdBy: "agent", parents: [{ parentNodeId: root.nodeId }] })).node;
   const childA = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "r4r-a", title: "子节点A", createdBy: "agent", sessionMemory: "on", parents: [{ parentNodeId: root.nodeId }] })).node;
+    requestId: "r4r-a", title: "子节点A", createdBy: "agent", parents: [{ parentNodeId: root.nodeId }] })).node;
   const childB = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "r4r-b", title: "子节点B", createdBy: "agent", sessionMemory: "on", parents: [{ parentNodeId: root.nodeId }] })).node;
+    requestId: "r4r-b", title: "子节点B", createdBy: "agent", parents: [{ parentNodeId: root.nodeId }] })).node;
   const childC = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "r4r-c", title: "子节点C", createdBy: "agent", sessionMemory: "on", parents: [{ parentNodeId: root.nodeId }] })).node;
+    requestId: "r4r-c", title: "子节点C", createdBy: "agent", parents: [{ parentNodeId: root.nodeId }] })).node;
 
   // One real settled anchor on the parent (its own round), then one work+remember round per child.
   faux.setResponses([
     fauxAssistantMessage("父节点第一轮"),
-    fauxAssistantMessage("work：已按补充代传 A 继续"), fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "R4代传结论A", expectedRevision: 0 })), fauxAssistantMessage("已记住"),
-    fauxAssistantMessage("work：已按补充代传 B 继续"), fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "R4代传结论B", expectedRevision: 0 })), fauxAssistantMessage("已记住"),
-    fauxAssistantMessage("work：已按补充代传 C 继续"), fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "R4代传结论C", expectedRevision: 0 })), fauxAssistantMessage("已记住"),
+    fauxAssistantMessage("work：已按补充代传 A 继续"),
+    fauxAssistantMessage("work：已按补充代传 B 继续"),
+    fauxAssistantMessage("work：已按补充代传 C 继续"),
   ]);
   await acceptLongAgentTurn({ chatHome: base.home, longAgentId: "friend", requireInteractionRevision: false, projectId: "friend",
     turnId: "r4r-parent-turn", text: "父节点问题", source: "chat-web", topicNode: { topicId: topic.topicId, nodeId: parent.nodeId } });
@@ -718,8 +717,8 @@ test("R4 relay: the confirmed action RUNS the node round, settles an anchor, and
   assert.equal(factsA.turns.length, 1, "exactly one turn for the request id");
   assert.equal(factsA.turns[0].status, "completed");
   assert.equal(factsA.edges.length, 1, "one R4 edge");
-  assert.equal((await readSessionMemory(base.home, "friend", childA.sessionId)).entries.some((entry) => entry.content === "R4代传结论A"), true,
-    "the relay round's work+remember reached a terminal state");
+  assert.equal((await readSessionMemory(base.home, "friend", childA.sessionId)).entries.length, 0,
+    "a node round writes no memory (the separate Workflow owns that)");
   assert.equal(readTopicSettledAnchors(factsA.session.manager).length, 1, "the relay round settled an anchor");
 
   // (2) Retry the same identity: it completes the missing steps and adds NOTHING new.
@@ -758,7 +757,7 @@ test("R4 relay: the confirmed action RUNS the node round, settles an anchor, and
   assert.equal(factsB.turns.length, 1);
   assert.equal(factsB.turns[0].status, "completed");
   assert.equal(factsB.edges.length, 1);
-  assert.equal((await readSessionMemory(base.home, "friend", childB.sessionId)).entries.some((entry) => entry.content === "R4代传结论B"), true);
+  assert.equal((await readSessionMemory(base.home, "friend", childB.sessionId)).entries.length, 0, "a node round writes no memory");
 
   // (5) Interruption AFTER acceptance but BEFORE execution: the retry must not create a second turn.
   const stagedC = await relayTopicNodeMessage({ chatHome: base.home, longAgentId: "friend", nodeId: childC.nodeId, requestId: "r4r-relay-c", text: "补充代传给C" });
@@ -777,7 +776,7 @@ test("R4 relay: the confirmed action RUNS the node round, settles an anchor, and
   assert.equal(factsC.turns.length, 1);
   assert.equal(factsC.turns[0].status, "completed");
   assert.equal(factsC.edges.length, 1);
-  assert.equal((await readSessionMemory(base.home, "friend", childC.sessionId)).entries.some((entry) => entry.content === "R4代传结论C"), true);
+  assert.equal((await readSessionMemory(base.home, "friend", childC.sessionId)).entries.length, 0, "a node round writes no memory");
 });
 
 test("steering a topic node turn keeps the node binding and the server-frozen project", async (t) => {
@@ -791,7 +790,7 @@ test("steering a topic node turn keeps the node binding and the server-frozen pr
   const { readLongAgentState } = await import("../../src/long-agents/storage.ts");
   const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "引导", purpose: "引导", requestId: "steer-topic", expectedRevision: 0 })).topic;
   const node = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId, requestId: "steer-topic",
-    title: "根节点", createdBy: "agent", sessionMemory: "off", frozenProjectContext: "a" })).node;
+    title: "根节点", createdBy: "agent", frozenProjectContext: "a" })).node;
   const accepted = await acceptLongAgentTurn({ chatHome: base.home, longAgentId: "friend", requireInteractionRevision: false, projectId: "friend",
     turnId: "steer-target-1", text: "第一轮", source: "chat-web", topicNode: { topicId: topic.topicId, nodeId: node.nodeId } });
   // The client claims the WRONG project; the server must derive it from the durable node turn instead.
@@ -829,11 +828,7 @@ test("a second message queued mid-round stays in the same node session and reads
   const contexts = [];
   faux.setResponses([
     fauxAssistantMessage("第一轮答案"),
-    fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "append-m1", expectedRevision: 0 })),
-    fauxAssistantMessage("m1-done"),
     (context) => { contexts.push(JSON.stringify(context.messages)); return fauxAssistantMessage("第二轮答案"); },
-    fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "append-m2", expectedRevision: 1 })),
-    fauxAssistantMessage("m2-done"),
   ]);
   // Both messages are accepted while the first round is still queued/running: the second must keep the
   // node target, share the session, and never drift into the daily conversation.

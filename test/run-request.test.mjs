@@ -160,7 +160,7 @@ test("Workflows without image support reject image input with a friendly error",
   );
 });
 
-test("promptCapture is a caller preference parsed like sessionMemory", () => {
+test("promptCapture is a caller preference", () => {
   const on = parseChatWorkflowHttpInput({ prompt: "x", promptCapture: "on" }, defaults);
   assert.equal(on.promptCaptureEnabled, true);
   const off = parseChatWorkflowHttpInput({ prompt: "x", promptCapture: "off" }, defaults);
@@ -171,6 +171,13 @@ test("promptCapture is a caller preference parsed like sessionMemory", () => {
     () => parseChatWorkflowHttpInput({ prompt: "x", promptCapture: "yes" }, defaults),
     /promptCapture必须是on或off/,
   );
+});
+
+test("sessionMemory is no longer a request field: the parser drops it without effect", () => {
+  // Session memory is maintained by the user-triggered 「会话记忆」Workflow; a stale client sending the
+  // old switch must not change the round — the field is simply not part of the parsed request.
+  const parsed = parseChatWorkflowHttpInput({ prompt: "x", sessionMemory: "off" }, defaults);
+  assert.deepEqual(parsed, { cwd: "/workspace", prompt: "x", workflow: DEFAULT_CHAT_WORKFLOW_ID });
 });
 
 test("malformed image attachments are rejected at the HTTP boundary", () => {

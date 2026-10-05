@@ -186,65 +186,7 @@ test("mid-work interruption: recovery marks the round interrupted, settles nothi
   await drainLongAgentTurns(base.home, "friend", node.sessionId);
   const after = await nodeFacts(base.home, node);
   assert.equal(after.anchors, 1, "the fresh round settles exactly one anchor");
-  assert.equal(after.memory, before.memory + 1, "the fresh round writes exactly one memory entry");
-});
-
-test("mid-remember interruption (before the write): nothing settles and no memory is produced", async (t) => {
-  const base = await fixture(t);
-  const server = await startModelServer();
-  t.after(() => server.close());
-  const { topic, node } = await prepare(base.home, server.url, t);
-  const before = await nodeFacts(base.home, node);
-  server.setHang("remember-first");
-  const hang = server.waitForHang();
-  const { acceptLongAgentTurn, drainLongAgentTurns } = await import("../../src/long-agents/turn-queue.ts");
-  await acceptLongAgentTurn({ chatHome: base.home, longAgentId: "friend", requireInteractionRevision: false, projectId: "friend",
-    turnId: "recovery-remember-turn", text: "工作已完成，正在写记忆", source: "chat-web", topicNode: { topicId: topic.topicId, nodeId: node.nodeId } });
-  const worker = spawnWorker(base.home, node.sessionId);
-  await hang;
-  const mid = await nodeFacts(base.home, node);
-  assert.equal(mid.anchors, 0, "work finished but remember is still running: NOT settled");
-  assert.equal(mid.memory, before.memory, "the writer had not written yet");
-  worker.child.kill("SIGKILL");
-  await worker.exited;
-  server.setHang(null);
-  await drainLongAgentTurns(base.home, "friend", node.sessionId);
-  const turn = (await readLongAgentState(base.home)).turns.find((candidate) => candidate.requestId === "recovery-remember-turn");
-  assert.equal(turn?.status, "interrupted");
-  const recovered = await nodeFacts(base.home, node);
-  assert.equal(recovered.anchors, 0, "nothing settled");
-  assert.equal(recovered.memory, before.memory, "no memory written or duplicated");
-});
-
-test("mid-remember interruption (after the write): the written entry stays, recovery adds no duplicate", async (t) => {
-  const base = await fixture(t);
-  const server = await startModelServer();
-  t.after(() => server.close());
-  const { topic, node } = await prepare(base.home, server.url, t);
-  server.setHang("remember-after-write");
-  const hang = server.waitForHang();
-  const { acceptLongAgentTurn, drainLongAgentTurns } = await import("../../src/long-agents/turn-queue.ts");
-  await acceptLongAgentTurn({ chatHome: base.home, longAgentId: "friend", requireInteractionRevision: false, projectId: "friend",
-    turnId: "recovery-remember2-turn", text: "写完记忆再中断", source: "chat-web", topicNode: { topicId: topic.topicId, nodeId: node.nodeId } });
-  const worker = spawnWorker(base.home, node.sessionId);
-  await hang;
-  const mid = await nodeFacts(base.home, node);
-  assert.equal(mid.anchors, 0, "the round is not settled even though remember already wrote");
-  assert.equal(mid.memory, 1, "the writer's entry landed before the interruption");
-  worker.child.kill("SIGKILL");
-  await worker.exited;
-  server.setHang(null);
-  await drainLongAgentTurns(base.home, "friend", node.sessionId);
-  const recovered = await nodeFacts(base.home, node);
-  assert.equal(recovered.anchors, 0, "still not settled after recovery");
-  assert.equal(recovered.memory, 1, "recovery does not replay, so the entry is neither duplicated nor lost");
-  // A fresh round keeps the total consistent: one new entry, one settled anchor.
-  await acceptLongAgentTurn({ chatHome: base.home, longAgentId: "friend", requireInteractionRevision: false, projectId: "friend",
-    turnId: "recovery-remember2-next", text: "新的一轮", source: "chat-web", topicNode: { topicId: topic.topicId, nodeId: node.nodeId } });
-  await drainLongAgentTurns(base.home, "friend", node.sessionId);
-  const after = await nodeFacts(base.home, node);
-  assert.equal(after.anchors, 1);
-  assert.equal(after.memory, 2);
+  assert.equal(after.memory, before.memory, "node rounds no longer write memory (the separate Workflow does)");
 });
 
 test("mid-work interruption of a RELAY round keeps exactly one intent, one native message and one turn", async (t) => {
@@ -322,27 +264,28 @@ test("recovery converges a round whose completed marker landed but whose queue s
   assert.deepEqual(after.roundMarkers, ["running", "completed"], "recovery adds no round marker");
 });
 
-test("a cancellation during remember is never rewritten as a completed round", async (t) => {
+test("a cancellation mid-work is never rewritten as a completed round", async (t) => {
   const base = await fixture(t);
   const { drainLongAgentTurns } = await import("../../src/long-agents/turn-queue.ts");
   const { cancelFriendTurn } = await import("../../src/long-agents/turn-controls.ts");
-  let cancelled = false;
-  const server = await startModelServer({ onRememberFirst: async () => {
-    if (cancelled) return;
-    cancelled = true;
-    // The REAL stop entry: it sets the durable cancel intent AND aborts the live Session, which at this
-    // point is the writer's (the work segment handed the round over).
-    await cancelFriendTurn(base.home, "friend", "chat-web:friend:recovery-cancel-turn");
-  } });
+  const server = await startModelServer();
   t.after(() => server.close());
   const { topic, node } = await prepare(base.home, server.url, t);
+  // Remember 阶段已退役：取消发生在工作轮内（唯一阶段）；同进程 drain 才能 abort 真实 live Session。
+  server.setHang("work");
+  const hang = server.waitForHang();
   const { acceptLongAgentTurn } = await import("../../src/long-agents/turn-queue.ts");
   await acceptLongAgentTurn({ chatHome: base.home, longAgentId: "friend", requireInteractionRevision: false, projectId: "friend",
     turnId: "recovery-cancel-turn", text: "这一轮会被取消", source: "chat-web", topicNode: { topicId: topic.topicId, nodeId: node.nodeId } });
-  await drainLongAgentTurns(base.home, "friend", node.sessionId);
+  void drainLongAgentTurns(base.home, "friend", node.sessionId);
+  await hang;
+  await cancelFriendTurn(base.home, "friend", "chat-web:friend:recovery-cancel-turn");
+  server.setHang(null);
+  await drainLongAgentTurns(base.home, "friend", node.sessionId).catch(() => {});
   const turn = (await readLongAgentState(base.home)).turns.find((candidate) => candidate.requestId === "recovery-cancel-turn");
   assert.equal(turn?.status, "cancelled", "a cancelled round stays cancelled");
   const facts = await nodeFacts(base.home, node);
   assert.equal(facts.anchors, 0, "a cancelled round is not a forkable anchor");
   assert.equal(facts.roundMarkers.includes("completed"), false, "a stopped round is never marked completed");
+  assert.equal(facts.memory, 0, "no memory for a cancelled round");
 });

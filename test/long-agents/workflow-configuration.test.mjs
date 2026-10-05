@@ -8,8 +8,6 @@ import { readLongAgentRegistry, updateLongAgentRegistry } from "../../src/long-a
 import { acceptLongAgentTurn, executeQueuedLongAgentTurn } from "../../src/long-agents/turn-queue.ts";
 import { readAssemblySnapshot } from "../../src/agents/assembly-context.ts";
 import { updateAgentDurableConfig, readAgentDurableConfig } from "../../src/workflows/agent-model-config.ts";
-import { prepareChatWorkflowAgentsFromRound } from "../../src/workflows/workflow-configuration.ts";
-import { SESSION_MEMORY_WRITER_AGENT } from "../../src/workflows/session-memory/agents/writer/index.ts";
 import { inspectWorkflowAgent } from "../../src/workflows/agent-inspection.ts";
 import { PI_CODING_AGENT } from "../../src/workflows/minimal-pi-coding-agent/agents/pi-coding-agent/index.ts";
 
@@ -19,11 +17,9 @@ function acceptedSnapshot(turn) {
   return { manager, snapshot: readAssemblySnapshot(manager, turn.turnId) };
 }
 
-test("Web, IM and schedule use Workflow configuration; admission freezes all roles and Session selections", async t => {
+test("Web, IM and schedule use Workflow configuration; admission freezes the role and Session selections", async t => {
   const f = await fixture(t);
   const base = path.join(f.home, "long-agents/friend");
-  const writer = { provider: "p3-local", modelId: "daily-model" };
-  await updateAgentDurableConfig(base, "minimal-pi-coding-agent", "session-memory-writer", { model: writer });
   const accepted = [];
   for (const source of ["chat-web", "channel", "scheduled"]) accepted.push(await acceptLongAgentTurn({ ...f.input(source), source,
     agentConfigs: { "pi-coding-agent": { tools: { mode: "none" } } } }));
@@ -31,22 +27,16 @@ test("Web, IM and schedule use Workflow configuration; admission freezes all rol
     const { snapshot } = acceptedSnapshot(turn);
     assert.equal(snapshot.agent.id, "pi-coding-agent");
     assert.equal(snapshot.agent.tools.mode, "none");
-    assert.deepEqual(snapshot.agent.model, writer);
+    assert.deepEqual(snapshot.agent.model, { provider: "p3-local", modelId: "daily-model" });
     assert.match(JSON.stringify(snapshot.agent.customInstructions), /Stable Friend/);
   }
   const inspected = await inspectWorkflowAgent({ projectId: "friend", chatHome: f.home, cwd: base,
     workflowId: "minimal-pi-coding-agent", defaultAgent: PI_CODING_AGENT, selection: { tools: { mode: "none" } } });
   assert.equal(inspected.agent.effectiveModel.modelId, "daily-model");
-  // A later durable edit cannot change either role of an already accepted invocation.
+  // A later durable edit cannot change the role of an already accepted invocation.
   await updateAgentDurableConfig(base, "minimal-pi-coding-agent", "pi-coding-agent", { tools: { mode: "explicit", names: ["read"], exclude: [] } });
-  await updateAgentDurableConfig(base, "minimal-pi-coding-agent", "session-memory-writer", { model: { provider: "removed-provider", modelId: "later" } });
-  const { manager } = acceptedSnapshot(accepted[0]);
-  const frozenWriter = await prepareChatWorkflowAgentsFromRound({ sessionManager: manager, invocationId: accepted[0].workflow.invocationId,
-    workflowId: accepted[0].workflow.id, agents: [SESSION_MEMORY_WRITER_AGENT], cwd: base, chatHome: f.home, projectDataDir: base });
-  assert.deepEqual(frozenWriter.agents[SESSION_MEMORY_WRITER_AGENT.id].model, writer);
   const result = await executeQueuedLongAgentTurn({ ...f.input("chat-web"), source: "chat-web", agentConfigs: { "pi-coding-agent": { tools: { mode: "none" } } } });
   assert.equal(result.completed, true);
-  assert.ok(!JSON.stringify(f.requests.at(-1)).includes("Stable Friend"), "writer must not inherit owner duties");
   assert.equal((await readLongAgentRegistry(f.home)).agents[0].definition.tools.names[0], "read");
 });
 
@@ -72,4 +62,22 @@ test("legacy execution settings migrate once into the shared store with identity
   const restored = await readAgentDurableConfig(base, "minimal-pi-coding-agent", "pi-coding-agent");
   assert.equal(restored.tools.mode, "none", "compatibility writes compare the effective inherited value");
   assert.equal(restored.resources.mode, "explicit");
+});
+
+test("inspection exposes effective generation parameters and their source", async t => {
+  const f = await fixture(t);
+  const base = path.join(f.home, "long-agents/friend");
+  await updateAgentDurableConfig(base, "minimal-pi-coding-agent", "pi-coding-agent", {
+    generation: { temperature: 0.3, maxOutputTokens: 8192 },
+  });
+  const inspected = await inspectWorkflowAgent({ projectId: "friend", chatHome: f.home, cwd: base,
+    workflowId: "minimal-pi-coding-agent", defaultAgent: PI_CODING_AGENT });
+  assert.deepEqual(inspected.agent.effectiveGeneration, { temperature: 0.3, maxOutputTokens: 8192 });
+  assert.equal(inspected.agent.generationSource, "durable");
+
+  // 会话级选择覆盖持久配置，并把来源标记为 selection。
+  const withSessionSelection = await inspectWorkflowAgent({ projectId: "friend", chatHome: f.home, cwd: base,
+    workflowId: "minimal-pi-coding-agent", defaultAgent: PI_CODING_AGENT, selection: { generation: { topP: 0.8 } } });
+  assert.deepEqual(withSessionSelection.agent.effectiveGeneration, { topP: 0.8 });
+  assert.equal(withSessionSelection.agent.generationSource, "selection");
 });

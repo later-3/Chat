@@ -48,12 +48,12 @@ test("independent chats continue across days and work returns to the true origin
   const base = { chatHome: f.home, projectId: "friend", agent };
   const first = await ensureProjectLongAgent({ ...base, createRequestId: "one" });
   const second = await ensureProjectLongAgent({ ...base, createRequestId: "two" });
-  await executeLongAgentTurn({ ...f.input("ONLY_FIRST", "a"), sessionId: first.day.sessionId, sessionMemory: "off" });
-  await executeLongAgentTurn({ ...f.input("ONLY_SECOND", "b"), sessionId: second.day.sessionId, sessionMemory: "off" });
+  await executeLongAgentTurn({ ...f.input("ONLY_FIRST", "a"), sessionId: first.day.sessionId });
+  await executeLongAgentTurn({ ...f.input("ONLY_SECOND", "b"), sessionId: second.day.sessionId });
   assert.doesNotMatch(JSON.stringify(f.requests.at(-1)), /ONLY_FIRST/);
   t.mock.timers.setTime(new Date("2026-09-30T10:00:00Z").getTime());
   const daily = await ensureProjectLongAgent(base);
-  const continued = await executeLongAgentTurn({ ...f.input("CONTINUE_FIRST", "a"), sessionId: first.day.sessionId, sessionMemory: "off" });
+  const continued = await executeLongAgentTurn({ ...f.input("CONTINUE_FIRST", "a"), sessionId: first.day.sessionId });
   assert.equal(continued.sessionId, first.day.sessionId);
   assert.match(JSON.stringify(f.requests.at(-1)), /ONLY_FIRST/);
   assert.equal((await ensureProjectLongAgent(base)).day.sessionId, daily.day.sessionId);

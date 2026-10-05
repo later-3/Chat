@@ -50,7 +50,7 @@ test("LA1 concurrent retries converge; changed payload, foreign identity, projec
   const [a, b] = await Promise.all([startFriendWork(f.work("same")), startFriendWork(f.work("same"))]);
   assert.equal(a.work.id, b.work.id); assert.equal(a.work.sessionId, b.work.sessionId);
   await drainLongAgentTurns(f.home, "friend", a.work.sessionId);
-  assert.equal(f.requests.length, 4);
+  assert.equal(f.requests.length, 2);
   await assert.rejects(startFriendWork(f.work("same", "changed")), /不同输入/);
   await assert.rejects(startFriendWork({ ...f.work("other"), originSessionId: a.work.sessionId }), /不能递归/);
   await assert.rejects(readFriendWork(f.home, "other-friend", a.work.id), /找不到/);
@@ -131,7 +131,7 @@ test("LA1 cancel during assembly is durable and avoids invoking the model", asyn
   await cancelFriendWork(f.home, "friend", work.work.id, turn.turnId);
   release.resolve(); await held; await run;
   assert.equal((await readFriendWork(f.home, "friend", work.work.id)).execution.status, "cancelled");
-  assert.equal(f.requests.length, 4);
+  assert.equal(f.requests.length, 2);
 });
 
 test("LA1 restart classifies unknown work as interrupted and never replays tools", async t => {
@@ -149,7 +149,7 @@ test("LA1 restart classifies unknown work as interrupted and never replays tools
   const result = await readFriendWork(f.home, "friend", work.work.id);
   assert.equal(result.execution.status, "interrupted");
   await drainLongAgentTurns(f.home, "friend", work.work.sessionId);
-  assert.equal(f.requests.length, 4);
+  assert.equal(f.requests.length, 2);
   await deliverFriendWorkReturns(f.home);
 });
 
@@ -203,7 +203,7 @@ test("LA1 the registered Friend tool starts the same identity and refuses an ord
   await drainLongAgentTurns(f.home, "friend");
   const again = await tool.execute("call-1", input);
   assert.equal(again.details.work.id, result.details.work.id);
-  assert.equal(f.requests.length, 4);
+  assert.equal(f.requests.length, 2);
   const ordinary = FRIEND_WORK_TOOL_PROVIDER.create({ ...context, longAgentId: undefined });
   await assert.rejects(ordinary.execute("spoof", input), /当前Friend/);
   const read = await tool.execute("read", { operation: "get", workId: result.details.work.id });
@@ -219,10 +219,9 @@ test("LA1 queued work resumes in a new Backend process with the originally accep
   await promisify(execFile)(process.execPath, ["--import", "./scripts/typescript-test-loader.mjs", "--experimental-strip-types", "--input-type=module", "-e",
     `const {mock}=await import("node:test"); const {installWorkflowTransport}=await import("./test/long-agents/workflow-transport-fixture.mjs"); installWorkflowTransport({mock}); const {drainLongAgentTurns}=await import(${JSON.stringify(queue)});await drainLongAgentTurns(${JSON.stringify(f.home)},"friend");`]);
   assert.equal((await readFriendWork(f.home, "friend", work.work.id)).execution.status, "completed");
-  assert.equal(f.requests.length, 6);
-  // The last request belongs to the memory writer; the WORK request is the one before it.
-  assert.match(JSON.stringify(f.requests.at(-2)), /RULE_a/);
-  assert.doesNotMatch(JSON.stringify(f.requests.at(-2)), /CHANGED_RULE_MUST_NOT_APPEAR/);
+  assert.equal(f.requests.length, 3);
+  assert.match(JSON.stringify(f.requests.at(-1)), /RULE_a/);
+  assert.doesNotMatch(JSON.stringify(f.requests.at(-1)), /CHANGED_RULE_MUST_NOT_APPEAR/);
 });
 
 test("LA1 cancelling the main conversation leaves detached work running", { timeout: 15000 }, async t => {

@@ -59,7 +59,7 @@ test("cross-process recovery: a node turn and a relay accepted in another proces
 
   const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "跨进程", purpose: "跨进程", requestId: "restart-topic", expectedRevision: 0 })).topic;
   const node = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
-    requestId: "restart-topic", title: "根节点", createdBy: "agent", sessionMemory: "off" })).node;
+    requestId: "restart-topic", title: "根节点", createdBy: "agent" })).node;
 
   // Both turns are ACCEPTED (queued, durable) by a different process that then exits.
   acceptInChildProcess(base.home, "node turn", { turnId: "restart-node-1", text: "跨进程节点轮次", topicId: topic.topicId, nodeId: node.nodeId });

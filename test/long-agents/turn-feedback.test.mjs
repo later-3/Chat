@@ -100,7 +100,7 @@ test("P4 accepted HTTP returns before model; native deltas, bounded reset, recon
   assert.match(JSON.stringify(feedback.snapshot.messages), /Firstx+Final/);
   const duplicate = await (await f.post({ requestId: "stream", text: "stream" })).json();
   assert.equal(duplicate.id, ref.id);
-  assert.equal(f.requests.length, 2); // work + the memory writer tail
+  assert.equal(f.requests.length, 1); // a round is one work request
   assert.equal((await f.post({ requestId: "stream", text: "different" })).status, 409);
   assert.equal((await f.router.fetch(new Request(f.url(ref.id).replace("/friend/", "/other/")))).status, 404);
 });
@@ -156,7 +156,7 @@ test("P4 native steering is durable and delivered once; cross-project steering r
   const turns = (await readLongAgentState(f.home)).turns;
   assert.equal(turns.length, 2);
   assert.ok(turns.every((t) => t.status === "completed"));
-  assert.equal(f.requests.length, 3);
+  assert.equal(f.requests.length, 2);
   const session = await openChatSession({ chatHome: f.home, projectId: "friend", sessionId: first.sessionId });
   assert.equal(
     session.manager
@@ -172,7 +172,7 @@ test("P4 native steering is durable and delivered once; cross-project steering r
   });
   assert.equal(late.delivery, "followUp");
   await drainLongAgentTurns(f.home, "friend");
-  assert.equal(f.requests.length, 5);
+  assert.equal(f.requests.length, 3);
 });
 
 test("P4 provider failure retains terminal error and original messages; images rejected before Web acceptance", async (t) => {
@@ -210,16 +210,18 @@ test("the unified contract accepts a bare per-turn contextProjectId and freezes 
   assert.ok(turns.every((turn) => turn.interactionRevision == null), "new acceptances carry no retired revision");
 });
 
-test("the owner turn API persists memory-off and still completes the work round", async (t) => {
+test("the owner turn API rejects the retired sessionMemory field; ordinary rounds complete alone", async (t) => {
   const f = await setup(t);
-  f.setHandler(() => ({ content: "记忆关闭，工作正常完成" }));
-  const response = await f.post({ requestId: "memory-off-http", text: "正常工作", sessionMemory: "off" });
+  f.setHandler(() => ({ content: "记忆交给独立的会话记忆Workflow" }));
+  // 会话记忆不再随发送走：旧客户端字段在合同边界被拒绝（客户端与后端同版本发布）。
+  const stale = await f.post({ requestId: "memory-field-http", text: "正常工作", sessionMemory: "off" });
+  assert.equal(stale.status, 400, "未知字段必须拒绝");
+  const response = await f.post({ requestId: "memory-round-http", text: "正常工作" });
   assert.equal(response.status, 202, await response.clone().text());
   const execution = await response.json();
   await drainLongAgentTurns(f.home, "friend");
   const stored = (await readLongAgentState(f.home)).turns.find((turn) => turn.turnId === execution.id);
-  assert.equal(stored.sessionMemory, "off");
+  assert.equal(stored.sessionMemory, undefined, "the retired field never persists");
   assert.equal(stored.status, "completed");
-  assert.equal(f.requests.length, 1, "the work model ran; the writer did not");
-  assert.equal((await f.post({ requestId: "memory-invalid-http", text: "无效开关", sessionMemory: "maybe" })).status, 400);
+  assert.equal(f.requests.length, 1, "one round is one work request");
 });

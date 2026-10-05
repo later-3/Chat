@@ -5,10 +5,11 @@ import path from "node:path";
 import test from "node:test";
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { ensureAgentHomeProject } from "../../src/projects/registry.ts";
-import { readSessionMemory } from "../../src/long-agents/session-memory.ts";
+import { readSessionMemory, sessionMemoryFile } from "../../src/long-agents/session-memory.ts";
 import { sessionMemoryWorkflowDefinition } from "../../src/workflows/session-memory/index.ts";
 import { ensureChatSessionWithId } from "../../src/chat-session.ts";
-import { SESSION_MEMORY_WRITER_AGENT } from "../../src/workflows/session-memory/agents/writer/index.ts";
+import { appendChatUserMessage } from "../../src/workflows/session-conversation.ts";
+import { fixture } from "../long-agents/daily-fixture.mjs";
 
 function writeFauxConfiguration(agentDir, faux) {
   const model = faux.getModel();
@@ -28,34 +29,7 @@ function textOf(message) {
   return message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n");
 }
 
-/**
- * Registers the Workflow-call dispatch runtime at the same boundary the production bootstrap uses
- * (src/runtime-initialization.ts). The child Workflow itself runs inside the Workflow SDK runtime, which
- * is not available in a plain unit-test process, so this stub records the call the worker actually made
- * and returns a real child result through that boundary.
- */
-const childCalls = [];
-async function registerWorkflowCallRuntime() {
-  const { registerChatWorkflowCallRuntime } = await import("../../src/workflows/workflow-call-runtime.ts");
-  registerChatWorkflowCallRuntime({
-    describe: async (input) => {
-      throw new Error(`describe 在本测试中未使用: ${JSON.stringify(input)}`);
-    },
-    start: async (input) => {
-      childCalls.push(input);
-      const startedAt = new Date().toISOString();
-      return {
-        status: "completed", callId: "call-child-1", workflowId: input.targetWorkflowId, runId: "run-child-1",
-        workflowInvocationId: "invocation-child-1", sessionId: "sess-child-1", startedAt, completedAt: startedAt,
-        durationMs: 3, text: "子工作流结果：第 42 行确实为空指针", model: null,
-      };
-    },
-    wait: async () => { throw new Error("wait 在本测试中未使用"); },
-    cancel: async () => { throw new Error("cancel 在本测试中未使用"); },
-  });
-}
-
-async function fixture(t, prefix) {
+async function agentHomeFixture(t, prefix) {
   const previousCwd = process.cwd();
   const previousChatHome = process.env.CHAT_HOME;
   const base = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -70,44 +44,21 @@ async function fixture(t, prefix) {
   process.chdir(base);
   process.env.CHAT_HOME = path.join(base, ".chat");
   writeFauxConfiguration(path.join(base, ".chat", "agent"), faux);
-  // Session memory only exists inside a Long Agent home, so the node session must live there.
-  await registerWorkflowCallRuntime();
   const project = await ensureAgentHomeProject("friend", "Friend", process.env.CHAT_HOME);
   return { base, faux, workspace: project.cwd, project };
 }
 
 const run = (input) => sessionMemoryWorkflowDefinition.run(input);
 
-test("session-memory workflow: work then remember with the current-round projection", { concurrency: false }, async (t) => {
-  const { faux, workspace, project } = await fixture(t, "chat-smem-workflow");
+test("session-memory workflow: one remember node judges the WHOLE session and its report is the answer", { concurrency: false }, async (t) => {
+  const { faux, workspace, project } = await agentHomeFixture(t, "chat-smem-workflow");
   fs.writeFileSync(path.join(workspace, "AGENTS.md"), "BUSINESS_IDENTITY_ONLY: act as the project worker.");
   const writerInputs = [];
-  const workerTools = [];
-  const workerWorkflowCalls = [];
+  const writerTools = [];
   faux.setResponses([
-    // The worker does ordinary work AND actually calls a business Workflow once (P2: work may delegate).
     (context) => {
-      assert.match(context.systemPrompt, /BUSINESS_IDENTITY_ONLY/);
-      workerTools.push((context.tools ?? []).map((tool) => tool.name));
-      return fauxAssistantMessage(fauxToolCall("workflow_call", {
-        action: "start",
-        workflowId: "minimal-pi-coding-agent",
-        prompt: "目标：确认第 42 行的空指针来源。上下文：节点会话已定位到该行。约束：只读检查，不修改文件。期望输出：一句话结论与证据。授权边界：只读。",
-        agents: [{ agentId: "pi-coding-agent", tools: ["read"], skills: [] }],
-        waitTimeoutMs: 20_000,
-      }));
-    },
-    (context) => {
-      const result = context.messages.filter((message) => message.role === "toolResult").map(textOf).join("\n");
-      workerWorkflowCalls.push(result);
-      const raw = result.slice(result.indexOf("{"));
-      const child = raw.startsWith("{") ? JSON.parse(raw) : {};
-      // The worker answers with what the delegation boundary reported, which is the child's terminal
-      // status; the child's own text is visible to the model only through the tool result.
-      return fauxAssistantMessage(`work 阶段：子工作流${result.includes("completed") ? "已完成" : "未完成"}：${String(child.text ?? result)}`.slice(0, 200));
-    },
-    (context) => {
-      assert.doesNotMatch(context.systemPrompt, /BUSINESS_IDENTITY_ONLY/, "maintenance must not inherit business identity instructions");
+      assert.doesNotMatch(context.systemPrompt, /BUSINESS_IDENTITY_ONLY/, "the writer must not inherit business identity instructions");
+      writerTools.push((context.tools ?? []).map((tool) => tool.name));
       writerInputs.push(context.messages.map((message) => `${message.role}:${textOf(message)}`).join("\n---\n"));
       return fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "空指针根因在第 42 行", expectedRevision: 0 }));
     },
@@ -118,116 +69,112 @@ test("session-memory workflow: work then remember with the current-round project
       const revision = /"revision":(\d+)/.exec(toolResult)?.[1] ?? "missing";
       return fauxAssistantMessage(`已写入 entryId=${entryId} revision=${revision}`);
     },
-    // The child business Workflow (minimal-pi-coding-agent) executes its own turn.
-    fauxAssistantMessage("子工作流结果：第 42 行确实为空指针"),
-    fauxAssistantMessage("子工作流结果：第 42 行确实为空指针"),
   ]);
-  const result = await run({
-    projectId: project.projectId, chatHome: process.env.CHAT_HOME, cwd: workspace,
-    sessionId: undefined, prompt: "为什么这里空指针？", workflowInvocationId: "smem-invocation-1",
-  });
-  assert.equal(typeof result.text, "string");
-  assert.notEqual(result.text, "");
-  assert.equal(workerTools[0].includes("session_memory"), true, "the worker is offered the memory tool for on-demand reads");
-  // Normal work capability: Pi's ordinary tools plus business Workflow delegation.
-  assert.equal(workerTools[0].includes("workflow_call"), true, "the worker may call a business Workflow");
-  assert.equal(workerTools[0].some((name) => ["read", "bash", "write", "edit"].includes(name)), true,
-    "the worker keeps ordinary work tools instead of only the memory tool");
-  assert.equal(workerWorkflowCalls.length, 1, "the worker actually delegated to a business Workflow");
-  assert.equal(childCalls.length, 1, "exactly one child Workflow call reached the dispatch runtime");
-  assert.equal(childCalls[0].prompt.length > 0, true, "the delegation carries an objective, context, constraints and expected output");
-  assert.equal(Array.isArray(childCalls[0].agents) && childCalls[0].agents.length > 0, true, "the delegation selects the child Agent capabilities");
-  assert.equal(workerWorkflowCalls[0].includes("completed"), true,
-    `the worker saw the child Workflow's terminal status (tool result: ${workerWorkflowCalls[0].slice(0, 120)})`);
-  assert.equal(childCalls[0].targetWorkflowId, "minimal-pi-coding-agent", "the delegated target is the requested business Workflow");
-  assert.equal(childCalls[0].parentWorkflowId, "session-memory", "the delegation records the session-memory parent");
-  assert.equal(childCalls[0].parentStageId, "work", "the delegation is attributed to the work stage");
-  // The round's answer is the work answer, NOT the memory bookkeeping text.
-  assert.equal(result.text.includes("子工作流已完成"), true, "the work answer reflects the child's terminal status");
-  assert.equal(result.text.includes("已写入 entryId"), false, "the memory report is not returned as the round's answer");
-  const memory = await readSessionMemory(process.env.CHAT_HOME, "friend", result.sessionId);
-  assert.equal(memory.entries.length, 1, "the writer wrote exactly one entry");
-  assert.equal(memory.entries[0].content, "空指针根因在第 42 行");
-  assert.equal(writerInputs.length, 1);
-  assert.equal(writerInputs[0].includes("为什么这里空指针？"), true, "the writer sees the round's user message");
-  assert.equal(writerInputs[0].includes("子工作流已完成"), true, "the writer sees the whole work stage, including the delegation outcome");
-  // The writer's visible reply cites the entry id the tool actually returned (not a scripted value).
-  const branch = (await ensureChatSessionWithId({ chatHome: process.env.CHAT_HOME, projectId: project.projectId },
-    result.sessionId)).session.manager.getBranch();
-  const lastAssistant = [...branch].reverse().find((entry) => entry.type === "message" && entry.message?.role === "assistant");
-  const cited = textOf(lastAssistant.message);
-  assert.equal(cited.includes(memory.entries[0].entryId), true, "the writer's reply cites the real entry id from the tool result");
-  assert.equal(cited.includes("revision=1"), true, "the writer's reply cites the real revision");
-});
-
-test("session-memory workflow: an earlier round never leaks into the writer", { concurrency: false }, async (t) => {
-  const { faux, workspace, project } = await fixture(t, "chat-smem-rounds");
-  const writerInputs = [];
-  faux.setResponses([
-    fauxAssistantMessage("第二轮回答：已经修好第二处"),
-    (context) => { writerInputs.push(context.messages.map(textOf).join("\n")); return fauxAssistantMessage("本轮无需写入"); },
-    fauxAssistantMessage("本轮无需写入"),
-  ]);
-  // Seed an EARLIER round directly in the Session (its own user + assistant entries).
-  const { ensureChatSessionWithId } = await import("../../src/chat-session.ts");
-  const { appendChatUserMessage } = await import("../../src/workflows/session-conversation.ts");
+  // Seed an EARLIER round directly in the Session: the writer judges the WHOLE session, so both rounds
+  // must reach it (this is the manual, user-triggered consolidation round).
   const seeded = await ensureChatSessionWithId({ chatHome: process.env.CHAT_HOME, projectId: project.projectId },
-    "sess-seeded-round", "旧轮次");
+    "sess-whole", "整轮会话");
   appendChatUserMessage(seeded.session.manager, "第一轮问题");
   seeded.session.manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "第一轮回答：空指针在第一处" }], timestamp: Date.now() });
   seeded.session.manager.flush();
 
-  const result = await run({ projectId: project.projectId, chatHome: process.env.CHAT_HOME, cwd: workspace,
-    sessionId: "sess-seeded-round", prompt: "第二轮问题", workflowInvocationId: "smem-round-2" });
-  assert.equal(result.sessionId, "sess-seeded-round");
-  assert.equal(writerInputs.length, 1);
-  assert.equal(writerInputs[0].includes("第二轮问题"), true, "the writer sees the current round's user message");
-  assert.equal(writerInputs[0].includes("第二轮回答：已经修好第二处"), true, "the writer sees the current work stage");
-  assert.equal(writerInputs[0].includes("第一轮问题"), false, "the earlier round is NOT injected into the writer");
-  assert.equal(writerInputs[0].includes("第一轮回答"), false);
+  const result = await run({
+    projectId: project.projectId, chatHome: process.env.CHAT_HOME, cwd: workspace,
+    sessionId: "sess-whole", prompt: "整理这一轮的会话记忆", workflowInvocationId: "smem-invocation-1",
+  });
+  assert.equal(result.sessionId, "sess-whole");
+  // The round's answer IS the writer's report (entry receipts), not a work-stage answer.
+  assert.match(result.text, /已写入 entryId=/);
+  assert.deepEqual(writerTools[0], ["session_memory"], "the writer gets exactly the memory tool");
+  // Whole-session projection: the earlier round AND the trigger instruction both reach the writer.
+  assert.equal(writerInputs[0].includes("第一轮问题"), true, "the earlier round's user message reaches the writer");
+  assert.equal(writerInputs[0].includes("第一轮回答"), true, "the earlier round's answer reaches the writer");
+  assert.equal(writerInputs[0].includes("整理这一轮的会话记忆"), true, "the trigger message is part of the projection");
+  const memory = await readSessionMemory(process.env.CHAT_HOME, "friend", result.sessionId);
+  assert.equal(memory.entries.length, 1, "the writer wrote exactly one entry");
+  assert.equal(memory.entries[0].content, "空指针根因在第 42 行");
+  // The writer's visible reply cites the entry id the tool actually returned (not a scripted value).
+  assert.equal(result.text.includes(memory.entries[0].entryId), true, "the report cites the real entry id from the tool result");
+  assert.equal(result.text.includes("revision=1"), true, "the report cites the real revision");
+  // Exactly one stage ran, owned by the session-memory Workflow itself.
+  const session = await ensureChatSessionWithId({ chatHome: process.env.CHAT_HOME, projectId: project.projectId }, result.sessionId);
+  const stages = session.session.manager.getBranch()
+    .filter((entry) => entry.type === "custom" && entry.customType === "chat.workflow_stage")
+    .map((entry) => entry.data);
+  assert.deepEqual(stages.map((stage) => stage.stageId), ["remember"], "the round is a single remember stage");
+  assert.equal(stages[0].workflowId, "session-memory");
+  assert.equal(stages[0].agentId, "session-memory-writer");
+});
+
+test("session-memory workflow: a round judged not worth recording writes nothing and says so", { concurrency: false }, async (t) => {
+  const { faux, workspace, project } = await agentHomeFixture(t, "chat-smem-none");
+  faux.setResponses([fauxAssistantMessage("本轮无需写入")]);
+  const result = await run({
+    projectId: project.projectId, chatHome: process.env.CHAT_HOME, cwd: workspace,
+    sessionId: undefined, prompt: "没什么可记的", workflowInvocationId: "smem-none-1",
+  });
+  assert.equal(result.text, "本轮无需写入", "the writer's judgment is the round's answer");
   assert.equal((await readSessionMemory(process.env.CHAT_HOME, "friend", result.sessionId)).entries.length, 0,
     "a round the writer judged not worth recording stays empty");
 });
 
-test("session-memory workflow: the remember stage refuses a round without a user entry", { concurrency: false }, async (t) => {
-  const { faux, workspace, project } = await fixture(t, "chat-smem-refuse");
-  const template = () => fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "不该存在的条目", expectedRevision: 0 }));
-  faux.setResponses([template, template, template]);
-  const { runSessionMemoryRememberStep } = await import("../../src/workflows/session-memory/step.ts");
-  const { SessionMemoryRoundUnavailableError } = await import("../../src/workflows/session-memory/agents/writer/runtime.ts");
-  // A REAL Session that has no user entry at all: the remember stage must fail visibly, not record history.
-  await ensureChatSessionWithId({ chatHome: process.env.CHAT_HOME, projectId: project.projectId }, "sess-no-round", "空会话");
-  await assert.rejects(
-    runSessionMemoryRememberStep({ projectId: project.projectId, chatHome: process.env.CHAT_HOME, cwd: workspace,
-      sessionId: "sess-no-round", prompt: "无用户条目", workflowInvocationId: "smem-refuse-1" }),
-    (error) => error instanceof Error && (error.message.includes("没有返回Assistant文本")
-      || error.message.includes(SessionMemoryRoundUnavailableError.name)
-      || error.message.includes("本轮用户消息")),
-  );
-  const { listChatSessions } = await import("../../src/session-read-model.ts");
-  for (const session of await listChatSessions(project.projectId, process.env.CHAT_HOME)) {
-    assert.equal((await readSessionMemory(process.env.CHAT_HOME, "friend", session.sessionId)).entries.length, 0,
-      "a refused round wrote no memory");
-  }
+test("session-memory workflow: an ordinary Project session keeps its memory inside the project data dir", { concurrency: false }, async (t) => {
+  const f = await fixture(t);
+  const sessionId = "sess-project-smem";
+  await ensureChatSessionWithId({ chatHome: f.home, projectId: "a" }, sessionId, "Project session");
+  // The writer's FIRST turn writes one entry; its second turn closes the round (never another call).
+  f.setHandler((body) => {
+    const system = body.messages.find((message) => message.role === "system")?.content;
+    const lastIsToolResult = body.messages.at(-1)?.role === "tool";
+    if (typeof system === "string" && system.includes("维护**本会话**的会话记忆")) {
+      if (lastIsToolResult) return { content: "已按工具返回核对写入" };
+      return { tool_calls: [{ index: 0, id: "smem-write-1", type: "function", function: { name: "session_memory",
+        arguments: JSON.stringify({ operation: "write", purpose: "finding", author: "agent", content: "项目会话自己的记忆条目", expectedRevision: 0 }) } }] };
+    }
+    return { content: "不应出现的回答" };
+  });
+
+  const result = await run({
+    projectId: "a", chatHome: f.home,
+    cwd: f.projects.find((project) => project.projectId === "a").projectRoot,
+    prompt: "整理本会话记忆", sessionId, workflowInvocationId: "proj-smem-1",
+  });
+  assert.equal(result.text, "已按工具返回核对写入", "the writer's report is the round's answer");
+  const memory = await readSessionMemory(f.home, "a", sessionId);
+  assert.equal(memory.entries.length, 1);
+  assert.equal(memory.entries[0].content, "项目会话自己的记忆条目");
+  assert.equal(memory.entries[0].purpose, "finding");
+  const file = sessionMemoryFile(f.home, "a", sessionId);
+  assert.equal(file.includes("/projects/a/sessions/session-memory/"), true, `memory must live in the project data dir: ${file}`);
 });
 
-test("session-memory workflow: with the switch off the round is ordinary work and writes no memory", { concurrency: false }, async (t) => {
-  const { faux, workspace, project } = await fixture(t, "chat-smem-switch");
-  const workerTools = [];
-  faux.setResponses([
-    (context) => { workerTools.push((context.tools ?? []).map((tool) => tool.name)); return fauxAssistantMessage("普通一轮：没有记忆也能干活"); },
-  ]);
-  const result = await run({
-    projectId: project.projectId, chatHome: process.env.CHAT_HOME, cwd: workspace,
-    sessionId: undefined, prompt: "关掉记忆的这一轮", workflowInvocationId: "smem-off-1", sessionMemoryEnabled: false,
-  });
-  assert.equal(result.text, "普通一轮：没有记忆也能干活", "the round still does the work");
-  assert.equal(workerTools[0].includes("session_memory"), false, "the memory tool is not assembled when the switch is off");
-  assert.equal((await readSessionMemory(process.env.CHAT_HOME, "friend", result.sessionId)).entries.length, 0, "no memory is written");
-  // No writer stage ran: the Session has no remember-stage marker.
-  const session = await ensureChatSessionWithId({ chatHome: process.env.CHAT_HOME, projectId: project.projectId }, result.sessionId);
-  const stages = session.session.manager.getBranch()
-    .filter((entry) => entry.type === "custom" && entry.customType === "chat.workflow_stage")
-    .map((entry) => entry.data?.stageId);
-  assert.deepEqual(stages, ["work"], "only the work stage ran");
+test("session-memory workflow: a failed round records a visible notice and never reports success", { concurrency: false }, async (t) => {
+  const f = await fixture(t);
+  const sessionId = "sess-smem-fail";
+  await ensureChatSessionWithId({ chatHome: f.home, projectId: "a" }, sessionId, "Project session");
+  f.setHandler(() => ({ error: "memory provider exploded" }));
+
+  // The provider error surfaces as the round failing to produce an answer.
+  await assert.rejects(
+    run({
+      projectId: "a", chatHome: f.home,
+      cwd: f.projects.find((project) => project.projectId === "a").projectRoot,
+      prompt: "整理本会话记忆", sessionId, workflowInvocationId: "proj-smem-fail",
+    }),
+    /会话记忆 remember 阶段没有返回Assistant文本|memory provider exploded/,
+  );
+  const { openChatSession } = await import("../../src/chat-session.ts");
+  const session = await openChatSession({ chatHome: f.home, projectId: "a", sessionId });
+  const notices = session.manager.getEntries()
+    .filter((entry) => entry.type === "custom_message" && entry.customType === "chat.session_memory_notice")
+    .map((entry) => entry.details);
+  assert.equal(notices.length, 1, "the failure is recorded in the session, not only logged");
+  assert.equal(notices[0].status, "failed");
+  // …and it must reach the PUBLIC message contract: a display:false entry is filtered out by the
+  // session read, so the owner would never see it.
+  const { readChatSession } = await import("../../src/session-read-model.ts");
+  const publicRead = await readChatSession(sessionId, undefined, {}, "a", f.home, { kind: "owner" });
+  const visible = publicRead.context.messages.filter((message) => message.role === "custom"
+    && message.customType === "chat.session_memory_notice");
+  assert.equal(visible.length, 1, "the failure notice must be visible through the public read");
 });

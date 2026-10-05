@@ -214,16 +214,9 @@ test("topic API: a node round runs work then remember, and only the finished rou
   const topic = (await createTopic({ chatHome: base.home, longAgentId: "friend", title: "定位", purpose: "定位", requestId: "chain-topic", expectedRevision: 0 })).topic;
   const node = (await createTopicNodeWithSession({ chatHome: base.home, longAgentId: "friend", topicId: topic.topicId,
     requestId: "chain-topic", title: "根节点", createdBy: "agent" })).node;
-  const { SESSION_MEMORY_WRITER_AGENT } = await import("../../src/workflows/session-memory/agents/writer/index.ts");
-  const writerConfig = { [SESSION_MEMORY_WRITER_AGENT.id]: { tools: { mode: "explicit", names: [], exclude: [], addresses: ["system:tool/session_memory"] } } };
+  // 记忆轮是独立 Workflow：节点轮仅工作（单响应）。
   faux.setResponses([
     fauxAssistantMessage("work：空指针在第 42 行"),
-    fauxAssistantMessage(fauxToolCall("session_memory", { operation: "write", purpose: "finding", author: "agent", content: "空指针根因在第 42 行", expectedRevision: 0 })),
-    (context) => {
-      const toolResult = context.messages.filter((message) => message.role === "toolResult").map((message) => JSON.stringify(message)).join("\n");
-      const entryId = /"entryId":"([^"]+)"/.exec(toolResult)?.[1] ?? "missing";
-      return fauxAssistantMessage(`已写入 ${entryId}`);
-    },
   ]);
 
   const accepted = await call(`/api/long-agents/friend/topics/${topic.topicId}/nodes/${node.nodeId}/messages`, {
@@ -237,14 +230,15 @@ test("topic API: a node round runs work then remember, and only the finished rou
   const turn = (await readLongAgentState(base.home)).turns.find((candidate) => candidate.turnId === "chat-web:friend:chain-turn-1");
   assert.equal(turn.status, "completed", "the round completed");
   assert.notEqual(turn.settledAt, undefined, "the turn settled after the whole outer chain");
+  // 节点轮不再写记忆（独立会话记忆 Workflow 负责），锚点由工作轮直接结算。
   const memory = await readSessionMemory(base.home, "friend", node.sessionId);
-  assert.equal(memory.entries.length, 1, "the writer wrote one entry inside the node round");
+  assert.equal(memory.entries.length, 0, "a node round writes no memory");
   const { ensureChatSessionWithId: ensure } = await import("../../src/chat-session.ts");
   const { readTopicSettledAnchors } = await import("../../src/long-agents/topic-anchor.ts");
   const manager = (await ensure({ chatHome: base.home, projectId: "friend" }, node.sessionId)).session.manager;
   const anchors = readTopicSettledAnchors(manager);
   assert.equal(anchors.length, 1, "exactly one settled round is forkable");
-  void writerConfig;
+
 });
 
 test("topic API: work finished but remember unfinished is NOT a forkable round", async (t) => {

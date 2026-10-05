@@ -44,12 +44,6 @@ test("Workflow declaration catalog is the single target-discovery source", () =>
         agentIds: ["memory-agent"],
       },
       {
-        id: "session-memory",
-        name: "会话记忆",
-        description: "在一个节点会话里跑完一轮工作（work），随后由会话记忆写入 agent 记录本轮（remember）。既有记忆按需读取，不注入上下文。",
-        agentIds: ["session-memory-worker"],
-      },
-      {
         id: "problem-diagnosis",
         name: "问题定位",
         description: "对一个线上或代码问题做结构化定位：先列已确认现场事实，再给互斥根因假设与各自的最小验证路径，最后给出结论边界与仍待确认的信息。",

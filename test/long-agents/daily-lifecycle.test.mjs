@@ -98,14 +98,14 @@ test("P3 accepted Web/channel/schedule requests freeze rules and execute once in
   await assert.rejects(acceptLongAgentTurn({ ...inputs[0], contextProjectId: "b" }), /同一requestId/);
   fs.writeFileSync(path.join(f.projects[0].cwd, "AGENTS.md"), "CHANGED_AFTER_ACCEPT");
   await Promise.all(turns.map(() => drainLongAgentTurns(f.home, "friend")));
-  assert.equal(f.requests.length, 6);
+  assert.equal(f.requests.length, 3);
   for (const [index, turn] of [...turns].sort((a,b) => a.sequence-b.sequence).entries()) {
-    // Each interactive turn is work + memory writer, so turn i owns request 2i.
-    assert.match(JSON.stringify(f.requests[index * 2].messages), new RegExp(turn.requestId));
-    if (turn.requestId === "web") { assert.match(system(f.requests[index * 2]), /RULE_a/); assert.doesNotMatch(system(f.requests[index * 2]), /CHANGED_AFTER_ACCEPT|RULE_b/); }
-    if (turn.requestId === "channel") { assert.match(system(f.requests[index * 2]), /RULE_b/); assert.doesNotMatch(system(f.requests[index * 2]), /RULE_a/); }
+    // 每轮一个（work）请求：turn i 拥有请求 index。
+    assert.match(JSON.stringify(f.requests[index].messages), new RegExp(turn.requestId));
+    if (turn.requestId === "web") { assert.match(system(f.requests[index]), /RULE_a/); assert.doesNotMatch(system(f.requests[index]), /CHANGED_AFTER_ACCEPT|RULE_b/); }
+    if (turn.requestId === "channel") { assert.match(system(f.requests[index]), /RULE_b/); assert.doesNotMatch(system(f.requests[index]), /RULE_a/); }
   }
-  const replay = await executeLongAgentTurn(inputs[0]); assert.equal(replay.text, "ack"); assert.equal(f.requests.length, 6);
+  const replay = await executeLongAgentTurn(inputs[0]); assert.equal(replay.text, "ack"); assert.equal(f.requests.length, 3);
   const state = await readLongAgentState(f.home); assert.ok(state.turns.every((turn) => turn.status === "completed" && turn.seed === undefined && turn.text === undefined));
   const view = await readFriendDays(f.home, "friend"); assert.equal(JSON.stringify(view).includes("RULE_a"), false);
 });
@@ -147,7 +147,7 @@ test("P3 restart recovery resumes queued work, records unknown in-flight writes 
   const recovered = await readLongAgentState(f.home);
   assert.equal(recovered.turns[0].status, "interrupted"); assert.equal(recovered.turns[1].status, "completed");
   await assert.rejects(controlQueuedRequest(f.home, "friend", turns[0].turnId, "retry"), /结果不明/);
-  await drainLongAgentTurns(f.home, "friend"); assert.equal(f.requests.length, 2);
+  await drainLongAgentTurns(f.home, "friend"); assert.equal(f.requests.length, 1);
 });
 
 test("P3 queued cancellation and failed retries cannot rewind subsequent conversation", async (t) => {
@@ -181,7 +181,7 @@ test("P3 an accepted queue resumes in a fresh Backend process from its persisted
   const { execFile } = await import("node:child_process"); const { promisify } = await import("node:util");
   await promisify(execFile)(process.execPath, ["--import", path.resolve("scripts/typescript-test-loader.mjs"), "--experimental-strip-types", "--input-type=module", "-e",
     'const { mock } = await import("node:test"); const { installWorkflowTransport } = await import("./test/long-agents/workflow-transport-fixture.mjs"); installWorkflowTransport({mock}); const { drainLongAgentTurns } = await import("./src/long-agents/turn-queue.ts"); await drainLongAgentTurns(process.argv[1], "friend");', f.home], { cwd: process.cwd() });
-  assert.equal(f.requests.length, 2); assert.match(system(f.requests[0]), /RULE_a/);
+  assert.equal(f.requests.length, 1); assert.match(system(f.requests[0]), /RULE_a/);
   assert.equal((await readLongAgentState(f.home)).turns[0].status, "completed");
 });
 

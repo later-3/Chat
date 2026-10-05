@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  parseAgentConfigSelection,
+  parseGeneration,
   parseWorkflowAgentDefinition,
 } from "../../src/workflows/agent-config.ts";
 import { allowFileRoot } from "../../src/files/access.ts";
@@ -358,7 +360,7 @@ test("durable model configuration rejects unknown fields, empty configs, and inv
   );
   await assert.rejects(
     writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", { schemaVersion: 1 }),
-    /至少需要model、thinkingLevel、tools或resources/,
+    /至少需要model、thinkingLevel、generation、tools或resources/,
   );
   await assert.rejects(
     writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", {
@@ -374,5 +376,133 @@ test("durable model configuration rejects unknown fields, empty configs, and inv
     }),
     /workflowId格式无效/,
   );
+  assert.equal(await readAgentModelConfig(projectDataDir, "workflow-1", "test-agent"), undefined);
+});
+
+test("parseGeneration enforces bounded sampling parameters", () => {
+  assert.deepEqual(
+    parseGeneration({ temperature: 1.5, topP: 0.9, maxOutputTokens: 4096 }),
+    { temperature: 1.5, topP: 0.9, maxOutputTokens: 4096 },
+  );
+  assert.deepEqual(parseGeneration({ temperature: 0 }), { temperature: 0 });
+  assert.deepEqual(parseGeneration({ topP: 1 }), { topP: 1 });
+  assert.deepEqual(parseGeneration({ maxOutputTokens: 32000 }), { maxOutputTokens: 32000 });
+  assert.throws(() => parseGeneration({}), /至少需要temperature、topP或maxOutputTokens之一/);
+  assert.throws(() => parseGeneration(-1), /generation必须是对象/);
+  assert.throws(() => parseGeneration({ temperature: -0.1 }), /generation.temperature必须在0到2之间/);
+  assert.throws(() => parseGeneration({ temperature: 2.1 }), /generation.temperature必须在0到2之间/);
+  assert.throws(() => parseGeneration({ temperature: Number.NaN }), /generation.temperature必须是有限数字/);
+  assert.throws(() => parseGeneration({ topP: -0.5 }), /generation.topP必须在0到1之间/);
+  assert.throws(() => parseGeneration({ topP: 1.1 }), /generation.topP必须在0到1之间/);
+  assert.throws(() => parseGeneration({ maxOutputTokens: 0 }), /generation.maxOutputTokens必须在1到32000之间/);
+  assert.throws(() => parseGeneration({ maxOutputTokens: 32001 }), /generation.maxOutputTokens必须在1到32000之间/);
+  assert.throws(() => parseGeneration({ maxOutputTokens: 1.5 }), /generation.maxOutputTokens必须是整数/);
+  assert.throws(() => parseGeneration({ unknown: true }), /未知字段/);
+});
+
+test("agent config selection accepts and round-trips session-level overrides", () => {
+  const selection = parseAgentConfigSelection({
+    model: { provider: "p", modelId: "m" },
+    thinkingLevel: "high",
+    generation: { temperature: 0.4 },
+  });
+  assert.deepEqual(selection, {
+    model: { provider: "p", modelId: "m" },
+    thinkingLevel: "high",
+    generation: { temperature: 0.4 },
+  });
+  assert.deepEqual(parseAgentConfigSelection(JSON.parse(JSON.stringify(selection))), selection);
+  assert.throws(
+    () => parseAgentConfigSelection({ model: { provider: "p", modelId: "m" }, extra: 1 }),
+    /未知字段/,
+  );
+  assert.throws(
+    () => parseAgentConfigSelection({ generation: { temperature: 5 } }),
+    /generation.temperature必须在0到2之间/,
+  );
+});
+
+test("generation follows the workflow-default → config-file → durable → selection coverage chain", async (t) => {
+  const dir = fixture(t);
+  const projectDataDir = path.join(dir, "data");
+  fs.mkdirSync(projectDataDir, { recursive: true });
+  const withDefault = parseWorkflowAgentDefinition({
+    ...defaultAgent,
+    generation: { temperature: 0.7 },
+  });
+
+  const fromDefault = await resolveWorkflowAgentDefinition({ defaultAgent: withDefault, cwd: dir });
+  assert.deepEqual(fromDefault.generation, { temperature: 0.7 });
+  assert.equal(fromDefault.generationSource, "workflow-default");
+
+  fs.writeFileSync(path.join(dir, "append.json"), JSON.stringify({
+    schemaVersion: 1,
+    generation: { topP: 0.5 },
+  }));
+  const fromFile = await resolveWorkflowAgentDefinition({
+    defaultAgent: withDefault,
+    cwd: dir,
+    selection: { append: ["append.json"] },
+  });
+  assert.deepEqual(fromFile.generation, { topP: 0.5 });
+  assert.equal(fromFile.generationSource, "config-file");
+
+  await writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", {
+    schemaVersion: 1,
+    model: { provider: "durable-provider", modelId: "durable-model" },
+    thinkingLevel: "high",
+    generation: { temperature: 0.2 },
+  });
+  const fromDurable = await resolveWorkflowAgentDefinition({
+    defaultAgent: withDefault,
+    cwd: dir,
+    selection: { append: ["append.json"] },
+    durableModelConfig: { projectDataDir, workflowId: "workflow-1", agentId: "test-agent" },
+  });
+  assert.deepEqual(fromDurable.generation, { temperature: 0.2 });
+  assert.equal(fromDurable.generationSource, "durable");
+  assert.deepEqual(fromDurable.model, { provider: "durable-provider", modelId: "durable-model" });
+  assert.equal(fromDurable.modelSource, "durable");
+  assert.equal(fromDurable.thinkingSource, "durable");
+
+  const fromSelection = await resolveWorkflowAgentDefinition({
+    defaultAgent: withDefault,
+    cwd: dir,
+    selection: {
+      append: ["append.json"],
+      model: { provider: "session-provider", modelId: "session-model" },
+      thinkingLevel: "low",
+      generation: { maxOutputTokens: 8000 },
+    },
+    durableModelConfig: { projectDataDir, workflowId: "workflow-1", agentId: "test-agent" },
+  });
+  assert.deepEqual(fromSelection.generation, { maxOutputTokens: 8000 });
+  assert.deepEqual(fromSelection.model, { provider: "session-provider", modelId: "session-model" });
+  assert.equal(fromSelection.thinkingLevel, "low");
+  assert.equal(fromSelection.generationSource, "selection");
+  assert.equal(fromSelection.modelSource, "selection");
+  assert.equal(fromSelection.thinkingSource, "selection");
+  assert.deepEqual(fromSelection.sources.at(-1), { kind: "session-selection" });
+});
+
+test("durable generation configuration can be set, cleared, and removed", async (t) => {
+  const projectDataDir = fixture(t);
+  await writeAgentModelConfig(projectDataDir, "workflow-1", "test-agent", {
+    schemaVersion: 1,
+    model: { provider: "p", modelId: "m" },
+    generation: { temperature: 0.3 },
+  });
+  assert.deepEqual((await readAgentModelConfig(projectDataDir, "workflow-1", "test-agent")).generation, {
+    temperature: 0.3,
+  });
+
+  // Clearing only generation keeps the other durable fields.
+  const cleared = await updateAgentDurableConfig(projectDataDir, "workflow-1", "test-agent", { generation: null });
+  assert.deepEqual(cleared, { schemaVersion: 1, model: { provider: "p", modelId: "m" } });
+  assert.equal((await readAgentModelConfig(projectDataDir, "workflow-1", "test-agent")).generation, undefined);
+
+  // Clearing the last remaining field removes the file.
+  const removed = await updateAgentDurableConfig(projectDataDir, "workflow-1", "test-agent", { model: null });
+  assert.equal(removed, undefined);
   assert.equal(await readAgentModelConfig(projectDataDir, "workflow-1", "test-agent"), undefined);
 });
