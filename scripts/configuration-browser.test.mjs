@@ -40,25 +40,37 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
   };
   await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
   await page.send("Network.enable");
-  // Appearance is orthogonal: changing palette never silently changes material or mode.
+  // 七预设外观（2026-10-01 升级）：每个预设自带明暗模式与配色，点选即应用、彼此独立。
   await click("Appearance");
-  for (const mode of ["Light", "Dark"]) {
-    await click(mode);
-    for (const material of ["Paper", "Glass"]) {
-      await click(material);
-      for (const [label, palette] of [["Classic","classic"],["Ocean","ocean"],["Peach","rose"],["Orchid","orchid"],["Instagram","instagram"]]) {
-        await click(label);
-        assert.deepEqual(await page.evaluate("({material:document.documentElement.dataset.material,palette:document.documentElement.dataset.palette,dark:document.documentElement.classList.contains('dark')})"),
-          {material:material.toLowerCase(),palette,dark:mode === "Dark"});
-      }
-    }
+  const presetModes = { paper: "light", glacier: "light", peach: "light", instagram: "light", graphite: "dark", obsidian: "dark", dracula: "dark" };
+  for (const [preset, mode] of Object.entries(presetModes)) {
+    await page.evaluate(`document.getElementById('appearance-preset-${preset}').click()`);
+    assert.deepEqual(
+      await page.evaluate("({preset:document.documentElement.dataset.preset,dark:document.documentElement.classList.contains('dark'),checked:document.getElementById('appearance-preset-' + document.documentElement.dataset.preset)?.getAttribute('aria-checked')})"),
+      { preset, dark: mode === "dark", checked: "true" });
   }
+  // radiogroup 键盘可达：方向键同时移动选中与焦点。
+  await page.evaluate("document.getElementById('appearance-preset-paper').focus()");
+  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
+  await ready("document.documentElement.dataset.preset === 'glacier'");
+  assert.equal(await page.evaluate("document.activeElement?.id"), "appearance-preset-glacier");
+  // 效果开关与预设正交：透明度只在玻璃预设（glacier/obsidian）可用。
+  const opaqueSwitch = "[...document.querySelectorAll('.appearance-effects input[role=switch]')].at(-1)";
+  await page.evaluate("document.getElementById('appearance-preset-dracula').click()");
+  await ready("document.documentElement.dataset.preset === 'dracula'");
+  assert.equal(await page.evaluate(`${opaqueSwitch}.disabled`), true, "非玻璃预设的透明度开关应禁用");
+  await page.evaluate("document.getElementById('appearance-preset-obsidian').click()");
+  await ready("document.documentElement.dataset.preset === 'obsidian'");
+  assert.equal(await page.evaluate(`${opaqueSwitch}.disabled`), false, "玻璃预设可切换透明度");
+  await screenshot("appearance-preset-obsidian");
+  // 刷新后恢复上次选择（v2 持久化）。
   await page.send("Page.navigate", { url: `${f.base}/?view=settings&settings=appearance` });
-  await ready("document.querySelector('[data-palette-choice=instagram][aria-pressed=true]')");
-  assert.equal(await page.evaluate("document.documentElement.dataset.material"), "glass");
+  await ready("document.getElementById('appearance-preset-obsidian')?.getAttribute('aria-checked') === 'true'");
+  assert.equal(await page.evaluate("document.documentElement.dataset.preset"), "obsidian");
   assert.equal(await page.evaluate("document.documentElement.classList.contains('dark')"), true);
-  await screenshot("appearance-dark-glass");
-  await click("Paper"); await click("Classic"); await click("System");
+  // 回到浅色预设，避免影响后续媒体与截图断言。
+  await page.evaluate("document.getElementById('appearance-preset-paper').click()");
+  await ready("!document.documentElement.classList.contains('dark')");
   await click("Personal resources");
   await click("Models");
   await ready("document.querySelector('[role=dialog]')?.textContent.includes('Manual provider and model configuration')");
@@ -88,11 +100,11 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
   assert.equal(page.events.some(event => event.method === "Network.requestWillBeSent"
     && /\/api\/(auth\/|models-config\/(test|catalog|discover))/.test(event.params.request.url)), false);
   await screenshot("models-desktop");
+  // 新外观是显式预设：系统偏好不再覆盖用户已选的外观（v1 迁移期除外）。
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
-  await ready("document.documentElement.classList.contains('dark')");
+  await ready("document.documentElement.dataset.preset === 'paper' && !document.documentElement.classList.contains('dark')");
   await screenshot("models-dark");
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
-  await ready("!document.documentElement.classList.contains('dark')");
   for (const width of [768, 390]) {
     await page.send("Emulation.setDeviceMetricsOverride", { width, height: 844, deviceScaleFactor: 1, mobile: width < 768 });
     assert.equal(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
@@ -108,11 +120,16 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
   await screenshot("workflow-desktop");
   await click("Tools & resources");
   await ready("document.querySelector('[role=dialog] input[type=checkbox]')");
+  // 三个 tab（模型与生成 / 指令与输出 / 工具与资源）的方向键循环，选中与焦点同步。
   await page.evaluate("document.querySelector('[role=dialog] [role=tab][aria-selected=true]').focus()");
   for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
-  await ready("document.querySelector('[role=dialog] [role=tab][aria-selected=true]')?.textContent.includes('Session overrides')");
-  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
-  await ready("document.querySelector('[role=dialog] [role=tabpanel]')?.textContent.includes('Effective capabilities')");
+  await ready("document.querySelector('[role=dialog] [role=tab][aria-selected=true]')?.textContent.includes('Model & generation')");
+  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37 });
+  await ready("document.querySelector('[role=dialog] [role=tab][aria-selected=true]')?.textContent.includes('Tools & resources')");
+  // 配置范围选择器与“查看有效配置”检查面板。
+  await ready("document.querySelector('[role=dialog] select[aria-label=\"Configuration scope\"]') !== null");
+  await page.evaluate("document.querySelector('[role=dialog] button[aria-label=\"View effective configuration\"]').click()");
+  await ready("document.querySelector(\"[role=dialog] [aria-label='Effective configuration · inspection']\") !== null");
   await page.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   assert.equal(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
   await screenshot("workflow-mobile");
@@ -169,10 +186,10 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
   await page.evaluate("document.querySelector('[role=dialog] main').scrollTop = document.querySelector('[role=dialog] main').scrollHeight");
   await screenshot("friend-model-desktop");
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
-  await ready("document.documentElement.classList.contains('dark')");
+  // 显式预设优先于系统偏好（v1 迁移期除外）：系统切暗色不改变已选外观。
+  await ready("document.documentElement.dataset.preset === 'paper' && !document.documentElement.classList.contains('dark')");
   await screenshot("friend-model-dark");
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
-  await ready("!document.documentElement.classList.contains('dark')");
   await page.evaluate("document.querySelector('[role=dialog] main').scrollTop = 0");
   await page.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   assert.equal(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
