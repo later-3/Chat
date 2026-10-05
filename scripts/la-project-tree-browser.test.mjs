@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { fixture } from "../test/long-agents/daily-fixture.mjs";
 import { readLongAgentState } from "../src/long-agents/storage.ts";
+import { listRemovedChatSessions } from "../src/session-removal.ts";
 import { launchBrowser, chromeExecutable } from "./cdp.mjs";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -92,6 +93,16 @@ test("the LA→Project→Session tree creates project-owned sessions and survive
     await stopProcess(server);
     for (const cleanup of cleanups.reverse()) await cleanup();
   });
+  /** Radix 菜单以 pointerdown 打开，程序化 .click() 不会触发；用真实鼠标事件。 */
+  const clickBySelector = async (selector, label = selector) => {
+    const point = await page.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    assert.notEqual(point, null, `找不到可见元素：${label}`);
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+      await page.send("Input.dispatchMouseEvent", { type, x: point.x, y: point.y, button: "left", clickCount: 1 });
+    }
+  };
+
   const ready = async () => {
     const deadline = Date.now() + 40_000;
     while (Date.now() < deadline && server.exitCode === null) {
@@ -164,8 +175,10 @@ test("the LA→Project→Session tree creates project-owned sessions and survive
   assert.ok(fs.readdirSync(alphaSessionDir).some((name) => name.includes(binding.sessionId)), "Session 文件落在 Agent 的项目树");
   assert.equal(await page.evaluate(`document.querySelector('[data-workspace-chat]').innerText.includes(${JSON.stringify(WORK_TEXT)})`), true);
 
-  // 用户手动命名：预填当前显示标题，提交后标题以用户为准（写进会话文件）。
-  await page.evaluate(`document.querySelector('[data-project-tree-rename="${binding.sessionId}"]').click()`);
+  // 会话动作入口是行内唯一的 “…” 菜单（列表行默认干净）：从菜单进入重命名。
+  await clickBySelector(`[data-session-menu="${binding.sessionId}"]`, "会话动作菜单触发器");
+  await page.waitFor(`document.querySelector('[data-session-action="rename"]') !== null`, { label: "会话动作菜单" });
+  await clickBySelector('[data-session-action="rename"]', "重命名菜单项");
   await page.waitFor(`document.querySelector('[data-project-tree-rename-input="${binding.sessionId}"]') !== null`, { label: "重命名输入框" });
   await page.evaluate(`(() => {
     const input = document.querySelector('[data-project-tree-rename-input="${binding.sessionId}"]');
@@ -178,6 +191,21 @@ test("the LA→Project→Session tree creates project-owned sessions and survive
   const { openChatSession: openRenamed } = await import("../src/chat-session.ts");
   const renamedSession = await openRenamed({ projectId: "a", chatHome: home, sessionId: binding.sessionId, ownerLongAgentId: "friend" });
   assert.equal(renamedSession.manager.getSessionName(), "用户改的项目标题", "用户命名写入会话文件");
+
+  // 移除：同一菜单进入，确认后从列表消失、文件进入该 Agent 项目树下的移除区。
+  await clickBySelector(`[data-session-menu="${binding.sessionId}"]`, "会话动作菜单触发器");
+  await page.waitFor(`document.querySelector('[data-session-action="remove"]') !== null`, { label: "移除动作" });
+  await clickBySelector('[data-session-action="remove"]', "移除菜单项");
+  await page.waitFor(`document.querySelector('[role=alertdialog]') !== null`, { label: "移除确认" });
+  await page.evaluate("Array.from(document.querySelectorAll('[role=alertdialog] button')).at(-1).click()");
+  await page.waitFor(`document.querySelector('[data-project-tree-session="${binding.sessionId}"]') === null`, { label: "移除后列表不再显示", timeoutMs: 30_000 });
+  const removedDir = path.join(alphaSessionDir, "removed");
+  assert.equal(fs.existsSync(removedDir) && fs.readdirSync(removedDir).some((name) => name.includes(binding.sessionId)), true, "会话文件进入其归属项目树的移除区");
+  const listed = await listRemovedChatSessions("a", home);
+  assert.equal(listed.sessions.some((item) => item.id === binding.sessionId), true, "项目移除区能看到该会话");
+  // 恢复，保证后续刷新验收仍然可用（移除区 UI 验收单独进行）。
+  const { restoreRemovedChatSession } = await import("../src/session-removal.ts");
+  await restoreRemovedChatSession("a", binding.sessionId, home);
 
   // 刷新恢复：URL 打开的是项目 a 的会话，树必须默认跟随该项目并直接列出它
   // （回归：曾经树停在 Workspace，看起来像"项目下没有会话"）。
