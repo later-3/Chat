@@ -4,6 +4,7 @@ import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { appendChatAuditEvent } from "./audit-log.js";
 import { resolveChatConfig } from "./chat-config.js";
 import { listProjects, resolveProjectContext } from "./projects/registry.js";
+import { listOwnedSessionRoots, resolveOwnedSessionLocation } from "./session-location.js";
 import type { ChatProjectContext } from "./projects/types.js";
 import {
   activeSessionRecordPath,
@@ -109,18 +110,24 @@ export async function listRemovedChatSessions(
   chatHome?: string,
   now = new Date(),
 ): Promise<{ readonly sessions: RemovedSessionListItem[]; readonly retentionDays: number }> {
-  const project = await resolveProjectContext(projectId, chatHome);
+  // 移除区按项目天然存放：共享项目目录一份，各 Long Agent 在该项目下的项目树各一份。
+  const roots = await listOwnedSessionRoots(projectId, chatHome);
   const retentionDays = (await resolveChatConfig(projectId, chatHome)).effective.sessions.removedRetentionDays;
-  return withRemovedSessionIndexMutation(project, async () => {
-    await purgeExpiredRecords(projectId, project, now);
-    const index = await readRecoveredRemovedSessionIndex(project);
-    return {
-      sessions: Object.values(index.sessions)
-        .sort((left, right) => right.removedAt.localeCompare(left.removedAt))
-        .map((record) => publicRecord(projectId, record)),
-      retentionDays,
-    };
-  });
+  const sessions: RemovedSessionListItem[] = [];
+  const seen = new Set<string>();
+  for (const { project } of roots) {
+    const listed = await withRemovedSessionIndexMutation(project, async () => {
+      await purgeExpiredRecords(projectId, project, now);
+      const index = await readRecoveredRemovedSessionIndex(project);
+      return Object.values(index.sessions).map((record) => publicRecord(projectId, record));
+    });
+    for (const record of listed) {
+      if (seen.has(record.id)) continue;
+      seen.add(record.id);
+      sessions.push(record);
+    }
+  }
+  return { sessions: sessions.sort((left, right) => right.removedAt.localeCompare(left.removedAt)), retentionDays };
 }
 
 /** Applies retention on startup without making an unavailable Project block Chat. */
@@ -143,7 +150,8 @@ export async function removeChatSession(
   chatHome?: string,
   now = new Date(),
 ): Promise<RemovedSessionListItem> {
-  const project = await resolveProjectContext(projectId, chatHome);
+  const location = await resolveOwnedSessionLocation(projectId, sessionId, chatHome);
+  const project = location.project;
   return withChatSessionOperationLock(chatSessionOperationKey(projectId, sessionId), async () => (
     withRemovedSessionIndexMutation(project, async () => {
       const index = await readRecoveredRemovedSessionIndex(project);
@@ -170,7 +178,7 @@ export async function removeChatSession(
       const prepared = prepareRemovedSessionIndexOperation(index, "remove", record, now);
       await writeRemovedSessionIndex(project, prepared);
       await rename(session.path, target);
-      await markSessionMemoryOrphan(project.chatHome, projectId, sessionId);
+      await markSessionMemoryOrphan(project.chatHome, projectId, sessionId, location.ownerLongAgentId);
       // The topic node follows the session: removal is reflected durably before the index completes.
       // The session lock is already held here, so this only takes the graph lock (session -> graph).
       if (project.kind === "agent") await applyTopicNodeSessionLifecycle({ chatHome: project.chatHome, longAgentId: projectId, sessionId, state: "removed" });
@@ -195,7 +203,8 @@ export async function restoreRemovedChatSession(
   chatHome?: string,
   now = new Date(),
 ): Promise<{ readonly sessionId: string; readonly state: "active" }> {
-  const project = await resolveProjectContext(projectId, chatHome);
+  const location = await resolveOwnedSessionLocation(projectId, sessionId, chatHome);
+  const project = location.project;
   return withChatSessionOperationLock(chatSessionOperationKey(projectId, sessionId), async () => (
     withRemovedSessionIndexMutation(project, async () => {
       const index = await readRecoveredRemovedSessionIndex(project);
@@ -214,7 +223,7 @@ export async function restoreRemovedChatSession(
       await writeRemovedSessionIndex(project, prepared);
       await rename(removedSessionRecordPath(project, record), target);
       // The memory change lands after the durable intent and file move, before completion (review 28).
-      await clearSessionMemoryOrphan(project.chatHome, projectId, sessionId);
+      await clearSessionMemoryOrphan(project.chatHome, projectId, sessionId, location.ownerLongAgentId);
       if (project.kind === "agent") await applyTopicNodeSessionLifecycle({ chatHome: project.chatHome, longAgentId: projectId, sessionId, state: "active" });
       const sessions = { ...prepared.sessions };
       delete sessions[sessionId];
@@ -235,13 +244,14 @@ export async function purgeRemovedChatSession(
   chatHome?: string,
   now = new Date(),
 ): Promise<{ readonly sessionId: string; readonly state: "purged"; readonly purgedAt: string }> {
-  const project = await resolveProjectContext(projectId, chatHome);
+  const location = await resolveOwnedSessionLocation(projectId, sessionId, chatHome);
+  const project = location.project;
   return withChatSessionOperationLock(chatSessionOperationKey(projectId, sessionId), async () => (
     withRemovedSessionIndexMutation(project, async () => {
       const index = await readRecoveredRemovedSessionIndex(project);
       const tombstone = index.tombstones[sessionId];
       if (tombstone !== undefined) {
-        await purgeSessionMemory(project.chatHome, projectId, sessionId);
+        await purgeSessionMemory(project.chatHome, projectId, sessionId, location.ownerLongAgentId);
         return { sessionId, state: "purged", purgedAt: tombstone.purgedAt };
       }
       const record = index.sessions[sessionId];
@@ -253,7 +263,7 @@ export async function purgeRemovedChatSession(
       const source = removedSessionRecordPath(project, record);
       if (await removedSessionPathExists(source)) await unlink(source);
       // The memory deletion is irreversible; it happens only after the purge intent is durable (review 29).
-      await purgeSessionMemory(project.chatHome, projectId, sessionId);
+      await purgeSessionMemory(project.chatHome, projectId, sessionId, location.ownerLongAgentId);
       await purgePromptCaptures(project.sessionDir, sessionId);
       const sessions = { ...prepared.sessions };
       delete sessions[sessionId];
