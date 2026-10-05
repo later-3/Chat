@@ -106,10 +106,8 @@ export default defineEventHandler(async (event) => {
 
   const isNewSession = input.sessionId === undefined;
   if (isNewSession) {
-    // Persist the prompt-derived display name at the HTTP acceptance boundary.
-    // A Workflow Step can fail before it appends the native user message; the
-    // Session must still retain a useful title across a browser refresh.
-    const reserved = await reserveChatSession(input, input.prompt);
+    // 会话标题只由用户写；未命名时列表回退到会话第一句话（与 Pi / Pi Web 一致）。
+    const reserved = await reserveChatSession(input);
     input = { ...input, sessionId: reserved.manager.getSessionId() };
   }
   const sessionId = input.sessionId as string;

@@ -138,7 +138,6 @@ export async function ensureProjectLongAgent(input: {
       const sessionId = candidates[0]?.id;
       if (input.requestedSessionId !== undefined && input.requestedSessionId !== sessionId) throw new Error("Friend会话绑定不匹配");
       const session = await openChatSession({ projectId: own.projectId, chatHome: input.chatHome, ...(sessionId === undefined ? {} : { sessionId }) });
-      if (sessionId === undefined) session.manager.appendSessionInfo(`${agent.name} · ${date}`);
       isNewSession = sessionId === undefined;
       day = { longAgentId: agent.id, date, timeZone: agent.timeZone, sessionId: session.manager.getSessionId(), createdAt: now.toISOString(),
         summary: { status: "pending", attempts: 0, cutoff: null, entryId: null, nextAttemptAt: null, error: null, revision: null } };

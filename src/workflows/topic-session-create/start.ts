@@ -55,7 +55,6 @@ export async function startTopicSessionCreation(input: StartTopicSessionCreation
     const { session } = await ensureChatSessionWithId(
       { projectId: input.longAgentId, chatHome },
       prepareSessionId,
-      "主题创建",
     );
     const started = await startChatWorkflow({
       workflow: TOPIC_SESSION_CREATE_WORKFLOW_ID,

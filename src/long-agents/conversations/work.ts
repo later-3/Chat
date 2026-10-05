@@ -130,7 +130,6 @@ async function ensureWorkSession(input: {
   if (work.sessionId !== null) return work.sessionId;
   const reserved = await reserveChatSession(
     { chatHome: input.chatHome, projectId: input.storageProjectId },
-    `群任务 · ${work.title}`,
   );
   const sessionId = reserved.manager.getSessionId();
   reserved.manager.appendCustomEntry(GROUP_WORK_SESSION, {

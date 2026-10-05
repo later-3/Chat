@@ -43,7 +43,7 @@ export async function createAdditionalSession(input: {
         const session = await openChatSession({ chatHome: project.chatHome, projectId: project.projectId });
         binding = { longAgentId: project.projectId, sessionId: session.manager.getSessionId(), requestId: input.requestId,
           date: input.date, timeZone: input.timeZone, createdAt: input.now.toISOString() };
-        session.manager.appendSessionInfo(`${input.name} · ${input.date} · 新会话`);
+        // 会话标题只由用户写：系统不再替用户命名（列表回退到会话第一句话）。
         session.manager.appendCustomEntry(DIRECT_SESSION_MARKER, binding);
         session.manager.flush();
         isNewSession = true;

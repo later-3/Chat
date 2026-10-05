@@ -42,7 +42,7 @@ export async function createConversation(input: {
   const existing = (await readConversationState(input.chatHome, input.storageProjectId)).conversations.find((candidate) => candidate.id === id);
   if (existing !== undefined) return existing;
   // The public root is a native Session of the storage Project; it never runs a shared Agent loop.
-  const publicSession = await reserveChatSession({ chatHome: input.chatHome, projectId: input.storageProjectId }, input.title);
+  const publicSession = await reserveChatSession({ chatHome: input.chatHome, projectId: input.storageProjectId });
   const now = new Date().toISOString();
   return changeConversationState(input.chatHome, input.storageProjectId, (state) => {
     const duplicate = state.conversations.find((candidate) => candidate.id === id);
@@ -228,7 +228,6 @@ export async function bindParticipationSession(input: {
   if (member.sessionId !== null) return { conversation, sessionId: member.sessionId, participationEpoch: member.participationEpoch, created: false };
   const reserved = await reserveChatSession(
     { chatHome: input.chatHome, projectId: input.storageProjectId },
-    `${conversation.title} · ${input.longAgentId}`,
   );
   const sessionId = reserved.manager.getSessionId();
   // Mark the Session durably: every later read can tell it is a group participation context and

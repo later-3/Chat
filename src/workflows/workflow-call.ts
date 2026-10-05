@@ -321,7 +321,7 @@ export async function callChatWorkflow(
       projectId: input.projectId,
       chatHome: input.chatHome,
       cwd: input.cwd,
-    }, input.prompt, { parentSessionManager: input.parentSessionManager, ...(input.parentProjectId === undefined ? {} : { parentProjectId: input.parentProjectId }) });
+    }, undefined, { parentSessionManager: input.parentSessionManager, ...(input.parentProjectId === undefined ? {} : { parentProjectId: input.parentProjectId }) });
   } catch (error) {
     releaseCapacity();
     throw error;

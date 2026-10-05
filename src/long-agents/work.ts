@@ -59,7 +59,8 @@ export async function startFriendWork(input: {
     if (candidates.length > 1) throw new Error("后台工作存在多个原生会话，请检查绑定");
     let binding = candidates[0];
     if (!binding) {
-      const child = await reserveChatSession({ projectId: agent.id, chatHome: input.chatHome }, input.title,
+      // 标题交给用户或“第一句话”兜底，系统不写会话名。
+      const child = await reserveChatSession({ projectId: agent.id, chatHome: input.chatHome }, undefined,
         { parentSessionManager: origin.manager });
       binding = { id, longAgentId: agent.id, sessionId: child.manager.getSessionId(), originSessionId: input.originSessionId,
         originEntryId: origin.manager.getLeafId(), contextProjectId: input.contextProjectId, requestId: input.requestId,
