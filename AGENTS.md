@@ -3,15 +3,7 @@
 ## 文档入口与同步
 
 - Agent开发Chat前读取`.chat/skills/chat-architecture/SKILL.md`；按`docs/development/agent-contribution.md`先分析场景和机制，再进入架构/技术方案与实施。跨模块核对`docs/architecture/chat-module-contracts.md`，诊断与交接见`docs/development/diagnostics.md`；具体红线例外须有理由、替代保障和明确架构审核，不能先旁路再补文档。
-- `docs/README.md`是项目文档索引。开始任务时按修改范围读取对应模块文档，不要求无差别读取全部文档。
-- 修改模型、Workflow、Agent、Project配置、目录、Schema、继承顺序或配置API前，必须完整阅读`docs/configuration/README.md`。
-- 修改Backend、通用编码约束或测试时，分别阅读`docs/development/backend.md`、`docs/development/coding-standards.md`和`docs/development/testing.md`。
-- 涉及任何Frontend功能开发、优化或评审前，必须遵守[前端设计方法与案例](frontend/docs/frontend-design-method.md)，先在仓库文档记录任务、信息清单和关系推导，再实施并回写真实验收。
-- 修改Frontend时，同时遵守`frontend/AGENTS.md`及其文档索引；修改架构敏感机制时从`docs/architecture/README.md`选择相关文档。
-- Long Agent定义、配置、连续性、Docker和主动工作设计从`docs/modules/long-agents/README.md`及`docs/modules/long-agents/chat-long-agent-capability-model.md`进入；新增场景按`docs/modules/long-agents/chat-long-agent-mechanism-contract.md`归类和评审扩展，实现差距见`docs/modules/long-agents/chat-long-agent-roadmap.md`。目标设计不能写成已发布能力，具体实现合同仍需审核。
-- Long Agent详细设计与实施前须核对`docs/modules/long-agents/chat-long-agent-engineering-baseline.md`中的原生接入证据、Skill生效合同、Session扩展、约束与测试门槛、场景依赖及待确认决策；状态为建议的部分先完成评审，不能当作已实现事实。
-- README和AGENTS只保存导航与强制边界。完整用法和模块规范保存在独立文档中，不在多个入口复制。
-- 用户可观察行为、配置格式、目录、API、开发约束或验证命令发生变化时，必须在同一变更中更新对应文档和测试。若实现与文档冲突，先判断实现缺陷或规范变化，不能只改文档来合理化意外行为。
+- 开发 Chat 时的协作规范（需求规范、前端规范、维护规范）与资产（飞轮、概念空间、正反案例、每日记录）都在用户的交互 harness 目录 `~/.chat/interaction-harness/`，**不在仓库里复制副本**；仓库只保留索引 `docs/standards/README.md`。接到需求、做决策、开始前端工作前按该目录 README 与 `standards/` 执行；请用户选择时必须给出依据（参考出处、正反案例、难度与风险）。
 
 ## 项目定位
 
