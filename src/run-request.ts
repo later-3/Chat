@@ -35,13 +35,9 @@ export interface ChatWorkflowHttpInput {
   /** Backend-internal provenance; the HTTP parser never accepts it from clients. */
   readonly delegatedByAgentId?: string;
   /** Backend-internal session-memory target; the HTTP parser never accepts it from clients. */
-  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
-  /**
-   * Caller preference for THIS send: `false` runs the round without the Workflow's last (memory) node.
-   * It is the only session-memory field the HTTP parser accepts, because it only affects the caller's
-   * own round in the caller's own session.
-   */
-  readonly sessionMemoryEnabled?: boolean;
+  readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string; readonly ownerLongAgentId?: string };
+  /** Backend-internal storage owner for Long Agent sessions; the HTTP parser never accepts it. */
+  readonly ownerLongAgentId?: string;
   /** Backend-internal trusted topic-creation binding; the HTTP parser never accepts it from clients. */
   readonly topicCreation?: {
     readonly longAgentId: string;
@@ -103,12 +99,6 @@ export function parseChatWorkflowHttpInput(
   if (definition === undefined) {
     throw new Error(`workflow必须是${CHAT_WORKFLOW_IDS.join("或")}`);
   }
-  // The session-memory switch is a CALLER preference about the caller's own session, so it is accepted
-  // from the request (unlike the trusted bindings above). Absent = on.
-  const sessionMemory = value.sessionMemory;
-  if (sessionMemory !== undefined && sessionMemory !== "on" && sessionMemory !== "off") {
-    throw new Error("sessionMemory必须是on或off");
-  }
   const promptCapture = value.promptCapture;
   if (promptCapture !== undefined && promptCapture !== "on" && promptCapture !== "off") {
     throw new Error("promptCapture必须是on或off");
@@ -137,7 +127,6 @@ export function parseChatWorkflowHttpInput(
     ...(sessionId === undefined ? {} : { sessionId }),
     ...(defaults.defaultAgentConfigs === undefined ? {} : { defaultAgentConfigs: defaults.defaultAgentConfigs }),
     ...(agentConfigs === undefined ? {} : { agentConfigs }),
-    ...(sessionMemory === undefined ? {} : { sessionMemoryEnabled: sessionMemory !== "off" }),
     ...(promptCapture === undefined ? {} : { promptCaptureEnabled: promptCapture !== "off" }),
   };
 }

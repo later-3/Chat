@@ -1,5 +1,4 @@
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
-import { runSessionMemoryTail } from "../session-memory/tail.js";
 import {
   beginSessionExecution,
   endSessionExecution,
@@ -15,7 +14,7 @@ export async function minimalPiCodingAgentWorkflow(
     beginSessionExecution(input.sessionId, "minimal-pi-coding-agent", input.workflowInvocationId);
   }
   try {
-    return await runSessionMemoryTail(input, await runPiCodingAgentPromptStep(input), "minimal-pi-coding-agent");
+    return await runPiCodingAgentPromptStep(input);
   } finally {
     if (input.sessionId !== undefined) {
       endSessionExecution(input.sessionId, input.workflowInvocationId);

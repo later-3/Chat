@@ -11,23 +11,12 @@
       "name": "定位",
       "description": "依据调用方给出的问题描述与证据做定位分析。",
       "agentId": "problem-diagnoser"
-    },
-    {
-      "kind": "agent",
-      "id": "remember",
-      "name": "记录会话记忆",
-      "description": "只依据本轮（用户消息与工作阶段产物）维护本会话的会话记忆。",
-      "agentId": "session-memory-writer"
     }
   ],
   "agents": [
     {
       "id": "problem-diagnoser",
       "config": "./agents/diagnoser/agent.json"
-    },
-    {
-      "id": "session-memory-writer",
-      "config": "../session-memory/agents/writer/agent.json"
     }
   ]
 }

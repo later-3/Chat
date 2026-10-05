@@ -50,6 +50,9 @@ export async function readChatSessionOwnerIndex(
     for (const entry of state.projectAgents) {
       if (entry.projectId === projectId) add(entry.primarySessionId, entry.longAgentId, entry.id);
     }
+    for (const binding of state.projectSessions) {
+      if (binding.projectId === projectId) add(binding.sessionId, binding.longAgentId, projectLongAgentId(projectId, binding.longAgentId));
+    }
     for (const day of [...state.dailySessions, ...state.additionalSessions]) {
       if (day.longAgentId === projectId) add(day.sessionId, day.longAgentId, projectLongAgentId(projectId, day.longAgentId));
     }
@@ -77,6 +80,6 @@ export function chatSessionOwner(
 export async function readWritableFriendSessionIds(chatHome?: string, snapshot?: SessionOwnershipFacts): Promise<ReadonlySet<string>> {
   const { state, legacy } = snapshot ?? await readSessionOwnershipFacts(chatHome);
   return new Set([...state.dailySessions.map(day => day.sessionId), ...state.additionalSessions.map(session => session.sessionId), ...state.works.map(work => work.sessionId),
-    ...state.nodeSessions.map(node => node.sessionId),
+    ...state.nodeSessions.map(node => node.sessionId), ...state.projectSessions.map(session => session.sessionId),
     ...legacy.filter(entry => entry.longAgentId !== null && entry.targetProjectId === entry.longAgentId).map(entry => entry.sessionId)]);
 }

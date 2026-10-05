@@ -6,6 +6,8 @@ export interface ChatWorkflowInput {
   readonly acceptedLongAgentTurn?: { readonly longAgentId: string; readonly turnId: string };
   readonly projectId?: string;
   readonly chatHome?: string;
+  /** Backend-internal storage owner for Long Agent sessions; never parsed from HTTP. */
+  readonly ownerLongAgentId?: string;
   readonly cwd: string;
   readonly prompt: string;
   /** Optional image attachments consumed by image-capable Agent steps. */
@@ -22,23 +24,11 @@ export interface ChatWorkflowInput {
    */
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
   /**
-   * Backend-internal「会话记忆」switch for this round (node-level, resolved from the topic node by the
-   * dispatching service — never from an HTTP client or model argument). When false the round runs as an
-   * ordinary agent turn: no read Skill/tool is assembled and no writer stage runs.
-   */
-  readonly sessionMemoryEnabled?: boolean;
-  /**
    * Backend-internal「完整 Prompt 记录」switch for this round (node-level, resolved at the HTTP
    * acceptance boundary — never from an HTTP client of nested calls). When true every final
    * provider payload of the round's agent sessions is captured to gzip sidecars.
    */
   readonly promptCaptureEnabled?: boolean;
-  /**
-   * Backend-internal: the Workflow that OWNS this round's `remember` node. The writer implementation is
-   * shared, but its stage/invocation provenance must stay that of the calling Workflow so execution,
-   * inspection and the frontend all read the same identity. Only the tail sets it.
-   */
-  readonly sessionMemoryOwnerWorkflowId?: string;
   /**
    * Backend-internal trusted binding for the review-gated topic creation Workflow. Resolved from the
    * trusted dispatch context (initiating Long Agent, source session/turn, request identity, fork anchor)

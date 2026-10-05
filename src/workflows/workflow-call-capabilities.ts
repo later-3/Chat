@@ -1,6 +1,5 @@
 import { listChatSystemTools } from "../tools/registry.js";
 import type { AgentConfigSelection } from "./agent-config.js";
-import { isSessionMemoryTailAgent } from "./session-memory/tail-node.js";
 import { inspectWorkflowAgent } from "./agent-inspection.js";
 import { getChatWorkflowDefinition } from "./registry.js";
 import type {
@@ -133,8 +132,7 @@ export async function resolveWorkflowCallAgentConfigs(
     }
     selectionByAgent.set(selection.agentId, selection);
   }
-  // The workflow-owned memory tail is part of the Workflow itself: the caller never selects it.
-  const expectedAgentIds = new Set(inspected.agents.map((agent) => agent.agentId).filter((agentId) => !isSessionMemoryTailAgent(agentId)));
+  const expectedAgentIds = new Set(inspected.agents.map((agent) => agent.agentId));
   const unknownAgentIds = [...selectionByAgent.keys()].filter((agentId) => !expectedAgentIds.has(agentId));
   if (unknownAgentIds.length > 0) {
     throw new Error(`Workflow ${inspected.workflow.id}不存在Agent: ${unknownAgentIds.join(", ")}`);
@@ -147,8 +145,6 @@ export async function resolveWorkflowCallAgentConfigs(
   const systemToolAddresses = new Set(listChatSystemTools().map((tool) => tool.address));
   const resolved: Record<string, AgentConfigSelection> = {};
   for (const { agentId, inspection } of inspected.agents) {
-    // The workflow-owned memory tail keeps its own definition; the caller never configures it.
-    if (isSessionMemoryTailAgent(agentId)) continue;
     const selection = selectionByAgent.get(agentId) as WorkflowCallAgentCapabilitySelection;
     const selectedToolNames = [...new Set(selection.tools)];
     const selectedSkillNames = [...new Set(selection.skills)];

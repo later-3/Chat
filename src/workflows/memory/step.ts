@@ -1,4 +1,3 @@
-import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
 import { openChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
@@ -11,7 +10,6 @@ import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.
 import { appendChatWorkflowAgentInput, appendChatWorkflowStage } from "../workflow-stage.js";
 import { MEMORY_AGENT } from "./agents/memory-agent/index.js";
 import { prepareMemoryAgentSession } from "./agents/memory-agent/runtime.js";
-import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 
 export async function runMemoryAgentStep(
   input: ChatWorkflowInput,
@@ -23,7 +21,7 @@ export async function runMemoryAgentStep(
   const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: "memory",
-    agents: [MEMORY_AGENT, SESSION_MEMORY_WRITER_AGENT],
+    agents: [MEMORY_AGENT],
     cwd: chatSession.cwd,
     ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
     ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),
@@ -130,7 +128,7 @@ export async function runMemoryAgentStep(
     );
     throw error;
   } finally {
-    await observer.finish(stageFinishClosesStream(input));
+    await observer.finish(true);
     session.dispose();
     console.log(`${localTimestamp()} [memory] session disposed`);
   }

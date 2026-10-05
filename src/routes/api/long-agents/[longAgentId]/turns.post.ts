@@ -21,9 +21,8 @@ export default defineEventHandler(async (event) => {
     const v = body as Record<string, unknown>;
     if (
       Object.keys(v).some(
-        (k) => !["agentConfigs", "workflow", "schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId", "sessionMemory", "promptCapture"].includes(k),
+        (k) => !["agentConfigs", "workflow", "schemaVersion", "requestId", "sessionId", "text", "images", "contextProjectId", "promptCapture"].includes(k),
       ) ||
-      (v.sessionMemory !== undefined && v.sessionMemory !== "on" && v.sessionMemory !== "off") ||
       (v.promptCapture !== undefined && v.promptCapture !== "on" && v.promptCapture !== "off") ||
       v.schemaVersion !== 1 ||
       typeof v.requestId !== "string" ||
@@ -46,7 +45,6 @@ export default defineEventHandler(async (event) => {
       projectId: longAgentId,
       turnId: v.requestId,
       text: v.text,
-      ...(v.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}),
       ...(v.promptCapture === "on" ? { promptCapture: "on" as const } : {}),
       ...(v.contextProjectId === undefined ? {} : { contextProjectId: v.contextProjectId as string | null }),
       ...(v.sessionId === undefined ? {} : { sessionId: v.sessionId as string }),

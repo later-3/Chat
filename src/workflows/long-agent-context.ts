@@ -11,7 +11,8 @@ export async function requireAcceptedWorkflowTurn(input: Pick<ChatWorkflowInput,
   if (ref === undefined) throw new Error("缺少受理的Friend轮次");
   const home = resolveChatHome(input.chatHome);
   const turn = (await readLongAgentState(home)).turns.find(candidate => candidate.turnId === ref.turnId);
-  if (turn === undefined || turn.longAgentId !== ref.longAgentId || turn.longAgentId !== input.projectId
+  if (turn === undefined || turn.longAgentId !== ref.longAgentId
+    || (turn.storageProjectId ?? turn.longAgentId) !== input.projectId
     || turn.sessionId !== input.sessionId || turn.workflow?.invocationId !== input.workflowInvocationId)
     throw new Error("Workflow与耐久接受记录不匹配");
   if (!inspection && (turn.cancelRequested || turn.status === "cancelled")) throw new Error("请求已取消");
@@ -27,11 +28,11 @@ export async function executeLongAgentWorkflowStep(input: ChatWorkflowInput): Pr
   chatSession.manager.flush();
   const { executeAcceptedLongAgentTurn } = await import("../long-agents/runtime.js");
   const result = await executeAcceptedLongAgentTurn({
-    ...(input.chatHome === undefined ? {} : { chatHome: input.chatHome }), projectId: turn.longAgentId, longAgentId: turn.longAgentId,
+    ...(input.chatHome === undefined ? {} : { chatHome: input.chatHome }), projectId: turn.storageProjectId ?? turn.longAgentId, longAgentId: turn.longAgentId,
     sessionId: turn.sessionId, text: turn.text, ...(turn.images === undefined ? {} : { images: turn.images }), turnId: turn.turnId,
     source: turn.source, channelType: turn.channelType, contextProjectId: turn.contextProjectId,
     ...(turn.inboundEventId === null ? {} : { inboundEventId: turn.inboundEventId }), summaryDraft: turn.summaryDraft,
-    workflowExecution: { invocationId: input.workflowInvocationId, workflowId: "minimal-pi-coding-agent", memoryEnabled: input.sessionMemoryEnabled !== false },
+    workflowExecution: { invocationId: input.workflowInvocationId, workflowId: "minimal-pi-coding-agent" },
   }, turn);
   const sessionFile = chatSession.manager.getSessionFile();
   if (sessionFile === undefined) throw new Error("受理Session缺少原生文件");

@@ -1,6 +1,6 @@
 import { parseFriendWork, type FriendWork } from "./work-state.js";
 import { validateTimeZone } from "./calendar.js";
-import { parseDailySession, parseAdditionalSession, parseAcceptedTurn, type AdditionalSession, type DailySession, type AcceptedTurn } from "./daily-state.js";
+import { parseDailySession, parseAdditionalSession, parseAcceptedTurn, parseProjectSessionBinding, type AdditionalSession, type DailySession, type AcceptedTurn, type ProjectSessionBinding } from "./daily-state.js";
 import { createHash } from "node:crypto";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { PROJECT_ID_PATTERN } from "../projects/types.js";
@@ -12,7 +12,7 @@ import {
 } from "../workflows/agent-config.js";
 
 export const LONG_AGENT_SCHEMA_VERSION = 1;
-export const LONG_AGENT_STATE_SCHEMA_VERSION = 7;
+export const LONG_AGENT_STATE_SCHEMA_VERSION = 8;
 export const LONG_AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 
 export interface LongAgentAddress {
@@ -47,6 +47,11 @@ export interface LongAgentConfig {
   readonly instanceId: string;
   readonly nanoclawAgentGroupId: string;
   readonly defaultProjectId: string;
+  /**
+   * Web 三级导航（LA → Project → Session）的显式项目绑定；Agent Workspace（id 即 agent id）
+   * 永远首位且不可解绑。解绑只移除导航可见性，不删除项目下已产生的 Session。
+   */
+  readonly boundProjectIds: readonly string[];
   /** Channel 绑定；未绑定的 Agent 仅从 Chat Web 入口工作（S2 生命周期允许先创建后绑定）。 */
   readonly inbox?: LongAgentAddress & { readonly messagingGroupId: string };
   /** 生命周期状态；缺省为 active。archived 停止新工作但保留全部数据。 */
@@ -56,8 +61,6 @@ export interface LongAgentConfig {
    * 用户在配置页自定义过工具后变为 false，补齐不再触碰。
    */
   readonly toolsManagedByDefault?: boolean;
-  /** 回复末尾追加模板；变量 {{project}}/{{agentName}}/{{date}}。缺省为 `project：{{project}}`。 */
-  readonly responseTemplate?: string;
   /** Chat-owned Pi capability definition. NanoClaw never receives this value. */
   readonly definition: WorkflowAgentDefinition;
 }
@@ -111,7 +114,7 @@ export interface LongAgentNodeSession {
 }
 
 export interface LongAgentState {
-  readonly schemaVersion: 7;
+  readonly schemaVersion: 8;
   readonly works: readonly FriendWork[];
   /**
    * Topic node sessions. A node is an ordinary Pi session, so it gets its own binding instead of
@@ -121,6 +124,11 @@ export interface LongAgentState {
   readonly nodeSessions: readonly LongAgentNodeSession[];
   readonly dailySessions: readonly DailySession[];
   readonly additionalSessions: readonly AdditionalSession[];
+  /**
+   * 项目归属会话（LA→Project→Session 三级导航）：从 Long Agent 绑定项目新建的 Web 会话，
+   * 存储与执行项目都是该项目。Agent Home 的每日/额外会话不在此表。
+   */
+  readonly projectSessions: readonly ProjectSessionBinding[];
   readonly turns: readonly AcceptedTurn[];
   readonly projectAgents: readonly ProjectLongAgent[];
   readonly bindings: readonly LongAgentConversationBinding[];
@@ -258,9 +266,11 @@ function parseAgentAvatar(value: unknown): LongAgentAvatar {
 
 function parseAgent(value: unknown): LongAgentConfig {
   if (!isRecord(value)) throw new Error("LongAgent agent必须是对象");
+  // The responseTemplate reply-footer template retired (2026-10-01); older registries may still carry
+  // the field, so it stays in the accepted list here but is never parsed back onto the config.
   exactFields(
     value,
-    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "inbox", "status", "toolsManagedByDefault", "responseTemplate", "definition", "timeZone"],
+    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "boundProjectIds", "inbox", "status", "toolsManagedByDefault", "responseTemplate", "definition", "timeZone"],
     "LongAgent agent",
   );
   if (value.inbox !== undefined) {
@@ -277,9 +287,6 @@ function parseAgent(value: unknown): LongAgentConfig {
   const id = parseId(value.id, "agent.id");
   const name = requiredString(value.name, "agent.name");
   const description = typeof value.description === "string" ? value.description.trim() : "";
-  if (value.responseTemplate !== undefined && (typeof value.responseTemplate !== "string" || value.responseTemplate.length > 2_000)) {
-    throw new Error("agent.responseTemplate必须是不超过2000字符的字符串");
-  }
   const defaultDefinition = buildDefaultLongAgentDefinition(id, name, description);
   // The collaboration_project tool retired with the unified project contract (2026-09-28); strip it
   // from persisted definitions on read so older registries keep loading instead of failing tool resolution.
@@ -295,13 +302,13 @@ function parseAgent(value: unknown): LongAgentConfig {
     id,
     name,
     description,
-    ...(typeof value.responseTemplate === "string" ? { responseTemplate: value.responseTemplate } : {}),
     ...(value.timeZone === undefined ? {} : { timeZone: validateTimeZone(value.timeZone) }),
     avatar: parseAgentAvatar(value.avatar),
     enabled: value.enabled,
     instanceId: parseId(value.instanceId, "agent.instanceId"),
     nanoclawAgentGroupId: requiredString(value.nanoclawAgentGroupId, "agent.nanoclawAgentGroupId"),
     defaultProjectId,
+    boundProjectIds: normalizeBoundProjectIds(id, value.boundProjectIds),
     ...(value.inbox === undefined
       ? {}
       : {
@@ -326,6 +333,24 @@ function parseAgent(value: unknown): LongAgentConfig {
 function parseAgentStatus(value: unknown): "active" | "archived" {
   if (value !== "active" && value !== "archived") throw new Error("agent.status必须是active或archived");
   return value;
+}
+
+/**
+ * 归一化 Web 三级导航的项目绑定：Agent Workspace（id 即 agent id）永远首位且不可移除，
+ * 其余保持用户顺序并去重；缺省等价于只绑定 Workspace。只做格式校验，登记状态由调用方校验。
+ */
+export function normalizeBoundProjectIds(agentId: string, value: unknown): readonly string[] {
+  const raw = value === undefined ? [] : value;
+  if (!Array.isArray(raw)) throw new Error("agent.boundProjectIds必须是项目id数组");
+  const ids: string[] = [agentId];
+  for (const entry of raw) {
+    if (entry === agentId) continue;
+    if (typeof entry !== "string" || !PROJECT_ID_PATTERN.test(entry)) {
+      throw new Error(`agent.boundProjectIds项目id无效: ${String(entry)}`);
+    }
+    if (!ids.includes(entry)) ids.push(entry);
+  }
+  return ids;
 }
 
 /** Long Agent 的默认能力定义（与 parseAgent 内联默认值同源，供默认能力补齐复用）。 */
@@ -407,7 +432,7 @@ export function parseLongAgentRegistry(value: unknown): LongAgentRegistry {
 }
 
 export function emptyLongAgentState(): LongAgentState {
-  return { schemaVersion: 7, works: [], nodeSessions: [], dailySessions: [], additionalSessions: [], turns: [], projectAgents: [], bindings: [], pendingEvents: [], processedEvents: [] };
+  return { schemaVersion: 8, works: [], nodeSessions: [], dailySessions: [], additionalSessions: [], projectSessions: [], turns: [], projectAgents: [], bindings: [], pendingEvents: [], processedEvents: [] };
 }
 
 function parseNodeSessions(value: unknown): LongAgentNodeSession[] {
@@ -627,10 +652,14 @@ export function parseLongAgentState(value: unknown): LongAgentState {
     exactFields(value, ["schemaVersion", "projectAgents", "bindings", "pendingEvents", "processedEvents", "dailySessions", "turns", "works", "nodeSessions"], "Legacy LongAgent State");
     return parseLongAgentState({ ...value, schemaVersion: 7, additionalSessions: [] });
   }
+  if (isRecord(value) && value.schemaVersion === 7) {
+    exactFields(value, ["schemaVersion", "projectAgents", "bindings", "pendingEvents", "processedEvents", "dailySessions", "additionalSessions", "turns", "works", "nodeSessions"], "Legacy LongAgent State");
+    return parseLongAgentState({ ...value, schemaVersion: 8, projectSessions: [] });
+  }
   if (!isRecord(value) || value.schemaVersion !== LONG_AGENT_STATE_SCHEMA_VERSION) {
     throw new Error(`LongAgent State必须使用schemaVersion ${LONG_AGENT_STATE_SCHEMA_VERSION}`);
   }
-  exactFields(value, ["schemaVersion", "projectAgents", "bindings", "pendingEvents", "processedEvents", "dailySessions", "additionalSessions", "turns", "works", "nodeSessions"], "LongAgent State");
+  exactFields(value, ["schemaVersion", "projectAgents", "bindings", "pendingEvents", "processedEvents", "dailySessions", "additionalSessions", "projectSessions", "turns", "works", "nodeSessions"], "LongAgent State");
   if (!Array.isArray(value.projectAgents) || !Array.isArray(value.bindings)
     || !Array.isArray(value.pendingEvents) || !Array.isArray(value.processedEvents)) {
     throw new Error("LongAgent State projectAgents、bindings、pendingEvents和processedEvents必须是数组");
@@ -708,13 +737,28 @@ export function parseLongAgentState(value: unknown): LongAgentState {
     || works.some((work) => work.sessionId === binding.sessionId))) throw new Error("节点会话不能同时是每日会话或后台工作");
   const ownedByNode = (turn: { readonly longAgentId: string; readonly sessionId: string }) =>
     nodeSessions.some((binding) => binding.longAgentId === turn.longAgentId && binding.sessionId === turn.sessionId);
+  if (!Array.isArray(value.projectSessions)) throw new Error("缺少项目归属会话绑定");
+  const projectSessions = value.projectSessions.map(parseProjectSessionBinding);
+  const projectSessionKeys = new Set<string>();
+  for (const binding of projectSessions) {
+    const key = `${binding.longAgentId}\0${binding.projectId}\0${binding.requestId}`;
+    if (projectSessionKeys.has(key) || directSessionIds.has(binding.sessionId)
+      || nodeSessions.some((node) => node.sessionId === binding.sessionId)
+      || works.some((work) => work.sessionId === binding.sessionId)) throw new Error("项目归属会话绑定重复或占用其他会话");
+    projectSessionKeys.add(key); directSessionIds.add(binding.sessionId);
+  }
   for (const turn of turns) {
+    const ownedByProject = turn.storageProjectId !== undefined
+      && projectSessions.some((binding) => binding.longAgentId === turn.longAgentId && binding.projectId === turn.storageProjectId
+        && binding.sessionId === turn.sessionId);
     if (turnIds.has(turn.turnId) || sequences.has(turn.sequence) || !(turn.workId === undefined
-      ? [...dailySessions, ...additionalSessions].some((day) => day.longAgentId === turn.longAgentId && day.date === turn.date && day.sessionId === turn.sessionId) || ownedByNode(turn)
+      ? (turn.storageProjectId === undefined
+        ? [...dailySessions, ...additionalSessions].some((day) => day.longAgentId === turn.longAgentId && day.date === turn.date && day.sessionId === turn.sessionId) || ownedByNode(turn)
+        : ownedByProject)
       : works.some(work => work.id === turn.workId && work.longAgentId === turn.longAgentId && work.sessionId === turn.sessionId && work.contextProjectId === turn.contextProjectId))) throw new Error("请求归属或序号无效");
     turnIds.add(turn.turnId); sequences.add(turn.sequence);
   }
-  return { schemaVersion: 7, projectAgents, bindings, pendingEvents, processedEvents, dailySessions, additionalSessions, turns, works, nodeSessions };
+  return { schemaVersion: 8, projectAgents, bindings, pendingEvents, processedEvents, dailySessions, additionalSessions, projectSessions, turns, works, nodeSessions };
 }
 
 export function parseNanoClawIntegrationEvent(value: unknown): NanoClawIntegrationEvent {

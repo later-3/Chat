@@ -281,6 +281,8 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
         // resolved one from the Chat settings chain, so the source is Chat default.
         modelSource: agent.modelSource ?? (session.model === undefined ? null : "chat-default"),
         thinkingSource: agent.thinkingSource ?? (session.thinkingLevel === undefined ? null : "chat-default"),
+        effectiveGeneration: agent.generation ?? null,
+        generationSource: agent.generationSource ?? null,
         durableConfig: durableConfig ?? null,
       },
       prompt: {

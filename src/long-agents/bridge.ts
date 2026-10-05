@@ -63,8 +63,9 @@ async function collectTurnDeliveryImages(
   projectId: string,
   sessionId: string,
   turnId: string,
+  ownerLongAgentId: string,
 ): Promise<TurnDeliveryImage[]> {
-  const chatSession = await openChatSession({ projectId, chatHome, sessionId });
+  const chatSession = await openChatSession({ projectId, chatHome, sessionId, ownerLongAgentId });
   const entries = chatSession.manager.getBranch();
   const markers = collectChatLongAgentTurnMarkers(entries).filter((marker) => marker.turnId === turnId);
   const start = markers.find((marker) => marker.status === "running");
@@ -316,6 +317,7 @@ async function projectEvent(
         projectId: projectAgent.projectId,
         chatHome,
         sessionId: projectAgent.primarySessionId,
+        ownerLongAgentId: projectAgent.longAgentId,
       });
       if (session.manager.getEntries().some((entry) => entryHasEvent(entry, event.eventId))) return false;
       const timestamp = Date.parse(event.timestamp);
@@ -437,6 +439,7 @@ async function syncInstance(
           agent.id,
           result.sessionId,
           result.turnId,
+          agent.id,
         );
         await persistNanoClawDelivery({
           instance,

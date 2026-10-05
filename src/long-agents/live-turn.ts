@@ -64,7 +64,7 @@ function publishLiveEvent(value: LiveTurn, event: AgentSessionEvent): void {
   if (!["message_start", "message_end", "message_update"].includes(event.type)) value.phase = projected;
   value.events.push({
     schemaVersion: 1,
-    execution: { kind: "friend", id: value.turn.turnId, sessionId: value.turn.sessionId, projectId: value.turn.longAgentId },
+    execution: { kind: "friend", id: value.turn.turnId, sessionId: value.turn.sessionId, projectId: value.turn.storageProjectId ?? value.turn.longAgentId },
     seq: ++value.seq,
     at: new Date().toISOString(),
     type: "agent_event",

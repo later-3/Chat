@@ -3,10 +3,9 @@ import { resolveLongAgentWorkflowAgent } from "./workflow-configuration.js";
 import { ensureAgentCalendar } from "./project-agent.js";
 import { DAILY_ARCHIVE_INSTRUCTIONS } from "./daily-summary-task.js";
 import { agentDate } from "./calendar.js";
-import { ensureAgentHomeProject, resolveProjectContext } from "../projects/registry.js";
+import { ensureAgentHomeProject } from "../projects/registry.js";
 import { ensureLongAgentResourceDirs, longAgentConfigRoot } from "./storage.js";
 import { buildAgentGroupContextInstructions, readLongAgentAgentGroup, type readFrozenLongAgentAgentGroup } from "./agent-group-service.js";
-import { buildReplyFormatInstruction, localDate } from "./reply-template.js";
 import { buildLongAgentHandoff } from "./summaries.js";
 import { longAgentScopeInstructions, type LongAgentScope } from "./scope.js";
 import type { LongAgentConfig } from "./types.js";
@@ -32,7 +31,6 @@ export async function prepareLongAgentAssembly(input: {
   const agent = await ensureAgentCalendar(input.agent, chatHome);
   const own = await ensureAgentHomeProject(agent.id, agent.name, chatHome);
   await ensureLongAgentResourceDirs(chatHome, agent.id);
-  const project = input.projectId === null ? null : await resolveProjectContext(input.projectId, chatHome);
   const scope = input.scope;
   const includeGroup = scope === undefined || scope.include.agentGroupInstructions;
   const includeHandoff = scope === undefined || scope.include.dailyHandoff;
@@ -40,9 +38,6 @@ export async function prepareLongAgentAssembly(input: {
   const handoff = includeHandoff
     ? await buildLongAgentHandoff({ chatHome, longAgentId: agent.id, today: input.today ?? agentDate(agent.timeZone) })
     : null;
-  const format = buildReplyFormatInstruction(agent.responseTemplate, {
-    project: project?.name ?? "无项目", agentName: agent.name, date: input.today ?? localDate(),
-  });
   const execution = input.executionAgent ?? (scope === undefined
     ? (await resolveLongAgentWorkflowAgent(agent, chatHome)).agent : agent.definition);
   const identityInstructions = [
@@ -64,7 +59,6 @@ export async function prepareLongAgentAssembly(input: {
         ...execution.customInstructions,
         ...(execution === agent.definition ? [] : identityInstructions),
         ...(group === undefined ? [] : [{ text: buildAgentGroupContextInstructions(group) }]),
-        ...(format === null ? [] : [{ text: format }]),
         ...(includeHandoff ? [{ text: DAILY_ARCHIVE_INSTRUCTIONS }] : []),
         ...(handoff === null ? [] : [{ text: handoff }]),
         ...(scope === undefined ? [] : [{ text: longAgentScopeInstructions(scope, { agentName: agent.name }) }]),

@@ -22,6 +22,7 @@ import { removeLongAgentAvatarAssets } from "./avatars.js";
 import {
   LONG_AGENT_ID_PATTERN,
   longAgentConfigRevision,
+  normalizeBoundProjectIds,
   type LongAgentAvatar,
   type LongAgentConfig,
   type LongAgentInstanceConfig,
@@ -59,9 +60,9 @@ export interface LongAgentConfigurationDocument {
     readonly avatar: PublicLongAgentAvatar;
     readonly enabled: boolean;
     readonly defaultProjectId: string;
+    /** Web 三级导航的项目绑定；Agent Workspace 永远首位。 */
+    readonly boundProjectIds: readonly string[];
     readonly timeZone?: string;
-    /** 回复模板；null 表示使用默认（project 尾注）。 */
-    readonly responseTemplate: string | null;
     readonly effective: LongAgentEffectiveConfig;
     readonly definition: {
       readonly schemaVersion: 1;
@@ -156,8 +157,8 @@ function documentOf(agent: LongAgentConfig, instance: LongAgentInstanceConfig): 
       avatar: publicLongAgentAvatar(agent.avatar),
       enabled: agent.enabled,
       defaultProjectId: agent.defaultProjectId,
+      boundProjectIds: agent.boundProjectIds,
       ...(agent.timeZone === undefined ? {} : { timeZone: agent.timeZone }),
-      responseTemplate: agent.responseTemplate ?? null,
       effective: {
         model: null,
         thinkingLevel: null,
@@ -234,9 +235,9 @@ interface ParsedUpdate {
   readonly avatar?: { readonly kind: "auto" } | { readonly kind: "emoji"; readonly emoji: string };
   readonly enabled: boolean;
   readonly defaultProjectId: string;
+  /** 完整替换目标绑定列表；undefined 表示不改。格式校验在此，登记状态由 update 校验。 */
+  readonly boundProjectIds?: readonly string[];
   readonly timeZone?: string;
-  /** null 表示恢复默认模板；undefined 表示不改。 */
-  readonly responseTemplate?: string | null;
   readonly definition: WorkflowAgentDefinition;
 }
 
@@ -267,8 +268,10 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
   if (!isRecord(value) || value.schemaVersion !== 1) {
     throw new LongAgentConfigurationInvalidError("Long Agent配置必须使用schemaVersion 1");
   }
+  // The responseTemplate reply-footer template retired (2026-10-01); older clients may still send
+  // the field in update payloads, so it stays in the accepted list here but is never read back.
   exactFields(value, [
-    "schemaVersion", "expectedRevision", "name", "description", "avatar", "enabled", "defaultProjectId", "definition", "responseTemplate", "timeZone",
+    "schemaVersion", "expectedRevision", "name", "description", "avatar", "enabled", "defaultProjectId", "boundProjectIds", "definition", "responseTemplate", "timeZone",
   ], "Long Agent配置");
   const expectedRevision = readNonEmptyString(value.expectedRevision, "expectedRevision");
   if (!/^[a-f0-9]{64}$/.test(expectedRevision)) {
@@ -309,14 +312,15 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
     ...(avatar === undefined ? {} : { avatar }),
     enabled: value.enabled,
     defaultProjectId,
-    ...(value.timeZone === undefined ? {} : { timeZone: parseTimeZone(value.timeZone) }),
-    ...(value.responseTemplate === undefined
+    ...(value.boundProjectIds === undefined
       ? {}
-      : { responseTemplate: value.responseTemplate === null
-          ? null
-          : typeof value.responseTemplate === "string" && value.responseTemplate.length <= 2_000
-            ? value.responseTemplate
-            : (() => { throw new LongAgentConfigurationInvalidError("responseTemplate必须是不超过2000字符的字符串或null"); })() }),
+      : (() => {
+          try { return { boundProjectIds: normalizeBoundProjectIds(longAgentId, value.boundProjectIds) }; }
+          catch (cause) {
+            throw new LongAgentConfigurationInvalidError(cause instanceof Error ? cause.message : "boundProjectIds无效", { cause });
+          }
+        })()),
+    ...(value.timeZone === undefined ? {} : { timeZone: parseTimeZone(value.timeZone) }),
     definition,
   };
 }
@@ -388,6 +392,14 @@ export async function updateLongAgentConfiguration(
   }
   await validateModel(update.definition, root);
   await validateTools(update.definition, update.defaultProjectId, root);
+  for (const boundId of update.boundProjectIds ?? []) {
+    if (boundId === id) continue; // Agent Workspace，无需登记校验
+    try {
+      await resolveProjectContext(boundId, root);
+    } catch (error) {
+      throw new LongAgentConfigurationInvalidError(`boundProjectId不可用: ${boundId}`, { cause: error });
+    }
+  }
 
   const document = await updateLongAgentRegistry(root, async (registry) => {
     const index = registry.agents.findIndex((candidate) => candidate.id === id);
@@ -397,17 +409,17 @@ export async function updateLongAgentConfiguration(
     if (revisionOf(previous) !== update.expectedRevision) {
       throw new LongAgentConfigurationConflictError("Long Agent配置已被其他操作更新，请重新加载后再保存");
     }
-    const { responseTemplate: previousResponseTemplate, ...previousBase } = previous;
-    const responseTemplate = update.responseTemplate === undefined ? previousResponseTemplate : update.responseTemplate;
     const next: LongAgentConfig = {
-      ...previousBase,
+      ...previous,
       name: update.name,
       description: update.description,
       ...(update.avatar === undefined ? {} : { avatar: update.avatar }),
       enabled: update.enabled,
       defaultProjectId: update.defaultProjectId,
+      boundProjectIds: update.boundProjectIds === undefined
+        ? previous.boundProjectIds
+        : normalizeBoundProjectIds(id, update.boundProjectIds),
       ...(update.timeZone === undefined ? {} : { timeZone: update.timeZone }),
-      ...(responseTemplate === undefined || responseTemplate === null ? {} : { responseTemplate }),
       // 工具集与当前默认一致 → 仍由默认托管（后续新增默认能力会补齐）；用户自定义过 → 退出托管。
       toolsManagedByDefault: toolsMatchDefault({ ...previous, definition: update.definition }),
       definition: update.definition,

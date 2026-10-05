@@ -1,4 +1,3 @@
-import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
 import { openChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
@@ -11,7 +10,6 @@ import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 import { appendChatWorkflowStage } from "../workflow-stage.js";
 import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
 import { PI_CODING_AGENT } from "./agents/pi-coding-agent/index.js";
-import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 
 export async function runPiCodingAgentPromptStep(
   input: ChatWorkflowInput,
@@ -27,7 +25,7 @@ export async function runPiCodingAgentPromptStep(
   const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: "minimal-pi-coding-agent",
-    agents: [PI_CODING_AGENT, SESSION_MEMORY_WRITER_AGENT],
+    agents: [PI_CODING_AGENT],
     cwd: chatSession.cwd,
     ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
     ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),
@@ -122,7 +120,7 @@ export async function runPiCodingAgentPromptStep(
     );
     throw error;
   } finally {
-    await observer.finish(stageFinishClosesStream(input));
+    await observer.finish(true);
     session.dispose();
     console.log(`${localTimestamp()} [pi] session disposed`);
   }

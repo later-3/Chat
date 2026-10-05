@@ -1,4 +1,3 @@
-import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
 import { openChatSession } from "../../chat-session.js";
 import { getStoredAgentConfigs, resolveChatConfig } from "../../chat-config.js";
 import { localTimestamp } from "../../runtime-log.js";
@@ -13,7 +12,6 @@ import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.
 import { getChatWorkflowDefinition } from "../registry.js";
 import { RULE_CURATOR_AGENT } from "./agents/rule-curator-agent/index.js";
 import { prepareRuleCuratorAgentSession } from "./agents/rule-curator-agent/runtime.js";
-import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 
 export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<ChatWorkflowResult> {
   "use step";
@@ -23,7 +21,7 @@ export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<C
   const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: "rule-management",
-    agents: [RULE_CURATOR_AGENT, SESSION_MEMORY_WRITER_AGENT],
+    agents: [RULE_CURATOR_AGENT],
     cwd: chatSession.cwd,
     ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
     ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),
@@ -122,7 +120,7 @@ export async function runRuleManagementStep(input: ChatWorkflowInput): Promise<C
         : { provider: session.model.provider, modelId: session.model.id },
     };
   } finally {
-    await observer.finish(stageFinishClosesStream(input));
+    await observer.finish(true);
     session.dispose();
     console.log(`${localTimestamp()} [rule-curator] session disposed`);
   }

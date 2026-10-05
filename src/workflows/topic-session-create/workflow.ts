@@ -1,5 +1,4 @@
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
-import { runSessionMemoryTail } from "../session-memory/tail.js";
 import { beginSessionExecution, endSessionExecution } from "../execution-registry.js";
 import { assertPlanReviewDecisionMatches, planReviewDecisionHook, planReviewHookToken } from "../planning-execution/review.js";
 import {
@@ -39,8 +38,6 @@ export async function topicSessionCreateWorkflow(input: ChatWorkflowInput): Prom
       cwd: input.cwd,
       workflowInvocationId: input.workflowInvocationId,
       prompt: input.prompt,
-      ...(input.sessionMemoryEnabled === undefined ? {} : { sessionMemoryEnabled: input.sessionMemoryEnabled }),
-      ...(input.sessionMemoryOwnerWorkflowId === undefined ? {} : { sessionMemoryOwnerWorkflowId: input.sessionMemoryOwnerWorkflowId }),
       ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     };
     const initial = await runTopicCollectStep({ ...input, prompt: collectionBrief });
@@ -71,7 +68,7 @@ export async function topicSessionCreateWorkflow(input: ChatWorkflowInput): Prom
             inputEntryIds: [initial.userEntryId, ...feedbackEntryIds, planEntryId, recorded.messageEntryId],
             topicCreation,
           });
-          return await runSessionMemoryTail(input, tailResult, "topic-session-create");
+          return tailResult;
         }
         if (recorded.feedbackEntryId === undefined) throw new Error("主题修改意见没有写入原生用户消息");
         feedbackEntryIds.push(recorded.feedbackEntryId);

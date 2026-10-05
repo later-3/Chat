@@ -21,8 +21,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<unknown>(event);
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw createError({ statusCode: 400, statusMessage: "请求必须是对象" });
   const value = body as Record<string, unknown>;
-  if (Object.keys(value).some((key) => !["workflow", "sessionMemory", "schemaVersion", "requestId", "text", "images"].includes(key))
-    || (value.sessionMemory !== undefined && value.sessionMemory !== "off" && value.sessionMemory !== "on")
+  if (Object.keys(value).some((key) => !["workflow", "schemaVersion", "requestId", "text", "images"].includes(key))
     || value.schemaVersion !== 1 || typeof value.requestId !== "string" || value.requestId.trim() === ""
     || typeof value.text !== "string" || value.text.length > 100_000)
     throw createError({ statusCode: 400, statusMessage: "无效节点消息合同" });
@@ -41,7 +40,6 @@ export default defineEventHandler(async (event) => {
       ...(value.workflow === undefined ? {} : { workflow: value.workflow as string }),
       chatHome: home, longAgentId, projectId: longAgentId,
       turnId: String(value.requestId), text: value.text, source: "chat-web",
-      ...(value.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}),
       ...(images === undefined ? {} : { images }),
       topicNode: { topicId, nodeId },
     });

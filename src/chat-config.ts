@@ -101,7 +101,12 @@ export function parseChatRootConfig(value: unknown): ChatRootConfig {
       if (!availableAgentIds.has(agentId)) {
         throw new Error(`Workflow ${workflowId}不存在Agent: ${agentId}`);
       }
-      agents[agentId] = parseAgentConfigSelection(rawSelection);
+      const selection = parseAgentConfigSelection(rawSelection);
+      // model/thinkingLevel/generation 是会话级覆盖档，只随 Session 流动，不进 Chat/Project 配置文件。
+      if (selection.model !== undefined || selection.thinkingLevel !== undefined || selection.generation !== undefined) {
+        throw new Error(`Chat配置Workflow ${workflowId}的Agent ${agentId}不支持会话级model/thinkingLevel/generation覆盖`);
+      }
+      agents[agentId] = selection;
     }
     workflows[workflowId] = { agents };
   }

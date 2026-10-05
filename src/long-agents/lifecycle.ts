@@ -92,6 +92,7 @@ export async function createLongAgent(input: CreateLongAgentInput): Promise<Long
       instanceId: instance.id,
       nanoclawAgentGroupId: groupId,
       defaultProjectId: agentHomeProjectId(input.id),
+      boundProjectIds: [input.id],
       status: "active",
       toolsManagedByDefault: true,
       definition: parseWorkflowAgentDefinition(buildDefaultLongAgentDefinition(input.id, name, input.description?.trim() ?? "")),

@@ -1,6 +1,7 @@
 import type { ChatLongAgentTurnAgentGroupContext } from "./session-turn.js";
 import { validateTimeZone } from "./calendar.js";
 import { parseWorkflowImages } from "../workflows/image-input.js";
+import { PROJECT_ID_PATTERN } from "../projects/types.js";
 import type { ImageContent } from "@earendil-works/pi-ai";
 
 export interface AdditionalSession {
@@ -18,6 +19,29 @@ export function parseAdditionalSession(value: unknown): AdditionalSession {
   if (value.requestId.length > 256 || value.requestId.trim() !== value.requestId) throw new Error("无效会话创建请求ID");
   date(value.date); timestamp(value.createdAt); validateTimeZone(value.timeZone);
   return value as unknown as AdditionalSession;
+}
+
+export interface ProjectSessionBinding {
+  /** 所属 Long Agent；Agent Workspace 不在本表（它由每日/额外直接会话承载）。 */
+  readonly longAgentId: string;
+  /** Session 存储归属的项目；本项目必须在该 Agent 的 boundProjectIds 内（创建时校验）。 */
+  readonly projectId: string;
+  readonly sessionId: string;
+  /** independent = 独立新建；fork = 从已有会话派生（记录来源，内容整合随主题模式演进）。 */
+  readonly kind: "independent" | "fork";
+  readonly forkedFromSessionId?: string;
+  readonly requestId: string;
+  readonly createdAt: string;
+}
+
+export function parseProjectSessionBinding(value: unknown): ProjectSessionBinding {
+  record(value); fields(value, ["longAgentId", "projectId", "sessionId", "kind", "forkedFromSessionId", "requestId", "createdAt"]);
+  string(value.longAgentId); string(value.projectId); string(value.sessionId); string(value.requestId);
+  if (value.kind !== "independent" && value.kind !== "fork") throw new Error("无效项目会话类型");
+  if (value.kind === "fork") { string(value.forkedFromSessionId); if (value.forkedFromSessionId === value.sessionId) throw new Error("项目会话不能以自身为来源"); }
+  if (value.requestId.length > 256 || value.requestId.trim() !== value.requestId) throw new Error("无效会话创建请求ID");
+  timestamp(value.createdAt);
+  return value as unknown as ProjectSessionBinding;
 }
 
 export interface DailySession {
@@ -42,11 +66,6 @@ export interface AcceptedTurn {
   readonly isNewSession: boolean;
   /** Frozen topic node target for a node round; present only on node turns. */
   readonly topicNode?: { readonly topicId: string; readonly nodeId: string };
-  /**
-   * The session-memory switch carried by this send. "off" skips the workflow's last (memory) node for
-   * this round only; absent means the default (on). It is a send preference, not request identity.
-   */
-  readonly sessionMemory?: "off";
   readonly promptCapture?: "on";
   /**
    * A relay round consumes a durable relay intent: the native user message is appended on the active
@@ -58,6 +77,12 @@ export interface AcceptedTurn {
   readonly channelType: string | null;
   readonly inboundEventId: string | null;
   readonly contextProjectId: string | null;
+  /**
+   * 项目归属会话的存储项目（LA→Project→Session 三级导航）：存在时 Session 文件与执行
+   * cwd 都在该项目下，执行项目 = 本字段（服务端由 projectSessions 绑定推导，非客户端声明）；
+   * 缺省 = Agent Home（每日/额外直接会话/工作/节点的既有行为）。
+   */
+  readonly storageProjectId?: string;
   /** Legacy per-Friend association revision kept for older turn records; new acceptances always write null. */
   readonly interactionRevision?: number | null;
   /** Version of the acceptance payload digest; absent on records written before the versioning. */
@@ -95,17 +120,23 @@ export function parseDailySession(value: unknown): DailySession {
   return value as unknown as DailySession;
 }
 export function parseAcceptedTurn(value: unknown): AcceptedTurn {
-  record(value); fields(value, ["workflow", "turnId", "requestId", "payloadHash", "summaryDraft", "isNewSession", "longAgentId", "source", "channelType", "inboundEventId", "contextProjectId", "interactionRevision", "payloadHashVersion", "sessionId", "date", "timeZone", "acceptedAt", "settledAt", "sequence", "status", "error", "text", "images", "seed", "groupContext", "workId", "cancelRequested", "topicNode", "relayIntentEntryId", "sessionMemory", "promptCapture"]);
+  // The retired sessionMemory round-switch stays in the accepted list: older turn records on disk
+  // carry it, and rejecting them would break state reads (2026-10-03 legacy tolerance). It is never
+  // parsed back onto the turn.
+  record(value); fields(value, ["workflow", "turnId", "requestId", "payloadHash", "summaryDraft", "isNewSession", "longAgentId", "source", "channelType", "inboundEventId", "contextProjectId", "storageProjectId", "sessionMemory", "interactionRevision", "payloadHashVersion", "sessionId", "date", "timeZone", "acceptedAt", "settledAt", "sequence", "status", "error", "text", "images", "seed", "groupContext", "workId", "cancelRequested", "topicNode", "relayIntentEntryId", "promptCapture"]);
   if (value.workflow !== undefined) {
     record(value.workflow); fields(value.workflow, ["id", "invocationId", "runId"]);
     string(value.workflow.id); string(value.workflow.invocationId);
     if (!/^[a-zA-Z0-9-]{1,100}$/.test(String(value.workflow.invocationId))) throw new Error("无效Workflow invocation身份");
     if (value.workflow.runId !== undefined) string(value.workflow.runId);
   }
-  if (value.sessionMemory !== undefined && value.sessionMemory !== "off") throw new Error("无效会话记忆开关");
   if (value.promptCapture !== undefined && value.promptCapture !== "on") throw new Error("无效Prompt记录开关");
   if (value.relayIntentEntryId !== undefined && (typeof value.relayIntentEntryId !== "string" || value.relayIntentEntryId.trim() === "")) throw new Error("无效代传意图条目");
   if (value.cancelRequested !== undefined && typeof value.cancelRequested !== "boolean") throw new Error("无效取消请求");
+  if (value.storageProjectId !== undefined) {
+    string(value.storageProjectId);
+    if (!PROJECT_ID_PATTERN.test(value.storageProjectId)) throw new Error("无效项目归属会话存储项目");
+  }
   if (value.workId !== undefined) { string(value.workId); if (!/^work-[a-f0-9]{32}$/.test(value.workId)) throw new Error("后台工作ID无效"); }
   for (const key of ["turnId", "requestId", "payloadHash", "longAgentId", "sessionId"]) string(value[key]);
   for (const key of ["channelType", "inboundEventId", "contextProjectId", "error"]) nullable(value[key]);

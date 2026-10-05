@@ -1,5 +1,4 @@
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
-import { runSessionMemoryTail } from "../session-memory/tail.js";
 import {
   beginSessionExecution,
   endSessionExecution,
@@ -13,7 +12,7 @@ export async function ruleManagementWorkflow(input: ChatWorkflowInput): Promise<
     beginSessionExecution(input.sessionId, "rule-management", input.workflowInvocationId);
   }
   try {
-    return await runSessionMemoryTail(input, await runRuleManagementStep(input), "rule-management");
+    return await runRuleManagementStep(input);
   } finally {
     if (input.sessionId !== undefined) {
       endSessionExecution(input.sessionId, input.workflowInvocationId);

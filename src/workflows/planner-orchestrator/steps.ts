@@ -1,4 +1,3 @@
-import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
 import { openChatSession, type ChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
@@ -27,7 +26,6 @@ import {
 import { ORCHESTRATION_PLANNER_AGENT } from "./agents/planner/index.js";
 import { WORKFLOW_COORDINATOR_AGENT } from "./agents/coordinator/index.js";
 import { prepareWorkflowCoordinatorSession } from "./agents/coordinator/runtime.js";
-import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 
 const WORKFLOW_ID = "planner-orchestrator";
 
@@ -43,9 +41,6 @@ export interface OrchestrationExecutionStepInput {
   readonly inputEntryIds: readonly string[];
   readonly agent: ResolvedWorkflowAgentDefinition;
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
-  /** The round's memory switch: the work stage only releases the stream when no memory node follows. */
-  readonly sessionMemoryEnabled?: boolean;
-  readonly sessionMemoryOwnerWorkflowId?: string;
   readonly promptCaptureEnabled?: boolean;
 }
 
@@ -96,7 +91,7 @@ export async function runOrchestrationPlanningStep(input: ChatWorkflowInput) {
   return runReviewedPlanningStep(input, {
     workflowId: WORKFLOW_ID,
     plannerAgent: ORCHESTRATION_PLANNER_AGENT,
-    agents: [ORCHESTRATION_PLANNER_AGENT, WORKFLOW_COORDINATOR_AGENT, SESSION_MEMORY_WRITER_AGENT],
+    agents: [ORCHESTRATION_PLANNER_AGENT, WORKFLOW_COORDINATOR_AGENT],
   });
 }
 
@@ -217,7 +212,7 @@ export async function runWorkflowDelegationStep(
     await markOrchestrationPhase(chatSession, input.workflowInvocationId, "failed");
     throw error;
   } finally {
-    await observer.finish(stageFinishClosesStream(input));
+    await observer.finish(true);
     session.dispose();
   }
 }

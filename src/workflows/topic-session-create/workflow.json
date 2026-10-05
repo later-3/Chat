@@ -25,13 +25,6 @@
       "name": "创建",
       "description": "按已批准版本调用受控提交动作创建主题节点会话。",
       "agentId": "topic-creator"
-    },
-    {
-      "kind": "agent",
-      "id": "remember",
-      "name": "记录会话记忆",
-      "description": "只依据本轮（用户消息与工作阶段产物）维护本会话的会话记忆。",
-      "agentId": "session-memory-writer"
     }
   ],
   "agents": [
@@ -42,10 +35,6 @@
     {
       "id": "topic-creator",
       "config": "./agents/creator/agent.json"
-    },
-    {
-      "id": "session-memory-writer",
-      "config": "../session-memory/agents/writer/agent.json"
     }
   ]
 }

@@ -1,5 +1,4 @@
 import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
-import { runSessionMemoryTail } from "../session-memory/tail.js";
 import { beginSessionExecution, endSessionExecution } from "../execution-registry.js";
 import {
   assertPlanReviewDecisionMatches,
@@ -33,8 +32,6 @@ export async function plannerOrchestratorWorkflow(
       workflowInvocationId: input.workflowInvocationId,
       prompt: input.prompt,
       ...(input.sessionMemoryTarget === undefined ? {} : { sessionMemoryTarget: input.sessionMemoryTarget }),
-      ...(input.sessionMemoryEnabled === undefined ? {} : { sessionMemoryEnabled: input.sessionMemoryEnabled }),
-      ...(input.sessionMemoryOwnerWorkflowId === undefined ? {} : { sessionMemoryOwnerWorkflowId: input.sessionMemoryOwnerWorkflowId }),
       ...(input.promptCaptureEnabled === undefined ? {} : { promptCaptureEnabled: input.promptCaptureEnabled }),
     };
     const initial = await runOrchestrationPlanningStep(input);
@@ -91,7 +88,7 @@ export async function plannerOrchestratorWorkflow(
             ],
             agent: coordinatorAgent,
           });
-          return await runSessionMemoryTail(input, tailResult, "planner-orchestrator");
+          return tailResult;
         }
         if (recordedDecision.feedbackEntryId === undefined) {
           throw new Error("计划修改意见没有写入原生用户消息");

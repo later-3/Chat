@@ -7,7 +7,6 @@ import sessionMemoryManifestJson from "./session-memory/workflow.json" with { ty
 import problemDiagnosisManifestJson from "./problem-diagnosis/workflow.json" with { type: "json" };
 import topicSessionCreateManifestJson from "./topic-session-create/workflow.json" with { type: "json" };
 import { parseChatWorkflowManifest } from "./framework.js";
-import { isSessionMemoryTailAgent } from "./session-memory/tail-node.js";
 
 export const MINIMAL_PI_CODING_AGENT_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
   minimalPiCodingAgentManifestJson,
@@ -69,7 +68,6 @@ export function listAgentCallableWorkflowTargets(): readonly AgentCallableWorkfl
       id: workflow.id,
       name: workflow.name,
       description: workflow.description,
-      // The session-memory writer is every Workflow's LAST node, not a selectable child capability.
-      agentIds: workflow.agents.map((agent) => agent.id).filter((id) => !isSessionMemoryTailAgent(id)),
+      agentIds: workflow.agents.map((agent) => agent.id),
     }));
 }

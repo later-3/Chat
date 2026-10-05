@@ -25,21 +25,17 @@ export default defineEventHandler(async (event) => {
     && (typeof body.contextProjectId !== "string" || body.contextProjectId.trim() === "")) {
     throw createError({ statusCode: 400, statusMessage: "contextProjectId必须是项目ID或null" });
   }
-  if (body.requestId !== undefined && (typeof body.requestId !== "string" || !body.requestId.trim() || body.requestId.length > 256)) throw createError({ statusCode: 400, statusMessage: "requestId无效" });
-  if (body.sessionMemory !== undefined && body.sessionMemory !== "on" && body.sessionMemory !== "off") {
-    throw createError({ statusCode: 400, statusMessage: "sessionMemory必须是on或off" });
-  }
+  if (body.requestId !== undefined && (typeof body.requestId !== "string" || body.requestId.trim() === "" || body.requestId.length > 256)) throw createError({ statusCode: 400, statusMessage: "requestId无效" });
   if (body.promptCapture !== undefined && body.promptCapture !== "on" && body.promptCapture !== "off") {
     throw createError({ statusCode: 400, statusMessage: "promptCapture必须是on或off" });
   }
-  if (Object.keys(body).some((key) => !["projectId", "sessionId", "text", "contextProjectId", "requestId", "sessionMemory", "promptCapture"].includes(key))) throw createError({ statusCode: 400, statusMessage: "未知消息字段" });
+  if (Object.keys(body).some((key) => !["projectId", "sessionId", "text", "contextProjectId", "requestId", "promptCapture"].includes(key))) throw createError({ statusCode: 400, statusMessage: "未知消息字段" });
   try {
     return await executeLongAgentTurn({
       ...(typeof body.requestId === "string" ? { turnId: body.requestId } : {}),
       longAgentId,
       projectId: body.projectId,
       ...(typeof body.sessionId === "string" ? { sessionId: body.sessionId } : {}),
-      ...(body.sessionMemory === "off" ? { sessionMemory: "off" as const } : {}),
       ...(body.promptCapture === "on" ? { promptCapture: "on" as const } : {}),
       text: body.text,
       contextProjectId: typeof body.contextProjectId === "string" ? body.contextProjectId : null,

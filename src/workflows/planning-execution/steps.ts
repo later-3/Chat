@@ -1,4 +1,3 @@
-import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
 import { openChatSession, type ChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import {
@@ -30,7 +29,6 @@ import {
   runReviewedPlanningStep,
 } from "./reviewed-planning-runtime.js";
 
-import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 interface PlanningStepResult {
   readonly sessionId: string;
   readonly userEntryId: string;
@@ -129,9 +127,6 @@ export interface PlanningExecutionStepInput {
   readonly inputEntryIds: readonly string[];
   readonly agent: ResolvedWorkflowAgentDefinition;
   readonly sessionMemoryTarget?: { readonly storageProjectId: string; readonly sessionId: string };
-  /** The round's memory switch: the work stage only releases the stream when no memory node follows. */
-  readonly sessionMemoryEnabled?: boolean;
-  readonly sessionMemoryOwnerWorkflowId?: string;
   readonly promptCaptureEnabled?: boolean;
 }
 
@@ -168,7 +163,7 @@ export async function runPlanningStep(input: ChatWorkflowInput): Promise<Plannin
   const result = await runReviewedPlanningStep(input, {
     workflowId: "planning-execution",
     plannerAgent: PLANNER_AGENT,
-    agents: [PLANNER_AGENT, PLANNING_EXECUTION_AGENT, SESSION_MEMORY_WRITER_AGENT],
+    agents: [PLANNER_AGENT, PLANNING_EXECUTION_AGENT],
   });
   const executionAgent = result.agents[PLANNING_EXECUTION_AGENT.id];
   if (executionAgent === undefined) throw new Error("本轮配置缺少Planning Execution Agent");
@@ -304,7 +299,7 @@ export async function runPlanningExecutionStep(
     await markPlanningExecutionFailed(chatSession, input.workflowInvocationId);
     throw error;
   } finally {
-    await observer.finish(stageFinishClosesStream(input));
+    await observer.finish(true);
     session.dispose();
     console.log(`${localTimestamp()} [pi] session disposed`);
   }

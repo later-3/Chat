@@ -22,10 +22,8 @@ import {
   parseTopicCreationDraft,
   planSha256Hex,
   renderTopicCreationPreview,
-  type TopicCreationDraft,
 } from "./creation-draft.js";
 
-import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 export const TOPIC_SESSION_CREATE_WORKFLOW_ID = "topic-session-create";
 
 export interface TopicCollectStepResult {
@@ -51,9 +49,6 @@ export interface TopicCreateStepInput {
   readonly planSha256: string;
   readonly inputEntryIds: readonly string[];
   readonly topicCreation: NonNullable<ChatWorkflowInput["topicCreation"]>;
-  /** The round's memory switch: the work stage only releases the stream when no memory node follows. */
-  readonly sessionMemoryEnabled?: boolean;
-  readonly sessionMemoryOwnerWorkflowId?: string;
   readonly promptCaptureEnabled?: boolean;
 }
 
@@ -181,7 +176,7 @@ export async function runTopicCreateStep(input: TopicCreateStepInput): Promise<C
     console.log(`${localTimestamp()} [topic-session-create] created node=${node.nodeId} session=${node.sessionId}`);
     return { text, sessionId: session.sessionId, sessionFile, model: session.model === undefined ? null : { provider: session.model.provider, modelId: session.model.id } };
   } finally {
-    await observer.finish(stageFinishClosesStream(input));
+    await observer.finish(true);
     session.dispose();
   }
 }

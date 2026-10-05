@@ -3,10 +3,12 @@ import { readFile, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
+  parseGeneration,
   parseModel,
   parseThinkingLevel,
   parseWorkflowAgentToolPolicy,
   parseWorkflowAgentResources,
+  type AgentGenerationConfig,
   type AgentModelConfig,
   type WorkflowAgentResources,
   type WorkflowAgentToolPolicy,
@@ -14,7 +16,7 @@ import {
 
 const SCHEMA_VERSION = 1;
 const ENTITY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const ALLOWED_FIELDS = new Set(["schemaVersion", "model", "thinkingLevel", "tools", "resources"]);
+const ALLOWED_FIELDS = new Set(["schemaVersion", "model", "thinkingLevel", "tools", "resources", "generation"]);
 
 /**
  * Chat-owned per-Agent model configuration, persisted per Project and read on
@@ -27,6 +29,7 @@ export interface ChatAgentDurableConfig {
   readonly thinkingLevel?: ThinkingLevel;
   readonly tools?: WorkflowAgentToolPolicy;
   readonly resources?: WorkflowAgentResources;
+  readonly generation?: AgentGenerationConfig;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -47,8 +50,10 @@ export function parseDurableConfig(value: unknown, source: string): ChatAgentDur
   const thinkingLevel = value.thinkingLevel === undefined ? undefined : parseThinkingLevel(value.thinkingLevel);
   const tools = value.tools === undefined ? undefined : parseWorkflowAgentToolPolicy(value.tools);
   const resources = value.resources === undefined ? undefined : parseWorkflowAgentResources(value.resources);
-  if (model === undefined && thinkingLevel === undefined && tools === undefined && resources === undefined) {
-    throw new Error(`Agent持久配置至少需要model、thinkingLevel、tools或resources: ${source}`);
+  const generation = value.generation === undefined ? undefined : parseGeneration(value.generation);
+  if (model === undefined && thinkingLevel === undefined && tools === undefined && resources === undefined
+    && generation === undefined) {
+    throw new Error(`Agent持久配置至少需要model、thinkingLevel、generation、tools或resources: ${source}`);
   }
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -56,6 +61,7 @@ export function parseDurableConfig(value: unknown, source: string): ChatAgentDur
     ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
     ...(tools === undefined ? {} : { tools }),
     ...(resources === undefined ? {} : { resources }),
+    ...(generation === undefined ? {} : { generation }),
   };
 }
 
@@ -134,6 +140,7 @@ export async function updateAgentDurableConfig(
     readonly thinkingLevel?: ThinkingLevel | null;
     readonly tools?: WorkflowAgentToolPolicy | null;
     readonly resources?: WorkflowAgentResources | null;
+    readonly generation?: AgentGenerationConfig | null;
   },
 ): Promise<ChatAgentDurableConfig | undefined> {
   return mutateAgentDurableConfig(projectDataDir, workflowId, agentId, async (existing) => {
@@ -143,6 +150,7 @@ export async function updateAgentDurableConfig(
       ...(existing?.thinkingLevel === undefined ? {} : { thinkingLevel: existing.thinkingLevel }),
       ...(existing?.tools === undefined ? {} : { tools: existing.tools }),
       ...(existing?.resources === undefined ? {} : { resources: existing.resources }),
+      ...(existing?.generation === undefined ? {} : { generation: existing.generation }),
       ...(patch.model === undefined ? {} : patch.model === null ? { model: undefined } : { model: patch.model }),
       ...(patch.thinkingLevel === undefined
         ? {}
@@ -151,6 +159,9 @@ export async function updateAgentDurableConfig(
       ...(patch.resources === undefined
         ? {}
         : patch.resources === null ? { resources: undefined } : { resources: patch.resources }),
+      ...(patch.generation === undefined
+        ? {}
+        : patch.generation === null ? { generation: undefined } : { generation: patch.generation }),
     };
     const normalized = {
       schemaVersion: SCHEMA_VERSION,
@@ -158,6 +169,7 @@ export async function updateAgentDurableConfig(
       ...(next.thinkingLevel === undefined ? {} : { thinkingLevel: next.thinkingLevel }),
       ...(next.tools === undefined ? {} : { tools: next.tools }),
       ...(next.resources === undefined ? {} : { resources: next.resources }),
+      ...(next.generation === undefined ? {} : { generation: next.generation }),
     };
     return Object.keys(normalized).length === 1 ? undefined : normalized;
   });

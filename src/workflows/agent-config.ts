@@ -15,6 +15,13 @@ export interface AgentModelConfig {
   readonly modelId: string;
 }
 
+/** Provider sampling parameters; every field is optional and omitted values keep provider defaults. */
+export interface AgentGenerationConfig {
+  readonly temperature?: number;
+  readonly topP?: number;
+  readonly maxOutputTokens?: number;
+}
+
 export type WorkflowAgentSystemPrompt =
   | { readonly mode: "pi-default" }
   | { readonly mode: "replace"; readonly text: string; readonly sourcePath?: string };
@@ -66,6 +73,7 @@ export interface WorkflowAgentDefinition {
   readonly description: string;
   readonly model?: AgentModelConfig;
   readonly thinkingLevel?: ThinkingLevel;
+  readonly generation?: AgentGenerationConfig;
   readonly systemPrompt: WorkflowAgentSystemPrompt;
   readonly customInstructions: readonly AgentInstruction[];
   readonly tools: WorkflowAgentToolPolicy;
@@ -79,10 +87,14 @@ export interface AgentConfigSelection {
   readonly promptResources?: readonly AgentPromptResourceSelection[];
   readonly tools?: WorkflowAgentToolPolicy;
   readonly resources?: WorkflowAgentResources;
+  /** "当前会话"档覆盖：仅对当前 Session 的后续轮次生效，优先于持久配置。 */
+  readonly model?: AgentModelConfig;
+  readonly thinkingLevel?: ThinkingLevel;
+  readonly generation?: AgentGenerationConfig;
 }
 
 export interface AgentConfigSource {
-  readonly kind: "workflow-default" | "durable-config" | "primary" | "append" | "prompt" | "prompt-resource";
+  readonly kind: "workflow-default" | "durable-config" | "primary" | "append" | "prompt" | "prompt-resource" | "session-selection";
   readonly path?: string;
   readonly resourceId?: string;
   readonly resourceTarget?: PromptResourceTarget;
@@ -93,6 +105,7 @@ export type WorkflowAgentModelSource =
   | "workflow-default"
   | "config-file"
   | "durable"
+  | "selection"
   | "chat-default";
 
 export interface ResolvedWorkflowAgentDefinition extends WorkflowAgentDefinition {
@@ -100,6 +113,7 @@ export interface ResolvedWorkflowAgentDefinition extends WorkflowAgentDefinition
   /** Which source set the effective model; `chat-default` is assigned at inspection. */
   readonly modelSource?: WorkflowAgentModelSource;
   readonly thinkingSource?: WorkflowAgentModelSource;
+  readonly generationSource?: WorkflowAgentModelSource;
 }
 
 export type RawSystemPrompt =
@@ -115,6 +129,7 @@ export interface RawAgentConfig {
   readonly description?: string;
   readonly model?: AgentModelConfig;
   readonly thinkingLevel?: ThinkingLevel;
+  readonly generation?: AgentGenerationConfig;
   readonly systemPrompt?: RawSystemPrompt;
   readonly customInstructions?: readonly RawInstruction[];
   readonly tools?: WorkflowAgentToolPolicy;
@@ -266,10 +281,42 @@ export function parseThinkingLevel(value: unknown): ThinkingLevel {
   return level;
 }
 
+function readBoundedNumber(value: unknown, field: string, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${field}必须是有限数字`);
+  if (value < min || value > max) throw new Error(`${field}必须在${min}到${max}之间`);
+  return value;
+}
+
+function readBoundedInteger(value: unknown, field: string, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isInteger(value)) throw new Error(`${field}必须是整数`);
+  if (value < min || value > max) throw new Error(`${field}必须在${min}到${max}之间`);
+  return value;
+}
+
+export function parseGeneration(value: unknown): AgentGenerationConfig {
+  if (!isRecord(value)) throw new Error("generation必须是对象");
+  assertKnownFields(value, ["temperature", "topP", "maxOutputTokens"]);
+  const temperature = value.temperature === undefined
+    ? undefined
+    : readBoundedNumber(value.temperature, "generation.temperature", 0, 2);
+  const topP = value.topP === undefined ? undefined : readBoundedNumber(value.topP, "generation.topP", 0, 1);
+  const maxOutputTokens = value.maxOutputTokens === undefined
+    ? undefined
+    : readBoundedInteger(value.maxOutputTokens, "generation.maxOutputTokens", 1, 32000);
+  if (temperature === undefined && topP === undefined && maxOutputTokens === undefined) {
+    throw new Error("generation至少需要temperature、topP或maxOutputTokens之一");
+  }
+  return {
+    ...(temperature === undefined ? {} : { temperature }),
+    ...(topP === undefined ? {} : { topP }),
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+  };
+}
+
 export function parseRawAgentConfig(value: unknown, complete: boolean): RawAgentConfig {
   if (!isRecord(value) || value.schemaVersion !== 1) throw new Error("Agent配置必须使用schemaVersion 1");
   assertKnownFields(value, [
-    "schemaVersion", "id", "name", "description", "model", "thinkingLevel",
+    "schemaVersion", "id", "name", "description", "model", "thinkingLevel", "generation",
     "systemPrompt", "customInstructions", "tools", "resources",
   ]);
   const id = value.id === undefined ? undefined : readNonEmptyString(value.id, "id");
@@ -288,6 +335,7 @@ export function parseRawAgentConfig(value: unknown, complete: boolean): RawAgent
     ...(description === undefined ? {} : { description }),
     ...(value.model === undefined ? {} : { model: parseModel(value.model) }),
     ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
+    ...(value.generation === undefined ? {} : { generation: parseGeneration(value.generation) }),
     ...(value.systemPrompt === undefined ? {} : { systemPrompt: parseSystemPrompt(value.systemPrompt) }),
     ...(value.customInstructions === undefined ? {} : { customInstructions: parseInstructions(value.customInstructions) }),
     ...(value.tools === undefined ? {} : { tools: parseWorkflowAgentToolPolicy(value.tools) }),
@@ -297,7 +345,10 @@ export function parseRawAgentConfig(value: unknown, complete: boolean): RawAgent
 
 export function parseAgentConfigSelection(value: unknown): AgentConfigSelection {
   if (!isRecord(value)) throw new Error("Agent配置选择必须是对象");
-  assertKnownFields(value, ["primary", "append", "promptFiles", "promptResources", "tools", "resources"]);
+  assertKnownFields(value, [
+    "primary", "append", "promptFiles", "promptResources", "tools", "resources",
+    "model", "thinkingLevel", "generation",
+  ]);
   const primary = value.primary === undefined ? undefined : readNonEmptyString(value.primary, "primary");
   const append = value.append === undefined ? undefined : readStringList(value.append, "append");
   const promptFiles = value.promptFiles === undefined ? undefined : readStringList(value.promptFiles, "promptFiles");
@@ -306,6 +357,9 @@ export function parseAgentConfigSelection(value: unknown): AgentConfigSelection 
     : parsePromptResourceSelections(value.promptResources);
   const tools = value.tools === undefined ? undefined : parseWorkflowAgentToolPolicy(value.tools);
   const resources = value.resources === undefined ? undefined : parseWorkflowAgentResources(value.resources);
+  const model = value.model === undefined ? undefined : parseModel(value.model);
+  const thinkingLevel = value.thinkingLevel === undefined ? undefined : parseThinkingLevel(value.thinkingLevel);
+  const generation = value.generation === undefined ? undefined : parseGeneration(value.generation);
   const count = (primary === undefined ? 0 : 1) + (append?.length ?? 0) + (promptFiles?.length ?? 0);
   if (count > MAX_AGENT_CONFIG_FILES) throw new Error(`单个Agent最多加载${MAX_AGENT_CONFIG_FILES}个配置和提示词文件`);
   return {
@@ -315,6 +369,9 @@ export function parseAgentConfigSelection(value: unknown): AgentConfigSelection 
     ...(promptResources === undefined ? {} : { promptResources }),
     ...(tools === undefined ? {} : { tools }),
     ...(resources === undefined ? {} : { resources }),
+    ...(model === undefined ? {} : { model }),
+    ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
+    ...(generation === undefined ? {} : { generation }),
   };
 }
 
@@ -339,6 +396,7 @@ export function parseWorkflowAgentDefinition(value: unknown): WorkflowAgentDefin
     description: raw.description as string,
     ...(raw.model === undefined ? {} : { model: raw.model }),
     ...(raw.thinkingLevel === undefined ? {} : { thinkingLevel: raw.thinkingLevel }),
+    ...(raw.generation === undefined ? {} : { generation: raw.generation }),
     systemPrompt: raw.systemPrompt.mode === "pi-default"
       ? { mode: "pi-default" }
       : { mode: "replace", text: raw.systemPrompt.text as string },

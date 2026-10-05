@@ -56,9 +56,9 @@ export interface CreateChatPiAgentSessionOptions {
    */
   readonly providerRequestGate?: NonNullable<CreateAgentSessionOptions["providerRequestGate"]>;
   /**
-   * Send-time switch (per round, resolved at the HTTP acceptance boundary like sessionMemory):
-   * records every final provider payload of this assembled session as gzip sidecars plus a
-   * region-decomposed index. Off by default; never changes what the model receives.
+   * Send-time switch (per round, resolved at the HTTP acceptance boundary): records every final
+   * provider payload of this assembled session as gzip sidecars plus a region-decomposed index.
+   * Off by default; never changes what the model receives.
    */
   readonly promptCaptureEnabled?: boolean;
   readonly toolContext?: Omit<
@@ -217,7 +217,7 @@ export async function createChatPiAgentSession(
     if (chatSession.projectContext === undefined || options.toolContext === undefined) {
       throw new Error(`Agent ${agent.id}配置了Chat系统Tool，但缺少Project或Tool运行上下文`);
     }
-    chatTools = resolveChatSystemTools(toolAddresses, {
+      chatTools = resolveChatSystemTools(toolAddresses, {
       ...options.toolContext,
       authorizedToolAddresses,
       authorizedToolNames,
@@ -355,6 +355,19 @@ export async function createChatPiAgentSession(
       ? {}
       : { transformContext: effectiveTransformContext }),
   });
+
+  // 生成参数属于产品层配置，写入 Pi Agent state；createLoopConfig 每轮把它透传给
+  // stream options。thinking 与 temperature 的互斥由 pi-ai 适配层兜底（Anthropic #1665），
+  // Chat 不重复判断模型兼容性。
+  const generation = agent.generation;
+  if (generation !== undefined) {
+    const piAgent = created.session.agent;
+    if (generation.temperature !== undefined) piAgent.state.temperature = generation.temperature;
+    if (generation.topP !== undefined) {
+      piAgent.state.samplingParams = { ...piAgent.state.samplingParams, top_p: generation.topP };
+    }
+    if (generation.maxOutputTokens !== undefined) piAgent.state.maxTokens = generation.maxOutputTokens;
+  }
 
   // Region ①/⑤ durable source of truth: the assembled system prompt and the active tool
   // schemas, frozen once per execution turn even when payload recording is off.

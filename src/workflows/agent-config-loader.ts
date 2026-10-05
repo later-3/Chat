@@ -179,6 +179,7 @@ async function materializeConfig(
     ...(raw.description === undefined ? {} : { description: raw.description }),
     ...(raw.model === undefined ? {} : { model: raw.model }),
     ...(raw.thinkingLevel === undefined ? {} : { thinkingLevel: raw.thinkingLevel }),
+    ...(raw.generation === undefined ? {} : { generation: raw.generation }),
     ...(raw.systemPrompt === undefined ? {} : {
       systemPrompt: await resolveSystemPrompt(raw.systemPrompt, configPath, allowedRoots),
     }),
@@ -238,6 +239,9 @@ export async function resolveWorkflowAgentDefinition(options: {
   let thinkingSource: WorkflowAgentModelSource | undefined = options.defaultAgent.thinkingLevel === undefined
     ? undefined
     : "workflow-default";
+  let generationSource: WorkflowAgentModelSource | undefined = options.defaultAgent.generation === undefined
+    ? undefined
+    : "workflow-default";
   const sources: AgentConfigSource[] = [{ kind: "workflow-default" }];
   if (options.selection?.primary !== undefined) {
     const primary = await readAgentConfig(resolve(options.cwd, options.selection.primary), true, allowedRoots);
@@ -247,6 +251,7 @@ export async function resolveWorkflowAgentDefinition(options: {
     }
     if (materialized.model !== undefined) modelSource = "config-file";
     if (materialized.thinkingLevel !== undefined) thinkingSource = "config-file";
+    if (materialized.generation !== undefined) generationSource = "config-file";
     current = {
       schemaVersion: 1,
       id: materialized.id,
@@ -254,6 +259,7 @@ export async function resolveWorkflowAgentDefinition(options: {
       description: materialized.description as string,
       ...(materialized.model === undefined ? {} : { model: materialized.model }),
       ...(materialized.thinkingLevel === undefined ? {} : { thinkingLevel: materialized.thinkingLevel }),
+      ...(materialized.generation === undefined ? {} : { generation: materialized.generation }),
       systemPrompt: materialized.systemPrompt ?? { mode: "pi-default" },
       customInstructions: materialized.customInstructions ?? [],
       tools: materialized.tools ?? { mode: "pi-default" },
@@ -269,6 +275,7 @@ export async function resolveWorkflowAgentDefinition(options: {
     }
     if (addition.config.model !== undefined) modelSource = "config-file";
     if (addition.config.thinkingLevel !== undefined) thinkingSource = "config-file";
+    if (addition.config.generation !== undefined) generationSource = "config-file";
     current = mergeAgentConfig(current, await materializeConfig(addition.config, addition.path, allowedRoots));
     sources.push({ kind: "append", path: addition.path });
   }
@@ -314,6 +321,7 @@ export async function resolveWorkflowAgentDefinition(options: {
     if (durable !== undefined) {
       if (durable.model !== undefined) modelSource = "durable";
       if (durable.thinkingLevel !== undefined) thinkingSource = "durable";
+      if (durable.generation !== undefined) generationSource = "durable";
       // 持久资源路径与本轮选择走同一条授权边界校验。
       const durableResources = durable.resources === undefined
         ? undefined
@@ -332,6 +340,7 @@ export async function resolveWorkflowAgentDefinition(options: {
         ...(durable.thinkingLevel === undefined ? {} : { thinkingLevel: durable.thinkingLevel }),
         ...(durable.tools === undefined ? {} : { tools: durable.tools }),
         ...(durableResources === undefined ? {} : { resources: durableResources }),
+        ...(durable.generation === undefined ? {} : { generation: durable.generation }),
       };
       sources.push({
         kind: "durable-config",
@@ -344,10 +353,25 @@ export async function resolveWorkflowAgentDefinition(options: {
     }
   }
 
+  // 会话级选择最具体，必须最后应用，覆盖 durable 与 workflow 默认的 model/thinkingLevel/generation。
+  const selectionModel = options.selection?.model;
+  const selectionThinkingLevel = options.selection?.thinkingLevel;
+  const selectionGeneration = options.selection?.generation;
+  if (selectionModel !== undefined) modelSource = "selection";
+  if (selectionThinkingLevel !== undefined) thinkingSource = "selection";
+  if (selectionGeneration !== undefined) generationSource = "selection";
+  if (selectionModel !== undefined || selectionThinkingLevel !== undefined || selectionGeneration !== undefined) {
+    sources.push({ kind: "session-selection" });
+  }
+
   return {
     ...current,
+    ...(selectionModel === undefined ? {} : { model: selectionModel }),
+    ...(selectionThinkingLevel === undefined ? {} : { thinkingLevel: selectionThinkingLevel }),
+    ...(selectionGeneration === undefined ? {} : { generation: selectionGeneration }),
     ...(modelSource === undefined ? {} : { modelSource }),
     ...(thinkingSource === undefined ? {} : { thinkingSource }),
+    ...(generationSource === undefined ? {} : { generationSource }),
     ...(options.selection?.tools === undefined ? {} : { tools: options.selection.tools }),
     customInstructions: [
       ...current.customInstructions,

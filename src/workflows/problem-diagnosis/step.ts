@@ -1,4 +1,3 @@
-import { SESSION_MEMORY_WRITER_AGENT } from "../session-memory/agents/writer/index.js";
 import { openChatSession } from "../../chat-session.js";
 import { localTimestamp } from "../../runtime-log.js";
 import { createWorkflowAgentSession } from "../agent-definition.js";
@@ -8,7 +7,6 @@ import type { ChatWorkflowInput, ChatWorkflowResult } from "../types.js";
 import { prepareChatWorkflowTurnConfiguration } from "../workflow-configuration.js";
 import { appendChatWorkflowAgentInput, appendChatWorkflowStage } from "../workflow-stage.js";
 import { PROBLEM_DIAGNOSER_AGENT } from "./agents/diagnoser/index.js";
-import { stageFinishClosesStream } from "../session-memory/tail-policy.js";
 
 export const PROBLEM_DIAGNOSIS_WORKFLOW_ID = "problem-diagnosis";
 export const PROBLEM_DIAGNOSIS_STAGE_ID = "diagnose";
@@ -24,7 +22,7 @@ export async function runProblemDiagnosisStep(input: ChatWorkflowInput): Promise
   const prepared = await prepareChatWorkflowTurnConfiguration(chatSession.manager, {
     invocationId: input.workflowInvocationId,
     workflowId: PROBLEM_DIAGNOSIS_WORKFLOW_ID,
-    agents: [PROBLEM_DIAGNOSER_AGENT, SESSION_MEMORY_WRITER_AGENT],
+    agents: [PROBLEM_DIAGNOSER_AGENT],
     cwd: chatSession.cwd,
     ...(chatSession.projectContext === undefined ? {} : { chatHome: chatSession.projectContext.chatHome }),
     ...(chatSession.projectContext === undefined ? {} : { projectDataDir: chatSession.projectContext.projectDataDir }),
@@ -82,7 +80,7 @@ export async function runProblemDiagnosisStep(input: ChatWorkflowInput): Promise
       model: session.model === undefined ? null : { provider: session.model.provider, modelId: session.model.id },
     };
   } finally {
-    await observer.finish(stageFinishClosesStream(input));
+    await observer.finish(true);
     session.dispose();
   }
 }

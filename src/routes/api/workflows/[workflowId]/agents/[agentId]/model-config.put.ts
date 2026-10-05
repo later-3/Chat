@@ -4,7 +4,9 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { resolveProjectContext } from "../../../../../../projects/registry.js";
 import { updateAgentDurableConfig } from "../../../../../../workflows/agent-model-config.js";
 import {
+  parseGeneration,
   parseThinkingLevel,
+  type AgentGenerationConfig,
   type AgentModelConfig,
 } from "../../../../../../workflows/agent-config.js";
 import { getChatWorkflowDefinition } from "../../../../../../workflows/registry.js";
@@ -37,12 +39,14 @@ export default defineEventHandler(async (event) => {
 
     const hasModelField = "model" in body;
     const hasThinkingField = "thinkingLevel" in body;
-    if (!hasModelField && !hasThinkingField) {
-      throw new Error("至少需要model或thinkingLevel");
+    const hasGenerationField = "generation" in body;
+    if (!hasModelField && !hasThinkingField && !hasGenerationField) {
+      throw new Error("至少需要model、thinkingLevel或generation");
     }
     // null clears one persisted field while keeping the others; omitted fields stay unchanged.
     const clearModel = hasModelField && body.model === null;
     const clearThinking = hasThinkingField && body.thinkingLevel === null;
+    const clearGeneration = hasGenerationField && body.generation === null;
     const rawModel = hasModelField && typeof body.model === "object" && body.model !== null ? body.model : undefined;
     if (hasModelField && !clearModel && rawModel === undefined) throw new Error("model必须是对象或null");
     const rawThinkingLevel = hasThinkingField && typeof body.thinkingLevel === "string"
@@ -52,6 +56,10 @@ export default defineEventHandler(async (event) => {
       throw new Error("thinkingLevel必须是字符串或null");
     }
     const thinkingLevel = rawThinkingLevel === undefined ? undefined : parseThinkingLevel(rawThinkingLevel);
+    let generation: AgentGenerationConfig | undefined;
+    if (hasGenerationField && !clearGeneration) {
+      generation = parseGeneration(body.generation);
+    }
     let modelConfig: AgentModelConfig | undefined;
     if (rawModel !== undefined) {
       const provider = "provider" in rawModel && typeof rawModel.provider === "string" ? rawModel.provider : undefined;
@@ -70,6 +78,7 @@ export default defineEventHandler(async (event) => {
     const config = await updateAgentDurableConfig(project.projectDataDir, workflow.id, agent.id, {
       ...(clearModel ? { model: null } : modelConfig === undefined ? {} : { model: modelConfig }),
       ...(clearThinking ? { thinkingLevel: null } : thinkingLevel === undefined ? {} : { thinkingLevel }),
+      ...(clearGeneration ? { generation: null } : generation === undefined ? {} : { generation }),
     });
     return config;
   } catch (error) {
