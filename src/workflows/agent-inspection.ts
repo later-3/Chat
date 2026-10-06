@@ -15,6 +15,7 @@ import { describeResourceVersion, qualifiedResourceAddress } from "../resources/
 import { readAgentDurableConfig } from "./agent-model-config.js";
 import { longAgentConfigRoot, readLongAgentRegistry } from "../long-agents/storage.js";
 import { prepareLongAgentAssembly } from "../long-agents/assembly.js";
+import { summarizePromptRegions } from "../long-agents/prompt-regions.js";
 import { createChatPiAgentSession } from "../agents/pi-agent-session.js";
 import { ensureAgentHomeProject } from "../projects/registry.js";
 
@@ -286,6 +287,9 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
         durableConfig: durableConfig ?? null,
       },
       prompt: {
+        // 区域构成：与真实执行装配同一来源（prepareLongAgentAssembly 注入的段），
+        // 供检查视图按区域核对“这一轮装了什么、依据哪一版”。
+        regions: summarizePromptRegions((prepared?.identityInstructions ?? []).map((instruction) => instruction.text)),
         final: session.systemPrompt,
         base: {
           mode: agent.systemPrompt.mode,
