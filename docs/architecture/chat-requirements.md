@@ -526,3 +526,40 @@ Chat给自定义区域加明确的结构标记，并把其中的多个规则按�
 ```
 
 这是Chat的Agent配置扩展区，不修改Pi原生数据结构，同时保留Pi默认Prompt、项目上下文和Skill机制。
+
+### Prompt 区域总表（system prompt）
+
+Agent 的一切能力最终都体现在 prompt 上（工具、Skill、Extension、规则、上下文都只是占用 prompt 空间）。
+因此 system prompt 必须按区域设计，且每个区域都能在完整 prompt 记录里被单独识别：
+
+**区域按“性质”划分，来源只作为属性**（例如 `source="nanoclaw"`）。不同性质的内容不得塞进同一区域，
+顶级区域也不得嵌套（嵌套会让完整 prompt 解析失真）。
+
+| 区域 | 标记 | 内容 | 来源 | 约束强度 |
+|---|---|---|---|---|
+| 系统基础与资源 | 无标记（`pi-base`） | Pi 原生系统提示、Skill / Extension / Plugin 清单、Chat 运行时约定 | Pi / Chat | 基础约定 |
+| 身份与职责 | `<chat_identity …>` | Agent Group 运行身份（name、identity rule）与 standing instructions | NanoClaw | 固定 |
+| 长期记忆事实 | `<chat_long_term_memory …>` | Agent Memory core（`index.md`）与记忆系统定义、缓存状态 | NanoClaw | 事实参考 |
+| 自定义指令（含规则） | `<chat_agent_custom_instructions>` | Agent 自定义指令、Prompt 资源（规则 / 经验）、会话级调整 | Agent 配置 / 用户 | 按各条内容声明 |
+| 交互 harness | `<chat_interaction_harness revision="sha256:…">` | 该 Agent 的协作规范：通用规范（所有 Long Agent）+ 该 Agent 在该 project 下的专属规范 | 用户（交互 harness） | 必须遵守；每轮按 revision 冻结 |
+| 当前项目指令 | `<chat_current_project>` | 当前 Project 的上下文文件（AGENTS.md 等） | Project | 必须遵守（项目级） |
+| 协作上下文 | `<chat_project_collaboration>` | 群聊 / 协作目标与参与者约束 | 会话 | 场景相关 |
+
+实机示例（coder-muse × chat）：身份 796 字符、长期记忆 15,483、交互 harness 6,903、自定义指令 6,237、
+Pi 基础 7 —— 每个区域都能被独立解析与核对。
+
+消息区域（按 `role` 与 `customType` 分类：注入指令 / 当前用户消息 / 历史 / 工具结果）与工具区域
+（名称、描述、参数字符数）由同一套解析给出。完整 prompt 由 prompt capture 逐轮保存并做区域分解，
+用于事后反查“模型实际收到的是什么、为什么这样回答”。
+
+**区域设计的硬性要求**（新增内容进入 prompt 前必须回答）：
+
+1. **用途**：这块内容解决什么；
+2. **来源**：内容从哪来（Pi 默认 / Chat 项目 / 用户配置 / 运行时事实）；
+3. **适用条件**：所有轮次、特定项目，还是特定场景；
+4. **约束强度**：必须遵守的硬规则，还是可按需参考的资料；
+5. **协同关系**：与相邻区域如何衔接，不得重复或互相矛盾；
+6. **可解析**：在完整 prompt 里能识别为独立区域，并带可追溯的来源 / revision。
+
+确需新增区域时，必须同时更新：区域标记、prompt capture 的区域分类、前端区域展示与本文档。
+“把文字直接塞进 prompt”不算完成设计。
