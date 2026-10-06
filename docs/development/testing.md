@@ -45,7 +45,8 @@ pnpm test:built
 pnpm test:dev
 
 # 完整验证链
-pnpm verify
+pnpm verify:fast   # 改动级：架构检查 + 后端/前端测试 + 类型检查，约 1 分 45 秒（上限 3 分钟）
+pnpm verify        # 发布级：另含 test:tooling、build、test:built、test:dev，耗时长，发布前跑
 ```
 
 `pnpm test:built` 依赖 `pnpm build` 生成的 `.output`，不要把旧构建产物的通过结果当成当前源码的验证结果。

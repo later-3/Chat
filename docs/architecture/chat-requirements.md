@@ -558,7 +558,7 @@ Pi 基础 7 —— 每个区域都能被独立解析与核对。
 抽象定义确定后才讨论“怎么用 Pi 生态与 NanoClaw 落地”。抽象区域按模型行为依据划分为八类：
 **身份 / 能力 / 原则 / 规范 / 工作上下文 / 长期记忆 / 任务 / 历史**——其中“参与某个项目要遵守的东西”
 归到 原则 + 规范 + 任务 三类。完整定义与落地映射见
-[Chat Agent 的抽象定义与落地路径](../../../.chat/interaction-harness/concept-space.md#13-chat-agent-的抽象定义与落地路径分离原则)。
+Chat Home 的 `~/.chat/interaction-harness/concept-space.md` 第 13 节「Chat Agent 的抽象定义与落地路径（分离原则）」（用户级资产，不在本仓库内，故不写相对链接）。
 
 落地选择原则：优先用 Pi 生态已有的成熟机制；NanoClaw 提供的能力（身份、Agent Memory 等）不是必须，
 只有当它确实更适合承担某个抽象区域时才采用。

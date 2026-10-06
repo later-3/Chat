@@ -354,3 +354,19 @@ Friend A（一个身份）
   归属（文件放在哪个存储根）与绑定收敛规则。
 - “fork、新建会话”属于 Session 的**创建机制**，不是管理动作；是否允许某类会话 fork 属于第三层决定，
   但底层能力始终存在。
+
+## 13. 会话定位三要素：agent + project + session（2026-10-05）
+
+会话必须能被唯一定位：**哪个 Long Agent × 哪个 Project × 哪条 Session**。此前地址栏只有
+`?session=<id>&projectId=<p>`，看不出会话属于哪个 Long Agent。
+
+| 项 | 变化 |
+|---|---|
+| 会话 URL | `?agent=<longAgentId>&project=<projectId>&session=<sessionId>`；旧链接（无 `agent`）**仍可解析**，普通会话清除 `agent` |
+| 写入时机 | 打开会话时按**服务端事实**写入：以 `SessionInfo.owner` 为准（调用方提示只作线索），避免“URL 说一个、实际是另一个” |
+| 接口 | 单会话读取仍为 `GET /api/sessions/:id?projectId=…`（后端已能从绑定唯一定位归属）；会话列表/搜索已支持 `scope=agent|project|all` + `projectId` + `owner` |
+
+实现：`frontend/lib/initial-navigation.ts`、`frontend/lib/device-workspace.ts`、
+`frontend/components/AppShell.tsx`（`handleOpenExistingSession`）、`SessionSidebar`、`ProjectLongAgentSection`。
+回归：`frontend/lib/initial-navigation.test.mjs`（读取与旧链接兼容）、`frontend/lib/long-agents-browser.test.mjs`（打开路径）。
+前端设计记录：`frontend/docs/design/long-agent-definition-and-session-locating.md`。

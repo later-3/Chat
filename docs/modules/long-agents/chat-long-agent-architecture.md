@@ -276,14 +276,35 @@ Web、IM、定时工作均在受理时读取 Home 的默认/显式 Workflow，�
 交互 harness 是与用户协作开发的规则集合（飞轮、概念空间、正反案例、每日记录与四个规范），
 它是**与 Agent 的 prompt 相关**的能力，因此复用 Chat 既有的“规则 / 自定义指令”装配路径，不新建注入机制。
 
-| 来源 | 生效范围 | 路径 |
-|---|---|---|
-| 通用规范 | 所有 Long Agent | `<chatHome>/interaction-harness/standards/{需求规范,前端规范,开发规范,维护规范}.md` |
-| 项目专属规范 | 仅该 Long Agent 在该 project 下 | `<chatHome>/long-agents/<agentId>/projects/<projectId>/project-guidance.md` |
+| 来源 | 生效范围 | 路径 | 注入方式 |
+|---|---|---|---|
+| 通用规范 | 所有 Long Agent | `<chatHome>/interaction-harness/standards/{需求规范,前端规范,开发规范,task规范,维护规范}.md` | 全文 |
+| 飞轮与案例 | 所有 Long Agent | `<chatHome>/interaction-harness/{AGENTS.md,cases.md,flywheel.md}` | **全文**（正例/反例每次交互前必读） |
+| 概念空间 | 所有 Long Agent | `<chatHome>/interaction-harness/concept-space.md` | 仅章节索引，正文按路径读取 |
+| 项目专属 | 仅该 Long Agent 在该 project 下 | `<chatHome>/long-agents/<agentId>/projects/<projectId>/{project-guidance.md,AGENTS.md}` | 全文（**全部存在的文件**，不早退） |
 
 实现：`src/long-agents/interaction-harness.ts` 读取上述文件，`prepareLongAgentAssembly` 在装配时把它们
-作为一条 `<interaction_harness revision="sha256:…">` 自定义指令注入，因此每轮装配都冻结了“本轮遵守的是
-哪一版规范”。文件不存在时不注入（既有环境不受影响），完整资产（案例、每日记录）保留在目录中按需读取，
-不重复写进 prompt。
+作为一条 `<chat_interaction_harness revision="sha256:…">` 自定义指令注入，因此每轮装配都冻结了“本轮遵守的是
+哪一版规范”。文件不存在时不注入（既有环境不受影响）。真机示例（coder-muse × chat）：
+`chat_interaction_harness` 19,612 字符、`sha256:9da24e85…`。
 
-回归：`test/long-agents/interaction-harness.test.mjs`（通用 + 专属隔离、装配注入）。
+回归：`test/long-agents/interaction-harness.test.mjs`（通用 + 专属隔离与多文件、案例/飞轮必进、概念空间只进索引、装配注入）。
+
+## Agent 构成层开关与区域构成（2026-10-05）
+
+Long Agent 的构成层有两个开关，缺省为 `on`；关闭只影响**注入**，不改变能力可用性：
+
+| 字段 | 位置 | 作用 | 关闭后的行为 |
+|---|---|---|---|
+| `interactionHarness` | registry `LongAgentConfig` | 是否注入交互 harness | 该轮不出现 `<chat_interaction_harness>` 区域 |
+| `agentMemory` | registry `LongAgentConfig` | 是否注入长期记忆 | 该轮 `<chat_long_term_memory>` 为空；`agent_memory_*` 工具仍可按需读写 |
+
+身份以 **Chat 定义**为主（`<chat_identity source="chat">` 由 registry + `definition.json` 生成），
+NanoClaw 只作为同区域内的可选覆盖（`<nanoclaw_identity>`）；NanoClaw 网关不可用且无快照时装配照常。
+配置读写经 `GET/PUT /api/long-agents/:id/config`（写操作带 `expectedRevision`）。
+
+**区域构成可核对**：`GET /api/long-agents/:id/inspection` 新增 `prompt.regions`，把本轮装配注入的
+指令段解析为 `{ name, revision, characters }[]`，与真实执行装配同源（`summarizePromptRegions`，
+来源 `prepareLongAgentAssembly` 的注入段），供前端「规范」标签与检查视图核对“这一轮装了什么、依据哪一版”。
+
+回归：`test/long-agents/prompt-regions.test.mjs`、`test/long-agents/interaction-harness.test.mjs`。

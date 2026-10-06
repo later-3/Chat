@@ -1,6 +1,6 @@
 # Session 管理前端设计（第二层）
 
-按 [前端规范](../../../.chat/interaction-harness/standards/前端规范.md) 的三步走记录：先信息与关系，再交互与展示。
+按 Chat Home 的 `~/.chat/interaction-harness/standards/前端规范.md` 三步走记录：先信息与关系，再交互与展示。
 
 ## 1. 要呈现的信息
 

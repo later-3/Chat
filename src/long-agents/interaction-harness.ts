@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { getChatHomePaths } from "../chat-home.js";
 
 /** 通用规范的固定读取顺序（需求 → 前端 → 开发 → 任务 → 维护）；只读存在的文件。 */
-const COMMON_STANDARDS = ["需求规范.md", "前端规范.md", "开发规范.md", "task规范.md", "维护规范.md"] as const;
+const COMMON_STANDARDS = ["需求规范.md", "前端规范.md", "开发规范.md", "task规范.md", "测试规范.md", "维护规范.md"] as const;
 /**
  * 必须全文注入的 harness 资产：本层指引（AGENTS.md）、案例（正例与反例）、飞轮（积累）。
  * 案例与飞轮是“量变引起质变”的来源，每次交互都要先读；与规范同等重要，因此一起注入。
