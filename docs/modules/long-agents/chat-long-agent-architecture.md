@@ -269,3 +269,21 @@ HTTP v1：`GET/POST /api/long-agents/:id/work`。POST 为 `{schemaVersion:1,requ
 用户确认的 A6 修复采用现有 Workflow 配置服务：Long Agent Home 是 Session 的配置归属，执行项目只决定本轮工作上下文，不复制模型设置。`definition.json` 保留长期身份提示词；模型、思考等级、工具及资源迁到 Home 的 `workflows/minimal-pi-coding-agent/agents/pi-coding-agent.json`。迁移留存不可变原件，已有 Workflow 字段优先，缺失字段从旧定义补齐；重试不覆盖迁移后编辑。旧配置 API 仅作为同一持久配置的兼容投影，不再保存第二份执行字段。
 
 Web、IM、定时工作均在受理时读取 Home 的默认/显式 Workflow，经公共 Resolver 冻结全部节点及 Session 选择；执行和记忆节点消费同一调用快照。检查与设置复用普通项目的 Workflow API。长期身份作为工作节点的附加上下文；记忆维护节点不继承身份职责、日报指引或项目上下文文件。旧已受理轮次继续使用原冻结快照。
+
+
+## 交互 Harness 注入（2026-10-05）
+
+交互 harness 是与用户协作开发的规则集合（飞轮、概念空间、正反案例、每日记录与四个规范），
+它是**与 Agent 的 prompt 相关**的能力，因此复用 Chat 既有的“规则 / 自定义指令”装配路径，不新建注入机制。
+
+| 来源 | 生效范围 | 路径 |
+|---|---|---|
+| 通用规范 | 所有 Long Agent | `<chatHome>/interaction-harness/standards/{需求规范,前端规范,开发规范,维护规范}.md` |
+| 项目专属规范 | 仅该 Long Agent 在该 project 下 | `<chatHome>/long-agents/<agentId>/projects/<projectId>/{交互harness.md,interaction-harness.md}` |
+
+实现：`src/long-agents/interaction-harness.ts` 读取上述文件，`prepareLongAgentAssembly` 在装配时把它们
+作为一条 `<interaction_harness revision="sha256:…">` 自定义指令注入，因此每轮装配都冻结了“本轮遵守的是
+哪一版规范”。文件不存在时不注入（既有环境不受影响），完整资产（案例、每日记录）保留在目录中按需读取，
+不重复写进 prompt。
+
+回归：`test/long-agents/interaction-harness.test.mjs`（通用 + 专属隔离、装配注入）。

@@ -4,6 +4,7 @@ import { ensureAgentCalendar } from "./project-agent.js";
 import { DAILY_ARCHIVE_INSTRUCTIONS } from "./daily-summary-task.js";
 import { agentDate } from "./calendar.js";
 import { ensureAgentHomeProject } from "../projects/registry.js";
+import { hasInteractionHarness, interactionHarnessInstruction, readInteractionHarness } from "./interaction-harness.js";
 import { ensureLongAgentResourceDirs, longAgentConfigRoot } from "./storage.js";
 import { buildAgentGroupContextInstructions, readLongAgentAgentGroup, type readFrozenLongAgentAgentGroup } from "./agent-group-service.js";
 import { buildLongAgentHandoff } from "./summaries.js";
@@ -44,6 +45,9 @@ export async function prepareLongAgentAssembly(input: {
     ...(agent.definition.systemPrompt.mode === "replace" ? [{ text: agent.definition.systemPrompt.text }] : []),
     ...agent.definition.customInstructions,
   ];
+  // 交互 harness 是一套规则：通用规范对所有 Long Agent 生效，项目专属规范仅在该 (agent, project) 下生效。
+  const harness = await readInteractionHarness({ chatHome, longAgentId: agent.id, projectId: input.projectId });
+  const harnessInstruction = hasInteractionHarness(harness) ? interactionHarnessInstruction(harness) : undefined;
   const prepared = {
     invocation: {
       turnId: input.turnId, projectId: input.projectId,
@@ -63,6 +67,7 @@ export async function prepareLongAgentAssembly(input: {
         ...(handoff === null ? [] : [{ text: handoff }]),
         ...(scope === undefined ? [] : [{ text: longAgentScopeInstructions(scope, { agentName: agent.name }) }]),
         { text: "<memory_fact_contract>记忆只保存有依据的事实：用户明确说过的内容才可归为 user，Agent 的推断须单独归为 agent 并标明不确定性；计划、尝试、成功分别表述，只有真实成功回执才能声称已完成，不把尚未发送的回复记为已回复。Session、轮次、请求、原生消息 Entry 和记忆条目是不同标识，来源以工具和服务端上下文为准，禁止互换。发现旧事实错误时以可追踪修订纠正，不覆盖用户原始发言。</memory_fact_contract>" },
+        ...(harnessInstruction === undefined ? [] : [{ text: harnessInstruction }]),
         { text: "<chat_runtime_capability_contract>你是由 Chat 公共 Pi 装配执行的长期助手。当前 Agent、Project、Session 与授权范围由本轮服务端上下文确定。平台能力以本轮实际激活的 Tool 名称、Schema 和使用说明为准；身份职责、旧记忆或历史中的功能上线状态和容器路径不能覆盖当前能力事实。工具已提供表示允许尝试，不表示网关或外部服务必然可达；失败须报告真实原因，不能说成记忆不存在。NanoClaw Agent Memory 通过 agent_memory_* 访问，不能猜测其宿主或原生容器路径；Chat Personal/Project 共享事实用 memory_*，会话要点用 session_memory，每日总结和历史归档用 summary_manage。只使用本轮存在的工具，未提供则明确说明能力未装配；不要修改身份定义或扩大权限来绕过。身份和职责仍沿用已配置来源。</chat_runtime_capability_contract>" },
       ],
     },
