@@ -4,8 +4,15 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { getChatHomePaths } from "../chat-home.js";
 
-/** 通用规范的固定读取顺序（需求 → 前端 → 开发 → 维护）；只读存在的文件。 */
-const COMMON_STANDARDS = ["需求规范.md", "前端规范.md", "开发规范.md", "维护规范.md"] as const;
+/** 通用规范的固定读取顺序（需求 → 前端 → 开发 → 任务 → 维护）；只读存在的文件。 */
+const COMMON_STANDARDS = ["需求规范.md", "前端规范.md", "开发规范.md", "task规范.md", "维护规范.md"] as const;
+/**
+ * 必须全文注入的 harness 资产：案例（正例与反例）每次交互都要先读，
+ * 飞轮说明为什么这么做。它们与规范同等重要，因此与规范一起注入。
+ */
+const HARNESS_ASSETS = ["cases.md", "flywheel.md"] as const;
+/** 概念空间体积较大：注入其章节索引，细节按路径读取，避免每轮塞满上下文。 */
+const HARNESS_INDEX = "concept-space.md";
 /** 某个 Long Agent 在某个 project 下的专属指引/规范（文件名一律英文）。 */
 const PROJECT_STANDARDS = ["project-guidance.md"] as const;
 
@@ -20,8 +27,22 @@ async function readIfPresent(path: string): Promise<string | undefined> {
 }
 
 export interface InteractionHarnessSections {
+  /** 通用规范（standards/ 下按固定顺序）。 */
   readonly common: readonly { readonly name: string; readonly text: string }[];
+  /** 必须全文注入的资产（案例、飞轮）。 */
+  readonly assets: readonly { readonly name: string; readonly text: string }[];
+  /** 只注入索引的资产（概念空间章节清单）。 */
+  readonly index: readonly { readonly name: string; readonly text: string }[];
   readonly project?: { readonly name: string; readonly text: string };
+}
+
+/** 提取 Markdown 一、二级标题，作为概念空间的索引。 */
+function headingIndex(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => /^#{1,2} \S/.test(line))
+    .join("\n")
+    .trim();
 }
 
 /**
@@ -37,24 +58,37 @@ export async function readInteractionHarness(input: {
   readonly projectId: string | null;
 }): Promise<InteractionHarnessSections> {
   const paths = getChatHomePaths(input.chatHome);
-  const standardsDir = resolve(paths.root, "interaction-harness", "standards");
+  const harnessDir = resolve(paths.root, "interaction-harness");
+  const standardsDir = resolve(harnessDir, "standards");
   const common: { name: string; text: string }[] = [];
   for (const name of COMMON_STANDARDS) {
     const text = await readIfPresent(resolve(standardsDir, name));
     if (text !== undefined) common.push({ name, text });
   }
-  if (input.projectId === null) return { common };
+  const assets: { name: string; text: string }[] = [];
+  for (const name of HARNESS_ASSETS) {
+    const text = await readIfPresent(resolve(harnessDir, name));
+    if (text !== undefined) assets.push({ name, text });
+  }
+  const index: { name: string; text: string }[] = [];
+  const conceptSpace = await readIfPresent(resolve(harnessDir, HARNESS_INDEX));
+  if (conceptSpace !== undefined) {
+    const headings = headingIndex(conceptSpace);
+    if (headings !== "") index.push({ name: HARNESS_INDEX, text: headings });
+  }
+  if (input.projectId === null) return { common, assets, index };
   const projectDir = resolve(paths.root, "long-agents", input.longAgentId, "projects", input.projectId);
   for (const name of PROJECT_STANDARDS) {
     const text = await readIfPresent(resolve(projectDir, name));
-    if (text !== undefined) return { common, project: { name, text } };
+    if (text !== undefined) return { common, assets, index, project: { name, text } };
   }
-  return { common };
+  return { common, assets, index };
 }
 
 /** 是否有任何可注入内容（避免为空时也写一段壳）。 */
 export function hasInteractionHarness(sections: InteractionHarnessSections): boolean {
-  return sections.common.length > 0 || sections.project !== undefined;
+  return sections.common.length > 0 || sections.assets.length > 0 || sections.index.length > 0
+    || sections.project !== undefined;
 }
 
 /**
@@ -64,14 +98,18 @@ export function hasInteractionHarness(sections: InteractionHarnessSections): boo
 export function interactionHarnessInstruction(sections: InteractionHarnessSections): string {
   const parts: string[] = [];
   for (const section of sections.common) parts.push(`## 通用规范 · ${section.name}\n\n${section.text}`);
+  for (const asset of sections.assets) parts.push(`## 通用资产 · ${asset.name}\n\n${asset.text}`);
+  for (const asset of sections.index) {
+    parts.push(`## 索引 · ${asset.name}（需要细节时读取该文件）\n\n${asset.text}`);
+  }
   if (sections.project !== undefined) parts.push(`## 本项目专属规范 · ${sections.project.name}\n\n${sections.project.text}`);
   const body = parts.join("\n\n---\n\n");
   const revision = `sha256:${createHash("sha256").update(body).digest("hex")}`;
   return [
     `<chat_interaction_harness revision="${revision}">`,
-    "以下是用户与该项目的交互 harness（协作规范），必须在本次开发中遵守；",
-    "新概念先解释、决策先给依据、结论按第一性原理、每轮回填案例与每日记录。",
-    "完整资产（飞轮、概念空间、案例、每日记录）位于 Chat Home 的 interaction-harness 目录，可按需读取。",
+    "以下是用户与该项目的交互 harness（协作规范 + 案例 + 概念索引），必须在本次开发中遵守；",
+    "**动手前先读反例与正例**：正例照做，反例不得重犯；新概念先解释、决策先给依据、结论按第一性原理。",
+    "每轮结束后回填案例（正例/反例）与每日记录；概念空间的完整正文按上面的索引路径读取。",
     "",
     body,
     "</chat_interaction_harness>",

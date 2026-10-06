@@ -33,9 +33,29 @@ test("交互 harness 读取：通用规范 + 该 Long Agent 在该 project 下�
   assert.match(instruction, /只在该项目生效/);
 
   // 专属规范按 (Long Agent × project) 隔离：其他项目读不到
+  // 案例（正例/反例）必须全文注入：每次交互前都要先读，否则飞轮无法持续升级。
+  writeHarness(f.home, "interaction-harness/cases.md", "## C9（反例）示例\n\n内容");
+  writeHarness(f.home, "interaction-harness/flywheel.md", "# 飞轮\n\n为什么这么做");
+  writeHarness(f.home, "interaction-harness/concept-space.md", "# 概念空间\n\n## §1 飞轮\n\n## §2 概念空间\n\n细则正文");
+  writeHarness(f.home, "interaction-harness/standards/task规范.md", "# 任务规范");
+  const withAssets = await readInteractionHarness({ chatHome: f.home, longAgentId: "friend", projectId: "a" });
+  assert.equal(withAssets.assets.some((item) => item.name === "cases.md"), true, "案例必须注入");
+  assert.equal(withAssets.assets.some((item) => item.name === "flywheel.md"), true, "飞轮必须注入");
+  assert.equal(withAssets.index.some((item) => item.name === "concept-space.md"), true, "概念空间以索引注入");
+  assert.equal(withAssets.common.some((item) => item.name === "task规范.md"), true, "任务规范属于通用规范");
+  const assetInstruction = interactionHarnessInstruction(withAssets);
+  assert.match(assetInstruction, /C9（反例）示例/, "注入内容包含案例正文");
+  assert.match(assetInstruction, /先读反例与正例/, "注入内容提示先读案例");
+  assert.match(assetInstruction, /## §1 飞轮/, "概念空间索引包含章节标题");
+  assert.doesNotMatch(assetInstruction, /细则正文/, "概念空间正文不进注入（按路径读取）");
+
   const other = await readInteractionHarness({ chatHome: f.home, longAgentId: "friend", projectId: "b" });
   assert.equal(other.project, undefined);
-  assert.equal(other.common.length, 2, "通用规范对所有项目生效");
+  assert.deepEqual(
+    other.common.map((item) => item.name),
+    ["需求规范.md", "前端规范.md", "task规范.md"],
+    "通用规范对所有项目生效（含任务规范）",
+  );
 });
 
 test("装配把交互 harness 作为规则注入 Agent 的指令", async (t) => {
