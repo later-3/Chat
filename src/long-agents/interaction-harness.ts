@@ -6,8 +6,8 @@ import { getChatHomePaths } from "../chat-home.js";
 
 /** 通用规范的固定读取顺序（需求 → 前端 → 开发 → 维护）；只读存在的文件。 */
 const COMMON_STANDARDS = ["需求规范.md", "前端规范.md", "开发规范.md", "维护规范.md"] as const;
-/** 某个 Long Agent 在某个 project 下的专属规范；两种命名都识别。 */
-const PROJECT_STANDARDS = ["交互harness.md", "interaction-harness.md"] as const;
+/** 某个 Long Agent 在某个 project 下的专属指引/规范（文件名一律英文）。 */
+const PROJECT_STANDARDS = ["project-guidance.md"] as const;
 
 async function readIfPresent(path: string): Promise<string | undefined> {
   try {

@@ -279,7 +279,7 @@ Web、IM、定时工作均在受理时读取 Home 的默认/显式 Workflow，�
 | 来源 | 生效范围 | 路径 |
 |---|---|---|
 | 通用规范 | 所有 Long Agent | `<chatHome>/interaction-harness/standards/{需求规范,前端规范,开发规范,维护规范}.md` |
-| 项目专属规范 | 仅该 Long Agent 在该 project 下 | `<chatHome>/long-agents/<agentId>/projects/<projectId>/{交互harness.md,interaction-harness.md}` |
+| 项目专属规范 | 仅该 Long Agent 在该 project 下 | `<chatHome>/long-agents/<agentId>/projects/<projectId>/project-guidance.md` |
 
 实现：`src/long-agents/interaction-harness.ts` 读取上述文件，`prepareLongAgentAssembly` 在装配时把它们
 作为一条 `<interaction_harness revision="sha256:…">` 自定义指令注入，因此每轮装配都冻结了“本轮遵守的是

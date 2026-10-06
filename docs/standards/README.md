@@ -10,7 +10,7 @@
   cases.md             正反案例
   daily/YYYY-MM-DD.md  每日关键事件
   standards/           通用规范：需求规范、前端规范
-~/.chat/long-agents/<agentId>/projects/<projectId>/交互harness.md
+~/.chat/long-agents/<agentId>/projects/<projectId>/{project-guidance.md, tasks/, daily/}
                                                    该 Long Agent 在该项目下的专属规范
 ```
 
