@@ -571,22 +571,39 @@ export async function mutateLongAgentMemory(longAgentId: unknown, value: unknown
  * 两者都来自 NanoClaw，但性质不同（身份 vs 记忆），因此不放在同一个区域里——
  * 区域按性质划分，来源只作为属性，这样完整 prompt 才能按区域核对与优化。
  */
-export function buildAgentGroupContextSections(document: LongAgentAgentGroupDocument): readonly string[] {
-  function promptText(value: string, maxCodePoints: number, field: string): string {
-    const codePoints = [...value];
-    if (codePoints.length <= maxCodePoints) return value;
-    if (field === "standingInstructions" || field === "system/definition.md") {
-      throw new Error(`Agent必需身份区域 ${field} 超过 ${maxCodePoints} 字符，拒绝截断执行`);
-    }
-    return [
-      codePoints.slice(0, maxCodePoints).join(""),
-      `<truncation_notice field="${field}" original_code_points="${String(codePoints.length)}" included_code_points="${String(maxCodePoints)}">Use agent_memory_read to inspect the complete Markdown file when needed.</truncation_notice>`,
-    ].join("\n");
+/**
+ * NanoClaw 提供的**身份覆盖片段**（可选）：Chat 的 Agent 定义为主身份，NanoClaw 的 Agent Group
+ * name 与 standing instructions 只作为覆盖来源；NanoClaw 不可用时本片段为空，身份仍完整。
+ */
+function promptText(value: string, maxCodePoints: number, field: string): string {
+  const codePoints = [...value];
+  if (codePoints.length <= maxCodePoints) return value;
+  if (field === "standingInstructions" || field === "system/definition.md") {
+    throw new Error(`Agent必需身份区域 ${field} 超过 ${maxCodePoints} 字符，拒绝截断执行`);
   }
+  return [
+    codePoints.slice(0, maxCodePoints).join(""),
+    `<truncation_notice field="${field}" original_code_points="${String(codePoints.length)}" included_code_points="${String(maxCodePoints)}">Use agent_memory_read to inspect the complete Markdown file when needed.</truncation_notice>`,
+  ].join("\n");
+}
+
+export function buildNanoClawIdentityOverride(document: LongAgentAgentGroupDocument): string | undefined {
   const instructions = document.group.standingInstructions?.trim();
   const standingPrompt = instructions === undefined
     ? undefined
     : promptText(instructions, MAX_PROMPT_STANDING_INSTRUCTIONS_CODE_POINTS, "standingInstructions");
+  const lines = [
+    `<nanoclaw_identity source="nanoclaw" agent_group_id="${document.group.id}" revision="${document.group.revision}" stale="${String(document.stale)}">`,
+    `<runtime_identity_name_override>${document.group.name}</runtime_identity_name_override>`,
+    "<identity_rule>NanoClaw Agent Group name and standing instructions are the runtime identity override; the Chat agent definition stays the base identity.</identity_rule>",
+    standingPrompt ? `<standing_instructions>\n${standingPrompt}\n</standing_instructions>` : "",
+    "</nanoclaw_identity>",
+  ].filter((line) => line !== "");
+  return lines.length <= 3 ? undefined : lines.join("\n");
+}
+
+/** 长期记忆区域（Agent Memory，可选来源）：core memory 与记忆系统定义。 */
+export function buildAgentMemorySection(document: LongAgentAgentGroupDocument): string {
   const indexPrompt = promptText(
     document.coreMemory.index.content,
     MAX_PROMPT_CORE_MEMORY_CODE_POINTS,
@@ -597,14 +614,7 @@ export function buildAgentGroupContextSections(document: LongAgentAgentGroupDocu
     MAX_PROMPT_CORE_MEMORY_CODE_POINTS,
     document.coreMemory.definition.path,
   );
-  const identity = [
-    `<chat_identity source="nanoclaw" agent_group_id="${document.group.id}" revision="${document.group.revision}" stale="${String(document.stale)}">`,
-    `<runtime_identity_name>${document.group.name}</runtime_identity_name>`,
-    "<identity_rule>NanoClaw Agent Group name and standing instructions are the authoritative runtime identity and long-running role. Chat display alias and summary are UI metadata only.</identity_rule>",
-    standingPrompt ? `<standing_instructions>\n${standingPrompt}\n</standing_instructions>` : "",
-    "</chat_identity>",
-  ].filter((line) => line !== "").join("\n");
-  const memory = [
+  return [
     `<chat_long_term_memory source="nanoclaw" agent_group_id="${document.group.id}" revision="${document.coreMemory.index.revision}" stale="${String(document.stale)}">`,
     `<agent_memory_core path="${document.coreMemory.index.path}" revision="${document.coreMemory.index.revision}">\n${indexPrompt}\n</agent_memory_core>`,
     `<agent_memory_system_definition path="${document.coreMemory.definition.path}" revision="${document.coreMemory.definition.revision}">\n${definitionPrompt}\n</agent_memory_system_definition>`,
@@ -613,5 +623,4 @@ export function buildAgentGroupContextSections(document: LongAgentAgentGroupDocu
       : "",
     "</chat_long_term_memory>",
   ].filter((line) => line !== "").join("\n");
-  return [identity, memory];
 }

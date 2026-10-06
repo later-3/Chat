@@ -47,3 +47,40 @@ test("装配把交互 harness 作为规则注入 Agent 的指令", async (t) => 
   assert.match(instructions, /<chat_interaction_harness revision="sha256:/);
   assert.match(instructions, /先对齐场景与交互/);
 });
+
+test("身份以 Chat 定义为主；NanoClaw 只作覆盖；两个开关独立生效", async (t) => {
+  const f = await fixture(t);
+  writeHarness(f.home, "interaction-harness/standards/需求规范.md", "# 需求规范\n\n先对齐场景与交互。");
+  const agent = (await readLongAgentRegistry(f.home)).agents[0];
+  const instructionsOf = async (candidate) => {
+    const prepared = await prepareLongAgentAssembly({ agent: candidate, chatHome: f.home, projectId: "a", turnId: `identity-${candidate.name}` });
+    return prepared.agent.customInstructions.map((instruction) => instruction.text).join("\n");
+  };
+
+  // A. NanoClaw 可用：基础身份来自 Chat 定义，NanoClaw 作为覆盖片段；长期记忆注入
+  const live = await instructionsOf(agent);
+  assert.match(live, /<chat_identity source="chat">/);
+  assert.match(live, new RegExp(`<runtime_identity_name>${agent.name}</runtime_identity_name>`));
+  assert.match(live, /<nanoclaw_identity source="nanoclaw"/, "NanoClaw 作为身份覆盖来源");
+  assert.match(live, /<chat_long_term_memory source="nanoclaw"/);
+  assert.match(live, /<chat_interaction_harness revision="sha256:/, "交互 harness 缺省开启");
+
+  // B. 关闭长期记忆：身份与覆盖不受影响，只少记忆区
+  const memoryOff = await instructionsOf({ ...agent, agentMemory: "off" });
+  assert.doesNotMatch(memoryOff, /<chat_long_term_memory/);
+  assert.match(memoryOff, /<chat_identity source="chat">/);
+  assert.match(memoryOff, /<nanoclaw_identity source="nanoclaw"/);
+
+  // C. 关闭交互 harness：只影响规范注入
+  const harnessOff = await instructionsOf({ ...agent, interactionHarness: "off" });
+  assert.doesNotMatch(harnessOff, /<chat_interaction_harness/);
+  assert.match(harnessOff, /<chat_identity source="chat">/);
+
+  // D. NanoClaw 不可用：身份依然完整（Chat 定义），只是没有覆盖与记忆
+  fs.rmSync(path.join(f.home, "runtime/long-agents/friend/agent-group-snapshot.json"));
+  const noNano = await instructionsOf(agent);
+  assert.match(noNano, /<chat_identity source="chat">/);
+  assert.match(noNano, new RegExp(`<runtime_identity_name>${agent.name}</runtime_identity_name>`));
+  assert.doesNotMatch(noNano, /<nanoclaw_identity/);
+  assert.doesNotMatch(noNano, /<chat_long_term_memory/);
+});

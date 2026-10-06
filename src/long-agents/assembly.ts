@@ -1,4 +1,5 @@
 import type { AgentInstruction, WorkflowAgentDefinition } from "../workflows/agent-config.js";
+import type { LongAgentAgentGroupDocument } from "./agent-group-service.js";
 import { resolveLongAgentWorkflowAgent } from "./workflow-configuration.js";
 import { ensureAgentCalendar } from "./project-agent.js";
 import { DAILY_ARCHIVE_INSTRUCTIONS } from "./daily-summary-task.js";
@@ -6,12 +7,34 @@ import { agentDate } from "./calendar.js";
 import { ensureAgentHomeProject } from "../projects/registry.js";
 import { hasInteractionHarness, interactionHarnessInstruction, readInteractionHarness } from "./interaction-harness.js";
 import { ensureLongAgentResourceDirs, longAgentConfigRoot } from "./storage.js";
-import { buildAgentGroupContextSections, readLongAgentAgentGroup, type readFrozenLongAgentAgentGroup } from "./agent-group-service.js";
+import { buildAgentMemorySection, buildNanoClawIdentityOverride, readLongAgentAgentGroup, type readFrozenLongAgentAgentGroup } from "./agent-group-service.js";
+import { NanoClawGatewayUnavailableError } from "./nanoclaw-client.js";
 import { buildLongAgentHandoff } from "./summaries.js";
 import { longAgentScopeInstructions, type LongAgentScope } from "./scope.js";
 import type { LongAgentConfig } from "./types.js";
 
 /** Lifecycle and inspection share Friend-owned inputs; public assembly owns project rules/tools/settings. */
+/**
+ * 构成层 · 身份区域：由 **Chat 的 Agent 定义**生成（名称、简介、身份指令），
+ * NanoClaw 的 Agent Group 若可用则作为覆盖片段附在同一区域内。NanoClaw 不可用时身份依然完整。
+ */
+function buildChatIdentityInstruction(
+  agent: LongAgentConfig,
+  group: LongAgentAgentGroupDocument | undefined,
+): string {
+  const override = group === undefined ? undefined : buildNanoClawIdentityOverride(group);
+  return [
+    '<chat_identity source="chat">',
+    `<runtime_identity_name>${agent.name}</runtime_identity_name>`,
+    agent.description.trim() === "" ? "" : `<runtime_identity_summary>${agent.description.trim()}</runtime_identity_summary>`,
+    agent.definition.systemPrompt.mode === "replace" && agent.definition.systemPrompt.text.trim() !== ""
+      ? `<runtime_identity_instructions>\n${agent.definition.systemPrompt.text.trim()}\n</runtime_identity_instructions>`
+      : "",
+    override === undefined ? "" : override,
+    "</chat_identity>",
+  ].filter((line) => line !== "").join("\n");
+}
+
 export async function prepareLongAgentAssembly(input: {
   readonly agent: LongAgentConfig;
   readonly executionAgent?: WorkflowAgentDefinition;
@@ -35,7 +58,14 @@ export async function prepareLongAgentAssembly(input: {
   const scope = input.scope;
   const includeGroup = scope === undefined || scope.include.agentGroupInstructions;
   const includeHandoff = scope === undefined || scope.include.dailyHandoff;
-  const group = includeGroup ? input.groupContext ?? await readLongAgentAgentGroup(agent.id, chatHome) : undefined;
+  // 降级契约：NanoClaw 不可用（网关不可达/无快照）时，装配照常进行——身份由 Chat 的 Agent 定义提供，
+  // 身份覆盖与长期记忆区域为空；只有快照本身损坏等真实错误才向上抛。
+  const group = includeGroup
+    ? input.groupContext ?? await readLongAgentAgentGroup(agent.id, chatHome).catch((error: unknown) => {
+        if (error instanceof NanoClawGatewayUnavailableError) return undefined;
+        throw error;
+      })
+    : undefined;
   const handoff = includeHandoff
     ? await buildLongAgentHandoff({ chatHome, longAgentId: agent.id, today: input.today ?? agentDate(agent.timeZone) })
     : null;
@@ -45,9 +75,21 @@ export async function prepareLongAgentAssembly(input: {
     ...(agent.definition.systemPrompt.mode === "replace" ? [{ text: agent.definition.systemPrompt.text }] : []),
     ...agent.definition.customInstructions,
   ];
-  // 交互 harness 是一套规则：通用规范对所有 Long Agent 生效，项目专属规范仅在该 (agent, project) 下生效。
-  const harness = await readInteractionHarness({ chatHome, longAgentId: agent.id, projectId: input.projectId });
-  const harnessInstruction = hasInteractionHarness(harness) ? interactionHarnessInstruction(harness) : undefined;
+  // 交互 harness 是一套规则：通用规范对所有 Long Agent 生效，项目专属规范仅在该 (agent, project) 下生效；
+  // 开关在 Agent 配置层（缺省 on）。
+  const harnessEnabled = agent.interactionHarness !== "off";
+  const harness = harnessEnabled
+    ? await readInteractionHarness({ chatHome, longAgentId: agent.id, projectId: input.projectId })
+    : undefined;
+  const harnessInstruction = harness !== undefined && hasInteractionHarness(harness)
+    ? interactionHarnessInstruction(harness)
+    : undefined;
+  // 构成层 · 身份：Chat 的 Agent 定义为主身份；NanoClaw 的 Agent Group 只作为可选覆盖。
+  const identityInstruction = buildChatIdentityInstruction(agent, group);
+  // 构成层 · 长期记忆：Agent Memory 为可选来源，受开关控制（关闭只影响注入）。
+  const memoryInstruction = group === undefined || agent.agentMemory === "off"
+    ? undefined
+    : buildAgentMemorySection(group);
   const prepared = {
     invocation: {
       turnId: input.turnId, projectId: input.projectId,
@@ -62,7 +104,8 @@ export async function prepareLongAgentAssembly(input: {
       customInstructions: [
         ...execution.customInstructions,
         ...(execution === agent.definition ? [] : identityInstructions),
-        ...(group === undefined ? [] : buildAgentGroupContextSections(group).map((text): AgentInstruction => ({ text }))),
+        { text: identityInstruction },
+        ...(memoryInstruction === undefined ? [] : [{ text: memoryInstruction }]),
         ...(includeHandoff ? [{ text: DAILY_ARCHIVE_INSTRUCTIONS }] : []),
         ...(handoff === null ? [] : [{ text: handoff }]),
         ...(scope === undefined ? [] : [{ text: longAgentScopeInstructions(scope, { agentName: agent.name }) }]),

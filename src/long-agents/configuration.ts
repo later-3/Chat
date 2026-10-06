@@ -62,6 +62,10 @@ export interface LongAgentConfigurationDocument {
     readonly defaultProjectId: string;
     /** Web 三级导航的项目绑定；Agent Workspace 永远首位。 */
     readonly boundProjectIds: readonly string[];
+    /** 构成层开关：交互 harness 是否注入本轮 prompt；缺省 on。 */
+    readonly interactionHarness: "on" | "off";
+    /** 构成层开关：长期记忆是否注入本轮 prompt；缺省 on。 */
+    readonly agentMemory: "on" | "off";
     readonly timeZone?: string;
     readonly effective: LongAgentEffectiveConfig;
     readonly definition: {
@@ -158,6 +162,8 @@ function documentOf(agent: LongAgentConfig, instance: LongAgentInstanceConfig): 
       enabled: agent.enabled,
       defaultProjectId: agent.defaultProjectId,
       boundProjectIds: agent.boundProjectIds,
+      interactionHarness: agent.interactionHarness ?? "on",
+      agentMemory: agent.agentMemory ?? "on",
       ...(agent.timeZone === undefined ? {} : { timeZone: agent.timeZone }),
       effective: {
         model: null,
@@ -238,6 +244,9 @@ interface ParsedUpdate {
   /** 完整替换目标绑定列表；undefined 表示不改。格式校验在此，登记状态由 update 校验。 */
   readonly boundProjectIds?: readonly string[];
   readonly timeZone?: string;
+  /** 构成层开关；undefined 表示不改。 */
+  readonly interactionHarness?: "on" | "off";
+  readonly agentMemory?: "on" | "off";
   readonly definition: WorkflowAgentDefinition;
 }
 
@@ -271,7 +280,7 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
   // The responseTemplate reply-footer template retired (2026-10-01); older clients may still send
   // the field in update payloads, so it stays in the accepted list here but is never read back.
   exactFields(value, [
-    "schemaVersion", "expectedRevision", "name", "description", "avatar", "enabled", "defaultProjectId", "boundProjectIds", "definition", "responseTemplate", "timeZone",
+    "schemaVersion", "expectedRevision", "name", "description", "avatar", "enabled", "defaultProjectId", "boundProjectIds", "definition", "responseTemplate", "timeZone", "interactionHarness", "agentMemory",
   ], "Long Agent配置");
   const expectedRevision = readNonEmptyString(value.expectedRevision, "expectedRevision");
   if (!/^[a-f0-9]{64}$/.test(expectedRevision)) {
@@ -288,6 +297,14 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
   }
   const defaultProjectId = readNonEmptyString(value.defaultProjectId, "defaultProjectId");
   const avatar = parseAvatarUpdate(value.avatar);
+  const onOff = (field: "interactionHarness" | "agentMemory"): "on" | "off" | undefined => {
+    const raw = value[field];
+    if (raw === undefined) return undefined;
+    if (raw !== "on" && raw !== "off") throw new LongAgentConfigurationInvalidError(`${field}必须是on或off`);
+    return raw;
+  };
+  const interactionHarness = onOff("interactionHarness");
+  const agentMemory = onOff("agentMemory");
   if (!isRecord(value.definition)) throw new LongAgentConfigurationInvalidError("definition必须是对象");
   let definition: WorkflowAgentDefinition;
   try {
@@ -321,6 +338,8 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
           }
         })()),
     ...(value.timeZone === undefined ? {} : { timeZone: parseTimeZone(value.timeZone) }),
+    ...(interactionHarness === undefined ? {} : { interactionHarness }),
+    ...(agentMemory === undefined ? {} : { agentMemory }),
     definition,
   };
 }
@@ -420,6 +439,8 @@ export async function updateLongAgentConfiguration(
         ? previous.boundProjectIds
         : normalizeBoundProjectIds(id, update.boundProjectIds),
       ...(update.timeZone === undefined ? {} : { timeZone: update.timeZone }),
+      ...(update.interactionHarness === undefined ? {} : { interactionHarness: update.interactionHarness }),
+      ...(update.agentMemory === undefined ? {} : { agentMemory: update.agentMemory }),
       // 工具集与当前默认一致 → 仍由默认托管（后续新增默认能力会补齐）；用户自定义过 → 退出托管。
       toolsManagedByDefault: toolsMatchDefault({ ...previous, definition: update.definition }),
       definition: update.definition,

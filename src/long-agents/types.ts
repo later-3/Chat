@@ -61,6 +61,13 @@ export interface LongAgentConfig {
    * 用户在配置页自定义过工具后变为 false，补齐不再触碰。
    */
   readonly toolsManagedByDefault?: boolean;
+  /**
+   * 构成层的开关：交互 harness（协作规范）是否注入本轮 prompt；缺省 on。
+   * 规范内容来自 Chat Home 的 interaction-harness，与该 Agent 在该 project 下的 project-guidance.md。
+   */
+  readonly interactionHarness?: "on" | "off";
+  /** 构成层的开关：长期记忆（Agent Memory）是否注入本轮 prompt；缺省 on。关闭只影响注入，工具仍可用。 */
+  readonly agentMemory?: "on" | "off";
   /** Chat-owned Pi capability definition. NanoClaw never receives this value. */
   readonly definition: WorkflowAgentDefinition;
 }
@@ -270,7 +277,7 @@ function parseAgent(value: unknown): LongAgentConfig {
   // the field, so it stays in the accepted list here but is never parsed back onto the config.
   exactFields(
     value,
-    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "boundProjectIds", "inbox", "status", "toolsManagedByDefault", "responseTemplate", "definition", "timeZone"],
+    ["id", "name", "description", "avatar", "enabled", "instanceId", "nanoclawAgentGroupId", "defaultProjectId", "boundProjectIds", "inbox", "status", "toolsManagedByDefault", "interactionHarness", "agentMemory", "responseTemplate", "definition", "timeZone"],
     "LongAgent agent",
   );
   if (value.inbox !== undefined) {
@@ -326,8 +333,15 @@ function parseAgent(value: unknown): LongAgentConfig {
     ...(value.toolsManagedByDefault === undefined
       ? {}
       : { toolsManagedByDefault: value.toolsManagedByDefault === true }),
+    ...(value.interactionHarness === undefined ? {} : { interactionHarness: parseOnOff(value.interactionHarness, "agent.interactionHarness") }),
+    ...(value.agentMemory === undefined ? {} : { agentMemory: parseOnOff(value.agentMemory, "agent.agentMemory") }),
     definition,
   };
+}
+
+function parseOnOff(value: unknown, field: string): "on" | "off" {
+  if (value !== "on" && value !== "off") throw new Error(`${field}必须是on或off`);
+  return value;
 }
 
 function parseAgentStatus(value: unknown): "active" | "archived" {
