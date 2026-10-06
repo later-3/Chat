@@ -33,7 +33,8 @@ export interface InteractionHarnessSections {
   readonly assets: readonly { readonly name: string; readonly text: string }[];
   /** 只注入索引的资产（概念空间章节清单）。 */
   readonly index: readonly { readonly name: string; readonly text: string }[];
-  readonly project?: { readonly name: string; readonly text: string };
+  /** 该 Long Agent 在该 project 下的专属文件（可多个：project-guidance.md、AGENTS.md）。 */
+  readonly projects: readonly { readonly name: string; readonly text: string }[];
 }
 
 /** 提取 Markdown 一、二级标题，作为概念空间的索引。 */
@@ -76,19 +77,21 @@ export async function readInteractionHarness(input: {
     const headings = headingIndex(conceptSpace);
     if (headings !== "") index.push({ name: HARNESS_INDEX, text: headings });
   }
-  if (input.projectId === null) return { common, assets, index };
+  if (input.projectId === null) return { common, assets, index, projects: [] };
   const projectDir = resolve(paths.root, "long-agents", input.longAgentId, "projects", input.projectId);
+  const projects: { name: string; text: string }[] = [];
+  // 收集全部存在的项目专属文件：早退会漏掉后面的文件（如 AGENTS.md 被 project-guidance.md 挡掉）。
   for (const name of PROJECT_STANDARDS) {
     const text = await readIfPresent(resolve(projectDir, name));
-    if (text !== undefined) return { common, assets, index, project: { name, text } };
+    if (text !== undefined) projects.push({ name, text });
   }
-  return { common, assets, index };
+  return { common, assets, index, projects };
 }
 
 /** 是否有任何可注入内容（避免为空时也写一段壳）。 */
 export function hasInteractionHarness(sections: InteractionHarnessSections): boolean {
   return sections.common.length > 0 || sections.assets.length > 0 || sections.index.length > 0
-    || sections.project !== undefined;
+    || sections.projects.length > 0;
 }
 
 /**
@@ -102,7 +105,9 @@ export function interactionHarnessInstruction(sections: InteractionHarnessSectio
   for (const asset of sections.index) {
     parts.push(`## 索引 · ${asset.name}（需要细节时读取该文件）\n\n${asset.text}`);
   }
-  if (sections.project !== undefined) parts.push(`## 本项目专属规范 · ${sections.project.name}\n\n${sections.project.text}`);
+  for (const project of sections.projects) {
+    parts.push(`## 本项目专属规范 · ${project.name}\n\n${project.text}`);
+  }
   const body = parts.join("\n\n---\n\n");
   const revision = `sha256:${createHash("sha256").update(body).digest("hex")}`;
   return [

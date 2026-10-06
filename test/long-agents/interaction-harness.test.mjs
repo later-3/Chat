@@ -25,7 +25,7 @@ test("交互 harness 读取：通用规范 + 该 Long Agent 在该 project 下�
 
   const sections = await readInteractionHarness({ chatHome: f.home, longAgentId: "friend", projectId: "a" });
   assert.deepEqual(sections.common.map((item) => item.name), ["需求规范.md", "前端规范.md"]);
-  assert.equal(sections.project?.name, "project-guidance.md");
+  assert.deepEqual(sections.projects.map((item) => item.name), ["project-guidance.md"]);
 
   const instruction = interactionHarnessInstruction(sections);
   assert.match(instruction, /<chat_interaction_harness revision="sha256:[0-9a-f]{64}">/);
@@ -52,7 +52,7 @@ test("交互 harness 读取：通用规范 + 该 Long Agent 在该 project 下�
   assert.doesNotMatch(assetInstruction, /细则正文/, "概念空间正文不进注入（按路径读取）");
 
   const other = await readInteractionHarness({ chatHome: f.home, longAgentId: "friend", projectId: "b" });
-  assert.equal(other.project, undefined);
+  assert.deepEqual(other.projects, []);
   assert.deepEqual(
     other.common.map((item) => item.name),
     ["需求规范.md", "前端规范.md", "task规范.md"],
