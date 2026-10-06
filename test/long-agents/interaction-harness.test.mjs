@@ -34,11 +34,13 @@ test("交互 harness 读取：通用规范 + 该 Long Agent 在该 project 下�
 
   // 专属规范按 (Long Agent × project) 隔离：其他项目读不到
   // 案例（正例/反例）必须全文注入：每次交互前都要先读，否则飞轮无法持续升级。
+  writeHarness(f.home, "interaction-harness/AGENTS.md", "# 交互 harness 本层指引\n\n动手前先读案例。");
   writeHarness(f.home, "interaction-harness/cases.md", "## C9（反例）示例\n\n内容");
   writeHarness(f.home, "interaction-harness/flywheel.md", "# 飞轮\n\n为什么这么做");
   writeHarness(f.home, "interaction-harness/concept-space.md", "# 概念空间\n\n## §1 飞轮\n\n## §2 概念空间\n\n细则正文");
   writeHarness(f.home, "interaction-harness/standards/task规范.md", "# 任务规范");
   const withAssets = await readInteractionHarness({ chatHome: f.home, longAgentId: "friend", projectId: "a" });
+  assert.equal(withAssets.assets.some((item) => item.name === "AGENTS.md"), true, "本层指引必须注入");
   assert.equal(withAssets.assets.some((item) => item.name === "cases.md"), true, "案例必须注入");
   assert.equal(withAssets.assets.some((item) => item.name === "flywheel.md"), true, "飞轮必须注入");
   assert.equal(withAssets.index.some((item) => item.name === "concept-space.md"), true, "概念空间以索引注入");

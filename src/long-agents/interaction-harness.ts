@@ -7,14 +7,14 @@ import { getChatHomePaths } from "../chat-home.js";
 /** 通用规范的固定读取顺序（需求 → 前端 → 开发 → 任务 → 维护）；只读存在的文件。 */
 const COMMON_STANDARDS = ["需求规范.md", "前端规范.md", "开发规范.md", "task规范.md", "维护规范.md"] as const;
 /**
- * 必须全文注入的 harness 资产：案例（正例与反例）每次交互都要先读，
- * 飞轮说明为什么这么做。它们与规范同等重要，因此与规范一起注入。
+ * 必须全文注入的 harness 资产：本层指引（AGENTS.md）、案例（正例与反例）、飞轮（积累）。
+ * 案例与飞轮是“量变引起质变”的来源，每次交互都要先读；与规范同等重要，因此一起注入。
  */
-const HARNESS_ASSETS = ["cases.md", "flywheel.md"] as const;
+const HARNESS_ASSETS = ["AGENTS.md", "cases.md", "flywheel.md"] as const;
 /** 概念空间体积较大：注入其章节索引，细节按路径读取，避免每轮塞满上下文。 */
 const HARNESS_INDEX = "concept-space.md";
 /** 某个 Long Agent 在某个 project 下的专属指引/规范（文件名一律英文）。 */
-const PROJECT_STANDARDS = ["project-guidance.md"] as const;
+const PROJECT_STANDARDS = ["project-guidance.md", "AGENTS.md"] as const;
 
 async function readIfPresent(path: string): Promise<string | undefined> {
   try {
