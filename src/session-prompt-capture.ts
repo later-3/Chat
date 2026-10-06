@@ -39,7 +39,7 @@ export interface PromptCaptureTurn {
 }
 
 export interface PromptCaptureSystemSection {
-  readonly kind: "chat-project" | "chat-collaboration" | "chat-custom-instructions" | "pi-project-context" | "pi-base" | "other";
+  readonly kind: "chat-project" | "chat-collaboration" | "chat-custom-instructions" | "chat-interaction-harness" | "pi-project-context" | "pi-base" | "other";
   readonly label: string;
   readonly text: string;
 }
@@ -112,12 +112,15 @@ const CHAT_SECTION_TAGS: readonly { readonly kind: PromptCaptureSystemSection["k
   { kind: "chat-project", tag: "chat_current_project", label: "当前项目指令" },
   { kind: "chat-collaboration", tag: "chat_project_collaboration", label: "协作上下文" },
   { kind: "chat-custom-instructions", tag: "chat_agent_custom_instructions", label: "自定义指令（含规则）" },
+  { kind: "chat-interaction-harness", tag: "chat_interaction_harness", label: "交互 harness（协作规范）" },
 ];
 
 function splitSystemSections(text: string): PromptCaptureSystemSection[] {
   const sections: PromptCaptureSystemSection[] = [];
+  // 区域标签允许携带属性（例如 <chat_interaction_harness revision="sha256:…">）；
+  // 闭合标签按同名匹配，因此同一区域不会互相吞并。
   const pattern = new RegExp(
-    String.raw`<(${CHAT_SECTION_TAGS.map((section) => section.tag).join("|")})>([\s\S]*?)<\/\1>`,
+    String.raw`<(${CHAT_SECTION_TAGS.map((section) => section.tag).join("|")})(?:\s[^>]*)?>([\s\S]*?)<\/\1>`,
     "g",
   );
   let cursor = 0;

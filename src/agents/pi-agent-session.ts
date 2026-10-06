@@ -83,17 +83,25 @@ export interface CreatedChatPiAgentSession {
   readonly assemblySnapshot?: ChatAssemblySnapshot;
 }
 
-/** Wraps Chat-owned additions in one visible section of Pi's System Prompt. */
-export function buildChatAgentCustomInstructions(
+/**
+ * Wraps Chat-owned additions into Pi's System Prompt **by region**.
+ *
+ * 区域不得嵌套：`<chat_interaction_harness>` 是与自定义指令并列的独立区域
+ * （它是必须遵守、按 revision 冻结的协作规范，与"Agent 自定义指令/规则"性质不同）。
+ * 每个区域都会被 prompt capture 单独解析，便于事后按区域核对。
+ */
+export function buildChatSystemPromptSections(
   instructions: ChatPiAgentDefinition["customInstructions"],
 ): string | undefined {
   const content = instructions.map(({ text }) => text.trim()).filter((value) => value !== "");
-  if (content.length === 0) return undefined;
-  return [
-    "<chat_agent_custom_instructions>",
-    content.join("\n\n"),
-    "</chat_agent_custom_instructions>",
-  ].join("\n");
+  const harness = content.filter((text) => text.startsWith("<chat_interaction_harness"));
+  const custom = content.filter((text) => !text.startsWith("<chat_interaction_harness"));
+  const sections: string[] = [];
+  if (custom.length > 0) {
+    sections.push(["<chat_agent_custom_instructions>", custom.join("\n\n"), "</chat_agent_custom_instructions>"].join("\n"));
+  }
+  sections.push(...harness);
+  return sections.length === 0 ? undefined : sections.join("\n\n");
 }
 
 /**
@@ -139,7 +147,7 @@ export async function createChatPiAgentSession(
     ? declaredContextFiles
     : declaredContextFiles.filter((file) =>
         assembly !== undefined && file.path.startsWith(`${assembly.snapshot.ownWorkspace}/`));
-  const customInstructions = buildChatAgentCustomInstructions([
+  const customInstructions = buildChatSystemPromptSections([
     ...agent.customInstructions,
     ...(workflowContext?.project === undefined ? [] : [{ text: projectContextInstructions(workflowContext.project) }]),
     ...(assembly === undefined ? [] : [{ text: collaborationInstructions(assembly.snapshot) }]),

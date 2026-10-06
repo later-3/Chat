@@ -28,7 +28,7 @@ test("交互 harness 读取：通用规范 + 该 Long Agent 在该 project 下�
   assert.equal(sections.project?.name, "交互harness.md");
 
   const instruction = interactionHarnessInstruction(sections);
-  assert.match(instruction, /<interaction_harness revision="sha256:[0-9a-f]{64}">/);
+  assert.match(instruction, /<chat_interaction_harness revision="sha256:[0-9a-f]{64}">/);
   assert.match(instruction, /R1 以业务目标为核心/);
   assert.match(instruction, /只在该项目生效/);
 
@@ -44,6 +44,6 @@ test("装配把交互 harness 作为规则注入 Agent 的指令", async (t) => 
   writeHarness(f.home, "interaction-harness/standards/需求规范.md", "# 需求规范\n\n先对齐场景与交互。");
   const prepared = await prepareLongAgentAssembly({ agent, chatHome: f.home, projectId: "a", turnId: "harness-turn" });
   const instructions = prepared.agent.customInstructions.map((instruction) => instruction.text).join("\n");
-  assert.match(instructions, /<interaction_harness revision="sha256:/);
+  assert.match(instructions, /<chat_interaction_harness revision="sha256:/);
   assert.match(instructions, /先对齐场景与交互/);
 });

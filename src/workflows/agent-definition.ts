@@ -5,7 +5,7 @@ import type {
 import type { ChatSession } from "../chat-session.js";
 import type { ChatToolRuntimeContext } from "../tools/framework.js";
 import {
-  buildChatAgentCustomInstructions,
+  buildChatSystemPromptSections,
   createChatPiAgentSession,
   type CreatedChatPiAgentSession,
 } from "../agents/pi-agent-session.js";
@@ -49,7 +49,7 @@ export interface WorkflowAgentSessionExtensions {
 }
 
 export type CreatedWorkflowAgentSession = CreatedChatPiAgentSession;
-export { buildChatAgentCustomInstructions };
+export { buildChatSystemPromptSections };
 
 /**
  * Creates one Pi AgentSession from the Agent definition owned by a Workflow.

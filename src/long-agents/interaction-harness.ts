@@ -68,13 +68,13 @@ export function interactionHarnessInstruction(sections: InteractionHarnessSectio
   const body = parts.join("\n\n---\n\n");
   const revision = `sha256:${createHash("sha256").update(body).digest("hex")}`;
   return [
-    `<interaction_harness revision="${revision}">`,
+    `<chat_interaction_harness revision="${revision}">`,
     "以下是用户与该项目的交互 harness（协作规范），必须在本次开发中遵守；",
     "新概念先解释、决策先给依据、结论按第一性原理、每轮回填案例与每日记录。",
     "完整资产（飞轮、概念空间、案例、每日记录）位于 Chat Home 的 interaction-harness 目录，可按需读取。",
     "",
     body,
-    "</interaction_harness>",
+    "</chat_interaction_harness>",
   ].join("\n");
 }
 

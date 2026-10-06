@@ -12,6 +12,25 @@ import {
   readPromptCapturePayload,
 } from "../src/session-prompt-capture.ts";
 
+test("交互 harness 与自定义指令被解析为两个独立区域", () => {
+  const regions = parseProviderPayloadRegions({
+    model: "m",
+    messages: [{
+      role: "system",
+      content: [
+        "Pi base",
+        "<chat_agent_custom_instructions>\n规则正文\n</chat_agent_custom_instructions>",
+        '<chat_interaction_harness revision="sha256:abc">\n协作规范正文\n</chat_interaction_harness>',
+      ].join("\n\n"),
+    }],
+  }, undefined);
+  const kinds = (regions.systemPrompt?.sections ?? []).map((section) => section.kind);
+  assert.deepEqual(kinds, ["pi-base", "chat-custom-instructions", "chat-interaction-harness"]);
+  const harness = regions.systemPrompt?.sections.find((section) => section.kind === "chat-interaction-harness");
+  assert.match(harness?.text ?? "", /协作规范正文/);
+  assert.doesNotMatch(regions.systemPrompt?.sections.find((section) => section.kind === "chat-custom-instructions")?.text ?? "", /协作规范/);
+});
+
 test("openai-completions payloads decompose into managed regions", () => {
   const payload = {
     model: "debug-model",
