@@ -1,4 +1,4 @@
-import type { WorkflowAgentDefinition } from "../workflows/agent-config.js";
+import type { AgentInstruction, WorkflowAgentDefinition } from "../workflows/agent-config.js";
 import { resolveLongAgentWorkflowAgent } from "./workflow-configuration.js";
 import { ensureAgentCalendar } from "./project-agent.js";
 import { DAILY_ARCHIVE_INSTRUCTIONS } from "./daily-summary-task.js";
@@ -6,7 +6,7 @@ import { agentDate } from "./calendar.js";
 import { ensureAgentHomeProject } from "../projects/registry.js";
 import { hasInteractionHarness, interactionHarnessInstruction, readInteractionHarness } from "./interaction-harness.js";
 import { ensureLongAgentResourceDirs, longAgentConfigRoot } from "./storage.js";
-import { buildAgentGroupContextInstructions, readLongAgentAgentGroup, type readFrozenLongAgentAgentGroup } from "./agent-group-service.js";
+import { buildAgentGroupContextSections, readLongAgentAgentGroup, type readFrozenLongAgentAgentGroup } from "./agent-group-service.js";
 import { buildLongAgentHandoff } from "./summaries.js";
 import { longAgentScopeInstructions, type LongAgentScope } from "./scope.js";
 import type { LongAgentConfig } from "./types.js";
@@ -62,7 +62,7 @@ export async function prepareLongAgentAssembly(input: {
       customInstructions: [
         ...execution.customInstructions,
         ...(execution === agent.definition ? [] : identityInstructions),
-        ...(group === undefined ? [] : [{ text: buildAgentGroupContextInstructions(group) }]),
+        ...(group === undefined ? [] : buildAgentGroupContextSections(group).map((text): AgentInstruction => ({ text }))),
         ...(includeHandoff ? [{ text: DAILY_ARCHIVE_INSTRUCTIONS }] : []),
         ...(handoff === null ? [] : [{ text: handoff }]),
         ...(scope === undefined ? [] : [{ text: longAgentScopeInstructions(scope, { agentName: agent.name }) }]),

@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { createRouter } from "nitro/h3";
 import {
-  buildAgentGroupContextInstructions,
+  buildAgentGroupContextSections,
   readLongAgentAgentGroup,
 } from "../../src/long-agents/agent-group-service.ts";
 import { writeLongAgentRegistry } from "../../src/long-agents/storage.ts";
@@ -181,10 +181,17 @@ test("Agent Group live snapshot is strict, atomically cached, and used stale whi
   const live = await readLongAgentAgentGroup("nexus", chatHome);
   assert.equal(live.stale, false);
   assert.equal(live.group.id, "nano-agent-1");
-  assert.match(buildAgentGroupContextInstructions(live), /Always maintain a clear working ledger/);
-  assert.match(buildAgentGroupContextInstructions(live), /The user values continuity/);
-  assert.match(buildAgentGroupContextInstructions(live), /<runtime_identity_name>Nexus Nano<\/runtime_identity_name>/);
-  assert.match(buildAgentGroupContextInstructions(live), /authoritative runtime identity/);
+  // 身份与长期记忆是**两个独立区域**（性质不同，来源同为 NanoClaw）
+  const sections = buildAgentGroupContextSections(live);
+  assert.equal(sections.length, 2, "身份区与记忆区各自独立");
+  assert.match(sections[0] ?? "", /^<chat_identity source="nanoclaw"/);
+  assert.match(sections[0] ?? "", /<runtime_identity_name>Nexus Nano<\/runtime_identity_name>/);
+  assert.match(sections[0] ?? "", /authoritative runtime identity/);
+  assert.match(sections[0] ?? "", /Always maintain a clear working ledger/);
+  assert.match(sections[1] ?? "", /^<chat_long_term_memory source="nanoclaw"/);
+  assert.match(sections[1] ?? "", /<agent_memory_core path=/);
+  assert.doesNotMatch(sections[0] ?? "", /<agent_memory_core/, "记忆不落在身份区");
+  assert.doesNotMatch(sections[1] ?? "", /runtime_identity_name/, "身份不落在记忆区");
 
   const cachePath = path.join(chatHome, "runtime", "long-agents", "nexus", "agent-group-snapshot.json");
   const cache = JSON.parse(fs.readFileSync(cachePath, "utf8"));
@@ -218,7 +225,7 @@ test("Agent Group live snapshot is strict, atomically cached, and used stale whi
   const stale = await readLongAgentAgentGroup("nexus", chatHome);
   assert.equal(stale.stale, true);
   assert.equal(stale.group.revision, live.group.revision);
-  assert.match(buildAgentGroupContextInstructions(stale), /最后有效缓存/);
+  assert.match(buildAgentGroupContextSections(stale).join("\n"), /最后有效缓存/);
 });
 
 test("Long Agent Agent Group and Memory browser APIs expose safe strict projections", { concurrency: false }, async (t) => {
@@ -339,11 +346,11 @@ test("required identity fails over budget; optional core index uses Unicode-safe
       },
     },
   };
-  assert.throws(() => buildAgentGroupContextInstructions(document), /拒绝截断/);
+  assert.throws(() => buildAgentGroupContextSections(document), /拒绝截断/);
   document.group.standingInstructions = "STANDING";
-  assert.throws(() => buildAgentGroupContextInstructions(document), /拒绝截断/);
+  assert.throws(() => buildAgentGroupContextSections(document), /拒绝截断/);
   document.coreMemory.definition.content = "DEFINITION";
-  const context = buildAgentGroupContextInstructions(document);
+  const context = buildAgentGroupContextSections(document).join("\n");
   assert.equal(context.includes("TAIL-STANDING"), false);
   assert.equal(context.includes("TAIL-INDEX"), false);
   assert.equal(context.includes("TAIL-DEFINITION"), false);

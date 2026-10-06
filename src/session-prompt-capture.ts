@@ -39,7 +39,7 @@ export interface PromptCaptureTurn {
 }
 
 export interface PromptCaptureSystemSection {
-  readonly kind: "chat-project" | "chat-collaboration" | "chat-custom-instructions" | "chat-interaction-harness" | "pi-project-context" | "pi-base" | "other";
+  readonly kind: "chat-project" | "chat-collaboration" | "chat-custom-instructions" | "chat-interaction-harness" | "chat-identity" | "chat-long-term-memory" | "pi-project-context" | "pi-base" | "other";
   readonly label: string;
   readonly text: string;
 }
@@ -113,6 +113,8 @@ const CHAT_SECTION_TAGS: readonly { readonly kind: PromptCaptureSystemSection["k
   { kind: "chat-collaboration", tag: "chat_project_collaboration", label: "协作上下文" },
   { kind: "chat-custom-instructions", tag: "chat_agent_custom_instructions", label: "自定义指令（含规则）" },
   { kind: "chat-interaction-harness", tag: "chat_interaction_harness", label: "交互 harness（协作规范）" },
+  { kind: "chat-identity", tag: "chat_identity", label: "身份与职责" },
+  { kind: "chat-long-term-memory", tag: "chat_long_term_memory", label: "长期记忆（Agent Memory）" },
 ];
 
 function splitSystemSections(text: string): PromptCaptureSystemSection[] {

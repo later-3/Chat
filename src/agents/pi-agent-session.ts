@@ -90,17 +90,27 @@ export interface CreatedChatPiAgentSession {
  * （它是必须遵守、按 revision 冻结的协作规范，与"Agent 自定义指令/规则"性质不同）。
  * 每个区域都会被 prompt capture 单独解析，便于事后按区域核对。
  */
+/** Chat 的顶级 system prompt 区域：它们按**性质**划分，必须与“自定义指令”并列，不能嵌套在其中。 */
+const CHAT_TOP_LEVEL_TAGS = [
+  "<chat_interaction_harness",
+  "<chat_identity",
+  "<chat_long_term_memory",
+  "<chat_project_collaboration",
+  "<chat_current_project",
+] as const;
+
 export function buildChatSystemPromptSections(
   instructions: ChatPiAgentDefinition["customInstructions"],
 ): string | undefined {
   const content = instructions.map(({ text }) => text.trim()).filter((value) => value !== "");
-  const harness = content.filter((text) => text.startsWith("<chat_interaction_harness"));
-  const custom = content.filter((text) => !text.startsWith("<chat_interaction_harness"));
+  const isTopLevel = (text: string): boolean => CHAT_TOP_LEVEL_TAGS.some((tag) => text.startsWith(tag));
+  const topLevel = content.filter(isTopLevel);
+  const custom = content.filter((text) => !isTopLevel(text));
   const sections: string[] = [];
   if (custom.length > 0) {
     sections.push(["<chat_agent_custom_instructions>", custom.join("\n\n"), "</chat_agent_custom_instructions>"].join("\n"));
   }
-  sections.push(...harness);
+  sections.push(...topLevel);
   return sections.length === 0 ? undefined : sections.join("\n\n");
 }
 

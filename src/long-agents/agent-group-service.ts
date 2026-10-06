@@ -562,7 +562,16 @@ export async function mutateLongAgentMemory(longAgentId: unknown, value: unknown
   return { schemaVersion: 1, stale: false, agentGroupId: target.agent.nanoclawAgentGroupId, ...deleted };
 }
 
-export function buildAgentGroupContextInstructions(document: LongAgentAgentGroupDocument): string {
+/**
+ * Agent Group 的内容按**性质**分成两个独立 prompt 区域（来源用属性标注）：
+ *
+ * - `<chat_identity>`：身份与职责（Agent Group name、identity rule、standing instructions）
+ * - `<chat_long_term_memory>`：长期记忆事实（Agent Memory core 与系统定义、缓存状态）
+ *
+ * 两者都来自 NanoClaw，但性质不同（身份 vs 记忆），因此不放在同一个区域里——
+ * 区域按性质划分，来源只作为属性，这样完整 prompt 才能按区域核对与优化。
+ */
+export function buildAgentGroupContextSections(document: LongAgentAgentGroupDocument): readonly string[] {
   function promptText(value: string, maxCodePoints: number, field: string): string {
     const codePoints = [...value];
     if (codePoints.length <= maxCodePoints) return value;
@@ -588,16 +597,21 @@ export function buildAgentGroupContextInstructions(document: LongAgentAgentGroup
     MAX_PROMPT_CORE_MEMORY_CODE_POINTS,
     document.coreMemory.definition.path,
   );
-  return [
-    `<nanoclaw_agent_group_context agent_group_id="${document.group.id}" revision="${document.group.revision}" stale="${String(document.stale)}">`,
+  const identity = [
+    `<chat_identity source="nanoclaw" agent_group_id="${document.group.id}" revision="${document.group.revision}" stale="${String(document.stale)}">`,
     `<runtime_identity_name>${document.group.name}</runtime_identity_name>`,
     "<identity_rule>NanoClaw Agent Group name and standing instructions are the authoritative runtime identity and long-running role. Chat display alias and summary are UI metadata only.</identity_rule>",
     standingPrompt ? `<standing_instructions>\n${standingPrompt}\n</standing_instructions>` : "",
+    "</chat_identity>",
+  ].filter((line) => line !== "").join("\n");
+  const memory = [
+    `<chat_long_term_memory source="nanoclaw" agent_group_id="${document.group.id}" revision="${document.coreMemory.index.revision}" stale="${String(document.stale)}">`,
     `<agent_memory_core path="${document.coreMemory.index.path}" revision="${document.coreMemory.index.revision}">\n${indexPrompt}\n</agent_memory_core>`,
     `<agent_memory_system_definition path="${document.coreMemory.definition.path}" revision="${document.coreMemory.definition.revision}">\n${definitionPrompt}\n</agent_memory_system_definition>`,
     document.stale
       ? "<context_notice>NanoClaw当前不可达；以上Agent Group上下文来自最后有效缓存，可能已经过期。</context_notice>"
       : "",
-    "</nanoclaw_agent_group_context>",
+    "</chat_long_term_memory>",
   ].filter((line) => line !== "").join("\n");
+  return [identity, memory];
 }
