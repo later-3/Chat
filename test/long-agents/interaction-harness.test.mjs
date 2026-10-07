@@ -37,19 +37,22 @@ test("交互 harness 读取：通用规范 + 该 Long Agent 在该 project 下�
   writeHarness(f.home, "interaction-harness/AGENTS.md", "# 交互 harness 本层指引\n\n动手前先读案例。");
   writeHarness(f.home, "interaction-harness/cases.md", "## C9（反例）示例\n\n内容");
   writeHarness(f.home, "interaction-harness/flywheel.md", "# 飞轮\n\n为什么这么做");
-  writeHarness(f.home, "interaction-harness/concept-space.md", "# 概念空间\n\n## §1 飞轮\n\n## §2 概念空间\n\n细则正文");
+  writeHarness(f.home, "interaction-harness/concept-space.md", "# 概念空间\n\n## 元规则\n\n怎样建立共同语言");
+  writeHarness(f.home, "interaction-harness/concept-space/00-索引.md", "# 概念索引\n\n| 概念 | 正文 |");
+  writeHarness(f.home, "interaction-harness/concept-space/harness/00-索引.md", "# harness 作用域索引");
   writeHarness(f.home, "interaction-harness/standards/task规范.md", "# 任务规范");
   const withAssets = await readInteractionHarness({ chatHome: f.home, longAgentId: "friend", projectId: "a" });
   assert.equal(withAssets.assets.some((item) => item.name === "AGENTS.md"), true, "本层指引必须注入");
   assert.equal(withAssets.assets.some((item) => item.name === "cases.md"), true, "案例必须注入");
   assert.equal(withAssets.assets.some((item) => item.name === "flywheel.md"), true, "飞轮必须注入");
-  assert.equal(withAssets.index.some((item) => item.name === "concept-space.md"), true, "概念空间以索引注入");
+  assert.equal(withAssets.assets.some((item) => item.name === "concept-space.md"), true, "概念空间元规则全文注入");
+  assert.equal(withAssets.assets.some((item) => item.name === "concept-space/00-索引.md"), true, "概念索引全文注入");
   assert.equal(withAssets.common.some((item) => item.name === "task规范.md"), true, "任务规范属于通用规范");
   const assetInstruction = interactionHarnessInstruction(withAssets);
   assert.match(assetInstruction, /C9（反例）示例/, "注入内容包含案例正文");
   assert.match(assetInstruction, /先读反例与正例/, "注入内容提示先读案例");
-  assert.match(assetInstruction, /## §1 飞轮/, "概念空间索引包含章节标题");
-  assert.doesNotMatch(assetInstruction, /细则正文/, "概念空间正文不进注入（按路径读取）");
+  assert.match(assetInstruction, /怎样建立共同语言/, "元规则全文进注入");
+  assert.match(assetInstruction, /概念索引/, "概念索引全文进注入");
 
   const other = await readInteractionHarness({ chatHome: f.home, longAgentId: "friend", projectId: "b" });
   assert.deepEqual(other.projects, []);

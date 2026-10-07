@@ -7,12 +7,15 @@ import { getChatHomePaths } from "../chat-home.js";
 /** 通用规范的固定读取顺序（需求 → 前端 → 开发 → 任务 → 维护）；只读存在的文件。 */
 const COMMON_STANDARDS = ["需求规范.md", "前端规范.md", "开发规范.md", "task规范.md", "测试规范.md", "维护规范.md"] as const;
 /**
- * 必须全文注入的 harness 资产：本层指引（AGENTS.md）、案例（正例与反例）、飞轮（积累）。
+ * 必须全文注入的 harness 资产：本层指引（AGENTS.md）、案例（正例与反例）、飞轮（积累）、
+ * 概念空间的元规则与索引（概念正文按需读取）。
  * 案例与飞轮是“量变引起质变”的来源，每次交互都要先读；与规范同等重要，因此一起注入。
  */
-const HARNESS_ASSETS = ["AGENTS.md", "cases.md", "flywheel.md"] as const;
-/** 概念空间体积较大：注入其章节索引，细节按路径读取，避免每轮塞满上下文。 */
-const HARNESS_INDEX = "concept-space.md";
+const HARNESS_ASSETS = [
+  "AGENTS.md", "cases.md", "flywheel.md",
+  // 概念空间：注入元规则与两级索引（都很短）；概念正文按需读取，不占用每轮上下文。
+  "concept-space.md", "concept-space/00-索引.md", "concept-space/harness/00-索引.md",
+] as const;
 /** 某个 Long Agent 在某个 project 下的专属指引/规范（文件名一律英文）。 */
 const PROJECT_STANDARDS = ["project-guidance.md", "AGENTS.md"] as const;
 
@@ -31,19 +34,8 @@ export interface InteractionHarnessSections {
   readonly common: readonly { readonly name: string; readonly text: string }[];
   /** 必须全文注入的资产（案例、飞轮）。 */
   readonly assets: readonly { readonly name: string; readonly text: string }[];
-  /** 只注入索引的资产（概念空间章节清单）。 */
-  readonly index: readonly { readonly name: string; readonly text: string }[];
   /** 该 Long Agent 在该 project 下的专属文件（可多个：project-guidance.md、AGENTS.md）。 */
   readonly projects: readonly { readonly name: string; readonly text: string }[];
-}
-
-/** 提取 Markdown 一、二级标题，作为概念空间的索引。 */
-function headingIndex(text: string): string {
-  return text
-    .split("\n")
-    .filter((line) => /^#{1,2} \S/.test(line))
-    .join("\n")
-    .trim();
 }
 
 /**
@@ -71,13 +63,7 @@ export async function readInteractionHarness(input: {
     const text = await readIfPresent(resolve(harnessDir, name));
     if (text !== undefined) assets.push({ name, text });
   }
-  const index: { name: string; text: string }[] = [];
-  const conceptSpace = await readIfPresent(resolve(harnessDir, HARNESS_INDEX));
-  if (conceptSpace !== undefined) {
-    const headings = headingIndex(conceptSpace);
-    if (headings !== "") index.push({ name: HARNESS_INDEX, text: headings });
-  }
-  if (input.projectId === null) return { common, assets, index, projects: [] };
+  if (input.projectId === null) return { common, assets, projects: [] };
   const projectDir = resolve(paths.root, "long-agents", input.longAgentId, "projects", input.projectId);
   const projects: { name: string; text: string }[] = [];
   // 收集全部存在的项目专属文件：早退会漏掉后面的文件（如 AGENTS.md 被 project-guidance.md 挡掉）。
@@ -85,13 +71,12 @@ export async function readInteractionHarness(input: {
     const text = await readIfPresent(resolve(projectDir, name));
     if (text !== undefined) projects.push({ name, text });
   }
-  return { common, assets, index, projects };
+  return { common, assets, projects };
 }
 
 /** 是否有任何可注入内容（避免为空时也写一段壳）。 */
 export function hasInteractionHarness(sections: InteractionHarnessSections): boolean {
-  return sections.common.length > 0 || sections.assets.length > 0 || sections.index.length > 0
-    || sections.projects.length > 0;
+  return sections.common.length > 0 || sections.assets.length > 0 || sections.projects.length > 0;
 }
 
 /**
@@ -102,9 +87,6 @@ export function interactionHarnessInstruction(sections: InteractionHarnessSectio
   const parts: string[] = [];
   for (const section of sections.common) parts.push(`## 通用规范 · ${section.name}\n\n${section.text}`);
   for (const asset of sections.assets) parts.push(`## 通用资产 · ${asset.name}\n\n${asset.text}`);
-  for (const asset of sections.index) {
-    parts.push(`## 索引 · ${asset.name}（需要细节时读取该文件）\n\n${asset.text}`);
-  }
   for (const project of sections.projects) {
     parts.push(`## 本项目专属规范 · ${project.name}\n\n${project.text}`);
   }
@@ -114,7 +96,7 @@ export function interactionHarnessInstruction(sections: InteractionHarnessSectio
     `<chat_interaction_harness revision="${revision}">`,
     "以下是用户与该项目的交互 harness（协作规范 + 案例 + 概念索引），必须在本次开发中遵守；",
     "**动手前先读反例与正例**：正例照做，反例不得重犯；新概念先解释、决策先给依据、结论按第一性原理。",
-    "每轮结束后回填案例（正例/反例）与每日记录；概念空间的完整正文按上面的索引路径读取。",
+    "每轮结束后回填案例（正例/反例）与每日记录；需要某个概念的完整解释时，按概念索引读取对应正文。",
     "",
     body,
     "</chat_interaction_harness>",
