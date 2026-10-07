@@ -17,7 +17,11 @@ const HARNESS_ASSETS = [
   "concept-space.md", "concept-space/00-索引.md", "concept-space/harness/00-索引.md",
 ] as const;
 /** 某个 Long Agent 在某个 project 下的专属指引/规范（文件名一律英文）。 */
-const PROJECT_STANDARDS = ["project-guidance.md", "AGENTS.md"] as const;
+const PROJECT_STANDARDS = [
+  "project-guidance.md", "AGENTS.md",
+  // 项目层概念索引：项目层可以有概念正文（一概念一正文），其索引同样要在每轮可见，正文按需读取。
+  "concept-space/00-索引.md",
+] as const;
 
 async function readIfPresent(path: string): Promise<string | undefined> {
   try {
