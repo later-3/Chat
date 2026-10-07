@@ -3,7 +3,9 @@
 ## 文档入口与同步
 
 - Agent开发Chat前读取`.chat/skills/chat-architecture/SKILL.md`；按`docs/development/agent-contribution.md`先分析场景和机制，再进入架构/技术方案与实施。跨模块核对`docs/architecture/chat-module-contracts.md`，诊断与交接见`docs/development/diagnostics.md`；具体红线例外须有理由、替代保障和明确架构审核，不能先旁路再补文档。
-- 开发 Chat 时的协作规范（需求规范、前端规范、维护规范）与资产（飞轮、概念空间、正反案例、每日记录）都在用户的交互 harness 目录 `~/.chat/interaction-harness/`，**不在仓库里复制副本**；仓库只保留索引 `docs/standards/README.md`。接到需求、做决策、开始前端工作前按该目录 README 与 `standards/` 执行；请用户选择时必须给出依据（参考出处、正反案例、难度与风险）。
+- 开发 Chat 时的协作规范（需求、前端、开发、task、测试、维护）与资产（概念空间、飞轮、正反案例、每日记录、Todo）都在用户的交互 harness 目录 `~/.chat/interaction-harness/`，**不在仓库里复制副本**；仓库只保留索引 `docs/standards/README.md`。
+  - **做事前**：读该目录的 `AGENTS.md`（本层指引：角色与责任、阅读顺序、部件与关系、七个板块协议、版本控制）与 `standards/`；接到需求、做决策、开始前端工作前按此执行；请用户选择时必须给出依据（参考出处、正反案例、难度与风险）。
+  - **每轮结束（交付回复之前，不可跳过）**：新正反例 → `cases.md`；可复用结论 → `flywheel.md`；当天记录 → `long-agents/<agent>/projects/<project>/daily/<今天>.md`（**追加**，时间戳由程序生成）；遗留事项 → 该项目的 `todo/`。
 
 ## 项目定位
 
