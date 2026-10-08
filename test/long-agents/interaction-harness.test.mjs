@@ -22,15 +22,15 @@ test("交互 harness 读取：通用规范 + 该 Long Agent 在该 project 下�
   writeHarness(f.home, "interaction-harness/standards/需求规范.md", "# 需求规范\n\nR1 以业务目标为核心。");
   writeHarness(f.home, "interaction-harness/standards/前端规范.md", "# 前端规范\n\n先梳理信息关系。");
   writeHarness(f.home, "long-agents/friend/projects/a/project-guidance.md", "# 专属规范\n\n只在该项目生效。");
-  writeHarness(f.home, "long-agents/friend/projects/a/cases.md", "# 项目层案例\n\n## C1（反例）示例");
+  writeHarness(f.home, "long-agents/friend/projects/a/cases/2026-10-05.md", "# 项目层案例\n\n## C1（反例）示例");
   writeHarness(f.home, "long-agents/friend/projects/a/flywheel.md", "# 项目层飞轮");
   writeHarness(f.home, "long-agents/friend/projects/a/concept-space.md", "# 项目层概念空间");
 
   const sections = await readInteractionHarness({ chatHome: f.home, longAgentId: "friend", projectId: "a" });
   assert.deepEqual(sections.common.map((item) => item.name), ["需求规范.md", "前端规范.md"]);
   assert.deepEqual(sections.projects.map((item) => item.name),
-    ["project-guidance.md", "cases.md", "flywheel.md", "concept-space.md"],
-    "项目层专属内容（指引/案例/飞轮/概念）都要注入");
+    ["project-guidance.md", "flywheel.md", "concept-space.md", "cases/2026-10-05.md"],
+    "项目层专属内容（指引/飞轮/概念 + 按日期的案例）都要注入");
 
   const instruction = interactionHarnessInstruction(sections);
   assert.match(instruction, /<chat_interaction_harness revision="sha256:[0-9a-f]{64}">/);
@@ -40,7 +40,9 @@ test("交互 harness 读取：通用规范 + 该 Long Agent 在该 project 下�
   // 专属规范按 (Long Agent × project) 隔离：其他项目读不到
   // 案例（正例/反例）必须全文注入：每次交互前都要先读，否则飞轮无法持续升级。
   writeHarness(f.home, "interaction-harness/AGENTS.md", "# 交互 harness 本层指引\n\n动手前先读案例。");
-  writeHarness(f.home, "interaction-harness/cases.md", "## C9（反例）示例\n\n内容");
+  writeHarness(f.home, "interaction-harness/cases/AGENTS.md", "# 案例目录\n\n## 编号索引");
+  writeHarness(f.home, "interaction-harness/cases/2026-10-05.md", "## C9（反例）示例\n\n内容");
+  writeHarness(f.home, "interaction-harness/cases/2026-10-08.md", "## C66（反例）分层");
   writeHarness(f.home, "interaction-harness/flywheel.md", "# 飞轮\n\n为什么这么做");
   writeHarness(f.home, "interaction-harness/concept-space.md", "# 概念空间\n\n## 元规则\n\n怎样建立共同语言");
   writeHarness(f.home, "interaction-harness/concept-space/00-索引.md", "# 概念索引\n\n| 概念 | 正文 |");
@@ -48,7 +50,8 @@ test("交互 harness 读取：通用规范 + 该 Long Agent 在该 project 下�
   writeHarness(f.home, "interaction-harness/standards/task规范.md", "# 任务规范");
   const withAssets = await readInteractionHarness({ chatHome: f.home, longAgentId: "friend", projectId: "a" });
   assert.equal(withAssets.assets.some((item) => item.name === "AGENTS.md"), true, "本层指引必须注入");
-  assert.equal(withAssets.assets.some((item) => item.name === "cases.md"), true, "案例必须注入");
+  assert.equal(withAssets.assets.some((item) => item.name === "cases/2026-10-05.md"), true, "案例目录按日期注入");
+  assert.equal(withAssets.assets.some((item) => item.name === "cases/2026-10-08.md"), true, "多日期文件都注入");
   assert.equal(withAssets.assets.some((item) => item.name === "flywheel.md"), true, "飞轮必须注入");
   assert.equal(withAssets.assets.some((item) => item.name === "concept-space.md"), true, "概念空间元规则全文注入");
   assert.equal(withAssets.assets.some((item) => item.name === "concept-space/00-索引.md"), true, "概念索引全文注入");

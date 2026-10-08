@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { getChatHomePaths } from "../chat-home.js";
 
 /** 通用规范的固定读取顺序（需求 → 前端 → 开发 → 任务 → 维护）；只读存在的文件。 */
@@ -11,16 +11,20 @@ const COMMON_STANDARDS = ["需求规范.md", "前端规范.md", "开发规范.md
  * 概念空间的元规则与索引（概念正文按需读取）。
  * 案例与飞轮是“量变引起质变”的来源，每次交互都要先读；与规范同等重要，因此一起注入。
  */
-const HARNESS_ASSETS = [
-  "AGENTS.md", "cases.md", "flywheel.md",
+const HARNESS_ASSET_FILES = [
+  "AGENTS.md", "flywheel.md",
   // 概念空间：注入元规则与两级索引（都很短）；概念正文按需读取，不占用每轮上下文。
   "concept-space.md", "concept-space/00-索引.md", "concept-space/harness/00-索引.md",
 ] as const;
+/** 目录型资产：案例按「产生日期」分文件存放（避免单文件过大），注入时读取目录下全部 Markdown。 */
+const HARNESS_ASSET_DIRS = ["cases"] as const;
 /** 某个 Long Agent 在某个 project 下的专属指引/规范（文件名一律英文）。 */
 const PROJECT_STANDARDS = [
-  // 项目层：该 Long Agent 在该 project 下的专属内容（指引、案例、飞轮、概念），全部随每轮注入。
-  "project-guidance.md", "AGENTS.md", "cases.md", "flywheel.md", "concept-space.md",
+  // 项目层：该 Long Agent 在该 project 下的专属内容（指引、飞轮、概念），随每轮注入。
+  "project-guidance.md", "AGENTS.md", "flywheel.md", "concept-space.md",
 ] as const;
+/** 项目层目录：本项目案例（按日期分文件）。 */
+const PROJECT_STANDARD_DIRS = ["cases"] as const;
 
 async function readIfPresent(path: string): Promise<string | undefined> {
   try {
@@ -30,6 +34,23 @@ async function readIfPresent(path: string): Promise<string | undefined> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
+}
+
+/** 读取目录下的全部 Markdown（按文件名排序）；目录不存在时返回空。 */
+async function readDirectoryFiles(dir: string): Promise<{ name: string; text: string }[]> {
+  let names: string[];
+  try {
+    names = (await readdir(dir)).filter((name) => name.endsWith(".md")).sort();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const files: { name: string; text: string }[] = [];
+  for (const name of names) {
+    const text = await readIfPresent(resolve(dir, name));
+    if (text !== undefined) files.push({ name: `${basename(dir)}/${name}`, text });
+  }
+  return files;
 }
 
 export interface InteractionHarnessSections {
@@ -62,9 +83,12 @@ export async function readInteractionHarness(input: {
     if (text !== undefined) common.push({ name, text });
   }
   const assets: { name: string; text: string }[] = [];
-  for (const name of HARNESS_ASSETS) {
+  for (const name of HARNESS_ASSET_FILES) {
     const text = await readIfPresent(resolve(harnessDir, name));
     if (text !== undefined) assets.push({ name, text });
+  }
+  for (const dir of HARNESS_ASSET_DIRS) {
+    assets.push(...await readDirectoryFiles(resolve(harnessDir, dir)));
   }
   if (input.projectId === null) return { common, assets, projects: [] };
   const projectDir = resolve(paths.root, "long-agents", input.longAgentId, "projects", input.projectId);
@@ -73,6 +97,9 @@ export async function readInteractionHarness(input: {
   for (const name of PROJECT_STANDARDS) {
     const text = await readIfPresent(resolve(projectDir, name));
     if (text !== undefined) projects.push({ name, text });
+  }
+  for (const dir of PROJECT_STANDARD_DIRS) {
+    projects.push(...await readDirectoryFiles(resolve(projectDir, dir)));
   }
   return { common, assets, projects };
 }
