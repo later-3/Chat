@@ -27,3 +27,7 @@ deploy/macos/*.plist
 
 # Local agent workspace
 .trae/
+
+# 临时调试截图（不进仓库）
+Snipaste_*.png
+*.snipaste.png
