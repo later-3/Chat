@@ -18,6 +18,8 @@ const HARNESS_ASSET_FILES = [
 ] as const;
 /** 目录型资产：案例按「产生日期」分文件存放（避免单文件过大），注入时读取目录下全部 Markdown。 */
 const HARNESS_ASSET_DIRS = ["cases"] as const;
+/** 第一层纯规则：`protocol/` 四份（怎么做协作/任务/收尾/版本），缺失可降级（读不到按空计，不抛错）。 */
+const PROTOCOL_DIR = "protocol" as const;
 /** 某个 Long Agent 在某个 project 下的专属指引/规范（文件名一律英文）。 */
 const PROJECT_STANDARDS = [
   // 项目层：该 Long Agent 在该 project 下的专属内容（指引、飞轮、概念），随每轮注入。
@@ -58,6 +60,8 @@ export interface InteractionHarnessSections {
   readonly common: readonly { readonly name: string; readonly text: string }[];
   /** 必须全文注入的资产（案例、飞轮）。 */
   readonly assets: readonly { readonly name: string; readonly text: string }[];
+  /** 第一层纯规则（protocol/ 四份，缺失可降级为空）。 */
+  readonly protocol: readonly { readonly name: string; readonly text: string }[];
   /** 该 Long Agent 在该 project 下的专属文件（可多个：project-guidance.md、AGENTS.md）。 */
   readonly projects: readonly { readonly name: string; readonly text: string }[];
 }
@@ -90,7 +94,8 @@ export async function readInteractionHarness(input: {
   for (const dir of HARNESS_ASSET_DIRS) {
     assets.push(...await readDirectoryFiles(resolve(harnessDir, dir)));
   }
-  if (input.projectId === null) return { common, assets, projects: [] };
+  const protocol = await readDirectoryFiles(resolve(harnessDir, PROTOCOL_DIR));
+  if (input.projectId === null) return { common, assets, protocol, projects: [] };
   const projectDir = resolve(paths.root, "long-agents", input.longAgentId, "projects", input.projectId);
   const projects: { name: string; text: string }[] = [];
   // 收集全部存在的项目专属文件：早退会漏掉后面的文件（如 AGENTS.md 被 project-guidance.md 挡掉）。
@@ -101,12 +106,12 @@ export async function readInteractionHarness(input: {
   for (const dir of PROJECT_STANDARD_DIRS) {
     projects.push(...await readDirectoryFiles(resolve(projectDir, dir)));
   }
-  return { common, assets, projects };
+  return { common, assets, protocol, projects };
 }
 
 /** 是否有任何可注入内容（避免为空时也写一段壳）。 */
 export function hasInteractionHarness(sections: InteractionHarnessSections): boolean {
-  return sections.common.length > 0 || sections.assets.length > 0 || sections.projects.length > 0;
+  return sections.common.length > 0 || sections.assets.length > 0 || sections.protocol.length > 0 || sections.projects.length > 0;
 }
 
 /**
@@ -114,16 +119,22 @@ export function hasInteractionHarness(sections: InteractionHarnessSections): boo
  * 记录“这一轮遵守的是哪一版规范”。
  */
 export function interactionHarnessInstruction(sections: InteractionHarnessSections): string {
-  const parts: string[] = [];
-  for (const section of sections.common) parts.push(`## 通用规范 · ${section.name}\n\n${section.text}`);
-  for (const asset of sections.assets) parts.push(`## 通用资产 · ${asset.name}\n\n${asset.text}`);
+  const protocolParts: string[] = [];
+  for (const item of sections.protocol) protocolParts.push(`## 纯规则 · ${item.name}\n\n${item.text}`);
+  const sharedParts: string[] = [];
+  for (const section of sections.common) sharedParts.push(`## 通用规范 · ${section.name}\n\n${section.text}`);
+  for (const asset of sections.assets) sharedParts.push(`## 通用资产 · ${asset.name}\n\n${asset.text}`);
   for (const project of sections.projects) {
-    parts.push(`## 本项目专属规范 · ${project.name}\n\n${project.text}`);
+    sharedParts.push(`## 本项目专属规范 · ${project.name}\n\n${project.text}`);
   }
-  const body = parts.join("\n\n---\n\n");
+  const protocolBody = protocolParts.join("\n\n---\n\n");
+  const sharedBody = sharedParts.join("\n\n---\n\n");
+  const body = [protocolBody, sharedBody].filter((part) => part !== "").join("\n\n---\n\n");
   const revision = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+  const protocolRevision = `sha256:${createHash("sha256").update(protocolBody).digest("hex")}`;
+  const sharedRevision = `sha256:${createHash("sha256").update(sharedBody).digest("hex")}`;
   return [
-    `<chat_interaction_harness revision="${revision}">`,
+    `<chat_interaction_harness revision="${revision}" protocol_revision="${protocolRevision}" shared_revision="${sharedRevision}">`,
     "以下是用户与该项目的交互 harness（协作规范 + 案例 + 概念索引），必须在本次开发中遵守；",
     "**动手前先读反例与正例**：正例照做，反例不得重犯；新概念先解释、决策先给依据、结论按第一性原理。",
     "每轮结束后回填案例（正例/反例）与每日记录；需要某个概念的完整解释时，按概念索引读取对应正文。",

@@ -33,9 +33,22 @@ test("交互 harness 读取：通用规范 + 该 Long Agent 在该 project 下�
     "项目层专属内容（指引/飞轮/概念 + 按日期的案例）都要注入");
 
   const instruction = interactionHarnessInstruction(sections);
-  assert.match(instruction, /<chat_interaction_harness revision="sha256:[0-9a-f]{64}">/);
+  assert.match(instruction, /<chat_interaction_harness revision="sha256:[0-9a-f]{64}" protocol_revision="sha256:[0-9a-f]{64}" shared_revision="sha256:[0-9a-f]{64}">/);
   assert.match(instruction, /R1 以业务目标为核心/);
   assert.match(instruction, /只在该项目生效/);
+
+  // protocol/ 四份缺失可降级：读不到按空计，不抛错（D3）
+  assert.deepEqual(sections.protocol, []);
+  // protocol/ 存在时进入独立分区，双 revision 可区分协议变还是内容变
+  writeHarness(f.home, "interaction-harness/protocol/collaboration.md", "# 协作\n\n根本判据：5 分钟可续跑。");
+  writeHarness(f.home, "interaction-harness/protocol/task-lifecycle.md", "# 任务\n\n真相源层级。");
+  const withProtocol = await readInteractionHarness({ chatHome: f.home, longAgentId: "friend", projectId: "a" });
+  assert.deepEqual(withProtocol.protocol.map((item) => item.name), ["protocol/collaboration.md", "protocol/task-lifecycle.md"]);
+  const protocolInstruction = interactionHarnessInstruction(withProtocol);
+  assert.match(protocolInstruction, /## 纯规则 · protocol\/collaboration\.md/);
+  const merged = /revision="(sha256:[0-9a-f]{64})" protocol_revision="(sha256:[0-9a-f]{64})" shared_revision="(sha256:[0-9a-f]{64})"/.exec(protocolInstruction);
+  assert.ok(merged !== null);
+  assert.notEqual(merged[2], merged[3], "protocol 与 shared 为空时不应相等（本轮 protocol 非空）");
 
   // 专属规范按 (Long Agent × project) 隔离：其他项目读不到
   // 案例（正例/反例）必须全文注入：每次交互前都要先读，否则飞轮无法持续升级。
