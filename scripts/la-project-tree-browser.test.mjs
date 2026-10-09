@@ -175,10 +175,9 @@ test("the LA→Project→Session tree creates project-owned sessions and survive
   assert.ok(fs.readdirSync(alphaSessionDir).some((name) => name.includes(binding.sessionId)), "Session 文件落在 Agent 的项目树");
   assert.equal(await page.evaluate(`document.querySelector('[data-workspace-chat]').innerText.includes(${JSON.stringify(WORK_TEXT)})`), true);
 
-  // 会话动作入口是行内唯一的 “…” 菜单（列表行默认干净）：从菜单进入重命名。
-  await clickBySelector(`[data-session-menu="${binding.sessionId}"]`, "会话动作菜单触发器");
-  await page.waitFor(`document.querySelector('[data-session-action="rename"]') !== null`, { label: "会话动作菜单" });
-  await clickBySelector('[data-session-action="rename"]', "重命名菜单项");
+  // 会话动作收敛到 L1 那一行（会话行默认干净）：选中当前会话后直接用 L1 的重命名动作。
+  await page.waitFor(`document.querySelector('[data-session-action="rename"]') !== null && !document.querySelector('[data-session-action="rename"]').disabled`, { label: "L1 重命名动作就绪", timeoutMs: 30_000 });
+  await clickBySelector('[data-session-action="rename"]', "重命名动作");
   await page.waitFor(`document.querySelector('[data-project-tree-rename-input="${binding.sessionId}"]') !== null`, { label: "重命名输入框" });
   await page.evaluate(`(() => {
     const input = document.querySelector('[data-project-tree-rename-input="${binding.sessionId}"]');
@@ -192,10 +191,9 @@ test("the LA→Project→Session tree creates project-owned sessions and survive
   const renamedSession = await openRenamed({ projectId: "a", chatHome: home, sessionId: binding.sessionId, ownerLongAgentId: "friend" });
   assert.equal(renamedSession.manager.getSessionName(), "用户改的项目标题", "用户命名写入会话文件");
 
-  // 移除：同一菜单进入，确认后从列表消失、文件进入该 Agent 项目树下的移除区。
-  await clickBySelector(`[data-session-menu="${binding.sessionId}"]`, "会话动作菜单触发器");
-  await page.waitFor(`document.querySelector('[data-session-action="remove"]') !== null`, { label: "移除动作" });
-  await clickBySelector('[data-session-action="remove"]', "移除菜单项");
+  // 移除：同一 L1 行进入，确认后从列表消失、文件进入该 Agent 项目树下的移除区。
+  await page.waitFor(`document.querySelector('[data-session-action="remove"]') !== null && !document.querySelector('[data-session-action="remove"]').disabled`, { label: "L1 移除动作就绪", timeoutMs: 30_000 });
+  await clickBySelector('[data-session-action="remove"]', "移除动作");
   await page.waitFor(`document.querySelector('[role=alertdialog]') !== null`, { label: "移除确认" });
   await page.evaluate("Array.from(document.querySelectorAll('[role=alertdialog] button')).at(-1).click()");
   await page.waitFor(`document.querySelector('[data-project-tree-session="${binding.sessionId}"]') === null`, { label: "移除后列表不再显示", timeoutMs: 30_000 });
