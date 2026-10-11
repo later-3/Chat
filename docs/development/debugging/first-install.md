@@ -62,7 +62,7 @@ pnpm debug:stop
 
 不需要 Nano 时使用 `pnpm debug:start` / `pnpm debug:smoke`。TUI 要交互终端，用 `--tui` 加入整套，或 `pnpm debug:tui` 独立连接已有调试 Backend。F5 的单模块/任意组合与具体点击步骤只在[环境与 VS Code](./environment.md)维护。
 
-Nano 启动器通过原生接口复用/初始化 Debug Agent、CLI Wiring、Memory 和缺失 Registry。`lab ready` 表示练习环境初始化完成，不表示真实 Telegram/微信已登录；平台验证使用独立测试账号。真实 Friend 的创建由 Web → Backend → Nano 管理 API 完成，不手写生产 Registry 或把 debug-agent 复制到生产。
+Nano 启动器通过原生接口复用/初始化 Debug Agent、CLI Wiring、Memory 和缺失 Registry。`lab ready` 表示练习环境初始化完成，不表示真实 Telegram/微信已登录；平台验证使用独立测试账号。真实 Long Agent 的创建由 Web → Backend → Nano 管理 API 完成，不手写生产 Registry 或把 debug-agent 复制到生产。
 
 ## 交付检查
 

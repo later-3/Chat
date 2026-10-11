@@ -47,7 +47,7 @@
 
 | 场景 | Pi 测了什么 | Chat 能力与证据 | 还缺什么 |
 |---|---|---|---|
-| S04 自动压缩后继续交流 | [compaction suite][n-compact]：阈值/溢出、摘要 Entry、计费 usage、估计压缩后大小 | 自动压缩已保留。[Workflow][c-workflow]、[Friend 生命周期][c-daily]、[实际 Runtime][c-runtime]覆盖真实压缩、同 Session 重开、工具与规则继续可用；[浏览器][c-browser]检查结果反馈 | 自动压缩的成功路径已经有 Chat 证据，不表示以下失败组合也已覆盖 |
+| S04 自动压缩后继续交流 | [compaction suite][n-compact]：阈值/溢出、摘要 Entry、计费 usage、估计压缩后大小 | 自动压缩已保留。[Workflow][c-workflow]、[Long Agent 生命周期][c-daily]、[实际 Runtime][c-runtime]覆盖真实压缩、同 Session 重开、工具与规则继续可用；[浏览器][c-browser]检查结果反馈 | 自动压缩的成功路径已经有 Chat 证据，不表示以下失败组合也已覆盖 |
 | S05 切点、零 usage、旧 usage | [切点与估算][n-cut]：保留区间、跨 turn 切点、custom 消息预算；[#8328][n-zero]：零 usage 时按估算判断；[auto queue][n-autoqueue]：压缩前旧 usage 不引发重复压缩 | 底层算法沿用；Chat 本轮选定原生测试覆盖零/旧 usage 判断 | 缺少这些输入穿过 Chat 公共装配、节点重建后的完整回归。不能把 tokens=0 当作没有上下文，也不能把未知当作 0 |
 | S06 溢出与输出截断的区别 | [compaction suite][n-compact]：未达到期望输出长度的 length stop 可压缩恢复；达到输出上限不乱压缩；第二次仍溢出/截断则停止恢复；[pre-prompt][n-preprompt]不从 assistant 尾部错误 continue | 原生处理仍在；Chat 尚未找到等价的“失败→压缩→单次重试→终止”完整链路测试 | 增加实际 Workflow 的请求次数、终态、下一轮可发送和原历史不丢失断言，防无限重试或重复工作 |
 | S07 摘要截断不落盘 | [#7048][n-truncated]：摘要以 length 结束时抛错，compaction Entry 数保持 0 | 真实公共装配及 Nitro Runtime 以 length/配额错误触发摘要失败，验证无成功 checkpoint、原文保留、同 Session 新轮继续；空摘要与其他 Provider 协议仍需扩展。 | 本轮门禁见 [维护合同](../sessions/chat-session-maintenance.md)；未列场景不宣称已覆盖。 |
@@ -73,15 +73,15 @@
 
 | 场景 | Pi 测了什么 | Chat 能力与证据 | 还缺什么 |
 |---|---|---|---|
-| S15 steer 与 followUp 时机 | [queue suite][n-queue]：引导在下次模型调用前消费，follow-up 在当前工作后消费；one-at-a-time/all；输入钩子转换与 handled | **部分接通**。Friend 的 [turn-feedback][c-feedback]覆盖引导一次投递、跨项目拒绝、晚到转下一轮、取消后 follow-up。普通 Workflow 入口未接（15/16） | Friend 的耐久下一轮队列与原生内存队列语义不同；普通 Workflow、批量模式和扩展输入转换需单独适配/验收 |
+| S15 steer 与 followUp 时机 | [queue suite][n-queue]：引导在下次模型调用前消费，follow-up 在当前工作后消费；one-at-a-time/all；输入钩子转换与 handled | **部分接通**。Long Agent 的 [turn-feedback][c-feedback]覆盖引导一次投递、跨项目拒绝、晚到转下一轮、取消后 follow-up。普通 Workflow 入口未接（15/16） | Long Agent 的耐久下一轮队列与原生内存队列语义不同；普通 Workflow、批量模式和扩展输入转换需单独适配/验收 |
 | S16 队列可见性、取回、压缩时序 | [queue suite][n-queue]：消费前移除 pending 文本，禁止把扩展命令当普通队列文字；[auto queue][n-autoqueue]/[compaction suite][n-compact]涉及压缩与队列 | Web queuedMessages 固定空、recall 空（17），不代表 Backend 没有队列 | 接耐久受理/待消费/已消费事实；压缩期间来信、取消与取回竞态必须测试，不能直接清空本地数组 |
-| S17 中断后的显式继续 | [prompt suite][n-prompt]：resumePendingTurn 恢复未完成 user turn；已完整 assistant 尾拒绝恢复 | Chat 能恢复已受理队列与待审核 Run；[实际 Runtime][c-runtime]和[Topic 中断][c-interrupt]验证未知 in-flight 写入不自动重放。普通会话显式 resume 未接（18） | 需区分安全继续与重放副作用工具；“不自动重放”是保护，不等于已经支持用户主动继续 |
+| S17 中断后的显式继续 | [prompt suite][n-prompt]：resumePendingTurn 恢复未完成 user turn；已完整 assistant 尾拒绝恢复 | Chat 能恢复已受理队列与待审核 Run；[实际 Runtime][c-runtime]和[Topic 中断][c-interrupt]验证未知 in-flight 写入不自动重放。会话显式 resume 未接（18） | 需区分安全继续与重放副作用工具；“不自动重放”是保护，不等于已经支持用户主动继续 |
 
 ### 6. 普通重试与停止
 
 | 场景 | Pi 测了什么 | Chat 能力与证据 | 还缺什么 |
 |---|---|---|---|
-| S18 可重试错误、上限、停止 | [retry suite][n-retry]：瞬时失败恢复、耗尽、禁用、认证错误不重试、取消退避；恢复后继续完成工具循环 | 原生机制保留，Chat [事件单测][c-events]验证普通 retry 投影；[Friend][c-feedback]覆盖停止、终态和后续轮次 | 没有等价的 Chat Provider 故障序列回归来证明所有 retry 分支；“终态显示失败”不是“重试策略已完整验收” |
+| S18 可重试错误、上限、停止 | [retry suite][n-retry]：瞬时失败恢复、耗尽、禁用、认证错误不重试、取消退避；恢复后继续完成工具循环 | 原生机制保留，Chat [事件单测][c-events]验证普通 retry 投影；[Long Agent][c-feedback]覆盖停止、终态和后续轮次 | 没有等价的 Chat Provider 故障序列回归来证明所有 retry 分支；“终态显示失败”不是“重试策略已完整验收” |
 | S19 取消后的记录与结算 | [retry suite][n-retry]：取消流后 aborted assistant 留存并最终 settled；[runtime][n-runtime]切换前中止工具并保存对应结果 | 原有取消/结算门禁之外，实际 Runtime 已补摘要失败、退避取消、压缩中 Backend 重启、同 ID 继续及不重放。 | 本轮门禁见 [维护合同](../sessions/chat-session-maintenance.md)；未列场景不宣称已覆盖。 |
 
 ### 7. 分支与生命周期操作
@@ -89,15 +89,15 @@
 | 场景 | Pi 测了什么 | Chat 能力与证据 | 还缺什么 |
 |---|---|---|---|
 | S20 看旧节点与从旧节点继续 | [tree navigation][n-tree]：选 user 时返回编辑文本并切到其父节点；选 assistant 时定位该节点；无摘要导航不增 Entry | GET 仍只读；显式继续以原生 branch/resetLeaf、纯元数据、expectedLeafId 检查提交持久位置；用户节点回填，工具中间位置拒绝。不是 CLI 全部树钩子/分支摘要的等价实现。 | 本轮门禁见 [维护合同](../sessions/chat-session-maintenance.md)；未列场景不宣称已覆盖。 |
-| S21 fork、分支摘要、标签 | [runtime][n-runtime]：fork 的 before/at、无效 ID、未落盘会话；[branch summary][n-branchsummary]验证位置/来源/usage；[labels][n-labels]验证增删改和持久化 | 普通 [fork][c-fork]已做同项目、锁、幂等和原文保留。原生已有标签能由[树投影][c-tree]展示；但标签写入口、分支摘要生成/取消未接（37/38） | 已有 fork 不能代替原地导航或摘要；Friend/Topic 要保留各自归属合同。标签“展示过”不等于可管理 |
+| S21 fork、分支摘要、标签 | [runtime][n-runtime]：fork 的 before/at、无效 ID、未落盘会话；[branch summary][n-branchsummary]验证位置/来源/usage；[labels][n-labels]验证增删改和持久化 | 普通 [fork][c-fork]已做同项目、锁、幂等和原文保留。原生已有标签能由[树投影][c-tree]展示；但标签写入口、分支摘要生成/取消未接（37/38） | 已有 fork 不能代替原地导航或摘要；Long Agent/Topic 要保留各自归属合同。标签“展示过”不等于可管理 |
 | S22 clone/import 与业务归属 | [RPC clone][n-clone]只断言命令发送；[interactive import][n-import]验证路径参数、确认与错误提示，runtime 被替身替换；这些不是完整导入持久化证明 | Chat 缺少 owner/Project/来源校验下的完整产品合同（39）；不能把直接复制 JSONL 当已支持 | 定义幂等导入、来源、模型/资源恢复策略；保留可追溯性，拒绝借导入跨项目读取 |
 
 ### 8. Prompt、Skill 与上下文资源
 
 | 场景 | Pi 测了什么 | Chat 能力与证据 | 还缺什么 |
 |---|---|---|---|
-| S23 Context 根、资源发现与优先级 | [resource loader][n-resources]：AGENTS.override、父目录层叠、信任、资源冲突、显式路径、reload | Chat **有意按授权根适配**：Personal/当前 Project/Friend，固定 revision；[公共装配][c-factory]覆盖切项目、符号链接越界、资源冻结与变更恢复失败 | 原生的祖先目录自动发现不是要照搬的功能。需要保留 Chat 对应反例，而非强行让原生发现规则全部生效 |
-| S24 Skill/模板/命令展开 | [prompt suite][n-prompt]：/skill 展开、模板参数、sendUserMessage 显式选择展开；[prompt templates][n-templates]补参数解析 | 原生 prompt 路径能展开；Chat 已测资源装配和冻结，但 Web 命令目录/补全为空（28/32） | 逐入口检查普通 Workflow、Friend、Topic 的传参/展开/原文记录；不能用“System Prompt 里有 skill 名称”替代实际展开测试 |
+| S23 Context 根、资源发现与优先级 | [resource loader][n-resources]：AGENTS.override、父目录层叠、信任、资源冲突、显式路径、reload | Chat **有意按授权根适配**：Personal/当前 Project/Long Agent，固定 revision；[公共装配][c-factory]覆盖切项目、符号链接越界、资源冻结与变更恢复失败 | 原生的祖先目录自动发现不是要照搬的功能。需要保留 Chat 对应反例，而非强行让原生发现规则全部生效 |
+| S24 Skill/模板/命令展开 | [prompt suite][n-prompt]：/skill 展开、模板参数、sendUserMessage 显式选择展开；[prompt templates][n-templates]补参数解析 | 原生 prompt 路径能展开；Chat 已测资源装配和冻结，但 Web 命令目录/补全为空（28/32） | 逐入口检查普通 Workflow、Long Agent、Topic 的传参/展开/原文记录；不能用“System Prompt 里有 skill 名称”替代实际展开测试 |
 
 ### 9. 扩展
 
@@ -110,7 +110,7 @@
 
 | 场景 | Pi 测了什么 | Chat 能力与证据 | 还缺什么 |
 |---|---|---|---|
-| S27 模型/思考等级与配置 | [model/extension suite][n-modelext]：模型变更记录、scoped 循环、thinking 能力夹取、xhigh/max、缺认证拒绝 | Chat Backend 解析有效配置并传 Pi；[配置测试][c-config]和[Workflow][c-workflow]覆盖覆盖顺序与记录，[公共装配][c-factory]覆盖 Friend 不误用项目模型 | 配置持久化测试不等于所有模型实际支持该等级；重开/切节点后有效等级、不同模型能力选项还需逐组合验收 |
+| S27 模型/思考等级与配置 | [model/extension suite][n-modelext]：模型变更记录、scoped 循环、thinking 能力夹取、xhigh/max、缺认证拒绝 | Chat Backend 解析有效配置并传 Pi；[配置测试][c-config]和[Workflow][c-workflow]覆盖覆盖顺序与记录，[公共装配][c-factory]覆盖 Long Agent 不误用项目模型 | 配置持久化测试不等于所有模型实际支持该等级；重开/切节点后有效等级、不同模型能力选项还需逐组合验收 |
 | S28 协议与供应商边界 | `ai/test` 覆盖 toolCall ID/结果配对、thinking 签名重放、空块、图片、流截断、取消、usage/cache、重试与 OAuth | Chat 继承 Pi Provider，新增模型目录和认证管理；现有本地 HTTP 假模型主要证明经过选定协议的装配与传输 | 138 个原生文件并非 138 种已验收产品能力。有真实服务条件测试；本次未运行供应商实网矩阵。预算/自定义 stream/HTTP options 尤须过公共装配 |
 
 ### 11. 工具与附件
@@ -118,7 +118,7 @@
 | 场景 | Pi 测了什么 | Chat 能力与证据 | 还缺什么 |
 |---|---|---|---|
 | S29 原生工具、用户 shell 与截断 | [tools][n-tools]和 bash 相关回归覆盖文件/命令结果；[bash persistence][n-bash]覆盖用户执行、取消、延迟输出/落盘 | 模型工具已接，Chat 额外的文件范围由[公共装配][c-factory]验证。用户 `!`/`!!` 输入在 Web 被拒绝（44） | 模型 bash 工具不等于用户 shell 模式；原生截断测试不证明 Web 没裁切按钮或丢失完整输出入口 |
-| S30 图片输入与工具图片结果 | [prompt suite][n-prompt]：图片传到 Provider、纯图片不加空文本；[tool images][n-images]：结果图片进入后续模型上下文 | 普通 Workflow 有[输入校验][c-images]、读模型/延迟图片 API；Friend 的 [turn-feedback][c-feedback]明确在受理前拒绝图片 | 不能写成“所有 Chat 入口都支持图片”；从浏览器附件到实际请求的验收必须按普通/Friend/Topic 与模型能力区分 |
+| S30 图片输入与工具图片结果 | [prompt suite][n-prompt]：图片传到 Provider、纯图片不加空文本；[tool images][n-images]：结果图片进入后续模型上下文 | 普通 Workflow 有[输入校验][c-images]、读模型/延迟图片 API；Long Agent 的 [turn-feedback][c-feedback]明确在受理前拒绝图片 | 不能写成“所有 Chat 入口都支持图片”；从浏览器附件到实际请求的验收必须按普通/Long Agent/Topic 与模型能力区分 |
 
 ### 12. 产品外围、传输与显示
 

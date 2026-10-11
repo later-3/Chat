@@ -17,7 +17,7 @@ Nano仓库有[文档索引](../../../nanoclaw/docs/README.md)、[架构草稿](.
 3. 读取Group资源，补齐`memory/index.md`、`memory/system/index.md`、`memory/system/definition.md`；已有Memory不覆盖。
 4. 调试`long-agents.json`缺失时生成debug实例和debug-agent映射，inbox使用真实CLI记录ID。已有Registry保留，包括过去的telegram/debug-offline占位inbox；若其映射与本实验冲突则报错。
 
-终端出现`[debug] lab ready`后再刷新Friend页面。需要重试只运行`pnpm debug:bootstrap`，不要重新create Group。ncl是操作者本地初始化工具，Chat业务仍只调用窄HTTP API，不依赖CLI Socket或Nano数据库。
+终端出现`[debug] lab ready`后再刷新Long Agent页面。需要重试只运行`pnpm debug:bootstrap`，不要重新create Group。ncl是操作者本地初始化工具，Chat业务仍只调用窄HTTP API，不依赖CLI Socket或Nano数据库。
 
 查看结果（在调试Nano工作区）：
 

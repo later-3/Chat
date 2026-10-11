@@ -3,7 +3,7 @@
 2026-09-30 用户确认修订：每日唯一性只约束默认入口；支持额外独立直接 Session。执行配置统一到公共 Workflow，具体迁移、受理冻结、旧轮次兼容及验证以[架构 §4](./chat-long-agent-architecture.md#4-project-first-与会话选择)和[本批修复记录](../../history/reviews/2026-09-30-workflow-configuration-and-session-presentation.md)为准。以下历史 P1/LA0 范围不覆盖此修订。
 
 
-2026-09-19 P1 范围修订：每 Friend 每日唯一直接交流 Session，业务项目逐轮装配；下文旧的按业务项目拆分/独立整理 Session 及其并发假设不再作为本轮实现依据，统一以[生命周期合同](./chat-long-agent-architecture.md#4-project-first-与会话选择)和[开发计划](../../development/agent-unification-plan.md)为准。其余长期能力不因本轮合同自动成为已实现。
+2026-09-19 P1 范围修订：每 Long Agent 每日唯一直接交流 Session，业务项目逐轮装配；下文旧的按业务项目拆分/独立整理 Session 及其并发假设不再作为本轮实现依据，统一以[生命周期合同](./chat-long-agent-architecture.md#4-project-first-与会话选择)和[开发计划](../../development/agent-unification-plan.md)为准。其余长期能力不因本轮合同自动成为已实现。
 
 2026-09-20 LA0 补充：后台任务和群参与各自使用独立 Session，不改变直接交流每日唯一性。新实施合同见[机制 §9](./chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)及[Session §11](../sessions/chat-session-architecture.md#11-la0独立工作与群聊的原生-session-合同)，场景依赖/阶段门槛以[LA0–LA6 计划](../../development/long-agent-functionality-plan.md)为准；本基线的原生接入、资源和代码质量红线继续有效。
 
@@ -13,7 +13,7 @@
 
 本轮证据来自当前工作区源码与文档的静态核查。工作区包含既有未提交实现；下文“已有”表示存在代码与相应测试入口；实际验证范围见[本轮审核记录](../../history/reviews/2026-09-07-agent-development-readiness.md)，不代表已部署。当前配置语法仍以[系统配置](../../configuration/README.md)为准。
 
-不再重复讨论已确认的产品方向：NanoClaw承载长期身份映射、Channel、调度与耐久通信；Chat Backend接管产品配置、Project、Pi执行和原生Chat Session；Web是Backend客户端。独立 Agent、统一 Chat 模型与共享概览继续成立；Friend Session/并发按本文开头的 2026-09-19 修订及生命周期合同执行。
+不再重复讨论已确认的产品方向：NanoClaw承载长期身份映射、Channel、调度与耐久通信；Chat Backend接管产品配置、Project、Pi执行和原生Chat Session；Web是Backend客户端。独立 Agent、统一 Chat 模型与共享概览继续成立；Long Agent Session/并发按本文开头的 2026-09-19 修订及生命周期合同执行。
 
 ## 2. 原生能力、现有接入与改造位置
 
@@ -135,7 +135,7 @@ HTTP投递重试、工作执行重试、下次周期和对用户通知重试分�
 | B0 | 固定当前回归基线；明确受管字段迁移、资源包/路径合同、消息投影、异步等待和调度责任 | 现有源码与本文件 | 避免后面同时改错边界；高风险接缝先有验证方案 |
 | B1 | 先跑通一个Agent的自有配置与对话，再用同一入口创建第二个，验证共用Chat模型目录且Daily独立；Web与Channel一致 | B0 | 所有后续场景的身份、权限、装配与配置基础 |
 | B2 | 接入一个Chat Skill和一个Nano运行时Skill；新增、更新、选择、缺依赖可见，并证明实际读取/调用 | B1 | 所有技能、工具、模板及自我管理 |
-| B3 | 道德经与另一Project切换、隔天继续；Coder能查共享概览；同 Friend 当天跨项目不拆会话，显式 Workflow 子工作按自身合同并行 | B1、B2 | 学习、项目工作、历史、日记和跨入口连续性 |
+| B3 | 道德经与另一Project切换、隔天继续；Coder能查共享概览；同 Long Agent 当天跨项目不拆会话，显式 Workflow 子工作按自身合同并行 | B1、B2 | 学习、项目工作、历史、日记和跨入口连续性 |
 | B4a | Skill调用脚本/工具在Docker中执行，输入与产物可定位；独立工作环境隔离 | B1、B2 | 开发、素材处理、MCP与脚本检查；可与B3并行建设 |
 | B4b | 一个确定性提醒、一次需要模型的到期工作、一个事件触发，各自正确归属与恢复 | B1、B3 | 定时任务、订阅、长期职责的推进机会；不依赖完整业务流程 |
 | B5a | 旅游检查无变化不唤醒模型，有变化分析并通知；按活动生成日记，Social更新触发可见订阅 | B3、B4b；脚本检查另依赖B4a | 监控、共享动态、日记和后续内容事件 |

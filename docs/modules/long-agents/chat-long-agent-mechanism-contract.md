@@ -57,7 +57,7 @@ Project概览、进度和活动通过统一服务供Web与Agent查询，公共�
 
 共享范围通过持久配置表达；配置范围内的读取不逐次询问用户。建议新建普通业务Project默认继承用户级“概览共享”设置，项目可以覆盖；Agent Daily原始历史和私有Memory仍保持自身作用域。升级已有数据不自动扩大原可见范围。默认设置属于可编辑产品配置，不硬编码具体项目名。
 
-概览可见、详情可读、工作可执行分别判断。查询不会自动切换用户工作位置；Friend 实际进入项目工作时冻结该 Project 的协作上下文，直接交流仍在当天唯一 Session；普通 Workflow 使用其所属项目 Session。所有Agent引用同一事实，不在每个私有Memory中维护项目进度副本。
+概览可见、详情可读、工作可执行分别判断。查询不会自动切换用户工作位置；Long Agent 实际进入项目工作时冻结该 Project 的协作上下文，直接交流仍在当天唯一 Session；普通 Workflow 使用其所属项目 Session。所有Agent引用同一事实，不在每个私有Memory中维护项目进度副本。
 
 ### 3.2 交互与并发的收口
 
@@ -65,7 +65,7 @@ Project概览、进度和活动通过统一服务供Web与Agent查询，公共�
 
 消息和决定保留真实来源、目标、回复关系及适用工作版本。点名回应、相关者补充、可选主持是可配置发言策略；没有贡献时允许沉默。具体多参与者讨论如何映射到Pi原生Session和消息，需要详细合同证明，不另存一套与Pi历史分歧的聊天事实。
 
-同一 Session 的上下文推进和历史写入有序；2026-09-19 起 Friend 同日直接交流只有一条 Session，不通过按项目拆分实现并行；独立 Workflow 子工作和不同 Friend 允许并发。同一稿件、配置、Memory或其他共享写入采用版本冲突保护或短时互斥；独占工具按实际资源排队。等待用户或Agent回复不能锁住整个身份，也不能持有对方回应所需的资源。调度要兼顾及时交互与持续工作，避免长期职责饥饿。
+同一 Session 的上下文推进和历史写入有序；2026-09-19 起 Long Agent 同日直接交流只有一条 Session，不通过按项目拆分实现并行；独立 Workflow 子工作和不同 Long Agent 允许并发。同一稿件、配置、Memory或其他共享写入采用版本冲突保护或短时互斥；独占工具按实际资源排队。等待用户或Agent回复不能锁住整个身份，也不能持有对方回应所需的资源。调度要兼顾及时交互与持续工作，避免长期职责饥饿。
 
 暂停/取消针对明确职责、任务、运行或交互；不能把移除参与者、取消其所有工作和撤销全部权限当作同一动作。旧结果返回时核验适用版本，已发生的外部动作不能靠改状态撤回。
 
@@ -156,10 +156,10 @@ Project概览、进度和活动通过统一服务供Web与Agent查询，公共�
 
 | 对象 | 稳定关联 | 明确不代表什么 |
 |---|---|---|
-| Friend | longAgentId、定义 revision、自有资源根 | 一条 Session 或某个 Workflow 临时角色 |
-| 日常直接交流 | Friend + Backend 接受日，位于 Agent Home | 该 Friend 所有工作的唯一执行容器 |
+| Long Agent | longAgentId、定义 revision、自有资源根 | 一条 Session 或某个 Workflow 临时角色 |
+| 日常直接交流 | Long Agent + Backend 接受日，位于 Agent Home | 该 Long Agent 所有工作的唯一执行容器 |
 | 群 Conversation | conversationId、存储 Project、成员及授权 revision、公共消息顺序 | 每个参与 Agent 共享一个可写 Pi 上下文 |
-| 群参与关系 | conversationId + Friend，绑定独立原生 Session；换 Session 保留显式链路 | 第二个 Friend 身份或另一个 Nano Host |
+| 群参与关系 | conversationId + Long Agent，绑定独立原生 Session；换 Session 保留显式链路 | 第二个 Long Agent 身份或另一个 Nano Host |
 | Task | taskId、负责人、存储 Project、定义 revision、可选 dutyId | 每次定时到点都修改同一条 Run |
 | Occurrence | taskId + revision + 触发来源的稳定标识 | 消息重投、Delivery 重试产生的新工作 |
 | 执行尝试 | occurrence + attempt，固定 executor、SessionRef、配置/授权快照 | 对外副作用已成功或自然获得重试权限 |
@@ -169,7 +169,7 @@ Project概览、进度和活动通过统一服务供Web与Agent查询，公共�
 
 后台工作有独立 Session，按任务/执行者关联；后续尝试是否继续同一 Session 必须由前次终态和可信恢复点决定，不能并发写同一文件。任务存储 Project 固定，执行目标另以每轮 CollaborationContext 冻结。主会话来源用 origin Session/Entry 关联，不复制整天聊天。换日不迁移在途任务、不改变群参与 Session。
 
-日常、群和后台执行都用同一个 Friend Resolver、公用 Pi 工厂。Workflow 定义阶段、路由、审核、并行和终止，不把已有 Friend 偷换成只有同名 Prompt 的临时 Agent；普通 Workflow Agent 的现行行为保留。原生消息映射见[Session §11](../sessions/chat-session-architecture.md#11-la0独立工作与群聊的原生-session-合同)。
+日常、群和后台执行都用同一个 Long Agent Resolver、公用 Pi 工厂。Workflow 定义阶段、路由、审核、并行和终止，不把已有 Long Agent 偷换成只有同名 Prompt 的临时 Agent；普通 Workflow Agent 的现行行为保留。原生消息映射见[Session §11](../sessions/chat-session-architecture.md#11-la0独立工作与群聊的原生-session-合同)。
 
 ### 9.2 输入、权限与并发
 
@@ -207,7 +207,7 @@ Occurrence 采用可重算键：周期任务用定义 revision + IANA 计划时�
 
 日终私有交接用于下一日主会话；夜间笔记是 Workspace 的可读产物，格式由 Agent 选定；Memory 是经授权持久记录；Social 是选择受众后的发布行为。四者不能自动互相替代或复制。
 
-同一天可发布多条动态，postId 是独立身份，`Agent + 日期` 仅是筛选/聚合维度。每天三次发布和一次笔记分别有 occurrence；发布/写文件按 occurrence + 产物目标去重，修订采用已有产物版本。产物身份、内容冻结、提交校验、恢复与状态的具体合同见[Friend 产物闭环](./deliverables.md)（LA4）。`morning-outreach` 的允许沉默策略不能未经说明用于承诺每日必发的任务。资料不足或检查失败显示未完成及原因，不伪造三条成功记录。
+同一天可发布多条动态，postId 是独立身份，`Agent + 日期` 仅是筛选/聚合维度。每天三次发布和一次笔记分别有 occurrence；发布/写文件按 occurrence + 产物目标去重，修订采用已有产物版本。产物身份、内容冻结、提交校验、恢复与状态的具体合同见[Long Agent 产物闭环](./deliverables.md)（LA4）。`morning-outreach` 的允许沉默策略不能未经说明用于承诺每日必发的任务。资料不足或检查失败显示未完成及原因，不伪造三条成功记录。
 
 ### 9.6 发言策略与终止
 
@@ -221,9 +221,9 @@ Occurrence 采用可重算键：周期任务用定义 revision + IANA 计划时�
 
 共同保存 round、输入截止点、回复目标、成员 revision、取消/等待及终止原因。必须有有限轮数、时间/Token/调用预算、重复/无进展终止与用户停止入口；数值是可配置运行策略，执行前必须有上限。触发链保留 causationId，不允许 A→B→A 无限反弹。无用户在场不扩大权限。确定性轮询不需要额外模型，只有决定本身需要推理时才由 Agent 参与。
 
-## 10. （已退役）LA6-A：Friend 协作项目关联 → 统一项目合同
+## 10. （已退役）LA6-A：Long Agent 协作项目关联 → 统一项目合同
 
-LA6-A 的 per-Friend 关联已整体移除（2026-09-28）：`interaction.json` 存储、`interactionRevision` 强制、`GET/PUT /api/long-agents/[id]/interaction-project`、Chat 系统 Tool `collaboration_project` 及 Friend 私聊头部独立下拉均不复存在。全产品只有一个项目上下文（UI 文案为"项目"），每轮执行项目按入口唯一确定并在受理时冻结，不存在第二个可写的"项目关联"存储：
+LA6-A 的 per-Friend 关联已整体移除（2026-09-28）：`interaction.json` 存储、`interactionRevision` 强制、`GET/PUT /api/long-agents/[id]/interaction-project`、Chat 系统 Tool `collaboration_project` 及 Long Agent 私聊头部独立下拉均不复存在。全产品只有一个项目上下文（UI 文案为"项目"），每轮执行项目按入口唯一确定并在受理时冻结，不存在第二个可写的"项目关联"存储：
 
 | 入口 | 目标来源 |
 |---|---|
@@ -235,7 +235,7 @@ LA6-A 的 per-Friend 关联已整体移除（2026-09-28）：`interaction.json` 
 
 已接受 requestId 重试先按原冻结项目校验输入摘要，不因页面当前选择变化而重新路由或拒绝原回执；同 ID 异载荷仍冲突。切换页面/发送后刷新不改变已接受轮次。
 
-入口同源：选中 Friend 时，侧栏 cwd/项目选择、文件浏览器、资源区与窗口标题取自全局"项目"选择器（同一 `activeProjectId`）；显式无项目时使用 Friend 自身 Workspace。
+入口同源：选中 Long Agent 时，侧栏 cwd/项目选择、文件浏览器、资源区与窗口标题取自全局"项目"选择器（同一 `activeProjectId`）；显式无项目时使用 Long Agent 自身 Workspace。
 
 摘要版本兼容：接受摘要按格式版本核对——v1（LA6-A 前）、v2（LA6-A，含 interactionRevision）、v3（requested+frozen 两组字段）保留各自精确字段顺序；旧记录逐版本比对以保持原样重试幂等，改正文/项目在所有版本下仍拒绝。新记录写 `payloadHashVersion=3`，`interactionRevision` 恒为 null（仅为旧记录重试兼容保留解析）。显式摘要版本只核对对应格式，未知版本拒绝读取；不能通过遍历历史候选绕过已声明版本。
 

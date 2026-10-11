@@ -21,7 +21,7 @@
 常见模块入口：
 
 - [Project](../modules/projects/chat-project-framework.md)、[Session](../modules/sessions/chat-session-architecture.md)、[Workflow](../modules/workflows/chat-workflow-framework.md)。
-- [Friend 当前使用](../modules/long-agents/README.md)、[实施状态](../modules/long-agents/chat-long-agent-roadmap.md)、[工程基线](../modules/long-agents/chat-long-agent-engineering-baseline.md)。
+- [Long Agent 当前使用](../modules/long-agents/README.md)、[实施状态](../modules/long-agents/chat-long-agent-roadmap.md)、[工程基线](../modules/long-agents/chat-long-agent-engineering-baseline.md)。
 - [Web 对象与交互](../modules/web/chat-web.md)、[TUI](../modules/tui/chat-workflow-tui.md)。
 - [Pi 会话能力与 Chat 适配基线](../modules/pi/chat-pi-session-capabilities.md)、[Pi Agent](../modules/pi/pi-agent-design.md)、[上游 Pi Web](../modules/pi/pi-web-design.md)。
 

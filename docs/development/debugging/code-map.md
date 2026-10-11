@@ -8,7 +8,7 @@ Workflow终端入口从 `cli/src/main.ts` → `controller.ts` → `api.ts` →�
 ## 第一次调试：先跑这一条
 
 1. 在 Chat 根目录打开 VS Code，F5 选择 `Debug Chat`。它会启动本地假模型 `45401`、Backend `45112`、Vite `35145` 和独立 Chrome。只看页面时访问调试浏览器中的 `35145`；`43110` 是生产实例。
-2. 打开 Debug Lab，选直接执行 Workflow，发送 `DEBUG_HELLO`。先只下 3 个断点：`useAgentSession.ts` 的 `handleSend`、`runs.post.ts` 的请求解析后、`step.ts` 的 `session.prompt()` 前。
+2. 打开 Debug Lab，选单节点回合 Workflow，发送 `DEBUG_HELLO`。先只下 3 个断点：`useAgentSession.ts` 的 `handleSend`、`runs.post.ts` 的请求解析后、`step.ts` 的 `session.prompt()` 前。
 3. 预期假模型返回 `DEBUG_OK`，Run 到 `completed`，刷新后 Session 仍有回复。再用 `DEBUG_READ_SKILL` 练习模型调用 `read`，观察 `DEBUG_SKILL_LOADED`。
 4. 普通 Web 跑通后，再选 `Debug Chat + NanoClaw` 学长期 Agent。首次先执行 `pnpm debug:prepare:nanoclaw`。Nano 的断点在 `.data/debug/nanoclaw/src`，其他模块在原仓库源码。
 
@@ -43,7 +43,7 @@ flowchart LR
 
 ## Web 普通对话：按函数追踪
 
-1. `useAgentSession` 根据 Session `owner` 判断普通会话或Friend；普通会话调用 `runChatWorkflowPrompt()`。
+1. `useAgentSession` 根据 Session `owner` 判断会话或Long Agent；会话调用 `runChatWorkflowPrompt()`。
 2. `POST /runs` 校验用户输入与 Project，恢复默认选择/Session，返回 `runId / workflowInvocationId / sessionId`。
 3. [startChatWorkflow](../../../src/workflows/start-chat-workflow.ts) 从 Registry 选择 Workflow，由 Workflow SDK 启动。
 4. [minimalPiCodingAgentWorkflow](../../../src/workflows/minimal-pi-coding-agent/workflow.ts) 组织一次执行，进入 [runPiCodingAgentPromptStep](../../../src/workflows/minimal-pi-coding-agent/step.ts)。Workflow 代码受持久执行约束；Node 文件 IO、模型和 Tool 执行在 Step 中。
@@ -56,7 +56,7 @@ flowchart LR
 
 | 顺序、交接 | 文件 + 函数 | 断点观察值与作用 |
 |---|---|---|
-| 1. 输入 → 请求 | [useAgentSession.ts](../../../frontend/hooks/useAgentSession.ts)：`handleSend` | `message`、当前 `session.owner`、Project、Workflow 选择；这里分流普通会话和 Long Agent |
+| 1. 输入 → 请求 | [useAgentSession.ts](../../../frontend/hooks/useAgentSession.ts)：`handleSend` | `message`、当前 `session.owner`、Project、Workflow 选择；这里分流会话和 Long Agent |
 | 2. 浏览器 → Backend | [chat-workflow-browser.ts](../../../frontend/lib/chat-workflow-browser.ts)：`runChatWorkflowPrompt` | 输入 `ChatWorkflowPromptInput`；POST 后取得 Run 引用，进入 `followChatWorkflowRun` |
 | 3. 请求 → 可信输入 | [runs.post.ts](../../../src/routes/runs.post.ts)：默认 handler；[run-request.ts](../../../src/run-request.ts)：`parseChatWorkflowHttpInput` | `body` 对比 `input`；`resolveRequestProject` 解析 Project，`resolveChatConfig` 提供默认值，首轮 `reserveChatSession` 先落盘 |
 | 4. Run → Workflow | [start-chat-workflow.ts](../../../src/workflows/start-chat-workflow.ts)：`startChatWorkflow` | `definition.run`、`chatWorkflowInput`、SDK 返回的 `run.runId`；记录 Run 与 Session 的绑定 |
@@ -91,10 +91,10 @@ Long Agent 的能力源是自身 `LongAgentConfig.definition`，接受时冻结�
 
 | 交接 | 文件 + 函数 | 观察什么 |
 |---|---|---|
-| 打开 Agent / 日期 | [project-agent.ts](../../../src/long-agents/project-agent.ts)：`ensureProjectLongAgent`；[start 路由](../../../src/routes/api/long-agents/%5BlongAgentId%5D/start.post.ts) | Agent Home、Friend 时区、目标日期；存储归属与本轮协作项目分开 |
+| 打开 Agent / 日期 | [project-agent.ts](../../../src/long-agents/project-agent.ts)：`ensureProjectLongAgent`；[start 路由](../../../src/routes/api/long-agents/%5BlongAgentId%5D/start.post.ts) | Agent Home、Long Agent 时区、目标日期；存储归属与本轮协作项目分开 |
 | 发送与耐久接受 | [turns 路由](../../../src/routes/api/long-agents/%5BlongAgentId%5D/turns.post.ts)；[turn-queue.ts](../../../src/long-agents/turn-queue.ts)：`acceptLongAgentTurn` | request/turnId、sessionId、冻结项目与能力；接受不代表完成 |
 | 接受记录 → Run | [workflow-execution.ts](../../../src/long-agents/workflow-execution.ts)：`executeAcceptedWorkflowTurn`；[accepted-run-runtime.ts](../../../src/workflows/accepted-run-runtime.ts) | Workflow Run 引用、重放与绑定；重复观察不能再建 Run |
-| Step → Friend 上下文 | [long-agent-stage.ts](../../../src/workflows/long-agent-stage.ts)：`attachLongAgentWorkflowContext` | Group 快照、工作项目、工具和预算，交给同一公共 Pi 装配 |
+| Step → Long Agent 上下文 | [long-agent-stage.ts](../../../src/workflows/long-agent-stage.ts)：`attachLongAgentWorkflowContext` | Group 快照、工作项目、工具和预算，交给同一公共 Pi 装配 |
 | Pi → 回复 / 统计 | [agent-definition.ts](../../../src/workflows/agent-definition.ts)：`createWorkflowAgentSession`；[Pi AgentSession](../../../pi/packages/coding-agent/src/core/agent-session.ts) | 原生消息、压缩/分支摘要、预算准入和取消；终态后重读 Session |
 
 前端的新轮次从接受回执取得 `workflowRun` 后订阅公共 `/runs/:id/events`，旧接受记录保留兼容观察。`messages` 为既有阻塞调用合同，不能把它当成当前 Web 主发送路径。后台工作按绑定的 workId/projectId 打开；群成员参与记录留在群视图，页面导航不改变 Session owner。手动压缩/历史继续入口见 [Session 维护](../../modules/sessions/chat-session-maintenance.md)。
@@ -137,7 +137,7 @@ Ack 与投递是不同操作；不能看到 Ack 就判断平台用户已读。Ch
 
 | 路径 | 文件 + 函数 | 当前源码的行为 |
 |---|---|---|
-| 任务管理 | [tasks/service.ts](../../../src/long-agents/tasks/service.ts)：`manageFriendTask`、`acceptTaskTrigger` | LA2 定义/修订/发生记录由 Chat 持久化，Nano 保存调度投影。完整合同见 [Friend 任务](../../modules/long-agents/tasks.md)；新建 Friend 不再预置隐藏任务 |
+| 任务管理 | [tasks/service.ts](../../../src/long-agents/tasks/service.ts)：`manageFriendTask`、`acceptTaskTrigger` | LA2 定义/修订/发生记录由 Chat 持久化，Nano 保存调度投影。完整合同见 [Long Agent 任务](../../modules/long-agents/tasks.md)；新建 Long Agent 不再预置隐藏任务 |
 | 到期 → Event | [Nano task-forwarder.ts](../../../nanoclaw/src/modules/chat-integration/task-forwarder.ts)：`startChatPiTaskForwarder`、`forwardDueChatPiTasks` | 启动立即扫描，随后每 60 秒扫描一次到期 pending 任务；生成 `kind: schedule`、`taskId` 事件。带 pre-task script 的任务跳过并记日志 |
 | Event → Agent | [bridge.ts](../../../src/long-agents/bridge.ts)：`syncInstance` 的 `event.kind === "schedule"` 分支 | 使用 Agent 默认 Project 的主会话执行，`source: scheduled`；此分支没有普通渠道的自动 Delivery/Ack |
 | Agent → 发帖 | [social-manage/index.ts](../../../src/tools/builtins/social-manage/index.ts)：`SOCIAL_MANAGE_TOOL_PROVIDER` 的 `execute` | `operation: post/read/comment`；要求可信 Long Agent 执行身份，写入后追加审计 |

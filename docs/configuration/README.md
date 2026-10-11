@@ -28,16 +28,16 @@ export CHAT_HOME=/srv/chat-data
 
 下文中的 `<CHAT_HOME>` 均指这个目录。不要把整个 Chat Home 提交到 Git，其中包含 Session、认证和其他私有运行数据。
 
-新环境为每个已创建 Friend 准备独立 Home（`long-agents/<id>/workspace`），共享资源容器为 `longagentshare`；两者均不是用户项目。普通 Session 在用户显式选择的 Project 中创建。旧 `daily` / `daily-<id>` 保留原数据与历史入口，迁移不删除它们。
+新环境为每个已创建 Long Agent 准备独立 Home（`long-agents/<id>/workspace`），共享资源容器为 `longagentshare`；两者均不是用户项目。会话 在用户显式选择的 Project 中创建。旧 `daily` / `daily-<id>` 保留原数据与历史入口，迁移不删除它们。
 ### Long Agent注册与配置管理（当前实现）
 
-新环境在 Web 全局导航打开“Friend”，点击“启用并创建默认助手”创建 Nexus，无需先创建或选择 Project。之后点“＋”新增 Friend，填写名称与可选简介，内部 ID 自动生成、用户无需填写。Backend 自动创建 NanoClaw Group、独立配置目录与 Agent home；点击 Friend即可进入它自己的日常会话。模型与认证沿用 Chat 配置；Telegram/微信等 Channel 可稍后连接。
+新环境在 Web 全局导航打开“Long Agent”，点击“启用并创建默认助手”创建 Nexus，无需先创建或选择 Project。之后点“＋”新增 Long Agent，填写名称与可选简介，内部 ID 自动生成、用户无需填写。Backend 自动创建 NanoClaw Group、独立配置目录与 Agent home；点击 Long Agent即可进入它自己的日常会话。模型与认证沿用 Chat 配置；Telegram/微信等 Channel 可稍后连接。
 
-启用是显式创建动作，不新增全局开关：读取列表或重启不会强制生成助手，不会恢复已归档 Friend。重复启用返回已有 Friend。NanoClaw Host 必须已按[部署指南](../operations/README.md)以 `chat-pi` 启动并与 Backend 使用相同服务认证。无 Registry 时首次连接默认使用 `http://127.0.0.1:3000/webhook/chat-backend`、实例 `local`；自定义端口可通过 Backend 的 `CHAT_NANOCLAW_GATEWAY_URL` 指定。已有 Registry 继续使用其实例配置，不被环境变量覆盖。
+启用是显式创建动作，不新增全局开关：读取列表或重启不会强制生成助手，不会恢复已归档 Long Agent。重复启用返回已有 Long Agent。NanoClaw Host 必须已按[部署指南](../operations/README.md)以 `chat-pi` 启动并与 Backend 使用相同服务认证。无 Registry 时首次连接默认使用 `http://127.0.0.1:3000/webhook/chat-backend`、实例 `local`；自定义端口可通过 Backend 的 `CHAT_NANOCLAW_GATEWAY_URL` 指定。已有 Registry 继续使用其实例配置，不被环境变量覆盖。
 
 创建中断时按相同 ID、名称、简介重试。Backend 在 `runtime/long-agent-provisioning/<id>.json` 原子保存请求标识，NanoClaw 幂等补齐同一 Group；未完成的操作可能保留未绑定的 Group 与初始化文件，不会作为成功创建返回。不要手工删创建记录或连续更换 ID。显式删除后再创建同名 ID 使用新的 Group，不继承旧助手的私有记忆。
 
-Chat使用`<CHAT_HOME>/long-agents.json`登记长期Agent及其NanoClaw本机实例。该文件已降级为**索引**（身份、NanoClaw绑定、状态与 Channel 绑定）；每个 Agent 的长期身份定义位于独立配置根`<CHAT_HOME>/long-agents/<longAgentId>/definition.json`，资源目录（`skills/`、`prompts/`、`extensions/`）位于同一根下。存量内联 definition 会在首次读取时幂等迁移（备份与标记位于`runtime/migrations/long-agent-definition-split/`）。每个 Agent 只有一个根：`long-agents/<longAgentId>/{workspace,sessions,memory,skills,...}`，其 home 项目的 projectId 就是 `longAgentId`，日常主 Session 按持久化 IANA 时区的日期轮换。公共共享空间为 `longagentshare`（原共享 `daily` 归一而来，不默认打开）；普通会话必须属于用户自己的项目。`defaultProjectId`仅决定新建私聊绑定的默认协作上下文；Home/共享容器表示无业务项目。已有渠道使用自己的 `contextProjectId`；Web 每条消息显式选择项目或 null。Friend 默认进入当天默认 Session；显式新建的直接 Session 有独立历史，跨日可继续，不替换每日默认引用。Agent Memory 仍由 NanoClaw Agent Group 承载，迁入 Chat Home 是后续切片（S5b）。剩余差距见[实施状态](../modules/long-agents/chat-long-agent-roadmap.md)。
+Chat使用`<CHAT_HOME>/long-agents.json`登记长期Agent及其NanoClaw本机实例。该文件已降级为**索引**（身份、NanoClaw绑定、状态与 Channel 绑定）；每个 Agent 的长期身份定义位于独立配置根`<CHAT_HOME>/long-agents/<longAgentId>/definition.json`，资源目录（`skills/`、`prompts/`、`extensions/`）位于同一根下。存量内联 definition 会在首次读取时幂等迁移（备份与标记位于`runtime/migrations/long-agent-definition-split/`）。每个 Agent 只有一个根：`long-agents/<longAgentId>/{workspace,sessions,memory,skills,...}`，其 home 项目的 projectId 就是 `longAgentId`，日常主 Session 按持久化 IANA 时区的日期轮换。公共共享空间为 `longagentshare`（原共享 `daily` 归一而来，不默认打开）；会话必须属于用户自己的项目。`defaultProjectId`仅决定新建私聊绑定的默认协作上下文；Home/共享容器表示无业务项目。已有渠道使用自己的 `contextProjectId`；Web 每条消息显式选择项目或 null。Long Agent 默认进入当天默认 Session；显式新建的直接 Session 有独立历史，跨日可继续，不替换每日默认引用。Agent Memory 仍由 NanoClaw Agent Group 承载，迁入 Chat Home 是后续切片（S5b）。剩余差距见[实施状态](../modules/long-agents/chat-long-agent-roadmap.md)。
 
 Long Agent 的执行设置与普通项目 Session 使用同一 Workflow 服务。设置页“配置 Workflow”打开同一节点编辑器；默认 Workflow 与资源选择保存在 Home 的项目配置中，节点模型、思考等级、工具及资源保存在 `long-agents/<id>/workflows/<workflowId>/agents/<agentId>.json`。`definition.json` 只保存长期身份 Prompt。旧定义中的执行字段幂等迁至 `minimal-pi-coding-agent/pi-coding-agent`，已有公共配置字段优先；原件及完成标记位于 `runtime/migrations/long-agent-workflow-config/<id>/`。旧 Long Agent 配置 API 中执行字段为公共配置的兼容投影，修改写回同一文件。
 
@@ -115,11 +115,11 @@ Web 管理接口为`GET/PATCH /api/long-agents/:id/agent-group`与`GET/PATCH /ap
 
 NanoClaw Token、Bot Token、OAuth和模型Credential不写入该文件。Telegram Token仍由NanoClaw环境管理；Chat的Bot Credential注册表也不能通过Long Agent API返回给浏览器。
 
-Chat Web 的全局导航包括“同事、项目、动态、设置”。Friend 列表跨项目稳定存在；顶栏 Project 是当前交流的上下文，切 Project 不替换同事，切同事不改 Project。“项目”入口按当前 Project 展示普通 Session 和新建入口；普通会话归属于自己的 Project。Friend 模式保留原生 Long Agent Session 归属，顶栏上下文作为既有 `contextProjectId` 传入，不等于把 Session 移到另一 Project。首次无恢复目标时优先打开可用的 Nexus；明确的 Project 链接进入项目会话模式。右侧资料跟随当前 Project，历史文件预览保留来源。
+Chat Web 的全局导航包括“同事、项目、动态、设置”。Long Agent 列表跨项目稳定存在；顶栏 Project 是当前交流的上下文，切 Project 不替换同事，切同事不改 Project。“项目”入口按当前 Project 展示会话 和新建入口；会话归属于自己的 Project。Long Agent 模式保留原生 Long Agent Session 归属，顶栏上下文作为既有 `contextProjectId` 传入，不等于把 Session 移到另一 Project。首次无恢复目标时优先打开可用的 Nexus；明确的 Project 链接进入项目会话模式。右侧资料跟随当前 Project，历史文件预览保留来源。
 
-`<CHAT_HOME>/long-agents/<longAgentId>/` 下按领域分开的受管可写文件：`definition.json`（Pi 运行策略）、`tasks.json`（LA2 任务定义、不可变修订与发生记录）、`duties.json`（LA3 职责、目标代号、进度与回执）、`artifacts.json`（LA4 产物记录、冻结内容与内容版本）。任务可选带 `deliverable`（`kind`/`slot`/`audience`）声明它是 3+1 产物任务，配置入口是任务表单与 `task_manage`；产物身份、提交、校验、恢复与状态合同见 [Friend 产物闭环](../modules/long-agents/deliverables.md)。这些文件只由 Backend 服务在文件锁内原子替换写入，不接受手工编辑，也不出现在 Frontend 响应中的宿主路径。
+`<CHAT_HOME>/long-agents/<longAgentId>/` 下按领域分开的受管可写文件：`definition.json`（Pi 运行策略）、`tasks.json`（LA2 任务定义、不可变修订与发生记录）、`duties.json`（LA3 职责、目标代号、进度与回执）、`artifacts.json`（LA4 产物记录、冻结内容与内容版本）。任务可选带 `deliverable`（`kind`/`slot`/`audience`）声明它是 3+1 产物任务，配置入口是任务表单与 `task_manage`；产物身份、提交、校验、恢复与状态合同见 [Long Agent 产物闭环](../modules/long-agents/deliverables.md)。这些文件只由 Backend 服务在文件锁内原子替换写入，不接受手工编辑，也不出现在 Frontend 响应中的宿主路径。
 
-Long Agent配置入口位于“Friend”列表的设置按钮，优先选中当前 Friend。它编辑的`LongAgent`定义是Personal配置，对该Long Agent所有Project生效；顶栏上下文不会把同事定义变成Project配置。可编辑字段包括显示名称与描述、Personal全局启停、`defaultProjectId`、Model、Thinking Level、System Prompt/自定义Prompt、Tools和Resources；稳定`id`不可改名。
+Long Agent配置入口位于“Long Agent”列表的设置按钮，优先选中当前 Long Agent。它编辑的`LongAgent`定义是Personal配置，对该Long Agent所有Project生效；顶栏上下文不会把同事定义变成Project配置。可编辑字段包括显示名称与描述、Personal全局启停、`defaultProjectId`、Model、Thinking Level、System Prompt/自定义Prompt、Tools和Resources；稳定`id`不可改名。
 
 配置页使用两个后端合同：
 
@@ -128,18 +128,18 @@ Long Agent配置入口位于“Friend”列表的设置按钮，优先选中当�
 | `GET /api/long-agents/:id/config` | 读取Personal LongAgent定义与可见的Channel Gateway摘要 | 返回`revision`；Channel adapter/gateway只读，不返回Gateway地址、Credential或Token |
 | `PUT /api/long-agents/:id/config` | 替换可编辑配置 | 请求必须带`expectedRevision`；过期revision返回`409`，保存采用串行化原子替换 |
 | `GET /api/long-agents/:id/inspection` | 按与执行完全相同的Pi装配路径解析该Agent的生效Skill、Tool与Prompt | 只读；缺省检查无冻结项目，可用`?projectId=`检查已登记用户项目；兼容旧客户端传入自身Agent ID时视为无项目；Skill带`owner`归属分类（personal/project/plugin/agent/injected） |
-| `POST /api/long-agents/enable` | 空对象请求：首次创建 Nexus；已有 Friend时返回已有记录 | 不恢复已归档身份；Host 不可用时返回可重试错误 |
-| `POST /api/long-agents` | `id/name` 与可选 `description` 创建 Friend，自动配齐 Group、配置根和 home | 创建请求持久化以支持失败重试；显式 `nanoclawAgentGroupId/instanceId` 继续支持绑定已有 Group；写入审计 |
+| `POST /api/long-agents/enable` | 空对象请求：首次创建 Nexus；已有 Long Agent时返回已有记录 | 不恢复已归档身份；Host 不可用时返回可重试错误 |
+| `POST /api/long-agents` | `id/name` 与可选 `description` 创建 Long Agent，自动配齐 Group、配置根和 home | 创建请求持久化以支持失败重试；显式 `nanoclawAgentGroupId/instanceId` 继续支持绑定已有 Group；写入审计 |
 | `POST /api/long-agents/:id/archive` | 归档（停新工作、保留数据）或恢复（`?restore=true`） | 幂等；归档同时置`enabled=false` |
 | `DELETE /api/long-agents/:id` | 两阶段删除 | 必须先归档；不删除业务 Project 历史，Daily Workspace 文件保留在磁盘 |
 
 `PUT`会先离线刷新本地模型与认证快照，再校验`defaultProjectId`、Model与Provider认证、Tool地址以及完整Agent Definition，不接受未知字段。保存成功后以返回的新`revision`替换页面基线；冲突时重新读取，不得用过期表单覆盖新配置。
 
-Friend 设置中的基础能力检查固定在该助手自身 Home 解析，并明确标注预览范围；不会拿“新建渠道默认项目”冒充本轮项目。业务项目执行仍在受理时冻结项目并重新解析资源。保存后重新读取检查，检查失败单独展示；未保存的配置不混入“已生效”列表。切换对象时清空旧检查并忽略旧请求返回，刷新须保护未保存草稿。身份/长期指令、运行配置和 Agent Memory 保留各自领域的 revision 与保存入口。
+Long Agent 设置中的基础能力检查固定在该助手自身 Home 解析，并明确标注预览范围；不会拿“新建渠道默认项目”冒充本轮项目。业务项目执行仍在受理时冻结项目并重新解析资源。保存后重新读取检查，检查失败单独展示；未保存的配置不混入“已生效”列表。切换对象时清空旧检查并忽略旧请求返回，刷新须保护未保存草稿。身份/长期指令、运行配置和 Agent Memory 保留各自领域的 revision 与保存入口。
 
-`ProjectLongAgent`不复制 Agent Definition。新直接交流的当前投影位于 Home，完整日历在 state 的 dailySessions；旧业务绑定保留作历史来源。全局 enabled 控制新执行，用户切换项目不会改变 Friend 身份或其每日 Session。
+`ProjectLongAgent`不复制 Agent Definition。新直接交流的当前投影位于 Home，完整日历在 state 的 dailySessions；旧业务绑定保留作历史来源。全局 enabled 控制新执行，用户切换项目不会改变 Long Agent 身份或其每日 Session。
 
-`<CHAT_HOME>/runtime/long-agent-state.json` schema 5 保存独立工作绑定、日历、耐久请求、当前投影、渠道绑定、待投递事件与幂等收据。202 前冻结并持久化接受输入，执行/Delivery/Ack 由恢复 Worker 负责；Session 读取不触发渠道重放。Web 用 `POST /api/long-agents/:id/turns` 接受文本/模型支持的图片，再按执行引用订阅；旧 messages API 仅同步兼容。失败重试与不明中断不能混淆，完整合同见[Friend 生命周期](../modules/long-agents/chat-long-agent-architecture.md#421-p3-实现合同2026-09-19)。
+`<CHAT_HOME>/runtime/long-agent-state.json` schema 5 保存独立工作绑定、日历、耐久请求、当前投影、渠道绑定、待投递事件与幂等收据。202 前冻结并持久化接受输入，执行/Delivery/Ack 由恢复 Worker 负责；Session 读取不触发渠道重放。Web 用 `POST /api/long-agents/:id/turns` 接受文本/模型支持的图片，再按执行引用订阅；旧 messages API 仅同步兼容。失败重试与不明中断不能混淆，完整合同见[Long Agent 生命周期](../modules/long-agents/chat-long-agent-architecture.md#421-p3-实现合同2026-09-19)。
 
 NanoClaw Host以Instance为单位配置Chat Backend、实例身份和共享服务Credential：
 
@@ -215,7 +215,7 @@ Long Agent 的模型是其自身定义的一部分，与头像/身份一样可�
 
 模型编辑页支持图片输入、推理、上下文/输出上限、费用、模型级 API/baseUrl、headers、samplingParams、compat 和 thinkingLevelMap；Provider 支持显示名称、authHeader 与 compat。高级 JSON 必须为对象，错误草稿阻止保存。`samplingParams` 沿用 Pi 合同，仅 OpenAI-compatible adapters 使用；声明图片支持不等于供应商实测。未触达的原生字段（包括分段价格等）保存时保留。
 
-`GET /api/models` 从相同 Pi ModelRuntime 离线解析自定义目录，响应的 `input: ("text" | "image")[]` 与 contextWindow/maxTokens/thinkingLevels 供 Friend 和 Workflow 共用选择器显示能力，不维护前端规格表。旧 Backend 缺少 input 时显示“未提供”，不能解释为“不支持”。Workflow 设置采用统一弹窗，将项目持久配置、当前 Session 覆盖和实际检查分开；模型/工具/资源修改从下一轮生效。
+`GET /api/models` 从相同 Pi ModelRuntime 离线解析自定义目录，响应的 `input: ("text" | "image")[]` 与 contextWindow/maxTokens/thinkingLevels 供 Long Agent 和 Workflow 共用选择器显示能力，不维护前端规格表。旧 Backend 缺少 input 时显示“未提供”，不能解释为“不支持”。Workflow 设置采用统一弹窗，将项目持久配置、当前 Session 覆盖和实际检查分开；模型/工具/资源修改从下一轮生效。
 
 `models.json` 可能包含 API Key、自定义请求头或读取密钥的命令，应视为敏感文件。能使用环境变量或 Chat 认证流程时，不要写入明文 Credential。
 
@@ -300,7 +300,7 @@ Personal 默认 Workflow 位于 `<CHAT_HOME>/config.json`。它必须是完整�
 }
 ```
 
-也可以覆盖一个 Workflow Agent 的配置选择。例如只让直接执行 Agent 使用明确选择的资源：
+也可以覆盖一个 Workflow Agent 的配置选择。例如只让单节点回合的 Agent 使用明确选择的资源：
 
 ```json
 {
@@ -332,7 +332,7 @@ Chat 源码仓库当前只跟踪`.chat/project.json`和`.chat/skills/**`，默�
 
 Backend 初始化会把随产品发布的 `project-management` 安装到 `<CHAT_HOME>/agent/skills/project-management/SKILL.md`。下一轮继承资源的 Agent 可发现；已有同名用户 Skill 或用户修改的内容不会被升级覆盖。安装版本收据位于 `<CHAT_HOME>/runtime/builtin-skills/`，它不属于 Skill 目录。
 
-Long Agent 未提供自定义 Definition 时，默认拥有 `project_search`、`project_read`、`project_create`、`project_open`、`project_update`、`project_configure`。已经保存显式 Definition 的 Agent 保留原选择；需要时在Friend配置页选择这六个 `system:tool/project_*` 地址，资源用 inherit 或明确选择 Skill 路径。普通 Workflow Agent 也可通过同一 Tool 配置入口启用。
+Long Agent 未提供自定义 Definition 时，默认拥有 `project_search`、`project_read`、`project_create`、`project_open`、`project_update`、`project_configure`。已经保存显式 Definition 的 Agent 保留原选择；需要时在Long Agent配置页选择这六个 `system:tool/project_*` 地址，资源用 inherit 或明确选择 Skill 路径。普通 Workflow Agent 也可通过同一 Tool 配置入口启用。
 
 例如直接说“创建思考项目，记录日常思考与反思”。新项目显示名为“思考”，工作目录为 `<CHAT_HOME>/workspaces/思考`，不添加 `project-` 前缀；同名目录已占用时使用 `思考 (2)` 等序号，显示名仍保留原名。名称支持中文和空格，须是有效的单级目录名，UTF-8最多240字节，不接受路径分隔符或控制字符。内部稳定projectId自动分配，也可通过可选id指定；Session、Memory等私有数据仍位于 `<CHAT_HOME>/projects/<projectId>`，不是用户工作目录。旧项目及同requestId重试保留原身份和目录，不自动迁移。`.chat/project.json` 保存身份和用途，`.chat/config.json` 默认继承。首次接入外部目录仍需先通过 Chat 项目选择器授权打开。
 
@@ -405,8 +405,8 @@ src/workflows/<workflowId>/agents/<agentId>/agent.json
 | 修改一个项目的 Pi 默认模型 | `<project-root>/.pi/settings.json` |
 | 添加自定义 Provider 或模型 | `<CHAT_HOME>/agent/models.json` |
 | 管理 Provider 认证 | `<CHAT_HOME>/agent/auth.json`，使用认证流程 |
-| 管理Long Agent身份、全局启停、默认Project与Agent能力 | 全局“Friend”入口的列表设置按钮；Personal事实在`<CHAT_HOME>/long-agents.json` |
-| 修改Long Agent显示头像 | Friend 设置页的身份区域；图片资产在`<CHAT_HOME>/long-agents-assets/` |
+| 管理Long Agent身份、全局启停、默认Project与Agent能力 | 全局“Long Agent”入口的列表设置按钮；Personal事实在`<CHAT_HOME>/long-agents.json` |
+| 修改Long Agent显示头像 | Long Agent 设置页的身份区域；图片资产在`<CHAT_HOME>/long-agents-assets/` |
 | 查看Long Agent的Telegram/NanoClaw Host信息 | 同一配置页的只读摘要；不返回Credential或Token |
 | 修改 Personal 默认 Workflow | `<CHAT_HOME>/config.json` |
 | 修改一个项目的默认 Workflow | `<project-root>/.chat/config.json` |
@@ -425,31 +425,31 @@ src/workflows/<workflowId>/agents/<agentId>/agent.json
 
 约定的 Project `.chat/extensions` 是可选资源目录，未创建时不作为扩展加载错误；工具目录与公共 Pi 装配使用相同发现规则。显式配置的扩展路径继续由 Pi 校验，实际诊断不会因此隐藏。
 
-Friend 的简介在配置保存时也允许空串（最多 500 字符）；底层 Agent Definition 保留 `Chat Long Agent` 默认描述，列表仍显示用户的空简介。revision 按规范化配置计算，避免保存后因字段顺序不同产生虚假冲突。原 `responseTemplate` 回复尾注模板已废弃；更旧配置或客户端传入的该字段会被读取时忽略，下次保存写入后即移除。
+Long Agent 的简介在配置保存时也允许空串（最多 500 字符）；底层 Agent Definition 保留 `Chat Long Agent` 默认描述，列表仍显示用户的空简介。revision 按规范化配置计算，避免保存后因字段顺序不同产生虚假冲突。原 `responseTemplate` 回复尾注模板已废弃；更旧配置或客户端传入的该字段会被读取时忽略，下次保存写入后即移除。
 
 ## 公共装配与后续格式迁移
 
-Friend 每日默认引用与额外直接 Session、每轮项目冻结、schema 7 日历与队列、公共实时展示已实现。P5 无损迁移保留旧文件与索引备份，定义冲突会阻止覆盖，state 升级中断可补完成标记。旧 URL 仅通过精确迁移记录读取；不会全局搜索另一个项目作为失败回退。迁移目录、冲突处理和回退前提见[Friend 升级手册](../operations/friend-migration.md)。
+Long Agent 每日默认引用与额外直接 Session、每轮项目冻结、schema 7 日历与队列、公共实时展示已实现。P5 无损迁移保留旧文件与索引备份，定义冲突会阻止覆盖，state 升级中断可补完成标记。旧 URL 仅通过精确迁移记录读取；不会全局搜索另一个项目作为失败回退。迁移目录、冲突处理和回退前提见[Long Agent 升级手册](../operations/friend-migration.md)。
 
-Friend 和普通项目 Session 复用公共 Workflow 配置 Resolver；Friend 使用 Home 的默认 Workflow、节点持久配置与会话选择，并冻结本轮全部节点的有效定义，不让浏览项目 `.pi/settings.json` 或旧 Session 模型隐式覆盖本轮执行配置。身份的 Chat/Nano 当前事实源保持不变，本轮不顺带迁移 Agent Memory 或双写受管字段。详细输入和迁移边界见[公共装配 §15](../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)、[Session §10](../modules/sessions/chat-session-architecture.md#10-friend-每日-session-与本轮项目p1待实施)。
+Long Agent 和普通项目 Session 复用公共 Workflow 配置 Resolver；Long Agent 使用 Home 的默认 Workflow、节点持久配置与会话选择，并冻结本轮全部节点的有效定义，不让浏览项目 `.pi/settings.json` 或旧 Session 模型隐式覆盖本轮执行配置。身份的 Chat/Nano 当前事实源保持不变，本轮不顺带迁移 Agent Memory 或双写受管字段。详细输入和迁移边界见[公共装配 §15](../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)、[Session §10](../modules/sessions/chat-session-architecture.md#10-friend-每日-session-与本轮项目p1待实施)。
 
 P2 消息 API 的 `contextProjectId` 接受用户 Project ID 或 null，省略等同无项目；切换只作用于下一条消息。装配快照恢复使用原目标与规则，失效项目不回退 Home；无项目时工具 cwd 为专属 Workspace，Project Memory 默认写入要求明确目标。跨项目 `workflow_call` 保留父 Home Session 来源，子 Workflow 属于协作 Project。详见公共装配 §15.6。
 
-Friend 配置 GET/PUT 的可选 `timeZone` 为 IANA 时区（例如 `Asia/Shanghai`、`America/New_York`），使用同一 revision 并发校验；旧配置首次使用固定 Backend 有效时区。配置页“运行策略”可修改，新请求采用新时区，已接受请求与历史不移动。日历与队列迁移、恢复路径见 [Long Agent 实现合同](../modules/long-agents/chat-long-agent-architecture.md#421-p3-实现合同2026-09-19)，不要手工改 Session 日期或 state 中的绑定来模拟换日。
+Long Agent 配置 GET/PUT 的可选 `timeZone` 为 IANA 时区（例如 `Asia/Shanghai`、`America/New_York`），使用同一 revision 并发校验；旧配置首次使用固定 Backend 有效时区。配置页“运行策略”可修改，新请求采用新时区，已接受请求与历史不移动。日历与队列迁移、恢复路径见 [Long Agent 实现合同](../modules/long-agents/chat-long-agent-architecture.md#421-p3-实现合同2026-09-19)，不要手工改 Session 日期或 state 中的绑定来模拟换日。
 
 ### LA1 状态升级
 
 `runtime/long-agent-state.json` 从 v4 升至 v5，增加 `works`；旧状态默认空数组，旧 Session 不移动、不合并。升级前原件一次性保存在 `runtime/migrations/long-agent-work-v5/source.json`，完成后记录 `complete.json`；中断可重跑，原备份不覆盖。v1–v3 同时保留原 daily-v4 迁移收据合同。已有 v5 工作后不能将旧程序直接指向该状态文件，应向前修复；没有新增数据时才可停服按受管备份恢复。执行合同、HTTP 与工具说明见 [LA1](../modules/long-agents/chat-long-agent-architecture.md#la1独立后台工作实现合同)。
 
 
-2026-09-26 单聊统一：Friend/Topic 消息可选 `workflow`（默认 minimal-pi-coding-agent）；这是下一轮执行选择，不改变 Session 存储归属或 Friend 配置。默认工作 Agent 继续使用 Friend 冻结定义，业务 Workflow 使用自己的阶段角色并继承可信 owner/本轮冻结项目，记忆 writer 不改写工作 Agent 配置。字段和恢复规则见 [模块合同](../architecture/chat-module-contracts.md#三类会话的统一执行与导航2026-09-26)。
+2026-09-26 单聊统一：Long Agent/Topic 消息可选 `workflow`（默认 minimal-pi-coding-agent）；这是下一轮执行选择，不改变 Session 存储归属或 Long Agent 配置。默认工作 Agent 继续使用 Long Agent 冻结定义，业务 Workflow 使用自己的阶段角色并继承可信 owner/本轮冻结项目，记忆 writer 不改写工作 Agent 配置。字段和恢复规则见 [模块合同](../architecture/chat-module-contracts.md#三类会话的统一执行与导航2026-09-26)。
 
 
 ### 模型选择的能力展示（2026-09-27）
 
 `GET /api/models` 保留全局 thinkingLevels，并在每个已配置模型返回 `thinkingLevels:string[]`，由同一个 Pi ModelRuntime 解析模型后调用 Pi 的 `getSupportedThinkingLevels()`，再限制到 Chat 已支持的枚举。非推理模型仅支持 off；不能给每个模型无条件展示全局最高等级。Frontend 验证响应，在缺少 per-model 字段的旧 Backend 上只展示继承与当前配置提示，不自行猜测。
 
-Friend 与 Workflow Agent 采用共用可搜索模型选择和思考等级单选。继承、显式配置、不可用当前值分别呈现；未认证模型不可新选，已经保存的不可用值不会静默替换。保存持久配置对下一次运行生效，不能改变在途执行冻结的配置。Provider 编辑仍保存 `models.json`，模型高级 thinkingLevelMap 的 default/null/string 语义不变。
+Long Agent 与 Workflow Agent 采用共用可搜索模型选择和思考等级单选。继承、显式配置、不可用当前值分别呈现；未认证模型不可新选，已经保存的不可用值不会静默替换。保存持久配置对下一次运行生效，不能改变在途执行冻结的配置。Provider 编辑仍保存 `models.json`，模型高级 thinkingLevelMap 的 default/null/string 语义不变。
 
 ### Long Agent 每日归档
 

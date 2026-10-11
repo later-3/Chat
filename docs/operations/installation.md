@@ -43,7 +43,7 @@ curl --fail --location https://raw.githubusercontent.com/later-3/Chat/main/deplo
 sudo bash /tmp/chatctl install --with-nanoclaw
 ```
 
-`--with-nanoclaw` 安装 Friend Host；只使用普通 Web/Workflow 时去掉该参数。已有本次源码包时，可直接 `sudo bash deploy/chatctl install --with-nanoclaw --ref <已发布提交>`。安装脚本仍按 `--ref` 从 Git 获取构建输入，**本机未提交代码不会因此出现在另一台机器**。默认 main；Frontend、Pi、Nano 的版本固定到该父提交，禁止子模块自行追踪远端。
+`--with-nanoclaw` 安装 Long Agent Host；只使用普通 Web/Workflow 时去掉该参数。已有本次源码包时，可直接 `sudo bash deploy/chatctl install --with-nanoclaw --ref <已发布提交>`。安装脚本仍按 `--ref` 从 Git 获取构建输入，**本机未提交代码不会因此出现在另一台机器**。默认 main；Frontend、Pi、Nano 的版本固定到该父提交，禁止子模块自行追踪远端。
 
 自动完成：
 
@@ -67,7 +67,7 @@ sudo /opt/chat/deploy/chatctl status
 
 在本机浏览器访问 `http://127.0.0.1:43110`。WSL 的 Windows 浏览器通常可通过 localhost 访问 Linux 服务，见 [Microsoft 网络说明](https://learn.microsoft.com/windows/wsl/networking)。远程 Linux 使用[SSH 转发](./network.md)，无需为安装开放公网端口。
 
-在设置中选择可用 Provider、模型并配置认证，然后创建自己的 Project。Friend 页面点击启用默认助手或“＋”，只填名称和可选简介；Backend 通过 Nano 管理接口创建 Group、独立资源和会话，不需要手工写 Registry。仅 Web 交流不要求 Telegram/微信，渠道账号稍后连接。没有模型凭据可以浏览配置页面，不能据此声称模型已能工作。
+在设置中选择可用 Provider、模型并配置认证，然后创建自己的 Project。Long Agent 页面点击启用默认助手或“＋”，只填名称和可选简介；Backend 通过 Nano 管理接口创建 Group、独立资源和会话，不需要手工写 Registry。仅 Web 交流不要求 Telegram/微信，渠道账号稍后连接。没有模型凭据可以浏览配置页面，不能据此声称模型已能工作。
 
 也可以手动配置 `/etc/chat/chat.env` 的 Provider 环境变量，或 `/home/chat/.chat/agent/settings.json`、`models.json`、`auth.json`；格式以[配置合同](../configuration/README.md)为准。环境文件修改后需 restart，密钥不打印或提交。
 

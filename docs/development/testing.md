@@ -131,7 +131,7 @@ git -C frontend diff --check
 
 上述限制针对默认自动化门禁；真实模型验收是用户授权后单独运行的补充，不能用假模型通过声称真实模型已经可用。Agent 装配、工具调用、压缩及每日总结变更应明确记录真实模型是否验收；有条件且已授权时完成验收，再报告范围。真实渠道发送需要另外的明确授权。
 
-Friend 生命周期可使用 `scripts/long-agent-live-smoke.mjs`：
+Long Agent 生命周期可使用 `scripts/long-agent-live-smoke.mjs`：
 
 ```bash
 node --import ./scripts/typescript-test-loader.mjs --experimental-strip-types \
@@ -209,9 +209,9 @@ P1 只修改合同与实验测试，无产品执行代码变更；运行上述�
 
 这些是 Chat 实现门禁；`pi-assembly-seams.test.mjs` 只证明原生接缝。公共装配变更还必须通过 verify 中的 Builder、开发 Step bundle、生产 Runtime 和 test:dev，不用公共工厂单测替代。已运行服务使用 `.output` 时，应在隔离源码副本完成 build/verify，避免改写运行中的产物。P2 完整证据见 [阶段记录](../history/reviews/2026-09-19-agent-unification-p2.md)。
 
-普通 Workflow 还必须覆盖“用户项目嵌套在另一个仓库下、没有 AGENTS/README”的场景：模型请求父级 README 时得到明确越界错误，使用当前项目名称与用途，不把父级仓库当作当前项目。`public-assembly.test.mjs` 覆盖父级/相邻项目/符号链接、六种原生文件工具、检查入口与重试身份冻结；Friend A/B 通过不能代替这条普通 Workflow 回归。事故机制见[嵌套项目身份与文件边界](./experiences/nested-project-identity.md)。
+普通 Workflow 还必须覆盖“用户项目嵌套在另一个仓库下、没有 AGENTS/README”的场景：模型请求父级 README 时得到明确越界错误，使用当前项目名称与用途，不把父级仓库当作当前项目。`public-assembly.test.mjs` 覆盖父级/相邻项目/符号链接、六种原生文件工具、检查入口与重试身份冻结；Long Agent A/B 通过不能代替这条普通 Workflow 回归。事故机制见[嵌套项目身份与文件边界](./experiences/nested-project-identity.md)。
 
-## Friend P3 生命周期门禁
+## Long Agent P3 生命周期门禁
 
 `test/long-agents/daily-lifecycle.test.mjs` 使用真实 Pi、本地流式假模型与只替换 Date 的可控时钟，覆盖接受冻结、唯一日期、旧链接、重启队列/未知副作用、跨日总结、原子写入故障和原生压缩后工具操作。其中独立 Node 进程恢复验证无内存 Loader 的持久请求。`long-agents.test.mjs` 覆盖实际 Web/Nano 并发、原生 HTTP 入口、渠道投递失败次日只重投、可信私聊边界及已支持调度。Frontend 的 `friend-daily-browser.test.mjs` 验证状态/操作响应；浏览器矩阵与完整门禁结果记录于 [P3 自检](../history/reviews/2026-09-19-agent-unification-p3.md)。模拟 Nano 不等于真实 Telegram 验收。
 
@@ -220,7 +220,7 @@ P1 只修改合同与实验测试，无产品执行代码变更；运行上述�
 
 `test/long-agents/turn-feedback.test.mjs` 通过 HTTP 接受、原生 Pi 和可控模型验证 202 与执行解耦、真实增量、256 事件窗口 reset、去重/冲突/归属、取消后后续消息、同项目原生引导、跨项目拒绝、模型错误与图片能力。`frontend/lib/friend-execution.test.mjs` 验证相同消费器的断序补读、重复忽略、未知版本/错误身份拒绝、无响应超时、观察终止和终态。P3 生命周期用例继续覆盖重启、跨日和原生压缩恢复。
 
-真实浏览器必须对照普通 Session 与 Friend：首 Token/工具/完成、刷新与断网不重发、取消、引导、切项目后的后续消息、明暗主题与长内容滚动。假模型边界测试和真实供应商测试分别记录，不能互相冒充。用户现有服务运行时，在隔离源码副本执行 `pnpm verify`，禁止覆盖其正在使用的 `.output`。本次证据见[P4 审计](../history/reviews/2026-09-19-agent-unification-p4.md)。
+真实浏览器必须对照会话 与 Long Agent：首 Token/工具/完成、刷新与断网不重发、取消、引导、切项目后的后续消息、明暗主题与长内容滚动。假模型边界测试和真实供应商测试分别记录，不能互相冒充。用户现有服务运行时，在隔离源码副本执行 `pnpm verify`，禁止覆盖其正在使用的 `.output`。本次证据见[P4 审计](../history/reviews/2026-09-19-agent-unification-p4.md)。
 
 
 ## LA0 原生独立会话接缝
@@ -228,13 +228,13 @@ P1 只修改合同与实验测试，无产品执行代码变更；运行上述�
 `test/long-agents/la0-session-seams.test.mjs` 使用公共工厂、本地 HTTP 假模型与真实 Pi 持久化，验证同身份独立 Session 并发、原生工具/压缩后的公开 Entry 引用、旧写入器风险、同锁重开及丢回执去重。已知风险用例是可行性基线，不是生产修复验收；LA1 必须增加真实入口回归并替换对应风险断言。LA0 没有新增群/任务 UI，不能报告真实浏览器群聊通过。阶段边界与证据见[LA0 审计](../history/reviews/2026-09-20-long-agent-la0.md)。
 
 
-统一会话门禁：`scripts/unified-session-runtime.test.mjs` 已进入 `pnpm test:dev`，必须证明同 Friend Pi Session 默认→规划审核→真实进程替换后批准→默认，节点选择业务 Workflow 并 settled，work/remember 执行中断不自动重放，以及停止幂等。另以真实自动压缩验证 Writer 的下一次 Provider 请求使用摘要而不回填归档原文；`session-memory-switch-browser.test.mjs` 检查原生事件驱动的压缩结果和估计文案，默认截图位于 `.data/verification/pi-capabilities/native-compaction-feedback.png`。领域单元测试的 `workflow-transport-fixture.mjs` 只替换 SDK 传输并运行同一 Workflow body/Pi；不能称为真实 Runtime 证据。性能使用 `scripts/unified-session-perf.mjs`，保留数据规模、冷热态、轮询重叠与原始计时，不把小会话平均数冒充所有场景上限。
+统一会话门禁：`scripts/unified-session-runtime.test.mjs` 已进入 `pnpm test:dev`，必须证明同 Long Agent Pi Session 默认→规划审核→真实进程替换后批准→默认，节点选择业务 Workflow 并 settled，work/remember 执行中断不自动重放，以及停止幂等。另以真实自动压缩验证 Writer 的下一次 Provider 请求使用摘要而不回填归档原文；`session-memory-switch-browser.test.mjs` 检查原生事件驱动的压缩结果和估计文案，默认截图位于 `.data/verification/pi-capabilities/native-compaction-feedback.png`。领域单元测试的 `workflow-transport-fixture.mjs` 只替换 SDK 传输并运行同一 Workflow body/Pi；不能称为真实 Runtime 证据。性能使用 `scripts/unified-session-perf.mjs`，保留数据规模、冷热态、轮询重叠与原始计时，不把小会话平均数冒充所有场景上限。
 
-会话切换连续性门禁：`session-memory-switch-browser.test.mjs` 在同一浏览器跨 Friend 切换，再切回已访问会话，检查 DOM 与逐帧采样中聊天输入不消失、联系人没有整列灰闪、目标历史保留。不能以最后出现答案或两帧之后可输入代替中间状态验证。首次滚动由 `chat-auto-scroll.test.mjs` 检查绘制前定位，历史上翻与真实新活动保持原合同。
+会话切换连续性门禁：`session-memory-switch-browser.test.mjs` 在同一浏览器跨 Long Agent 切换，再切回已访问会话，检查 DOM 与逐帧采样中聊天输入不消失、Long Agent 列没有整列灰闪、目标历史保留。不能以最后出现答案或两帧之后可输入代替中间状态验证。首次滚动由 `chat-auto-scroll.test.mjs` 检查绘制前定位，历史上翻与真实新活动保持原合同。
 
-## Friend 任务导航与摘要计量门禁（2026-09-27）
+## Long Agent 任务导航与摘要计量门禁（2026-09-27）
 
-`test/long-agents/task-usage.test.mjs` 从 Duty → Task → Work → 原生 Pi 压缩 → 本地 HTTP 模型验证全部已记录摘要用量进入预算和助手汇总，同时覆盖 UTC 主机/Asia-Shanghai Friend 跨日、缓存与分支摘要用量。`frontend/lib/task-results.test.mjs` 验证同任务多次执行、长期任务多项成果和无关任务过滤。真实浏览器门禁在 `scripts/group-browser.test.mjs` 与 `scripts/session-memory-switch-browser.test.mjs`：成员参与记录深链/刷新回群、共享 Dialog 焦点/Escape、聊天工具创建后台任务、侧栏无创建表单、确认取消不丢草稿及中英文/主题/视口恢复。设置 `CHAT_UI_EVIDENCE_DIR` 可保留截图；这些检查随 `pnpm verify` 执行。
+`test/long-agents/task-usage.test.mjs` 从 Duty → Task → Work → 原生 Pi 压缩 → 本地 HTTP 模型验证全部已记录摘要用量进入预算和助手汇总，同时覆盖 UTC 主机/Asia-Shanghai Long Agent 跨日、缓存与分支摘要用量。`frontend/lib/task-results.test.mjs` 验证同任务多次执行、长期任务多项成果和无关任务过滤。真实浏览器门禁在 `scripts/group-browser.test.mjs` 与 `scripts/session-memory-switch-browser.test.mjs`：成员参与记录深链/刷新回群、共享 Dialog 焦点/Escape、聊天工具创建后台任务、侧栏无创建表单、确认取消不丢草稿及中英文/主题/视口恢复。设置 `CHAT_UI_EVIDENCE_DIR` 可保留截图；这些检查随 `pnpm verify` 执行。
 
 真实模型群聊验收只在显式设置 `CHAT_TEST_REAL_MODEL=1` 时执行；普通 `pnpm verify` / `pnpm test:dev` 使用隔离假模型，不能因机器上存在正式认证就自动消费真实模型。
 

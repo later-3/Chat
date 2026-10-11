@@ -8,7 +8,7 @@
 
 2026-09-07 Long Agent 目标扩展了会话选择与跨日生命周期，见本文第10节及[Long Agent架构](../long-agents/chat-long-agent-architecture.md)。下文的Workflow消息、谱系和持久化合同继续有效；多Agent与用户共同会话的参与者协议尚未定案。
 
-2026-09-27 开发分支：Project、Friend、Topic 的新轮次共用 Workflow Run/Step 与 Pi 装配；业务受理入口仍校验各自来源、owner 和顺序。会话切换只读取目标会话，不启动 Run，Workflow 选择不改变 Session ID。只读摘要/近期视图均为有界、可失效投影，原生消息不裁剪。精确实现见[统一模块合同](../../architecture/chat-module-contracts.md#三类会话的统一执行与导航2026-09-26)与[导航性能](../../development/session-navigation-performance.md)。
+2026-09-27 开发分支：Project、Long Agent、Topic 的新轮次共用 Workflow Run/Step 与 Pi 装配；业务受理入口仍校验各自来源、owner 和顺序。会话切换只读取目标会话，不启动 Run，Workflow 选择不改变 Session ID。只读摘要/近期视图均为有界、可失效投影，原生消息不裁剪。精确实现见[统一模块合同](../../architecture/chat-module-contracts.md#三类会话的统一执行与导航2026-09-26)与[导航性能](../../development/session-navigation-performance.md)。
 
 ## 1. 对象边界
 
@@ -211,11 +211,11 @@ Session详情的`workflowCallStatistics`是上述关系的只读聚合：`direct
 11. 新建、恢复、主动发言、Channel接入和定时触发都先解析Project；缺少具体归属的新交互进入Daily Project。
 12. Session固有Project与请求、Channel Binding或父任务Project不一致时明确失败，不自动迁移或回退。
 
-## 10. Friend 每日 Session 与本轮项目（P1，待实施）
+## 10. Long Agent 每日 Session 与本轮项目（P1，待实施）
 
 实施状态：P2 已完成本轮装配元数据与历史项目标记；P3 已完成每日唯一性、耐久接受序号、总结与恢复；P5 迁移与恢复合同见[升级手册](../../operations/friend-migration.md)。标题保留以兼容既有锚点。
 
-最新合同取代旧的“进入业务项目另建 Friend Session”。每个 Friend 每日一条直接交流 Session，原生 ID、存储根、header cwd 不因工作目标变化。普通项目 Session 和显式 Workflow 子会话保持原合同；跨日、时区和总结由[Long Agent 架构 §4–6](../long-agents/chat-long-agent-architecture.md#4-project-first-与会话选择)规定。
+最新合同取代旧的“进入业务项目另建 Long Agent Session”。每个 Long Agent 每日一条直接交流 Session，原生 ID、存储根、header cwd 不因工作目标变化。普通项目 Session 和显式 Workflow 子会话保持原合同；跨日、时区和总结由[Long Agent 架构 §4–6](../long-agents/chat-long-agent-architecture.md#4-project-first-与会话选择)规定。
 
 ### 10.1 原生记录与模型输入
 
@@ -228,23 +228,23 @@ Session详情的`workflowCallStatistics`是上述关系的只读聚合：`direct
 
 ### 10.2 迁移、兼容与日历唯一性
 
-旧 Agent 项目绑定、旧按日索引和旧 Channel 映射先扫描并报告。每 Friend 每日期建立唯一新索引；若同日已有多个旧 Session，以已有 Home 当日主 Session 为优先，无法唯一确定时停止该 Agent 迁移并报告冲突，不合并正文。其他旧 Session 保留为历史。迁移和维护时没有当日主 Session 就保持空；首次实际交流再创建。旧业务历史提供有来源入口，不伪装成当日既有对话。
+旧 Agent 项目绑定、旧按日索引和旧 Channel 映射先扫描并报告。每 Long Agent 每日期建立唯一新索引；若同日已有多个旧 Session，以已有 Home 当日主 Session 为优先，无法唯一确定时停止该 Agent 迁移并报告冲突，不合并正文。其他旧 Session 保留为历史。迁移和维护时没有当日主 Session 就保持空；首次实际交流再创建。旧业务历史提供有来源入口，不伪装成当日既有对话。
 
-迁移在停止新接受并排空在途工作后进行；保存受管备份、版本标记和原映射。阶段写入原子化，重跑从标记恢复；失败前不发布新映射。回退仅允许新格式尚无新增工作时恢复原映射；已有新消息后必须导出兼容数据或向前修复，不把旧版本直接指向未知格式。旧链接读取保持。2026-09-27 起，显式选择 Home 历史会话可继续该 Session，默认联系人入口仍定位今天，不互相改投；消息时间保持真实时间。
+迁移在停止新接受并排空在途工作后进行；保存受管备份、版本标记和原映射。阶段写入原子化，重跑从标记恢复；失败前不发布新映射。回退仅允许新格式尚无新增工作时恢复原映射；已有新消息后必须导出兼容数据或向前修复，不把旧版本直接指向未知格式。旧链接读取保持。2026-09-27 起，显式选择 Home 历史会话可继续该 Session，默认 Long Agent 入口仍定位今天，不互相改投；消息时间保持真实时间。
 
-Project 参与者不因能读项目而自动获得 Friend 混合多个项目的整日 Session。按项目活动投影只返回授权轮次引用/摘要；整个 Friend 日常历史继续属于其私有受众。
+Project 参与者不因能读项目而自动获得 Long Agent 混合多个项目的整日 Session。按项目活动投影只返回授权轮次引用/摘要；整个 Long Agent 日常历史继续属于其私有受众。
 
 原生接缝门禁：`test/agents/pi-assembly-seams.test.mjs`。它已证明同一 ID/文件重装配、CustomEntry/transformContext 区别及 compaction 重开恢复；P2 公共工厂及 Long Agent 消息/检查 API 已增加实现测试；P3 生产入口回归见 `test/long-agents/daily-lifecycle.test.mjs`，包括真实压缩后恢复工具操作；P5 无损迁移演练结果见[阶段验收](../../history/reviews/2026-09-20-agent-unification-p5.md)。
 
 ### 10.3 P2 已实现的原生扩展
 
-`chat.agent-assembly.v1` 保存 Friend 本轮定义、存储身份、协作目标、根规则正文和 SHA-256；`chat.agent-assembly-resources.v1` 保存选中资源内容/版本；`chat.agent-assembly-tools.v1` 保存实际启用工具选择、Schema 和资源版本，恢复不允许设置变化暗中增加能力；`chat.workflow-context-files.v1` 保存普通 Workflow invocation/stage/agent 的规则快照。均使用 Pi CustomEntry，未知版本或校验错误中止恢复，不向模型重复注入元数据。
+`chat.agent-assembly.v1` 保存 Long Agent 本轮定义、存储身份、协作目标、根规则正文和 SHA-256；`chat.agent-assembly-resources.v1` 保存选中资源内容/版本；`chat.agent-assembly-tools.v1` 保存实际启用工具选择、Schema 和资源版本，恢复不允许设置变化暗中增加能力；`chat.workflow-context-files.v1` 保存普通 Workflow invocation/stage/agent 的规则快照。均使用 Pi CustomEntry，未知版本或校验错误中止恢复，不向模型重复注入元数据。
 
 `chat.collaboration-context.v1` 为原生隐藏 CustomMessage，在首轮或目标变更时幂等记录 turnId、项目 ID/名称及历史解释，不复制规则、不增加 user 消息。Pi 原生压缩能够读到它；P3 已通过真实 Pi 压缩输入、原生记录重开、项目 B 工具写入及旧日总结的产品回归。
 
 Workflow Call 的 parent/child 端点增加可选 `projectId`。旧记录省略时沿用原同项目关系；跨项目子会话创建先验证 parentProjectId 与真实父 Session 归属，保持 Pi 原生 parentSession。树读模型和前端解析保留两端 Project，统计按已记录目标加载子 Session，不从父 cwd 猜测。Memory 写入来源仍为父存储 Session，默认写入目标取协作 Project。
 
-P5 归属查询同时读取当前主会话、全部 dailySessions 和经过校验的历史迁移记录。Home 每日历史返回原 owner 与 `readOnly: false`，通过同一 Friend 受理链续聊；已经迁入 Home 的旧历史也可在核实精确迁移回执和源 cwd 后续聊，不改原 header。仍留在旧业务项目的迁移档案保留只读。普通 Workflow 启动入口再次校验归属，不能接管 Friend。旧链接携带的 projectId 由 Backend 按精确 Session 映射解析，未知项目或 Session 不回退。新迁移不移动或复制 JSONL；只为已执行 v1 迁移的历史保留当前位置别名。
+P5 归属查询同时读取当前主会话、全部 dailySessions 和经过校验的历史迁移记录。Home 每日历史返回原 owner 与 `readOnly: false`，通过同一 Long Agent 受理链续聊；已经迁入 Home 的旧历史也可在核实精确迁移回执和源 cwd 后续聊，不改原 header。仍留在旧业务项目的迁移档案保留只读。普通 Workflow 启动入口再次校验归属，不能接管 Long Agent。旧链接携带的 projectId 由 Backend 按精确 Session 映射解析，未知项目或 Session 不回退。新迁移不移动或复制 JSONL；只为已执行 v1 迁移的历史保留当前位置别名。
 
 ## 11. LA0：独立工作与群聊的原生 Session 合同
 
@@ -265,11 +265,11 @@ Friend A（一个身份）
   └─ B 的 publication → B 参与 Session 的原生 assistant Entry
 ```
 
-公共根负责排序和已发布消息引用；每位 Friend 在自己的参与 Session 中保留输入、原生 assistant/toolCall/toolResult、压缩及重试。公共根不是另一份文本日志，也不是把多名 Agent 当同一个 assistant 轮流驱动。前端通过 Backend 受权投影渲染原生消息引用，不能自行读参与者完整 Session 或凭姓名推断作者。
+公共根负责排序和已发布消息引用；每位 Long Agent 在自己的参与 Session 中保留输入、原生 assistant/toolCall/toolResult、压缩及重试。公共根不是另一份文本日志，也不是把多名 Agent 当同一个 assistant 轮流驱动。前端通过 Backend 受权投影渲染原生消息引用，不能自行读参与者完整 Session 或凭姓名推断作者。
 
 元数据只保留 conversation/participant/turn/run、source Session/Entry、replyTo、配置/授权 revision、输入截止点与状态。群外消息进入参与 Session 时采用有来源的原生 custom_message，保留原作者和公共 Entry 引用；Pi 映射成模型支持的角色，但 Chat 的真实发送者不丢失、不冒充真人。派生输入不是第二份群消息事实，必须能追溯公开原件和输入 revision。
 
-`CustomEntry` 本身不会进入模型上下文。公共根引用需要显式受权投影才能展示/喂给参与者，不能期望 Pi 自动解析跨文件引用。普通/Friend 的共用历史/流式读取层增加该解析能力，各入口只增加可信来源及工作关联；不另写群聊渲染器来掩盖消息合同差异。
+`CustomEntry` 本身不会进入模型上下文。公共根引用需要显式受权投影才能展示/喂给参与者，不能期望 Pi 自动解析跨文件引用。普通/Long Agent 的共用历史/流式读取层增加该解析能力，各入口只增加可信来源及工作关联；不另写群聊渲染器来掩盖消息合同差异。
 
 ### 11.2 发布与恢复
 
@@ -291,7 +291,7 @@ Friend A（一个身份）
 
 ### LA1 已实现的后台 Session
 
-明确后台工作绑定纳入 Session owner 与可写投影，存储于 Friend Home；普通 Workflow 启动接口不得接管它。日常列表只含每日主聊，独立工作从 Friend 工作列表进入。复用现有详情、Pi 历史、压缩及 turns/events 实时合同，不添加第二套 transcript。工作句柄与结果引用、v5 迁移、跨日/取消/恢复边界以 [Long Agent 实现合同](../long-agents/chat-long-agent-architecture.md#la1独立后台工作实现合同)为准，群公共 Session 尚待 LA5。
+明确后台工作绑定纳入 Session owner 与可写投影，存储于 Long Agent Home；普通 Workflow 启动接口不得接管它。日常列表只含每日主聊，独立工作从 Long Agent 工作列表进入。复用现有详情、Pi 历史、压缩及 turns/events 实时合同，不添加第二套 transcript。工作句柄与结果引用、v5 迁移、跨日/取消/恢复边界以 [Long Agent 实现合同](../long-agents/chat-long-agent-architecture.md#la1独立后台工作实现合同)为准，群公共 Session 尚待 LA5。
 
 ## 12. 会话管理能力分层（2026-10-05）
 
@@ -332,7 +332,7 @@ Friend A（一个身份）
 | 恢复 | 从移除区回到活动目录，绑定事实自动重新生效 |
 | 永久删除 | 只删除移除区文件，保留不含内容的最小 tombstone（区分“已删除”与“从未存在”） |
 | 保留期清理 | 按 `sessions.removedRetentionDays` 自动清理过期移除项 |
-| 归属定位 | 普通项目会话在 `projects/<projectId>/sessions/`；Long Agent 会话在 `long-agents/<agentId>/projects/<projectId>/sessions/`。**所有生命周期操作都必须先按归属定位文件**，不允许按业务另写一套定位 |
+| 归属定位 | 会话在 `projects/<projectId>/sessions/`；Long Agent 会话在 `long-agents/<agentId>/projects/<projectId>/sessions/`。**所有生命周期操作都必须先按归属定位文件**，不允许按业务另写一套定位 |
 | 生命周期约束 | 运行中的会话不可移除；非终态 Workflow 阻止移除；同一约束对所有会话相同 |
 
 本层**不判断**这是“每日会话”还是“主题节点”，也不决定业务绑定的去留。
@@ -362,7 +362,7 @@ Friend A（一个身份）
 
 | 项 | 变化 |
 |---|---|
-| 会话 URL | `?agent=<longAgentId>&project=<projectId>&session=<sessionId>`；旧链接（无 `agent`）**仍可解析**，普通会话清除 `agent` |
+| 会话 URL | `?agent=<longAgentId>&project=<projectId>&session=<sessionId>`；旧链接（无 `agent`）**仍可解析**，会话清除 `agent` |
 | 写入时机 | 打开会话时按**服务端事实**写入：以 `SessionInfo.owner` 为准（调用方提示只作线索），避免“URL 说一个、实际是另一个” |
 | 接口 | 单会话读取仍为 `GET /api/sessions/:id?projectId=…`（后端已能从绑定唯一定位归属）；会话列表/搜索已支持 `scope=agent|project|all` + `projectId` + `owner` |
 

@@ -4,7 +4,7 @@
 
 ## CFG-01：修改模型/Thinking却未生效
 
-在 Debug Lab 新建普通Session，打开Agent配置，选择调试Provider和模型。保存后重读页面，再发送一轮。断点依次放在：
+在 Debug Lab 新建会话，打开Agent配置，选择调试Provider和模型。保存后重读页面，再发送一轮。断点依次放在：
 
 1. [chat-config](../../../src/chat-config.ts) 的 `resolveChatConfig()`：Personal与Project覆盖后的结果。
 2. [workflow-configuration](../../../src/workflows/workflow-configuration.ts) 的 `prepareChatWorkflowTurnConfiguration()`：Session最近选择与本轮调整如何冻结。
@@ -18,7 +18,7 @@
 | Project Workflow默认选择 | 该Project`.chat/config.json` | 在Chat源码Project改配置，却在Debug Lab观察 |
 | 某Project的某Workflow Agent模型/Thinking | Backend模型配置API；数据在调试Home项目目录 | Personal config.json不支持直接保存这些model字段 |
 | 当前Session或本轮 | 运行界面选择与请求中的调整 | 旧Session选择覆盖新默认；新建Session或重置后再测 |
-| Long Agent模型/能力 | Friend配置页的Personal运行策略 | Project Workflow Agent配置不覆盖Long Agent定义 |
+| Long Agent模型/能力 | Long Agent配置页的Personal运行策略 | Project Workflow Agent配置不覆盖Long Agent定义 |
 | Group长期身份/职责 | Agent Group页，Nano事实 | Chat显示别名不等于Group运行身份 |
 
 保存Long Agent配置时观察`GET/PUT /api/long-agents/:id/config`中的revision/expectedRevision。两个页面同时修改同一revision，第二个应得到409；保留草稿并重读，不能自动覆盖。模型在保存时会验证目录与认证，实际Provider请求失败则是执行期错误。
@@ -33,7 +33,7 @@
 .data/debug/chat-home/workspaces/debug-lab/.chat/skills/debug-trace/SKILL.md
 ```
 
-打开Debug Lab，并在直接执行Agent上选择资源inherit。先在资源目录查到debug-trace，再打开Agent检查结果。检查API是：
+打开Debug Lab，并在单节点回合的 Agent 上选择资源inherit。先在资源目录查到debug-trace，再打开Agent检查结果。检查API是：
 
 ```text
 GET  /api/workflows/minimal-pi-coding-agent/agents/pi-coding-agent/catalog

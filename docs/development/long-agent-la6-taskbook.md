@@ -7,11 +7,11 @@
 
 > 已退役（2026-09-28）：per-Friend 协作项目关联不再存在，全产品只有一个项目上下文。见[机制合同 §10](../modules/long-agents/chat-long-agent-mechanism-contract.md#10-已退役la6-afriend-协作项目关联--统一项目合同)。以下保留当时的任务书。
 
-小思等 Friend 保持自己的身份与 Workspace，用户可持续私聊、安排后台工作、参与多个群；每位 Friend 记住自己的协作项目。三项学习职责持续推进，早/中/晚动态和夜间笔记按用户配置自然发生。Web 与已验收的真实渠道呈现同一工作事实；断线、重启、跨日和升级不会串项目、重复执行或伪造完成。
+小思等 Long Agent 保持自己的身份与 Workspace，用户可持续私聊、安排后台工作、参与多个群；每位 Long Agent 记住自己的协作项目。三项学习职责持续推进，早/中/晚动态和夜间笔记按用户配置自然发生。Web 与已验收的真实渠道呈现同一工作事实；断线、重启、跨日和升级不会串项目、重复执行或伪造完成。
 
 LA6 既包含两个明确功能交付，也包含对 LA0–LA5 的联合验收：
 
-1. **按 Friend 持久化协作项目**，修复当前全局选择影响其他 Friend 的问题。
+1. **按 Long Agent 持久化协作项目**，修复当前全局选择影响其他 Long Agent 的问题。
 2. **实际渠道闭环**，包括一个明确选定平台的私聊和群场景接入/验证；复用 Nano 窄合同和 Chat Conversation，不把外部群当另一个 Agent Runtime。
 3. **升级、恢复与至少 24h 自然联合运行**，补齐用户真正使用时的组合证据。
 
@@ -24,11 +24,11 @@ LA6 既包含两个明确功能交付，也包含对 LA0–LA5 的联合验收�
 - [公共模块合同](../architecture/chat-module-contracts.md)、[系统生命周期](../architecture/chat-system-lifecycle.md)。
 - [Long Agent 机制](../modules/long-agents/chat-long-agent-mechanism-contract.md)、[工程基线](../modules/long-agents/chat-long-agent-engineering-baseline.md)、[Session 合同](../modules/sessions/chat-session-architecture.md)。
 - [群聊](../modules/long-agents/group-chat.md)、[任务](../modules/long-agents/tasks.md)、[职责](../modules/long-agents/duties.md)、[产物](../modules/long-agents/deliverables.md)。
-- [配置](../configuration/README.md)、[渠道诊断](./debugging/channels.md)、[Friend 迁移](../operations/friend-migration.md)、[运行手册](../operations/running.md)、[测试指南](./testing.md)。改 Frontend/Nano/Pi 时分别先读其 AGENTS。
+- [配置](../configuration/README.md)、[渠道诊断](./debugging/channels.md)、[Long Agent 迁移](../operations/friend-migration.md)、[运行手册](../operations/running.md)、[测试指南](./testing.md)。改 Frontend/Nano/Pi 时分别先读其 AGENTS。
 
 | 现有事实/落点 | 本阶段应如何复用 |
 |---|---|
-| `turn-queue.ts` 按接受的 `contextProjectId` 构造/冻结轮次；`daily-state.ts` 保存它 | 解决接受之前“当前 Friend 选择什么项目”，不重写执行中快照 |
+| `turn-queue.ts` 按接受的 `contextProjectId` 构造/冻结轮次；`daily-state.ts` 保存它 | 解决接受之前“当前 Long Agent 选择什么项目”，不重写执行中快照 |
 | `work-state.ts`、群 Conversation 已各自保存协作目标 | 不把私聊偏好变成后台工作或群的新全局配置 |
 | `bridge.ts` 有渠道 binding 的 `contextProjectId` 与事件重试关联 | 明确渠道目标与用户当前私聊选择的解析优先级，不能直接用浏览器全局项目覆盖 binding |
 | `internal/channel/v1/events` 的 202 仅表示耐久接收 | 接收、执行、公开提交、投递、Ack 分开验收；处理完成不等于对方收到 |
@@ -40,15 +40,15 @@ LA6 既包含两个明确功能交付，也包含对 LA0–LA5 的联合验收�
 
 ## 3. 必须先落定的合同
 
-### 3.1 Friend 与项目关联
+### 3.1 Long Agent 与项目关联
 
-- 稳定 `longAgentId` 为关联主体，关联属于当前本地用户与该 Friend；不改变 Friend 身份、专属 Workspace、每日 Session 的存储归属或历史。
-- A/P→B/Q→A 恢复 P，返回 B 恢复 Q。普通 Project Session 和群各自保持选择，不反写 Friend 私聊关联。
+- 稳定 `longAgentId` 为关联主体，关联属于当前本地用户与该 Long Agent；不改变 Long Agent 身份、专属 Workspace、每日 Session 的存储归属或历史。
+- A/P→B/Q→A 恢复 P，返回 B 恢复 Q。普通 Project Session 和群各自保持选择，不反写 Long Agent 私聊关联。
 - Backend 是权威事实源；Web 与 Agent 授权动作使用同一读写服务。持久对象具备版本和预期 revision；慢响应、双标签页及 Agent/Web 交错不能覆盖更新值。
-- 区分“从未设置”“显式无项目”“关联项目已不可用”。**首次默认无协作项目**；若迁移已有明确的单 Friend 关联则保留。不得从最近访问的其他 Friend/全局导航推测默认关联。
-- 页面标题、文件浏览器、发送目标、实际模型请求中的项目及 AGENTS.md 来源一致。消息接受时冻结 Friend、关联 revision 和项目；发送后切页不更改已接受轮次。对过期关联采用明确冲突/重新确认语义，不悄悄换项目执行。
-- 修改项目只改变后续轮次输入，不主动给模型发送“切换”消息，不重建日常 Session；显式无项目仍有 Friend 自身身份和资源。
-- 关联不等于授权。失效/撤权显示不可用并阻止错误项目执行，用户可明确清空/重选，不能静默回退 Friend Workspace 或 Daily。
+- 区分“从未设置”“显式无项目”“关联项目已不可用”。**首次默认无协作项目**；若迁移已有明确的单 Long Agent 关联则保留。不得从最近访问的其他 Long Agent/全局导航推测默认关联。
+- 页面标题、文件浏览器、发送目标、实际模型请求中的项目及 AGENTS.md 来源一致。消息接受时冻结 Long Agent、关联 revision 和项目；发送后切页不更改已接受轮次。对过期关联采用明确冲突/重新确认语义，不悄悄换项目执行。
+- 修改项目只改变后续轮次输入，不主动给模型发送“切换”消息，不重建日常 Session；显式无项目仍有 Long Agent 自身身份和资源。
+- 关联不等于授权。失效/撤权显示不可用并阻止错误项目执行，用户可明确清空/重选，不能静默回退 Long Agent Workspace 或 Daily。
 - Agent 经授权改变协作目标也更新同一服务；群成员不能借此修改私聊选择。旧 Task/Occurrence/Discussion 保持原冻结目标。
 - 渠道 binding、群协作目标、私聊偏好分别归属：群使用群记录；已接受事件沿用其冻结目标；新私聊事件的 binding 与偏好如何一致，必须在 A 包给出明确规则与迁移依据，不能让两个入口各自猜测。
 
@@ -58,11 +58,11 @@ LA6 既包含两个明确功能交付，也包含对 LA0–LA5 的联合验收�
 
 | 决策 | 采用方案 |
 |---|---|
-| 存储 | 使用既有 `longAgentConfigRoot` 下独立 `interaction.json`，不扩写身份 definition，不在 registry 或 Nano 保存第二份。由本地 Chat Home 确定用户范围，稳定 longAgentId 确定 Friend；路径授权、原子写和 revision CAS 沿用现有持久化原语。文件迁移/删除纳入 Friend 生命周期。 |
+| 存储 | 使用既有 `longAgentConfigRoot` 下独立 `interaction.json`，不扩写身份 definition，不在 registry 或 Nano 保存第二份。由本地 Chat Home 确定用户范围，稳定 longAgentId 确定 Long Agent；路径授权、原子写和 revision CAS 沿用现有持久化原语。文件迁移/删除纳入 Long Agent 生命周期。 |
 | 三态 | 无记录是 unset（读取时有效项目为 null，不暗中写入）；有记录的 `projectId:null` 是显式清空；非 null 项目失效是 unavailable（保留原值及 revision，解析结果带原因）。记录包含 schemaVersion、projectId、revision、updatedAt；读取有效状态由 Backend 计算。 |
 | 首次默认 | 无协作项目。不得用 agent.defaultProjectId、最近一条历史、全局导航或 Agent Home 推断协作项目。显式改选才写入。 |
 | Web/Agent 私聊选择 | 写入共同关联服务并带 expectedRevision；普通发送携带关联版本校验值，在接受时原子核对/冻结。旧页面不一致返回明确冲突，不默默采用当前值，也不让每轮 projectId 成为绕过持久关联的隐式覆盖。 |
-| 其他执行对象 | 已接受 turn/work/occurrence/discussion 的冻结目标优先且不可变；新 Task/Duty/群配置使用其自身明确目标，**不在每次触发时重新读 Friend 私聊偏好**。普通 Project Session/TUI 项目会话仍用自身项目；未来 TUI Friend 私聊入口使用共同关联服务。 |
+| 其他执行对象 | 已接受 turn/work/occurrence/discussion 的冻结目标优先且不可变；新 Task/Duty/群配置使用其自身明确目标，**不在每次触发时重新读 Long Agent 私聊偏好**。普通 Project Session/TUI 项目会话仍用自身项目；未来 TUI Long Agent 私聊入口使用共同关联服务。 |
 | 渠道 | 旧 binding 的显式协作目标保留为该渠道的固定目标，不能反向迁移成所有入口共享的偏好。新的可信本地 owner 私聊绑定可明确采用 follow-friend；非 owner 或身份未核验的来源不得继承 owner 的私有项目，沿用已授权目标或 null。绑定模式/来源的版本化变更在 A 短设计中列明，B 按合同接线。已接受事件重试永远使用接受时冻结值。 |
 | 迁移 | 不从 defaultProjectId/历史轮次猜测。若找到独立、明确且唯一的旧 per-Friend 用户选择来源，可迁移其原值并记录来源；当前代码没有该事实时保持 unset。旧渠道固定绑定、群、任务、Session 不改属；冲突来源不得用“最新一个”覆盖。 |
 
@@ -94,8 +94,8 @@ LA6 既包含两个明确功能交付，也包含对 LA0–LA5 的联合验收�
 
 | 包 | 目标与可用场景 | 实施/交付 | 验证与退出条件 | 自审：禁止省略什么 |
 |---|---|---|---|---|
-| A：项目关联与输入一致 | 切 Friend 恢复各自项目，私聊/普通 Session/群互不影响 | 先场景→数据归属→解析优先级短设计，再统一 Backend 关联服务、版本合同、迁移和 Web/Agent 接线；更新所属模块规范 | A/P→B/Q 往返、null/失效、刷新/重启、乱序/双标签页/发送中切换；真实浏览器和实际 Pi 模型请求中的项目哨兵一致 | 不只改标题或 localStorage；不只证明 DTO；不能改在途工作目标 |
-| B：真实渠道闭环 | 真实私聊及测试群中用户与 Friend 交互，Web 可查同一事实 | 选定适配器与测试受众，绑定/身份/授权、入站幂等、公共引用到出站 Delivery/Ack 接线；必要的最小群适配 | 真实双向私聊和群消息、重复入站、回执丢失、断线/认证失败/撤权、bot 回环；本地故障注入加平台接收证据 | HTTP 202、模拟服务、健康接口、模型正文不能替代真正收件证明 |
+| A：项目关联与输入一致 | 切 Long Agent 恢复各自项目，私聊/会话/群互不影响 | 先场景→数据归属→解析优先级短设计，再统一 Backend 关联服务、版本合同、迁移和 Web/Agent 接线；更新所属模块规范 | A/P→B/Q 往返、null/失效、刷新/重启、乱序/双标签页/发送中切换；真实浏览器和实际 Pi 模型请求中的项目哨兵一致 | 不只改标题或 localStorage；不只证明 DTO；不能改在途工作目标 |
+| B：真实渠道闭环 | 真实私聊及测试群中用户与 Long Agent 交互，Web 可查同一事实 | 选定适配器与测试受众，绑定/身份/授权、入站幂等、公共引用到出站 Delivery/Ack 接线；必要的最小群适配 | 真实双向私聊和群消息、重复入站、回执丢失、断线/认证失败/撤权、bot 回环；本地故障注入加平台接收证据 | HTTP 202、模拟服务、健康接口、模型正文不能替代真正收件证明 |
 | C：迁移与故障联合演练 | 老数据升级可读，新旧任务并行，重启后能恢复和定位异常 | 用去敏旧格式 fixture 与当前数据建立升级/回退兼容表；混合职责/任务/群/私聊运行；统一诊断证据和修复 | ≥3 次升级读写交替，源项目/绑定/授权不扩大；提交前后 kill、耗尽/取消、并发文件编辑、断网/恢复，实际 UI 终态正确 | 不只对新格式重复调用 no-op 迁移；不只注入已完成后的错误；不能全量自动重放未知副作用 |
 | D：至少 24h 自然运行 | 小思三项职责、3+1 产物、私聊/群/后台工作跨日共同运行 | 使用已构建的隔离常驻栈、真实 Nano 时钟/触发与真实模型；有限预算；耐久记录每次发生、输出、回执与资源曲线 | 真实经过 ≥24h 且覆盖一次当地日期边界和完整早/中/晚/夜间配置窗口；证明每次该发生的工作有可解释终态 | 加速时钟、将时间改到两分钟后、拼接短跑不能算24h；仅进程活着不能算业务通过 |
 | E：整体验收与交付说明 | 用户知道怎么启动、配置、查询、恢复，以及哪些平台已实测 | 从实际 UI 操作完整链，复跑门禁；只更新权威模块与运行/迁移文档，归档结果，统一阶段状态 | 下面矩阵逐项“通过/失败/未测+证据”；阻断问题清零后才标完成；提交部署另按用户指令 | 不拿全绿单测代替场景；不省略平台/模型限制；不因工期或上下文耗尽缩范围 |
@@ -108,7 +108,7 @@ LA6 既包含两个明确功能交付，也包含对 LA0–LA5 的联合验收�
 |---|---|---|
 | M1 | A/P、B/Q 往返；穿插普通项目 Session/群；重启后不串 | 真实浏览器操作 + Backend 关联 + 实际模型输入哨兵 |
 | M2 | 显式 null、首次未设置、项目删除/撤权；快切/双页/旧 revision；发送后切页 | 确定性乱序/CAS 测试；浏览器失败提示；已接受轮次和旧 Task 归属不变 |
-| M3 | 私聊、群、后台任务使用同一 Friend 身份但独立 Session；群项目不污染私聊 | 私聊/两群/后台同时运行；原生 Session 与资源授权检查 |
+| M3 | 私聊、群、后台任务使用同一 Long Agent 身份但独立 Session；群项目不污染私聊 | 私聊/两群/后台同时运行；原生 Session 与资源授权检查 |
 | M4 | 真实渠道收发与群绑定；外部发送者不变 owner；bot 不回环 | 选定平台测试账号/群的接收证据，关联 event/turn/publication/delivery，去敏截图/日志 |
 | M5 | 入站重复、出站成功丢 Ack、结果未知、解绑/撤权/认证失败 | 在提交点暂停的确定性交错 + 真实断线恢复；证明重试只投递、不再调模型 |
 | M6 | 三项学习职责可配置/查询/修改/暂停/恢复；缺资料等待、聊天纠错 | Web 与 Agent 同源结果，进度引用实际存在，未应用历史不进当前模型依据 |

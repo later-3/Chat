@@ -26,7 +26,7 @@ Memory 保存需要跨 Session 继续使用的稳定事实。它由 Agent 主动
 
 Memory 与 Session 历史、Rule、Experience 和 Skill 各自保留独立职责：Session 保存会话过程，Rule/Experience 是可版本化的 Prompt 资源，Skill 描述任务方法，Memory 保存长期事实。Agent 在一次执行中可以同时装配并使用这些资源。
 
-Friend 的默认 Project Memory Target 来自本轮冻结项目，不来自 Session 的 Home 存储项目；无项目时默认搜索只包含 Personal，Project 写入须显式给出目标。Memory 的来源 sessionId/projectId 仍标记真实存储归属。普通 Workflow 默认目标与存储 Project 相同。详见 [公共装配 §15](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)。
+Long Agent 的默认 Project Memory Target 来自本轮冻结项目，不来自 Session 的 Home 存储项目；无项目时默认搜索只包含 Personal，Project 写入须显式给出目标。Memory 的来源 sessionId/projectId 仍标记真实存储归属。普通 Workflow 默认目标与存储 Project 相同。详见 [公共装配 §15](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)。
 
 ### Long Agent的Agent Memory边界
 
@@ -275,6 +275,6 @@ git -C frontend diff --check
 
 ## 记忆目录身份与隔离预览
 
-目录的 Project 分组以 Registry 的 `kind=project` 为准，同时兼容旧系统 ID 过滤。迁移后的 Agent home（例如 id 与 Friend 相同）不能重复成为 Project Memory；其领域访问仍走 NanoClaw Agent Memory。传 Agent home 到 Catalog list/health 返回 400 和正确入口提示，不返回内部错误 500。
+目录的 Project 分组以 Registry 的 `kind=project` 为准，同时兼容旧系统 ID 过滤。迁移后的 Agent home（例如 id 与 Long Agent 相同）不能重复成为 Project Memory；其领域访问仍走 NanoClaw Agent Memory。传 Agent home 到 Catalog list/health 返回 400 和正确入口提示，不返回内部错误 500。
 
 Personal Catalog、Project Catalog 与 NanoClaw Agent Memory 分别核查。`CHAT_HOME` 隔离副本中 Catalog 为空不证明正式库为空；NanoClaw 断连也不证明文件被删。预览如需个人记忆，应在停机副本上通过 SQLite backup 复制一致性快照，不能将正式目录软链成可写数据源；不为了消除提示而给预览接入正式网关。Agent Memory 没有有效快照时计数为未知，读取失败与空库分开呈现。

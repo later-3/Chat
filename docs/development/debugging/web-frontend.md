@@ -1,6 +1,6 @@
 # Chat Web 与 Frontend 场景调试
 
-前置：按[环境章节](./environment.md)启动 `Debug Chat`，使用 F5 打开的独立 Chrome，直接打开 `.data/debug/chat-home/workspaces/debug-lab`。初始使用 `debug-local/debug-model`，Workflow 选“直接执行”对应的 `minimal-pi-coding-agent`。
+前置：按[环境章节](./environment.md)启动 `Debug Chat`，使用 F5 打开的独立 Chrome，直接打开 `.data/debug/chat-home/workspaces/debug-lab`。初始使用 `debug-local/debug-model`，Workflow 选“单节点回合”对应的 `minimal-pi-coding-agent`。
 
 ## WEB-01：从点击发送到最终回复
 
@@ -32,17 +32,17 @@
 
 在调试专用浏览器中使用 Network Offline 可模拟断线；恢复后检查请求重附着和Session重读。取消浏览器 stream 不代表取消后端执行，点“停止执行”应检查是否调用 `DELETE /runs/:id`。相关合同测试：[chat-workflow-contract.test](../../../frontend/lib/chat-workflow-contract.test.mjs)。
 
-## LA-01：Web Friend入口
+## LA-01：Web Long Agent入口
 
-先按[渠道章节](./channels.md)准备 Nano Group 与 Chat Registry，启动 `Debug Chat + NanoClaw`。在当前 Project 切换“Friend”，点击 Debug Agent。
+先按[渠道章节](./channels.md)准备 Nano Group 与 Chat Registry，启动 `Debug Chat + NanoClaw`。在当前 Project 切换“Long Agent”，点击 Debug Agent。
 
-1. 观察 `POST /api/long-agents/:id/start`，它打开 Friend 的 Agent Home 下目标日期的日常 Session，默认今天；存储 Project 与协作 Project 分开。
-2. 检查 Session 的 `owner`。发送通过 `POST /api/long-agents/:id/turns`，接受回执中的 `workflowRun` 指向公共 Workflow Run；不把 Friend 请求改发普通 `/runs` 来绕过授权。
+1. 观察 `POST /api/long-agents/:id/start`，它打开 Long Agent 的 Agent Home 下目标日期的日常 Session，默认今天；存储 Project 与协作 Project 分开。
+2. 检查 Session 的 `owner`。发送通过 `POST /api/long-agents/:id/turns`，接受回执中的 `workflowRun` 指向公共 Workflow Run；不把 Long Agent 请求改发普通 `/runs` 来绕过授权。
 3. 在 [turns 路由](../../../src/routes/api/long-agents/%5BlongAgentId%5D/turns.post.ts)、[turn-queue](../../../src/long-agents/turn-queue.ts)、[workflow-execution](../../../src/long-agents/workflow-execution.ts) 和实际 Workflow Step 暂停。
-4. 输入 `DEBUG_HELLO`，确认冻结的 Friend、Session 和协作项目进入公共 Pi 装配；前端订阅公共 `/runs/:id/events` 并在终态重读 Session。原 `messages` 阻塞接口仍用于既有调用，不是当前主发送路径。
-5. 刷新后仍从 Backend 恢复原归属；进入群成员参与记录留在群工作区，不跳到 Friend 私聊。
+4. 输入 `DEBUG_HELLO`，确认冻结的 Long Agent、Session 和协作项目进入公共 Pi 装配；前端订阅公共 `/runs/:id/events` 并在终态重读 Session。原 `messages` 阻塞接口仍用于既有调用，不是当前主发送路径。
+5. 刷新后仍从 Backend 恢复原归属；进入群成员参与记录留在群工作区，不跳到 Long Agent 私聊。
 
-配置可读但发送失败时，分别检查 Friend 启用状态、Gateway 认证/Group、冻结项目授权、模型认证及接受记录的 Run 绑定。日期使用 Friend 配置的时区；顶栏项目选择只影响后续日常轮次，不移动 Session，后台工作继续使用创建时固定项目。精确断点见[源码地图](./code-map.md)。
+配置可读但发送失败时，分别检查 Long Agent 启用状态、Gateway 认证/Group、冻结项目授权、模型认证及接受记录的 Run 绑定。日期使用 Long Agent 配置的时区；顶栏项目选择只影响后续日常轮次，不移动 Session，后台工作继续使用创建时固定项目。精确断点见[源码地图](./code-map.md)。
 
 ## Frontend 代码修改练习
 

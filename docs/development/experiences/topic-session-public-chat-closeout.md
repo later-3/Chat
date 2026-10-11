@@ -4,10 +4,10 @@
 
 直接根因与修复：
 
-- 公共 Session read 只从旧 owner 索引判断 Friend 执行，节点虽有耐久 turn 绑定却未返回 `friendExecution`。恢复必须按真实存储归属与节点 turn 读取已有执行引用；前端新节点身份来自后端解析的 `topicNode`，不新增身份状态源。
+- 公共 Session read 只从旧 owner 索引判断 Long Agent 执行，节点虽有耐久 turn 绑定却未返回 `friendExecution`。恢复必须按真实存储归属与节点 turn 读取已有执行引用；前端新节点身份来自后端解析的 `topicNode`，不新增身份状态源。
 - 最后一个 assistant 不一定是用户问题的答案。writer 的 remember 回复是阶段记录；显示层按既有阶段元数据选工作答案，把整理记忆过程保留在可展开区。新 work 的 running 标记必须清除上轮阶段标签。
 - 窄屏的导航隐藏会连带裁掉嵌套审核弹窗；停止入口又藏在设置面板。审核与资料复用公共页面层弹窗，停止放在主工具栏；主题布局占满宽高，导航按需打开。验收不能仅用 DOM click 绕过可见性。
-- 首屏主题深链接被默认 Friend 自动选会话带回聊天，旧测试随后点击“主题”掩盖了问题。显式全局视图暂停默认选择；真实浏览器直接打开带节点目标的 URL，等首屏异步读取完成后仍断言保留该视图，不做补救性点击。
+- 首屏主题深链接被默认 Long Agent 自动选会话带回聊天，旧测试随后点击“主题”掩盖了问题。显式全局视图暂停默认选择；真实浏览器直接打开带节点目标的 URL，等首屏异步读取完成后仍断言保留该视图，不做补救性点击。
 
 自动回归已进入 `pnpm verify`：`test/long-agents/topic-api.test.mjs` 检查公共读取恢复执行引用；`frontend/lib/message-display.test.mjs` 检查工作答案不被回执替代；`scripts/topics-browser.test.mjs` 以真实指针/键盘执行审核修改、运行中刷新与断线重连、停止、图片、fork、记忆 CAS，并检查 390/768/1440 与缩放等效视口。
 

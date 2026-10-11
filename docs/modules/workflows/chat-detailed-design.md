@@ -117,7 +117,7 @@ Agent配置被分成两个明确模块：
 
 ## 6. 五个Workflow
 
-### 6.1 直接执行
+### 6.1 单节点回合
 
 这个Workflow拥有一个`pi-coding-agent`和一个`execute` Stage。Agent继续使用Pi默认System Prompt、工具和项目资源，Workflow包装不改变Session上下文、压缩或工具循环。
 
@@ -133,7 +133,7 @@ Agent配置被分成两个明确模块：
 
 ### 6.3 Planner Orchestrator
 
-这个Workflow复用Planner与耐久审核合同，但批准后进入`coordinator` Agent节点。Coordinator装配私有`workflow-delegation` Skill和Chat系统`workflow_call` Tool，不拥有Shell或文件工具。Tool通过统一系统Tool Registry按Agent配置解析，只允许调用Manifest显式声明`agentCallable: true`的目标，并拒绝超过4层的递归；`planReview`只决定目标是否会在自己的Session等待人，不影响可调用资格。同一个Workflow定义可以启动新的子Session与子Run，这是直接执行Workflow继续拆分为同类执行子任务的基础能力。
+这个Workflow复用Planner与耐久审核合同，但批准后进入`coordinator` Agent节点。Coordinator装配私有`workflow-delegation` Skill和Chat系统`workflow_call` Tool，不拥有Shell或文件工具。Tool通过统一系统Tool Registry按Agent配置解析，只允许调用Manifest显式声明`agentCallable: true`的目标，并拒绝超过4层的递归；`planReview`只决定目标是否会在自己的Session等待人，不影响可调用资格。同一个Workflow定义可以启动新的子Session与子Run，这是单节点回合 Workflow 继续拆分为同类执行子任务的基础能力。
 
 父Agent先用`action=describe`读取目标Workflow中每个Child Agent实际可选的Tool和Skill；随后`action=start`必须为每个Child Agent提交明确选择。Backend只接受能力名称，再通过目标Workflow的真实检查与装配入口解析为Tool地址和资源路径，冻结为本轮`agentConfigs`，不读取目标在当前Project中保存的默认选择作为隐式授权。Tool Call通过中央Registry和`startChatWorkflow()`启动完整目标Workflow；目标Workflow仍提供Node、Agent身份、Prompt和Stage结构，任务上下文及本次可用Tool/Skill由父Agent的Tool参数决定。
 

@@ -7,12 +7,12 @@
 | 本次 0.5.4 固定版本：release / VS Code 安装、启动和关闭 | [Linux 交付步骤](./release-0.5.4.md) |
 | 新 Linux / WSL2 电脑从零安装 | [安装指南](./installation.md) |
 | 选择脚本、启动/停止、正式服务维护 | [运行手册](./running.md) |
-| Friend 旧数据迁移、升级冲突、回退 | [Friend 升级](./friend-migration.md) |
+| Long Agent 旧数据迁移、升级冲突、回退 | [Long Agent 升级](./friend-migration.md) |
 | 现有 macOS 常驻服务 | [macOS](./macos.md) |
 | SSH、域名与可选代理 | [网络访问](./network.md) |
-| 模型、Provider、Project、Friend 配置 | [配置合同](../configuration/README.md) |
+| 模型、Provider、Project、Long Agent 配置 | [配置合同](../configuration/README.md) |
 
-生产拓扑只有 2 类服务：Backend 内含 Web 静态文件、Workflow 和 Pi SDK；可选的一个 NanoClaw Host 承载多个 Friend。没有单独的 Pi Server、生产 Vite 或每个 Friend 一个进程。TUI 是独立客户端，见[终端使用](../modules/tui/README.md)。
+生产拓扑只有 2 类服务：Backend 内含 Web 静态文件、Workflow 和 Pi SDK；可选的一个 NanoClaw Host 承载多个 Long Agent。没有单独的 Pi Server、生产 Vite 或每个 Long Agent 一个进程。TUI 是独立客户端，见[终端使用](../modules/tui/README.md)。
 
 ```text
 浏览器 / TUI → Chat Backend（内含 Web / Workflow / Pi）

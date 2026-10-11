@@ -1,4 +1,4 @@
-# Friend 长期任务（内部 Duty）
+# Long Agent 长期任务（内部 Duty）
 
 长期职责是持续负责的工作目标：目标、授权范围、资料、进度证据、下一步与推进节奏保存在 Chat，推进经 LA2 任务/触发进入 LA1 独立工作 Session 与公共 Pi 装配。本文是职责领域的技术合同；机制边界见[机制合同 §9.4](./chat-long-agent-mechanism-contract.md)。职责不是第二套任务状态机：调度、发生记录、执行容量与回执全部复用 `src/long-agents/tasks/` 与 `src/long-agents/work.ts`。
 
@@ -57,14 +57,14 @@
 - 报告按来源串行化：**所有交互式修改**（Web 用户纠错、主聊管理纠错）都必须带上调用方实际观察到的 `expectedRevision`，基于同一版本的两个并发纠错只有一个成功、另一个 409；`update/pause/resume/end/report` 缺少该字段是 400，`duty_manage` 也要求先 `list` 再提交。**只有**推进工作中的报告使用接受推进时冻结的职责修订（occurrence 的 `dutyDispatchRevision`）：若期间用户已改动（暂停、纠错、改配置），该报告只入历史、不覆盖用户刚写下的状态（响应 `reportApplied: false`）。同推进键同载荷幂等（即使版本已前移也返回既有结果），异载荷 409。
 - 每条进度条目持久记录 `applied`：是否真正应用到当时的当前指针。组装下一轮推进文本时，只有当前目标代号且 `applied` 的条目作为"近期进度（依据）"与"已覆盖的材料"；未应用或被取代的条目只作为带标记的历史（"历史（不构成当前依据）：另有 N 条…"），不能当作已学事实。
 - 所有写操作（含会移动指针的报告）都在**状态锁内**做比较并推进 `revision`；锁外读取的旧修订不能覆盖新写入。
-- 证据校验使用真实路径：项目职责的根是 `projectRoot`，Friend 空间职责的根是该 Friend 的 agent home 项目；相对路径解析后必须 `realpath` 落在根内（符号链接不得越界）、存在且是普通文件；`work` 证据必须属于本 Friend。越界、不存在、非普通文件都拒绝。
+- 证据校验使用真实路径：项目职责的根是 `projectRoot`，Long Agent 空间职责的根是该 Long Agent 的 agent home 项目；相对路径解析后必须 `realpath` 落在根内（符号链接不得越界）、存在且是普通文件；`work` 证据必须属于本 Long Agent。越界、不存在、非普通文件都拒绝。
 - `nextStep`、`nextCheckAt`、`awaitingMaterial` 由当前代号的报告持久化；跳过原因与下次检查时间持久可查。
 
 ## 同源入口
 
 - API：`GET/POST /api/long-agents/:id/duties`，`schemaVersion 1`，操作 `list/create/update/pause/resume/end/advance/cancel-advance/report`；写操作要求 `expectedRevision`，create/advance 要求 `requestId`。暂停/恢复/结束/立即推进通过同一任务服务落到关联任务。
 - Tool：`duty_manage`（`src/tools/builtins/duty-manage/`），与 API 调用同一 `manageFriendDuty`。`report` 在推进工作中绑定该次推进，在日常主聊中是管理纠错；推进键都由服务端从执行上下文或请求键推导。
-- 前端：`frontend/lib/friend-duties.ts` 运行时校验；Friend 设置"职责"页展示修订/目标代号、进度、依据、进行中与停止、跳过原因，并提供用户纠错。
+- 前端：`frontend/lib/friend-duties.ts` 运行时校验；Long Agent 设置"职责"页展示修订/目标代号、进度、依据、进行中与停止、跳过原因，并提供用户纠错。
 
 ## 验证入口
 

@@ -2,7 +2,7 @@
 
 ## 1. 状态与文档职责
 
-状态：目标架构；2026-09-19 P1 将直接交流收敛为每 Friend 每日唯一 Session，并明确本轮项目上下文。P2 公共装配与本轮冻结项目已实现（Context §15.6），P3 每日索引/总结及 P4 统一实时交互已实现；P5 已完成旧数据兼容与本地全链验收，真实 Telegram 外部收发及最终审核待完成。2026-09-28 统一项目合同生效：每轮执行项目按入口唯一确定并受理冻结，LA6-A 的 per-Friend 关联已移除（见[机制合同 §10](./chat-long-agent-mechanism-contract.md#10-已退役la6-afriend-协作项目关联--统一项目合同)）。本文定义运行、数据与恢复机制；配置能力以[定义与配置模型](./chat-long-agent-capability-model.md)为准，使用要求以[场景与验收](./chat-long-agent-scenarios.md)为准。
+状态：目标架构；2026-09-19 P1 将直接交流收敛为每 Long Agent 每日唯一 Session，并明确本轮项目上下文。P2 公共装配与本轮冻结项目已实现（Context §15.6），P3 每日索引/总结及 P4 统一实时交互已实现；P5 已完成旧数据兼容与本地全链验收，真实 Telegram 外部收发及最终审核待完成。2026-09-28 统一项目合同生效：每轮执行项目按入口唯一确定并受理冻结，LA6-A 的 per-Friend 关联已移除（见[机制合同 §10](./chat-long-agent-mechanism-contract.md#10-已退役la6-afriend-协作项目关联--统一项目合同)）。本文定义运行、数据与恢复机制；配置能力以[定义与配置模型](./chat-long-agent-capability-model.md)为准，使用要求以[场景与验收](./chat-long-agent-scenarios.md)为准。
 
 [当前集成基线](./chat-nanoclaw-pi-integration.md)保留旧接口与实现证据，[实施状态](./chat-long-agent-roadmap.md)明确差距。不能把目标目录、Daily 轮换、历史 Tool、定时执行或 Docker 写成已经可用。
 
@@ -35,8 +35,8 @@ Chat 统一管理产品配置、Project、会话选择、Pi 执行和前端合�
 | Long Agent | 身份、自有配置与资源、工作连续性 | 长期 |
 | Project | 工作数据、上下文、资源和授权边界 | 长期 |
 | Agent Home 容器（旧称 Daily Project） | 专属空间和每日 Session 的内部存储归属，不是用户项目 | 长期稳定，不按日新建 |
-| Agent/Project 协作关系 | 参与权限和各轮次工作目标 | 不内嵌第二份 Agent Definition，不另建 Friend 项目会话 |
-| Chat Session | 原生交流历史，固定存储归属 | Friend 每日默认与额外独立直接会话；独立任务/群参与目标见 LA0 合同；普通项目会话按用户创建规则延续 |
+| Agent/Project 协作关系 | 参与权限和各轮次工作目标 | 不内嵌第二份 Agent Definition，不另建 Long Agent 项目会话 |
+| Chat Session | 原生交流历史，固定存储归属 | Long Agent 每日默认与额外独立直接会话；独立任务/群参与目标见 LA0 合同；会话按用户创建规则延续 |
 | Pi AgentSession | 一次 Turn 或执行阶段的运行对象 | 临时，可恢复持久 Session |
 | 长期职责 | Agent 持续承担的工作范围及自主安排约束，关联明确 Project | 长期；一项工作完成不终止职责 |
 | Task | 一项具体工作定义及触发策略，可关联长期职责 | 一次性、周期或事件驱动 |
@@ -64,19 +64,19 @@ Task/Run 不替代已有 Workflow Run；任务调用 Workflow 时保存其 ID、
 
 ### 4.1 项目是每轮冻结的执行上下文
 
-Friend 的直接交流使用自己的每日默认或用户选择的额外直接 Session。业务项目通过本轮冻结的项目上下文进入公共装配：2026-10-01 起项目归属会话执行项目 = 会话归属，每日/额外直接会话在 Agent 容器执行（历史合同：Web 私聊曾取顶栏"项目"选择，群聊取会话 storageProjectId）；不因此新建项目 Friend Session。查询其他项目的概览也不自动切换执行项目。Session 存储不迁移、原项目授权不扩大。
+Long Agent 的直接交流使用自己的每日默认或用户选择的额外直接 Session。业务项目通过本轮冻结的项目上下文进入公共装配：2026-10-01 起项目归属会话执行项目 = 会话归属，每日/额外直接会话在 Agent 容器执行（历史合同：Web 私聊曾取顶栏"项目"选择，群聊取会话 storageProjectId）；不因此新建项目 Long Agent Session。查询其他项目的概览也不自动切换执行项目。Session 存储不迁移、原项目授权不扩大。
 
-项目展示与 Agent Home 分开；旧 API 的 projectId 兼容表示存储归属，新消费者明确使用 SessionRef 与本轮冻结的 `contextProjectId`，精确字段以[公共装配合同](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)为准。项目页只列普通项目 Session；Friend 的项目活动可引用相关轮次，不复制私有每日对话或授权其他参与者读取整天历史。
+项目展示与 Agent Home 分开；旧 API 的 projectId 兼容表示存储归属，新消费者明确使用 SessionRef 与本轮冻结的 `contextProjectId`，精确字段以[公共装配合同](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)为准。项目页只列普通项目 Session；Long Agent 的项目活动可引用相关轮次，不复制私有每日对话或授权其他参与者读取整天历史。
 
 2026-10-01 已确认目标合同（实施完成，见[评审记录](../../history/reviews/2026-10-01-la-project-session-tree.md)）：Web 端入口重构为 Long Agent → Project → Session 三级导航。Long Agent 通过有序 `boundProjectIds` 显式绑定多个项目（增删走配置 API，Workspace 固定首位不可解绑，解绑不删 Session）；从绑定项目新建的会话 storageProjectId 为该项目，执行项目 = 会话归属；每日默认、额外直接会话、定时与 IM 轮次仍归 Agent Home，Session 不迁移。多 Agent 进入同一项目的身份区分复用现有机制：SessionRef owner 归属校验、各 LA 独立配置根冻结的身份区/当前项目区、导航路径标注，不新增运行时。顶栏项目选择器在 coworker 模式退役；主题模式本期只在项目下展示现有图，跨项目来源放宽后置。
 
 ### 日历历史入口（2026-09-27 实现）
 
-Friend 列表每行的日历按钮打开历史阅读器：全年格子按周排列，Agent Home 的原生 Session 在当天有消息才显示绿色。只有文件头/配置的空 Session 不点亮；不能把每日绑定存在当作已有历史。Home 中日常、后台工作、主题和其他原生 Session 都沿用现有存储与归属。点击任意日期直接进入该日工作区：中央打开日常 Session，侧栏按所选日期列出会话和后台工作，不再弹出第二层会话选择；每个 Session 沿用自己的权限和公共 ChatWindow，已有历史可以继续会话；打开已有会话不创建替代品。空日期可点击，通过既有 `POST /api/long-agents/:id/start` 的可选 `date: YYYY-MM-DD` 幂等打开或创建该日直接交流 Session。只创建不会调用模型，也不是定时任务。
+Long Agent 列表每行的日历按钮打开历史阅读器：全年格子按周排列，Agent Home 的原生 Session 在当天有消息才显示绿色。只有文件头/配置的空 Session 不点亮；不能把每日绑定存在当作已有历史。Home 中日常、后台工作、主题和其他原生 Session 都沿用现有存储与归属。点击任意日期直接进入该日工作区：中央打开日常 Session，侧栏按所选日期列出会话和后台工作，不再弹出第二层会话选择；每个 Session 沿用自己的权限和公共 ChatWindow，已有历史可以继续会话；打开已有会话不创建替代品。空日期可点击，通过既有 `POST /api/long-agents/:id/start` 的可选 `date: YYYY-MM-DD` 幂等打开或创建该日直接交流 Session。只创建不会调用模型，也不是定时任务。
 
-`GET /api/long-agents/:id/daily?year=YYYY` 保留 `days` 生命周期记录，另返回 `sessions: [{sessionId,projectId,title,kind,dates,createdAt}]` 只读投影供历史入口使用。年份允许 1970–9999；不传年份时保留状态面板最近 60 天合同。会话发现复用公共 `listActiveSessionFiles`，日期从同一次 stat 校验的 Pi 分支消息读取，按 Agent 时区计算；跨日会话只出现在真正有消息的日期，不填满创建至修改之间的空闲日。过去分支/压缩前全文继续通过公共历史入口查看。此版本范围是 Agent Home，不递归扫描其他项目中的委派子会话。无新存储、调度或模型调用，日历读取不加入联系人切换的关键路径。侧栏在主聊天打开后异步读取投影，后台工作按创建日或当日实际消息归入；同名定时任务每次执行按 work/Session 身份区分，并显示实际开始时间。
+`GET /api/long-agents/:id/daily?year=YYYY` 保留 `days` 生命周期记录，另返回 `sessions: [{sessionId,projectId,title,kind,dates,createdAt}]` 只读投影供历史入口使用。年份允许 1970–9999；不传年份时保留状态面板最近 60 天合同。会话发现复用公共 `listActiveSessionFiles`，日期从同一次 stat 校验的 Pi 分支消息读取，按 Agent 时区计算；跨日会话只出现在真正有消息的日期，不填满创建至修改之间的空闲日。过去分支/压缩前全文继续通过公共历史入口查看。此版本范围是 Agent Home，不递归扫描其他项目中的委派子会话。无新存储、调度或模型调用，日历读取不加入 Long Agent 切换的关键路径。侧栏在主聊天打开后异步读取投影，后台工作按创建日或当日实际消息归入；同名定时任务每次执行按 work/Session 身份区分，并显示实际开始时间。
 
-用户选择的日期只是 Session 的日历归属；接受时间、消息时间与模型所见今天仍使用真实当前时间。继续旧日不改变默认联系人今天的会话；旧日总结已完成时重新置为待总结，按新 cutoff 更新，收尾正在占用会话时仍使用既有冲突提示。日历后续可以投影现有 Task/Occurrence/Duty，但本批只提供 Session 导航和创建，未把任务定义或跳过记录当成已有会话。
+用户选择的日期只是 Session 的日历归属；接受时间、消息时间与模型所见今天仍使用真实当前时间。继续旧日不改变默认 Long Agent 今天的会话；旧日总结已完成时重新置为待总结，按新 cutoff 更新，收尾正在占用会话时仍使用既有冲突提示。日历后续可以投影现有 Task/Occurrence/Duty，但本批只提供 Session 导航和创建，未把任务定义或跳过记录当成已有会话。
 
 后续已确认方向：按每天真实 Token 消耗映射绿色深浅（多则深、少则浅），当前只记录实现注释，未启用强度。届时应读取原生 assistant usage，明确缓存 Token 口径与 fork 继承去重；不能以会话数量或文件大小代替用量，也不新建会话事实源。
 
@@ -88,25 +88,25 @@ Friend 列表每行的日历按钮打开历史阅读器：全年格子按周排�
 
 - 唯一键为 `(longAgentId, localDate)`，不含业务 projectId、Channel 或浏览器 ID。默认日期由 Backend 耐久接受时间及 Agent 的持久 IANA timeZone 计算；迟到渠道消息保留原发送时间，但新接受请求进入接受日。2026-09-27 用户明确选择日历日期或已有 Session 时例外：Backend 验证日期/归属后定位该 Session，不改变消息时间和模型所见当前时间。
 - 老配置首次迁移时把 Backend 的有效 IANA 时区持久固定，并在检查中展示；以后不随服务器时区漂移。改时区从下一轮接受生效，历史不改；遇到同一日期复用原 Session，不能因时区更名再建一个。同一执行保存其 timeZone revision。
-- 同日直接消息和内部维护进入每日原生 Session，有序执行；LA2 任务触发通过 LA1 独立工作 Session 执行（[任务合同](./tasks.md)）；接收与模型执行分离，使用现有 Long Agent 耐久待处理记录扩展请求序号/状态，不新增通用任务引擎。多个 Friend 可并行；独立 Workflow 委派仍按自身合同并行。
+- 同日直接消息和内部维护进入每日原生 Session，有序执行；LA2 任务触发通过 LA1 独立工作 Session 执行（[任务合同](./tasks.md)）；接收与模型执行分离，使用现有 Long Agent 耐久待处理记录扩展请求序号/状态，不新增通用任务引擎。多个 Long Agent 可并行；独立 Workflow 委派仍按自身合同并行。
 - 本轮接受时选定日期/项目/资源；午夜不迁移已接受或执行中的轮次。旧日队列仍写旧 Session，新日任务使用新 Session，缺少最终交接时携带“旧日仍在执行”的可查引用；不得假称昨日已全部总结。
-- Backend 恢复 Worker 启动时、每 60 秒及接受消息前检查换日和待总结记录；空闲日不制造空 Session。首条新日工作按唯一键创建。2026-09-27 按用户修正的产品要求，显式打开旧日可以在原 Session 继续；默认点 Friend 仍进入今天。已完成总结会随新轮次重新进入待总结，不能悄悄转投今日。
+- Backend 恢复 Worker 启动时、每 60 秒及接受消息前检查换日和待总结记录；空闲日不制造空 Session。首条新日工作按唯一键创建。2026-09-27 按用户修正的产品要求，显式打开旧日可以在原 Session 继续；默认点 Long Agent 仍进入今天。已完成总结会随新轮次重新进入待总结，不能悄悄转投今日。
 - 新日初始化按唯一键幂等，不因先打开页面或进程重建丢失交接。交接 readiness/revision 独立记录，每轮从记录恢复；后来完成的旧日总结从下一轮进入，不改已接受轮次。
 
 ### 4.2.1 P3 实现合同（2026-09-19）
 
 所有直接入口复用 `acceptLongAgentTurn → drainLongAgentTurns → executeAcceptedLongAgentTurn → createChatPiAgentSession`。Nano Event API 在返回 202 前冻结模型输入并保存事件；P4 Web 已使用 turns API 在耐久接受后返回 202，再按引用订阅公共 Pi 事件；旧 messages API 保留同步兼容。精确路由、恢复边界和能力差异见[模块合同](../../architecture/chat-module-contracts.md#friend-p4-实时与控制合同)。
 
-- `project-agent.ts` 按 Friend＋日期定位 Home 原生 Session，兼容输入的业务 projectId 不再创建另一条 Friend 主会话。显式旧 Home 日常 Session ID 可以继续原历史；点 Friend 的“开始聊天”仍进入今天。经过旧迁移的 Home 历史须有精确迁移回执；原生 header 保留，公共打开入口只在原 cwd 与迁移来源 Registry 一致时允许从当前 Home 续聊。仍在旧业务 Project 的迁移档案不自动接管。
+- `project-agent.ts` 按 Long Agent＋日期定位 Home 原生 Session，兼容输入的业务 projectId 不再创建另一条 Long Agent 主会话。显式旧 Home 日常 Session ID 可以继续原历史；点 Long Agent 的“开始聊天”仍进入今天。经过旧迁移的 Home 历史须有精确迁移回执；原生 header 保留，公共打开入口只在原 cwd 与迁移来源 Registry 一致时允许从当前 Home 续聊。仍在旧业务 Project 的迁移档案不自动接管。
 - 时区首次读取配置、打开会话或 Worker 恢复时固定进 Registry；保存配置可修改 `timeZone`。每个请求记录接受时的日期和时区，改配置不重写历史。当前日期因改时区再次出现时复用原 Session；若该日正在收尾则明确要求稍后重试，完成后追加工作会重新标记待总结。
 - `runtime/long-agent-state.json` schema 4 增加 dailySessions 和 turns。turns 是执行信封/收据：保存 requestId、可信来源、全局接受序号、日历归属、项目、Nano revision、公共装配 seed、正文/图片和状态；不是第二套聊天。完成/取消后清除正文、图片、seed，消息事实始终在 Pi JSONL。失败/不明中断保留原输入供检查。
-- Web 使用稳定 requestId；同来源/Friend/requestId 且正文、项目、附件一致即复用，不同则 409。Turn ID 带来源和 Friend 前缀，避免不同入口身份碰撞。一个 Friend 的 Worker 串行处理接受序号，不同 Friend 可并行；当前采用单 Backend 进程的原子状态写队列，不支持多个 Backend 同写一个 Chat Home。
+- Web 使用稳定 requestId；同来源/Long Agent/requestId 且正文、项目、附件一致即复用，不同则 409。Turn ID 带来源和 Long Agent 前缀，避免不同入口身份碰撞。一个 Long Agent 的 Worker 串行处理接受序号，不同 Long Agent 可并行；当前采用单 Backend 进程的原子状态写队列，不支持多个 Backend 同写一个 Chat Home。
 - 接受在临时 Pi Session 中通过公共装配做预解析，只保留装配元数据，不复制消息。执行时将 seed 安装到真实每日 Session。已加载资源在本进程保留版本；重启后规则正文仍冻结，Skill/Extension 按 P2 恢复校验，不可恢复的版本明确失败，不能换成新资源偷偷执行。
 - Worker 在启动、每 60 秒和注册后的消息入口检查；重建既有 Home 日历索引但不分配空闲日 Session。日期标记与首次 Session flush 一起持久化，索引提交前崩溃可据标记恢复；同日多个候选报冲突，不合并正文。
 - queued 在重启后继续；running 仅有同轮原生终态/完整 stop 回复时恢复 completed，否则 interrupted，保留历史且不自动重放不明工具副作用。取消排队不会调用模型；失败可显式重试，但已有后续执行或日期已收尾时拒绝回退历史，改为当前会话发新消息。
-- Nano 私聊必须匹配已配置 inbox 或已有可信私聊绑定；群聊、未绑定地址不共享每日私有历史。第二渠道不能仅凭 Agent Group ID 自动获得旧对话。回复始终使用原 event 目的地；完成后的 Delivery/Ack 重试不创建新日 Session、不重新装配模型，停用 Friend 也不丢已完成回复的待投递收据。
+- Nano 私聊必须匹配已配置 inbox 或已有可信私聊绑定；群聊、未绑定地址不共享每日私有历史。第二渠道不能仅凭 Agent Group ID 自动获得旧对话。回复始终使用原 event 目的地；完成后的 Delivery/Ack 重试不创建新日 Session、不重新装配模型，停用 Long Agent 也不丢已完成回复的待投递收据。
 
-`GET /api/long-agents/:id/daily` schema 1 提供时区、今天、最近 60 日总结状态及最近 100 个请求的安全投影，不返回冻结 Prompt、附件或 Credential。`POST` 同路径接受 `retry-summary + date`、`retry-request + turnId`、`cancel-request + turnId`，拒绝未知字段及不适用状态。Friend 设置 → 日常记录 → 会话与交接提供历史、失败原因与对应操作；P4 运行中取消/引导/事件订阅复用同一执行队列和原生 Pi 句柄，合同见上述链接。
+`GET /api/long-agents/:id/daily` schema 1 提供时区、今天、最近 60 日总结状态及最近 100 个请求的安全投影，不返回冻结 Prompt、附件或 Credential。`POST` 同路径接受 `retry-summary + date`、`retry-request + turnId`、`cancel-request + turnId`，拒绝未知字段及不适用状态。Long Agent 设置 → 日常记录 → 会话与交接提供历史、失败原因与对应操作；P4 运行中取消/引导/事件订阅复用同一执行队列和原生 Pi 句柄，合同见上述链接。
 
 旧 schema 1–3 转换前保留 `runtime/migrations/long-agent-daily-v4/source.json`，转换完成写 `complete.json`。只自动收录可唯一识别的 Home 日期和新原生标记；其他旧业务项目 Session 不挪动、不拼接，P5 的旧 URL、映射、冲突和恢复规则见[升级手册](../../operations/friend-migration.md)。
 
@@ -116,7 +116,7 @@ Web 每次发送显式提供项目 ID 或 null，刷新恢复该窗口选择。N
 
 自然语言“去项目 B”通过同一受控项目上下文服务解析已授权对象并更新入口绑定；当前轮次保持快照，切换后的下一轮生效。若要立即继续，以有来源的后续轮次推进，而不是热替换正在执行的工具。重名、无授权和不存在需要明确处理，不能从模型正文或相对目录猜 projectId。
 
-仅已识别为同一用户的私有入口复用同一 Friend 每日历史。未知发送者、多用户群聊不能被自动接入这个私有上下文；保留当前拒绝/显式配置边界，多人共享另行设计。回复目的地由原始可信请求固定，Web 回复不默认广播到 IM。通知回复引用旧任务只作为关联，不改变本轮每日 Session。
+仅已识别为同一用户的私有入口复用同一 Long Agent 每日历史。未知发送者、多用户群聊不能被自动接入这个私有上下文；保留当前拒绝/显式配置边界，多人共享另行设计。回复目的地由原始可信请求固定，Web 回复不默认广播到 IM。通知回复引用旧任务只作为关联，不改变本轮每日 Session。
 
 ## 5. 不失忆的连续性机制
 
@@ -171,7 +171,7 @@ Agent Memory 保存该 Agent 的长期事实与协作知识；Personal Memory �
 
 需要表达的字段领域：名称/目标、负责人、Project、可选职责关联、一次性/周期/事件触发及过滤条件、时区、输入、可选前置检查、Session 策略、能力或 Workflow 引用、通知目的地、通知条件、重试/补跑/重叠策略、预算和启停状态。字段名称与 HTTP/Tool Schema 待详细设计。自由活动不必为满足 Task 的目标字段而制造交付任务。
 
-现有 Nano 定时消息仍进入接受日唯一 Session；LA1 显式后台工作进入独立 Session；没有模型的确定性检查不创建 Session。显式委派 Workflow 的子 Session 属于 Workflow，不接管 Friend 主交流。旧策略中的“指定业务 Session/每次独立 Friend Session”不作为本轮实现输入。任务仍持有工作项目和来源，不能隐式跟随用户页面。
+现有 Nano 定时消息仍进入接受日唯一 Session；LA1 显式后台工作进入独立 Session；没有模型的确定性检查不创建 Session。显式委派 Workflow 的子 Session 属于 Workflow，不接管 Long Agent 主交流。旧策略中的“指定业务 Session/每次独立 Long Agent Session”不作为本轮实现输入。任务仍持有工作项目和来源，不能隐式跟随用户页面。
 
 ### 7.2 一次运行
 
@@ -198,11 +198,11 @@ Task、Run、模型执行和 Delivery 状态分开。投递重试不重新执行
 
 同一任务默认不重叠，同一 Session 顺序执行，不同 Session 受 Agent 和机器预算控制。错过时间按显式 skip/coalesce/catch-up 策略处理，恢复后不能无限补跑。重试、次数、超时和暂停阈值必须可查。
 
-同一个 Friend 可持续接收不同入口消息；同日模型推进和历史写入按唯一 Session 有序。等待不阻止耐久接收；需要交互的暂停点释放运行操作锁，恢复使用明确版本。不同 Friend 和显式子 Workflow 可按各自合同并行；共同会话参与者协议不在本轮开放。
+同一个 Long Agent 可持续接收不同入口消息；同日模型推进和历史写入按唯一 Session 有序。等待不阻止耐久接收；需要交互的暂停点释放运行操作锁，恢复使用明确版本。不同 Long Agent 和显式子 Workflow 可按各自合同并行；共同会话参与者协议不在本轮开放。
 
 并发控制落到实际冲突资源：同一配置或 Memory 文件的写入需要版本冲突保护或短时串行；相同可写工作副本、浏览器页面、设备等按资源能力互斥；只读快照与互不冲突的工作可以并行。正在执行的轮次保留其配置快照，后续轮次读取新版本。等待另一 Agent 或用户回复时，不得持有阻塞整个身份或对方响应所需资源的锁。
 
-Friend 同日直接交流使用现有待处理记录的接受序号，不能并发写同一 Pi 分支；后台维护排在其截止范围的已接受消息之后。跨日后仍可显式在旧日 Session 接受新用户轮次；总结按已有 cutoff 与会话锁收尾，完成后若有新轮次则更新总结。默认新消息仍进入今天。未来多 Agent 协作不能用新增隐藏 Friend Session 绕过此合同。
+Long Agent 同日直接交流使用现有待处理记录的接受序号，不能并发写同一 Pi 分支；后台维护排在其截止范围的已接受消息之后。跨日后仍可显式在旧日 Session 接受新用户轮次；总结按已有 cutoff 与会话锁收尾，完成后若有新轮次则更新总结。默认新消息仍进入今天。未来多 Agent 协作不能用新增隐藏 Long Agent Session 绕过此合同。
 
 自由活动与正式工作可以并行；收到正式任务不自动中断全部自由活动。只有资源冲突、优先级或预算需要时才等待、暂停或让出资源。自由活动的完整产品场景仍在讨论。
 
@@ -250,11 +250,11 @@ Frontend 只消费 Backend：Agent 详情、配置编辑、有效 Prompt、资�
 
 ## LA1：独立后台工作实现合同
 
-入口为 Friend 侧栏“后台工作”和 `friend_work` Tool，两者调用 `src/long-agents/work.ts`。仅本人日常 Session 可发起自己的工作，不允许伪造另一个 Friend 或递归派生。创建需完整任务说明，不复制主聊历史。后台沿已有 Long Agent Resolver、接受快照与公共 Pi 工厂执行，不创建同名临时 Agent，也不改变普通 Workflow Agent。复杂阶段仍可由现有 `workflow_call` 组织；周期定义/Occurrence/长期职责属于 LA2–LA3。
+入口为 Long Agent 侧栏“后台工作”和 `friend_work` Tool，两者调用 `src/long-agents/work.ts`。仅本人日常 Session 可发起自己的工作，不允许伪造另一个 Long Agent 或递归派生。创建需完整任务说明，不复制主聊历史。后台沿已有 Long Agent Resolver、接受快照与公共 Pi 工厂执行，不创建同名临时 Agent，也不改变普通 Workflow Agent。复杂阶段仍可由现有 `workflow_call` 组织；周期定义/Occurrence/长期职责属于 LA2–LA3。
 
-- `FriendWork` 是执行绑定，保存在 `long-agent-state.json` v5 的 `works`。ID 由 Friend 与 requestId 决定，同键异载荷拒绝；保存原生工作 Session、origin Session/Entry、标题与固定协作 Project。原生 `chat.friend-work.v1` CustomEntry 用于绑定恢复；Pi header 保留 parentSession。
-- LA1 工作存储 Project 固定为该 Friend Home，和日常历史一样属于本人私有范围；业务 Project 仅为冻结的工作目标，不把它误作 Home。工作下一轮可重新装配能力，但不能改投另一个项目；新项目另开工作。
-- 运行状态仍来自既有 `AcceptedTurn`（新增可选 workId），不复制第二套 Run 状态。接受时冻结定义、资源和项目，按原生 Session 串行；不同工作与主聊并行。每 Friend 当前最多 4 条活跃后台 Session，主聊不占此容量；此值为 LA1 固定上限，预算/配置管理后续接入。
+- `FriendWork` 是执行绑定，保存在 `long-agent-state.json` v5 的 `works`。ID 由 Long Agent 与 requestId 决定，同键异载荷拒绝；保存原生工作 Session、origin Session/Entry、标题与固定协作 Project。原生 `chat.friend-work.v1` CustomEntry 用于绑定恢复；Pi header 保留 parentSession。
+- LA1 工作存储 Project 固定为该 Long Agent Home，和日常历史一样属于本人私有范围；业务 Project 仅为冻结的工作目标，不把它误作 Home。工作下一轮可重新装配能力，但不能改投另一个项目；新项目另开工作。
+- 运行状态仍来自既有 `AcceptedTurn`（新增可选 workId），不复制第二套 Run 状态。接受时冻结定义、资源和项目，按原生 Session 串行；不同工作与主聊并行。每 Long Agent 当前最多 4 条活跃后台 Session，主聊不占此容量；此值为 LA1 固定上限，预算/配置管理后续接入。
 - Web 复用原 turns、events、Session 详情与聊天组件。侧栏每 3 秒刷新工作状态；打开后走相同的流式事件。取消只针对对应执行，queued 直接取消，running 持久化 cancelRequested 并中止 Pi；装配窗口在调用模型前检查。已发生的外部动作不回滚。
 - 终态 AcceptedTurn 是耐久返回源。`chat.friend-work-return.v1` 隐藏原生 CustomMessage 只写状态/来源引用，不复制答案，不伪造旧 Tool Result，不自动唤醒主聊。交付先取得来源 Session 锁并重开，按 turnId 去重，只接受当前最新尝试；旧日已关闭或来源删除时保留工作结果入口，不重开旧日。刷新不重执行模型。
 - 重启延续 queued；无法证明完成的 running 标 interrupted，保留历史并由用户检查后发新消息，禁止自动重放未知工具副作用。新尝试结果不能引用旧尝试答案。

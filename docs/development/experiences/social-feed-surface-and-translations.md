@@ -2,7 +2,7 @@
 
 ## 现象与根因
 
-朋友圈入口打开后，内容追加在联系人列表底部，标题和空状态显示 `longAgentSettings.socialHeading` 等内部键。`LongAgentFeedView` 复用了设置页 CSS，并作为普通 section 参与侧栏 flex 布局；两个语言包均未注册这些键。空数据时没有帖子可暴露更多布局问题。
+朋友圈入口打开后，内容追加在 Long Agent 列表底部，标题和空状态显示 `longAgentSettings.socialHeading` 等内部键。`LongAgentFeedView` 复用了设置页 CSS，并作为普通 section 参与侧栏 flex 布局；两个语言包均未注册这些键。空数据时没有帖子可暴露更多布局问题。
 
 ## 原验证缺口
 

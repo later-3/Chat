@@ -66,7 +66,7 @@ pnpm debug:prepare
 
 运行哪些功能与给哪些模块挂调试器是两件事。下面两个入口都启动 Backend、Web、NanoClaw、TUI 和本地测试模型，使用同一套隔离调试环境；需先完成 NanoClaw 的首次准备。
 
-- **只调后端，其余功能照常使用：** 选择 `Debug Backend (full environment)`，按 F5。Web 和 TUI 正常运行，Web Friend通过 NanoClaw Group 与 Backend/Pi 执行；只有 Backend 挂调试器。
+- **只调后端，其余功能照常使用：** 选择 `Debug Backend (full environment)`，按 F5。Web 和 TUI 正常运行，Web Long Agent通过 NanoClaw Group 与 Backend/Pi 执行；只有 Backend 挂调试器。
 - **按需调任意一个或多个模块：** 先选择 `Run Chat (full environment)`，按 F5。环境就绪后，用命令面板 `Debug: Select and Start Debugging` 逐个启动需要的 `Debug Backend`、`Debug Frontend Server`、`Debug NanoClaw` 或 `Debug TUI`。也可从“只调后端”入口继续增加其他调试目标。
 
 #### 操作示例：后端与 NanoClaw 同时调试
@@ -157,7 +157,7 @@ pnpm debug:prepare:nanoclaw
 
 重复执行不会切换现有 worktree Commit，也不会覆盖你的修改。调试源码以这个 worktree 为准，原 `nanoclaw/src` 中尚未提交的修改不会自动进入它。要修改 Nano，请在此 worktree 创建自己的开发分支、编辑并提交；验证后按[维护章节](./maintenance.md)推送和更新父仓库 gitlink。版本升级先停止调试 Host，保留工作区修改，再按 Nano 原生升级约束处理；不要删除 upgrade marker 来跳过验证。
 
-若健康检查成功但新建 Friend 报管理接口错误，先比较 `nanoclaw` 与 `.data/debug/nanoclaw` 的 Commit；旧工作区可能只有健康接口，没有新的 `agent-groups/provision`。停止调试 Nano、保留私有修改并同步目标版本后，重新执行上述准备门禁，再启动。仅重启旧源码不会补齐接口，不能删除或提前覆盖 upgrade marker。
+若健康检查成功但新建 Long Agent 报管理接口错误，先比较 `nanoclaw` 与 `.data/debug/nanoclaw` 的 Commit；旧工作区可能只有健康接口，没有新的 `agent-groups/provision`。停止调试 Nano、保留私有修改并同步目标版本后，重新执行上述准备门禁，再启动。仅重启旧源码不会补齐接口，不能删除或提前覆盖 upgrade marker。
 
 生成的 `.data/debug/nanoclaw/.env` 默认 Telegram Token 为空、微信关闭。添加测试账号见[渠道章节](./channels.md)。这个文件与 `.data/debug/backend.env` 的服务 Token 必须一致。Nano 的固定运行模式为 `chat-pi`，不得改回原生容器 Runtime 试图绕过 Chat 错误。
 

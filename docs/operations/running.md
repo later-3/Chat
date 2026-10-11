@@ -11,10 +11,10 @@
 | Linux / WSL 正式日常使用 | `sudo /opt/chat/deploy/chatctl start` | 已安装的同一套正式服务 | `sudo /opt/chat/deploy/chatctl stop` |
 | 修改源码、看热更新 | `pnpm dev:all` | Nitro Backend＋Vite；不启动 Nano、TUI 或假模型 | 原终端 Ctrl+C；另终端可用 `pnpm chat:stop -- --debug` |
 | 隔离调试普通 Web / Workflow | `pnpm debug:start` | 独立调试 Backend＋Vite＋本地假模型 | `pnpm debug:stop` |
-| 隔离调试 Friend / Nano | `pnpm debug:start -- --nanoclaw` | 上述调试组件＋隔离 Nano Host | `pnpm debug:stop` |
+| 隔离调试 Long Agent / Nano | `pnpm debug:start -- --nanoclaw` | 上述调试组件＋隔离 Nano Host | `pnpm debug:stop` |
 | 终端交互 | `pnpm tui --url <Backend地址>` | 仅客户端，连接已有 Backend；当前只支持普通 Workflow | TUI 内 `/quit`，不停止 Backend |
 
-**`dev:all` 的 all 只指前后端，不表示整个 Chat 系统。** 它等价于 `bash scripts/dev-start.sh`，保留现有名称兼容已有用法。正式 Web 已在 Backend 构建内；Pi 和 Friend 执行也在 Backend 内，没有另一个 Pi Server 或每 Friend 一个服务。
+**`dev:all` 的 all 只指前后端，不表示整个 Chat 系统。** 它等价于 `bash scripts/dev-start.sh`，保留现有名称兼容已有用法。正式 Web 已在 Backend 构建内；Pi 和 Long Agent 执行也在 Backend 内，没有另一个 Pi Server 或每 Long Agent 一个服务。
 
 ## 正式启动：统一入口
 
@@ -45,7 +45,7 @@ bash scripts/dev-start.sh --backend-port 43112 --frontend-port 30145
 pnpm dev:tui
 ```
 
-前两条是两种调用方式，选一条运行。默认 Backend `43112`、Web `30145`、数据 `.data/dev/chat-home`；可显式设置 `CHAT_HOME`。这里使用该开发 Home 的模型配置，不自动准备假模型。`dev:tui` 等价于 `bash scripts/dev-start.sh tui`，不启动 Backend。需要 Friend 或独立断点环境时使用下面的 debug 入口。
+前两条是两种调用方式，选一条运行。默认 Backend `43112`、Web `30145`、数据 `.data/dev/chat-home`；可显式设置 `CHAT_HOME`。这里使用该开发 Home 的模型配置，不自动准备假模型。`dev:tui` 等价于 `bash scripts/dev-start.sh tui`，不启动 Backend。需要 Long Agent 或独立断点环境时使用下面的 debug 入口。
 
 ```bash
 pnpm debug:prepare                     # 首次准备隔离配置；整套启动也会自动调用
@@ -124,7 +124,7 @@ sudo /opt/chat/deploy/chatctl start
 sudo /opt/chat/deploy/chatctl doctor
 ```
 
-已安装 Nano 时 update 自动重新准备父提交固定的 Nano 版本；新加 Friend 功能用 `install --with-nanoclaw`，也需要先 stop。保留配置、数据库和 Group，不复制正常环境为 debug 环境。
+已安装 Nano 时 update 自动重新准备父提交固定的 Nano 版本；新加 Long Agent 功能用 `install --with-nanoclaw`，也需要先 stop。保留配置、数据库和 Group，不复制正常环境为 debug 环境。
 
 仅 Backend 的安装可在停止后执行 `chatctl rollback` 选择上一份保留 Release，然后单独 start；它不回退 Chat Home。回退后 doctor 的源码/Release 检查可能提示不同版本，必须核对对应源码。
 

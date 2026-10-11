@@ -37,7 +37,7 @@ Web 与 TUI 是 Chat 产品的两种交互入口，不互相转发消息；通�
 |---|---|
 | `/project` | 选择后端 Project，清空当前会话导航，不移动原 Session |
 | `/workflow` | 选择下一轮 Workflow；当前 Run 的配置不变 |
-| `/new`、`/resume` | 新会话草稿、恢复后端普通 Session |
+| `/new`、`/resume` | 新会话草稿、恢复后端会话 |
 | `/fork` | 选择原生 User Entry，在该输入之前分叉并恢复其文字为草稿 |
 | `/history`、`/tree` | 完整持久历史及只读分支浏览；浏览不修改执行叶子 |
 | `/approve`、`/revise`、`/cancel` | 当前 Run 的版本化审核与取消 |
@@ -53,12 +53,12 @@ TUI 复用既有 Run NDJSON 并适配浏览器增量；完成后重读持久消�
 
 ## Fork
 
-后端在请求锁与 Project Session 操作锁内检查普通 Session、目标 User Entry 和活跃执行。复用 Pi createBranchedSession/newSession，以同 Project 的临时目录准备文件，flush 后原子发布。客户端提供 UUID requestId；`session-operations/fork-<requestId>.json` 保存最小身份和准备文件引用，发布中断时重试完成同一文件，成功后清理准备目录。同一请求可重试，参数变化冲突；子会话移除或永久删除后旧请求明确拒绝，不重新创建。父子关系保留 Pi parentSession；来源 CustomEntry 记录请求与分叉点，不复制消息正文。
+后端在请求锁与 Project Session 操作锁内检查会话、目标 User Entry 和活跃执行。复用 Pi createBranchedSession/newSession，以同 Project 的临时目录准备文件，flush 后原子发布。客户端提供 UUID requestId；`session-operations/fork-<requestId>.json` 保存最小身份和准备文件引用，发布中断时重试完成同一文件，成功后清理准备目录。同一请求可重试，参数变化冲突；子会话移除或永久删除后旧请求明确拒绝，不重新创建。父子关系保留 Pi parentSession；来源 CustomEntry 记录请求与分叉点，不复制消息正文。
 
 Fork 复制的 Workflow 记录保留为历史，来源标记之前的审核、子调用和 Subsession 关联不视为新会话拥有的运行状态。新 Run 使用新 Invocation；继承的配置和原生话语保持可读。当前不支持正在运行或等待审核时 Fork；先完成或显式取消。
 
 ## 验证与发布
 
-覆盖命令/网络响应校验、跨 Project、普通会话归属、Fork 幂等与历史状态隔离、完整历史与压缩、Web 接续、认证过期、断流恢复及远程 URL 凭据边界。开发和生产 Runtime 使用隔离 CHAT_HOME 与本地假模型。CLI 打包后在仓库外安装并运行，验证原生终端交互及 --help；不发布 npm 或部署到未指定机器。
+覆盖命令/网络响应校验、跨 Project、会话归属、Fork 幂等与历史状态隔离、完整历史与压缩、Web 接续、认证过期、断流恢复及远程 URL 凭据边界。开发和生产 Runtime 使用隔离 CHAT_HOME 与本地假模型。CLI 打包后在仓库外安装并运行，验证原生终端交互及 --help；不发布 npm 或部署到未指定机器。
 
 服务端继续使用现有 chatctl 部署。CLI 使用版本化 npm tarball 分发，运行环境 Node >=22.19；命令为 chat，不额外启动服务器。运行事实和认证仍由目标实例拥有。

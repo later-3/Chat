@@ -2,9 +2,9 @@
 
 ## 1. 现象与影响
 
-2026-09-29，Web 私聊发消息整体失败：`POST /api/long-agents/:id/turns` 返回 409「私聊消息必须携带 Friend 项目关联 revision」。前端 0.10.0 已经按统一项目合同不再发送 `interactionRevision`，后端仍在准入处 `requireInteractionRevision: true`，于是一次都不成功。
+2026-09-29，Web 私聊发消息整体失败：`POST /api/long-agents/:id/turns` 返回 409「私聊消息必须携带 Long Agent 项目关联 revision」。前端 0.10.0 已经按统一项目合同不再发送 `interactionRevision`，后端仍在准入处 `requireInteractionRevision: true`，于是一次都不成功。
 
-影响面不止开发环境：标签 `v0.5.1`（前端 `691bcfc` = 0.10.0 + 当时的后端）把两侧捆在一起发布，按交付页装出来的实例 Friend 私聊直接不可用；窗口期是前端 `38b3860`（09-29 08:42）到后端 `56e2c6eeb`（09-29 18:05）。
+影响面不止开发环境：标签 `v0.5.1`（前端 `691bcfc` = 0.10.0 + 当时的后端）把两侧捆在一起发布，按交付页装出来的实例 Long Agent 私聊直接不可用；窗口期是前端 `38b3860`（09-29 08:42）到后端 `56e2c6eeb`（09-29 18:05）。
 
 ## 2. 已验证的直接根因
 

@@ -175,7 +175,7 @@ Session/本次Run临时覆盖
 
 一次Workflow Invocation在启动时解析并冻结配置和资源版本。文件变化从下一次Invocation生效。
 
-公共 Pi 装配同时提供本轮 Project 的身份、用途、根目录和 cwd。普通 Workflow 的项目身份随 `chat.workflow-context-files.v1` 快照冻结；旧快照保留原规则，缺少身份字段时由已解析的同一 Project 补齐，不改写历史。Friend 的同类字段使用既有装配快照；旧快照没有用途字段时保持未知。两者共用项目说明与原生文件工具作用域：read/write/edit/ls/find/grep 默认限定当前 Project；Friend 额外允许自己的 Workspace，已选上下文/Skill 资源只开放声明的读取范围。父仓库、Chat 安装位置和 Skill 来源不代表当前 Project；缺少 README 不得自动向父级寻找另一个项目来冒充。检查与执行使用相同工具装配，explicit/默认工具选择不变。Bash 与可信 Extension 不是文件工具沙箱，不能由此声称实现 OS 隔离。
+公共 Pi 装配同时提供本轮 Project 的身份、用途、根目录和 cwd。普通 Workflow 的项目身份随 `chat.workflow-context-files.v1` 快照冻结；旧快照保留原规则，缺少身份字段时由已解析的同一 Project 补齐，不改写历史。Long Agent 的同类字段使用既有装配快照；旧快照没有用途字段时保持未知。两者共用项目说明与原生文件工具作用域：read/write/edit/ls/find/grep 默认限定当前 Project；Long Agent 额外允许自己的 Workspace，已选上下文/Skill 资源只开放声明的读取范围。父仓库、Chat 安装位置和 Skill 来源不代表当前 Project；缺少 README 不得自动向父级寻找另一个项目来冒充。检查与执行使用相同工具装配，explicit/默认工具选择不变。Bash 与可信 Extension 不是文件工具沙箱，不能由此声称实现 OS 隔离。
 
 ## 10. 版本与日志
 
@@ -238,7 +238,7 @@ Markdown Agent Memory与Chat Personal/Project Memory保持不同领域服务和�
 
 ## 15. 公共 Agent 装配合同（P1，2026-09-19）
 
-状态：P2 已接入公共装配、规则/资源冻结、工具工作目标与检查预览；P3 已实现耐久接受和跨入口每日定位；P4 实时流已接入公共事件消费，验证状态见阶段记录；P5 迁移演练待完成。适用于 Workflow 与 Friend。它取代“Session 存储 Project 必须同时是 Friend 每轮工作 Project”的旧假设；Session 固有归属不变、目标授权和唯一 Pi 装配入口继续成立。每日生命周期由 [Long Agent 架构 §4](../modules/long-agents/chat-long-agent-architecture.md#4-project-first-与会话选择)拥有。
+状态：P2 已接入公共装配、规则/资源冻结、工具工作目标与检查预览；P3 已实现耐久接受和跨入口每日定位；P4 实时流已接入公共事件消费，验证状态见阶段记录；P5 迁移演练待完成。适用于 Workflow 与 Long Agent。它取代“Session 存储 Project 必须同时是 Long Agent 每轮工作 Project”的旧假设；Session 固有归属不变、目标授权和唯一 Pi 装配入口继续成立。每日生命周期由 [Long Agent 架构 §4](../modules/long-agents/chat-long-agent-architecture.md#4-project-first-与会话选择)拥有。
 
 ### 15.1 输入、所有权与解析顺序
 
@@ -246,8 +246,8 @@ Markdown Agent Memory与Chat Personal/Project Memory保持不同领域服务和�
 
 | 输入 | 字段与事实源 | 信任和生效点 |
 |---|---|---|
-| AgentDefinition | agentId、definitionRevision、模型/Thinking、System Prompt、自定义区域、tools/resources；现有配置 Resolver | Workflow 与 Friend 共用有效节点定义 Resolver；Friend 使用 Home 配置并叠加长期身份，不受浏览项目的 Workflow 或 `.pi/settings.json` 隐式覆盖 |
-| SessionRef | ownerKind、ownerId、storageProjectId、sessionId、dailyDate/timeZone（Friend）；Session 定位服务 | 路径仅服务端解析；projectId 兼容字段表示存储归属，不再同时代表本轮执行项目 |
+| AgentDefinition | agentId、definitionRevision、模型/Thinking、System Prompt、自定义区域、tools/resources；现有配置 Resolver | Workflow 与 Long Agent 共用有效节点定义 Resolver；Long Agent 使用 Home 配置并叠加长期身份，不受浏览项目的 Workflow 或 `.pi/settings.json` 隐式覆盖 |
+| SessionRef | ownerKind、ownerId、storageProjectId、sessionId、dailyDate/timeZone（Long Agent）；Session 定位服务 | 路径仅服务端解析；projectId 兼容字段表示存储归属，不再同时代表本轮执行项目 |
 | AgentWorkspace | longAgentId、workspaceRoot、自有资源引用；配置根和受控 Nano 资源服务 | 固定身份；不因项目切换搬家；Nano Group 资源不等于可任意挂载的本地目录 |
 | 本轮项目上下文 | projectId 或 null、projectRoot、effectiveCwd；Project Resolver | 统一项目合同按入口唯一确定并在受理时冻结：Web 私聊携带顶栏"项目"选择器的注册项目 id，群聊轮次取会话 storageProjectId，后台工作/任务/职责沿用创建时冻结目标，通道与定时为 null；null 明确表示无项目（Agent 容器），不能漏字段后猜最近项目，也不存在第二个可写的"项目关联"存储。2026-10-01 三级导航修订：Web 私聊的 Long Agent 会话改由会话归属项目决定执行项目（见 §15.6），顶栏选择器退役 |
 | Invocation | requestId、turnId、acceptedAt、序号、可信来源/发送者/回复目的地、运行用途 | 服务端校验后耐久接收；客户端不能指定其他 Agent 或 Session 权限 |
@@ -276,9 +276,9 @@ Markdown Agent Memory与Chat Personal/Project Memory保持不同领域服务和�
 
 ### 15.3 默认工作位置与能力边界
 
-普通 Workflow 默认 storageProjectId = 所属项目，保持现有行为；Friend 的 storageProjectId 永远指其 Home 容器，effectiveCwd 为本轮冻结项目根，无项目时为专属 Workspace。群聊会话只有一个项目字段 storageProjectId：会话存储与轮次执行项目一致，记录不再保存独立的执行项目字段。Pi Session header 的 cwd 保留创建事实，不能从它推断当前轮次 cwd。
+普通 Workflow 默认 storageProjectId = 所属项目，保持现有行为；Long Agent 的 storageProjectId 永远指其 Home 容器，effectiveCwd 为本轮冻结项目根，无项目时为专属 Workspace。群聊会话只有一个项目字段 storageProjectId：会话存储与轮次执行项目一致，记录不再保存独立的执行项目字段。Pi Session header 的 cwd 保留创建事实，不能从它推断当前轮次 cwd。
 
-Chat 系统工具上下文必须同时带 SessionRef 和本轮冻结项目（contextProjectId）：会话查找/审计来源用前者；默认项目读写/配置/Memory 用后者。没有冻结项目时，Project Memory 写入必须要求明确目标，不能把 Agent Home 当普通用户项目库；Personal 和 Agent Memory 仍走各自工具。`workflow_call` 保留父 Home Session 来源，目标子 Workflow 使用经授权的冻结项目并建立原生父子关系；该子 Session 属于 Workflow，不是 Friend 的第二条直接交流。
+Chat 系统工具上下文必须同时带 SessionRef 和本轮冻结项目（contextProjectId）：会话查找/审计来源用前者；默认项目读写/配置/Memory 用后者。没有冻结项目时，Project Memory 写入必须要求明确目标，不能把 Agent Home 当普通用户项目库；Personal 和 Agent Memory 仍走各自工具。`workflow_call` 保留父 Home Session 来源，目标子 Workflow 使用经授权的冻结项目并建立原生父子关系；该子 Session 属于 Workflow，不是 Long Agent 的第二条直接交流。
 
 跨项目的 read/write 等受管文件操作经真实路径和授权范围校验；专属空间只通过已授权自身资源路径/工具访问。**Pi 原生 cwd 不是沙箱**：绝对路径、`..`、bash 和扩展代码不由 cwd 限制。P1 实验只证明相对路径解析正确，不证明进程隔离。P2 已通过受管原生文件工具的真实路径校验验证文件越界；shell/任意代码继续明确为已有可信宿主能力，不能宣称具有项目沙箱，也不能给原本受限调用方隐式启用。要求严格进程隔离而无执行环境时明确不支持；本轮不通过命令文本检查冒充 Docker 隔离。
 
@@ -300,9 +300,9 @@ Chat 系统工具上下文必须同时带 SessionRef 和本轮冻结项目（con
 
 - `src/agents/assembly-context.ts` 解析可信 `invocation`，将身份、存储 Project、本轮目标、cwd、有效定义及根规则正文写入 `chat.agent-assembly.v1`。P3 已在统一耐久接受点冻结，执行安装同一 seed；P4 Web turns API 耐久接受后返回引用，再订阅实时事件，旧 messages API 保留同步兼容。
 - Web `contextProjectId` 为已登记用户项目 ID 或 null（统一项目合同：私聊按顶栏选择每轮携带并冻结，群聊取会话 storageProjectId，通道/定时为 null）；省略兼容为 null。Agent Home 不能作为执行项目。Nano/调度适配显式传入绑定的用户项目，绑定 Home 时为 null，不读取浏览器最后选择。
-- 2026-10-01 已确认目标合同（实施完成，见[评审记录](../history/reviews/2026-10-01-la-project-session-tree.md)）：Web 私聊的 Long Agent 会话改为项目归属——从 Long Agent 绑定项目新建的会话 storageProjectId 为该项目，执行项目 = 会话归属（与群聊现行规则一致）；每日默认、额外直接会话、定时与通道轮次仍归 Agent Home；顶栏"项目"选择器在 coworker 模式退役（workspace 普通会话的选项目继续存在）。实现事实：`LongAgentConfig.boundProjectIds`、状态 `projectSessions`（schema 8，原生标记 `chat.long-agent-project-session.v1` + requestId 幂等）、turn 记录可选 `storageProjectId` 驱动执行链（turn-queue/runtime/workflow-execution/live-turn/turn-feedback 全部跟随真实存储项目）、owner 索引与可写集合纳入 projectSessions；前端项目树（`LongAgentProjectTree`）+ 顶栏选择器 coworker 隐藏 + `contextProjectId` 派生改为会话归属。回归：`test/long-agents/long-agents.test.mjs`（绑定 + 项目会话全链）、`scripts/la-project-tree-browser.test.mjs`（真实浏览器，已入 `pnpm test:dev`）。
-- Friend 模型/Thinking 从 Home 公共 Workflow 配置及本轮选择解析，缺省沿用 Personal；项目设置只参与资源等 Pi 设置。`prepareLongAgentAssembly` 供执行和检查共用身份/交接输入，检查为当前配置预览，不修改真实历史。
-- 原生 `read` 对选中规则/Skill 等文本返回本轮快照，其他文本和图片保留 Pi 行为。普通 Workflow 与 Friend 共用 `read/write/edit/ls/find/grep` 作用域检查：普通 Workflow 以当前项目为边界，Friend 额外允许自身 Workspace；选中资源保留声明的只读范围。自定义同名工具仍由其能力提供方负责，不声称对任意扩展代码实施沙箱。
+- 2026-10-01 已确认目标合同（实施完成，见[评审记录](../history/reviews/2026-10-01-la-project-session-tree.md)）：Web 私聊的 Long Agent 会话改为项目归属——从 Long Agent 绑定项目新建的会话 storageProjectId 为该项目，执行项目 = 会话归属（与群聊现行规则一致）；每日默认、额外直接会话、定时与通道轮次仍归 Agent Home；顶栏"项目"选择器在 coworker 模式退役（workspace 会话的选项目继续存在）。实现事实：`LongAgentConfig.boundProjectIds`、状态 `projectSessions`（schema 8，原生标记 `chat.long-agent-project-session.v1` + requestId 幂等）、turn 记录可选 `storageProjectId` 驱动执行链（turn-queue/runtime/workflow-execution/live-turn/turn-feedback 全部跟随真实存储项目）、owner 索引与可写集合纳入 projectSessions；前端项目树（`LongAgentProjectTree`）+ 顶栏选择器 coworker 隐藏 + `contextProjectId` 派生改为会话归属。回归：`test/long-agents/long-agents.test.mjs`（绑定 + 项目会话全链）、`scripts/la-project-tree-browser.test.mjs`（真实浏览器，已入 `pnpm test:dev`）。
+- Long Agent 模型/Thinking 从 Home 公共 Workflow 配置及本轮选择解析，缺省沿用 Personal；项目设置只参与资源等 Pi 设置。`prepareLongAgentAssembly` 供执行和检查共用身份/交接输入，检查为当前配置预览，不修改真实历史。
+- 原生 `read` 对选中规则/Skill 等文本返回本轮快照，其他文本和图片保留 Pi 行为。普通 Workflow 与 Long Agent 共用 `read/write/edit/ls/find/grep` 作用域检查：普通 Workflow 以当前项目为边界，Long Agent 额外允许自身 Workspace；选中资源保留声明的只读范围。自定义同名工具仍由其能力提供方负责，不声称对任意扩展代码实施沙箱。
 - `chat.agent-assembly-resources.v1` 保存加载的 Skill/Prompt/扩展入口源内容与版本。恢复前校验，再交给 Pi；修改或缺失明确失败。运行中的扩展保留已加载实例。重建带可执行扩展的旧轮次一律失败并要求新轮次，因为入口文件 hash 无法证明其任意依赖代码未变化；不以重新导入最新代码冒充恢复。
 - `chat.agent-assembly-tools.v1` 固定实际启用工具、Schema 与资源版本；恢复时默认工具设置变化会明确失败，新轮次才采用新设置。
 - 普通 Workflow 以 invocation/stage/agent 为键保存 `chat.workflow-context-files.v1`，恢复时使用原规则正文。Session 消息、工具结果、Pi 压缩仍是原生记录；快照不是第二份聊天历史。

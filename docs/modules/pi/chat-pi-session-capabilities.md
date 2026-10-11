@@ -4,7 +4,7 @@
 
 2026-09-27，核对 Chat 工作分支 `codex/unified-session-performance`，Pi 固定源码 `0343d486d8d8c4622384fa18e93c7f1398cbd749`，`pi-coding-agent` 0.85.1。这是开发工作区的核对结果，不代表已提交、部署或上游最新版。[早期 Pi 设计分析](./pi-agent-design.md)使用另一版本，不能代替本表。
 
-用户场景是：Chat 增加 Project、Workflow、Friend、Topic、Memory 后，用户仍能连续交流、保留原始历史、压缩上下文、停止工作并恢复会话；业务编排不得改变 Pi 的基本会话语义。
+用户场景是：Chat 增加 Project、Workflow、Long Agent、Topic、Memory 后，用户仍能连续交流、保留原始历史、压缩上下文、停止工作并恢复会话；业务编排不得改变 Pi 的基本会话语义。
 
 判定分三层：原生能力存在、Chat 的真实执行链保留、产品入口可用。第三层缺失不能用第一层来宣称完整支持。下表逐项记录，不给没有运行证据的项目标记“已验证”。“保留”指源码调用路径仍成立；具体自动化证据单列。
 
@@ -44,21 +44,21 @@ Chat 对应入口：`src/agents/pi-agent-session.ts:createChatPiAgentSession`；
 | 05 | 上下文溢出后的压缩与重试 | 由 Pi 判断溢出、生成摘要并继续；Chat 不重写该算法 | 保留 |
 | 06 | 压缩不删除原始历史，重开恢复摘要和保留区间 | JSONL 留存全部 Entry；页面摘要由公共读模型投影 | 保留 |
 | 07 | 压缩后下一次请求不得恢复已归档长文本 | Session Memory Writer 原来重投影原始分支；现在先限定本轮，再取原生有效上下文，保留完整父链后过滤隐藏控制消息 | 本次修复 |
-| 08 | `compact(customInstructions)`、`abortCompaction` | 普通/私有 Friend 空闲会话通过 maintenance API、按钮和 `/compact` 调用原生方法；持久回执、取消和刷新恢复；群由专属合同限制 | 本次修复 |
+| 08 | `compact(customInstructions)`、`abortCompaction` | 普通/私有 Long Agent 空闲会话通过 maintenance API、按钮和 `/compact` 调用原生方法；持久回执、取消和刷新恢复；群由专属合同限制 | 本次修复 |
 | 09 | `compaction_start/end` 的原因、结果、取消、失败 | 原适配丢弃结果且 UI 不显示结束细节；现共用事件投影与运行状态显示原生计数、估计、失败/取消 | 本次修复 |
 | 10 | `getContextUsage` 当前上下文用量 | 原生只读 helper 投影到 Web；压缩后新响应前保留未知值，读取不装配 Agent | 本次修复 |
 | 11 | `getSessionStats` 全会话统计 | Pi 原生全文件聚合包含旧分支、摘要、工具 usage；顶部统计和 `/session` 已接 | 本次修复 |
 | 12 | 模型请求自动重试、退避、取消 | Pi 原生执行；Chat Run 状态显示次数与等待，并通过公共取消控制停止 | 保留 |
 | 13 | `summarization_retry_*` 事件 | 公共事件、浏览器解析与 RunStatus 已接次数/退避/重试恢复，结束清除倒计时 | 本次修复 |
-| 14 | abort、流/工具结束、Session 持久记录 | Chat 取消走 Run/Friend 生命周期再调用实际 Pi session.abort；保留业务状态与回执 | 业务适配 |
-| 15 | `steer` 在当前轮可接受边界追加引导 | Friend/Topic 有受理与实际 Pi 输入；普通 Workflow 前端拒绝运行中引导 | 缺口 |
-| 16 | `followUp` 等当前工作完成后继续 | Friend/Topic 使用耐久下一轮队列；普通 Workflow 入口未接。业务耐久队列不是 Pi 的内存队列 | 缺口 |
+| 14 | abort、流/工具结束、Session 持久记录 | Chat 取消走 Run/Long Agent 生命周期再调用实际 Pi session.abort；保留业务状态与回执 | 业务适配 |
+| 15 | `steer` 在当前轮可接受边界追加引导 | Long Agent/Topic 有受理与实际 Pi 输入；普通 Workflow 前端拒绝运行中引导 | 缺口 |
+| 16 | `followUp` 等当前工作完成后继续 | Long Agent/Topic 使用耐久下一轮队列；普通 Workflow 入口未接。业务耐久队列不是 Pi 的内存队列 | 缺口 |
 | 17 | 查看/清空/取回待处理输入、队列模式 | Web queuedMessages 固定空，handleRecallQueue 空；不能因此表示服务端没有待办输入 | 缺口 |
-| 18 | `resumePendingTurn` 与中断工具回合 | Chat 使用 Run 恢复/中断事实，不自动重放可能有副作用的工具。普通会话缺少对应显式继续入口 | 缺口 |
+| 18 | `resumePendingTurn` 与中断工具回合 | Chat 使用 Run 恢复/中断事实，不自动重放可能有副作用的工具。会话缺少对应显式继续入口 | 缺口 |
 | 19 | 跨请求重开同一 Session、恢复历史 | `openChatSession` + 公共工厂；统一 Workflow 不替换 Session ID | 保留 |
-| 20 | `setModel` 与模型变化记录 | Agent/Workflow 配置由 Backend 解析再传 Pi；Friend 使用自身/Personal 模型策略，不盲目继承上一业务节点模型 | 业务适配 |
+| 20 | `setModel` 与模型变化记录 | Agent/Workflow 配置由 Backend 解析再传 Pi；Long Agent 使用自身/Personal 模型策略，不盲目继承上一业务节点模型 | 业务适配 |
 | 21 | Thinking Level、模型能力与原生变化记录 | 设置/Agent 选择经公共装配，Pi 负责实际等级；不是新增第二套推理机制 | 业务适配 |
-| 22 | System Prompt 与项目 Context 文件 | Chat 显式解析 Personal/Project/Friend 授权根、冻结规则，再交原生 ResourceLoader；不继承机器上偶然的父目录 | 业务适配 |
+| 22 | System Prompt 与项目 Context 文件 | Chat 显式解析 Personal/Project/Long Agent 授权根、冻结规则，再交原生 ResourceLoader；不继承机器上偶然的父目录 | 业务适配 |
 | 23 | 查看实际 System Prompt | Agent 检查 API 使用公共装配；聊天 hook 的 systemPrompt/loader 仍为空，需要接实际选定节点的检查结果 | 缺口 |
 | 24 | 工具注册、调用、结果、继续模型循环 | Pi 执行；Chat 增加受权文件 Tool 和业务 Tool，同一 toolCallId 链路 | 保留 |
 | 25 | 工具进度/错误与流式文本、思考内容 | 统一原生事件投影，Web 共用渲染，省略流中的重复大 partial 不改变落盘消息 | 保留 |
@@ -72,7 +72,7 @@ Chat 对应入口：`src/agents/pi-agent-session.ts:createChatPiAgentSession`；
 | 33 | CLI 内置 `/compact /reload /name /session /copy` | `/compact [说明]`、`/session` 已接；其余 3 个命令仍拒绝，改名/复制的其他入口不等于命令可用 | 缺口 |
 | 34 | 读取旧 leaf 的历史 | Chat `/context?leafId` 只读；本地 activeLeaf 表示浏览位置，不是原生当前写入 leaf | 业务适配 |
 | 35 | 原生分支后原地继续 | 浏览只读并暂停发送；显式继续以 expectedLeafId 检查冲突，原生 branch/resetLeaf + 元数据保存位置；用户节点回填草稿；完整助手节点定位响应后；群/Topic 不走通用导航 | 本次修复 |
-| 36 | 从用户节点 fork 新 Session | 普通会话已有受锁保护、同 Project、幂等分叉；Topic 有领域分叉；每日/后台工作不能通过通用 fork 改属 | 业务适配 |
+| 36 | 从用户节点 fork 新 Session | 会话已有受锁保护、同 Project、幂等分叉；Topic 有领域分叉；每日/后台工作不能通过通用 fork 改属 | 业务适配 |
 | 37 | 导航生成 `branch_summary` | 已有摘要可以原生恢复和 Web 展示；Chat 没有完整的生成、取消、导航事务入口 | 缺口 |
 | 38 | Entry 标签/书签 `appendLabelChange` | 原生结构与已有标签投影存在；Chat 未接完整管理入口 | 缺口 |
 | 39 | clone / JSONL import | Pi SessionRuntime 支持；Chat 没有带 Project/owner/来源校验的产品导入/克隆合同 | 缺口 |
@@ -124,12 +124,12 @@ Session Memory Writer 先从完整原生父链识别当前 invocation 的首个 
 |---|---|---|
 | 原生接缝 | `test/agents/pi-assembly-seams.test.mjs` | 原生压缩、重开、项目规则与工具，不等于真实 Workflow Runtime |
 | 普通 Workflow | `test/workflows/chat-session-workflows.test.mjs` | 自动压缩后同 Session 继续 |
-| Friend 公共装配 | `test/long-agents/daily-lifecycle.test.mjs` | 真实压缩后规则恢复与工具执行 |
+| Long Agent 公共装配 | `test/long-agents/daily-lifecycle.test.mjs` | 真实压缩后规则恢复与工具执行 |
 | Writer 回归 | `test/workflows/session-memory-writer-runtime.test.mjs` | 摘要保留、归档文本不回填、分支隔离、隐藏控制 Entry 不断父链 |
 | 读模型 | `test/session-read-model.test.mjs` | 原生摘要映射、Entry ID 对应、历史不被改写 |
 | 事件 → Web | `test/workflows/chat-run-events.test.mjs`、`frontend/lib/run-activity.test.mjs` | 计数、失败/取消、非法响应拒绝与重试状态清理 |
 | 实际浏览器 | `scripts/session-memory-switch-browser.test.mjs` | 原生自动压缩完成后显示估计与原文保留说明，结果出现后输入区在 5 种视口仍完整可见 |
-| 实际 Runtime | `scripts/unified-session-runtime.test.mjs` | HTTP Friend → Workflow SDK/Step → Pi → 本地受控模型 → 自动压缩 → 同 Session Writer 实际请求不回填原文 |
+| 实际 Runtime | `scripts/unified-session-runtime.test.mjs` | HTTP Long Agent → Workflow SDK/Step → Pi → 本地受控模型 → 自动压缩 → 同 Session Writer 实际请求不回填原文 |
 
 代码更改运行 `pnpm verify` 和父仓库/Frontend `git diff --check`；不得用构造一个 compaction Entry 的单元测试替代真实压缩。可复用故障记录见 [Writer 压缩回归](../../development/experiences/writer-compaction-boundary.md)。后续 Pi gitlink 更新或公共装配、transformContext、事件过滤、Workflow 生命周期变化时，重审本表受影响项并增加用户场景验收。
 

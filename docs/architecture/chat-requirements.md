@@ -23,7 +23,7 @@ Project目标结构另见[Chat Project架构设计](../modules/projects/chat-pro
 7. 常用Agent能力应先能由配置文件声明；当前前端负责选择配置文件和资源并检查解析结果，创建和编辑配置文件属于后续功能。
 8. Pi Web现有页面能力后续仍要逐项接入，不能因为当前功能暂未使用就从界面或目标范围中永久删除。
 9. Workflow Agent的Pi AgentSession不是长期驻留对象。每次用户消息是一轮独立交互：Chat读取当前配置、恢复Pi Session上下文、创建本轮需要的AgentSession、完成执行并销毁运行对象。Long Agent是另一种长期产品身份，由Chat LongAgent对象与NanoClaw Agent Group承载，不受这条Pi AgentSession生命周期约束。
-10. 不定义“受限Agent”类型，也不默认禁止Extension。Planner、Pi Coding Agent或后续Agent都使用同一套能力配置机制；具体能力由配置值决定。
+10. 不定义“受限Agent”类型，也不默认禁止Extension。Planner、默认执行 Long Agent 或后续 Agent都使用同一套能力配置机制；具体能力由配置值决定。
 11. 当前系统没有管理员与普通用户角色，资源管理接口不基于不存在的角色模型设计。
 12. Agent配置文件可以放在用户选择的任意授权路径，不要求进入Git仓库，也不由Chat复制到临时目录。前端提交文件路径和本轮资源选择，后端统一读取、合并和校验。
 13. 每个Workflow先使用独立目录，集中放置该Workflow的代码、默认Agent配置和提示词资源，在物理结构上隔离。后续确有复用需要时再提取共享内容。
@@ -147,9 +147,9 @@ Project解析遵守以下优先级和失败规则：
 
 ## 4. 核心用户场景
 
-### 4.1 连续使用Pi Coding Agent
+### 4.1 连续使用单节点回合
 
-用户在一个Chat Session中连续选择直接执行Workflow。每一轮都应恢复同一Pi Session，并表现得像持续使用Pi Coding Agent：
+用户在一个Chat Session中连续选择单节点回合 Workflow。每一轮都应恢复同一Pi Session，并表现得像持续与同一 Long Agent 对话：
 
 - 能看到之前的用户、Assistant和Tool消息。
 - Session保存的模型、Thinking和压缩状态能够正确恢复。
@@ -158,7 +158,7 @@ Project解析遵守以下优先级和失败规则：
 
 ### 4.2 在同一Session切换Workflow
 
-用户先直接执行，下一轮选择规划执行，再切回直接执行。Workflow变化只决定“下一轮如何处理”，不改变Chat Session身份。
+用户先走单节点回合，下一轮选择规划执行，再切回单节点回合。Workflow变化只决定“下一轮如何处理”，不改变Chat Session身份。
 
 完整历史要能说明每轮由哪个Workflow和Agent处理；后续模型上下文仍遵守Pi Session规则和Chat明确的Stage交接规则。
 
@@ -473,7 +473,7 @@ workflows/<workflow-id>/
         └── Workflow、Stage和Agent装配测试
 ```
 
-即使两个Workflow都使用Pi Coding Agent，也先各自在自己的目录中拥有明确配置。允许使用Chat/Pi公共基础设施和公共资源，但不为了复用提前打散Workflow目录，也不在Workflow内复制Session、HTTP服务或Pi Runtime。
+即使两个 Workflow 都使用同一默认执行配置，也先各自在自己的目录中拥有明确配置。允许使用Chat/Pi公共基础设施和公共资源，但不为了复用提前打散Workflow目录，也不在Workflow内复制Session、HTTP服务或Pi Runtime。
 
 目录、两种Node、`workflow.json`、`agent.json`、`.chat/config.json`和前后端接口的规范定义见[Chat Workflow开发框架](../modules/workflows/chat-workflow-framework.md)。该文档是后续Agent新增Workflow时的直接开发入口。
 

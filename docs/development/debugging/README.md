@@ -26,7 +26,7 @@
 | 8 | [日志与故障定位](./troubleshooting.md) | 根据最后成功节点定位问题，收集可复现证据 |
 | 9 | [开发、验证与持续维护](./maintenance.md) | 修改代码、补测试和注释、更新手册、提交子模块与父仓库 |
 
-第一次学习建议顺序：环境 → Web 普通对话 → Backend → Pi 的 `read` → Skill 装配 → Web Friend → Telegram 私聊 → 微信私聊 → 失败重试。无需先把所有架构文档读完。
+第一次学习建议顺序：环境 → Web 普通对话 → Backend → Pi 的 `read` → Skill 装配 → Web Long Agent → Telegram 私聊 → 微信私聊 → 失败重试。无需先把所有架构文档读完。
 
 ## 当前系统的主要执行链
 
@@ -40,7 +40,7 @@ IM → NanoClaw → 耐久 HTTP Event → 同一接受链 ───┘       ↓
 IM 回复 → NanoClaw Delivery / Ack → Channel
 ```
 
-普通 Web/TUI Workflow 对话不需要 NanoClaw；Web Friend当前会从 NanoClaw读取 Group 身份/Memory，因此练习它时需要已准备的调试 Gateway。Pi 是 Backend 内调用的 SDK，不是另一个必须占端口的服务。模型协议、资源加载和 Session 的权威实现都在 Pi。
+普通 Web/TUI Workflow 对话不需要 NanoClaw；Web Long Agent当前会从 NanoClaw读取 Group 身份/Memory，因此练习它时需要已准备的调试 Gateway。Pi 是 Backend 内调用的 SDK，不是另一个必须占端口的服务。模型协议、资源加载和 Session 的权威实现都在 Pi。
 
 ## 场景编号与覆盖范围
 
@@ -54,7 +54,7 @@ IM 回复 → NanoClaw Delivery / Ack → Channel
 | PI-01 | Tool 调用 | 模型 tool call → 实际 `read` → tool result → 第二次模型响应 |
 | CFG-01 | 模型/Thinking 覆盖 | 本轮有效定义与实际 `session.model/thinkingLevel` 一致 |
 | RES-01 | Skill 与 Tool | 目录发现、选择、装配、正文读取、调用结果分别有证据 |
-| LA-01 | Web Friend | owner 正确、Long Agent Turn 完成、重读 Session |
+| LA-01 | Web Long Agent | owner 正确、Long Agent Turn 完成、重读 Session |
 | CLI-01 | 本地渠道闭环 | Nano CLI入站、Chat/Pi执行、Nano日志投递成功、终端收到DEBUG_OK |
 | TG-01 / WX-01 | 独立测试账号私聊 | 入站、稳定绑定、Pi、Delivery、平台收件、Ack |
 | FAIL-01 | 渠道/模型/配置故障 | 最后成功节点明确，恢复不重复执行已完成 Turn |

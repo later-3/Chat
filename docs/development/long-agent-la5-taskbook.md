@@ -1,6 +1,6 @@
-# LA5 群聊与多 Friend 协作任务书
+# LA5 群聊与多 Long Agent 协作任务书
 
-状态：**用户已批准实施；A–E 已完成，2026-09-21 经直接修复和独立实测，本地单 Backend 群聊范围验收通过**。日期：2026-09-20。群聊特有的对象、存储、状态机、入口与验证映射见 [Friend 群聊与多 Friend 协作合同](../modules/long-agents/group-chat.md)，该文件是本文的实施合同。所属阶段见 [LA0–LA6 计划](./long-agent-functionality-plan.md)。LA4 已按方案 B 收口，复核结论见 [第五轮独立复核](../history/reviews/2026-09-20-long-agent-la4-independent-review-round5.md)；不代表已提交或部署。
+状态：**用户已批准实施；A–E 已完成，2026-09-21 经直接修复和独立实测，本地单 Backend 群聊范围验收通过**。日期：2026-09-20。群聊特有的对象、存储、状态机、入口与验证映射见 [Long Agent 群聊与多 Long Agent 协作合同](../modules/long-agents/group-chat.md)，该文件是本文的实施合同。所属阶段见 [LA0–LA6 计划](./long-agent-functionality-plan.md)。LA4 已按方案 B 收口，复核结论见 [第五轮独立复核](../history/reviews/2026-09-20-long-agent-la4-independent-review-round5.md)；不代表已提交或部署。
 
 本文是实施 Agent 的任务输入，说明范围、接入、次序和验收。对象与 Session 的权威合同仍在 [机制 §9](../modules/long-agents/chat-long-agent-mechanism-contract.md#9-la0交互任务与调度的实施合同)、[Session §11](../modules/sessions/chat-session-architecture.md#11-la0独立工作与群聊的原生-session-合同)、[Workflow 接入](../modules/workflows/chat-subworkflow-design.md#la0friend-执行绑定与后台返回目标)。批准前不创建运行任务、不改产品代码、不发渠道消息。
 
@@ -8,27 +8,27 @@
 
 ## 1. 目的与最终完成标准
 
-用户能够建立由自己与多个现有 Friend 组成的群，按需发言、主持讨论、圆桌或并行分工，也能让 Friend 在明确预算内自主讨论、请教另一个 Friend。Friend 的身份、能力和 Workspace 不因入群而变成另一个 Agent；每个群的参与上下文独立，私聊和后台任务继续可用。
+用户能够建立由自己与多个现有 Long Agent 组成的群，按需发言、主持讨论、圆桌或并行分工，也能让 Long Agent 在明确预算内自主讨论、请教另一个 Long Agent。Long Agent 的身份、能力和 Workspace 不因入群而变成另一个 Agent；每个群的参与上下文独立，私聊和后台任务继续可用。
 
 LA5 完成必须同时具备：真实管理入口、公共聊天实时展示、独立参与 Session、权限裁剪、有限调度、可靠发布与恢复。只有多模型轮流生成、只有 API、只有演示群或只实现圆桌，均不算完成。
 
-不新增第二套 Agent Runtime、模型调用客户端、调度器或聊天前端。Workflow 编排谁执行及何时结束；Backend 管理成员、授权、输入和发布；Friend 生命周期经唯一公共工厂调用 Pi；Nano 保留 Channel Gateway 职责。
+不新增第二套 Agent Runtime、模型调用客户端、调度器或聊天前端。Workflow 编排谁执行及何时结束；Backend 管理成员、授权、输入和发布；Long Agent 生命周期经唯一公共工厂调用 Pi；Nano 保留 Channel Gateway 职责。
 
 ## 2. 必须支持的场景
 
 | 编号 | 用户场景 | 可观察结果 |
 |---|---|---|
 | S1 | 用户创建群，邀请 A、B，发送问题并 @A | 群内看到用户原消息、A 的公开回复和真实作者；B 不因每个事件被自动唤醒 |
-| S2 | 同一 Friend 同时在私聊、群 X、群 Y、后台工作 | 四条上下文互不混入，私聊仍流式响应；容量不足显示排队原因 |
+| S2 | 同一 Long Agent 同时在私聊、群 X、群 Y、后台工作 | 四条上下文互不混入，私聊仍流式响应；容量不足显示排队原因 |
 | S3 | 用户启动一轮圆桌 A→B→A | 每位只读其轮到时已提交且有权读取的消息，按配置轮数结束 |
 | S4 | A、B 并行研究同一问题 | 同轮冻结共同截止点；两者不假装读过对方尚未提交的回答；结果可分别查看并汇总 |
-| S5 | 指定 Friend 主持，或使用受控自由讨论 | 主持/选择器提议下一位，服务校验成员与预算；允许无人响应并终止 |
+| S5 | 指定 Long Agent 主持，或使用受控自由讨论 | 主持/选择器提议下一位，服务校验成员与预算；允许无人响应并终止 |
 | S6 | 用户离开页面后 A、B 在群里继续讨论 | 已明确启动的有限运行继续，刷新可恢复；达到预算/结束条件后停止 |
 | S7 | A 向 B 请教，再回到原工作 | 独立 B 执行、可信来源、有限委派链；结果返回相应群或工作，不能串回另一群/私聊 |
 | S8 | 群内安排研究任务，用户继续群聊 | 独立 work 与群来源绑定，可查询/取消；完成后只发布授权结果引用，任务等待不占群写锁 |
 | S9 | 用户改成员、项目、策略，停止单次或归档群 | 当前/后续影响明确，旧运行不偷偷继承新配置；退群/撤权阻止后续读取与发布 |
 
-群聊不是 NanoClaw 的 Agent Group：后者仍是一位 Friend 的长期身份。本阶段不复制 Friend 来模拟多群参与，不创建“一群一个 Nano Host”。
+群聊不是 NanoClaw 的 Agent Group：后者仍是一位 Long Agent 的长期身份。本阶段不复制 Long Agent 来模拟多群参与，不创建“一群一个 Nano Host”。
 
 ## 3. 对象、上下文与事实源
 
@@ -45,11 +45,11 @@ Conversation（固定存储 Project，成员与授权 revision）
 | 对象 | 最少需表达的关系 | 不允许的替代 |
 |---|---|---|
 | Conversation | 稳定 ID、标题、固定存储 Project、公共 Session、生命周期、成员与授权版本 | 用当前前端 projectId 随时改属历史 |
-| Participation | conversationId + longAgentId + 授权期/原生 SessionRef | 所有 Friend 共享一个可写 Pi Session |
+| Participation | conversationId + longAgentId + 授权期/原生 SessionRef | 所有 Long Agent 共享一个可写 Pi Session |
 | Discussion | 关联 Workflow Run、策略 revision、轮次、预算、等待/终止原因 | 再建一套与 Workflow 竞争执行的循环 |
 | 发言尝试 | 可信执行者、输入 cutoff、replyTo、causationId、配置/授权快照、attempt | 靠姓名、文本匹配或前端 UUID 证明作者 |
 | Publication | 源 Session/Entry/公开块、摘要、受众、稳定幂等键与公共顺序 | 复制正文建第二份 transcript，或读当前 leaf 代替固定引用 |
-| 委派/后台任务 | 来源群/Entry 或可信 work、目标 Friend、返回目标、预算链 | 伪造 dailySession，绕过现有来源校验 |
+| 委派/后台任务 | 来源群/Entry 或可信 work、目标 Long Agent、返回目标、预算链 | 伪造 dailySession，绕过现有来源校验 |
 
 存储 Project 按既有合同选择用户 Project 或普通 Daily；不会赋予成员整个 Project 的读取权。协作目标是每轮冻结的输入，与存储归属分开。切换页面上的项目不会改动在途讨论；群内显式修改协作目标只作用于后续运行，并显示生效范围。
 
@@ -57,10 +57,10 @@ Conversation（固定存储 Project，成员与授权 revision）
 
 ## 4. 权限与模型输入：先实现，再开放群聊
 
-1. 身份能力与本次授权取交集，在资源读取、Prompt 装配及工具注册之前裁剪。保留 Friend 身份但不能自动携带私聊、日终交接、Personal Memory、私有 Agent Memory、全部 Standing Instructions 或整个 Workspace。
+1. 身份能力与本次授权取交集，在资源读取、Prompt 装配及工具注册之前裁剪。保留 Long Agent 身份但不能自动携带私聊、日终交接、Personal Memory、私有 Agent Memory、全部 Standing Instructions 或整个 Workspace。
 2. 定义哪些身份说明/能力允许群内使用，以及用户如何配置共享材料。私有配置内容与可公开身份介绍分开；缺少范围时默认不加载，不让模型靠“请勿泄密”代替隔离。
 3. 防止工具绕过：read/bash、Memory、Session 查询、workflow_call、friend_work 及资源工具都必须服从当前范围。不能只过滤 Prompt，却给群参与者能读整个 Home 的工具。暂不能约束的工具在该执行范围不注册，并在有效能力检查中说明原因。
-4. 公共历史、实时流、搜索、引用详情、完整历史、分支、附件下载都走同一受权投影。普通 Session API 不得因已知参与 Session ID 而绕过权限；同名 Friend 用稳定 ID 区分。
+4. 公共历史、实时流、搜索、引用详情、完整历史、分支、附件下载都走同一受权投影。会话 API 不得因已知参与 Session ID 而绕过权限；同名 Long Agent 用稳定 ID 区分。
 5. 原作者、源 Entry、输入 cutoff 必须进入可审计信封。其他 Agent 的文字只是带来源的数据，不可伪造 system、工具回执或人类批准。
 6. 成员移除/范围收窄在派发、工具使用和公开提交阶段生效；定义明确的提交顺序。已接受运行不等于持续拥有发布权，迟到结果保留受限审计、不得补发到旧群。已公开历史的保留不等于撤权后仍可读取。
 7. 私有推理/工具过程默认不公开。公共实时草稿只能包含已经获准面向群公开的文本块，标为“生成中”，失败则标中断且不进入已提交历史。不能先广播敏感输出，再在终态进行权限检查。
@@ -71,10 +71,10 @@ Conversation（固定存储 Project，成员与授权 revision）
 
 | 策略 | 运行合同 |
 |---|---|
-| 指定/@ | 明确选择目标；未指定时按群已配置策略处理，不自动广播所有 Friend |
+| 指定/@ | 明确选择目标；未指定时按群已配置策略处理，不自动广播所有 Long Agent |
 | 圆桌 | 顺序可配置、每轮截止点可追溯、轮数有限；单人失败可停止或按明确策略跳过 |
 | 并行 | 一轮同一公共输入快照，分别运行；各自终态，按实际提交顺序发布，汇总只读已提交结果 |
-| 主持 | 使用明确 Friend 身份；主持决策本身算模型调用和预算；非法选择、无效结构不能无限重问 |
+| 主持 | 使用明确 Long Agent 身份；主持决策本身算模型调用和预算；非法选择、无效结构不能无限重问 |
 | 自由 | 有界选人/响应决策，允许沉默；同一消息不会无限唤醒全员；每次选择与不选择可解释 |
 | 请教 | 委托由可信来源创建，B 只收到获准问题/材料；返回引用不伪造已结束的 Tool Result |
 
@@ -102,7 +102,7 @@ Conversation（固定存储 Project，成员与授权 revision）
 |---|---|---|
 | A 合同与权限基础 | `assembly.ts` 当前读取 Group Context 和私有 handoff；在公共装配/Resolver 落实 group scope，建立 Conversation/Participation 与 Session owner 校验 | 私有标记不进入实际模型请求；越权 Tool/API 无正文或副作用；旧私聊装配不回归 |
 | B 执行与发布 | `runtime.ts`、`turn-queue.ts`、Session 锁和公共 Pi 工厂已有；增加可信群执行绑定和公共引用投影 | 用户+A+B 真正独立 Session；发布崩溃窗口可恢复，主聊并行 |
-| C 编排与委派 | Workflow 负责策略；`work.ts:startFriendWork` 当前仅接受 daily 来源且存储在 Friend Home；不能直接拿来冒充群参与 Session | S3–S8 全覆盖；显式扩展来源和返回合同，原 daily Task 保持兼容；调用预算不可逃逸 |
+| C 编排与委派 | Workflow 负责策略；`work.ts:startFriendWork` 当前仅接受 daily 来源且存储在 Long Agent Home；不能直接拿来冒充群参与 Session | S3–S8 全覆盖；显式扩展来源和返回合同，原 daily Task 保持兼容；调用预算不可逃逸 |
 | D Web 与同源管理 | 复用中央聊天、历史、事件流和设置组件；新增群管理 API/Tool/有效资源检查 | 创建、成员、项目、策略、预算、启动/停止/查询/归档实际可用；刷新恢复，不依赖 React 内存 |
 | E 集成验收与自审 | 当前 Nano 是渠道网关，不是群编排运行时 | 自动化、真实模型及浏览器联合通过；Channels 适配合同可测，不虚报外部平台验收 |
 
@@ -112,7 +112,7 @@ Conversation（固定存储 Project，成员与授权 revision）
 
 ## 8. 用户入口与体验
 
-交流区可创建/选择群，中央继续使用现有聊天组件。顶栏明确群名、成员、协作项目与讨论状态；成员/策略/预算放可折叠管理区，不新增重复标题挤占对话。普通 Project Session、Friend 私聊与任务入口保持原功能。
+交流区可创建/选择群，中央继续使用现有聊天组件。顶栏明确群名、成员、协作项目与讨论状态；成员/策略/预算放可折叠管理区，不新增重复标题挤占对话。普通 Project Session、Long Agent 私聊与任务入口保持原功能。
 
 用户能选择策略与目标成员、配置预算、启动一轮/继续下一轮、停止、查看未发言原因、打开获授权的执行详情、回到私聊。运行中切换页面不取消任务。等待模型、选人、排队、并行执行、待发布、已完成、失败有准确状态；结束汇总显示实际 Token/时间/调用量，缺失值不估算。
 
@@ -148,7 +148,7 @@ Web 与 Agent 管理 Tool 调用同一服务；Agent 不能自行扩大成员/�
 每个工作包结束、最终交付前逐项填“通过/失败/未测 + 证据 + 修复”并回答：
 
 - 是否只实现上一条检视特例，遗漏同一个写入/授权协议的其他入口？
-- 是否为了省工作量，把自由/并行/委派降格成圆桌，或把真 Friend 替换成同名临时 Agent？
+- 是否为了省工作量，把自由/并行/委派降格成圆桌，或把真 Long Agent 替换成同名临时 Agent？
 - 是否只有后台 API，没有用户入口；只有动画，没有真实流式；只有 Prompt 保密，没有 Tool/资源隔离？
 - 是否把模型完成当发布完成、Workflow 状态当 Pi 副作用已恢复、日志未丢当引用/顺序正确？
 - 是否测试的并发在当前生产调用链可达；探针是否因锁排队设计错误而自锁？
@@ -163,10 +163,10 @@ Web 与 Agent 管理 Tool 调用同一服务；Agent 不能自行扩大成员/�
 
 本次是合同与源码检查，不是 A 完成验收；`group-chat.md` 与 scope 第一片已存在。可以继续 A，但不能把部分地址裁剪当完整权限隔离。B 的生产群执行接入须等 A 的实际装配/注册与 V3 测试通过。
 
-1. **默认 social_manage 不予认可**：现有工具具备 post/comment，并以 Friend 身份读取其 self 动态。群参与默认不获得这些能力；移出默认集，或实现按操作/受众受限的同源服务并单独授权，不能靠 Prompt 约束。
+1. **默认 social_manage 不予认可**：现有工具具备 post/comment，并以 Long Agent 身份读取其 self 动态。群参与默认不获得这些能力；移出默认集，或实现按操作/受众受限的同源服务并单独授权，不能靠 Prompt 约束。
 2. **工具身份对齐**：当前 scope 默认清单是 `project_read` 等名称，真实系统工具地址由 `systemToolAddress` 生成 `system:tool/project_read` 等。统一名称与地址合同，使用真实注册表测试，不用两边都填裸名称的 fixture 证明成功。原生 names、inherit、Extension/MCP 等入口也要在有效注册处受限。
 3. **只读不等于可共享**：project_read/project_search 也要按群已授权的资源范围裁剪；成员身份不自动授权当前 Project 全部信息。未接入范围校验前默认不开放。
 4. **快照散列不是认证**：revision 可验证内容一致性，不能证明来源可信或防止重算散列。执行 scope 必须由 Backend 根据参与绑定、成员授权和可信快照生成/验证；不能接受浏览器/模型传入并自行重算的扩大权限 scope。
 5. **A 完成证据**：快照兼容、资源读取前裁剪、实际注册工具限制、检查与执行一致、真实 Pi 模型请求中的私有哨兵隔离、direct/background 回归。当前 prepareLongAgentAssembly 指令测试不能替代以上证据。
 
-本次新增的“每位 Friend 分别保存项目选择”按用户要求归 LA6，见阶段计划补充；不因此扩大当前 A/B 的施工范围，也不能让群项目反写参与者私聊关联。
+本次新增的“每位 Long Agent 分别保存项目选择”按用户要求归 LA6，见阶段计划补充；不因此扩大当前 A/B 的施工范围，也不能让群项目反写参与者私聊关联。

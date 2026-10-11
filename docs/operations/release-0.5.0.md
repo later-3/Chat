@@ -6,12 +6,12 @@
 
 ## 本版变化
 
-- Friend、后台工作、群参与和主题的新轮次通过 Backend 接受记录启动 Workflow，继续使用公共 Pi AgentSession；既有 Session 的归属不因导航改变。
+- Long Agent、后台工作、群参与和主题的新轮次通过 Backend 接受记录启动 Workflow，继续使用公共 Pi AgentSession；既有 Session 的归属不因导航改变。
 - 接通手动压缩、取消、原生统计和历史继续；摘要请求进入公共预算准入，覆盖失败、取消和恢复。
 - 日期直接进入当日工作区，任务产物回到对应任务，后台任务通过对话创建；共用返回、按钮和模态组件。默认英语，设置可切换完整中文界面。
 - Linux 浏览器回归可发现 PATH 中的 Chrome/Chromium，或通过绝对路径 `CHROME_BIN` 指定；CI 无浏览器时明确失败。
 
-升级已有数据前停止服务并备份，按 [Friend 迁移合同](./friend-migration.md)处理版本化索引和迁移标记。新机器空安装不需要搬迁旧电脑数据。
+升级已有数据前停止服务并备份，按 [Long Agent 迁移合同](./friend-migration.md)处理版本化索引和迁移标记。新机器空安装不需要搬迁旧电脑数据。
 
 ## 1. 安装 release
 
@@ -24,7 +24,7 @@ curl --fail --location https://raw.githubusercontent.com/later-3/Chat/v0.5.0/dep
 sudo bash /tmp/chatctl-0.5.0 install --ref v0.5.0 --with-nanoclaw
 ```
 
-脚本安装固定 Node/pnpm、拉取子模块、恢复 Pi 固定模型快照、验证并构建 Backend/Web，另准备 Nano Host。只用普通 Workflow 可以去掉 `--with-nanoclaw`；使用 Friend、助手记忆或群聊时保留它。
+脚本安装固定 Node/pnpm、拉取子模块、恢复 Pi 固定模型快照、验证并构建 Backend/Web，另准备 Nano Host。只用普通 Workflow 可以去掉 `--with-nanoclaw`；使用 Long Agent、助手记忆或群聊时保留它。
 
 ## 2. 拉起、检查与关闭 release
 

@@ -5,11 +5,11 @@
 | 修改内容 | 开发文档 |
 |---|---|
 | Pi 摘要预算、失败恢复与原生会话入口 | [维护合同](../modules/sessions/chat-session-maintenance.md) · [实施计划](./pi-session-controls-plan.md) |
-| 公共 Agent 装配、Friend 每日 Session 与统一交互改造（P1–P5） | [分阶段开发计划](./agent-unification-plan.md) |
-| Friend/Project/Topic 统一 Workflow 与导航性能 | [性能合同与实测](./session-navigation-performance.md) · [实施计划](./unified-session-performance-plan.md) · [交付与实测](../history/reviews/2026-09-27-unified-session-delivery.md) |
-| Friend 独立任务、长期职责、定时任务、动态与群聊（LA0–LA6） | [功能开发计划与阶段验收](./long-agent-functionality-plan.md) |
-| LA5 群聊、多 Friend 协作实施交接（本地范围已验收） | [LA5 任务书](./long-agent-la5-taskbook.md) |
-| LA6 Friend 项目关联、真实渠道与24h联合验收（待审核） | [LA6 任务书](./long-agent-la6-taskbook.md) |
+| 公共 Agent 装配、Long Agent 每日 Session 与统一交互改造（P1–P5） | [分阶段开发计划](./agent-unification-plan.md) |
+| Long Agent/Project/Topic 统一 Workflow 与导航性能 | [性能合同与实测](./session-navigation-performance.md) · [实施计划](./unified-session-performance-plan.md) · [交付与实测](../history/reviews/2026-09-27-unified-session-delivery.md) |
+| Long Agent 独立任务、长期职责、定时任务、动态与群聊（LA0–LA6） | [功能开发计划与阶段验收](./long-agent-functionality-plan.md) |
+| LA5 群聊、多 Long Agent 协作实施交接（本地范围已验收） | [LA5 任务书](./long-agent-la5-taskbook.md) |
+| LA6 Long Agent 项目关联、真实渠道与24h联合验收（待审核） | [LA6 任务书](./long-agent-la6-taskbook.md) |
 | 主题模式：Long Agent 策展的主题会话树与会话记忆 | [当前纠偏方案与统一验收](./topic-mode-correction-plan.md) · [主题模式任务书](./topic-mode-taskbook.md) · [开发计划](./topic-mode-plan.md) · [P2 任务书](./topic-mode-p2-taskbook.md) · [交接文档](./topic-mode-handover.md) |
 | Agent参与开发、架构审核与交接 | [贡献工作方法](./agent-contribution.md) |
 | 端到端调试、源码学习与问题定位 | [调试与开发说明书](./debugging/README.md) |
@@ -30,4 +30,4 @@
 
 当一次修改改变用户可观察行为、配置、API、目录、开发命令或验证方式时，同一变更必须更新相应文档和测试。
 
-- [Friend 任务与导航统一](./friend-task-navigation-plan.md)：产品术语、任务成果/用量关联、共享控件与回归。
+- [Long Agent 任务与导航统一](./friend-task-navigation-plan.md)：产品术语、任务成果/用量关联、共享控件与回归。

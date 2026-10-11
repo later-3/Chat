@@ -1,6 +1,6 @@
 # 主题模式任务书（Topic Mode：主题会话树与会话记忆）
 
-> **2026-09-25 用户需求修订与纠偏**：新建根节点与分叉创建统一改为真实 `topic-session-create` Workflow：整理 Agent → 用户审核（修改可循环）→ 创建 Agent；批准前不创建目标主题 Session。节点展示必须保留普通 Session 的完整聊天能力。具体方案、既有能力复用、实施顺序和统一退出表见[主题模式纠偏方案](./topic-mode-correction-plan.md)。该目标尚未实现；下文旧版本“直接整合并创建”按本修订执行，历史测试通过不代表当前主链达标。
+> **2026-09-25 用户需求修订与纠偏**：新建根节点与分叉创建统一改为真实 `topic-session-create` Workflow：整理 Agent → 用户审核（修改可循环）→ 创建 Agent；批准前不创建目标主题 Session。节点展示必须保留会话 的完整聊天能力。具体方案、既有能力复用、实施顺序和统一退出表见[主题模式纠偏方案](./topic-mode-correction-plan.md)。该目标尚未实现；下文旧版本“直接整合并创建”按本修订执行，历史测试通过不代表当前主链达标。
 
 状态：**草稿（已吸收 Trae Agent doc review R1–R12，全部采纳；回复见 §9），待用户批准后开工**。日期：2026-09-22。前置：LA6 已完成并打 tag（Chat `v0.4.0` / frontend `v0.8.12` / nanoclaw `v2.5.0`），生产 release 运行中。本任务书按 feature 实际功能命名，不占用 LA 序号；总目标与既有阶段见 [LA0–LA6 计划](./long-agent-functionality-plan.md)。**执行计划（分阶段目标/方案/注意事项/验证/检视点）见 [主题模式开发计划](./topic-mode-plan.md)**。P1（会话记忆底座）已独立复核通过（证据见 [P1 实施记录](../history/reviews/2026-09-22-topic-mode-p1.md)），P2 起按其阶段推进。
 
@@ -21,7 +21,7 @@ Long Agent 作为**上下文策展人**创建并管理主题会话树：用户�
 | 术语 | 含义 |
 |---|---|
 | 主题（topic） | 一棵树的根，由一个 Long Agent 创建，有自己的目的与标题 |
-| 节点（node） | 主题树中的一个**普通会话**（Pi session），可交互、可跑 workflow |
+| 节点（node） | 主题树中的一个**会话**（Pi session），可交互、可跑 workflow |
 | 边（edge） | “子节点创建自父节点的第 N 轮之后”，并记录初始上下文使用了父节点的哪些会话记忆条目（provenance） |
 | 会话记忆（session memory） | 会话的耐久伴生物，按目的分类的条目（背景/经验/规则/结论 + 自定义标签），由 workflow agents 主动维护、用户可查看/指定/修改 |
 | 整合（integration） | Long Agent 在创建节点时的真实策展动作：选取相关会话的记忆条目，去重、整理逻辑关系，形成新节点的初始上下文 |
@@ -59,7 +59,7 @@ Long Agent 作为**上下文策展人**创建并管理主题会话树：用户�
 - **与 Memory 的边界**：会话记忆是 **session 级、为主题模式服务**的沉淀；不写 mem0，不写 NanoClaw memory，也不等于跨会话的个人/项目 Prompt 资源。三层记忆（用户 mem0 / Long Agent NanoClaw memory / session memory）互不代写。
 - **不是唯一信息渠道**：Long Agent 整合时可读会话全文；会话记忆只是高效索引。
 - **会话删除/移除（PL4）**：挂钩既有删除入口 `removeChatSession`（路由 `POST /api/sessions/[sessionId]/remove`）——remove → session-memory 文件**不自动删除**，条目标记 `orphan: true` 保留可溯源，整合读取时来源标注“来源会话已删除”；**purge（`purgeRemovedChatSession`/过期清理）→ 记忆文件一并删除**（隐私对齐）。
-- **写入目标解析（PL1，已按检视 14 统一）**：目标 = **可信绑定 `{storageProjectId, sessionId}`**（唯一合同）。由节点发起服务解析，经 `workflow-call-tool → workflow-call → ChatWorkflowInput → step → createWorkflowAgentSession → ChatToolRuntimeContext` 传递并持久化；**嵌套调用继承原绑定，不重盖成中间子会话**；HTTP/模型参数不可自填。**未获得绑定的普通项目会话不得因此获得 agent home 的记忆写入能力**（回退前必须校验当前会话属于受支持的 agent home）。
+- **写入目标解析（PL1，已按检视 14 统一）**：目标 = **可信绑定 `{storageProjectId, sessionId}`**（唯一合同）。由节点发起服务解析，经 `workflow-call-tool → workflow-call → ChatWorkflowInput → step → createWorkflowAgentSession → ChatToolRuntimeContext` 传递并持久化；**嵌套调用继承原绑定，不重盖成中间子会话**；HTTP/模型参数不可自填。**未获得绑定的会话不得因此获得 agent home 的记忆写入能力**（回退前必须校验当前会话属于受支持的 agent home）。
 
 ### 3.2 主题图（topics）与节点
 
@@ -108,7 +108,7 @@ Long Agent 作为**上下文策展人**创建并管理主题会话树：用户�
 
 ### 3.4 workflow：Form A 与「带会话记忆的 workflow」
 
-- 主题会话是普通会话：每轮按需派发 workflow（既有机制），**不做**会话↔workflow 实例的跨轮绑定。
+- 主题会话是会话：每轮按需派发 workflow（既有机制），**不做**会话↔workflow 实例的跨轮绑定。
 - **每轮的 workflow 就是「会话记忆」workflow**：第一个节点是正常干活的 agent（连续会话逻辑）；需要专门流程时，它按需调用业务 workflow（如问题定位），走既有 `workflow_call` 能力——业务 workflow 不需要感知会话记忆。会话记忆关闭时，该轮就是普通模型轮。
 - **读（按需，不注入）**：主题会话每轮的 workflow 第一个节点就是**正常干活的 Pi agent**（连续会话逻辑，多轮上下文天然连续）。**不把会话记忆注入 prompt**（每轮注入会持续消耗 token）；只提供读取会话记忆的 **Skill / 工具**，agent 自己按需读取——想读就读，不读也不影响主流程。
 - **写（每轮触发，这是重点）**：workflow 的第二个 agent = **会话记忆写入 agent**。每轮在主 agent 完成后运行一次，**默认只给它当前轮**：

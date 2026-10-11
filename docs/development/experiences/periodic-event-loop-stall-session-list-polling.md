@@ -13,7 +13,7 @@
 ## 根因（两层叠加）
 
 1. **SessionSidebar 每 4s（有活动时 1s）对每个 available project 轮询 `GET /api/sessions`**。后端 `toListItems` 对每个 session 文件做两次全量解析：一次 `SessionManager.open().getEntries()` 算 subsession relation，一次 `firstSessionUtterance` 内部再次 open；`findActiveChatSessionFile` 也有同款双解析。
-2. **Pi 的 `SessionManager.listAll` → `buildSessionInfo` 本身对每个文件全量逐行流式解析**（含 `allMessagesText` 拼接）。Friend 项目 30-37 个 session 文件 → 每次轮询阻塞 300-800ms。
+2. **Pi 的 `SessionManager.listAll` → `buildSessionInfo` 本身对每个文件全量逐行流式解析**（含 `allMessagesText` 拼接）。Long Agent 项目 30-37 个 session 文件 → 每次轮询阻塞 300-800ms。
 
 早期修复（Intl.DateTimeFormat 缓存、859KB state 文件读缓存、calendar 重扫指纹跳过）只消掉维护路径的热点；轮询路径的 listAll + 双解析仍在，毛刺只是变小（每 ~4.7s 一次 300-600ms）。
 

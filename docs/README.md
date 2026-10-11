@@ -5,7 +5,7 @@
 | 目录 | 内容与入口 |
 |---|---|
 | [architecture](./architecture/README.md) | 全局架构、执行链、模块合同、生命周期和约束 |
-| [modules](./modules/README.md) | Project、Session、Workflow、Friend、Web、TUI、Memory、Pi 的模块资料 |
+| [modules](./modules/README.md) | Project、Session、Workflow、Long Agent、Web、TUI、Memory、Pi 的模块资料 |
 | [configuration](./configuration/README.md) | 配置位置、Schema、继承、模型与认证的统一合同 |
 | [operations](./operations/README.md) | 从零安装、日常启停、更新回退、平台与网络访问 |
 | [development](./development/README.md) | 贡献、编码、测试、CI、Submodule、诊断 |
@@ -20,7 +20,7 @@
 - 新电脑安装：[本次 0.5.4 release / VS Code 交付](./operations/release-0.5.4.md) → [Linux / WSL2 通用安装](./operations/installation.md) → [拉起与维护](./operations/running.md)。
 - 开发调试：[首次准备](./development/debugging/first-install.md) → [环境与 F5](./development/debugging/environment.md)。
 - 修改前端：[设计方法与工作流案例](../frontend/docs/frontend-design-method.md) → [对象与交互](./modules/web/chat-web.md) → [Frontend 开发](../frontend/docs/development.md) / [UI 规范](../frontend/docs/ui-ux-guidelines.md)。
-- Friend 后台任务、长期任务、定时任务与群聊：[LA0–LA6 计划与验收](./development/long-agent-functionality-plan.md)。
+- Long Agent 后台任务、长期任务、定时任务与群聊：[LA0–LA6 计划与验收](./development/long-agent-functionality-plan.md)。
 - 修改运行机制：[模块合同](./architecture/chat-module-contracts.md) → 所属模块文档。
 
 ## 归档规则

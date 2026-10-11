@@ -18,7 +18,7 @@
 
 本次确认替代旧设计中的“所有 Agent 共用 daily”“每个 Project × Agent 永久只有一个主 Session”“Chat 永久禁用所有 Docker 能力”。协作、共享认知和自主工作已进入机制收口；多参与者与Pi消息映射等具体实现合同仍需审核，不能从场景中的角色分工反推已批准的会话拓扑。
 
-2026-09-19 P1 修订：每 Friend 每日唯一直接交流 Session，项目逐轮装配；执行细则以[架构 §4](./chat-long-agent-architecture.md#4-project-first-与会话选择)为准。P2 公共装配已实现，P3–P5 的每日生命周期、实时交互和迁移尚待实施；旧的按业务项目拆会话目标被取代。
+2026-09-19 P1 修订：每 Long Agent 每日唯一直接交流 Session，项目逐轮装配；执行细则以[架构 §4](./chat-long-agent-architecture.md#4-project-first-与会话选择)为准。P2 公共装配已实现，P3–P5 的每日生命周期、实时交互和迁移尚待实施；旧的按业务项目拆会话目标被取代。
 
 ## 2. Long Agent 的定义
 
@@ -32,8 +32,8 @@ Long Agent 与 Workflow 共用 Pi 底座：Workflow 组织一次执行，Long Ag
 
 1. 每个 Long Agent 有独立配置根、工作空间、自有资源、Agent Memory 和 Daily Project。
 2. 所有 Session、主动任务、定时任务和 Workflow Run 必须归属 Project。
-3. Friend 每轮执行项目按统一项目合同确定并受理冻结（Web 私聊取顶栏"项目"选择，群聊取会话 storageProjectId），不因业务 Project 切换创建新 Session；固定的会话存储归属与本轮工作目标分别记录。
-4. Agent Home 存储根稳定，每个 Friend 每天只有一个直接交流 Session；普通项目 Session 和显式 Workflow 子 Session 仍遵循自己的生命周期。
+3. Long Agent 每轮执行项目按统一项目合同确定并受理冻结（Web 私聊取顶栏"项目"选择，群聊取会话 storageProjectId），不因业务 Project 切换创建新 Session；固定的会话存储归属与本轮工作目标分别记录。
+4. Agent Home 存储根稳定，每个 Long Agent 每天只有一个直接交流 Session；普通项目 Session 和显式 Workflow 子 Session 仍遵循自己的生命周期。
 5. 换 Daily Session、换 Project、换 Channel、换模型和重建容器不能导致工作失忆。
 6. 模型目录、认证和模型配置由 Chat 管理；Pi 的用户目录不是 Long Agent 的配置事实源。
 7. 文件配置是产品定义的事实源。Frontend、Agent Tool 和实际执行使用同一套配置服务及 Resolver。
@@ -42,7 +42,7 @@ Long Agent 与 Workflow 共用 Pi 底座：Workflow 组织一次执行，Long Ag
 10. Agent 在授权范围内自行维护配置和资源；权限扩大、跨 Agent 或共享资源变更按对应 Policy 处理，不能把所有自我维护一律变成审批提案。
 11. Docker 纳入隔离执行能力，同时保持统一 Pi Runtime、模型配置和 Session 事实。
 12. 公共管理知识可被每个 Long Agent 发现；实际能力与运行身份由服务端注入和 Tool 查询，不能依靠猜目录。
-13. 同一 Friend 的同日直接交流有序推进，可持续接收新消息；多个 Friend 和显式委派工作可并行，共享写入和独占工具另按资源控制。
+13. 同一 Long Agent 的同日直接交流有序推进，可持续接收新消息；多个 Long Agent 和显式委派工作可并行，共享写入和独占工具另按资源控制。
 14. Agent 可通过系统机制发现配置为可见的 Project、进度和活动，不依赖用户逐 Agent 告知；共享概览、读取详情和执行工作分别控制。
 15. 支持长期职责与自主推进（用户称“灵魂模式”），与无交付要求的自由活动、具体任务分别表达；时间与事件可为这些活动提供触发机会。
 

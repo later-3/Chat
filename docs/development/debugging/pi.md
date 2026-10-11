@@ -4,7 +4,7 @@ Pi 在 Chat Backend 进程体系内运行，不单独启动另一个 Pi CLI 来�
 
 ## PI-01：模型 → read → ToolResult → 模型
 
-1. 启动 `Debug Chat`，打开 Debug Lab 普通Session。检查运行模型为debug-local/debug-model、Tool选择包含read。
+1. 启动 `Debug Chat`，打开 Debug Lab 会话。检查运行模型为debug-local/debug-model、Tool选择包含read。
 2. 在公共装配的 `await createAgentSession()` 前后暂停。观察传给Pi的cwd、agentDir、sessionManager、model、resourceLoader与tools；路径必须落在本次调试Project/Chat Home。
 3. 在 [Pi SDK createAgentSession](../../../pi/packages/coding-agent/src/core/sdk.ts) 和 [AgentSession](../../../pi/packages/coding-agent/src/core/agent-session.ts) 的 `prompt()` 处暂停。
 4. 输入 `DEBUG_READ_SKILL`。在 [agent-loop](../../../pi/packages/agent/src/agent-loop.ts) 中观察模型响应里的toolCall；接着进入 [read Tool](../../../pi/packages/coding-agent/src/core/tools/read.ts)。参数path应指向调试Skill，不能指向正常Project。

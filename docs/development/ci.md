@@ -7,7 +7,7 @@
 Chat使用父仓库固定三个公开Submodule Commit：`pi/`、`frontend/`和`nanoclaw/`。因此CI分两层负责：
 
 1. 子仓库CI验证子仓库自己的源码。Pi的完整构建、检查和测试属于`later-3/pi`；Frontend的独立测试应在`later-3/chat-frontend`执行；NanoClaw源码改动应在`later-3/nanoclaw`执行自己的构建和测试。
-2. Chat父仓库CI验证三个gitlink都能按父提交精确检出，并通过Chat的前后端、Workflow、Pi装配和生产服务集成闭环。NanoClaw已通过认证 HTTP 接入；父仓库使用隔离 Gateway/Channel 夹具验证合同，默认 CI 不安装 Nano 自身依赖或运行真实渠道。Linux Friend 安装与 Nano 调试准备另执行它自身的门禁。
+2. Chat父仓库CI验证三个gitlink都能按父提交精确检出，并通过Chat的前后端、Workflow、Pi装配和生产服务集成闭环。NanoClaw已通过认证 HTTP 接入；父仓库使用隔离 Gateway/Channel 夹具验证合同，默认 CI 不安装 Nano 自身依赖或运行真实渠道。Linux Long Agent 安装与 Nano 调试准备另执行它自身的门禁。
 
 父仓库不重复运行Pi的完整测试，否则每次Chat改动都会重复两千余条与Chat接缝无关的用例。更新gitlink之前，仍应要求目标子仓库Commit自己的CI通过。
 

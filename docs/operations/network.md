@@ -46,7 +46,7 @@ Cloudflare → 127.0.0.1:33052 Nginx → 127.0.0.1:33051 Relay → Mac:43110
 curl --fail https://chat.example.com/api/health
 ```
 
-健康接口应返回`{"ok":true,"service":"chat"}`。随后用浏览器完成以下验收：打开工作区、创建Session、运行直接执行和规划执行，并让Planner Orchestrator在计划批准后调用多个子Workflow；观察Thinking/工具过程、父子Session、刷新恢复和“完整历史”中的`Workflow → Stage · Agent → 输入/模型思考/工具调用与输出/Agent输出`结构。
+健康接口应返回`{"ok":true,"service":"chat"}`。随后用浏览器完成以下验收：打开工作区、创建Session、运行单节点回合和规划执行，并让Planner Orchestrator在计划批准后调用多个子Workflow；观察Thinking/工具过程、父子Session、刷新恢复和“完整历史”中的`Workflow → Stage · Agent → 输入/模型思考/工具调用与输出/Agent输出`结构。
 
 浏览器打开该域名后应直接进入工作区，可以安装为PWA。Android Chrome使用“安装应用”，iOS Safari使用“添加到主屏幕”。
 

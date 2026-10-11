@@ -8,7 +8,7 @@
 2. 同进程 SDK Step 与 API 的模块实例不一定相同。锁、取消句柄放在模块局部 Map 会让 API 看不到当前 Pi，或两个入口以为自己都持有写权。使用稳定 Symbol 的同进程槽共享既有锁/句柄；不把它当持久状态、多进程锁或新执行引擎。
 3. 单条会话 GET 很快，但轮询时点击仍卡顿。旧页面同时请求多个 Project 列表，列表反复解析原生全文。应测轮询碰撞而非刻意等网络静默：原生摘要按 stat 指纹重验，一个 overview 响应共享归属读取，前端 ETag 不变不重绘。
 
-4. API 和两帧完成计时很快，点击仍有刷新感：联系人按钮短暂全部 disabled 并降到 0.55 透明度；keyed ChatWindow 首帧 loading，随后 effect/Promise 才应用已缓存的数据；滚动又延迟一帧。保留会话隔离，在 layout effect 同步应用已校验交接数据并初始定位；短暂导航不变灰整列，忙碌文字延迟至 300ms。
+4. API 和两帧完成计时很快，点击仍有刷新感：Long Agent 按钮短暂全部 disabled 并降到 0.55 透明度；keyed ChatWindow 首帧 loading，随后 effect/Promise 才应用已缓存的数据；滚动又延迟一帧。保留会话隔离，在 layout effect 同步应用已校验交接数据并初始定位；短暂导航不变灰整列，忙碌文字延迟至 300ms。
 
 5. 隔离预览列表正常但部分详情 404：副本 Session 的 cwd 与运行后 Project Registry 不一致，群参与标记引用的成员登记也未复制。必须验证所有可列出详情，保留原权限检查；仅修复隔离夹具路径/依赖，不能修改正式历史或移除绑定。`unified-session-perf.mjs --audit-sessions` 真实 HTTP 门禁在修正前 181/187、修正后 187/187，失败返回非零。
 
@@ -22,7 +22,7 @@
 
 10. 日期清单只显示工作标题时，同一定时任务的两次正常执行看起来像重复记录；旧日期选择又按会话数量分三种行为，主侧栏仍列全部历史。日期统一导航到当日工作区，侧栏按日期投影既有 Session/work，显示创建时间，URL 只保留视图日期。用相同标题、不同 Session/日期的浏览器夹具验证切日、刷新和返回今日。
 
-11. Friend 协作项目栏与 `height:100%` 聊天区相加超过父容器，底部工具栏被 overflow:hidden 裁切。父容器按列分配剩余高度、消息区允许收缩、输入区不收缩；会话记忆入口进入同一工具栏。浏览器必须检查整个输入/工具栏/记忆入口的实际矩形在视口内，不能仅确认 textarea 存在。
+11. Long Agent 协作项目栏与 `height:100%` 聊天区相加超过父容器，底部工具栏被 overflow:hidden 裁切。父容器按列分配剩余高度、消息区允许收缩、输入区不收缩；会话记忆入口进入同一工具栏。浏览器必须检查整个输入/工具栏/记忆入口的实际矩形在视口内，不能仅确认 textarea 存在。
 
 ## 为什么相邻验证不够
 
@@ -34,7 +34,7 @@
 - `scripts/topics-browser.test.mjs`、`session-memory-switch-browser.test.mjs`：真实聊天与记忆通知/取消。
 - `test/session-files.test.mjs`：外部追加、重命名、删除可见，未变文件不重复 parse。
 - `frontend/lib/session-view-cache.test.mjs`：目标隔离、取消、并发合并、有界缓存、下一次导航权威重读。
-- `scripts/session-memory-switch-browser.test.mjs`：实际跨联系人暖切换，DOM/逐帧检查输入不消失、联系人不灰闪；`frontend/lib/chat-auto-scroll.test.mjs` 验证初次定位无需等动画帧。
+- `scripts/session-memory-switch-browser.test.mjs`：实际跨 Long Agent 暖切换，DOM/逐帧检查输入不消失、Long Agent 不灰闪；`frontend/lib/chat-auto-scroll.test.mjs` 验证初次定位无需等动画帧。
 - `scripts/unified-session-perf.mjs`：非门禁毫秒测量，含与轮询同时发生的点击。
 
 ## experience 资源

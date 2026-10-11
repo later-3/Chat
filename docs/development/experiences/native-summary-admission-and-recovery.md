@@ -10,7 +10,7 @@ Chat 为群讨论/群工作配置了 providerRequestGate，但旧 SDK 将它绑�
 
 gate 与 Provider payload/response 钩子放在 SDK 共用 stream 边界，先调用本次 callback、扩展转换，再执行不可吞错的准入；普通请求只执行一次 gate。取消根据所属 AbortController.signal 判断，半份/截断/取消摘要不得生成成功 checkpoint。群讨论/群工作把成功摘要 usage 加入既有持久预算链，下一请求必须等待记录完成。
 
-手动维护必须持有现有 Session 锁、核对 Workflow/Friend 队列和原生群绑定；导航 roster 没有列出群工作，不代表可通过普通入口执行。维护 requestId 和结果进入原生 CustomEntry。读恢复不重发未知收费请求，只有原生 checkpoint 能证明压缩完成。统计使用 Pi 只读 helper，不为看数字加载扩展。
+手动维护必须持有现有 Session 锁、核对 Workflow/Long Agent 队列和原生群绑定；导航 roster 没有列出群工作，不代表可通过普通入口执行。维护 requestId 和结果进入原生 CustomEntry。读恢复不重发未知收费请求，只有原生 checkpoint 能证明压缩完成。统计使用 Pi 只读 helper，不为看数字加载扩展。
 
 ## 原验证为何漏掉
 

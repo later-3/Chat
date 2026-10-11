@@ -1,6 +1,6 @@
 # Chat Long Agent 管理实体与隔离架构
 
-2026-09-19 P1 范围修订：每 Friend 每日唯一直接交流 Session，业务项目逐轮装配；下文旧的按业务项目拆分/独立整理 Session 及其并发假设不再作为本轮实现依据，统一以[生命周期合同](./chat-long-agent-architecture.md#4-project-first-与会话选择)和[开发计划](../../development/agent-unification-plan.md)为准。其余长期能力不因本轮合同自动成为已实现。
+2026-09-19 P1 范围修订：每 Long Agent 每日唯一直接交流 Session，业务项目逐轮装配；下文旧的按业务项目拆分/独立整理 Session 及其并发假设不再作为本轮实现依据，统一以[生命周期合同](./chat-long-agent-architecture.md#4-project-first-与会话选择)和[开发计划](../../development/agent-unification-plan.md)为准。其余长期能力不因本轮合同自动成为已实现。
 
 ## 1. 文档地位与状态
 

@@ -4,7 +4,7 @@
 
 本版为 Chat `0.5.2`、Frontend `0.11.0`。从父仓库标签 `v0.5.2` 递归取得三个固定子模块；Pi 使用受管 Fork 的精确提交 `5b580155b`，基础包版本仍为 `0.85.1`，没有发布新的 Pi npm 包。NanoClaw 保持 `v2.5.0` 的固定提交 `c14d98d`。不要用子模块远端最新分支代替 gitlink。
 
-本版修复 `v0.5.1` 的阻断缺陷：那版把「已停止发送 `interactionRevision`」的 Frontend 0.10.0 与仍强制该字段的后端捆在一起，Friend 私聊发消息会 409「私聊消息必须携带 Friend 项目关联 revision」。**不要安装 `v0.5.1`**，使用本页命令。
+本版修复 `v0.5.1` 的阻断缺陷：那版把「已停止发送 `interactionRevision`」的 Frontend 0.10.0 与仍强制该字段的后端捆在一起，Long Agent 私聊发消息会 409「私聊消息必须携带 Long Agent 项目关联 revision」。**不要安装 `v0.5.1`**，使用本页命令。
 
 ## 本版变化
 
@@ -15,7 +15,7 @@
 - **停靠面板统一**：导航列表、项目资料、任务与归档区域共用同一个开合原语（同宽度过渡、内层固定宽、class 开合），Compact 统一覆盖滑入。
 - 文档：UI/UX 规范 3.7（§20.6 停靠面板、§20.7 会话宽度、§20.8 门禁）、机制合同 §10 标注 LA6-A 已退役。
 
-升级已有数据前停止服务并备份，按 [Friend 迁移合同](./friend-migration.md)处理版本化索引和迁移标记。新机器空安装不需要搬迁旧电脑数据。
+升级已有数据前停止服务并备份，按 [Long Agent 迁移合同](./friend-migration.md)处理版本化索引和迁移标记。新机器空安装不需要搬迁旧电脑数据。
 
 ## 1. 安装 release
 
@@ -28,7 +28,7 @@ curl --fail --location https://raw.githubusercontent.com/later-3/Chat/v0.5.2/dep
 sudo bash /tmp/chatctl-0.5.2 install --ref v0.5.2 --with-nanoclaw
 ```
 
-脚本安装固定 Node/pnpm、拉取子模块、恢复 Pi 固定模型快照、验证并构建 Backend/Web，另准备 Nano Host。只用普通 Workflow 可以去掉 `--with-nanoclaw`；使用 Friend、助手记忆或群聊时保留它。
+脚本安装固定 Node/pnpm、拉取子模块、恢复 Pi 固定模型快照、验证并构建 Backend/Web，另准备 Nano Host。只用普通 Workflow 可以去掉 `--with-nanoclaw`；使用 Long Agent、助手记忆或群聊时保留它。
 
 ## 2. 拉起、检查与关闭 release
 
@@ -93,4 +93,4 @@ pnpm debug:stop -- --check
 
 新 Linux 上仍需记录：OS/架构、`git -C /opt/chat rev-parse HEAD`、`git -C /opt/chat submodule status`、release 与 debug 各两次启停、停止 debug 后 release 仍可访问，以及 Session/Memory 保留。真实 Provider 调用、真实渠道收发、Linux systemd 和 VS Code GUI 断点分别验收；本机假模型和服务适配器通过不能替代这些结果。
 
-上一版交付步骤见 [0.5.1](./release-0.5.1.md)（该标签的前后端字段契约错配会使 Friend 私聊 409，仅作历史记录）。
+上一版交付步骤见 [0.5.1](./release-0.5.1.md)（该标签的前后端字段契约错配会使 Long Agent 私聊 409，仅作历史记录）。

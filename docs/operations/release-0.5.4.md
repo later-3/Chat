@@ -11,7 +11,7 @@
 - fix(release): scratch mode skips every git step
 - fix(release): tolerate entry documents that do not carry the tag string
 
-升级已有数据前停止服务并备份，按 [Friend 迁移合同](./friend-migration.md)处理版本化索引和迁移标记。新机器空安装不需要搬迁旧电脑数据。
+升级已有数据前停止服务并备份，按 [Long Agent 迁移合同](./friend-migration.md)处理版本化索引和迁移标记。新机器空安装不需要搬迁旧电脑数据。
 
 ## 1. 安装 release
 
@@ -24,7 +24,7 @@ curl --fail --location https://raw.githubusercontent.com/later-3/Chat/v0.5.4/dep
 sudo bash /tmp/chatctl-0.5.4 install --ref v0.5.4 --with-nanoclaw
 ```
 
-脚本安装固定 Node/pnpm、拉取子模块、恢复 Pi 固定模型快照、验证并构建 Backend/Web，另准备 Nano Host。只用普通 Workflow 可以去掉 `--with-nanoclaw`；使用 Friend、助手记忆或群聊时保留它。
+脚本安装固定 Node/pnpm、拉取子模块、恢复 Pi 固定模型快照、验证并构建 Backend/Web，另准备 Nano Host。只用普通 Workflow 可以去掉 `--with-nanoclaw`；使用 Long Agent、助手记忆或群聊时保留它。
 
 ## 2. 拉起、检查与关闭 release
 

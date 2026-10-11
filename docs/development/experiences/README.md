@@ -67,7 +67,7 @@
 - [模态焦点与层级归属](./modal-focus-and-layer-ownership.md)
 
 - [发送确认前的草稿保护](./submission-draft-recovery.md)：乐观清空与持久输入分开，确认不能清掉后续草稿。
-- [Friend 日期导航与输入区遮挡](./friend-date-navigation-and-composer.md)：日期、会话、工作列表与完整工具栏沿真实用户入口验证。
+- [Long Agent 日期导航与输入区遮挡](./friend-date-navigation-and-composer.md)：日期、会话、工作列表与完整工具栏沿真实用户入口验证。
 
 - [合并控件时保留领域策略事实](./shared-control-server-policy.md)：共享记忆入口必须保留主题节点的持久化、冲突和刷新恢复合同。
 

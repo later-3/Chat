@@ -10,23 +10,23 @@ Long Agent 是 Chat 中长期陪伴用户工作的助手。每个 Agent 有自�
 
 ## 2. 现在可以做什么
 
-首次使用从 Web 全局导航“Friend”点击“启用并创建默认助手”，系统准备 Nexus；无已选 Project 也可以操作。后续新增长期助手在对话中由某位长期助手创建（同源 `long_agent_manage` Tool），Web 面板不再提供“＋”创建表单，也不需要手填 NanoClaw Group ID。启动 Host、配置 Chat 模型后，点击 Friend 即可对话。启用前提、错误重试及 HTTP 合同见[系统配置](../../configuration/README.md#long-agent注册与配置管理当前实现)。
+首次使用从 Web 全局导航“Long Agent”点击“启用并创建默认助手”，系统准备 Nexus；无已选 Project 也可以操作。后续新增 Long Agent 在对话中由某位 Long Agent 创建（同源 `long_agent_manage` Tool），Web 面板不再提供“＋”创建表单，也不需要手填 NanoClaw Group ID。启动 Host、配置 Chat 模型后，点击 Long Agent 即可对话。启用前提、错误重试及 HTTP 合同见[系统配置](../../configuration/README.md#long-agent注册与配置管理当前实现)。
 
 当前已有 Chat Web 与 NanoClaw 文本对话、Telegram/微信接入路径、Long Agent 的部分配置管理、Agent 身份和 Standing Instructions 注入、Markdown Agent Memory 管理、Chat Personal/Project Memory、Workflow 调用，以及 Project 管理 Skill 和 6 个 Tool。
 
-当前已支持独立 Agent home 与日常主 Session 按日轮换；每日总结通过独立 Task 归档，次日交接按[每日工作与归档](./daily-archive.md)执行；任务管理（LA2）、长期任务（LA3）与产物闭环（LA4：笔记与动态）已接入，合同见[Friend 任务](./tasks.md)、[Friend 长期任务](./duties.md)和[Friend 产物闭环](./deliverables.md)；Docker 工具环境及完整资源自我管理仍有实施差距，逐项以[实施状态](./chat-long-agent-roadmap.md)为准。旧界面或旧配置不能代表新目标已经生效。
+当前已支持独立 Agent home 与日常主 Session 按日轮换；每日总结通过独立 Task 归档，次日交接按[每日工作与归档](./daily-archive.md)执行；任务管理（LA2）、长期任务（LA3）与产物闭环（LA4：笔记与动态）已接入，合同见[Long Agent 任务](./tasks.md)、[Long Agent 长期任务](./duties.md)和[Long Agent 产物闭环](./deliverables.md)；Docker 工具环境及完整资源自我管理仍有实施差距，逐项以[实施状态](./chat-long-agent-roadmap.md)为准。旧界面或旧配置不能代表新目标已经生效。
 
-2026-09-19 P1：以下目标已收敛为每 Friend 每日唯一直接交流 Session，项目逐轮装配；[公共装配](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)与[生命周期](./chat-long-agent-architecture.md#4-project-first-与会话选择)是实施合同，P2 公共装配和协作目标已接入，P3 每日生命周期已实现；P4 实时交互与 P5 本地迁移验收已完成，实际外部渠道验收边界见实施状态。
+2026-09-19 P1：以下目标已收敛为每 Long Agent 每日唯一直接交流 Session，项目逐轮装配；[公共装配](../../architecture/chat-context-resource-model.md#15-公共-agent-装配合同p12026-09-19)与[生命周期](./chat-long-agent-architecture.md#4-project-first-与会话选择)是实施合同，P2 公共装配和协作目标已接入，P3 每日生命周期已实现；P4 实时交互与 P5 本地迁移验收已完成，实际外部渠道验收边界见实施状态。
 
-独立任务、长期任务、定时笔记/动态与群聊按[LA0–LA6 功能计划](../../development/long-agent-functionality-plan.md)推进。LA0 确定“每日唯一”只约束直接交流，后台任务与群参与使用独立上下文；LA1–LA4 已交付；群聊（LA5）的**模块合同与短设计已交付、实施进行中**（[群聊与多 Friend 协作合同](./group-chat.md)），能力未发布前不得按现状使用。
+独立任务、长期任务、定时笔记/动态与群聊按[LA0–LA6 功能计划](../../development/long-agent-functionality-plan.md)推进。LA0 确定“每日唯一”只约束直接交流，后台任务与群参与使用独立上下文；LA1–LA4 已交付；群聊（LA5）的**模块合同与短设计已交付、实施进行中**（[群聊与多 Long Agent 协作合同](./group-chat.md)），能力未发布前不得按现状使用。
 
 ### 后台工作、定时任务、长期任务与日历
 
 | 用户要做什么 | 当前入口 | 对象关系 |
 |---|---|---|
-| 现在交一件事，独立干完 | 与 Friend 对话，由 `friend_work` 创建；侧栏“后台任务”查看 | 一次 Work 对应独立原生 Session，可打开继续交流 |
-| 指定时间/周期执行具体事项 | Friend 设置“任务”，或 `task_manage` | Task 定义何时做；每次触发为 Occurrence，再产生 Work/Session |
-| 长期推进有资料、目标、进度的事情 | Friend 设置“长期任务”，或 `duty_manage` | Duty 保存目标/进度/下一步，以关联 Task 安排每次 Work；一次执行完成不等于职责结束 |
+| 现在交一件事，独立干完 | 与 Long Agent 对话，由 `friend_work` 创建；侧栏“后台任务”查看 | 一次 Work 对应独立原生 Session，可打开继续交流 |
+| 指定时间/周期执行具体事项 | Long Agent 设置“任务”，或 `task_manage` | Task 定义何时做；每次触发为 Occurrence，再产生 Work/Session |
+| 长期推进有资料、目标、进度的事情 | Long Agent 设置“长期任务”，或 `duty_manage` | Duty 保存目标/进度/下一步，以关联 Task 安排每次 Work；一次执行完成不等于职责结束 |
 
 定时任务填写说明、项目、时间/cron、时区与策略；长期任务填写目标、资料、成果、节奏和预算，之后在职责页管理其推进任务。Web 和 Tool 调用相同领域服务；自动定时依赖 NanoClaw 调度应用成功，离线预览不代表正式任务消失。细节分别见[任务](./tasks.md)与[职责](./duties.md)。
 
@@ -37,20 +37,20 @@ Long Agent 是 Chat 中长期陪伴用户工作的助手。每个 Agent 有自�
 | 目的 | 目标使用方式 |
 |---|---|
 | 日常沟通 | 找到某个 Long Agent，进入它当天的 Daily Session |
-| 学习道德经 | 创建或打开学习 Project，与同一 Friend 在当天 Session 继续，项目规则自动装配 |
+| 学习道德经 | 创建或打开学习 Project，与同一 Long Agent 在当天 Session 继续，项目规则自动装配 |
 | 旅游规划与监控 | 在旅游 Project 保存计划、配置监控任务、查看变化来源 |
-| Ziji 开发 | 选择具体子项目，在 Friend 当天交流中发起工作；普通项目 Session 仍可独立使用 |
+| Ziji 开发 | 选择具体子项目，在 Long Agent 当天交流中发起工作；普通项目 Session 仍可独立使用 |
 | 问昨天做了什么 | 查询该 Agent 的活动/日记，再打开相关 Session |
 | 换入口继续 | 在 Web 打开对应会话，或回复带工作关联的 Channel 消息 |
 | 管理能力 | 查看自身配置、模型和资源目录，修改授权范围内的配置 |
 | 查看自动工作 | 从 Agent 或 Project 的任务列表检查 Run、结果与投递状态 |
-| 持续负责某项学习 | 在 Friend 设置的“长期任务”中配置目标、资料、成果要求与推进节奏；Agent 用 `duty_manage` 推进并留下进度与依据 |
+| 持续负责某项学习 | 在 Long Agent 设置的“长期任务”中配置目标、资料、成果要求与推进节奏；Agent 用 `duty_manage` 推进并留下进度与依据 |
 | 不重复介绍项目 | Agent 可通过系统概览发现向它开放的项目、用途和进度 |
 | 让 Agent 持续负责内容运营 | 配置 Content Lab 的长期任务，由 Agent 自主安排并跨日推进 |
 | 每天 3 条动态 + 1 篇笔记 | 在任务中把 4 个时段配置为产物任务（动态/笔记 + 槽位 + 受众），在对应任务详情查看状态、执行和成果 |
 | 查看其他 Agent 动态 | 订阅可见 Social 更新，通过事件获得处理机会 |
 
-这些使用方式的完整模拟与验收见[四个场景](./chat-long-agent-scenarios.md)。Friend 模式切项目只更新下一轮协作上下文，不切会话；普通项目模式仍按项目定位自己的 Session。
+这些使用方式的完整模拟与验收见[四个场景](./chat-long-agent-scenarios.md)。Long Agent 模式切项目只更新下一轮协作上下文，不切会话；普通项目模式仍按项目定位自己的 Session。
 
 ## 4. 配置在哪里、改动影响什么
 
@@ -70,7 +70,7 @@ Long Agent 是 Chat 中长期陪伴用户工作的助手。每个 Agent 有自�
 
 ## 6. 每日会话、记忆与日记的关系
 
-Agent 的 Daily Project 长期稳定，日常主 Session 按其时区每天轮换。Friend 的学习、旅游、开发交流使用当天同一 Session；跨日靠交接继续，普通项目 Session 可跨日。停止环境或切模型不改既有历史。
+Agent 的 Daily Project 长期稳定，日常主 Session 按其时区每天轮换。Long Agent 的学习、旅游、开发交流使用当天同一 Session；跨日靠交接继续，普通项目 Session 可跨日。停止环境或切模型不改既有历史。
 
 新会话先获得少量近期历史、未完成事项和记忆入口，需要细节时查询原 Session 或产物。Project Memory 保存项目事实，Agent Memory 保存助手自身的长期知识；公共 Personal Memory 由授权控制。
 
@@ -86,9 +86,9 @@ Social 使用日历和时间流展示每个 Agent 每天的工作及来源。没
 
 任务至少明确：谁负责、属于哪个 Project、做什么、何时触发、使用哪种 Session、何种情况通知、发往哪里，以及失败和错过时间如何处理。
 
-LA2 任务触发复用 LA1 独立工作 Session；迁移前已接受的旧 Nano 定时消息保留原 Session；显式 Workflow 委派保留独立子 Session，不能当作第二条 Friend 直接交流。后台运行不会抢走你当前聊天的位置。没有变化的检查可以不调用模型，但仍留下运行记录；通知失败与工作失败分别处理。
+LA2 任务触发复用 LA1 独立工作 Session；迁移前已接受的旧 Nano 定时消息保留原 Session；显式 Workflow 委派保留独立子 Session，不能当作第二条 Long Agent 直接交流。后台运行不会抢走你当前聊天的位置。没有变化的检查可以不调用模型，但仍留下运行记录；通知失败与工作失败分别处理。
 
-LA2 提供具体任务管理，见 [Friend 任务](./tasks.md)。长期任务自主拆解和群聊尚属后续阶段，不能把周期执行相同说明称为自主持续学习。
+LA2 提供具体任务管理，见 [Long Agent 任务](./tasks.md)。长期任务自主拆解和群聊尚属后续阶段，不能把周期执行相同说明称为自主持续学习。
 
 ## 8. Docker 意味着什么
 
@@ -118,8 +118,8 @@ Docker是可选环境依赖，不是Chat或Nano Channel Host的安装前提。�
 
 ## 后台任务（LA1）
 
-先打开 Friend，与它对话安排后台任务。侧栏“在对话中安排后台任务”回到该日日常会话；由已有 `friend_work` Tool 创建后台执行，不另填名称/说明表单。后台任务有独立 Session，可查看、继续和停止；选中后在任务详情查看成果和累计用量。相同名称的多次执行用时间区分，按稳定 workId 关联结果。点击 Friend 回到今天，日期导航合同见 [Chat Web](../web/chat-web.md)。
+先打开 Long Agent，与它对话安排后台任务。侧栏“在对话中安排后台任务”回到该日日常会话；由已有 `friend_work` Tool 创建后台执行，不另填名称/说明表单。后台任务有独立 Session，可查看、继续和停止；选中后在任务详情查看成果和累计用量。相同名称的多次执行用时间区分，按稳定 workId 关联结果。点击 Long Agent 回到今天，日期导航合同见 [Chat Web](../web/chat-web.md)。
 
-也可以让具备 `friend_work` 的 Friend 自己发起后台工作。默认管理的能力集增加此 Tool；显式自定义的能力集不强制改写，可在设置中选择。未确认提交应点击“确认上次提交”收敛同一请求，不要反复新建。完整边界见[LA1 实现合同](./chat-long-agent-architecture.md#la1独立后台工作实现合同)。定时编辑、长期学习策略和群聊尚不属于本阶段。
+也可以让具备 `friend_work` 的 Long Agent 自己发起后台工作。默认管理的能力集增加此 Tool；显式自定义的能力集不强制改写，可在设置中选择。未确认提交应点击“确认上次提交”收敛同一请求，不要反复新建。完整边界见[LA1 实现合同](./chat-long-agent-architecture.md#la1独立后台工作实现合同)。定时编辑、长期学习策略和群聊尚不属于本阶段。
 
-任务管理、触发投影和旧任务迁移见 [Friend 任务（LA2）](./tasks.md)。创建 Friend 只需名称和可选简介；服务连接、认证、接口版本错误分别提示，不再用一个含糊的“需要已更新的 Host”覆盖所有原因。
+任务管理、触发投影和旧任务迁移见 [Long Agent 任务（LA2）](./tasks.md)。创建 Long Agent 只需名称和可选简介；服务连接、认证、接口版本错误分别提示，不再用一个含糊的“需要已更新的 Host”覆盖所有原因。

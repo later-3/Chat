@@ -10,7 +10,7 @@
 
 两个 Backend F5 配置的 `outFiles` 与 `resolveSourceMapLocations` 同时覆盖 Nitro server 输出和 Workflow Step 中间产物，继续保留无扩展名的 Workflow VM 映射。更新 launch.json 后必须重新 F5。检查真正执行的 Nitro Worker，不能只检查启动器。
 
-此前测试只覆盖中间 bundle 与 VM 路径；构建成功或 Workflow VM 命中都不能证明 Step 断点已绑定。`scripts/debug-environment.test.mjs` 现对两个 Backend 配置逐一验证实际 server 与 Step bundle 均可被发现并允许解析映射。执行 `pnpm test:tooling`；手工验收在第 19 行设置断点，再从普通会话选择直接执行 Workflow 发消息。Inspector 可断点位置验证不等同于 VS Code 界面已实际命中。
+此前测试只覆盖中间 bundle 与 VM 路径；构建成功或 Workflow VM 命中都不能证明 Step 断点已绑定。`scripts/debug-environment.test.mjs` 现对两个 Backend 配置逐一验证实际 server 与 Step bundle 均可被发现并允许解析映射。执行 `pnpm test:tooling`；手工验收在第 19 行设置断点，再从会话选择单节点回合 Workflow 发消息。Inspector 可断点位置验证不等同于 VS Code 界面已实际命中。
 
 ## Experience Prompt 资源
 

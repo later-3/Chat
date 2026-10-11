@@ -4,16 +4,16 @@
 
 ## 用户场景与目标
 
-用户点击 Friend、Project Session 或主题节点，应连续看到目标消息并可输入；切换 Workflow 只改变下一轮选择，不启动执行，不重建原生 Session。不能通过丢消息、跳过授权、隐藏错误或取消后台工作获得速度。
+用户点击 Long Agent、Project Session 或主题节点，应连续看到目标消息并可输入；切换 Workflow 只改变下一轮选择，不启动执行，不重建原生 Session。不能通过丢消息、跳过授权、隐藏错误或取消后台工作获得速度。
 
-本机暖切换目标：选中/历史/输入可用 p95 ≤50ms，稳定绘制 p95 ≤100ms。性能同时包括视觉连续性：已有视图不得先变成加载页，联系人列不得因一次点击整体变灰，首帧不得先显示历史顶部再跳到底部。真正慢加载约 300ms 后显示忙碌反馈；API p95 和这些用户指标分别报告。这是指定数据规模的工程目标，不是所有设备、超大历史和远程网络的保证。
+本机暖切换目标：选中/历史/输入可用 p95 ≤50ms，稳定绘制 p95 ≤100ms。性能同时包括视觉连续性：已有视图不得先变成加载页，Long Agent 列不得因一次点击整体变灰，首帧不得先显示历史顶部再跳到底部。真正慢加载约 300ms 后显示忙碌反馈；API p95 和这些用户指标分别报告。这是指定数据规模的工程目标，不是所有设备、超大历史和远程网络的保证。
 
 ## 从点击到显示
 
 | 环节 | 实际工作与归属 | 耗时与可优化边界 |
 |---|---|---|
 | 1. 点击反馈 | 浏览器保留当前聊天和列表，阻止重复提交；目标忙碌由 aria-busy 表达，超过 300ms 才显示打开中文字 | 不变灰整列，不发模型请求 |
-| 2. 解析 Friend 日历 | `POST /api/long-agents/:id/start` 返回服务端今日 Session / projectId | 前批 50 次暖测 p50 11ms / p95 21ms；不可直接用旧 primarySessionId 代替跨日解析 |
+| 2. 解析 Long Agent 日历 | `POST /api/long-agents/:id/start` 返回服务端今日 Session / projectId | 前批 50 次暖测 p50 11ms / p95 21ms；不可直接用旧 primarySessionId 代替跨日解析 |
 | 3. 准备目标详情 | `fetchProjectSessionById`：有近期视图则立即交接，没有则等一次 GET；并发读取共享同一请求 | 近期视图 16 项 / 8MiB / 5 分钟；不是无限缓存 |
 | 4. 首帧聊天 | `useAgentSession` 在 layout effect 同步解析已交接数据；聊天仍按 Session 隔离草稿、观察器和运行引用；首次滚动在绘制前定位 | 缓存/刚下载的数据不经过异步 loading 空白帧；不常驻多个执行控制器 |
 | 5. 权威校验 | 暖导航重新 GET 当前 Session；冷导航共享刚取得的响应；执行结束与外部同步另读最新历史 | 不以导航缓存代替状态、权限、CAS；失败可见，旧目标响应不得覆盖当前目标 |
@@ -44,7 +44,7 @@ Chrome/CDP，1440×1000，生产构建；隔离数据副本包含 187 个原生�
 
 ## 验证与证据
 
-- 自动化回归：`scripts/session-memory-switch-browser.test.mjs` 经实际 Friend 点击切换，跨多个联系人后检查无聊天空白、无整列灰闪、历史保留；已纳入 `pnpm test:dev`。
+- 自动化回归：`scripts/session-memory-switch-browser.test.mjs` 经实际 Long Agent 点击切换，切换多个 Long Agent 后检查聊天空白、无整列灰闪、历史保留；已纳入 `pnpm test:dev`。
 - `frontend/lib/chat-auto-scroll.test.mjs`：首屏绘制前定位；未变轮询保留阅读位置；后续工具/正文/延迟布局仍跟随。
 - 缓存/失效：`test/session-files.test.mjs`、`frontend/lib/session-view-cache.test.mjs`；真实 Run 能力使用 `scripts/unified-session-runtime.test.mjs`。
 - 延迟实验：`node scripts/unified-session-perf.mjs http://127.0.0.1:<隔离端口> 50`。脚本拒绝正式 43110；保留原始 summary/samples、目标身份/消息数和轮询碰撞。私有证据放 gitignored `.data/verification/unified-session/`，不入库。

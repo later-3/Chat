@@ -8,7 +8,7 @@
 
 多 Agent、用户共同参与与自由活动的新增交互见[场景收敛与模拟（评审稿）](./chat-long-agent-interaction-simulations.md)。该稿新增行为待用户确认，不自动扩大本文已确认验收范围。
 
-2026-09-19 P1 更新：Friend 的项目工作和日常交流共用每日唯一 Session；本文较早的多 Agent/Docker/完整调度场景仍是长期目标，本轮验收范围为[开发计划 S01–S12](../../development/agent-unification-plan.md#4-场景验收矩阵)。
+2026-09-19 P1 更新：Long Agent 的项目工作和日常交流共用每日唯一 Session；本文较早的多 Agent/Docker/完整调度场景仍是长期目标，本轮验收范围为[开发计划 S01–S12](../../development/agent-unification-plan.md#4-场景验收矩阵)。
 
 ## 2. 演练环境与共同约束
 
@@ -19,7 +19,7 @@
 共同要求：
 
 - 用户或 Agent 的每次工作先归属 Project，Session 的 projectId 不变。
-- Friend 每日唯一 Session 的各轮次记录项目；普通 Project 可有多个独立 Session，显式 Workflow 子 Session 保留关联。
+- Long Agent 每日唯一 Session 的各轮次记录项目；普通 Project 可有多个独立 Session，显式 Workflow 子 Session 保留关联。
 - 新 Session 带有必要历史入口，进一步查询有授权和来源。
 - 所有配置可从 Web 和 Agent 管理入口读取；实际执行与检查使用同一版本。
 - 公共管理 Skill 可发现，真实 Tool/资源可查询；文档不会凭空赋予工具能力。
@@ -35,7 +35,7 @@
 ### 3.2 正常路径
 
 1. 从 Nexus 当天 Daily 发起，使用 Project 管理能力创建学习项目并关联来源。
-2. 用户选择学习项目，保持 Friend 当天 Session，下一轮自动装配学习项目规则；不改写存储归属。
+2. 用户选择学习项目，保持 Long Agent 当天 Session，下一轮自动装配学习项目规则；不改写存储归属。
 3. 配置目标、材料、学习 Skill 和 Prompt 自定义区域；选择的模型来自 Chat。
 4. 创建负责人为 Nexus、Project 为学习项目、时区明确的周期 Task。记录时间、Session 策略、通知目的地与运行政策。
 5. 到点后建立 Run，读取项目学习进度及相关历史。未完成上一章则继续该章节；已完成才进入新章节，活动关联固定到当天 Session 的本轮。
@@ -54,7 +54,7 @@
 
 | 编号 | 观察结果 |
 |---|---|
-| LA-S1-01 | 当天同一 Friend Session 保留日常/学习轮次及各自项目来源，工具目标正确 |
+| LA-S1-01 | 当天同一 Long Agent Session 保留日常/学习轮次及各自项目来源，工具目标正确 |
 | LA-S1-02 | 课程已发送、已阅读、已完成不是同一个状态；未完成不会被自动跳过 |
 | LA-S1-03 | Web/微信续接一致，重复触发不重复创建本次课程工作 |
 | LA-S1-04 | 新 Daily Session 能定位昨天的学习与开放问题，无需用户重述 |
@@ -69,11 +69,11 @@
 
 ### 4.2 正常路径
 
-1. 在 Friend 当天 Session 选择旅游项目，项目中保存计划与关心的事项。
+1. 在 Long Agent 当天 Session 选择旅游项目，项目中保存计划与关心的事项。
 2. 如采用规划 Agent 分工，交给它明确目标、允许访问的资料、完成标准与反馈位置。交互协议本轮不定案。
 3. 建立固定属于旅游 Project 的 Task，结构化配置检查来源、比较基准、频率、重要变化条件和 Destination。
 4. 到点建立 Run，在 Docker 中执行检查。无变化则记录检查成功及时间，不强制调用模型或创建空 Session。
-5. 有变化时在 Friend 当天 Session 建立分析轮次，冻结旅游项目上下文，分析来源、前后差异、影响与建议；保存检查基准和产物。
+5. 有变化时在 Long Agent 当天 Session 建立分析轮次，冻结旅游项目上下文，分析来源、前后差异、影响与建议；保存检查基准和产物。
 6. 根据策略投递结果。演练可由 Nexus 作为微信入口转达规划 Agent 结果，须保留来源；最终跨 Agent 消息与会话安排待评审。
 7. 用户回复某条通知，能够定位该 Run、Project 和工作 Session，而不是落到当时正在聊天的其他项目。
 
@@ -109,7 +109,7 @@
 3. 在旧日唯一 Session 的内部整理轮次中生成完成事项、进行中事项、待决策、回顾与明日计划。系统状态与 Agent 自述分开。
 4. 按权限维护自身 Memory 和交接信息；项目事实保留在 Project，共享资源修改继续遵守原 Policy。
 5. Social 生成该 Agent 当天卡片，支持日历与时间流，展开可见原 Session、Run、产物和 Memory 变更。
-6. 第二天新的 Daily 主 Session 自动获得必要交接和历史入口。继续 Friend 项目或日常工作均带来源进入今天 Session；显式 Workflow 子工作按原关联恢复。
+6. 第二天新的 Daily 主 Session 自动获得必要交接和历史入口。继续 Long Agent 项目或日常工作均带来源进入今天 Session；显式 Workflow 子工作按原关联恢复。
 
 ### 5.3 跨日、纠错和缺失
 
@@ -125,7 +125,7 @@
 |---|---|
 | LA-S3-01 | 每个 Agent 的 Daily、Memory、整理 Task 和日记彼此独立 |
 | LA-S3-02 | 日记覆盖业务项目活动，不只总结一条 Daily 对话 |
-| LA-S3-03 | Friend Session 按时区和日期唯一选择，项目切换不另建；普通项目 Session 可跨日 |
+| LA-S3-03 | Long Agent Session 按时区和日期唯一选择，项目切换不另建；普通项目 Session 可跨日 |
 | LA-S3-04 | 日记失败不影响翌日连续性，索引可定位未完成事项和原始来源 |
 | LA-S3-05 | 计划、进行中、已完成以及总结缺失分别呈现 |
 | LA-S3-06 | 来源纠错/删除/权限撤回作用于卡片、摘要、索引和缓存 |
