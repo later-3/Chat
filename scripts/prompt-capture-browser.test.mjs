@@ -280,6 +280,26 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     assert.ok(panelText.toLowerCase().includes("system prompt"), `区域树含系统提示分区: ${panelText.slice(0, 300)}`);
     await closeDialog();
 
+    // F11 形态断言（B3-fix §1.B→门禁：原型合同钉死——阶段头/条形图/4pills/无裸 tag）。
+    {
+      assert.equal(await openHistory(), true, "重开（形态断言）");
+      await page.waitFor("document.querySelectorAll('[data-full-history-turn-toggle]').length >= 2", { label: "轮列表（形态）" });
+      await page.evaluate("document.querySelectorAll('[data-full-history-turn-toggle]')[1].click()");
+      await page.waitFor("document.querySelector('[data-stage-head]') !== null", { label: "阶段头（后端统计）" });
+      assert.equal(await page.evaluate("document.querySelectorAll('[data-block-filter] .region-pill').length"), 4, "4 个区块 pills（原型形态）");
+      const stageHead = await page.evaluate("document.querySelector('[data-stage-head]')?.innerText ?? ''");
+      assert.ok(/\d/.test(stageHead), `阶段头含后端统计: ${stageHead}`);
+      const onText = await page.evaluate("document.querySelector('[data-turn-interactions]')?.innerText ?? ''");
+      assert.ok(!/chat_identity|chat-context|chat_context/.test(onText), `界面不裸露 tag 名（F-09）: ${onText.slice(0, 200)}`);
+      await page.waitFor("document.querySelectorAll('[data-prompt-capture-record]').length > 0", { label: "on 轮请求组（形态）" });
+      await page.evaluate("document.querySelector('[data-prompt-capture-row-toggle]').click()");
+      await page.waitFor("document.querySelector('[data-region-bars] .region-bar-row') !== null", { label: "区域条形图", timeoutMs: 20_000 });
+      const barNames = await page.evaluate("[...document.querySelectorAll('[data-region-bars] .region-name')].map(n => n.textContent)");
+      assert.ok(barNames.length > 0 && !barNames.some(name => /^chat-|^pi-base$/.test(name ?? '')), `条形用非裸名: ${JSON.stringify(barNames)}`);
+      assert.equal(await page.evaluate("document.querySelectorAll('[data-region-bars] .region-fill').length >= 1"), true, "条形填充存在");
+      await closeDialog();
+    }
+
     // ③ 重试聚合：注入一条 retryOf 链行 + error outcome（读模型真实读出 ×2 与失败徽标）。
     {
       const rowsNow = (await (await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(first.sessionId)}/interactions?projectId=friend&limit=500`)).json()).rows;
@@ -310,6 +330,36 @@ test("the prompt-capture switch reaches the send, records regions and drives the
       assert.equal(retryBadge, true, "重试聚合显示 ×2（后端归并，前端零聚合）");
       const failureBadge = await page.evaluate("[...document.querySelectorAll('.prompt-capture-failures')].some(node => node.textContent.includes('1'))");
       assert.equal(failureBadge, true, "失败次数徽标可见");
+      // F5：逐次尝试列表（数据=后端 attempt 链行）——展开含 ×2 的请求卡
+      await page.evaluate("document.querySelector('[data-prompt-capture-row-toggle]')?.click()");
+      await page.waitFor("document.querySelector('[data-attempt-list]') !== null", { label: "逐次尝试列表", timeoutMs: 15_000 });
+      const attemptRows = await page.evaluate("document.querySelectorAll('[data-attempt-list] .attempt-row').length");
+      assert.ok(attemptRows >= 2, `逐次尝试列表 ≥2 行: ${attemptRows}`);
+      const attemptText = await page.evaluate("document.querySelector('[data-attempt-list]')?.innerText ?? ''");
+      assert.ok(/Attempt 1|尝试 1/.test(attemptText) && /e2e injected failure/.test(attemptText), `尝试列表含各自结果: ${attemptText.slice(0, 200)}`);
+      // F5：元信息行（四问"怎么来的"）
+      const meta = await page.evaluate("document.querySelector('[data-request-meta]')?.innerText ?? ''");
+      assert.ok(/[0-9a-f]{8}-[0-9a-f]{4}/.test(meta) && /sha /.test(meta) && /Tools \d+/.test(meta),
+        `元信息行（requestId+sha+工具/消息/排除）: ${meta}`);
+      await closeDialog();
+      // F3：a/b 层与发起方 bar（本会话消息 turnId/时间窗匹配）
+      assert.equal(await openHistory(), true, "重开（a/b 形态）");
+      await page.waitFor("document.querySelectorAll('[data-full-history-turn-toggle]').length >= 2", { label: "轮列表（a/b）" });
+      // on 轮（第 2 轮）必有 a=pc-on 与回复：等消息拉取后的发起方 bar（消息 turnId/时间窗匹配）。
+      await page.evaluate("document.querySelectorAll('[data-full-history-turn-toggle]')[1]?.click()");
+      await page.waitFor("document.querySelector('[data-initiator-bar]') !== null", { label: "发起方 bar（a/b 层）", timeoutMs: 8_000 }).catch(() => {});
+      console.log("AB_DEBUG", await page.evaluate(`JSON.stringify({
+        toggles: document.querySelectorAll('[data-full-history-turn-toggle]').length,
+        expanded: [...document.querySelectorAll('[data-full-history-turn-toggle]')].map(b => b.getAttribute('aria-expanded')),
+        sideA: document.querySelectorAll('[data-side-a]').length,
+        initiator: document.querySelectorAll('[data-initiator-bar]').length,
+        sideB: document.querySelectorAll('[data-side-b]').length,
+        exchange: document.querySelector('[data-turn-exchange]')?.innerText?.slice(0, 120) ?? null,
+      })`));
+      const exchangeOk = await page.evaluate(`!!document.querySelector('[data-side-a] [data-initiator-bar]') && !!document.querySelector('[data-side-b] .turn-reply-card')`);
+      assert.equal(exchangeOk, true, "a 气泡侧发起方 bar + b 侧回复卡（原型 a/b 结构）");
+      const initiatorText = await page.evaluate("document.querySelector('[data-initiator-bar]')?.innerText ?? ''");
+      assert.ok(/发起方 bar|Initiator bar/.test(initiatorText) && /chars/.test(initiatorText), `发起方 bar 文本: ${initiatorText}`);
       await closeDialog();
     }
 

@@ -39,7 +39,7 @@ export interface InteractionTurn {
   readonly turnKey?: string;
   readonly stage: InteractionStage;
 }
-export interface InteractionRegionRef { readonly id: string; readonly chars: number; readonly revision?: string }
+export interface InteractionRegionRef { readonly id: string; readonly chars: number; readonly revision?: string; /** 人话展示名：读侧从注册表补（F6/F-09） */ readonly label?: string }
 export interface InteractionRequestRow {
   readonly schemaVersion: typeof INTERACTION_SCHEMA_VERSION;
   readonly requestId: string;
@@ -261,7 +261,8 @@ export async function readInteractionPage(sessionDir: string, sessionId: string,
   const window = all.filter((row) => row.seq > cursor).slice(0, limit);
   const rows = window.map((row) => {
     const outcome = outcomeByRequest.get(row.requestId);
-    return outcome === undefined ? row : { ...row, outcome };
+    const withLabel = { ...row, regions: row.regions.map(region => ({ ...region, label: regionLabelOf(region.id) })) };
+    return outcome === undefined ? withLabel : { ...withLabel, outcome };
   });
   const last = rows.at(-1);
   return { rows, ...(last === undefined || rows.length < limit ? {} : { nextCursor: last.seq }) };
@@ -302,9 +303,18 @@ function usageTokens(usage: unknown): number {
  * 轮内请求级聚合（D-1，02 T9：聚合在后端）。按 retryOf 链把多次尝试归为一个请求组；
  * legacy 适配行同样携带 retryOf/attempt，走同一逻辑。只在读侧做，不改行存储。
  */
+export interface InteractionStageSummary {
+  readonly id: string;
+  readonly nodeKind: string;
+  readonly requestCount: number;
+  readonly attempts: number;
+  readonly failures: number;
+}
+
 export function aggregateInteractionRows(rows: readonly OutcomeRow[]): {
   readonly requests: readonly InteractionRequestGroup[];
   readonly summary: InteractionTurnSummary;
+  readonly stages: readonly InteractionStageSummary[];
 } {
   const chains: { anchor: string; members: OutcomeRow[] }[] = [];
   const chainByMember = new Map<string, number>();
@@ -325,10 +335,11 @@ export function aggregateInteractionRows(rows: readonly OutcomeRow[]): {
     if (isFailedOutcome(row.outcome)) failures += 1;
     tokenOut += usageTokens(row.outcome?.usage);
   }
+  const stageMap = new Map<string, InteractionStageSummary>();
   const requests = chains.map((chain) => {
     attempts += chain.members.length;
     const last = chain.members.at(-1)!;
-    return {
+    const group: InteractionRequestGroup = {
       requestId: chain.anchor,
       attemptIds: chain.members.map((member) => member.requestId),
       attempts: chain.members.length,
@@ -337,22 +348,42 @@ export function aggregateInteractionRows(rows: readonly OutcomeRow[]): {
       messageCount: last.messageCount,
       toolCount: last.toolCount,
       ...(last.outcome === undefined ? {} : { lastOutcome: last.outcome }),
-    } satisfies InteractionRequestGroup;
+    };
+    const stage = last.turn.stage;
+    const stageKey = `${stage.id}::${stage.nodeKind}`;
+    const stageSummary = stageMap.get(stageKey) ?? { id: stage.id, nodeKind: stage.nodeKind, requestCount: 0, attempts: 0, failures: 0 };
+    stageMap.set(stageKey, {
+      ...stageSummary,
+      requestCount: stageSummary.requestCount + 1,
+      attempts: stageSummary.attempts + chain.members.length,
+      failures: stageSummary.failures + chain.members.filter((member) => isFailedOutcome(member.outcome)).length,
+    });
+    return group;
   });
-  return { requests, summary: { requestCount: requests.length, attempts, failures, tokenOut } };
+  return { requests, summary: { requestCount: requests.length, attempts, failures, tokenOut }, stages: [...stageMap.values()] };
 }
 
 export interface InteractionTurnGroupPage extends InteractionPage {
   readonly summary: InteractionTurnSummary;
   readonly requests: readonly InteractionRequestGroup[];
+  readonly stages: readonly InteractionStageSummary[];
+}
+
+function regionLabelOf(id: string): string {
+  // 行内 id 是 section.kind（虚线，如 chat-identity）；注册表按 id 或 kind 命中（F6：人话名）。
+  return PROMPT_REGION_REGISTRY.find((region) => region.id === id || region.kind === id)?.label ?? id;
+}
+
+/** 轮分组键（F2）：与旧前端 groupPromptCaptures 同源——workflowInvocationId ?? turnKey ?? 系统调用。 */
+export function interactionTurnKeyOf(row: Pick<InteractionRequestRow, "turn">): string {
+  return row.turn.workflowInvocationId ?? row.turn.turnKey ?? "系统调用";
 }
 
 export async function readInteractionTurnGroup(sessionDir: string, sessionId: string, groupKey: string): Promise<InteractionTurnGroupPage> {
   const page = await readInteractionPage(sessionDir, sessionId, { limit: 10_000 });
-  const key = (row: InteractionRequestRow) => row.turn.turnKey ?? "系统调用";
-  const rows = page.rows.filter((row) => key(row) === groupKey);
+  const rows = page.rows.filter((row) => interactionTurnKeyOf(row) === groupKey);
   const aggregated = aggregateInteractionRows(rows);
-  return { rows, summary: aggregated.summary, requests: aggregated.requests };
+  return { rows, summary: aggregated.summary, requests: aggregated.requests, stages: aggregated.stages };
 }
 
 /** D2：payload=1 附带的消息区域标注（index→region；text/chars 不给——原文已在 payload messages 里）。 */
@@ -447,7 +478,7 @@ export function adaptLegacyPromptCaptures(records: readonly PromptCaptureRecord[
       kind: record.kind,
       attempt,
       ...(() => { const prev = attempt > 1 ? rows.at(-1) : undefined; return prev === undefined ? {} : { retryOf: prev.requestId }; })(),
-      regions: (record.regions.systemPrompt?.sections ?? []).map((section) => ({ id: section.kind, chars: section.text.length })),
+      regions: (record.regions.systemPrompt?.sections ?? []).map((section) => ({ id: section.kind, chars: section.text.length, label: section.label || regionLabelOf(section.kind) })),
       toolCount: record.regions.tools?.length ?? 0,
       messageCount: record.regions.messages?.length ?? 0,
       excluded: { count: 0 },
