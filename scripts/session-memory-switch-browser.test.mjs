@@ -221,6 +221,9 @@ test("an ordinary round is one work request; memory rounds live in the separate 
   for (const [width, height] of [[390, 844], [390, 420], [1440, 900]]) {
     await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
     await page.waitFor(`innerWidth === ${width}`);
+    // dock 的 width/min-width 有 0.2s transition（components.css .workspace-dock）；视口切档后
+    // 布局断言必须等动画终态，否则读到中间帧（chat 列被瞬时压窄、composer 宽度为 0——F-53 定位结论）。
+    await page.evaluate("new Promise(resolve => setTimeout(resolve, 400))");
     await page.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
     const controls = await page.evaluate(`['[data-chat-composer]', '[data-chat-toolbar]'].map(selector => {
       const box = document.querySelector(selector).getBoundingClientRect();
