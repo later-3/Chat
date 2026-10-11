@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
       projectId: longAgentId,
       turnId: v.requestId,
       text: v.text,
-      ...(v.promptCapture === "on" ? { promptCapture: "on" as const } : {}),
+      ...(v.promptCapture === undefined ? {} : { promptCapture: v.promptCapture }),
       ...(v.contextProjectId === undefined ? {} : { contextProjectId: v.contextProjectId as string | null }),
       ...(v.sessionId === undefined ? {} : { sessionId: v.sessionId as string }),
       ...(images === undefined ? {} : { images }),

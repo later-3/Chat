@@ -142,15 +142,26 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
   assert.equal(page.events.slice(memoryRequestStart).some(event => event.method === "Network.requestWillBeSent" && event.params.request.url.includes('/api/long-agents/friend/agent-memory?operation=read')), true, "memory receipt opens the owner-bound resource");
   assert.equal(page.events.slice(memoryRequestStart).some(event => event.method === "Network.requestWillBeSent" && /\/api\/files/.test(event.params.request.url)), false, "Agent memory never falls through to project files");
   await page.evaluate("document.querySelector('[role=dialog] header button[aria-label=Close]').click()");
-  await ready("document.querySelector('button[aria-label=\"Open Friend settings\"]')");
-  await page.evaluate("document.querySelector('button[aria-label=\"Open Friend settings\"]').click()");
+  // 入口已随前端 bee3004 重构：侧栏 LA 面板头像按钮（data-long-agent-profile）打开悬浮窗（默认个人主页），
+  // 再切到「Friend settings」顶页；旧 aria-label "Open Friend settings" 已无组件引用。
+  await ready("document.querySelector('[data-long-agent-profile]') !== null");
+  await page.evaluate("document.querySelector('[data-long-agent-profile]').click()");
+  await ready("document.querySelector('[role=dialog] [role=tablist]') !== null");
+  await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] [role=tab]')).find(tab => tab.textContent.includes('Friend settings'))?.click()");
+  await ready("document.querySelector('[role=dialog] form')");
   await ready("document.querySelector('[role=dialog] form')");
   await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
   assert.equal(await page.evaluate("document.querySelector('[role=dialog] input[type=radio]') === null"), true);
   assert.equal(await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] details:not([open])')).every(e => e.getBoundingClientRect().height <= 60)"), true, "collapsed sections remain compact");
+  // 新面板分区化：有效装配在 Read-only 分区（旧 runtime 默认页已拆分），身份表单在 Identity（默认落页）。
+  await click("Read-only");
   await click("Effective assembly");
   await ready("document.querySelector('[role=dialog]')?.textContent.includes('agent_memory_write')");
+  await click("Identity");
   await fill("Chat display alias", "Nested editor draft");
+  await click("On-demand");
+  // 新面板该分区懒挂载：LongAgentWorkflowSettings 挂载后才拉 workflow/config，须等按钮启用再点。
+  await ready("!!Array.from(document.querySelectorAll('button')).find(e => e.textContent.trim().startsWith('Configure workflow') && !e.disabled)", { label: "Configure workflow enabled" });
   await click("Configure workflow");
   await ready("document.querySelectorAll('[role=dialog]').length === 2");
   await ready("Array.from(document.querySelectorAll('[role=dialog]')).at(-1)?.textContent.includes('Model parameters')");
@@ -168,18 +179,23 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
   await ready("Array.from(Array.from(document.querySelectorAll('[role=dialog]')).at(-1).querySelectorAll('label')).find(e => e.querySelector('span > strong')?.textContent === 'agent_memory_write')?.querySelector('input')?.checked === false");
   await page.evaluate("Array.from(document.querySelectorAll('[role=dialog]')).at(-1).querySelector('header button[aria-label=Close]').click()");
   await ready("document.querySelectorAll('[role=dialog]').length === 1");
+  await click("Identity");
   assert.equal(await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] input')).some(e => e.value === 'Nested editor draft')"), true);
+  await click("Read-only");
+  await click("Effective assembly");
   await ready("(() => { const text = Array.from(document.querySelectorAll('[role=dialog] details')).find(e=>e.querySelector('summary')?.textContent==='Effective assembly')?.textContent; return text?.includes('agent_memory_read') && !text.includes('agent_memory_write'); })()");
   const savedAgent = await (await fetch(`${f.base}/api/long-agents/friend/config`)).json();
   assert.equal(savedAgent.agent.definition.tools.addresses.includes("system:tool/agent_memory_write"), false);
-  await click("Save", "document.querySelector('[role=dialog] form')");
+  await click("Identity");
+  await click("Save", "document.querySelector('[role=dialog]')"); // 动作条在 form 外（新面板底部固定条）
   await ready("document.querySelector('[role=dialog]')?.textContent.includes('Long Agent configuration saved.')");
   await fill("Chat display alias", "Unsaved preview");
   await click("Refresh", "document.querySelector('[role=dialog] header')");
   await ready("document.querySelector('[role=alertdialog]')");
   await click("Cancel", "document.querySelector('[role=alertdialog]')");
   assert.equal(await page.evaluate("Array.from(document.querySelectorAll('input')).some(e=>e.value==='Unsaved preview')"), true);
-  await click("Discard changes", "document.querySelector('[role=dialog] form')");
+  await click("Discard changes", "document.querySelector('[role=dialog]')"); // 同上：Reset/Discard 在 form 外动作条
+  await click("Read-only");
   await click("Effective assembly");
   await page.evaluate("document.querySelector('[role=dialog] main').scrollTop = 0");
   await screenshot("friend-desktop");
@@ -196,7 +212,7 @@ test("configuration surfaces persist capabilities, refresh inspection and fit de
   assert.ok(await page.evaluate("document.querySelector('[role=dialog] header h1').getBoundingClientRect().width >= window.innerWidth - 110"), "mobile title retains readable width beside header actions");
   assert.ok(await page.evaluate("document.querySelector('[role=dialog] header').getBoundingClientRect().height < 180"), "header actions do not squeeze the mobile title into a tall column");
   await screenshot("friend-mobile");
-  await click("Agent Memory");
+  await click("Memory"); // 新面板分区改名（旧 Agent Memory → Memory）
   await ready("document.querySelector('[role=dialog]')?.textContent.includes('index.md')");
   await screenshot("friend-memory-mobile");
 

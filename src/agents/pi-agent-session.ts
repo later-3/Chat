@@ -26,7 +26,8 @@ import type {
 } from "../tools/framework.js";
 import { resolveChatSystemTools } from "../tools/registry.js";
 import type { WorkflowAgentDefinition } from "../workflows/agent-config.js";
-import { createPromptCaptureRecorder, PROMPT_CAPTURE_SCHEMA_VERSION, type PromptCaptureRecorder } from "../session-prompt-capture.js";
+import { PROMPT_CAPTURE_SCHEMA_VERSION } from "../session-prompt-capture.js";
+import { createInteractionRecorder, type InteractionRecorder } from "../session-interactions.js";
 import { topLevelTags } from "../long-agents/prompt-region-registry.js";
 
 /**
@@ -296,20 +297,24 @@ export async function createChatPiAgentSession(
   // Prompt capture composes at this single boundary: budget/gates run first, then the final
   // effective payload is recorded. Denied requests are never recorded; nothing here changes
   // what the model receives.
-  const promptCapture = options.promptCaptureEnabled === true && chatSession.projectContext !== undefined
-    ? createPromptCaptureRecorder({
+  // v2 记录器（P1-U3/U4）：**区域行无条件写**；promptCaptureEnabled 只控制 gz 原文（D4）。
+  const promptCapture = chatSession.projectContext !== undefined
+    ? createInteractionRecorder({
         sessionDir: chatSession.projectContext.sessionDir,
         storageProjectId: chatSession.projectContext.projectId,
         sessionId: options.sessionManager.getSessionId(),
         turn: (() => {
           const toolContext = options.toolContext;
           const turnKey = assemblyKey ?? toolContext?.longAgentTurnId;
+          const stageId = toolContext?.stageId;
           return {
             source: toolContext?.workflowId === undefined ? "direct" as const : "workflow" as const,
             ...(toolContext?.workflowId === undefined ? {} : { workflowId: toolContext.workflowId }),
             ...(toolContext?.workflowInvocationId === undefined ? {} : { workflowInvocationId: toolContext.workflowInvocationId }),
-            ...(toolContext?.stageId === undefined ? {} : { stageId: toolContext.stageId }),
+            ...(stageId === undefined ? {} : { stageId }),
             ...(turnKey === undefined ? {} : { turnKey }),
+            // D5：direct 轮（压缩/摘要等）stage 归属 system 组
+            stage: stageId === undefined ? { id: "direct", nodeKind: "system" as const } : { id: stageId, nodeKind: "agent" as const },
           };
         })(),
         agent: {
@@ -317,6 +322,7 @@ export async function createChatPiAgentSession(
           ...(agent.name === undefined ? {} : { agentName: agent.name }),
           ...(options.toolContext?.longAgentId === undefined ? {} : { longAgentId: options.toolContext.longAgentId }),
         },
+        enabled: options.promptCaptureEnabled === true,
       })
     : undefined;
   const effectiveTransformContext: AgentContextTransform | undefined = promptCapture === undefined
@@ -369,6 +375,13 @@ export async function createChatPiAgentSession(
       ? {}
       : { transformContext: effectiveTransformContext }),
   });
+
+  // D1/D2：recorder 订阅 session 事件（message_end 配对 outcome、auto_retry_* 归并 attempt）。
+  // 与请求写入同侧、AgentSession 内序天然有序。
+  if (promptCapture !== undefined) {
+    const recorder: InteractionRecorder = promptCapture;
+    created.session.subscribe((event) => { recorder.handleSessionEvent(event); });
+  }
 
   // 生成参数属于产品层配置，写入 Pi Agent state；createLoopConfig 每轮把它透传给
   // stream options。thinking 与 temperature 的互斥由 pi-ai 适配层兜底（Anthropic #1665），

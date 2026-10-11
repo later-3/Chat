@@ -1,3 +1,4 @@
+import { resolvePromptCapture } from "../session-interactions.js";
 import { longAgentWorkflowConfiguration } from "./workflow-configuration.js";
 import { prepareChatWorkflowTurnConfiguration } from "../workflows/workflow-configuration.js";
 import { agentDate } from "./calendar.js";
@@ -218,7 +219,14 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
           const active = new Set(state.turns.filter(t => t.longAgentId === agent.id && t.workId && ["queued", "running"].includes(t.status)).map(t => t.workId));
           if (!active.has(work.id) && active.size >= 4) throw new Error("此Friend已有4项后台工作，请等待完成或取消后重试");
         }
-        const turn: AcceptedTurn = { workflow: { id: configured.workflow.id, invocationId: workflowInvocationId }, ...(work ? { workId: work.id } : {}), ...(projectSession === undefined ? {} : { storageProjectId: projectSession.projectId }), ...(input.topicNode === undefined ? {} : { topicNode: { topicId: input.topicNode.topicId, nodeId: input.topicNode.nodeId } }), ...(input.relayIntentEntryId === undefined ? {} : { relayIntentEntryId: input.relayIntentEntryId }), ...(input.promptCapture === "on" ? { promptCapture: "on" as const } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
+        // U4 开关链（设计 §2 U4）：请求体（on/off，过渡最高优先）> 会话条目 > Long Agent 默认（DP-3 关）。
+        // AcceptedTurn 仅落 "on"（省略=关），daily-state 校验不变；会话条目在受理时从已打开会话读取（新鲜）。
+        const recording = resolvePromptCapture({
+          body: input.promptCapture,
+          entries: chatSession.manager.getEntries(),
+          agentDefault: agent.interactionRecording,
+        });
+        const turn: AcceptedTurn = { workflow: { id: configured.workflow.id, invocationId: workflowInvocationId }, ...(work ? { workId: work.id } : {}), ...(projectSession === undefined ? {} : { storageProjectId: projectSession.projectId }), ...(input.topicNode === undefined ? {} : { topicNode: { topicId: input.topicNode.topicId, nodeId: input.topicNode.nodeId } }), ...(input.relayIntentEntryId === undefined ? {} : { relayIntentEntryId: input.relayIntentEntryId }), ...(recording.promptCapture === "on" ? { promptCapture: "on" as const } : {}), turnId, requestId, payloadHash, isNewSession: located.isNewSession, summaryDraft: input.summaryDraft ?? false, longAgentId: agent.id, source,
           channelType: input.channelType ?? (source === "chat-web" ? "chat-web" : null), inboundEventId: input.inboundEventId ?? null,
           contextProjectId, interactionRevision, payloadHashVersion: 3, sessionId: located.day.sessionId, date: located.day.date, timeZone: calendar.timeZone,
           acceptedAt: acceptedAt.toISOString(), sequence: state.turns.reduce((max, item) => Math.max(max, item.sequence), 0) + 1,

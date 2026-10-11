@@ -68,6 +68,8 @@ export interface LongAgentConfig {
   readonly interactionHarness?: "on" | "off";
   /** 构成层的开关：长期记忆（Agent Memory）是否注入本轮 prompt；缺省 on。关闭只影响注入，工具仍可用。 */
   readonly agentMemory?: "on" | "off";
+  /** 完整记录开关（Long Agent 默认层；链：请求体 > 会话条目 > 此默认，DP-3 缺省关）。 */
+  readonly interactionRecording?: "on" | "off";
   /** Chat-owned Pi capability definition. NanoClaw never receives this value. */
   readonly definition: WorkflowAgentDefinition;
 }
@@ -335,6 +337,7 @@ function parseAgent(value: unknown): LongAgentConfig {
       : { toolsManagedByDefault: value.toolsManagedByDefault === true }),
     ...(value.interactionHarness === undefined ? {} : { interactionHarness: parseOnOff(value.interactionHarness, "agent.interactionHarness") }),
     ...(value.agentMemory === undefined ? {} : { agentMemory: parseOnOff(value.agentMemory, "agent.agentMemory") }),
+    ...(value.interactionRecording === undefined ? {} : { interactionRecording: parseOnOff(value.interactionRecording, "agent.interactionRecording") }),
     definition,
   };
 }

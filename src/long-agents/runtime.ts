@@ -50,7 +50,7 @@ export interface ExecuteLongAgentTurnInput {
    * this node) and appended as a native user message on the active branch when the round runs.
    */
   readonly relayIntentEntryId?: string;
-  readonly promptCapture?: "on";
+  readonly promptCapture?: "on" | "off";
   readonly text: unknown;
   /** Channel-provided image attachments; text may be empty when present. */
   readonly images?: readonly ImageContent[];

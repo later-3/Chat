@@ -172,10 +172,14 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     assert.equal(active, false, "默认关闭");
     await closeSettings();
 
-    // Off: a full round writes NOTHING.
+    // Off: 区域行仍写（D4），但原文不写（gz 契约保留）；兼容视图与读模型行数一致。
     const offRound = await send("pc-off", false);
+    const interactionsOff = await (await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(offRound.sessionId)}/interactions?projectId=friend`)).json();
+    assert.equal(interactionsOff.legacy, false, `新会话走 v2 读模型: ${JSON.stringify(interactionsOff)}`);
+    assert.ok(interactionsOff.rows.length >= 1, `关闭时区域行仍写（D4）: ${JSON.stringify(interactionsOff)}`);
+    assert.equal(interactionsOff.rows[0].payload?.file, undefined, "关闭时不写原文");
     const indexOff = await capturesIndex(offRound.sessionId);
-    assert.equal(indexOff.count, 0, `关闭时不得写入: ${JSON.stringify(indexOff)}`);
+    assert.equal(indexOff.count, interactionsOff.rows.length, `兼容视图与读模型行数一致: ${JSON.stringify(indexOff)}`);
 
     // On: the switch reaches the request and the captures index gains records with regions.
     await openSettings();
@@ -273,10 +277,11 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     await page.evaluate("document.querySelector('[data-turn-prompt-capture] .chat-prompt-embed-toggle').click()");
     await page.waitFor("document.querySelectorAll('[data-prompt-capture-record]').length > 0", { label: "内嵌块展开显示记录" });
     // Expanding one record loads its payload on demand and shows the region blocks.
-    await page.evaluate("document.querySelector('[data-prompt-capture-row-toggle]').click()");
+    // D4：区域行无条件写，off 轮也有内嵌块与行（v1 时代 off 轮无记录、块不渲染）。
+    // 行默认展开、detail 自动按需加载；off 轮 detail=404（原文未保存，符合契约），on 轮渲染区域树。
     await page.waitFor("document.querySelector('[data-prompt-capture-system]') !== null", { label: "区域负载按需加载并渲染系统提示" });
     // 请求页签并入消息流后：区域树直接从内嵌块读取（同一渲染组件）。
-    const panelText = await page.evaluate("document.querySelector('[data-turn-prompt-capture]').innerText");
+    const panelText = await page.evaluate("[...document.querySelectorAll('[data-turn-prompt-capture]')].map(n => n.innerText).join('\\n')");
     // The capture is the REQUEST, so it holds this turn's user message and the injected instruction,
     // plus the system prompt; the assistant answer only appears as history in the NEXT request.
     assert.ok(panelText.includes("pc-on"), `面板展示记录的请求内容: ${panelText.slice(0, 400)}`);

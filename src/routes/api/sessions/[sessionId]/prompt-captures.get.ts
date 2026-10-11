@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, getQuery, getRouterParam, setResponseHeader } from "nitro/h3";
 import { dirname } from "node:path";
 import { readPromptCaptureIndex } from "../../../../session-prompt-capture.js";
+import { hasInteractions, readInteractionPage, toLegacyListResponse } from "../../../../session-interactions.js";
 import { assertChatSessionReadable, requireChatSession } from "../../../../session-read-model.js";
 import { SessionLifecycleError } from "../../../../session-errors.js";
 import { toSessionLifecycleHttpError } from "../../../../session-removal-http.js";
@@ -28,6 +29,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: error instanceof Error ? error.message : String(error) });
   }
   try {
+    // v2（interactions）存在时提供兼容视图——新写入不双写旧目录（B2 偏差 1），读侧适配。
+    if (await hasInteractions(sessionDir, sessionId)) {
+      const page = await readInteractionPage(sessionDir, sessionId, { limit: 10_000 });
+      return toLegacyListResponse(page.rows, sessionId);
+    }
     const records = await readPromptCaptureIndex(sessionDir, sessionId);
     return {
       schemaVersion: 1 as const,

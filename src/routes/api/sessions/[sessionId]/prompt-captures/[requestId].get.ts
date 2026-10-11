@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, getQuery, getRouterParam, setResponseHeader } from "nitro/h3";
 import { dirname } from "node:path";
 import { readPromptCaptureIndex, readPromptCapturePayload } from "../../../../../session-prompt-capture.js";
+import { hasInteractions, readInteractionRequest, toLegacyDetail } from "../../../../../session-interactions.js";
 import { assertChatSessionReadable, requireChatSession } from "../../../../../session-read-model.js";
 import { SessionLifecycleError } from "../../../../../session-errors.js";
 import { toSessionLifecycleHttpError } from "../../../../../session-removal-http.js";
@@ -27,6 +28,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: error instanceof Error ? error.message : String(error) });
   }
   try {
+    if (await hasInteractions(sessionDir, sessionId)) {
+      const result = await readInteractionRequest(sessionDir, sessionId, requestId, true);
+      if (result.row === undefined) throw createError({ statusCode: 404, statusMessage: "找不到Prompt记录" });
+      if (!result.payload) throw createError({ statusCode: 404, statusMessage: "原文未保存（完整记录开关未开启）" });
+      return toLegacyDetail(result.row, JSON.parse(result.payload));
+    }
     const record = (await readPromptCaptureIndex(sessionDir, sessionId)).find((candidate) => candidate.requestId === requestId);
     if (record === undefined) throw createError({ statusCode: 404, statusMessage: "找不到Prompt记录" });
     const payload = await readPromptCapturePayload(sessionDir, sessionId, record);

@@ -66,6 +66,8 @@ export interface LongAgentConfigurationDocument {
     readonly interactionHarness: "on" | "off";
     /** 构成层开关：长期记忆是否注入本轮 prompt；缺省 on。 */
     readonly agentMemory: "on" | "off";
+    /** 完整记录开关（Long Agent 默认层；缺省 off——DP-3）。 */
+    readonly interactionRecording: "on" | "off";
     readonly timeZone?: string;
     readonly effective: LongAgentEffectiveConfig;
     readonly definition: {
@@ -163,6 +165,7 @@ function documentOf(agent: LongAgentConfig, instance: LongAgentInstanceConfig): 
       defaultProjectId: agent.defaultProjectId,
       boundProjectIds: agent.boundProjectIds,
       interactionHarness: agent.interactionHarness ?? "on",
+      interactionRecording: agent.interactionRecording ?? "off",
       agentMemory: agent.agentMemory ?? "on",
       ...(agent.timeZone === undefined ? {} : { timeZone: agent.timeZone }),
       effective: {
@@ -246,6 +249,7 @@ interface ParsedUpdate {
   readonly timeZone?: string;
   /** 构成层开关；undefined 表示不改。 */
   readonly interactionHarness?: "on" | "off";
+  readonly interactionRecording?: "on" | "off";
   readonly agentMemory?: "on" | "off";
   readonly definition: WorkflowAgentDefinition;
 }
@@ -280,7 +284,7 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
   // The responseTemplate reply-footer template retired (2026-10-01); older clients may still send
   // the field in update payloads, so it stays in the accepted list here but is never read back.
   exactFields(value, [
-    "schemaVersion", "expectedRevision", "name", "description", "avatar", "enabled", "defaultProjectId", "boundProjectIds", "definition", "responseTemplate", "timeZone", "interactionHarness", "agentMemory",
+    "schemaVersion", "expectedRevision", "name", "description", "avatar", "enabled", "defaultProjectId", "boundProjectIds", "definition", "responseTemplate", "timeZone", "interactionHarness", "interactionRecording", "agentMemory",
   ], "Long Agent配置");
   const expectedRevision = readNonEmptyString(value.expectedRevision, "expectedRevision");
   if (!/^[a-f0-9]{64}$/.test(expectedRevision)) {
@@ -297,13 +301,14 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
   }
   const defaultProjectId = readNonEmptyString(value.defaultProjectId, "defaultProjectId");
   const avatar = parseAvatarUpdate(value.avatar);
-  const onOff = (field: "interactionHarness" | "agentMemory"): "on" | "off" | undefined => {
+  const onOff = (field: "interactionHarness" | "agentMemory" | "interactionRecording"): "on" | "off" | undefined => {
     const raw = value[field];
     if (raw === undefined) return undefined;
     if (raw !== "on" && raw !== "off") throw new LongAgentConfigurationInvalidError(`${field}必须是on或off`);
     return raw;
   };
   const interactionHarness = onOff("interactionHarness");
+  const interactionRecording = onOff("interactionRecording");
   const agentMemory = onOff("agentMemory");
   if (!isRecord(value.definition)) throw new LongAgentConfigurationInvalidError("definition必须是对象");
   let definition: WorkflowAgentDefinition;
@@ -339,6 +344,7 @@ function parseUpdate(value: unknown, longAgentId: string): ParsedUpdate {
         })()),
     ...(value.timeZone === undefined ? {} : { timeZone: parseTimeZone(value.timeZone) }),
     ...(interactionHarness === undefined ? {} : { interactionHarness }),
+    ...(interactionRecording === undefined ? {} : { interactionRecording }),
     ...(agentMemory === undefined ? {} : { agentMemory }),
     definition,
   };
@@ -440,6 +446,7 @@ export async function updateLongAgentConfiguration(
         : normalizeBoundProjectIds(id, update.boundProjectIds),
       ...(update.timeZone === undefined ? {} : { timeZone: update.timeZone }),
       ...(update.interactionHarness === undefined ? {} : { interactionHarness: update.interactionHarness }),
+      ...(update.interactionRecording === undefined ? {} : { interactionRecording: update.interactionRecording }),
       ...(update.agentMemory === undefined ? {} : { agentMemory: update.agentMemory }),
       // 工具集与当前默认一致 → 仍由默认托管（后续新增默认能力会补齐）；用户自定义过 → 退出托管。
       toolsManagedByDefault: toolsMatchDefault({ ...previous, definition: update.definition }),

@@ -26,6 +26,7 @@ import {
 import { firstSessionUtterance, listActiveSessionFiles } from "./session-files.js";
 import { clearSessionMemoryOrphan, convergeSessionMemoryWithLifecycle, markSessionMemoryOrphan, purgeSessionMemory } from "./long-agents/session-memory.js";
 import { purgePromptCaptures } from "./session-prompt-capture.js";
+import { purgeInteractions } from "./session-interactions.js";
 import { applyTopicNodeSessionLifecycle } from "./long-agents/topics.js";
 
 /**
@@ -89,6 +90,7 @@ async function purgeExpiredRecords(
     // The memory deletion is irreversible; it happens only after the purge intent is durable (review 29).
     await purgeSessionMemory(project.chatHome, projectId, record.id);
     await purgePromptCaptures(project.sessionDir, record.id);
+    await purgeInteractions(project.sessionDir, record.id);
     const sessions = { ...prepared.sessions };
     delete sessions[record.id];
     const completed = completeRemovedSessionIndex(prepared, sessions, {
@@ -265,6 +267,7 @@ export async function purgeRemovedChatSession(
       // The memory deletion is irreversible; it happens only after the purge intent is durable (review 29).
       await purgeSessionMemory(project.chatHome, projectId, sessionId, location.ownerLongAgentId);
       await purgePromptCaptures(project.sessionDir, sessionId);
+      await purgeInteractions(project.sessionDir, sessionId);
       const sessions = { ...prepared.sessions };
       delete sessions[sessionId];
       const purgedAt = now.toISOString();

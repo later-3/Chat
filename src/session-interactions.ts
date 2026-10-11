@@ -1,0 +1,513 @@
+/**
+ * Interaction recording v2 (pi-004 P1-U3/U4/U5).
+ *
+ * 存储（<sessionDir>/interactions/<sessionId>/）：
+ *   - index.jsonl    请求行（v2；区域摘要，不含全文；单行 ≤4096 字节——超限降级写最小行并报错日志）
+ *   - outcomes.jsonl 结果追加（outcome 补写=追加合并读，避免原地改写 JSONL 的撕裂风险）
+ *   - requests/<requestId>.json.gz  完整原文（**开关 on 才写**；开关只控制 gz，区域行无条件写——D4）
+ *
+ * 判定规则（D1/D2/D5）：
+ *   - outcome：recorder 订阅 session 事件，message_end(assistant) 按 AgentSession 内序与待决请求 FIFO 配对
+ *   - attempt：事件为主（auto_retry_start 置位、记录时消费）+ 同实例同 sha 归并为辅；边界=recorder 实例
+ *     （每次 createChatPiAgentSession 新建，天然隔离跨轮同 payload 误归并）
+ *   - direct 轮（压缩/摘要等）：stage={id:"direct",nodeKind:"system"}，读模型聚合成“系统调用”组
+ *
+ * 旧数据：prompt-captures（schema1）只读，adaptLegacyPromptCaptures 提供纯读转换（不写回）。
+ */
+import { createHash, randomUUID } from "node:crypto";
+import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { parseProviderPayloadRegions, type PromptCaptureRecord } from "./session-prompt-capture.js";
+import { resolveOwnedSessionProject } from "./session-location.js";
+import { requireActiveChatSessionFile } from "./session-state.js";
+import { chatSessionOwner, readChatSessionOwnerIndex, readWritableFriendSessionIds } from "./session-owner.js";
+import { chatSessionOperationKey, withChatSessionOperationLock } from "./session-operation-lock.js";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+
+export const INTERACTION_SCHEMA_VERSION = 2;
+export const INTERACTION_RECORDING_CUSTOM_TYPE = "chat.interaction-recording";
+const INDEX_LIMIT_BYTES = 4096;
+
+export interface InteractionStage { readonly id: string; readonly nodeKind: "agent" | "system" | "task" }
+export interface InteractionTurn {
+  readonly source: "workflow" | "direct";
+  readonly workflowId?: string;
+  readonly workflowInvocationId?: string;
+  readonly stageId?: string;
+  readonly turnKey?: string;
+  readonly stage: InteractionStage;
+}
+export interface InteractionRegionRef { readonly id: string; readonly chars: number; readonly revision?: string }
+export interface InteractionRequestRow {
+  readonly schemaVersion: typeof INTERACTION_SCHEMA_VERSION;
+  readonly requestId: string;
+  readonly seq: number;
+  readonly timestamp: string;
+  readonly storageProjectId: string;
+  readonly sessionId: string;
+  readonly turn: InteractionTurn;
+  readonly agent: { readonly agentId: string; readonly agentName?: string; readonly longAgentId?: string };
+  readonly longAgentId?: string;
+  readonly model: { readonly provider: string; readonly modelId: string; readonly api?: string };
+  readonly kind: "agent" | "direct";
+  readonly attempt: number;
+  readonly retryOf?: string;
+  readonly regions: readonly InteractionRegionRef[];
+  readonly toolCount: number;
+  readonly messageCount: number;
+  /** 上下文排除数据源在 P5；B2 恒为 0（D3） */
+  readonly excluded: { readonly count: number };
+  readonly payload: { readonly sha256: string; readonly chars: number; readonly file?: string };
+  /** 仅旧数据适配视图携带（读取时标记，不落新盘） */
+  readonly legacy?: boolean;
+  /** 行超限降级标记（regions/counters 省略，原文仍可查） */
+  readonly degraded?: boolean;
+}
+export interface InteractionOutcomeRecord {
+  readonly requestId: string;
+  readonly timestamp: string;
+  readonly outcome: {
+    readonly status: "success" | "error" | "aborted";
+    readonly stopReason?: string;
+    readonly errorMessage?: string;
+    readonly usage?: unknown;
+    readonly durationMs?: number;
+    readonly responseId?: string;
+  };
+}
+
+// 与旧 recorder 相同的目录内串行写队列（先来后到，失败不阻断后续）。
+// U3：记录失败不再静默——后台写盘失败进运行日志并计数（会话执行不受影响）。
+const writeQueues = new Map<string, Promise<void>>();
+let interactionWriteFailures = 0;
+/** 记录写盘失败累计（测试与诊断用；进程内计数）。 */
+export function interactionWriteFailureCount(): number {
+  return interactionWriteFailures;
+}
+function enqueueWrite(directory: string, write: () => Promise<void>): Promise<void> {
+  const previous = writeQueues.get(directory) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(write);
+  writeQueues.set(directory, next);
+  void next.catch((error: unknown) => {
+    interactionWriteFailures += 1;
+    console.error(`[interactions] 写盘失败（不阻断会话）第 ${interactionWriteFailures} 次 dir=${directory}: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  return next;
+}
+
+export interface InteractionRecorderInput {
+  readonly sessionDir: string;
+  readonly storageProjectId: string;
+  readonly sessionId: string;
+  readonly turn: InteractionTurn;
+  readonly agent: { readonly agentId: string; readonly agentName?: string; readonly longAgentId?: string };
+  /** 完整记录开关：只控制 gz 原文（D4）；区域行无条件写 */
+  readonly enabled: boolean;
+}
+
+export interface InteractionRecorder {
+  readonly turn: InteractionTurn;
+  pushNeutralContext: (messages: readonly AgentMessage[]) => void;
+  record: (payload: unknown, model: { provider: string; modelId: string; api?: string }) => Promise<void>;
+  handleSessionEvent: (event: { readonly type: string; readonly [key: string]: unknown }) => void;
+}
+
+interface SessionEventLike {
+  readonly type: string;
+  readonly attempt?: number;
+  readonly message?: {
+    readonly role?: string;
+    readonly stopReason?: string;
+    readonly errorMessage?: string;
+    readonly usage?: unknown;
+    readonly responseId?: string;
+    readonly timestamp?: number;
+  };
+}
+
+function statusFromStopReason(stopReason: string | undefined, errorMessage: string | undefined): "success" | "error" | "aborted" {
+  if (stopReason === "error" || errorMessage !== undefined && errorMessage !== "") return "error";
+  if (stopReason === "cancelled" || stopReason === "aborted") return "aborted";
+  return "success";
+}
+
+export function interactionDirectory(sessionDir: string, sessionId: string): string {
+  return join(sessionDir, "interactions", sessionId);
+}
+
+export function createInteractionRecorder(input: InteractionRecorderInput): InteractionRecorder {
+  const directory = interactionDirectory(input.sessionDir, input.sessionId);
+  const neutralQueue: (readonly AgentMessage[] | undefined)[] = [];
+  const pending: { requestId: string; tsMs: number }[] = [];
+  let seq = 0;
+  let lastSha: string | undefined;
+  let lastAttempt = 1;
+  let awaitingRetry = false;
+
+  return {
+    turn: input.turn,
+    pushNeutralContext(messages) { neutralQueue.push(messages); },
+    async record(payload, model) {
+      seq += 1;
+      const neutral = neutralQueue.shift();
+      const requestId = randomUUID();
+      const timestamp = new Date();
+      const sha256 = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+      // D2：事件为主（auto_retry_start 置位即消费）、同实例同 sha 归并为辅；实例边界天然隔离跨轮。
+      const attempt = awaitingRetry || (lastSha === sha256) ? lastAttempt + 1 : 1;
+      awaitingRetry = false;
+      lastSha = sha256;
+      lastAttempt = attempt;
+      const parsed = parseProviderPayloadRegions(payload, model.api, neutral);
+      const regions: InteractionRegionRef[] = (parsed.systemPrompt?.sections ?? []).map((section) => {
+        const revision = /revision="([^"]+)"/.exec(section.text)?.[1];
+        return { id: section.kind, chars: section.text.length, ...(revision === undefined ? {} : { revision }) };
+      });
+      const payloadRecord = payload as { messages?: unknown[]; tools?: unknown[] };
+      const turn = input.turn;
+      const row: InteractionRequestRow = {
+        schemaVersion: INTERACTION_SCHEMA_VERSION,
+        requestId, seq, timestamp: timestamp.toISOString(),
+        storageProjectId: input.storageProjectId, sessionId: input.sessionId,
+        turn,
+        agent: {
+          agentId: input.agent.agentId,
+          ...(input.agent.agentName === undefined ? {} : { agentName: input.agent.agentName }),
+          ...(input.agent.longAgentId === undefined ? {} : { longAgentId: input.agent.longAgentId }),
+        },
+        ...(input.agent.longAgentId === undefined ? {} : { longAgentId: input.agent.longAgentId }),
+        model: { provider: model.provider, modelId: model.modelId, ...(model.api === undefined ? {} : { api: model.api }) },
+        kind: turn.source === "direct" ? "direct" : "agent",
+        attempt,
+        ...(() => { const prev = attempt > 1 ? pending[pending.length - 1]?.requestId : undefined; return prev === undefined ? {} : { retryOf: prev }; })(),
+        regions,
+        toolCount: Array.isArray(payloadRecord.tools) ? payloadRecord.tools.length : 0,
+        messageCount: Array.isArray(payloadRecord.messages) ? payloadRecord.messages.length : 0,
+        excluded: { count: 0 }, // D3：数据源在 P5
+        payload: { sha256, chars: JSON.stringify(payload).length, ...(input.enabled ? { file: `${requestId}.json.gz` } : {}) },
+      };
+      let line = `${JSON.stringify(row)}\n`;
+      if (Buffer.byteLength(line, "utf8") > INDEX_LIMIT_BYTES) {
+        // D4/上限保护：超限时退化为最小行（保留定位与计数），并保留原文可查。
+        console.error(`[interactions] 请求行超限 ${Buffer.byteLength(line, "utf8")}B，降级写入 sessionId=${input.sessionId} seq=${seq}`);
+        line = `${JSON.stringify({ ...row, regions: [], toolCount: 0, messageCount: 0, degraded: true } satisfies InteractionRequestRow)}\n`;
+      }
+      await enqueueWrite(directory, async () => {
+        await mkdir(directory, { recursive: true });
+        if (input.enabled) {
+          await mkdir(join(directory, "requests"), { recursive: true });
+          const gz = gzipSync(Buffer.from(JSON.stringify(payload), "utf8"));
+          await appendFile(join(directory, "requests", `${requestId}.json.gz`), gz);
+        }
+        await appendFile(join(directory, "index.jsonl"), line, "utf8");
+      }).catch(() => undefined); // 失败已由 enqueueWrite 记日志+计数；不抛给调用方，不阻断会话
+      pending.push({ requestId, tsMs: timestamp.getTime() });
+    },
+    handleSessionEvent(event) {
+      const typed = event as SessionEventLike;
+      if (typed.type === "auto_retry_start") { awaitingRetry = true; return; }
+      if (typed.type === "auto_retry_end") { awaitingRetry = false; return; }
+      if (typed.type !== "message_end" || typed.message?.role !== "assistant") return;
+      const request = pending.shift();
+      if (request === undefined) return; // 无待决请求的结果（如压缩自触发）不归属
+      const message = typed.message;
+      const record: InteractionOutcomeRecord = {
+        requestId: request.requestId,
+        timestamp: new Date().toISOString(),
+        outcome: {
+          status: statusFromStopReason(message.stopReason, message.errorMessage),
+          ...(message.stopReason === undefined ? {} : { stopReason: message.stopReason }),
+          ...(message.errorMessage === undefined ? {} : { errorMessage: message.errorMessage }),
+          ...(message.usage === undefined ? {} : { usage: message.usage }),
+          ...(message.responseId === undefined ? {} : { responseId: message.responseId }),
+          ...(message.timestamp === undefined ? {} : { durationMs: Math.max(0, message.timestamp - request.tsMs) }),
+        },
+      };
+      void enqueueWrite(directory, () => appendFile(join(directory, "outcomes.jsonl"), `${JSON.stringify(record)}\n`, "utf8"));
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 读模型（U5）
+// ---------------------------------------------------------------------------
+
+async function readJsonl<T>(path: string): Promise<T[]> {
+  let raw: string;
+  try { raw = await readFile(path, "utf8"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
+  const rows: T[] = [];
+  for (const line of raw.split("\n")) {
+    if (line.trim() === "") continue;
+    try { rows.push(JSON.parse(line) as T); } catch { /* 撕裂尾行跳过，不隐藏既有记录 */ }
+  }
+  return rows;
+}
+
+export interface InteractionPage {
+  readonly rows: readonly (InteractionRequestRow & { readonly outcome?: InteractionOutcomeRecord["outcome"] })[];
+  readonly nextCursor?: number;
+}
+
+export async function readInteractionPage(sessionDir: string, sessionId: string, options: { cursor?: number; limit?: number } = {}): Promise<InteractionPage> {
+  const directory = interactionDirectory(sessionDir, sessionId);
+  const all = await readJsonl<InteractionRequestRow>(join(directory, "index.jsonl"));
+  const outcomes = await readJsonl<InteractionOutcomeRecord>(join(directory, "outcomes.jsonl"));
+  const outcomeByRequest = new Map(outcomes.map((record) => [record.requestId, record.outcome]));
+  const cursor = options.cursor ?? 0;
+  const limit = options.limit ?? 200;
+  const window = all.filter((row) => row.seq > cursor).slice(0, limit);
+  const rows = window.map((row) => {
+    const outcome = outcomeByRequest.get(row.requestId);
+    return outcome === undefined ? row : { ...row, outcome };
+  });
+  const last = rows.at(-1);
+  return { rows, ...(last === undefined || rows.length < limit ? {} : { nextCursor: last.seq }) };
+}
+
+export async function readInteractionTurnGroup(sessionDir: string, sessionId: string, groupKey: string): Promise<InteractionPage> {
+  const page = await readInteractionPage(sessionDir, sessionId, { limit: 10_000 });
+  const key = (row: InteractionRequestRow) => row.turn.turnKey ?? "系统调用";
+  return { rows: page.rows.filter((row) => key(row) === groupKey) };
+}
+
+export async function readInteractionRequest(sessionDir: string, sessionId: string, requestId: string, withPayload: boolean): Promise<{
+  readonly row: (InteractionRequestRow & { readonly outcome?: InteractionOutcomeRecord["outcome"] }) | undefined;
+  readonly payload?: string;
+  readonly payloadPresent: boolean;
+}> {
+  const page = await readInteractionPage(sessionDir, sessionId, { limit: 10_000 });
+  const row = page.rows.find((candidate) => candidate.requestId === requestId);
+  if (row === undefined) return { row: undefined, payloadPresent: false };
+  if (!withPayload || row.payload.file === undefined) return { row, payloadPresent: false };
+  try {
+    const gz = await readFile(join(interactionDirectory(sessionDir, sessionId), "requests", row.payload.file));
+    return { row, payload: gunzipSync(gz).toString("utf8"), payloadPresent: true };
+  } catch { return { row, payloadPresent: false }; }
+}
+
+// ---------------------------------------------------------------------------
+// 旧 prompt-captures（schema1）纯读适配（不写回——设计偏差 3）
+// ---------------------------------------------------------------------------
+
+export async function hasInteractions(sessionDir: string, sessionId: string): Promise<boolean> {
+  try { await readFile(join(interactionDirectory(sessionDir, sessionId), "index.jsonl")); return true; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }
+}
+
+export function adaptLegacyPromptCaptures(records: readonly PromptCaptureRecord[]): {
+  readonly rows: readonly (InteractionRequestRow & { readonly legacy: true })[];
+  readonly groupKeys: readonly string[];
+} {
+  const rows: (InteractionRequestRow & { readonly legacy: true })[] = [];
+  const lastShaByKey = new Map<string, { sha: string; attempt: number; requestId: string }>();
+  let groupSeq = 0;
+  for (const record of records) {
+    const key = record.turn.turnKey ?? "系统调用";
+    const state = lastShaByKey.get(key);
+    const attempt = state !== undefined && state.sha === record.payloadSha256 ? state.attempt + 1 : 1;
+    lastShaByKey.set(key, { sha: record.payloadSha256, attempt, requestId: record.requestId });
+    groupSeq += 1;
+    const direct = record.turn.stageId === undefined;
+    rows.push({
+      schemaVersion: INTERACTION_SCHEMA_VERSION,
+      requestId: record.requestId,
+      seq: groupSeq,
+      timestamp: record.timestamp,
+      storageProjectId: record.storageProjectId,
+      sessionId: record.sessionId,
+      turn: {
+        source: record.turn.source,
+        ...(record.turn.workflowId === undefined ? {} : { workflowId: record.turn.workflowId }),
+        ...(record.turn.workflowInvocationId === undefined ? {} : { workflowInvocationId: record.turn.workflowInvocationId }),
+        ...(record.turn.stageId === undefined ? {} : { stageId: record.turn.stageId }),
+        ...(record.turn.turnKey === undefined ? {} : { turnKey: record.turn.turnKey }),
+        stage: direct ? { id: "direct", nodeKind: "system" } : { id: record.turn.stageId ?? "execute", nodeKind: "agent" },
+      },
+      agent: record.agent,
+      ...(record.agent.longAgentId === undefined ? {} : { longAgentId: record.agent.longAgentId }),
+      model: { provider: record.model.provider, modelId: record.model.modelId, ...(record.model.api === undefined ? {} : { api: record.model.api }) },
+      kind: record.kind,
+      attempt,
+      ...(() => { const prev = attempt > 1 ? rows.at(-1) : undefined; return prev === undefined ? {} : { retryOf: prev.requestId }; })(),
+      regions: (record.regions.systemPrompt?.sections ?? []).map((section) => ({ id: section.kind, chars: section.text.length })),
+      toolCount: record.regions.tools?.length ?? 0,
+      messageCount: record.regions.messages?.length ?? 0,
+      excluded: { count: 0 },
+      payload: { sha256: record.payloadSha256, chars: record.payloadChars },
+      legacy: true,
+    });
+  }
+  return { rows, groupKeys: [...new Set(rows.map((row) => row.turn.turnKey ?? "系统调用"))] };
+}
+
+// ---------------------------------------------------------------------------
+// 开关（U4）
+// ---------------------------------------------------------------------------
+
+export interface RecordingResolution { readonly promptCapture: "on" | undefined }
+
+/**
+ * 开关解析（过渡链，设计 §2 U4）：请求体显式值（on/off，body 最高优先） > 会话条目 > Long Agent 默认（DP-3 缺省关）。
+ * 返回值沿用 AcceptedTurn 的既有形态：仅 "on" 落盘（off = 省略字段）。
+ */
+export function resolvePromptCapture(input: {
+  readonly body?: "on" | "off" | undefined;
+  readonly entries: readonly { readonly type: string; readonly customType?: unknown; readonly data?: unknown }[];
+  readonly agentDefault?: "on" | "off" | undefined;
+}): RecordingResolution {
+  if (input.body !== undefined) return { promptCapture: input.body === "on" ? "on" : undefined };
+  for (let i = input.entries.length - 1; i >= 0; i -= 1) {
+    const entry = input.entries[i];
+    if (entry === undefined) continue;
+    if (entry.type === "custom" && entry.customType === INTERACTION_RECORDING_CUSTOM_TYPE) {
+      const data = entry.data as { enabled?: unknown };
+      return { promptCapture: data.enabled === true ? "on" : undefined };
+    }
+  }
+  return { promptCapture: input.agentDefault === "on" ? "on" : undefined };
+}
+
+export async function readSessionRecording(sessionDir: string, sessionId: string): Promise<{ readonly enabled: boolean; readonly revision: number }> {
+  const directory = interactionDirectory(sessionDir, sessionId);
+  const entries = await readJsonl<{ enabled?: unknown }>(join(directory, "index.jsonl"));
+  void entries;
+  throw new Error("使用 readSessionRecordingEntries（会话条目路径）");
+}
+
+/** 从已打开会话的 entries 读开关（受理链使用，entries 由调用方提供）。 */
+export function readRecordingFromEntries(entries: readonly { readonly type: string; readonly customType?: unknown; readonly data?: unknown }[]): { readonly enabled: boolean; readonly revision: number } | undefined {
+  let revision = 0;
+  let result: { readonly enabled: boolean; readonly revision: number } | undefined;
+  for (const entry of entries) {
+    if (entry.type === "custom" && entry.customType === INTERACTION_RECORDING_CUSTOM_TYPE) {
+      revision += 1;
+      const data = entry.data as { enabled?: unknown };
+      result = { enabled: data.enabled === true, revision };
+    }
+  }
+  return result;
+}
+
+/**
+ * PUT /api/sessions/:id/interaction-recording（U4）。
+ * 约定：revision = 会话内该类型条目数（读写同源、单调）；expectedRevision 不符 → 冲突错误（路由映射 409）。
+ * 与 rename 同锁；**不 assert idle**——开关从下一轮生效是产品语义（02 §2.1），允许活动会话切换。
+ */
+export async function setSessionInteractionRecording(input: {
+  readonly projectId: string;
+  readonly sessionId: string;
+  readonly enabled: boolean;
+  readonly expectedRevision: number;
+  readonly chatHome?: string;
+}): Promise<{ readonly enabled: boolean; readonly revision: number }> {
+  await resolveOwnedSessionProject(input.projectId, input.sessionId, input.chatHome);
+  return await withChatSessionOperationLock(chatSessionOperationKey(input.projectId, input.sessionId), async () => {
+    const project = await resolveOwnedSessionProject(input.projectId, input.sessionId, input.chatHome);
+    const info = await requireActiveChatSessionFile(project, input.sessionId);
+    const manager = SessionManager.open(info.path, project.sessionDir);
+    const current = readRecordingFromEntries(manager.getEntries()) ?? { enabled: false, revision: 0 };
+    if (current.revision !== input.expectedRevision) {
+      throw new RecordingConflictError(`开关已被修改（当前 revision ${current.revision}），请重新读取`);
+    }
+    manager.appendCustomEntry(INTERACTION_RECORDING_CUSTOM_TYPE, { schemaVersion: 1, enabled: input.enabled, revision: current.revision + 1 });
+    manager.flush();
+    return { enabled: input.enabled, revision: current.revision + 1 };
+  });
+}
+
+export class RecordingConflictError extends Error {
+  readonly statusCode = 409;
+  constructor(message: string) { super(message); this.name = "RecordingConflictError"; }
+}
+
+
+// ---------------------------------------------------------------------------
+// 旧 prompt-captures API 的兼容视图（v2 数据按 v1 形状返回——不双写，读侧适配）
+// ---------------------------------------------------------------------------
+
+import { PROMPT_REGION_REGISTRY } from "./long-agents/prompt-region-registry.js";
+
+function sectionLabel(kind: string): string {
+  return PROMPT_REGION_REGISTRY.find((region) => region.id === kind || region.kind === kind)?.label ?? kind;
+}
+
+/** 兼容视图的 v1 section.kind：虚线 legacy kind（chat-identity…）；无 kind 的区域回退 id（pi-base）。 */
+function sectionLegacyKind(regionId: string): string {
+  return PROMPT_REGION_REGISTRY.find((region) => region.id === regionId)?.kind ?? regionId;
+}
+
+export function toLegacyListResponse(
+  rows: readonly (InteractionRequestRow & { readonly outcome?: unknown })[],
+  sessionId: string,
+): { readonly schemaVersion: 1; readonly sessionId: string; readonly count: number; readonly records: unknown[] } {
+  const records = rows.map((row) => {
+    const systemPromptChars = row.regions.reduce((total, region) => total + region.chars, 0);
+    return {
+      requestId: row.requestId,
+      seq: row.seq,
+      timestamp: row.timestamp,
+      // v1 record 兼容字段（测试与旧消费方读 record.sessionId/storageProjectId/payloadSha256/file）
+      sessionId: row.sessionId,
+      storageProjectId: row.storageProjectId,
+      payloadSha256: row.payload.sha256,
+      ...(row.payload.file === undefined ? {} : { file: row.payload.file }),
+      kind: row.kind,
+      turn: row.turn,
+      agent: row.agent,
+      model: row.model,
+      payloadChars: row.payload.chars,
+      regions: {
+        parsed: true,
+        systemPromptChars,
+        systemSections: row.regions.map((region) => ({ kind: sectionLegacyKind(region.id), label: sectionLabel(region.id), chars: region.chars })),
+        messageCount: row.messageCount,
+        regionCounts: {} as Record<string, number>,
+        toolCount: row.toolCount,
+      },
+    };
+  });
+  return { schemaVersion: 1, sessionId, count: records.length, records };
+}
+
+export function toLegacyDetail(row: InteractionRequestRow, payload: unknown): { readonly schemaVersion: 1; readonly record: unknown; readonly payload: unknown } {
+  const systemPromptChars = row.regions.reduce((total, region) => total + region.chars, 0);
+  const record = {
+    requestId: row.requestId,
+    seq: row.seq,
+    timestamp: row.timestamp,
+    sessionId: row.sessionId,
+    storageProjectId: row.storageProjectId,
+    payloadSha256: row.payload.sha256,
+    ...(row.payload.file === undefined ? {} : { file: row.payload.file }),
+    kind: row.kind,
+    turn: row.turn,
+    agent: row.agent,
+    model: row.model,
+    payloadChars: row.payload.chars,
+    regions: {
+      parsed: true,
+      systemPromptChars,
+      systemSections: row.regions.map((region) => ({ kind: sectionLegacyKind(region.id), label: sectionLabel(region.id), chars: region.chars })),
+      messageCount: row.messageCount,
+      regionCounts: {} as Record<string, number>,
+      toolCount: row.toolCount,
+    },
+  };
+  return { schemaVersion: 1, record, payload };
+}
+
+
+/** 会话 purge 时同步删除 interactions 目录（与 purgePromptCaptures 成对，红线：随会话生命周期）。 */
+export async function purgeInteractions(sessionDir: string, sessionId: string): Promise<void> {
+  await rm(interactionDirectory(sessionDir, sessionId), { recursive: true, force: true });
+}
+
+
+/** 按会话文件读当前开关（读路径；不加锁——纯读 entries）。 */
+export async function readRecordingBySessionFile(sessionFile: string): Promise<{ readonly enabled: boolean; readonly revision: number }> {
+  const manager = SessionManager.open(sessionFile, dirname(sessionFile));
+  return readRecordingFromEntries(manager.getEntries()) ?? { enabled: false, revision: 0 };
+}

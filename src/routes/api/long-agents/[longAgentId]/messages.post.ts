@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
       longAgentId,
       projectId: body.projectId,
       ...(typeof body.sessionId === "string" ? { sessionId: body.sessionId } : {}),
-      ...(body.promptCapture === "on" ? { promptCapture: "on" as const } : {}),
+      ...(body.promptCapture === undefined ? {} : { promptCapture: body.promptCapture }),
       text: body.text,
       contextProjectId: typeof body.contextProjectId === "string" ? body.contextProjectId : null,
     });
