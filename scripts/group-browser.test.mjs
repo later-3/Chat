@@ -242,10 +242,10 @@ test("group chat is usable in a real browser: two groups, five policies, backgro
   await page.waitFor("document.querySelector('[data-group-history-public]') !== null", { label: "群聊完整历史入口", timeoutMs: 20_000 });
   await page.evaluate("document.querySelector('[data-group-history]')?.closest('details')?.querySelector('summary')?.click()");
   await page.evaluate("document.querySelector('[data-group-history]')?.focus(); document.querySelector('[data-group-history]')?.click()");
-  await page.waitFor("document.querySelector('iframe.full-history-frame') !== null", { label: "完整历史对话框打开", timeoutMs: 20_000 });
+  await page.waitFor("document.querySelector('[data-full-history-turns]') !== null", { label: "完整历史对话框打开（按轮列表）", timeoutMs: 20_000 });
   // Close the shared reader with Escape and restore focus to its history trigger.
   await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-  await page.waitFor("document.querySelector('iframe.full-history-frame') === null", {label:'shared reader Escape'});
+  await page.waitFor("document.querySelector('[data-full-history-turns]') === null", {label:'shared reader Escape'});
   await page.waitFor("document.activeElement?.matches('[data-group-history]')", {label:"reader restores trigger focus"});
   // A member record owns one storage Session; its deep link navigates back to its group.
   const groupSessions = await (await fetch(`${baseUrl}/api/sessions?projectId=${encodeURIComponent(targetProjectId)}`)).json();

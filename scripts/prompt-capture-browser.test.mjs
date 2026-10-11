@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import { gzipSync } from "node:zlib";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -131,7 +132,9 @@ test("the prompt-capture switch reaches the send, records regions and drives the
         }
       }
       const body = JSON.parse(request.params.request.postData);
-      assert.equal(body.promptCapture, captureOn ? "on" : undefined, `${text} 的真实请求开关`);
+      // B3 · L4：UI 停发 body promptCapture——开关是服务端事实，受理时从会话条目解析。
+      assert.equal(body.promptCapture, undefined, `${text} 请求体不再携带开关标志（L4）`);
+      void captureOn;
       const turnDeadline = Date.now() + 60_000;
       for (;;) {
         if (page.events.some((event) => event.method === "Network.loadingFinished" && event.params.requestId === request.params.requestId)) break;
@@ -203,7 +206,9 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     if (pageErrors.length > 0) console.log("PAGE_ERRORS", JSON.stringify(pageErrors));
     await page.waitFor("document.querySelector('[data-chat-settings]') !== null && document.querySelector('[data-chat-composer]:not([disabled])') !== null", { label: "刷新后可输入", timeoutMs: 60_000 });
     await openSettings();
-    assert.equal(await page.evaluate("document.querySelector('[data-prompt-capture-toggle]').getAttribute('aria-checked') === 'true'"), true, "刷新保留开启状态");
+    // 开关是服务端事实（B3）：刷新后从 interaction-recording 异步读取——等待真实状态，不假设同步。
+    await page.waitFor("document.querySelector('[data-prompt-capture-toggle]')?.getAttribute('aria-checked') === 'true'",
+      { label: "刷新后开关来自服务端事实", timeoutMs: 15_000 });
     await closeSettings();
 
     // A later native daily summary must stay outside the earlier memory Agent, in
@@ -222,110 +227,175 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     await page.waitFor("document.querySelector('[data-chat-composer]:not([disabled])') !== null", { label: "旧历史载入", timeoutMs: 20_000 });
     assert.equal(await page.evaluate("document.querySelector('[data-session-activity=\"daily-summary\"]') === null"), true);
 
-    // The full-history Prompt panel renders the recorded regions from the payload API.
-    const historyOpenedAt = Date.now();
-    const historyButton = await page.evaluate(`(() => {
+    // ── B3 · U7 新合同（B3-design §2，G1 通过；门禁从验收生成）──
+    const closeDialog = () => page.evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1)?.querySelector('header button[aria-label=Close]')?.click()");
+    const openHistory = () => page.evaluate(`(() => {
       const button = [...document.querySelectorAll('button')].find(candidate =>
         /完整历史|Full history/i.test(candidate.getAttribute('aria-label') ?? '') && !candidate.disabled);
       if (button === undefined) return false;
       button.click();
       return true;
     })()`);
-    assert.equal(historyButton, true, "完整历史入口存在");
-    await page.waitFor("document.querySelector('.full-history-frame') !== null", { label: "完整历史对话框打开（纯对话+导出）" });
-    // The first successful HTML response must leave loading without a tab/theme change.
-    await page.waitFor("document.querySelector('iframe.full-history-frame')?.srcdoc.includes('session-data') === true", { label: "完整历史首次响应直接显示", timeoutMs: 20_000 });
-    // Check the child document, not just the existence of an empty iframe.
-    let historyReady = false;
-    let historyDiagnostic;
-    let historySessionId;
-    const historyDeadline = Date.now() + 20_000;
-    while (!historyReady && Date.now() < historyDeadline) {
-      const { frameTree } = await page.send("Page.getFrameTree");
-      historyDiagnostic = frameTree.childFrames?.map(child => child.frame.url);
-      const frame = frameTree.childFrames?.find(child => child.frame.url === "about:srcdoc")?.frame;
-      let executionContextId;
-      if (frame) ({ executionContextId } = await page.send("Page.createIsolatedWorld", { frameId: frame.id, worldName: "history-readiness-test" }));
-      else if (!historySessionId) {
-        // Chrome may isolate the sandbox in another renderer process. It is then
-        // a separate CDP target, absent from the parent Page.getFrameTree.
-        const { targetInfos } = await page.send("Target.getTargets");
-        const target = targetInfos.find(info => info.type === "iframe" && info.url === "about:srcdoc");
-        if (target) ({ sessionId: historySessionId } = await page.send("Target.attachToTarget", { targetId: target.targetId, flatten: true }));
-      }
-      if (executionContextId || historySessionId) {
-        const result = await page.send("Runtime.evaluate", { ...(executionContextId ? { contextId: executionContextId } : {}), returnByValue: true,
-          expression: `(() => { const activity = document.querySelector('[data-chat-session-activity="daily-summary"]');
-            return { tree:document.querySelector('#tree-container')?.children.length ?? 0,
-              conversation:document.querySelector('#messages')?.textContent.includes('pc-on') ?? false,
-              maintenance:activity?.textContent.includes('DAILY_ACTIVITY_FIXTURE') ?? false,
-              writer:!!activity?.closest('[data-agent-id="session-memory-writer"]') }; })()` }, historySessionId);
-        historyDiagnostic = result.result?.value ?? result.exceptionDetails;
-        historyReady = historyDiagnostic?.tree > 0 && historyDiagnostic?.conversation === true
-          && historyDiagnostic?.maintenance === true && historyDiagnostic?.writer === false;
-      }
-      if (!historyReady) await pause(100);
+
+    // ④ 聊天页打开（reload 后）0 个 prompt 详情请求——interaction-recording 状态请求不计“详情”。
+    {
+      const eventMark = page.events.length;
+      await page.send("Page.reload");
+      await page.waitFor("document.querySelector('[data-chat-composer]:not([disabled])') !== null", { label: "聊天页就绪", timeoutMs: 30_000 });
+      await pause(600);
+      const detailRequests = page.events.slice(eventMark).filter(event =>
+        event.method === "Network.requestWillBeSent" &&
+        (/\/interactions\/requests\//.test(event.params.request.url) || /\/prompt-captures\//.test(event.params.request.url)));
+      assert.equal(detailRequests.length, 0, `聊天页 0 详情请求: ${JSON.stringify(detailRequests.map(event => event.params.request.url))}`);
     }
-    assert.equal(historyReady, true, `完整历史首帧包含实际消息和分支树：${JSON.stringify(historyDiagnostic)}`);
+
+    // ⑥ 首屏口径（D6）：index 首页（limit=50）响应体 ≤100KB（未压缩字节）。
+    const indexResponse = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(first.sessionId)}/interactions?projectId=friend&limit=50`);
+    const indexBytes = (await indexResponse.arrayBuffer()).byteLength;
+    assert.ok(indexBytes <= 100_000, `首屏 index 响应 ${indexBytes}B ≤100KB`);
+
+    // ① 打开完整历史：按轮列出；开关状态来自服务端。
+    const historyOpenedAt = Date.now();
+    assert.equal(await openHistory(), true, "完整历史入口存在");
+    await page.waitFor("document.querySelector('[data-full-history-turns]') !== null", { label: "按轮列表首帧", timeoutMs: 30_000 });
     console.log(`Full history cold first readable: ${Date.now() - historyOpenedAt} ms`);
-    if (historySessionId) await page.send("Target.detachFromTarget", { sessionId: historySessionId });
-    // 请求页签已并入消息流：关闭对话框后经内嵌块验证记录确实按轮可见。
-    await page.evaluate("document.querySelector('.surface-dialog [aria-label=\"i18n.cancel\"], .surface-dialog button[data-icon-button], .surface-dialog').dispatchEvent(new MouseEvent('click', { bubbles: true }))");
-    await page.waitFor("document.querySelector('[data-turn-prompt-capture]') !== null", { label: "消息流内嵌本轮 Prompt 解析块", timeoutMs: 30_000 });
-    const captureIndex = await (await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(first.sessionId)}/prompt-captures?projectId=friend`)).json();
-    assert.equal(captureIndex.count >= countAfterOn, true, `capture 索引包含全部记录: ${JSON.stringify(captureIndex.count)}`);
-    await page.evaluate("document.querySelector('[data-turn-prompt-capture] .chat-prompt-embed-toggle').click()");
-    await page.waitFor("document.querySelectorAll('[data-prompt-capture-record]').length > 0", { label: "内嵌块展开显示记录" });
-    // Expanding one record loads its payload on demand and shows the region blocks.
-    // D4：区域行无条件写，off 轮也有内嵌块与行（v1 时代 off 轮无记录、块不渲染）。
-    // 行默认展开、detail 自动按需加载；off 轮 detail=404（原文未保存，符合契约），on 轮渲染区域树。
-    await page.waitFor("document.querySelector('[data-prompt-capture-system]') !== null", { label: "区域负载按需加载并渲染系统提示" });
-    // 请求页签并入消息流后：区域树直接从内嵌块读取（同一渲染组件）。
-    const panelText = await page.evaluate("[...document.querySelectorAll('[data-turn-prompt-capture]')].map(n => n.innerText).join('\\n')");
-    // The capture is the REQUEST, so it holds this turn's user message and the injected instruction,
-    // plus the system prompt; the assistant answer only appears as history in the NEXT request.
-    assert.ok(panelText.includes("pc-on"), `面板展示记录的请求内容: ${panelText.slice(0, 400)}`);
-    assert.ok(panelText.toLowerCase().includes("system prompt"), `面板展示系统提示区域: ${panelText.slice(0, 400)}`);
-    // Exercise a real failed request, retry, and cancellation at the browser network boundary.
-    const closeHistory = () => page.evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1)?.querySelector('header button[aria-label=Close]')?.click()");
-    const openHistory = () => page.evaluate("[...document.querySelectorAll('button')].find(button => /完整历史|Full history/i.test(button.getAttribute('aria-label') ?? '') && !button.disabled).click()");
-    const pausedHistory = async start => {
+    assert.equal(await page.evaluate("document.querySelector('[data-recording-state]')?.getAttribute('data-recording-state')"), "on", "开关徽标来自服务端事实");
+    const turnCount = await page.evaluate("document.querySelectorAll('[data-full-history-turn-toggle]').length");
+    assert.ok(turnCount >= 2, `按轮列出（off/on 至少两轮）: ${turnCount}`);
+
+    // ② 展开第一轮（off 轮）：区域摘要可见；原文按契约缺失 → 明确文案（不伪造）。
+    await page.evaluate("document.querySelector('[data-full-history-turn-toggle]').click()");
+    await page.waitFor("document.querySelector('[data-turn-interactions]') !== null", { label: "轮展开 TurnInteractions" });
+    await page.waitFor("document.querySelectorAll('[data-prompt-capture-record]').length > 0", { label: "请求组行出现" });
+    await page.evaluate("document.querySelector('[data-prompt-capture-row-toggle]').click()");
+    await page.waitFor("document.querySelector('[data-payload-missing]') !== null", { label: "off 轮显示原文未保存" });
+
+    // ② 展开 on 轮：区域树（系统提示分区 + 消息区域 + 本轮输入）来自按需拉取的详情。
+    await page.evaluate("document.querySelectorAll('[data-full-history-turn-toggle]')[1].click()");
+    await page.waitFor("document.querySelectorAll('[data-prompt-capture-record]').length > 0", { label: "on 轮请求组" });
+    await page.evaluate("document.querySelector('[data-prompt-capture-row-toggle]').click()");
+    await page.waitFor("document.querySelector('[data-prompt-capture-system]') !== null", { label: "on 轮渲染系统提示区域", timeoutMs: 20_000 });
+    const panelText = await page.evaluate("document.querySelector('[data-turn-interactions]').innerText");
+    assert.ok(panelText.includes("pc-on"), `区域树含本轮请求内容: ${panelText.slice(0, 300)}`);
+    assert.ok(panelText.toLowerCase().includes("system prompt"), `区域树含系统提示分区: ${panelText.slice(0, 300)}`);
+    await closeDialog();
+
+    // ③ 重试聚合：注入一条 retryOf 链行 + error outcome（读模型真实读出 ×2 与失败徽标）。
+    {
+      const rowsNow = (await (await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(first.sessionId)}/interactions?projectId=friend&limit=500`)).json()).rows;
+      const onRow = rowsNow.find(row => row.attempt === 1 && row.payload?.file !== undefined);
+      assert.ok(onRow, `找到 on 轮锚行: ${rowsNow.length} 行`);
+      const sessionDirPath = path.dirname(detail.filePath);
+      const interactionDir = path.join(sessionDirPath, "interactions", first.sessionId);
+      const retryRow = { ...onRow, seq: Math.max(...rowsNow.map(row => row.seq)) + 1,
+        requestId: `e2e-retry-${Date.now()}`, attempt: 2, retryOf: onRow.requestId, timestamp: new Date().toISOString() };
+      delete retryRow.outcome;
+      fs.appendFileSync(path.join(interactionDir, "index.jsonl"), `${JSON.stringify(retryRow)}\n`);
+      fs.appendFileSync(path.join(interactionDir, "outcomes.jsonl"),
+        `${JSON.stringify({ requestId: retryRow.requestId, timestamp: retryRow.timestamp, outcome: { status: "error", errorMessage: "e2e injected failure" } })}\n`);
+      assert.equal(await openHistory(), true, "重开完整历史");
+      await page.waitFor("document.querySelectorAll('[data-full-history-turn-toggle]').length >= 2", { label: "重开后轮列表" });
+      const retryTurnIndex = rowsNow.findIndex(row => row.requestId === onRow.requestId);
+      const targetTurn = rowsNow.slice(0, retryTurnIndex + 1).reverse().find(row => row.turn.turnKey !== undefined);
+      const turnKeys = await page.evaluate("[...document.querySelectorAll('[data-turn-interactions]')].map(n => n.getAttribute('data-turn-interactions'))");
+      void turnKeys; void targetTurn;
+      // 找到含 ×2 的轮：逐轮展开到出现为止。
+      let retryBadge = false;
+      const toggleCount = await page.evaluate("document.querySelectorAll('[data-full-history-turn-toggle]').length");
+      for (let index = 0; index < toggleCount && !retryBadge; index += 1) {
+        await page.evaluate(`document.querySelectorAll('[data-full-history-turn-toggle]')[${index}].click()`);
+        await page.waitFor("document.querySelector('[data-turn-interactions]') !== null", { label: `轮 ${index} 展开` });
+        retryBadge = await page.evaluate("[...document.querySelectorAll('.prompt-capture-attempts')].some(node => node.textContent.includes('×2'))");
+      }
+      assert.equal(retryBadge, true, "重试聚合显示 ×2（后端归并，前端零聚合）");
+      const failureBadge = await page.evaluate("[...document.querySelectorAll('.prompt-capture-failures')].some(node => node.textContent.includes('1'))");
+      assert.equal(failureBadge, true, "失败次数徽标可见");
+      await closeDialog();
+    }
+
+    // ⑦ legacy 会话同 UI 可读 + 降级文案（D3 矩阵）：临时把当前会话转换为 schema1。
+    {
+      const sessionDirPath = path.dirname(detail.filePath);
+      const interactionsDir = path.join(sessionDirPath, "interactions", first.sessionId);
+      const legacyDir = path.join(sessionDirPath, "prompt-captures", first.sessionId);
+      const backupDir = `${interactionsDir}.e2e-bak`;
+      fs.renameSync(interactionsDir, backupDir);
+      fs.mkdirSync(legacyDir, { recursive: true });
+      const legacyRequestId = crypto.randomUUID(); // 旧路由要求 UUID 格式（/^[0-9a-f-]{36}$/）
+      const legacyPayload = { messages: [
+        { role: "system", content: "## 身份与职责\nLEGACY_SYSTEM_BODY" },
+        { role: "user", content: "legacy hello" },
+      ] };
+      const legacyRecord = {
+        schemaVersion: 1, requestId: legacyRequestId, seq: 1, timestamp: new Date().toISOString(),
+        storageProjectId: "friend", sessionId: first.sessionId, turn: { source: "direct" },
+        agent: { agentId: "pi-coding-agent" }, model: { provider: "p3-local", modelId: "daily-model", api: "openai-completions" },
+        kind: "agent", payloadChars: JSON.stringify(legacyPayload).length,
+        payloadSha256: "e2e", file: `${legacyRequestId}.json.gz`,
+        regions: { parsed: true, api: "openai-completions",
+          systemPrompt: { chars: 40, text: "## 身份与职责\nLEGACY_SYSTEM_BODY", sections: [{ kind: "chat-identity", label: "身份与职责", chars: 40, text: "## 身份与职责\nLEGACY_SYSTEM_BODY" }] },
+          messages: [{ index: 0, role: "user", region: "current-user-message", chars: 12, text: "legacy hello" }], tools: [] },
+      };
+      fs.writeFileSync(path.join(legacyDir, "index.jsonl"), `${JSON.stringify(legacyRecord)}\n`);
+      fs.writeFileSync(path.join(legacyDir, `${legacyRequestId}.json.gz`), gzipSync(Buffer.from(JSON.stringify(legacyPayload), "utf8")));
+      await page.send("Page.reload");
+      await page.waitFor("document.querySelector('[data-chat-composer]:not([disabled])') !== null", { label: "legacy 会话载入", timeoutMs: 30_000 });
+      assert.equal(await openHistory(), true, "legacy 会话完整历史入口");
+      await page.waitFor("document.querySelector('[data-full-history-turns]') !== null", { label: "legacy 按轮列出" });
+      assert.equal(await page.evaluate("document.querySelector('[data-full-history-legacy]') !== null || document.body.innerText.includes('Legacy record') || document.body.innerText.includes('旧记录')"), true, "legacy 徽标可见");
+      await page.evaluate("document.querySelector('[data-full-history-turn-toggle]').click()");
+      await page.waitFor("document.querySelector('[data-turn-interactions]') !== null", { label: "legacy 轮展开" });
+      await page.evaluate("document.querySelector('[data-prompt-capture-row-toggle]').click()");
+      await pause(1200);
+      await page.waitFor("document.querySelector('[data-prompt-capture-system]') !== null", { label: "legacy 系统提示可读（D3：有 system 区）", timeoutMs: 20_000 });
+      await page.evaluate("document.querySelector('[data-prompt-capture-system] summary')?.click()"); // 展开系统提示（断言用户可见内容）
+      await pause(200);
+      const legacyText = await page.evaluate("document.querySelector('[data-turn-interactions]').innerText");
+      assert.ok(legacyText.includes("LEGACY_SYSTEM_BODY"), "legacy 原文来自旧 gz");
+      assert.ok(/旧记录未保存结果|stored no result/.test(legacyText), `legacy 降级文案（无 outcome）: ${legacyText.slice(0, 200)}`);
+      await closeDialog();
+      // 恢复 v2 目录
+      fs.rmSync(legacyDir, { recursive: true, force: true });
+      fs.renameSync(backupDir, interactionsDir);
+    }
+
+    // export 失败与关闭中止：改为 intercept 读模型 index（首屏请求），合同不变（失败可见、可重试、关闭即中止）。
+    const pausedIndex = async start => {
       const deadline = Date.now() + 10_000;
       while (Date.now() < deadline) {
         const event = page.events.slice(start).find(item => item.method === "Fetch.requestPaused");
         if (event) return event.params;
         await pause(25);
       }
-      throw new Error("history request was not intercepted");
+      throw new Error("index request was not intercepted");
     };
-    await closeHistory();
-    await page.send("Fetch.enable", { patterns: [{ urlPattern: "*/api/sessions/*/export*", requestStage: "Request" }] });
+    await page.send("Fetch.enable", { patterns: [{ urlPattern: "*/interactions?*", requestStage: "Request" }] });
     let requestStart = page.events.length;
     await openHistory();
-    const failedHistory = await pausedHistory(requestStart);
-    await page.send("Fetch.fulfillRequest", { requestId: failedHistory.requestId, responseCode: 503,
+    const failedIndex = await pausedIndex(requestStart);
+    await page.send("Fetch.fulfillRequest", { requestId: failedIndex.requestId, responseCode: 503,
       responseHeaders: [{ name: "Content-Type", value: "text/plain" }], body: Buffer.from("Temporary failure").toString("base64") });
-    await page.waitFor("document.querySelector('[role=dialog] [role=alert]') !== null", { label: "历史请求失败可见" });
+    await page.waitFor("document.querySelector('[role=dialog] [role=alert]') !== null", { label: "读取失败可见（不伪造成空列表）" });
     requestStart = page.events.length;
     await page.evaluate("document.querySelector('[role=dialog] [role=alert] > button').click()");
-    await page.send("Fetch.continueRequest", { requestId: (await pausedHistory(requestStart)).requestId });
-    await page.waitFor("document.querySelector('iframe.full-history-frame')?.srcdoc.includes('session-data') === true", { label: "完整历史重试成功" });
-    await closeHistory();
+    await page.send("Fetch.continueRequest", { requestId: (await pausedIndex(requestStart)).requestId });
+    await page.waitFor("document.querySelector('[data-full-history-turns]') !== null", { label: "重试成功后按轮列出" });
+    await closeDialog();
     await page.evaluate(`(() => {
       const originalFetch = window.fetch;
       window.__historyAborted = false;
       window.fetch = (...args) => {
-        if (String(args[0]).includes('/export?')) args[1]?.signal?.addEventListener('abort', () => { window.__historyAborted = true; }, { once: true });
+        if (String(args[0]).includes('/interactions?')) args[1]?.signal?.addEventListener('abort', () => { window.__historyAborted = true; }, { once: true });
         return originalFetch(...args);
       };
     })()`);
     requestStart = page.events.length;
     await openHistory();
-    await pausedHistory(requestStart);
-    await closeHistory();
+    await pausedIndex(requestStart);
+    await closeDialog();
     await page.waitFor("window.__historyAborted === true", { label: "关闭完整历史中止未完成的请求" });
     await page.send("Fetch.disable");
-    assert.equal(await page.evaluate("document.querySelector('iframe.full-history-frame') === null"), true);
+    assert.equal(await page.evaluate("document.querySelector('[data-full-history-turns]') === null"), true);
     await page.send("Page.reload");
     await page.waitFor("document.querySelector('[data-chat-composer]:not([disabled])') !== null");
     for (const width of [390, 768, 1440]) {

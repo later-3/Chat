@@ -86,6 +86,10 @@ Web 通过同一 Session 响应的 `friendExecution` 恢复稳定执行引用，
 
 消费者 `lib/long-agent-presence.ts` 校验版本、时间、身份唯一性和枚举；轮询失败/超时/隐藏转为未知，重新可见时重读。不支持没有明确记录的离开或待用户确认状态。读投影不落盘，不替代 Pi Session 终态及权限事实。
 
+### 完整交互读模型（B3）
+
+前端完整历史与摘要条只通过三个窄接口读完整交互：`GET /api/sessions/:id/interactions`（轮分组轻摘要全量 + 行分页 + 开关事实 + legacy 标记）、`…/interactions/:turnKey`（轮内行 + **后端聚合** summary/requests——token 汇总、失败数、重试归并一律在后端，前端零聚合）、`…/interactions/requests/:requestId?payload=0|1`（`payload=0` 响应零原文字节；`payload=1` 附 `messageRegions` 消息区域标注）。开关读写 `…/interaction-recording`（GET/PUT，409 冲突重读重试）。旧会话（schema1）legacy 同 UI，详情回落旧 `prompt-captures` 读路由；三接口授权统一走 `assertChatSessionReadable`。
+
 ### Chat Web：轮次统计的时间来源
 
 原生 `compactionSummary` / `branchSummary` 经公共读模型转换为已有 `custom` 消息（compaction / branch-summary），保留摘要和元数据；Pi 原记录不变。Session 详情及 context 响应的 `context.entryTimes` 是与 `messages/entryIds` 同长度的只读数组，元素为原生 Pi Entry 的入库 Unix 毫秒或 null。分支、压缩与审核插入沿用 `projectSessionContext` 的选择结果，不能把其他分支时间混入；不新增时间数据库或执行状态。Frontend 检查长度/数值，旧服务缺字段时不展示耗时。结尾用量从可见轮次的模型 usage 和工具调用身份汇总，用时为输入至末条回复/工具结果入库的跨度，包含等待，不冒充 CPU/模型推理净时长。

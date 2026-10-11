@@ -66,22 +66,22 @@ Workflow/Agent身份与消息角色正交：同样是`assistant`，可以由Plan
 人工审核是`nodeKind=human`，没有虚假的Agent ID。没有人也没有Agent的确定性节点可使用`task`或`tool`元数据；只有它真的产生话语时，才追加对应的原生消息。
 | `chat.prompt-assembly.v1` | 每个执行轮装配后的最终 System Prompt 全文与实际启用的 Tool Schema，附 Workflow/Stage/Agent 身份 | 会话消息正文；不记录任何凭据 |
 
-### Prompt 捕获（`sessions/prompt-captures/`）
+### 完整交互记录（`sessions/interactions/`）
 
-发送开关 `promptCapture: "on"`（HTTP 接受边界解析，与 `sessionMemory` 同一套路，默认关）打开后，本轮每个 Agent Session 的**每次最终 Provider 请求**都记录为完整历史的一部分。抓取点只有一处：公共装配 `createChatPiAgentSession` 包装 Pi SDK 共用的 Provider 请求边界；预算等既有 gate 先行，被拒绝的请求不记录，抓取本身不改变发送内容。Workflow 多 Agent 天然覆盖——每个 Stage 的每次请求（工作轮、工具续跑、压缩摘要）都过同一边界。
+**开关是服务端会话事实**：条目 `chat.interaction-recording` `{enabled, revision}`（追加式），解析链 = 请求体 `promptCapture`（过渡覆盖）> 会话条目 > Long Agent 默认 `interactionRecording`（缺省关），在轮次受理时冻结（`turn-queue.ts` 单一解析点，Web/IM/定时同链）；写接口 `PUT /api/sessions/:id/interaction-recording`（`expectedRevision` 冲突 409，下一轮生效）。抓取点在公共装配 `createChatPiAgentSession` 的 Provider 请求边界；预算等既有 gate 先行，被拒绝的请求不记录，抓取不改变发送内容。
 
-存储与读取：
+两档落盘（每次最终 Provider 请求）：**区域行无条件追加**（索引只存摘要，单行 ≤4096 字节，超限降级不丢行）；**原文 gz 仅开关开启时写**。响应结果（status/stopReason/错误/用量/耗时/responseId）由 `message_end` 事件与请求行按序配对，追加 `outcomes.jsonl`（读时合并）；重试按 `auto_retry_start` 事件与同 payload 哈希归并为同一请求的多次 attempt。写盘失败进运行日志并计数，不阻断会话。
 
 ```text
-<project>/sessions/prompt-captures/<sessionId>/
-├── index.jsonl            # 每请求一条记录：requestId/序号/时间/Workflow/Stage/Agent身份/模型/区域摘要/payload哈希
-└── <requestId>.json.gz    # 最终 Provider payload 原文（gzip）
+<project>/sessions/interactions/<sessionId>/
+├── index.jsonl            # 每次尝试一行：requestId/seq/turn(stage,turnKey)/Agent/模型/区域摘要/attempt/retryOf/payload{sha256,chars,file?}
+├── outcomes.jsonl         # 结果追加账（与请求行按 requestId 合并）
+└── requests/<requestId>.json.gz   # 原文（仅开关开启）
 ```
 
-- payload 是发送事实的唯一权威；`index.jsonl` 的区域摘要来自 payload 解析（openai-completions 的首条 system / anthropic 的顶层 `system`），System Prompt 再按 Chat 标签切子区（`chat_current_project`、`chat_project_collaboration`、`chat_agent_custom_instructions`），消息区按中性上下文快照对齐分类为注入指令/本轮用户消息/历史/工具结果；未知 API 形态 fail-open 存原文并标"未解析"。
-- 不设轮数或单文件大小上限（产品决策：全量保留）；gzip 旁路文件不进入 Session JSONL，`chat.prompt-assembly.v1` 只存小体积的装配快照。
-- 生命周期跟随 Session：移除/恢复不移动捕获目录（读取被 Session 生命周期检查挡住），彻底删除（purge）时同步删除捕获目录。
-- 读取 API：`GET /api/sessions/:id/prompt-captures`（索引摘要）与 `GET /api/sessions/:id/prompt-captures/:requestId`（单请求全文），均要求 owner 读取权限。
+- 读取 API（均要求 owner 读取权限）：`GET /api/sessions/:id/interactions`（全量轮分组轻摘要 + 行分页 + 开关事实 + legacy 标记）、`…/interactions/:turnKey`（轮内行 + 后端聚合 summary/requests）、`…/interactions/requests/:requestId?payload=0|1`（`payload=0` 响应不含原文字节；`payload=1` 附消息区域标注 `messageRegions`）。
+- 旧 `sessions/prompt-captures/`（schema1）**只读兼容**：读侧适配为同一行形状（legacy 会话能力降级见任务 pi-004 B3 设计 D3 矩阵），新写入不双写旧目录；旧 `prompt-captures` 读 API 保留为兼容视图。
+- 生命周期跟随 Session：purge 时同步删除 `interactions/` 目录。
 
 ## 5. Planning Execution正例
 

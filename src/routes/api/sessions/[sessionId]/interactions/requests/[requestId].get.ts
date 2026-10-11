@@ -34,7 +34,13 @@ export default defineEventHandler(async (event) => {
     }
     const result = await readInteractionRequest(sessionDir, sessionId, requestId, withPayload);
     if (result.row === undefined) throw createError({ statusCode: 404, statusMessage: "找不到请求记录" });
-    return { sessionId, row: result.row, ...(result.payload === undefined ? {} : { payload: JSON.parse(result.payload) }), payloadPresent: result.payloadPresent };
+    return {
+      sessionId,
+      row: result.row,
+      ...(result.payload === undefined ? {} : { payload: JSON.parse(result.payload) }),
+      ...(result.messageRegions === undefined ? {} : { messageRegions: result.messageRegions }),
+      payloadPresent: result.payloadPresent,
+    };
   } catch (error) {
     if (error && typeof error === "object" && "statusCode" in error) throw error;
     console.error("[interactions] request read failed", error);

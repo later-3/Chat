@@ -267,15 +267,107 @@ export async function readInteractionPage(sessionDir: string, sessionId: string,
   return { rows, ...(last === undefined || rows.length < limit ? {} : { nextCursor: last.seq }) };
 }
 
-export async function readInteractionTurnGroup(sessionDir: string, sessionId: string, groupKey: string): Promise<InteractionPage> {
+export interface InteractionRequestGroup {
+  /** 锚行（链首）requestId */
+  readonly requestId: string;
+  readonly attemptIds: readonly string[];
+  readonly attempts: number;
+  /** 有 outcome 且非 success 的尝试数（outcome 缺失不计入，也不算成功） */
+  readonly failures: number;
+  readonly regions: readonly { readonly id: string; readonly chars: number }[];
+  readonly messageCount: number;
+  readonly toolCount: number;
+  readonly lastOutcome?: InteractionOutcomeRecord["outcome"];
+}
+
+export interface InteractionTurnSummary {
+  readonly requestCount: number;
+  readonly attempts: number;
+  readonly failures: number;
+  readonly tokenOut: number;
+}
+
+type OutcomeRow = InteractionRequestRow & { readonly outcome?: InteractionOutcomeRecord["outcome"] };
+
+function isFailedOutcome(outcome: InteractionOutcomeRecord["outcome"] | undefined): boolean {
+  return outcome !== undefined && outcome.status !== "success";
+}
+function usageTokens(usage: unknown): number {
+  if (typeof usage !== "object" || usage === null) return 0;
+  const total = (usage as { totalTokens?: unknown }).totalTokens;
+  return typeof total === "number" ? total : 0;
+}
+
+/**
+ * 轮内请求级聚合（D-1，02 T9：聚合在后端）。按 retryOf 链把多次尝试归为一个请求组；
+ * legacy 适配行同样携带 retryOf/attempt，走同一逻辑。只在读侧做，不改行存储。
+ */
+export function aggregateInteractionRows(rows: readonly OutcomeRow[]): {
+  readonly requests: readonly InteractionRequestGroup[];
+  readonly summary: InteractionTurnSummary;
+} {
+  const chains: { anchor: string; members: OutcomeRow[] }[] = [];
+  const chainByMember = new Map<string, number>();
+  for (const row of rows) {
+    const target = row.retryOf === undefined ? undefined : chainByMember.get(row.retryOf);
+    if (target === undefined) {
+      chains.push({ anchor: row.requestId, members: [row] });
+      chainByMember.set(row.requestId, chains.length - 1);
+    } else {
+      chains[target]!.members.push(row);
+      chainByMember.set(row.requestId, target);
+    }
+  }
+  let failures = 0;
+  let tokenOut = 0;
+  let attempts = 0;
+  for (const row of rows) {
+    if (isFailedOutcome(row.outcome)) failures += 1;
+    tokenOut += usageTokens(row.outcome?.usage);
+  }
+  const requests = chains.map((chain) => {
+    attempts += chain.members.length;
+    const last = chain.members.at(-1)!;
+    return {
+      requestId: chain.anchor,
+      attemptIds: chain.members.map((member) => member.requestId),
+      attempts: chain.members.length,
+      failures: chain.members.filter((member) => isFailedOutcome(member.outcome)).length,
+      regions: chain.anchor === last.requestId ? last.regions : rows.find((row) => row.requestId === chain.anchor)?.regions ?? last.regions,
+      messageCount: last.messageCount,
+      toolCount: last.toolCount,
+      ...(last.outcome === undefined ? {} : { lastOutcome: last.outcome }),
+    } satisfies InteractionRequestGroup;
+  });
+  return { requests, summary: { requestCount: requests.length, attempts, failures, tokenOut } };
+}
+
+export interface InteractionTurnGroupPage extends InteractionPage {
+  readonly summary: InteractionTurnSummary;
+  readonly requests: readonly InteractionRequestGroup[];
+}
+
+export async function readInteractionTurnGroup(sessionDir: string, sessionId: string, groupKey: string): Promise<InteractionTurnGroupPage> {
   const page = await readInteractionPage(sessionDir, sessionId, { limit: 10_000 });
   const key = (row: InteractionRequestRow) => row.turn.turnKey ?? "系统调用";
-  return { rows: page.rows.filter((row) => key(row) === groupKey) };
+  const rows = page.rows.filter((row) => key(row) === groupKey);
+  const aggregated = aggregateInteractionRows(rows);
+  return { rows, summary: aggregated.summary, requests: aggregated.requests };
+}
+
+/** D2：payload=1 附带的消息区域标注（index→region；text/chars 不给——原文已在 payload messages 里）。 */
+export interface InteractionMessageRegionMark {
+  readonly index: number;
+  readonly role: string;
+  readonly region: string;
+  readonly customType?: string;
+  readonly timestamp?: number;
 }
 
 export async function readInteractionRequest(sessionDir: string, sessionId: string, requestId: string, withPayload: boolean): Promise<{
   readonly row: (InteractionRequestRow & { readonly outcome?: InteractionOutcomeRecord["outcome"] }) | undefined;
   readonly payload?: string;
+  readonly messageRegions?: readonly InteractionMessageRegionMark[];
   readonly payloadPresent: boolean;
 }> {
   const page = await readInteractionPage(sessionDir, sessionId, { limit: 10_000 });
@@ -284,8 +376,31 @@ export async function readInteractionRequest(sessionDir: string, sessionId: stri
   if (!withPayload || row.payload.file === undefined) return { row, payloadPresent: false };
   try {
     const gz = await readFile(join(interactionDirectory(sessionDir, sessionId), "requests", row.payload.file));
-    return { row, payload: gunzipSync(gz).toString("utf8"), payloadPresent: true };
-  } catch { return { row, payloadPresent: false }; }
+    const payloadText = gunzipSync(gz).toString("utf8");
+    // D2：复用写侧同一解析（classifyRegions 无 neutral 也能按角色与末条 user 定位本轮输入），
+    // 输出索引语义与 v1 capture、FE 现有对齐逻辑一致；裁掉 text/chars 避免与 payload 重复。
+    const parsed = parseProviderPayloadRegions(safeJsonParse(payloadText), row.model.api, undefined);
+    const messageRegions = parsed.messages?.map((message) => ({
+      index: message.index,
+      role: message.role,
+      region: message.region,
+      ...(message.customType === undefined ? {} : { customType: message.customType }),
+      ...(message.timestamp === undefined ? {} : { timestamp: message.timestamp }),
+    }));
+    return {
+      row,
+      payload: payloadText,
+      ...(messageRegions === undefined ? {} : { messageRegions }),
+      payloadPresent: true,
+    };
+  } catch (error) {
+    console.error("[interactions] 详情读取失败", requestId, error);
+    return { row, payloadPresent: false };
+  }
+}
+
+function safeJsonParse(text: string): unknown {
+  try { return JSON.parse(text); } catch { return undefined; }
 }
 
 // ---------------------------------------------------------------------------

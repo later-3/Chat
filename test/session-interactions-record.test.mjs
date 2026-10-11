@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createInteractionRecorder, interactionWriteFailureCount, readInteractionPage } from "../src/session-interactions.ts";
+import { createInteractionRecorder, interactionWriteFailureCount, readInteractionPage, readInteractionRequest } from "../src/session-interactions.ts";
 
 function tmp(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "chat-interactions-"));
@@ -105,6 +105,29 @@ test("写盘失败不静默：进运行日志并计数，不阻断会话（U3）
   }
   assert.equal(interactionWriteFailureCount(), before + 1, "失败计数递增");
   assert.ok(errors.some(line => line.includes("[interactions] 写盘失败")), `运行日志含失败: ${JSON.stringify(errors)}`);
+});
+
+test("payload=1 附带 messageRegions 标注且不含重复 text（D2）", async (t) => {
+  const dir = tmp(t);
+  const recorder = createInteractionRecorder({ sessionDir: dir, storageProjectId: "p", sessionId: "s1", turn: directTurn(), agent: { agentId: "a" }, enabled: true });
+  await recorder.record({
+    messages: [
+      { role: "system", content: "SYS" },
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi" },
+      { role: "user", content: "again" },
+    ],
+  }, model);
+  const row = (await readInteractionPage(dir, "s1")).rows[0];
+  const result = await readInteractionRequest(dir, "s1", row.requestId, true);
+  assert.ok(result.messageRegions, "payload=1 返回 messageRegions");
+  assert.ok(result.messageRegions.length >= 3);
+  const userMarks = result.messageRegions.filter(mark => mark.role === "user");
+  assert.equal(userMarks.at(-1)?.region, "current-user-message", "末条 user 定位本轮输入");
+  assert.ok(userMarks.slice(0, -1).every(mark => mark.region === "history-user"));
+  assert.ok(result.messageRegions.every(mark => !("text" in mark) && !("chars" in mark)), "不携带重复原文");
+  const plain = await readInteractionRequest(dir, "s1", row.requestId, false);
+  assert.equal(plain.messageRegions, undefined, "payload=0 不带标注");
 });
 
 test("workflow 轮携带 turn/stage 标识", async (t) => {

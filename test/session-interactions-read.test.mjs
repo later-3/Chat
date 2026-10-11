@@ -1,6 +1,49 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adaptLegacyPromptCaptures, resolvePromptCapture, toLegacyListResponse } from "../src/session-interactions.ts";
+import { adaptLegacyPromptCaptures, aggregateInteractionRows, resolvePromptCapture, toLegacyDetail, toLegacyListResponse } from "../src/session-interactions.ts";
+
+test("轮内请求级聚合：retryOf 链归组 + tokenOut/failures 后端汇总（D-1/02 T9）", () => {
+  const row = (id, retryOf, outcome) => ({
+    seq: 1, requestId: id, timestamp: "t", storageProjectId: "p", sessionId: "s", schemaVersion: 2,
+    kind: "agent", payloadSha256: "x", agent: { agentId: "pi-coding-agent" },
+    model: { provider: "p", modelId: "m" }, payloadChars: 10,
+    turn: { source: "workflow", stage: { id: "execute", nodeKind: "agent" }, turnKey: "t1" },
+    regions: [{ id: "chat_identity", chars: 5 }], messageCount: 3, toolCount: 1,
+    attempt: 1, excluded: { count: 0 }, payload: { sha256: "x", chars: 10 },
+    ...(retryOf === undefined ? {} : { retryOf }),
+    ...(outcome === undefined ? {} : { outcome }),
+  });
+  const e = (status, totalTokens) => ({ status, usage: { totalTokens } });
+  const { requests, summary } = aggregateInteractionRows([
+    row("r1", undefined, e("error", 100)),
+    row("r2", "r1", e("error", 200)),
+    row("r3", "r2", e("success", 300)),
+    row("r4", undefined, e("success", 50)),
+    row("r5", undefined, undefined), // 未配对 outcome：不计失败也不算成功
+  ]);
+  assert.equal(requests.length, 3);
+  assert.deepEqual([requests[0].attempts, requests[1].attempts, requests[2].attempts], [3, 1, 1]);
+  assert.deepEqual([requests[0].failures, requests[1].failures], [2, 0]);
+  assert.deepEqual(summary, { requestCount: 3, attempts: 5, failures: 2, tokenOut: 650 });
+  assert.equal(requests[0].requestId, "r1");
+  assert.equal(requests[0].lastOutcome.status, "success");
+});
+
+test("v1 兼容详情形状锁：FE 解析契约（G1 §3）", () => {
+  const row = adaptLegacyPromptCaptures([{
+    seq: 1, timestamp: "t", storageProjectId: "p", sessionId: "s-legacy", kind: "agent", requestId: "r1",
+    payloadSha256: "x", agent: { agentId: "pi-coding-agent", longAgentId: "coder-muse" },
+    model: { provider: "p", modelId: "m" }, payloadChars: 10,
+    turn: { source: "workflow", stageId: "execute", turnKey: "t1" },
+    regions: { parsed: true, systemPrompt: { chars: 3, text: "abc", sections: [{ kind: "chat-identity", label: "身份与职责", chars: 3, text: "abc" }] }, tools: [], messages: [] },
+  }]).rows[0];
+  const detail = toLegacyDetail(row, { messages: [{ role: "system", content: "abc" }] });
+  assert.equal(detail.schemaVersion, 1);
+  assert.equal(detail.record.sessionId, "s-legacy");
+  assert.equal(detail.record.agent.agentId, "pi-coding-agent");
+  assert.equal(detail.record.regions.systemSections[0].kind, "chat-identity");
+  assert.ok(Array.isArray(detail.payload.messages));
+});
 
 test("开关解析链：请求体 > 会话条目 > LA 默认（DP-3 缺省关）", () => {
   const entry = { type: "custom", customType: "chat.interaction-recording", data: { enabled: true } };

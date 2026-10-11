@@ -4,7 +4,7 @@ import { assertChatSessionReadable, requireChatSession } from "../../../../../se
 import { SessionLifecycleError } from "../../../../../session-errors.js";
 import { toSessionLifecycleHttpError } from "../../../../../session-removal-http.js";
 import { SessionOwnerResolutionError } from "../../../../../session-owner.js";
-import { adaptLegacyPromptCaptures, hasInteractions, readInteractionTurnGroup } from "../../../../../session-interactions.js";
+import { adaptLegacyPromptCaptures, aggregateInteractionRows, hasInteractions, readInteractionTurnGroup } from "../../../../../session-interactions.js";
 import { readPromptCaptureIndex } from "../../../../../session-prompt-capture.js";
 
 /** 按轮次读取：阶段 + 请求行（不含原文）。direct 轮与系统调用归 key="系统调用"（D5）。 */
@@ -29,11 +29,13 @@ export default defineEventHandler(async (event) => {
     const key = decodeURIComponent(turnKey);
     if (await hasInteractions(sessionDir, sessionId)) {
       const group = await readInteractionTurnGroup(sessionDir, sessionId, key);
-      return { sessionId, legacy: false, turnKey: key, rows: group.rows };
+      return { sessionId, legacy: false, turnKey: key, rows: group.rows, summary: group.summary, requests: group.requests };
     }
     const rows = adaptLegacyPromptCaptures(await readPromptCaptureIndex(sessionDir, sessionId)).rows
       .filter((row) => (row.turn.turnKey ?? "系统调用") === key);
-    return { sessionId, legacy: true, turnKey: key, rows };
+    // legacy 同样给聚合（适配行带 attempt/retryOf，同一聚合器）——UI 合同一致（D3 矩阵）。
+    const aggregated = aggregateInteractionRows(rows);
+    return { sessionId, legacy: true, turnKey: key, rows, summary: aggregated.summary, requests: aggregated.requests };
   } catch (error) {
     console.error("[interactions] turn read failed", error);
     throw createError({ statusCode: 500, statusMessage: "无法读取轮次交互记录" });

@@ -39,17 +39,24 @@ export default defineEventHandler(async (event) => {
   try {
     const recording = await readRecordingBySessionFile(sessionPath);
     const legacy = !(await hasInteractions(sessionDir, sessionId));
-    const rows = legacy
+    // groups = 全量轻摘要（每轮一行，跨页不撕裂）；rows = 重字段按页给（首屏 UI 只消费 groups，
+    // 展开轮时由 turnKey 接口取该轮全量行——02 T9 聚合全部在后端）。
+    const allRows = legacy
       ? adaptLegacyPromptCaptures(await readPromptCaptureIndex(sessionDir, sessionId)).rows
+      : (await readInteractionPage(sessionDir, sessionId, { cursor: 0, limit: 100_000 })).rows;
+    const rows = legacy
+      ? allRows.filter(row => row.seq > cursor && row.seq <= cursor + limit)
       : (await readInteractionPage(sessionDir, sessionId, { cursor, limit })).rows;
-    const groups = new Map<string, { key: string; source: string; stage: { id: string; nodeKind: string }; requestCount: number; failures: number }>();
-    for (const row of rows) {
+    const groups = new Map<string, { key: string; source: string; stage: { id: string; nodeKind: string }; requestCount: number; failures: number; tokenOut: number }>();
+    for (const row of allRows) {
       const key = row.turn.turnKey ?? "系统调用";
       const current = groups.get(key);
-      const outcome = (row as { readonly outcome?: { readonly status?: string } }).outcome;
+      const outcome = (row as { readonly outcome?: { readonly status?: string; readonly usage?: unknown } }).outcome;
       const failed = outcome !== undefined && outcome.status !== "success";
-      if (current === undefined) groups.set(key, { key, source: row.turn.source, stage: row.turn.stage, requestCount: 1, failures: failed ? 1 : 0 });
-      else { current.requestCount += 1; if (failed) current.failures += 1; }
+      const usageTotal = (outcome?.usage as { totalTokens?: unknown } | undefined)?.totalTokens;
+      const tokens = typeof usageTotal === "number" ? usageTotal : 0;
+      if (current === undefined) groups.set(key, { key, source: row.turn.source, stage: row.turn.stage, requestCount: 1, failures: failed ? 1 : 0, tokenOut: tokens });
+      else { current.requestCount += 1; if (failed) current.failures += 1; current.tokenOut += tokens; }
     }
     const nextCursor = rows.at(-1)?.seq;
     return {

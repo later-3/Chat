@@ -33,6 +33,7 @@
 - `test/session-read-model.test.mjs`：真实 Pi SessionManager 记录序列，维护/普通续聊、未知阶段隔离、原文及 entry ID/时间对齐。
 - `frontend/lib/session-activity.test.mjs`：HTTP 来源结构、普通 JSON、过程顺序、统计隔离、结构化及原文回退。
 - `scripts/prompt-capture-browser.test.mjs`：首次点击完整历史后直接呈现历史正文与分支树，不依赖切标签或主题，同时验证维护区不属于记忆 Agent；既有群聊完整历史用例继续覆盖共享组件。
+  **2026-10-11 更新（任务 pi-004 B3）**：完整历史改为按轮列表 + `TurnInteractions` 原位展开，iframe/srcDoc 链移除、Pi 导出降为下载；本文上文的 iframe/srcDoc 修复叙述保留为历史。同一门禁改为断言新合同（按轮/区域/×N 聚合/聊天页 0 详情请求/首屏 ≤100KB/legacy 降级文案），`group-browser` 同轮同步（C69 纪律）。
 - `frontend/lib/chat-auto-scroll.test.mjs`：展开历史保留阅读位置、相同轮询不抢滚动、真实新活动恢复跟随。
 - `frontend/lib/history-document.test.mjs`：Pi 原始数据、分支脚本与样式投影隔离。
 

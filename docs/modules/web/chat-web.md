@@ -86,7 +86,7 @@ Long Agent 会话顶栏按用途显示「任务与归档」动作，不显示会
 | 会话 新建、搜索、改名、移除/恢复、子会话 | 全局项目列表及原会话菜单 |
 | 文件搜索、刷新、预览、标签、引用行 | 右侧项目资料；历史文件保留来源 |
 | 完整历史、分支、系统、统计 | 交流工具栏；窄屏经更多/会话信息进入 |
-| 完整 Prompt 记录开关 | 顶栏会话动作；发送级开关，默认关；开启后本轮起记录每次最终 Provider 请求（区域化展示，按需加载） |
+| 完整记录开关 | 会话操作菜单；**服务端会话级事实**（GET/PUT `interaction-recording`，默认关），开启后本轮起记录每次请求的区域行与原文；刷新/换设备读到同一状态 |
 | Workflow、Agent、本轮调整、审核、发送/停止 | 原交流及输入区，按 Session owner 选择合同 |
 | 模型、Memory、Tool、Skill、Prompt、Plugin、Extension 管理 | 全局设置，复用原管理 API |
 | 明暗/跟随系统、语言、标准/宽内容 | 设置 → 外观 |
@@ -113,8 +113,7 @@ Long Agent 会话顶栏按用途显示「任务与归档」动作，不显示会
 | 设置 → 个人资源 | Chat 模型/认证；Memory 内再选 Personal/Project | 分类入口；模型编辑和记忆编辑各自保留任务结构 |
 | 设置 → 项目资源 | 当前 Project 可见的 Tools/Skills/Plugins/Extensions/Prompt | 列表/详情，明确归属与启用来源；发现不等于 Agent 已选用 |
 | Workflow Agent 配置 | 具体 Project/Workflow/Agent | 带作用域的自动保存表单，实际装配检查为只读 |
-| 完整历史 | 当前 Session 全部 Pi 记录；浏览分支不改变正在交流的分支 | 共用阅读 Dialog，Pi HTML 隔离沙箱；Chat 主题；读取失败可重试，原导出保留 |
-| 完整 Prompt 记录 | 当前 Session 的 Provider 请求事实：按轮次/Workflow/Stage/Agent 分组的请求列表，区域化展示（系统提示子区、注入指令、本轮消息、历史、工具），payload 按需加载 | 记录开关默认关；展示过滤是纯前端状态；读取走 `prompt-captures` API，遵循 Session 读取权限 |
+| 完整历史 | 当前 Session **与大模型的完整交互**：按轮列出（请求数/失败数/token 汇总），点开轮次看执行树（阶段 → 请求 ×N 聚合 → 区域树），请求详情按需拉取；Pi HTML 导出降为“下载”按钮 | 对话框按轮列表 + 原位展开，`TurnInteractions` 与摘要条同源同组件；读取走 `interactions` 读模型 API（首屏只取摘要，`payload=0` 不含原文）；旧会话 legacy 同 UI、降级如实标注；记录开关默认关 |
 | 分支、系统提示词、Session 统计 | 当前 Session | 顶栏局部浮层；不能放进全局设置 |
 | 动态与评论 | 全局作者与已发布内容 | 单列阅读；作者筛选；当前不提供评论写入 |
 | 设备切换、离线、自检 | 连接与浏览器，不是 Agent 状态 | 顶栏/移动设备选择、连接状态面、自检详情 |

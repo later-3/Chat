@@ -31,7 +31,7 @@ nanoclaw/：独立Host/Channel Gateway ─服务HTTP───┘
 Chat Nitro进程
   ├── 渠道服务认证与前端静态文件
   ├── /runs：Workflow控制与事件读取
-  ├── /api/sessions：Pi Session读取投影、完整历史与Fork
+  ├── /api/sessions：Pi Session读取投影、完整交互读模型（interactions）、导出与Fork
   ├── /api/projects：Project Registry发现与切换
   ├── /api/files：受限文件读取
   ├── /api/workflows/.../agents/.../resolve：Agent实际装配结果
@@ -413,7 +413,8 @@ Session正常JSONL位于`~/.chat/projects/<projectId>/sessions/`，移除区位�
 | Workflow观察数据 | `src/workflows/workflow-stage.ts` |
 | 实时事件 | `src/workflows/agent-session-log.ts`、`chat-run-events.ts` |
 | Session前端投影 | `src/session-read-model.ts` |
-| 完整历史 | `src/session-export.ts` |
+| 完整历史（按轮交互） | `src/session-interactions.ts`（读模型）+ `TurnInteractions`（共用组件） |
+| Pi 导出（下载） | `src/session-export.ts` |
 | Long Agent与NanoClaw集成 | `src/long-agents/`、`src/agents/pi-agent-session.ts`、`nanoclaw/src/execution-driver.ts`、`nanoclaw/src/modules/chat-integration/` |
 | NanoClaw长期Agent源码基线 | `.gitmodules`、`nanoclaw/README.md`、`nanoclaw/docs/architecture.md`、`nanoclaw/docs/modules/memory/README.md` |
 
