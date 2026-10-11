@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
+import { captureSectionTags } from "./long-agents/prompt-region-registry.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
 /**
@@ -108,14 +109,8 @@ function captureFilePath(directory: string, requestId: string): string {
 // Region parsing
 // ---------------------------------------------------------------------------
 
-const CHAT_SECTION_TAGS: readonly { readonly kind: PromptCaptureSystemSection["kind"]; readonly tag: string; readonly label: string }[] = [
-  { kind: "chat-project", tag: "chat_current_project", label: "当前项目指令" },
-  { kind: "chat-collaboration", tag: "chat_project_collaboration", label: "协作上下文" },
-  { kind: "chat-custom-instructions", tag: "chat_agent_custom_instructions", label: "自定义指令（含规则）" },
-  { kind: "chat-interaction-harness", tag: "chat_interaction_harness", label: "交互 harness（协作规范）" },
-  { kind: "chat-identity", tag: "chat_identity", label: "身份与职责" },
-  { kind: "chat-long-term-memory", tag: "chat_long_term_memory", label: "长期记忆（Agent Memory）" },
-];
+/** 捕获解析白名单——唯一来源=区域注册表（pi-004 P1-U2）。 */
+const CHAT_SECTION_TAGS: readonly { readonly kind: PromptCaptureSystemSection["kind"]; readonly tag: string; readonly label: string }[] = captureSectionTags();
 
 function splitSystemSections(text: string): PromptCaptureSystemSection[] {
   const sections: PromptCaptureSystemSection[] = [];

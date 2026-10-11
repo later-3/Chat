@@ -27,6 +27,7 @@ import type {
 import { resolveChatSystemTools } from "../tools/registry.js";
 import type { WorkflowAgentDefinition } from "../workflows/agent-config.js";
 import { createPromptCaptureRecorder, PROMPT_CAPTURE_SCHEMA_VERSION, type PromptCaptureRecorder } from "../session-prompt-capture.js";
+import { topLevelTags } from "../long-agents/prompt-region-registry.js";
 
 /**
  * Agent capability definition shared by Workflow and Long Agent callers.
@@ -91,13 +92,8 @@ export interface CreatedChatPiAgentSession {
  * 每个区域都会被 prompt capture 单独解析，便于事后按区域核对。
  */
 /** Chat 的顶级 system prompt 区域：它们按**性质**划分，必须与“自定义指令”并列，不能嵌套在其中。 */
-const CHAT_TOP_LEVEL_TAGS = [
-  "<chat_interaction_harness",
-  "<chat_identity",
-  "<chat_long_term_memory",
-  "<chat_project_collaboration",
-  "<chat_current_project",
-] as const;
+// 顶层段识别——唯一来源=区域注册表（pi-004 P1-U2）。
+const CHAT_TOP_LEVEL_TAGS: readonly string[] = topLevelTags();
 
 export function buildChatSystemPromptSections(
   instructions: ChatPiAgentDefinition["customInstructions"],
