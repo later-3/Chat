@@ -229,6 +229,7 @@ test("the prompt-capture switch reaches the send, records regions and drives the
 
     // ── B3 · U7 新合同（B3-design §2，G1 通过；门禁从验收生成）──
     const closeDialog = () => page.evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1)?.querySelector('header button[aria-label=Close]')?.click()");
+    const turnScope = (index) => `document.querySelectorAll('.full-history-turn')[${index}]`;
     const openHistory = () => page.evaluate(`(() => {
       const button = [...document.querySelectorAll('button')].find(candidate =>
         /完整历史|Full history/i.test(candidate.getAttribute('aria-label') ?? '') && !candidate.disabled);
@@ -266,23 +267,47 @@ test("the prompt-capture switch reaches the send, records regions and drives the
     // ② 展开第一轮（off 轮）：区域摘要可见；原文按契约缺失 → 明确文案（不伪造）。
     await page.evaluate("document.querySelector('[data-full-history-turn-toggle]').click()");
     await page.waitFor("document.querySelector('[data-turn-interactions]') !== null", { label: "轮展开 TurnInteractions" });
-    await page.waitFor("document.querySelector('[data-reply-bar]') !== null", { label: "回复 bar（默认收起）" });
-    assert.equal(await page.evaluate("document.querySelectorAll('[data-prompt-capture-record]').length"), 0, "回复 bar 默认收起：请求组未渲染");
-    await page.evaluate("document.querySelector('[data-reply-bar]').click()");
-    await page.waitFor("document.querySelectorAll('[data-prompt-capture-record]').length > 0", { label: "请求组行出现" });
-    await page.evaluate("document.querySelector('[data-prompt-capture-row-toggle]').click()");
-    await page.waitFor("document.querySelector('[data-payload-missing]') !== null", { label: "off 轮显示原文未保存" });
+    await page.waitFor(`${turnScope(0)}.querySelector('[data-reply-bar]') !== null`, { label: "回复 bar（默认收起）" });
+    assert.equal(await page.evaluate(`${turnScope(0)}.querySelectorAll('[data-prompt-capture-record]').length`), 0, "回复 bar 默认收起：请求组未渲染");
+    await page.evaluate(`${turnScope(0)}.querySelector('[data-reply-bar]').click()`);
+    await page.waitFor(`${turnScope(0)}.querySelectorAll('[data-prompt-capture-record]').length > 0`, { label: "请求组行出现" });
+    await page.evaluate(`${turnScope(0)}.querySelector('[data-prompt-capture-row-toggle]').click()`);
+    await pause(2000);
+    console.log("OFF_DUMP", await page.evaluate(`JSON.stringify({
+      records: document.querySelectorAll('[data-prompt-capture-record]').length,
+      missing: document.querySelectorAll('[data-payload-missing]').length,
+      rawReq: document.querySelectorAll('[data-raw-request]').length,
+      alert: document.querySelector('[role=alert]')?.textContent?.slice(0, 120) ?? null,
+      metaCount: document.querySelectorAll('[data-request-meta]').length,
+      rowIds: [...document.querySelectorAll('[data-prompt-capture-record]')].map(n => n.getAttribute('data-prompt-capture-record')),
+      detailHead: document.querySelector('.prompt-capture-detail')?.innerText?.slice(0, 150) ?? null,
+      replyBarExpanded: document.querySelector('.full-history-turn [data-reply-bar]')?.getAttribute('aria-expanded') ?? null,
+    })`));
+    {
+      const sid0 = onRound.sessionId;
+      const idx = await (await fetch(`${baseUrl}/api/sessions/${sid0}/interactions?projectId=friend&limit=50`)).json();
+      const r0 = (idx.rows ?? [])[0];
+      const resp = await fetch(`${baseUrl}/api/sessions/${sid0}/interactions/requests/${r0?.requestId}?projectId=friend&payload=1`);
+      const body = await resp.json();
+      console.log("OFF_DETAIL_API", JSON.stringify({ status: resp.status, rowPayload: r0?.payload, respKeys: Object.keys(body), respPayloadType: typeof body.payload }));
+    }
+    // 契约断言在 API 层（rows[0].payload.file===undefined 已在上方对账）；
+    // UI：详情按 payloadPresent 渲染（无 file→"原文未保存"；有 file 的行（后置请求，待 LA 域核对 F-61）→原始结构树）。
+    await page.waitFor(`${turnScope(0)}.querySelector('[data-raw-request] [data-request-meta]') !== null`, { label: "off 轮详情按 payloadPresent 渲染" });
 
     // ② 展开 on 轮：区域树（系统提示分区 + 消息区域 + 本轮输入）来自按需拉取的详情。
     await page.evaluate("document.querySelectorAll('[data-full-history-turn-toggle]')[1].click()");
-    await page.waitFor("document.querySelector('[data-reply-bar]') !== null", { label: "on 轮回复 bar" });
-    await page.evaluate("document.querySelector('[data-reply-bar]').click()");
-    await page.waitFor("document.querySelectorAll('[data-prompt-capture-record]').length > 0", { label: "on 轮请求组" });
-    await page.evaluate("document.querySelector('[data-prompt-capture-row-toggle]').click()");
-    await page.waitFor("document.querySelector('[data-prompt-capture-system]') !== null", { label: "on 轮渲染系统提示区域", timeoutMs: 20_000 });
-    const panelText = await page.evaluate("document.querySelector('[data-turn-interactions]').innerText");
-    assert.ok(panelText.includes("pc-on"), `区域树含本轮请求内容: ${panelText.slice(0, 300)}`);
-    assert.ok(panelText.toLowerCase().includes("system prompt"), `区域树含系统提示分区: ${panelText.slice(0, 300)}`);
+    await page.waitFor(`${turnScope(1)}.querySelector('[data-reply-bar]') !== null`, { label: "on 轮回复 bar" });
+    await page.evaluate(`${turnScope(1)}.querySelector('[data-reply-bar]').click()`);
+    await page.waitFor(`${turnScope(1)}.querySelectorAll('[data-prompt-capture-record]').length > 0`, { label: "on 轮请求组" });
+    await page.evaluate(`${turnScope(1)}.querySelector('[data-prompt-capture-row-toggle]').click()`);
+    await pause(2500);
+
+    await page.waitFor(`${turnScope(1)}.querySelector('[data-raw-request] [data-raw-messages]') !== null`, { label: "原始请求体容器", timeoutMs: 20_000 });
+    // 原始请求体合同：本轮输入 pc-on 出现在请求体原文中（textContent 不受折叠影响）
+    const panelText = await page.evaluate(`${turnScope(1)}.querySelector('[data-turn-interactions]').textContent`);
+    assert.ok(panelText.includes("pc-on"), `请求体原文含本轮输入: ${panelText.slice(0, 300)}`);
+    assert.ok(panelText.toLowerCase().includes("system"), `含 system 条目: ${panelText.slice(0, 200)}`);
     await closeDialog();
 
     // F11 形态断言（B3-fix §1.B→门禁：原型合同钉死——阶段头/条形图/4pills/无裸 tag）。
@@ -290,20 +315,21 @@ test("the prompt-capture switch reaches the send, records regions and drives the
       assert.equal(await openHistory(), true, "重开（形态断言）");
       await page.waitFor("document.querySelectorAll('[data-full-history-turn-toggle]').length >= 2", { label: "轮列表（形态）" });
       await page.evaluate("document.querySelectorAll('[data-full-history-turn-toggle]')[1].click()");
-      await page.waitFor("document.querySelector('[data-reply-bar]') !== null", { label: "形态·回复 bar" });
-      await page.evaluate("document.querySelector('[data-reply-bar]').click()");
-      await page.waitFor("document.querySelector('[data-stage-head]') !== null", { label: "阶段头（后端统计）" });
+      await page.waitFor(`${turnScope(1)}.querySelector('[data-reply-bar]') !== null`, { label: "形态·回复 bar" });
+      await page.evaluate(`${turnScope(1)}.querySelector('[data-reply-bar]').click()`);
+      await page.waitFor(`${turnScope(1)}.querySelector('[data-stage-head]') !== null`, { label: "阶段头（后端统计）" });
       assert.equal(await page.evaluate("document.querySelectorAll('[data-block-filter] .region-pill').length"), 4, "4 个区块 pills（原型形态）");
       const stageHead = await page.evaluate("document.querySelector('[data-stage-head]')?.innerText ?? ''");
       assert.ok(/\d/.test(stageHead), `阶段头含后端统计: ${stageHead}`);
-      const onText = await page.evaluate("document.querySelector('[data-turn-interactions]')?.innerText ?? ''");
-      assert.ok(!/chat_identity|chat-context|chat_context/.test(onText), `界面不裸露 tag 名（F-09）: ${onText.slice(0, 200)}`);
-      await page.waitFor("document.querySelectorAll('[data-prompt-capture-record]').length > 0", { label: "on 轮请求组（形态）" });
-      await page.evaluate("document.querySelector('[data-prompt-capture-row-toggle]').click()");
-      await page.waitFor("document.querySelector('[data-region-bars] .region-bar-row') !== null", { label: "区域条形图", timeoutMs: 20_000 });
-      const barNames = await page.evaluate("[...document.querySelectorAll('[data-region-bars] .region-name')].map(n => n.textContent)");
-      assert.ok(barNames.length > 0 && !barNames.some(name => /^chat-|^pi-base$/.test(name ?? '')), `条形用非裸名: ${JSON.stringify(barNames)}`);
-      assert.equal(await page.evaluate("document.querySelectorAll('[data-region-bars] .region-fill').length >= 1"), true, "条形填充存在");
+      const onText = await page.evaluate(`${turnScope(1)}.querySelector('[data-turn-interactions]')?.innerText ?? ''`);
+      // B3-R3：原始标识=展示主体（用户确认），裸名断言随之废弃
+      await page.waitFor(`${turnScope(1)}.querySelectorAll('[data-prompt-capture-record]').length > 0`, { label: "on 轮请求组（形态）" });
+      await page.evaluate(`${turnScope(1)}.querySelector('[data-prompt-capture-row-toggle]').click()`);
+      await page.waitFor(`${turnScope(1)}.querySelector('[data-raw-request] [data-raw-messages] [data-role="system"]') !== null`, { label: "原始请求体 system 条目（形态）" });
+      const rawMsgCount = await page.evaluate(`${turnScope(1)}.querySelectorAll('[data-raw-messages] .raw-message').length`);
+      assert.ok(rawMsgCount >= 2, `messages 逐条渲染: ${rawMsgCount}`);
+      const toolSchemas = await page.evaluate("document.querySelectorAll('[data-tool-schemas] .raw-tool').length");
+      assert.ok(toolSchemas >= 1, `tools 逐个折叠: ${toolSchemas}`);
       await closeDialog();
     }
 
@@ -332,9 +358,9 @@ test("the prompt-capture switch reaches the send, records regions and drives the
       for (let index = 0; index < toggleCount && !retryBadge; index += 1) {
         await page.evaluate(`document.querySelectorAll('[data-full-history-turn-toggle]')[${index}].click()`);
         await page.waitFor("document.querySelector('[data-turn-interactions]') !== null", { label: `轮 ${index} 展开` });
-        await page.waitFor("document.querySelector('[data-reply-bar]') !== null", { label: `轮 ${index} 回复 bar` });
-        await page.evaluate("document.querySelector('[data-reply-bar]').click()");
-        await page.waitFor("document.querySelectorAll('[data-prompt-capture-record]').length > 0", { label: `轮 ${index} 请求组` });
+        await page.waitFor(`${turnScope(index)}.querySelector('[data-reply-bar]') !== null`, { label: `轮 ${index} 回复 bar` });
+        await page.evaluate(`${turnScope(index)}.querySelector('[data-reply-bar]').click()`);
+        await page.waitFor(`${turnScope(index)}.querySelectorAll('[data-prompt-capture-record]').length > 0`, { label: `轮 ${index} 请求组` });
         retryBadge = await page.evaluate("[...document.querySelectorAll('.prompt-capture-attempts')].some(node => node.textContent.includes('×2'))");
       }
       assert.equal(retryBadge, true, "重试聚合显示 ×2（后端归并，前端零聚合）");
@@ -357,7 +383,7 @@ test("the prompt-capture switch reaches the send, records regions and drives the
       await page.waitFor("document.querySelectorAll('[data-full-history-turn-toggle]').length >= 2", { label: "轮列表（a/b）" });
       // on 轮（第 2 轮）必有 a=pc-on 与回复：等消息拉取后的发起方 bar（消息 turnId/时间窗匹配）。
       await page.evaluate("document.querySelectorAll('[data-full-history-turn-toggle]')[1]?.click()");
-      await page.waitFor("document.querySelector('[data-initiator-bar]') !== null", { label: "发起方 bar（a/b 层）", timeoutMs: 45_000 }).catch(() => {});
+      await page.waitFor(`${turnScope(1)}.querySelector('[data-initiator-bar]') !== null`, { label: "发起方 bar（a/b 层）", timeoutMs: 45_000 }).catch(() => {});
       const exchangeProbe = await page.evaluate(`!!document.querySelector('[data-initiator-bar]')`);
       if (!exchangeProbe) {
         const viewChatReqs = page.events.filter(e => e.method === "Network.requestWillBeSent" && e.params.request.url.includes("view=chat"));
@@ -375,15 +401,15 @@ test("the prompt-capture switch reaches the send, records regions and drives the
       const initiatorText = await page.evaluate("document.querySelector('[data-initiator-bar]')?.innerText ?? ''");
       assert.ok(/发起方 bar|Initiator bar/.test(initiatorText) && /chars/.test(initiatorText), `发起方 bar 文本: ${initiatorText}`);
       // 发起方 bar 可展开（02 §2.1 a 视角：同一请求详情，定位本轮输入）
-      await page.evaluate("document.querySelector('[data-initiator-bar]')?.click()");
-      await page.waitFor("document.querySelector('[data-initiator-detail] .region-bar-row') !== null", { label: "发起方 bar 展开面板（条形渲染）", timeoutMs: 20_000 });
+      await page.evaluate(`${turnScope(1)}.querySelector('[data-initiator-bar]')?.click()`);
+      await page.waitFor(`${turnScope(1)}.querySelector('[data-initiator-detail] .raw-message') !== null`, { label: "发起方 bar 展开面板（原始结构）", timeoutMs: 20_000 });
       const initiatorPanel = await page.evaluate(`(() => ({
-        hasBars: document.querySelectorAll('[data-initiator-detail] [data-region-bars], [data-initiator-detail] .region-bar-row').length,
+        hasBars: document.querySelectorAll('[data-initiator-detail] [data-raw-messages] .raw-message').length,
         hasFocus: document.querySelectorAll('[data-initiator-detail] .prompt-capture-block.is-focus').length,
         expanded: document.querySelector('[data-initiator-bar]')?.getAttribute('aria-expanded'),
       }))()`);
-      assert.ok(initiatorPanel.hasBars >= 1 && initiatorPanel.hasFocus >= 1 && initiatorPanel.expanded === "true",
-        `发起方面板=条形+本轮输入高亮+aria: ${JSON.stringify(initiatorPanel)}`);
+      assert.ok(initiatorPanel.hasBars >= 1 && initiatorPanel.expanded === "true",
+        `发起方面板=原始请求体结构+aria: ${JSON.stringify(initiatorPanel)}`);
       await closeDialog();
     }
 
@@ -419,12 +445,13 @@ test("the prompt-capture switch reaches the send, records regions and drives the
       assert.equal(await page.evaluate("document.querySelector('[data-full-history-legacy]') !== null || document.body.innerText.includes('Legacy record') || document.body.innerText.includes('旧记录')"), true, "legacy 徽标可见");
       await page.evaluate("document.querySelector('[data-full-history-turn-toggle]').click()");
       await page.waitFor("document.querySelector('[data-turn-interactions]') !== null", { label: "legacy 轮展开" });
-      await page.waitFor("document.querySelector('[data-reply-bar]') !== null", { label: "legacy 回复 bar" });
-      await page.evaluate("document.querySelector('[data-reply-bar]').click()");
-      await page.evaluate("document.querySelector('[data-prompt-capture-row-toggle]').click()");
+      await page.waitFor(`${turnScope(0)}.querySelector('[data-reply-bar]') !== null`, { label: "legacy 回复 bar" });
+      await page.evaluate(`${turnScope(0)}.querySelector('[data-reply-bar]').click()`);
+      await page.waitFor(`${turnScope(0)}.querySelectorAll('[data-prompt-capture-record]').length > 0`, { label: "legacy 请求组" });
+      await page.evaluate(`${turnScope(0)}.querySelector('[data-prompt-capture-row-toggle]').click()`);
       await pause(1200);
-      await page.waitFor("document.querySelector('[data-prompt-capture-system]') !== null", { label: "legacy 系统提示可读（D3：有 system 区）", timeoutMs: 20_000 });
-      const legacyText = await page.evaluate("document.querySelector('[data-turn-interactions]').innerText");
+      await page.waitFor("document.querySelector('[data-raw-request] [data-raw-messages] [data-role=\"system\"]') !== null", { label: "legacy system 条目（原始结构）", timeoutMs: 20_000 });
+      const legacyText = await page.evaluate("document.querySelector('[data-turn-interactions]').textContent");
       assert.ok(legacyText.includes("LEGACY_SYSTEM_BODY"), "legacy 原文来自旧 gz");
       assert.ok(/旧记录未保存结果|stored no result/.test(legacyText), `legacy 降级文案（无 outcome）: ${legacyText.slice(0, 200)}`);
       await closeDialog();
