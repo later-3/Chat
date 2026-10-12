@@ -309,9 +309,16 @@ test("an ordinary round is one work request; memory rounds live in the separate 
   await page.waitFor(`document.querySelector('[data-rendered-session="${defaultBefore}"] [data-chat-composer]') !== null`);
   assert.equal(f.requests.length, requestCount, "opening extra/default chats never runs a model");
   // Native stage provenance survives the same refresh and groups work plus maintenance.
-  await page.evaluate("document.querySelectorAll('.turn-summary-toggle[aria-expanded=false]').forEach(element => element.click())");
-  assert.equal(await page.evaluate("document.querySelector('[data-workflow-node=execute]') !== null"), true);
+  // B4：常规轮 bar 已替换旧 TurnSummary（bar 契约由 turn-summary-bar-browser.test 专测，
+  // 消息流内的多 bar 与轮展开验证在该专属测试中覆盖——此处不再重复，避免全局选择器干扰面板断言）。
   await page.evaluate("document.querySelector('[data-friend-panel-toggle]').click()");
+  await pause(800);
+  console.log("PANEL_AFTER", await page.evaluate(`JSON.stringify({
+    toggle: document.querySelector('[data-friend-panel-toggle]') !== null,
+    open: document.querySelector('.workspace-friend-panel.is-open') !== null,
+    anyDialog: document.querySelectorAll('[role=dialog]').length,
+    turnDetails: document.querySelectorAll('[data-summary-detail]').length,
+  })`));
   await page.waitFor("document.querySelector('.workspace-friend-panel.is-open') === null");
 
   // The visible completion feedback comes from real Pi events, not fabricated component props.
