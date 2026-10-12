@@ -6,6 +6,7 @@ import { toSessionLifecycleHttpError } from "../../../../../session-removal-http
 import { SessionOwnerResolutionError } from "../../../../../session-owner.js";
 import {
   adaptLegacyPromptCaptures,
+  aggregateInteractionRows,
   interactionTurnKeyOf,
   hasInteractions,
   readInteractionPage,
@@ -50,24 +51,40 @@ export default defineEventHandler(async (event) => {
     const rows = legacy
       ? allRows.filter(row => row.seq > cursor && row.seq <= cursor + limit)
       : (await readInteractionPage(sessionDir, sessionId, { cursor, limit })).rows;
-    // 轮头字段（F4，只增）：首见时间、Agent 身份、完成态（该组最后一条有无 outcome）。
-    const groups = new Map<string, { key: string; source: string; stage: { id: string; nodeKind: string }; requestCount: number; failures: number; tokenOut: number; firstTimestamp: string; agentLabel: string; state: "done" | "running" }>();
+    // 轮头字段（F4 + E1/E2/E3 修复）：请求数按 retryOf 链去重聚合（=turn 接口一致），
+    // attempts=行数；state：末行有 outcome→done，legacy 且全无 outcome→unknown（UI 显示"未记录"），
+    // 否则 running。聚合全部在后端（02 T9）。
+    type AllRow = (typeof allRows)[number];
+    const rowsByKey = new Map<string, AllRow[]>();
     for (const row of allRows) {
       const key = interactionTurnKeyOf(row);
-      const current = groups.get(key);
-      const outcome = (row as { readonly outcome?: { readonly status?: string; readonly usage?: unknown } }).outcome;
-      const failed = outcome !== undefined && outcome.status !== "success";
-      const usageTotal = (outcome?.usage as { totalTokens?: unknown } | undefined)?.totalTokens;
-      const tokens = typeof usageTotal === "number" ? usageTotal : 0;
-      const agentLabel = row.agent.agentName ?? row.agent.agentId;
-      if (current === undefined) {
-        groups.set(key, { key, source: row.turn.source, stage: row.turn.stage, requestCount: 1, failures: failed ? 1 : 0, tokenOut: tokens,
-          firstTimestamp: row.timestamp, agentLabel, state: outcome === undefined ? "running" : "done" });
-      } else {
-        current.requestCount += 1; if (failed) current.failures += 1; current.tokenOut += tokens;
-        current.state = outcome === undefined ? "running" : current.state;
-        if (agentLabel) current.agentLabel = agentLabel;
-      }
+      const bucket = rowsByKey.get(key);
+      if (bucket === undefined) rowsByKey.set(key, [row]);
+      else bucket.push(row);
+    }
+    const groups = new Map<string, { key: string; source: string; stage: { id: string; nodeKind: string }; requestCount: number; attempts: number; failures: number; tokenOut: number; promptChars: number; model: string; firstTimestamp: string; agentLabel: string; state: "done" | "running" | "unknown"; hasOutcome: boolean }>();
+    for (const [key, rows] of rowsByKey) {
+      const aggregated = aggregateInteractionRows(rows);
+      const first = rows[0]!;
+      const last = rows[rows.length - 1]! as AllRow & { readonly outcome?: unknown };
+      const hasOutcome = aggregated.summary.hasOutcome;
+      const isLegacy = rows.every(row => (row as { legacy?: boolean }).legacy === true);
+      const state = last.outcome !== undefined ? "done" : isLegacy && !hasOutcome ? "unknown" : "running";
+      groups.set(key, {
+        key,
+        source: first.turn.source,
+        stage: first.turn.stage,
+        requestCount: aggregated.summary.requestCount,
+        attempts: aggregated.summary.attempts,
+        failures: aggregated.summary.failures,
+        tokenOut: aggregated.summary.tokenOut,
+        promptChars: aggregated.summary.promptChars,
+        model: aggregated.summary.model,
+        firstTimestamp: first.timestamp,
+        agentLabel: first.agent.agentName ?? first.agent.agentId,
+        state,
+        hasOutcome,
+      });
     }
     const nextCursor = rows.at(-1)?.seq;
     return {

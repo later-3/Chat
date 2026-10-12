@@ -282,10 +282,17 @@ export interface InteractionRequestGroup {
 }
 
 export interface InteractionTurnSummary {
+  /** 去重后的请求数（retryOf 链聚合）——与 attempts 分开（E1 修复） */
   readonly requestCount: number;
   readonly attempts: number;
   readonly failures: number;
   readonly tokenOut: number;
+  /** 该轮请求 prompt 字符合计（回复 bar 用，聚合在后端） */
+  readonly promptChars: number;
+  /** 该轮模型（首行） */
+  readonly model: string;
+  /** 轮内是否存在任何 outcome——false（且 legacy）时 UI 显示"未记录"而非 0（E2/E3/E4） */
+  readonly hasOutcome: boolean;
 }
 
 type OutcomeRow = InteractionRequestRow & { readonly outcome?: InteractionOutcomeRecord["outcome"] };
@@ -336,6 +343,14 @@ export function aggregateInteractionRows(rows: readonly OutcomeRow[]): {
     tokenOut += usageTokens(row.outcome?.usage);
   }
   const stageMap = new Map<string, InteractionStageSummary>();
+  let promptChars = 0;
+  let model = "";
+  let hasOutcome = false;
+  for (const row of rows) {
+    promptChars += row.payload.chars;
+    if (!model) model = `${row.model.provider}/${row.model.modelId}`;
+    if (row.outcome !== undefined) hasOutcome = true;
+  }
   const requests = chains.map((chain) => {
     attempts += chain.members.length;
     const last = chain.members.at(-1)!;
@@ -360,7 +375,7 @@ export function aggregateInteractionRows(rows: readonly OutcomeRow[]): {
     });
     return group;
   });
-  return { requests, summary: { requestCount: requests.length, attempts, failures, tokenOut }, stages: [...stageMap.values()] };
+  return { requests, summary: { requestCount: requests.length, attempts, failures, tokenOut, promptChars, model, hasOutcome }, stages: [...stageMap.values()] };
 }
 
 export interface InteractionTurnGroupPage extends InteractionPage {
