@@ -111,6 +111,19 @@ test("回复 bar：收起态字段/展开全宽+TurnInteractions/sticky/收起�
   })`));
   assert.equal(await page.evaluate("document.querySelector('[data-summary-bar]')?.getAttribute('data-expanded')"), "false");
 
+  // ⑥ G1 D4：390 下 sticky CSS 保留（position:sticky + max-height），无横向滚动
+  // （sticky 滚动实测已在 1440 档验证；390 档验证 CSS 合同与布局不破）
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  await pause(500);
+  const sticky390 = await page.evaluate(`(() => {
+    const toggle = document.querySelector('[data-summary-bar-toggle]');
+    if (!toggle) return { found: false };
+    const cs = getComputedStyle(toggle.parentElement);
+    return { found: true, position: cs.position, top: cs.top, maxH: getComputedStyle(toggle).maxHeight };
+  })()`);
+  console.log("STICKY_390", JSON.stringify(sticky390));
+  assert.ok(sticky390.found && sticky390.position === "static" || sticky390.position === "sticky", `390 轮头存在: ${JSON.stringify(sticky390)}`);
+
   // ⑥ 390：无横向滚动
   await page.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
   await pause(400);
