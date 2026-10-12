@@ -63,16 +63,16 @@ test("回复 bar：收起态字段/展开全宽+TurnInteractions/sticky/收起�
   })()`);
   console.log("BAR_COLLAPSED", JSON.stringify(collapsed).slice(0, 300));
   assert.equal(collapsed.expanded, "false", "默认收起");
-  assert.ok(collapsed.text.includes("Reply bar") && /\d/.test(collapsed.text), `bar 字段: ${collapsed.text}`);
+  assert.ok(/轮 \d|Turn \d/i.test(collapsed.text) && !collapsed.text.includes("Reply bar") && /Tools \d+/.test(collapsed.text), `轮号+属性无自标: ${collapsed.text}`);
   // ② 旧 TurnSummary 在常规轮不渲染
   assert.equal(await page.evaluate("document.querySelector('.turn-summary-card, [data-turn-summary-legacy]') !== null"), false, "旧 TurnSummary 常规轮不渲染");
 
   // ③ 点击展开：全宽面板 + TurnInteractions 原始请求体
   await page.evaluate("document.querySelector('[data-summary-bar-toggle]').click()");
-  await page.waitFor("document.querySelector('[data-summary-detail] [data-turn-interactions]') !== null", { label: "展开面板含 TurnInteractions", timeoutMs: 30_000 });
+  await page.waitFor("document.querySelector('[data-turn-process] .turn-process-item') !== null", { label: "过程回放条目", timeoutMs: 30_000 });
   const expanded = await page.evaluate(`(() => {
     const bar = document.querySelector('[data-summary-bar]');
-    const panel = document.querySelector('[data-summary-detail]');
+    const panel = document.querySelector('[data-turn-process]');
     const barW = bar.getBoundingClientRect().width, panelW = panel.getBoundingClientRect().width;
     const container = bar.closest('[data-chat-scroll]') ?? panel.parentElement?.parentElement;
     const toggle = document.querySelector('[data-summary-bar-toggle]');
@@ -102,7 +102,7 @@ test("回复 bar：收起态字段/展开全宽+TurnInteractions/sticky/收起�
   })()`);
   await pause(400);
   await page.evaluate("document.querySelector('[data-summary-bar-toggle]').click()");
-  await page.waitFor("document.querySelector('[data-summary-detail]') === null", { label: "收起后面板移除" });
+  await page.waitFor("document.querySelector('[data-turn-process]') === null", { label: "收起后过程面板移除" });
   console.log("COLLAPSE_DEBUG", await page.evaluate(`JSON.stringify({
     bars: document.querySelectorAll('[data-summary-bar]').length,
     toggles: document.querySelectorAll('[data-summary-bar-toggle]').length,
