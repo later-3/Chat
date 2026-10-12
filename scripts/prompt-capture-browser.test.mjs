@@ -357,9 +357,24 @@ test("the prompt-capture switch reaches the send, records regions and drives the
         exchange: document.querySelector('[data-turn-exchange]')?.innerText?.slice(0, 120) ?? null,
       })`));
       const exchangeOk = await page.evaluate(`!!document.querySelector('[data-side-a] [data-initiator-bar]') && !!document.querySelector('[data-side-b] .turn-reply-card')`);
+      if (!exchangeOk) console.log("AB_FAIL_DUMP", await page.evaluate(`JSON.stringify({
+        exchange: document.querySelector('[data-turn-exchange]')?.innerText?.slice(0, 200) ?? null,
+        sideA: document.querySelectorAll('[data-side-a]').length, sideB: document.querySelectorAll('[data-side-b]').length,
+        replyCard: document.querySelectorAll('.turn-reply-card').length, noMsg: document.body.innerText.includes('not linked') || document.body.innerText.includes('未关联'),
+      })`));
       assert.equal(exchangeOk, true, "a 气泡侧发起方 bar + b 侧回复卡（原型 a/b 结构）");
       const initiatorText = await page.evaluate("document.querySelector('[data-initiator-bar]')?.innerText ?? ''");
       assert.ok(/发起方 bar|Initiator bar/.test(initiatorText) && /chars/.test(initiatorText), `发起方 bar 文本: ${initiatorText}`);
+      // 发起方 bar 可展开（02 §2.1 a 视角：同一请求详情，定位本轮输入）
+      await page.evaluate("document.querySelector('[data-initiator-bar]')?.click()");
+      await page.waitFor("document.querySelector('[data-initiator-detail] .region-bar-row') !== null", { label: "发起方 bar 展开面板（条形渲染）", timeoutMs: 20_000 });
+      const initiatorPanel = await page.evaluate(`(() => ({
+        hasBars: document.querySelectorAll('[data-initiator-detail] [data-region-bars], [data-initiator-detail] .region-bar-row').length,
+        hasFocus: document.querySelectorAll('[data-initiator-detail] .prompt-capture-block.is-focus').length,
+        expanded: document.querySelector('[data-initiator-bar]')?.getAttribute('aria-expanded'),
+      }))()`);
+      assert.ok(initiatorPanel.hasBars >= 1 && initiatorPanel.hasFocus >= 1 && initiatorPanel.expanded === "true",
+        `发起方面板=条形+本轮输入高亮+aria: ${JSON.stringify(initiatorPanel)}`);
       await closeDialog();
     }
 
