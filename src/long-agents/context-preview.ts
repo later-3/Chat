@@ -17,7 +17,7 @@ import { prepareLongAgentAssembly } from "./assembly.js";
 import { readLongAgentAgentGroup } from "./agent-group-service.js";
 import { readLongAgentRegistry } from "./storage.js";
 import { longAgentWorkflowConfiguration } from "./workflow-configuration.js";
-import { applyContextEdit, readContextEditFromEntries } from "../context-edit.js";
+import { applyContextEdit, applyMessageEdits, readContextEditFromEntries } from "../context-edit.js";
 import { parseProviderPayloadRegions } from "../session-prompt-capture.js";
 
 export interface SendPreviewTool {
@@ -142,7 +142,14 @@ export async function buildSendPreview(input: {
   };
   const editLayer = readContextEditFromEntries(chatSession.manager.getEntries());
   const applied = applyContextEdit(rawPayload, model?.api, editLayer);
-  const edited = applied.payload as typeof rawPayload;
+  const editedBase = applied.payload as typeof rawPayload;
+  // 消息级修改：payload 的消息带 entryId，与发送侧共用 applyMessageEdits（所见即所发）。
+  const bodyMessages = (editedBase.messages as Record<string, unknown>[]).slice(1);
+  const bodyEntryIds = bodyMessages.map((message) => (typeof message.entryId === "string" ? message.entryId : ""));
+  const editedBody = applyMessageEdits(bodyMessages, bodyEntryIds, editLayer);
+  const edited = editedBody === undefined
+    ? editedBase
+    : { ...editedBase, messages: [(editedBase.messages as Record<string, unknown>[])[0] as Record<string, unknown>, ...(editedBody as Record<string, unknown>[])] };
   // 与真实详情一致：把消息按区域分类（本轮输入/历史用户/助手/工具结果/注入指令…），
   // 否则界面只能显示"未分类"。用的是捕获记录同一解析器。
   // 预览是 Pi 形态（role=`toolResult`），分类器按 Provider 角色识别（`tool`）——

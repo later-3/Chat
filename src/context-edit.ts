@@ -252,6 +252,34 @@ export function tagSubEntryBlockId(tag: string, subId: string): string { return 
 // 应用（gate 处；一期：excluded 的 system 区块与工具）
 // ---------------------------------------------------------------------------
 
+/**
+ * 消息级修改（B5）：按"条目 id 顺序"把 `modified["entry:<id>"]` 的文字写回对应消息。
+ * 预览（payload 消息带 entryId）与真实发送（transformContext 的消息数组）**共用本函数**，
+ * 保证"所见即所发"。数量不一致 → 返回 undefined（调用方跳过并记日志，不猜、不静默错配）。
+ */
+export function applyMessageEdits(
+  messages: readonly unknown[],
+  entryIds: readonly string[],
+  layer: ContextEditLayer,
+): readonly unknown[] | undefined {
+  if (entryIds.length !== messages.length) return undefined;
+  const edits = new Map<string, string>();
+  for (const [id, text] of Object.entries(layer.modified)) {
+    if (id.startsWith(ENTRY_PREFIX)) edits.set(id.slice(ENTRY_PREFIX.length), text);
+  }
+  if (edits.size === 0) return messages;
+  return messages.map((message, index) => {
+    const text = edits.get(entryIds[index] as string);
+    if (text === undefined) return message;
+    return { ...(message as Record<string, unknown>), content: [{ type: "text", text }] };
+  });
+}
+
+/** 编辑层里是否有消息（条目）级修改。 */
+export function hasMessageEdits(layer: ContextEditLayer): boolean {
+  return Object.keys(layer.modified).some((id) => id.startsWith(ENTRY_PREFIX));
+}
+
 export interface ApplyContextEditResult {
   readonly payload: unknown;
   /** 本轮实际排除的块数（system 块 + 工具 + 已声明的消息条目）。 */
@@ -266,6 +294,8 @@ export function applyContextEdit(payload: unknown, api: string | undefined, laye
   }
   const excluded = new Set(layer.excluded);
   const hit: string[] = [];
+  // modified 不产生"命中条目"，但要记入"改过"标志——否则末尾的快路径会把修改整个丢掉（F-67）。
+  let modifiedAny = false;
   const root = payload as Record<string, unknown>;
   const next: Record<string, unknown> = { ...root };
 
@@ -288,6 +318,7 @@ export function applyContextEdit(payload: unknown, api: string | undefined, laye
       const modified = layer.modified[blockId];
       if (modified !== undefined) {
         body = modified;
+        modifiedAny = true;
       } else {
         // 子条目级排除（用户 2026-10-13）：块没被整体勾掉时，逐条剔掉被勾掉的条目（前后端同一规则）。
         const excludedSubs = splitSubEntries(tag, segment.text)
@@ -357,7 +388,8 @@ export function applyContextEdit(payload: unknown, api: string | undefined, laye
 
   // 消息条目的排除发生在上下文层（gate 处已看不到它们）——按声明计数，保持 excluded.count 语义完整。
   const declaredEntries = layer.excluded.filter((id) => id.startsWith(ENTRY_PREFIX)).length;
-  return { payload: hit.length === 0 && declaredEntries === 0 ? payload : next, excludedCount: hit.length + declaredEntries, excludedIds: hit };
+  const untouched = hit.length === 0 && declaredEntries === 0 && !modifiedAny;
+  return { payload: untouched ? payload : next, excludedCount: hit.length + declaredEntries, excludedIds: hit };
 }
 
 function toolDefinitionName(tool: unknown): string | undefined {

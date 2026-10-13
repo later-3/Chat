@@ -141,10 +141,10 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
     readEdit: async (sessionId) => (await fetch(
       `${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/context-edit?projectId=friend`,
     )).json(),
-    writeEdit: async (sessionId, excluded, expectedRevision) => {
+    writeEdit: async (sessionId, excluded, expectedRevision, modified = {}) => {
       const response = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/context-edit?projectId=friend`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ excluded, modified: {}, added: {}, expectedRevision }),
+        body: JSON.stringify({ excluded, modified, added: {}, expectedRevision }),
       });
       return { status: response.status, body: await response.json() };
     },
@@ -275,6 +275,33 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
     const back = await (await fetch(previewUrl)).json();
     assert.equal((back.payload?.messages ?? []).some((message) => message.entryId === entryId), true, "恢复后历史消息回到预览");
     console.log("ENTRY_EXCLUSION", JSON.stringify({ entryId, removed: true, restored: true }));
+  }
+
+  // ⑤d 消息级修改（用户 2026-10-13：历史消息要能勾选**和编辑**）：
+  //     改一条历史消息的文字 → 发一轮 → **真实发给模型的请求体里就是改后的文字**（发送侧同一条 applyMessageEdits）。
+  {
+    // 发送前必须先关掉面板（dialog 会挡住 composer）
+    await page.evaluate("[...document.querySelectorAll('[role=dialog]')].forEach((dialog) => dialog.querySelector('header button[aria-label=Close]')?.click())");
+    await pause(1200);
+    const previewUrl = `${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/context-preview?projectId=friend&longAgentId=friend&draft=x`;
+    const before = await (await fetch(previewUrl)).json();
+    const target = (before.payload?.messages ?? []).find((message) => typeof message.entryId === "string" && message.role === "user");
+    assert.ok(target, "预览里应有可修改的历史用户消息");
+    const entryId = target.entryId;
+    const modifiedText = "E2E_MODIFIED_TEXT_历史消息被改过";
+    const current = await api.readEdit(sessionId);
+    const putModify = await api.writeEdit(sessionId, [], current.revision, { [`entry:${entryId}`]: modifiedText });
+    assert.equal(putModify.status, 200, JSON.stringify(putModify));
+    const after = await (await fetch(previewUrl)).json();
+    assert.equal(JSON.stringify(after.payload?.messages ?? []).includes(modifiedText), true, "预览里应显示改后的文字（所见即所发）");
+    // 真正发一轮，核对**实际发出的请求体**
+    const modifiedRound = await send("b5-modified");
+    const sent = await api.lastRequest(modifiedRound.sessionId);
+    const sentText = JSON.stringify(sent.detail.payload ?? {});
+    assert.equal(sentText.includes(modifiedText), true, "真实发给模型的请求体里应是改后的文字");
+    console.log("MESSAGE_MODIFY", JSON.stringify({ entryId, inPreview: true, inSentPayload: true }));
+    const restoredModify = await api.writeEdit(sessionId, [], putModify.body.revision, {});
+    assert.equal(restoredModify.status, 200, JSON.stringify(restoredModify));
   }
 
   // ⑥ 边界（用户 2026-10-13）：完整历史是事后回看 → 只读，不出现编辑勾选框。

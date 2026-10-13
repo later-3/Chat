@@ -153,3 +153,18 @@ test("applyContextEdit：子条目级排除只删该条目，块与其他条目�
   assert.equal(result.excludedIds[0], "tag:chat_interaction_harness#protocol/a.md");
   assert.equal(payload.messages[0].content, systemText, "原 payload 不改写");
 });
+
+test("applyContextEdit：只有修改（没有排除）也必须生效（F-67 快路径回归门禁）", () => {
+  const systemText = '<chat_identity source="chat">原文</chat_identity><chat_long_term_memory>记忆</chat_long_term_memory>';
+  const payload = { messages: [{ role: "system", content: systemText }] };
+  const layer = { ...EMPTY_CONTEXT_EDIT, modified: { "tag:chat_identity": "改后的身份" }, revision: 1 };
+  const result = applyContextEdit(payload, "openai-completions", layer);
+  assert.equal(result.payload.messages[0].content,
+    '<chat_identity source="chat">改后的身份</chat_identity><chat_long_term_memory>记忆</chat_long_term_memory>',
+    "只有修改时也要返回改后的 payload（不能落进'未命中→原样返回'的快路径）");
+});
+
+test("applyContextEdit：空编辑层仍走快路径（原对象返回）", () => {
+  const payload = { messages: [{ role: "system", content: "<chat_identity>x</chat_identity>" }] };
+  assert.equal(applyContextEdit(payload, "openai-completions", EMPTY_CONTEXT_EDIT).payload, payload);
+});

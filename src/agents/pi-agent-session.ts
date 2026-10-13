@@ -15,10 +15,11 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   ModelRuntime,
+  sessionEntryToContextMessages,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { ChatSession } from "../chat-session.js";
-import { EMPTY_CONTEXT_EDIT, applyContextEdit, isContextEditEmpty, readContextEditFromEntries } from "../context-edit.js";
+import { EMPTY_CONTEXT_EDIT, applyContextEdit, applyMessageEdits, hasMessageEdits, isContextEditEmpty, readContextEditFromEntries } from "../context-edit.js";
 import { describeResourceVersion, qualifiedResourceAddress } from "../resources/version.js";
 import type {
   ChatSessionToolResource,
@@ -326,18 +327,33 @@ export async function createChatPiAgentSession(
         enabled: options.promptCaptureEnabled === true,
       })
     : undefined;
-  const effectiveTransformContext: AgentContextTransform | undefined = promptCapture === undefined
-    ? options.transformContext
-    : async (messages, signal) => {
-        const result = options.transformContext === undefined ? messages : await options.transformContext(messages, signal);
-        promptCapture.pushNeutralContext(result);
-        return result;
-      };
   // B5 编辑层：打开会话时读取（写入即冻结、从下一轮生效）；独立于记录开关——排除不依赖 promptCapture。
   const contextEditLayer = chatSession.projectContext === undefined
     ? EMPTY_CONTEXT_EDIT
     : readContextEditFromEntries(options.sessionManager.getEntries());
   const hasContextEdit = !isContextEditEmpty(contextEditLayer);
+  const messageEdits = hasMessageEdits(contextEditLayer);
+  const effectiveTransformContext: AgentContextTransform | undefined = (promptCapture === undefined && !messageEdits)
+    ? options.transformContext
+    : async (messages, signal) => {
+        let result = options.transformContext === undefined ? messages : await options.transformContext(messages, signal);
+        if (messageEdits) {
+          // B5 消息级修改：按会话条目顺序与 Pi 传入的上下文配对（同一 contextEntryFilter 语义）；
+          // 数量不符则跳过并记日志——不猜、不静默错配。
+          const entryIds: string[] = [];
+          for (const entry of options.sessionManager.buildContextEntries()) {
+            for (let index = 0; index < sessionEntryToContextMessages(entry).length; index += 1) entryIds.push(entry.id);
+          }
+          const edited = applyMessageEdits(result, entryIds, contextEditLayer);
+          if (edited === undefined) {
+            console.error(`[context-edit] 消息修改配对失败（条目 ${entryIds.length} vs 消息 ${result.length}），本轮跳过消息级修改 sessionId=${options.sessionManager.getSessionId()}`);
+          } else {
+            result = edited as typeof result;
+          }
+        }
+        promptCapture?.pushNeutralContext(result);
+        return result;
+      };
   const effectiveProviderRequestGate = promptCapture === undefined && !hasContextEdit
     ? options.providerRequestGate
     : async (...gateArguments: Parameters<NonNullable<CreateAgentSessionOptions["providerRequestGate"]>>) => {
