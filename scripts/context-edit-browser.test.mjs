@@ -202,7 +202,37 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
   assert.equal(backSystem.includes("<chat_identity"), true, "恢复后真实请求体含身份区块");
   console.log("RESTORED_REGIONS", JSON.stringify(backRegionIds));
 
-  // ⑤ UI：完整历史 → 展开轮 → 回复 bar → 请求组 → 详情 → 勾选框 / 已排除区 / 恢复。
+  // ⑤ UI（**发送前入口**，用户定界）：composer 旁「即将发送的内容」→ 勾选 / 已排除区 / 恢复。
+  //    完整历史保持只读（回看不是编辑的地方）。
+  await page.evaluate("document.querySelector('[data-context-preview-open]').click()");
+  await page.waitFor("document.querySelector('[data-context-preview]') !== null", { label: "发送前编辑面板", timeoutMs: 30_000 });
+  await page.waitFor("document.querySelector('[data-context-preview] [data-context-edit-toggle]') !== null", { label: "块勾选框", timeoutMs: 30_000 });
+  const previewSummary = await page.evaluate("document.querySelector('[data-context-preview-summary]')?.textContent ?? ''");
+  assert.ok(/\d/.test(previewSummary), `发送统计应显示数字：${previewSummary}`);
+  console.log("PREVIEW_SUMMARY", previewSummary.trim());
+  const previewToggles = await page.evaluate("[...document.querySelectorAll('[data-context-preview] [data-context-edit-toggle]')].map(n => n.getAttribute('data-context-edit-toggle'))");
+  console.log("PREVIEW_TOGGLES", JSON.stringify(previewToggles.slice(0, 10)));
+  assert.ok(previewToggles.includes("tag:chat_identity"), `面板应有身份区块勾选框：${JSON.stringify(previewToggles.slice(0, 10))}`);
+  assert.ok(previewToggles.some((id) => id.startsWith("tools:")), `面板应有工具勾选框：${JSON.stringify(previewToggles.slice(0, 10))}`);
+
+  // 勾掉身份区块 → 已排除折叠区出现 + 后端真的写入。
+  await page.evaluate("document.querySelector('[data-context-preview] [data-context-edit-toggle=\"tag:chat_identity\"]').click()");
+  await page.waitFor("document.querySelector('[data-context-preview] [data-context-excluded]') !== null", { label: "已排除折叠区出现", timeoutMs: 20_000 });
+  await pause(600);
+  const afterUiExclude = await api.readEdit(sessionId);
+  assert.equal(afterUiExclude.excluded.includes("tag:chat_identity"), true, `UI 勾选写入后端：${JSON.stringify(afterUiExclude)}`);
+  const excludedRegionText = await page.evaluate("document.querySelector('[data-context-preview] [data-context-excluded]')?.textContent ?? ''");
+  assert.ok(/已排除|Excluded/i.test(excludedRegionText), `已排除区文案：${excludedRegionText}`);
+
+  // 在已排除区里恢复 → 折叠区消失 + 后端清空。
+  await page.evaluate("document.querySelector('[data-context-preview] [data-context-excluded] [data-context-edit-toggle=\"tag:chat_identity\"]').click()");
+  await page.waitFor("document.querySelector('[data-context-preview] [data-context-excluded]') === null", { label: "恢复后已排除区消失", timeoutMs: 20_000 });
+  await pause(600);
+  const afterUiRestore = await api.readEdit(sessionId);
+  assert.equal(afterUiRestore.excluded.includes("tag:chat_identity"), false, `UI 恢复写入后端：${JSON.stringify(afterUiRestore)}`);
+
+  // ⑥ 边界（用户 2026-10-13）：完整历史是事后回看 → 只读，不出现编辑勾选框。
+  await page.evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1)?.querySelector('header button[aria-label=Close]')?.click()");
   const closeDialog = () => page.evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1)?.querySelector('header button[aria-label=Close]')?.click()");
   const openHistory = () => page.evaluate(`(() => {
     const button = [...document.querySelectorAll('button')].find(candidate =>
@@ -220,31 +250,14 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
   await page.evaluate(`${turnScope(turnCount - 1)}.querySelector('[data-reply-bar]').click()`);
   await page.waitFor(`${turnScope(turnCount - 1)}.querySelectorAll('[data-prompt-capture-record]').length > 0`, { label: "请求组出现" });
   await page.evaluate(`${turnScope(turnCount - 1)}.querySelector('[data-prompt-capture-row-toggle]').click()`);
-  await page.waitFor("document.querySelector('[data-context-edit-toggle]') !== null", { label: "详情里的编辑勾选框", timeoutMs: 30_000 });
-  const summaryText = await page.evaluate("document.querySelector('[data-context-edit-summary]')?.textContent ?? ''");
-  assert.ok(summaryText.length > 0 && /\d/.test(summaryText), `发送统计应显示数字：${summaryText}`);
-  console.log("EDIT_SUMMARY", summaryText.trim());
+  await page.waitFor("document.querySelector('[data-raw-request]') !== null", { label: "原始请求体树", timeoutMs: 30_000 });
+  const historyToggles = await page.evaluate("document.querySelectorAll('[role=dialog] [data-context-edit-toggle]').length");
+  assert.equal(historyToggles, 0, `完整历史只读：不应出现编辑勾选框（实际 ${historyToggles}）`);
+  await closeDialog();
 
-  // 勾掉身份区块 → 已排除折叠区出现 + 后端真的写入。
-  await page.evaluate("document.querySelector('[data-context-edit-toggle=\"tag:chat_identity\"]').click()");
-  await page.waitFor("document.querySelector('[data-context-excluded]') !== null", { label: "已排除折叠区出现", timeoutMs: 20_000 });
-  await pause(500);
-  const afterUiExclude = await api.readEdit(sessionId);
-  assert.equal(afterUiExclude.excluded.includes("tag:chat_identity"), true, `UI 勾选写入后端：${JSON.stringify(afterUiExclude)}`);
-  const excludedRegionText = await page.evaluate("document.querySelector('[data-context-excluded]')?.textContent ?? ''");
-  assert.ok(/已排除|Excluded/i.test(excludedRegionText), `已排除区文案：${excludedRegionText}`);
-
-  // 在已排除区里恢复 → 折叠区消失 + 后端清空。
-  await page.evaluate("document.querySelector('[data-context-excluded] [data-context-edit-toggle=\"tag:chat_identity\"]').click()");
-  await page.waitFor("document.querySelector('[data-context-excluded]') === null", { label: "恢复后已排除区消失", timeoutMs: 20_000 });
-  await pause(500);
-  const afterUiRestore = await api.readEdit(sessionId);
-  assert.equal(afterUiRestore.excluded.includes("tag:chat_identity"), false, `UI 恢复写入后端：${JSON.stringify(afterUiRestore)}`);
-
-  // ⑥ 跨轮持久：刷新页面后编辑层仍是服务端事实（excluded 为空 = 恢复后的状态）。
+  // ⑦ 跨轮持久：刷新页面后编辑层仍是服务端事实（恢复后的状态 = 空）。
   await page.send("Page.reload");
   await pause(1500);
   const afterReload = await api.readEdit(sessionId);
   assert.deepEqual(afterReload.excluded, [], `刷新后编辑层保持服务端事实：${JSON.stringify(afterReload)}`);
-  await closeDialog();
 });

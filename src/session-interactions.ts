@@ -39,7 +39,7 @@ export interface InteractionTurn {
   readonly turnKey?: string;
   readonly stage: InteractionStage;
 }
-export interface InteractionRegionRef { readonly id: string; readonly chars: number; readonly revision?: string; /** 人话展示名：读侧从注册表补（F6/F-09） */ readonly label?: string }
+export interface InteractionRegionRef { readonly id: string; readonly chars: number; readonly revision?: string; /** 人话展示名：读侧从注册表补（F6/F-09） */ readonly label?: string; /** B5：内容前 80 字符预览（识别块用；**无条件记录，不依赖完整记录开关**） */ readonly preview?: string; /** B5：XML 标签名（= registry.id，如 chat_identity；pi-base 无标签不写）——发送前编辑的 blockId 依据 */ readonly tag?: string }
 export interface InteractionRequestRow {
   readonly schemaVersion: typeof INTERACTION_SCHEMA_VERSION;
   readonly requestId: string;
@@ -56,8 +56,10 @@ export interface InteractionRequestRow {
   readonly retryOf?: string;
   readonly regions: readonly InteractionRegionRef[];
   readonly toolCount: number;
+  /** B5：工具名清单（发送前编辑入口用；**无条件记录**）；超限降级时省略 */
+  readonly toolNames?: readonly string[];
   readonly messageCount: number;
-  /** 上下文排除数据源在 P5；B2 恒为 0（D3） */
+  /** 上下文排除：被编辑层剔除的块数（B5 实数化） */
   readonly excluded: { readonly count: number };
   readonly payload: { readonly sha256: string; readonly chars: number; readonly file?: string };
   /** 仅旧数据适配视图携带（读取时标记，不落新盘） */
@@ -163,9 +165,24 @@ export function createInteractionRecorder(input: InteractionRecorderInput): Inte
       const parsed = parseProviderPayloadRegions(payload, model.api, neutral);
       const regions: InteractionRegionRef[] = (parsed.systemPrompt?.sections ?? []).map((section) => {
         const revision = /revision="([^"]+)"/.exec(section.text)?.[1];
-        return { id: section.kind, chars: section.text.length, ...(revision === undefined ? {} : { revision }) };
+        const preview = section.text.trim().slice(0, 80);
+        // B5：带出 XML 标签名（编辑层 blockId 用）；第一个实测区域的 kind 与 id 对应同一 registry 条目。
+        const tag = PROMPT_REGION_REGISTRY.find((region) => region.kind === section.kind || region.id === section.kind)?.tag;
+        return { id: section.kind, chars: section.text.length, ...(revision === undefined ? {} : { revision }),
+          ...(tag === undefined || tag === "" ? {} : { tag }),
+          ...(preview === "" ? {} : { preview }) };
       });
       const payloadRecord = payload as { messages?: unknown[]; tools?: unknown[] };
+      const toolNames: string[] = [];
+      if (Array.isArray(payloadRecord.tools)) {
+        for (const tool of payloadRecord.tools) {
+          if (tool === null || typeof tool !== "object") continue;
+          const record = tool as { name?: unknown; function?: { name?: unknown } };
+          if (typeof record.name === "string") { toolNames.push(record.name); continue; }
+          const nested = record.function;
+          if (nested !== null && typeof nested === "object" && typeof nested.name === "string") toolNames.push(nested.name);
+        }
+      }
       const turn = input.turn;
       const row: InteractionRequestRow = {
         schemaVersion: INTERACTION_SCHEMA_VERSION,
@@ -184,6 +201,7 @@ export function createInteractionRecorder(input: InteractionRecorderInput): Inte
         ...(() => { const prev = attempt > 1 ? pending[pending.length - 1]?.requestId : undefined; return prev === undefined ? {} : { retryOf: prev }; })(),
         regions,
         toolCount: Array.isArray(payloadRecord.tools) ? payloadRecord.tools.length : 0,
+        ...(toolNames.length === 0 ? {} : { toolNames }),
         messageCount: Array.isArray(payloadRecord.messages) ? payloadRecord.messages.length : 0,
         excluded: { count: excludedCount ?? 0 }, // B5：装配时实数化（gate 应用编辑层后传入）
         payload: { sha256, chars: JSON.stringify(payload).length, ...(input.enabled ? { file: `${requestId}.json.gz` } : {}) },
