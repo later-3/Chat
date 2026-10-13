@@ -18,6 +18,7 @@ import { readLongAgentAgentGroup } from "./agent-group-service.js";
 import { readLongAgentRegistry } from "./storage.js";
 import { longAgentWorkflowConfiguration } from "./workflow-configuration.js";
 import { applyContextEdit, readContextEditFromEntries } from "../context-edit.js";
+import { parseProviderPayloadRegions } from "../session-prompt-capture.js";
 
 export interface SendPreviewTool {
   readonly name: string;
@@ -34,6 +35,8 @@ export interface SendPreview {
     readonly tools: readonly { readonly type: "function"; readonly function: { readonly name: string; readonly description?: string; readonly parameters?: unknown } }[];
   };
   readonly excludedCount: number;
+  /** 消息区域分类（与真实详情同一解析器）。 */
+  readonly messageRegions?: readonly { readonly index: number; readonly role: string; readonly region: string; readonly customType?: string; readonly timestamp?: number }[];
   readonly systemPrompt: string;
   readonly tools: readonly SendPreviewTool[];
   readonly messages: readonly Record<string, unknown>[];
@@ -130,9 +133,27 @@ export async function buildSendPreview(input: {
   const editLayer = readContextEditFromEntries(chatSession.manager.getEntries());
   const applied = applyContextEdit(rawPayload, model?.api, editLayer);
   const edited = applied.payload as typeof rawPayload;
+  // 与真实详情一致：把消息按区域分类（本轮输入/历史用户/助手/工具结果/注入指令…），
+  // 否则界面只能显示"未分类"。用的是捕获记录同一解析器。
+  // 预览是 Pi 形态（role=`toolResult`），分类器按 Provider 角色识别（`tool`）——
+  // 解析前做一次角色归一（只影响分类，不改展示形态）。
+  const normalizedForRegions = {
+    ...edited,
+    messages: (edited.messages as Record<string, unknown>[]).map((message) =>
+      message.role === "toolResult" ? { ...message, role: "tool" } : message),
+  };
+  const parsed = parseProviderPayloadRegions(normalizedForRegions, model?.api, undefined);
+  const messageRegions = parsed.messages?.map((message) => ({
+    index: message.index,
+    role: message.role,
+    region: message.region,
+    ...(message.customType === undefined ? {} : { customType: message.customType }),
+    ...(message.timestamp === undefined ? {} : { timestamp: message.timestamp }),
+  }));
   return {
     payload: edited,
     excludedCount: applied.excludedCount,
+    ...(messageRegions === undefined ? {} : { messageRegions }),
     systemPrompt: session.systemPrompt,
     tools,
     messages,

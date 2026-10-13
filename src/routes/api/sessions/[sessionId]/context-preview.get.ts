@@ -35,6 +35,7 @@ export default defineEventHandler(async (event) => {
       source: "assembly-preview",
       excludedCount: preview.excludedCount,
       payload: preview.payload,
+      ...(preview.messageRegions === undefined ? {} : { messageRegions: preview.messageRegions }),
     };
   } catch (error) {
     if (error instanceof SessionOwnerResolutionError) throw createError({ statusCode: 500, statusMessage: error.message });
