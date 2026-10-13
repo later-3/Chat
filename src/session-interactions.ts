@@ -279,7 +279,8 @@ export async function readInteractionPage(sessionDir: string, sessionId: string,
   const window = all.filter((row) => row.seq > cursor).slice(0, limit);
   const rows = window.map((row) => {
     const outcome = outcomeByRequest.get(row.requestId);
-    const withLabel = { ...row, regions: row.regions.map(region => ({ ...region, label: regionLabelOf(region.id) })) };
+    // B5：读侧补齐 label 与 tag（tag 供发送前编辑入口的 blockId；旧记录（B2 时期）无 tag 且无 preview）。
+    const withLabel = { ...row, regions: enrichRegionMetadata(row.regions) };
     return outcome === undefined ? withLabel : { ...withLabel, outcome };
   });
   const last = rows.at(-1);
@@ -407,6 +408,18 @@ function regionLabelOf(id: string): string {
   return PROMPT_REGION_REGISTRY.find((region) => region.id === id || region.kind === id)?.label ?? id;
 }
 
+/**
+ * B5：读侧补齐区域元数据——label（人话名，F6 既有语义）+ tag（XML 标签名，发送前编辑的 blockId 依据）。
+ * 旧记录（B2 时期）只有 id/chars：必须靠 registry 反查补齐，否则老会话在发送前面板里没有勾选框。
+ */
+export function enrichRegionMetadata(regions: readonly InteractionRegionRef[]): readonly InteractionRegionRef[] {
+  return regions.map((region) => {
+    const def = PROMPT_REGION_REGISTRY.find((candidate) => candidate.id === region.id || candidate.kind === region.id);
+    return { ...region, label: regionLabelOf(region.id),
+      ...(region.tag === undefined && def !== undefined && def.tag !== "" ? { tag: def.tag } : {}) };
+  });
+}
+
 /** 轮分组键（F2）：与旧前端 groupPromptCaptures 同源——workflowInvocationId ?? turnKey ?? 系统调用。 */
 export function interactionTurnKeyOf(row: Pick<InteractionRequestRow, "turn">): string {
   return row.turn.workflowInvocationId ?? row.turn.turnKey ?? "系统调用";
@@ -511,7 +524,9 @@ export function adaptLegacyPromptCaptures(records: readonly PromptCaptureRecord[
       kind: record.kind,
       attempt,
       ...(() => { const prev = attempt > 1 ? rows.at(-1) : undefined; return prev === undefined ? {} : { retryOf: prev.requestId }; })(),
-      regions: (record.regions.systemPrompt?.sections ?? []).map((section) => ({ id: section.kind, chars: section.text.length, label: section.label || regionLabelOf(section.kind) })),
+      regions: (record.regions.systemPrompt?.sections ?? []).map((section) => ({
+        id: section.kind, chars: section.text.length, label: section.label || regionLabelOf(section.kind),
+      })),
       toolCount: record.regions.tools?.length ?? 0,
       messageCount: record.regions.messages?.length ?? 0,
       excluded: { count: 0 },

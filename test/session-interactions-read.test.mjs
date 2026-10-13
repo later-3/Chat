@@ -93,3 +93,19 @@ test("兼容视图：v1 形状含 agent.agentId 与区域标签（FE 解析契�
   assert.equal(summary.regions.systemSections[0].label, "身份与职责");
   assert.equal(summary.regions.systemSections[0].chars, 3);
 });
+
+test("B5 读侧补齐区域元数据：旧记录（无 tag）反查 registry 补 tag，pi-base 不补", async () => {
+  const { enrichRegionMetadata } = await import("../src/session-interactions.ts");
+  const regions = enrichRegionMetadata([
+    { id: "chat-identity", chars: 920 },
+    { id: "pi-base", chars: 100 },
+    { id: "chat-interaction-harness", chars: 81262, preview: "以下是用户与该项目的交互 harness…" },
+    { id: "chat-unknown-region", chars: 5 },
+  ]);
+  assert.equal(regions[0].tag, "chat_identity", "旧记录按 kind 反查出 XML 标签名");
+  assert.ok(regions[0].label.length > 0 && regions[0].label !== "chat-identity", "补出人话名");
+  assert.equal(regions[1].tag, undefined, "pi-base 无标签 → 不补（界面不可勾）");
+  assert.equal(regions[2].tag, "chat_interaction_harness", "写入侧已带 tag 的记录保持不变");
+  assert.equal(regions[2].preview, "以下是用户与该项目的交互 harness…", "preview 原样保留");
+  assert.equal(regions[3].tag, undefined, "未登记区域不猜标签");
+});
