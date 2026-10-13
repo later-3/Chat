@@ -35,6 +35,7 @@ export default defineEventHandler(async (event) => {
       source: "assembly-preview",
       excludedCount: preview.excludedCount,
       blockLabels: preview.blockLabels,
+      usage: preview.usage,
       payload: preview.payload,
       ...(preview.messageRegions === undefined ? {} : { messageRegions: preview.messageRegions }),
     };

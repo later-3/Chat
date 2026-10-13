@@ -24,7 +24,8 @@ export async function executeLongAgentWorkflowStep(input: ChatWorkflowInput): Pr
   const turn = await requireAcceptedWorkflowTurn(input);
   const chatSession = await openChatSession(input);
   appendChatWorkflowStage(chatSession.manager, { invocationId: input.workflowInvocationId,
-    workflowId: "minimal-pi-coding-agent", stageId: "execute", agentId: "pi-coding-agent" });
+    // P3-U3：默认工作流（= 连续会话）的阶段归属**真实 Long Agent**。
+    workflowId: "minimal-pi-coding-agent", stageId: "execute", agentId: turn.longAgentId });
   chatSession.manager.flush();
   const { executeAcceptedLongAgentTurn } = await import("../long-agents/runtime.js");
   const result = await executeAcceptedLongAgentTurn({

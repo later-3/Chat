@@ -1,6 +1,5 @@
 import type { AgentInstruction, WorkflowAgentDefinition } from "../workflows/agent-config.js";
 import type { LongAgentAgentGroupDocument } from "./agent-group-service.js";
-import { resolveLongAgentWorkflowAgent } from "./workflow-configuration.js";
 import { ensureAgentCalendar } from "./project-agent.js";
 import { DAILY_ARCHIVE_INSTRUCTIONS } from "./daily-summary-task.js";
 import { agentDate } from "./calendar.js";
@@ -69,8 +68,10 @@ export async function prepareLongAgentAssembly(input: {
   const handoff = includeHandoff
     ? await buildLongAgentHandoff({ chatHome, longAgentId: agent.id, today: input.today ?? agentDate(agent.timeZone) })
     : null;
-  const execution = input.executionAgent ?? (scope === undefined
-    ? (await resolveLongAgentWorkflowAgent(agent, chatHome)).agent : agent.definition);
+  // P3-U3（用户 2026-10-13 定界）：**默认执行主体就是 Long Agent 本身**——
+  // 不再从工作流内置 agents 解析（那会落入 `pi-coding-agent` 假角色）。
+  // 显式传 executionAgent 的调用方（其他工作流，留待"多 Agent 交互"阶段）保持原样。
+  const execution = input.executionAgent ?? agent.definition;
   const identityInstructions = [
     ...(agent.definition.systemPrompt.mode === "replace" ? [{ text: agent.definition.systemPrompt.text }] : []),
     ...agent.definition.customInstructions,

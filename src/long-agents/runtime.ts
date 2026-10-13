@@ -308,7 +308,9 @@ export async function executeAcceptedLongAgentTurn(
         }
         const workflowObserver = input.workflowExecution === undefined ? undefined
           : (await import("../workflows/agent-session-log.js")).subscribeAgentSessionLog(created.session, "pi", {
-            workflowId: input.workflowExecution.workflowId, stageId: "execute", nodeKind: "agent", agentId: "pi-coding-agent",
+            workflowId: input.workflowExecution.workflowId, stageId: "execute", nodeKind: "agent",
+            // P3-U3：会话阶段归属**真实 Long Agent**（不再是 pi-coding-agent 假角色）。
+            agentId: agent.id,
           }, { sessionManager: chatSession.manager, projectId: projectAgent.projectId,
             workflowInvocationId: input.workflowExecution.invocationId, toolResources: created.toolResources });
         const feedback = registerLiveTurn(chatHome, accepted, created.session, projectSessionContext(chatSession.manager.getEntries(), chatSession.manager.getLeafId()).messages);
