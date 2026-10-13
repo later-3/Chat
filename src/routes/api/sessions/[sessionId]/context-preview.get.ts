@@ -33,7 +33,8 @@ export default defineEventHandler(async (event) => {
       sessionId,
       edit,
       source: "assembly-preview",
-      payload: { model: preview.model, messages: preview.messages, tools: preview.tools },
+      excludedCount: preview.excludedCount,
+      payload: preview.payload,
     };
   } catch (error) {
     if (error instanceof SessionOwnerResolutionError) throw createError({ statusCode: 500, statusMessage: error.message });
