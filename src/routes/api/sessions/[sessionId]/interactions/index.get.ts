@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
       if (bucket === undefined) rowsByKey.set(key, [row]);
       else bucket.push(row);
     }
-    const groups = new Map<string, { key: string; source: string; stage: { id: string; nodeKind: string }; requestCount: number; attempts: number; failures: number; tokenOut: number; promptChars: number; model: string; firstTimestamp: string; agentLabel: string; state: "done" | "running" | "unknown"; hasOutcome: boolean }>();
+    const groups = new Map<string, { key: string; source: string; stage: { id: string; nodeKind: string }; requestCount: number; attempts: number; failures: number; tokenOut: number; promptChars: number; excluded: number; model: string; firstTimestamp: string; agentLabel: string; state: "done" | "running" | "unknown"; hasOutcome: boolean }>();
     for (const [key, rows] of rowsByKey) {
       const aggregated = aggregateInteractionRows(rows);
       const first = rows[0]!;
@@ -79,6 +79,7 @@ export default defineEventHandler(async (event) => {
         failures: aggregated.summary.failures,
         tokenOut: aggregated.summary.tokenOut,
         promptChars: aggregated.summary.promptChars,
+        excluded: aggregated.summary.excluded,
         model: aggregated.summary.model,
         firstTimestamp: first.timestamp,
         agentLabel: first.agent.agentName ?? first.agent.agentId,

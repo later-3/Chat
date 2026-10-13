@@ -83,6 +83,20 @@ Workflow/Agent身份与消息角色正交：同样是`assistant`，可以由Plan
 - 旧 `sessions/prompt-captures/`（schema1）**只读兼容**：读侧适配为同一行形状（legacy 会话能力降级见任务 pi-004 B3 设计 D3 矩阵），新写入不双写旧目录；旧 `prompt-captures` 读 API 保留为兼容视图。
 - 生命周期跟随 Session：purge 时同步删除 `interactions/` 目录。
 
+### 上下文编辑层（`chat.context-edit`，P5 · 2026-10-13）
+
+用户可在**发送前**对"这一次要发给模型的内容"做三类操作：**勾选/取消**（不发）、**改文字**、**手写新增**。
+原 session 记录**零改写**：编辑层是会话内的追加条目（覆盖式快照——最后一条即有效集，`revision` 乐观并发，冲突 409）。
+
+- **应用位置**（全部在 Chat 自己的代码里，不改 Pi SDK）：
+  - **历史消息** → `SessionManager.setContextEntryFilter`（被排除条目不进入模型上下文，**压缩也算不到**）；
+  - **system 区块 / 工具 / 新增条目** → `providerRequestGate`（= Pi `onPayload`，**返回值即发送内容**）；
+  - **消息改文字** → `transformContext`（按会话条目顺序配对；数量不符则**跳过并记日志**，不猜）。
+- **块的粒度**：`tag:<chat_xxx>`（区块）、`tag:<chat_xxx>#<条目标识>`（块内条目）、`entry:<entryId>`（历史消息）、`tools:<名>`（工具）。
+- **测试契约**：`test/context-edit.test.mjs`（含 F-67 回归门禁）+ `scripts/context-edit-browser.test.mjs`（真实轮断言：勾掉的不发 / 改后发改后的 / 新增真的发，均 `inSentPayload: true`）。
+- **发送前预览**：`GET /api/sessions/:id/context-preview` 走与真实发送**同一条装配链**（`prepareLongAgentAssembly → createChatPiAgentSession`，in-memory 装配、不调用模型、不落盘），并跑**同一个过滤函数**——"所见即所发"。
+- **入口边界**：编辑在 **composer 旁（发送前）**；**完整历史是事后回看，只读**（两者共用底层树组件与编辑接口，入口与语义分开）。
+
 ## 5. Planning Execution正例
 
 下面是一条Session中的线性时间线；缩进不表示另建子会话：
