@@ -8,7 +8,7 @@
  * **不调用模型、不落盘**（装配与工具快照写在 in-memory Session 里，同 turn-queue 既有做法）。
  */
 import { randomUUID } from "node:crypto";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { convertToLlm, SessionManager } from "@earendil-works/pi-coding-agent";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
 import { createChatPiAgentSession } from "../agents/pi-agent-session.js";
@@ -29,13 +29,14 @@ export interface SendPreview {
   /** 完整请求体（已应用编辑层：与真实发送同一过滤函数——所见即所发）。 */
   readonly payload: {
     readonly model: string;
-    readonly messages: readonly { readonly role: string; readonly content: unknown }[];
+    /** Pi `convertToLlm` 的输出（user/assistant/toolResult，保留全部 parts 与字段）。 */
+    readonly messages: readonly Record<string, unknown>[];
     readonly tools: readonly { readonly type: "function"; readonly function: { readonly name: string; readonly description?: string; readonly parameters?: unknown } }[];
   };
   readonly excludedCount: number;
   readonly systemPrompt: string;
   readonly tools: readonly SendPreviewTool[];
-  readonly messages: readonly { readonly role: string; readonly content: unknown }[];
+  readonly messages: readonly Record<string, unknown>[];
   readonly model: { readonly provider: string; readonly modelId: string };
 }
 
@@ -97,7 +98,10 @@ export async function buildSendPreview(input: {
   const contextMessages = chatSession.manager.buildSessionContext().messages;
   const messages = [
     { role: "system", content: session.systemPrompt },
-    ...contextMessages.map((message) => ({ role: String(message.role), content: (message as { content?: unknown }).content ?? "" })),
+    // 走 Pi 交给 provider 的同一转换（convertToLlm）：完整保留 assistant 的 content parts
+    // （text / thinking / toolCall）与 toolResult，不做自己的“近似映射”（provider 编码细节——
+    // 如 tool_calls / reasoning_content / tool_call_id——由适配器完成，界面已注明）。
+    ...convertToLlm(contextMessages).map((message) => message as unknown as Record<string, unknown>),
     ...(input.draft === undefined || input.draft.trim() === "" ? [] : [{ role: "user", content: input.draft }]),
   ];
   const tools: SendPreviewTool[] = (session.agent.state.tools ?? []).map((tool) => {
@@ -114,8 +118,8 @@ export async function buildSendPreview(input: {
     model: `${model?.provider ?? ""}/${model?.id ?? ""}`,
     messages: [
       { role: "system", content: session.systemPrompt },
-      // Pi 内部 role `toolResult` 在真实发送时由 convertToLlm 变成 `tool`——预览按发送形态展示。
-      ...contextMessages.map((message) => ({ role: message.role === "toolResult" ? "tool" : String(message.role), content: (message as { content?: unknown }).content ?? "" })),
+      // 同一转换（与 :100 一致）——预览与真实发送共用 Pi 的 convertToLlm。
+      ...convertToLlm(contextMessages).map((message) => message as unknown as Record<string, unknown>),
       ...(input.draft === undefined || input.draft.trim() === "" ? [] : [{ role: "user", content: input.draft }]),
     ],
     tools: tools.map((tool) => ({
