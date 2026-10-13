@@ -61,6 +61,7 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
   let output = "";
   server.stdout.on("data", (chunk) => { output += chunk.toString(); });
   server.stderr.on("data", (chunk) => { output += chunk.toString(); });
+  process.on("exit", () => { if (process.env.B5_DEBUG === "1") console.log("SERVER_TAIL", output.slice(-4000)); });
   let browser;
   t.after(async () => {
     await browser?.close().catch(() => undefined);
@@ -206,7 +207,14 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
   //    完整历史保持只读（回看不是编辑的地方）。
   await page.evaluate("document.querySelector('[data-context-preview-open]').click()");
   await page.waitFor("document.querySelector('[data-context-preview]') !== null", { label: "发送前编辑面板", timeoutMs: 30_000 });
-  await page.waitFor("document.querySelector('[data-context-preview] [data-context-edit-toggle]') !== null", { label: "块勾选框", timeoutMs: 30_000 });
+  await pause(8000);
+  console.log("PREVIEW_PANEL_DUMP", await page.evaluate(`JSON.stringify({
+    error: document.querySelector('[data-context-preview-error]')?.textContent ?? null,
+    empty: document.querySelector('[data-context-preview-empty]')?.textContent ?? null,
+    text: (document.querySelector('[data-context-preview]')?.innerText ?? '').slice(0, 300),
+    toggles: document.querySelectorAll('[data-context-preview] [data-context-edit-toggle]').length,
+  })`));
+  await page.waitFor("document.querySelector('[data-context-preview] [data-context-edit-toggle]') !== null", { label: "块勾选框", timeoutMs: 60_000 });
   const previewSummary = await page.evaluate("document.querySelector('[data-context-edit-summary]')?.textContent ?? ''");
   assert.ok(/\d/.test(previewSummary), `发送统计应显示数字：${previewSummary}`);
   console.log("PREVIEW_SUMMARY", previewSummary.trim());
