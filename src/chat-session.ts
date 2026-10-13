@@ -82,6 +82,8 @@ export async function reserveChatSession(
   return session;
 }
 
+import { readContextEditFromEntries } from "./context-edit.js";
+
 /** Keeps obsolete Chat-internal handoffs out of restore and compaction context. */
 export function isChatAgentContextEntry(entry: SessionEntry): boolean {
   return entry.type !== "custom_message"
@@ -92,7 +94,14 @@ export function isChatAgentContextEntry(entry: SessionEntry): boolean {
 }
 
 function configureChatSessionManager(manager: SessionManager): SessionManager {
-  manager.setContextEntryFilter(isChatAgentContextEntry);
+  // B5 消息条目排除：打开会话时读取编辑层（写入即冻结、从下一轮生效——02 §2.1，受理链每轮新建会话）。
+  // 被排除条目根本不进入模型上下文与压缩（Pi setContextEntryFilter 语义：context and compaction）。
+  const excludedEntries = new Set(
+    readContextEditFromEntries(manager.getEntries())
+      .excluded.filter((blockId) => blockId.startsWith("entry:")),
+  );
+  manager.setContextEntryFilter((entry) =>
+    isChatAgentContextEntry(entry) && !excludedEntries.has(`entry:${entry.id}`));
   return manager;
 }
 

@@ -18,6 +18,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { ChatSession } from "../chat-session.js";
+import { EMPTY_CONTEXT_EDIT, applyContextEdit, isContextEditEmpty, readContextEditFromEntries } from "../context-edit.js";
 import { describeResourceVersion, qualifiedResourceAddress } from "../resources/version.js";
 import type {
   ChatSessionToolResource,
@@ -332,18 +333,29 @@ export async function createChatPiAgentSession(
         promptCapture.pushNeutralContext(result);
         return result;
       };
-  const effectiveProviderRequestGate = promptCapture === undefined
+  // B5 编辑层：打开会话时读取（写入即冻结、从下一轮生效）；独立于记录开关——排除不依赖 promptCapture。
+  const contextEditLayer = chatSession.projectContext === undefined
+    ? EMPTY_CONTEXT_EDIT
+    : readContextEditFromEntries(options.sessionManager.getEntries());
+  const hasContextEdit = !isContextEditEmpty(contextEditLayer);
+  const effectiveProviderRequestGate = promptCapture === undefined && !hasContextEdit
     ? options.providerRequestGate
     : async (...gateArguments: Parameters<NonNullable<CreateAgentSessionOptions["providerRequestGate"]>>) => {
         const [payload, model] = gateArguments;
         const result = options.providerRequestGate === undefined ? undefined : await options.providerRequestGate(payload, model);
-        const effective = result ?? payload;
-        try {
-          await promptCapture.record(effective, { provider: model.provider, modelId: model.id, api: model.api });
-        } catch (error) {
-          console.error(`[prompt-capture] 记录失败 sessionId=${options.sessionManager.getSessionId()}: ${error instanceof Error ? error.message : String(error)}`);
+        const base = result ?? payload;
+        // B5：应用编辑层（剔除/替换/追加）——返回值即发送内容（Pi onPayload 语义，源码已核实）。
+        const applied = hasContextEdit
+          ? applyContextEdit(base, model.api, contextEditLayer)
+          : { payload: base, excludedCount: 0 };
+        if (promptCapture !== undefined) {
+          try {
+            await promptCapture.record(applied.payload, { provider: model.provider, modelId: model.id, api: model.api }, applied.excludedCount);
+          } catch (error) {
+            console.error(`[prompt-capture] 记录失败 sessionId=${options.sessionManager.getSessionId()}: ${error instanceof Error ? error.message : String(error)}`);
+          }
         }
-        return result;
+        return hasContextEdit ? applied.payload : result;
       };
   const created = await createAgentSession({
     cwd,

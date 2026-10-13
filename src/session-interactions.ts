@@ -110,7 +110,7 @@ export interface InteractionRecorderInput {
 export interface InteractionRecorder {
   readonly turn: InteractionTurn;
   pushNeutralContext: (messages: readonly AgentMessage[]) => void;
-  record: (payload: unknown, model: { provider: string; modelId: string; api?: string }) => Promise<void>;
+  record: (payload: unknown, model: { provider: string; modelId: string; api?: string }, excludedCount?: number) => Promise<void>;
   handleSessionEvent: (event: { readonly type: string; readonly [key: string]: unknown }) => void;
 }
 
@@ -149,7 +149,7 @@ export function createInteractionRecorder(input: InteractionRecorderInput): Inte
   return {
     turn: input.turn,
     pushNeutralContext(messages) { neutralQueue.push(messages); },
-    async record(payload, model) {
+    async record(payload, model, excludedCount) {
       seq += 1;
       const neutral = neutralQueue.shift();
       const requestId = randomUUID();
@@ -185,7 +185,7 @@ export function createInteractionRecorder(input: InteractionRecorderInput): Inte
         regions,
         toolCount: Array.isArray(payloadRecord.tools) ? payloadRecord.tools.length : 0,
         messageCount: Array.isArray(payloadRecord.messages) ? payloadRecord.messages.length : 0,
-        excluded: { count: 0 }, // D3：数据源在 P5
+        excluded: { count: excludedCount ?? 0 }, // B5：装配时实数化（gate 应用编辑层后传入）
         payload: { sha256, chars: JSON.stringify(payload).length, ...(input.enabled ? { file: `${requestId}.json.gz` } : {}) },
       };
       let line = `${JSON.stringify(row)}\n`;
