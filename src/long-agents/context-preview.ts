@@ -17,6 +17,7 @@ import { prepareLongAgentAssembly } from "./assembly.js";
 import { readLongAgentAgentGroup } from "./agent-group-service.js";
 import { readLongAgentRegistry } from "./storage.js";
 import { longAgentWorkflowConfiguration } from "./workflow-configuration.js";
+import { applyContextEdit, readContextEditFromEntries } from "../context-edit.js";
 
 export interface SendPreviewTool {
   readonly name: string;
@@ -25,6 +26,13 @@ export interface SendPreviewTool {
 }
 
 export interface SendPreview {
+  /** 完整请求体（已应用编辑层：与真实发送同一过滤函数——所见即所发）。 */
+  readonly payload: {
+    readonly model: string;
+    readonly messages: readonly { readonly role: string; readonly content: unknown }[];
+    readonly tools: readonly { readonly type: "function"; readonly function: { readonly name: string; readonly description?: string; readonly parameters?: unknown } }[];
+  };
+  readonly excludedCount: number;
   readonly systemPrompt: string;
   readonly tools: readonly SendPreviewTool[];
   readonly messages: readonly { readonly role: string; readonly content: unknown }[];
@@ -101,7 +109,26 @@ export async function buildSendPreview(input: {
     };
   });
   const model = session.model;
+  // 与真实发送一致：先构造完整请求体，再跑**同一个编辑层过滤函数**（所见即所发）。
+  const rawPayload = {
+    model: `${model?.provider ?? ""}/${model?.id ?? ""}`,
+    messages: [
+      { role: "system", content: session.systemPrompt },
+      // Pi 内部 role `toolResult` 在真实发送时由 convertToLlm 变成 `tool`——预览按发送形态展示。
+      ...contextMessages.map((message) => ({ role: message.role === "toolResult" ? "tool" : String(message.role), content: (message as { content?: unknown }).content ?? "" })),
+      ...(input.draft === undefined || input.draft.trim() === "" ? [] : [{ role: "user", content: input.draft }]),
+    ],
+    tools: tools.map((tool) => ({
+      type: "function" as const,
+      function: { name: tool.name, ...(tool.description === undefined ? {} : { description: tool.description }), ...(tool.parameters === undefined ? {} : { parameters: tool.parameters }) },
+    })),
+  };
+  const editLayer = readContextEditFromEntries(chatSession.manager.getEntries());
+  const applied = applyContextEdit(rawPayload, model?.api, editLayer);
+  const edited = applied.payload as typeof rawPayload;
   return {
+    payload: edited,
+    excludedCount: applied.excludedCount,
     systemPrompt: session.systemPrompt,
     tools,
     messages,
