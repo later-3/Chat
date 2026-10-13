@@ -256,6 +256,27 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
     assert.equal(restoredSub.excluded.includes(subToggle), false, `子条目恢复：${JSON.stringify(restoredSub.excluded)}`);
   }
 
+  // ⑤c 历史消息级排除（用户 2026-10-13：用户消息/助手回答/工具输出都是历史信息，都要能勾选）：
+  //     勾掉一条历史消息 → 重装配后它不在预览里；恢复 → 回来。
+  {
+    const previewUrl = `${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/context-preview?projectId=friend&longAgentId=friend&draft=x`;
+    const before = await (await fetch(previewUrl)).json();
+    const target = (before.payload?.messages ?? []).find((message) => typeof message.entryId === "string");
+    assert.ok(target, `预览里应有带 entryId 的历史消息：${JSON.stringify((before.payload?.messages ?? []).map((m) => m.role))}`);
+    const entryId = target.entryId;
+    const current = await api.readEdit(sessionId);
+    const putEntry = await api.writeEdit(sessionId, [`entry:${entryId}`], current.revision);
+    assert.equal(putEntry.status, 200, JSON.stringify(putEntry));
+    const after = await (await fetch(previewUrl)).json();
+    assert.equal((after.payload?.messages ?? []).some((message) => message.entryId === entryId), false,
+      `被排除的历史消息不应在预览里：${JSON.stringify((after.payload?.messages ?? []).map((m) => m.entryId))}`);
+    const restored = await api.writeEdit(sessionId, [], putEntry.body.revision);
+    assert.equal(restored.status, 200, JSON.stringify(restored));
+    const back = await (await fetch(previewUrl)).json();
+    assert.equal((back.payload?.messages ?? []).some((message) => message.entryId === entryId), true, "恢复后历史消息回到预览");
+    console.log("ENTRY_EXCLUSION", JSON.stringify({ entryId, removed: true, restored: true }));
+  }
+
   // ⑥ 边界（用户 2026-10-13）：完整历史是事后回看 → 只读，不出现编辑勾选框。
   await page.evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1)?.querySelector('header button[aria-label=Close]')?.click()");
   const closeDialog = () => page.evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1)?.querySelector('header button[aria-label=Close]')?.click()");

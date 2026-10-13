@@ -8,7 +8,7 @@
  * **不调用模型、不落盘**（装配与工具快照写在 in-memory Session 里，同 turn-queue 既有做法）。
  */
 import { randomUUID } from "node:crypto";
-import { convertToLlm, SessionManager } from "@earendil-works/pi-coding-agent";
+import { convertToLlm, sessionEntryToContextMessages, SessionManager } from "@earendil-works/pi-coding-agent";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
 import { createChatPiAgentSession } from "../agents/pi-agent-session.js";
@@ -98,13 +98,23 @@ export async function buildSendPreview(input: {
     },
   });
   const session = created.session;
-  const contextMessages = chatSession.manager.buildSessionContext().messages;
+  // 逐会话条目构建上下文消息，并给每条带上所属条目 id——
+  // 前端据此对**每条历史消息**（用户消息/助手回答/工具输出）做勾选（blockId = `entry:<id>`）。
+  // buildContextEntries() 已应用 Chat 的上下文过滤器（B5 消息排除在这一层生效）。
+  const contextMessages: Record<string, unknown>[] = [];
+  for (const entry of chatSession.manager.buildContextEntries()) {
+    for (const message of sessionEntryToContextMessages(entry)) {
+      const [llm] = convertToLlm([message]);
+      if (llm === undefined) continue;
+      contextMessages.push({ ...(llm as unknown as Record<string, unknown>), entryId: entry.id });
+    }
+  }
   const messages = [
     { role: "system", content: session.systemPrompt },
     // 走 Pi 交给 provider 的同一转换（convertToLlm）：完整保留 assistant 的 content parts
     // （text / thinking / toolCall）与 toolResult，不做自己的“近似映射”（provider 编码细节——
     // 如 tool_calls / reasoning_content / tool_call_id——由适配器完成，界面已注明）。
-    ...convertToLlm(contextMessages).map((message) => message as unknown as Record<string, unknown>),
+    ...contextMessages,
     ...(input.draft === undefined || input.draft.trim() === "" ? [] : [{ role: "user", content: input.draft }]),
   ];
   const tools: SendPreviewTool[] = (session.agent.state.tools ?? []).map((tool) => {
@@ -122,7 +132,7 @@ export async function buildSendPreview(input: {
     messages: [
       { role: "system", content: session.systemPrompt },
       // 同一转换（与 :100 一致）——预览与真实发送共用 Pi 的 convertToLlm。
-      ...convertToLlm(contextMessages).map((message) => message as unknown as Record<string, unknown>),
+      ...contextMessages,
       ...(input.draft === undefined || input.draft.trim() === "" ? [] : [{ role: "user", content: input.draft }]),
     ],
     tools: tools.map((tool) => ({
