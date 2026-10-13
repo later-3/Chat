@@ -185,9 +185,15 @@ export async function buildSendPreview(input: {
   const contextWindowTokens = typeof model?.contextWindow === "number" ? model.contextWindow : 0;
   const editedMessages = edited.messages as Record<string, unknown>[];
   const systemTextAfterEdit = typeof editedMessages[0]?.content === "string" ? editedMessages[0].content : "";
-  const blockUsage = splitSystemSegments(systemTextAfterEdit)
+  const systemSegments = splitSystemSegments(systemTextAfterEdit);
+  const blockUsage = systemSegments
     .filter((segment) => segment.kind === "block" && segment.tag !== undefined)
     .map((segment) => ({ tag: segment.tag as string, tokens: estimateTokens({ role: "user", content: segment.raw } as never) }));
+  // Pi 系统基础与资源 = 标签之外的文本（registry id "pi-base"）——它同样占窗口，必须一起显示。
+  const piBaseText = systemSegments.filter((segment) => segment.kind === "text").map((segment) => segment.text).join("");
+  if (piBaseText.trim() !== "") {
+    blockUsage.unshift({ tag: "pi-base", tokens: estimateTokens({ role: "user", content: piBaseText } as never) });
+  }
   // 统一口径：各部分都按其**文本**估算（estimateTokens 对字符串 content 的比例稳定），保证"整轮 vs 区块"可比。
   const textOf = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value ?? ""));
   const totalTokens = editedMessages.reduce<number>(

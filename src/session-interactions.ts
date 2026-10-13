@@ -312,6 +312,8 @@ export interface InteractionTurnSummary {
   readonly model: string;
   /** 轮内是否存在任何 outcome——false（且 legacy）时 UI 显示"未记录"而非 0（E2/E3/E4） */
   readonly hasOutcome: boolean;
+  /** B5：本轮被编辑层排除的条目数（取轮内各次请求的最大值——编辑层在轮内不变，多次请求会重复计）。 */
+  readonly excluded: number;
 }
 
 type OutcomeRow = InteractionRequestRow & { readonly outcome?: InteractionOutcomeRecord["outcome"] };
@@ -362,11 +364,13 @@ export function aggregateInteractionRows(rows: readonly OutcomeRow[]): {
     tokenOut += usageTokens(row.outcome?.usage);
   }
   const stageMap = new Map<string, InteractionStageSummary>();
+  let excludedCount = 0;
   let promptChars = 0;
   let model = "";
   let hasOutcome = false;
   for (const row of rows) {
     promptChars += row.payload.chars;
+    excludedCount = Math.max(excludedCount, row.excluded?.count ?? 0);
     if (!model) model = `${row.model.provider}/${row.model.modelId}`;
     if (row.outcome !== undefined) hasOutcome = true;
   }
@@ -394,7 +398,7 @@ export function aggregateInteractionRows(rows: readonly OutcomeRow[]): {
     });
     return group;
   });
-  return { requests, summary: { requestCount: requests.length, attempts, failures, tokenOut, promptChars, model, hasOutcome }, stages: [...stageMap.values()] };
+  return { requests, summary: { requestCount: requests.length, attempts, failures, tokenOut, promptChars, model, hasOutcome, excluded: excludedCount }, stages: [...stageMap.values()] };
 }
 
 export interface InteractionTurnGroupPage extends InteractionPage {
