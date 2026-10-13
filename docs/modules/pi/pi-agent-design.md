@@ -293,7 +293,7 @@ Package安装与版本管理
 
 | 概念 | 负责 |
 |---|---|
-| Pi Coding Agent Session | 对话树、模型状态、Thinking Level、压缩和展示历史 |
+| 执行 Agent Session | 对话树、模型状态、Thinking Level、压缩和展示历史 |
 | Vercel Workflow Run | Workflow及Step执行状态 |
 | AgentSession对象 | 某次进程内Agent运行 |
 

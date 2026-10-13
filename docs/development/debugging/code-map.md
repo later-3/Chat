@@ -46,7 +46,7 @@ flowchart LR
 1. `useAgentSession` 根据 Session `owner` 判断会话或Long Agent；会话调用 `runChatWorkflowPrompt()`。
 2. `POST /runs` 校验用户输入与 Project，恢复默认选择/Session，返回 `runId / workflowInvocationId / sessionId`。
 3. [startChatWorkflow](../../../src/workflows/start-chat-workflow.ts) 从 Registry 选择 Workflow，由 Workflow SDK 启动。
-4. [minimalPiCodingAgentWorkflow](../../../src/workflows/minimal-pi-coding-agent/workflow.ts) 组织一次执行，进入 [runPiCodingAgentPromptStep](../../../src/workflows/minimal-pi-coding-agent/step.ts)。Workflow 代码受持久执行约束；Node 文件 IO、模型和 Tool 执行在 Step 中。
+4. [minimalPiCodingAgentWorkflow](../../../src/workflows/chat-direct/workflow.ts) 组织一次执行，进入 [runPiCodingAgentPromptStep](../../../src/workflows/chat-direct/step.ts)。Workflow 代码受持久执行约束；Node 文件 IO、模型和 Tool 执行在 Step 中。
 5. `prepareChatWorkflowTurnConfiguration()` 冻结本轮选择；`resolveWorkflowAgentDefinition()` 解析 Prompt/Tool/资源路径。
 6. `createWorkflowAgentSession()` 是薄包装，最终只调用 `createChatPiAgentSession()`。后者构造 `DefaultResourceLoader`、加载资源、注册系统 Tool，并调用 Pi `createAgentSession()`。
 7. `session.prompt()` 开始模型与 Tool 循环；事件订阅进入日志/Run 流，SessionManager 保存原生消息。最后释放 Session。
@@ -60,7 +60,7 @@ flowchart LR
 | 2. 浏览器 → Backend | [chat-workflow-browser.ts](../../../frontend/lib/chat-workflow-browser.ts)：`runChatWorkflowPrompt` | 输入 `ChatWorkflowPromptInput`；POST 后取得 Run 引用，进入 `followChatWorkflowRun` |
 | 3. 请求 → 可信输入 | [runs.post.ts](../../../src/routes/runs.post.ts)：默认 handler；[run-request.ts](../../../src/run-request.ts)：`parseChatWorkflowHttpInput` | `body` 对比 `input`；`resolveRequestProject` 解析 Project，`resolveChatConfig` 提供默认值，首轮 `reserveChatSession` 先落盘 |
 | 4. Run → Workflow | [start-chat-workflow.ts](../../../src/workflows/start-chat-workflow.ts)：`startChatWorkflow` | `definition.run`、`chatWorkflowInput`、SDK 返回的 `run.runId`；记录 Run 与 Session 的绑定 |
-| 5. Workflow → Node Step | [workflow.ts](../../../src/workflows/minimal-pi-coding-agent/workflow.ts)：`minimalPiCodingAgentWorkflow`；[step.ts](../../../src/workflows/minimal-pi-coding-agent/step.ts)：`runPiCodingAgentPromptStep` | `input` → `chatSession` → `prepared.agents`；业务 IO、模型和工具在 Step 中执行 |
+| 5. Workflow → Node Step | [workflow.ts](../../../src/workflows/chat-direct/workflow.ts)：`minimalPiCodingAgentWorkflow`；[step.ts](../../../src/workflows/chat-direct/step.ts)：`runPiCodingAgentPromptStep` | `input` → `chatSession` → `prepared.agents`；业务 IO、模型和工具在 Step 中执行 |
 | 6. Step → 公共装配 | [agent-definition.ts](../../../src/workflows/agent-definition.ts)：`createWorkflowAgentSession` | `agent`、`toolContext`、`sessionManager`；Workflow 包装转交唯一公共入口 |
 | 7. Pi → Run 流 | [agent-session-log.ts](../../../src/workflows/agent-session-log.ts)：`subscribeAgentSessionLog`；[chat-run-events.ts](../../../src/workflows/chat-run-events.ts)：`projectAgentSessionEvent` | Pi 原生事件投影成浏览器所需字段，再带上当前 Stage 信息 |
 | 8. HTTP 流 → UI | [events.get.ts](../../../src/routes/runs/%5BrunId%5D/events.get.ts)：默认 handler；[chat-workflow-browser.ts](../../../frontend/lib/chat-workflow-browser.ts)：`consumeRunEvents`、`followChatWorkflowRun` | 每行 NDJSON 事件、当前 Run；不是 SSE。事件应用与最终状态查询要分别看 |

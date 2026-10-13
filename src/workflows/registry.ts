@@ -37,7 +37,7 @@ export const CHAT_WORKFLOW_IDS = CHAT_WORKFLOW_DEFINITIONS.map(
   (definition) => definition.id,
 ) as readonly ChatWorkflowId[];
 
-export const DEFAULT_CHAT_WORKFLOW_ID: ChatWorkflowId = "chat-direct";
+export { DEFAULT_CHAT_WORKFLOW_ID } from "./ids.js";
 
 export function getChatWorkflowDefinition(id: string): ChatWorkflowDefinition | undefined {
   return CHAT_WORKFLOW_DEFINITIONS.find((definition) => definition.id === id);

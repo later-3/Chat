@@ -67,7 +67,7 @@ test("Agent configuration files are scoped to Agents in the selected Workflow", 
       workflow: "planning-execution",
       agentConfigs: {
         planner: { primary: "/configs/planner.json" },
-        "pi-coding-agent": {
+        executor: {
           append: ["/configs/coding.json"],
           promptFiles: ["/rules/typescript.md"],
         },
@@ -79,7 +79,7 @@ test("Agent configuration files are scoped to Agents in the selected Workflow", 
       workflow: "planning-execution",
       agentConfigs: {
         planner: { primary: "/configs/planner.json" },
-        "pi-coding-agent": {
+        executor: {
           append: ["/configs/coding.json"],
           promptFiles: ["/rules/typescript.md"],
         },

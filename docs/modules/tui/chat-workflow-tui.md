@@ -23,7 +23,7 @@ Web 与 TUI 是 Chat 产品的两种交互入口，不互相转发消息；通�
 
 消息、Markdown、工具结果、编辑器、列表和布局基础来自 Pi SDK。`cli/src/tui.ts` 负责 Chat 页面组合、快捷键、提示行与状态栏，`controller.ts` 负责命令和后端状态适配。并非启动 Pi 完整 `InteractiveMode` 后换一个名字。
 
-`/help 查看命令` 是提示行的初始内容，当前会保留到新的通知替换它，不按时间自动消失。底部格式为 `Project ID · Workflow ID · 执行状态 · Session ID/新会话`；例如 `chat · minimal-pi-coding-agent · idle · 新会话` 的第一个 `chat` 是 Project ID。这些文字和组合由 Chat 定义，状态取自客户端导航与后端读模型。提示仍在不表示正在执行 `/help` 或程序卡住。
+`/help 查看命令` 是提示行的初始内容，当前会保留到新的通知替换它，不按时间自动消失。底部格式为 `Project ID · Workflow ID · 执行状态 · Session ID/新会话`；例如 `chat · chat-direct · idle · 新会话` 的第一个 `chat` 是 Project ID。这些文字和组合由 Chat 定义，状态取自客户端导航与后端读模型。提示仍在不表示正在执行 `/help` 或程序卡住。
 
 ## 启动与调试边界
 

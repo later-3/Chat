@@ -135,7 +135,7 @@ Chat/frontend（纯浏览器）
 - Pi Tool Call字段在进入浏览器前完成转换。
 - 文件路径拒绝目录前缀伪装、`..`穿越和符号链接逃逸。
 - 前后端对图片、音频、PDF和DOCX类型的判断一致。
-- Workflow输入区分新Session与已有Session，并且只接受Workflow Registry中的注册值；当前包括`minimal-pi-coding-agent`、`planning-execution`、`planner-orchestrator`、`memory`和`rule-management`。
+- Workflow输入区分新Session与已有Session，并且只接受Workflow Registry中的注册值；当前包括`chat-direct`、`planning-execution`、`planner-orchestrator`、`memory`和`rule-management`。
 - Workflow过程通过可恢复读取的NDJSON事件流传给浏览器，Planner输出不会在Executor开始后被替换。
 - 完整历史保留Pi实际持久化的Thinking与工具数据，并展示每个Agent Stage收到的真实输入来源。
 - 构建后的单进程同时提供前端、Session API和文件API。
@@ -154,4 +154,4 @@ pnpm test
 pnpm verify
 ```
 
-`pnpm verify`依次运行后端测试、前端合同测试、类型检查、完整构建和隔离生产服务器HTTP测试。真实模型调用不放进确定性测试；Workflow到Pi Coding Agent的付费调用在明确需要时单独执行。
+`pnpm verify`依次运行后端测试、前端合同测试、类型检查、完整构建和隔离生产服务器HTTP测试。真实模型调用不放进确定性测试；Workflow到执行 Agent的付费调用在明确需要时单独执行。

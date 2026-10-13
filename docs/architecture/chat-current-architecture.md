@@ -59,7 +59,7 @@ Chat Nitro进程
                                       createChatPiAgentSession()
                                                    │
                                                    ▼
-pi/：Pi Coding Agent
+pi/：执行 Agent
   ├── ~/.chat/agent：模型、认证、Settings和个人资源
   ├── <project>/.chat：Project配置和资源声明
   ├── ~/.chat/prompt-resources：个人规则与经验
@@ -148,7 +148,7 @@ Telegram 等 IM 先由 NanoClaw 持久化 Inbox/Event Outbox，主动调用 `/ap
 当前 `src/workflows/registry.ts` 注册 8 个 Workflow：
 
 ```text
-minimal-pi-coding-agent
+chat-direct
 planning-execution
 planner-orchestrator
 memory
@@ -194,9 +194,9 @@ Backend初始化时会保证系统管理的`daily` Project存在于`~/.chat/work
 
 ```text
 同一Chat Session JSONL
-  ├── 第1轮：Direct Workflow / Pi Coding AgentSession
+  ├── 第1轮：Direct Workflow / 执行 AgentSession
   ├── 第2轮：Planning Workflow / Planner AgentSession + Executor AgentSession
-  └── 第3轮：再次Direct / 新建Pi Coding AgentSession并恢复同一JSONL
+  └── 第3轮：再次Direct / 新建执行 AgentSession并恢复同一JSONL
 ```
 
 模型历史、Thinking变更、压缩和分支仍由Pi SessionManager恢复。Workflow切换不会自动创建新对话。
@@ -401,7 +401,7 @@ Session正常JSONL位于`~/.chat/projects/<projectId>/sessions/`，移除区位�
 | 浏览器Workflow调用 | `frontend/lib/chat-workflow-browser.ts`、`frontend/hooks/useAgentSession.ts` |
 | HTTP输入和Workflow选择 | `src/run-request.ts`、`src/routes/runs.post.ts`、`src/workflows/registry.ts`、`start-chat-workflow.ts` |
 | Chat Session所有权 | `src/chat-session.ts` |
-| 单节点回合 | `src/workflows/minimal-pi-coding-agent/` |
+| 单节点回合 | `src/workflows/chat-direct/` |
 | Planner与Executor | `src/workflows/planning-execution/` |
 | Planner、Coordinator与子Workflow调用 | `src/workflows/planner-orchestrator/`、`src/workflows/workflow-call*.ts` |
 | Workflow框架与Manifest | `src/workflows/framework.ts`、各Workflow的`workflow.json` |

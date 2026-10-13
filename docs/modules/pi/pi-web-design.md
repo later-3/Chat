@@ -2,7 +2,7 @@
 
 ## 1. 目的、基线与结论
 
-本文回答两个问题：Pi Web原来如何把浏览器接到Pi Coding Agent，以及Chat把它改成纯前端后，哪些能力已经迁移、哪些只是保留了界面。
+本文回答两个问题：Pi Web原来如何把浏览器接到执行 Agent，以及Chat把它改成纯前端后，哪些能力已经迁移、哪些只是保留了界面。
 
 源码基线：
 
@@ -13,7 +13,7 @@
 
 先给出结论：
 
-1. 原Pi Web不是一个通用前端协议，也不是一个薄Adapter。它是Pi Coding Agent的本地Web产品，React页面、Next.js API、进程内`AgentSession`和本机文件访问都在一个进程中。
+1. 原Pi Web不是一个通用前端协议，也不是一个薄Adapter。它是执行 Agent的本地Web产品，React页面、Next.js API、进程内`AgentSession`和本机文件访问都在一个进程中。
 2. 原Pi Web没有定义独立的“Agent配置模型”。它把页面选择的模型、Thinking Level和工具集合转成RPC命令；其余能力来自Pi的`SettingsManager`、`ResourceLoader`和`PackageManager`。
 3. 原Pi Web的`rpc-manager.ts`是产品适配层：它不实现模型循环，但负责创建和缓存`AgentSession`、翻译命令、桥接事件、适配Extension UI以及维护运行状态。
 4. 当前Chat前端已经删除这套服务端控制面。浏览器改为选择Workflow并调用Chat的`/runs`、`/api/sessions`等公开接口。
@@ -21,7 +21,7 @@
 
 ## 2. 原Pi Web的产品定位
 
-原README把Pi Web定义为“Pi Coding Agent的本地浏览器界面”，并明确复用Pi的本地配置和Session文件。它不是要把Pi抽象成一个可编排的多Agent平台，而是让用户从浏览器完成原本Pi Coding Agent终端中的主要操作：
+原README把Pi Web定义为“执行 Agent的本地浏览器界面”，并明确复用Pi的本地配置和Session文件。它不是要把Pi抽象成一个可编排的多Agent平台，而是让用户从浏览器完成原本执行 Agent终端中的主要操作：
 
 - 新建、恢复、分支、重命名、导出和删除Pi Session。
 - 发送Prompt、Steering、Follow-up和Shell命令。
@@ -29,7 +29,7 @@
 - 管理模型、Provider认证、Skill、Extension和Pi Package。
 - 浏览项目文件、Git状态和Worktree。
 
-这决定了它原来的边界：浏览器只是交互界面，Next.js服务端才是Pi Coding Agent宿主。
+这决定了它原来的边界：浏览器只是交互界面，Next.js服务端才是执行 Agent宿主。
 
 ## 3. 原Pi Web整体架构
 
@@ -57,7 +57,7 @@ Pi Web服务端适配
   └── Extension RPC UI适配
           │
           ▼
-Pi Coding Agent
+执行 Agent
   ├── ModelRuntime
   ├── SettingsManager
   ├── DefaultResourceLoader / PackageManager

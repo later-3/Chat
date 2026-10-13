@@ -200,7 +200,7 @@ Pi只枚举`sessions/`第一层的`.jsonl`，不会递归进入`removed/`。因�
 
 Planning Run、Workflow Run、Memory、Prompt Resource和审计事实只保留Session引用，不随Session移动或永久删除。只有需要读取Session内容的调用才检查生命周期；非终态Workflow会阻止移除。永久删除只删除移除区JSONL，并保留不含会话内容的最小tombstone，从而区分“已永久删除”和“从未存在”。
 
-Subworkflow是Workflow调用，不是Session本身。创建Child Session时复用Pi Coding Agent的`parentSession`头建立原生结构关系，但使用的是不复制历史的`newSession({ parentSession })`，不是`forkFrom()`或`createBranchedSession()`；所以Child模型只接收父Agent通过Tool参数给出的任务上下文。Chat保留三类互补领域事实：父Session的`chat.workflow_call`记录一次Tool调用及其子Run，子Session的`chat.session_relation`记录稳定`sessionId/callId/depth`，`chat.workflow_delegation_origin`记录任务发起者。Pi文件路径负责原生谱系，CustomEntry负责Workflow语义、运行ID与可观测状态，不能相互替代。Session列表优先从显式关系投影`parentSessionId`，并可从Pi路径关系兼容读取；移除功能不自动级联移动其他Session。
+Subworkflow是Workflow调用，不是Session本身。创建Child Session时复用执行 Agent的`parentSession`头建立原生结构关系，但使用的是不复制历史的`newSession({ parentSession })`，不是`forkFrom()`或`createBranchedSession()`；所以Child模型只接收父Agent通过Tool参数给出的任务上下文。Chat保留三类互补领域事实：父Session的`chat.workflow_call`记录一次Tool调用及其子Run，子Session的`chat.session_relation`记录稳定`sessionId/callId/depth`，`chat.workflow_delegation_origin`记录任务发起者。Pi文件路径负责原生谱系，CustomEntry负责Workflow语义、运行ID与可观测状态，不能相互替代。Session列表优先从显式关系投影`parentSessionId`，并可从Pi路径关系兼容读取；移除功能不自动级联移动其他Session。
 
 Session详情的`workflowCallStatistics`是上述关系的只读聚合：`direct`只计当前Session发起的调用，`tree`沿独立Subsession递归，`capacity`只反映当前父Session的活跃调用。`workflowCallTree`同时投影每条边的深度、父调用ID和调用状态，供诊断与控制接口复用；聚合使用已访问Session集合防御损坏循环，不把统计结果或调用树写回Session，也不替代Workflow Runtime状态。用户导航仍复用现有Session侧栏的`parentSessionId`树，不另建看护树。
 

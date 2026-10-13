@@ -2,7 +2,7 @@
 
 ## 现象与根因
 
-2026-09-18，F5 启动后 `src/workflows/minimal-pi-coding-agent/step.ts` 断点为灰色。配置仅允许 `.nitro-debug` 中间产物和 Workflow VM 路径，遗漏 Nitro 实际输出 `.data/debug/output/server`。
+2026-09-18，F5 启动后 `src/workflows/chat-direct/step.ts` 断点为灰色。配置仅允许 `.nitro-debug` 中间产物和 Workflow VM 路径，遗漏 Nitro 实际输出 `.data/debug/output/server`。
 
 只读 Inspector 检查确认 Nitro Worker 已加载该目录的 `index.mjs`，其外置 map 的 `sourcesContent` 与当前 `step.ts` 一致；第 19 行 `const stepStartedAt = Date.now()` 映射到生成代码，V8 也报告有效断点位置。独立 Step bundle 在运行时按需加载，不能假定启动时已经加载。
 

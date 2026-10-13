@@ -29,7 +29,7 @@ pnpm debug:tui
 
 ## TUI-01：提交真实Workflow
 
-用 `Debug Chat Web + TUI` 或 `pnpm debug:start --tui` 启动后，确认状态栏为 `debug-lab · minimal-pi-coding-agent · idle · 新会话`。输入 `DEBUG_HELLO`，观察Run进入终态并回复 `DEBUG_OK`；输入 `DEBUG_READ_SKILL`，观察服务端 `read` 调用后返回 `DEBUG_SKILL_LOADED`。确定性假模型只验证文本和Tool工程路径，不代表它能完成规划Workflow。
+用 `Debug Chat Web + TUI` 或 `pnpm debug:start --tui` 启动后，确认状态栏为 `debug-lab · chat-direct · idle · 新会话`。输入 `DEBUG_HELLO`，观察Run进入终态并回复 `DEBUG_OK`；输入 `DEBUG_READ_SKILL`，观察服务端 `read` 调用后返回 `DEBUG_SKILL_LOADED`。确定性假模型只验证文本和Tool工程路径，不代表它能完成规划Workflow。
 
 | 层次 | 断点 | 关键观察值 |
 |---|---|---|

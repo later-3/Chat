@@ -214,7 +214,7 @@ Chat首次准备Chat Home时创建Personal根配置；Project可以在源码目�
 ```json
 {
   "schemaVersion": 1,
-  "defaultWorkflowId": "minimal-pi-coding-agent",
+  "defaultWorkflowId": "chat-direct",
   "workflows": {
     "memory": {
       "agents": {

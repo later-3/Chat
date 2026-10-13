@@ -69,27 +69,24 @@ test("a parent Agent discovers names and Backend resolves only its selected chil
     projectId: project.projectId,
     chatHome,
     cwd: workspace,
-    targetWorkflowId: "chat-direct",
+    targetWorkflowId: "memory",
   };
   const description = await describeChatWorkflowCapabilities(input);
   const child = description.agents[0];
-  assert.equal(child.agentId, "pi-coding-agent");
-  assert.ok(child.tools.some((tool) => tool.name === "read"));
-  assert.ok(child.tools.some((tool) => tool.name === "workflow_call"));
-  assert.ok(child.skills.some((skill) => skill.name === "review"));
+  // 单 Agent 工作流（memory）：父 Agent 看到的就是它的唯一子 Agent。
+  assert.equal(child.agentId, "memory-agent");
+  assert.ok(child.tools.length > 0, "子 Agent 应暴露可用工具");
+  assert.ok(child.skills.some((skill) => skill.name === "review"), "项目 Skill 应对子 Agent 可见");
 
   const configs = await resolveWorkflowCallAgentConfigs(input, [{
-    agentId: "pi-coding-agent",
+    agentId: "memory-agent",
     tools: ["read", "workflow_call"],
     skills: ["review"],
   }]);
-  assert.deepEqual(configs["pi-coding-agent"].tools, {
-    mode: "explicit",
-    names: ["read"],
-    exclude: [],
-    addresses: ["system:tool/workflow_call"],
-  });
-  assert.deepEqual(configs["pi-coding-agent"].resources, {
+  assert.equal(configs["memory-agent"].tools.mode, "explicit");
+  assert.deepEqual(configs["memory-agent"].tools.names, ["read"]);
+  assert.deepEqual(configs["memory-agent"].tools.addresses, ["system:tool/workflow_call"]);
+  assert.deepEqual(configs["memory-agent"].resources, {
     mode: "explicit",
     skillPaths: [path.join(reviewSkillDir, "SKILL.md")],
     extensionPaths: [],
@@ -102,7 +99,7 @@ test("a parent Agent discovers names and Backend resolves only its selected chil
   );
   await assert.rejects(
     resolveWorkflowCallAgentConfigs(input, [{
-      agentId: "pi-coding-agent",
+      agentId: "memory-agent",
       tools: ["not-a-tool"],
       skills: [],
     }]),

@@ -188,8 +188,14 @@ export async function startSessionMaintenance(sessionId: string, input: SessionM
         } else {
           const stage = collectChatWorkflowStageMarkers(branch).findLast(item => item.nodeKind === "agent" && item.stageId !== "remember" && item.workflowId !== "session-memory");
           const workflow = getChatWorkflowDefinition(stage?.workflowId ?? "chat-direct");
-          const definition = workflow?.agents.find(item => item.id === stage?.agentId) ?? workflow?.agents[0];
-          if (!definition || !workflow) throw new Error("Session agent is unavailable");
+          if (!workflow) throw new Error("Session agent is unavailable");
+          // P3-U2：默认工作流（chat-direct）**不定义 Agent**；普通会话（非 Long Agent）的维护轮
+          // 用 Chat 的默认执行定义（Pi 基础人设 + 默认工具），不再依赖工作流内置角色。
+          const definition = workflow.agents.find(item => item.id === stage?.agentId) ?? workflow.agents[0] ?? {
+            schemaVersion: 1, id: "chat-default", name: "Chat", description: "Chat default executor",
+            systemPrompt: { mode: "pi-default" as const }, tools: { mode: "pi-default" as const },
+            resources: { mode: "inherit" as const }, customInstructions: [],
+          };
           const selection = collectLatestChatWorkflowConfigurations(branch)[workflow.id]?.[definition.id];
           options = { agent: await resolveWorkflowAgentDefinition({ defaultAgent: definition, cwd: chatSession.cwd, chatHome: project.chatHome,
             durableModelConfig: { projectDataDir: project.projectDataDir, workflowId: workflow.id, agentId: definition.id },

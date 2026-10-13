@@ -1,4 +1,5 @@
 import { assertFileWithin, atomicWriteJson, expectRevision, withFileLock } from "../persistence/versioned-file.js";
+import { DEFAULT_CHAT_WORKFLOW_ID } from "./ids.js";
 import { readFile, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
@@ -68,6 +69,10 @@ export function parseDurableConfig(value: unknown, source: string): ChatAgentDur
 export function agentModelConfigPath(projectDataDir: string, workflowId: string, agentId: string): string {
   assertEntityId(workflowId, "workflowId");
   assertEntityId(agentId, "agentId");
+  // P3-U2：**默认工作流的能力配置是 Long Agent 单键**（没有 workflow / 内置角色维度）——
+  // 所有调用方（读取/写入/检查）都经由这里，因此"一份配置"在路径层就成立，
+  // 不需要每个调用方各写一遍。其他工作流（真正编排多 Agent）保持工作流维度。
+  if (workflowId === DEFAULT_CHAT_WORKFLOW_ID) return resolve(projectDataDir, "capability-config.json");
   return resolve(projectDataDir, "workflows", workflowId, "agents", `${agentId}.json`);
 }
 
@@ -76,6 +81,23 @@ export async function readAgentDurableConfig(
   workflowId: string,
   agentId: string,
 ): Promise<ChatAgentDurableConfig | undefined> {
+  // 默认工作流：**Long Agent 单键**（旧键 → 新键一次性惰性迁移；两者都在同一个 Long Agent 根下）。
+  if (workflowId === DEFAULT_CHAT_WORKFLOW_ID) {
+    const path = agentModelConfigPath(projectDataDir, workflowId, agentId);
+    const existing = await readConfigFileIfPresent(path);
+    if (existing !== undefined) return existing;
+    const legacyPath = resolve(projectDataDir, "workflows", workflowId, "agents", `${agentId}.json`);
+    const legacyValue = await readConfigFileIfPresent(legacyPath);
+    if (legacyValue === undefined) return undefined;
+    await withFileLock(path, async () => {
+      await atomicWriteJson(path, legacyValue);
+      await atomicWriteJson(resolve(projectDataDir, "runtime", "migrations", "long-agent-capability-unify", "legacy-config.json"), legacyValue);
+      await rm(resolve(projectDataDir, "workflows"), { recursive: true, force: true }).catch(() => undefined);
+      await atomicWriteJson(resolve(projectDataDir, "runtime", "migrations", "long-agent-capability-unify", "done.json"),
+        { schemaVersion: 1, from: legacyPath, to: path, at: new Date().toISOString() });
+    });
+    return legacyValue;
+  }
   const path = agentModelConfigPath(projectDataDir, workflowId, agentId);
   let content: string;
   try {

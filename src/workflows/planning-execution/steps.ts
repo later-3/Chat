@@ -15,7 +15,7 @@ import {
   appendChatWorkflowStage,
 } from "../workflow-stage.js";
 import { PLANNER_AGENT } from "./agents/planner/index.js";
-import { PLANNING_EXECUTION_AGENT } from "./agents/pi-coding-agent/index.js";
+import { PLANNING_EXECUTION_AGENT } from "./agents/executor/index.js";
 import { buildPlanningExecutionTaskBrief, stripLegacyPlanningHandoffs } from "./context.js";
 import type { PlanReviewDecision } from "./review.js";
 import {

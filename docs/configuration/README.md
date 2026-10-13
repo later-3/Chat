@@ -39,7 +39,7 @@ export CHAT_HOME=/srv/chat-data
 
 Chat使用`<CHAT_HOME>/long-agents.json`登记长期Agent及其NanoClaw本机实例。该文件已降级为**索引**（身份、NanoClaw绑定、状态与 Channel 绑定）；每个 Agent 的长期身份定义位于独立配置根`<CHAT_HOME>/long-agents/<longAgentId>/definition.json`，资源目录（`skills/`、`prompts/`、`extensions/`）位于同一根下。存量内联 definition 会在首次读取时幂等迁移（备份与标记位于`runtime/migrations/long-agent-definition-split/`）。每个 Agent 只有一个根：`long-agents/<longAgentId>/{workspace,sessions,memory,skills,...}`，其 home 项目的 projectId 就是 `longAgentId`，日常主 Session 按持久化 IANA 时区的日期轮换。公共共享空间为 `longagentshare`（原共享 `daily` 归一而来，不默认打开）；会话必须属于用户自己的项目。`defaultProjectId`仅决定新建私聊绑定的默认协作上下文；Home/共享容器表示无业务项目。已有渠道使用自己的 `contextProjectId`；Web 每条消息显式选择项目或 null。Long Agent 默认进入当天默认 Session；显式新建的直接 Session 有独立历史，跨日可继续，不替换每日默认引用。Agent Memory 仍由 NanoClaw Agent Group 承载，迁入 Chat Home 是后续切片（S5b）。剩余差距见[实施状态](../modules/long-agents/chat-long-agent-roadmap.md)。
 
-Long Agent 的执行设置与普通项目 Session 使用同一 Workflow 服务。设置页“配置 Workflow”打开同一节点编辑器；默认 Workflow 与资源选择保存在 Home 的项目配置中，节点模型、思考等级、工具及资源保存在 `long-agents/<id>/workflows/<workflowId>/agents/<agentId>.json`。`definition.json` 只保存长期身份 Prompt。旧定义中的执行字段幂等迁至 `minimal-pi-coding-agent/pi-coding-agent`，已有公共配置字段优先；原件及完成标记位于 `runtime/migrations/long-agent-workflow-config/<id>/`。旧 Long Agent 配置 API 中执行字段为公共配置的兼容投影，修改写回同一文件。
+Long Agent 的能力配置（模型、思考等级、工具、资源）保存在 **Long Agent 单键** `~/.chat/long-agents/<id>/capability-config.json`；`definition.json` 只保存长期身份 Prompt。历史形态（`<id>/workflows/<workflowId>/agents/<agentId>.json`）在首次读取时**惰性迁移**到单键并删除旧文件，迁移标记与备份位于 `~/.chat/long-agents/<id>/runtime/migrations/long-agent-capability-unify/`。默认工作流（`chat-direct`）**不定义 Agent**：执行主体就是本轮 Long Agent 本身，工作流只描述阶段。
 
 所有入口在受理时使用公共 Workflow Resolver，冻结节点有效能力及资源选择 revision。Session 内的选择优先于默认选择；前端本轮调整随受理请求提交，并持久记录到 Session。工作项目不会改变 Session 的配置归属。修改设置影响后续受理，已受理轮次和失败重试保留冻结内容；检查页显示当前待用设置，历史以该轮快照为准。
 
@@ -242,7 +242,7 @@ Personal 默认 Workflow 位于 `<CHAT_HOME>/config.json`。它必须是完整�
 ```json
 {
   "schemaVersion": 1,
-  "defaultWorkflowId": "minimal-pi-coding-agent",
+  "defaultWorkflowId": "chat-direct",
   "workflows": {},
   "sessions": { "removedRetentionDays": 30 }
 }
@@ -255,9 +255,9 @@ Personal 默认 Workflow 位于 `<CHAT_HOME>/config.json`。它必须是完整�
 ```json
 {
   "schemaVersion": 1,
-  "defaultWorkflowId": "minimal-pi-coding-agent",
+  "defaultWorkflowId": "chat-direct",
   "workflows": {
-    "minimal-pi-coding-agent": {
+    "chat-direct": {
       "agents": { "pi-coding-agent": { "resources": { "mode": "inherit" } } }
     }
   },
@@ -306,7 +306,7 @@ Personal 默认 Workflow 位于 `<CHAT_HOME>/config.json`。它必须是完整�
 {
   "schemaVersion": 1,
   "workflows": {
-    "minimal-pi-coding-agent": {
+    "chat-direct": {
       "agents": {
         "pi-coding-agent": {
           "resources": {
@@ -442,7 +442,7 @@ Long Agent 配置 GET/PUT 的可选 `timeZone` 为 IANA 时区（例如 `Asia/Sh
 `runtime/long-agent-state.json` 从 v4 升至 v5，增加 `works`；旧状态默认空数组，旧 Session 不移动、不合并。升级前原件一次性保存在 `runtime/migrations/long-agent-work-v5/source.json`，完成后记录 `complete.json`；中断可重跑，原备份不覆盖。v1–v3 同时保留原 daily-v4 迁移收据合同。已有 v5 工作后不能将旧程序直接指向该状态文件，应向前修复；没有新增数据时才可停服按受管备份恢复。执行合同、HTTP 与工具说明见 [LA1](../modules/long-agents/chat-long-agent-architecture.md#la1独立后台工作实现合同)。
 
 
-2026-09-26 单聊统一：Long Agent/Topic 消息可选 `workflow`（默认 minimal-pi-coding-agent）；这是下一轮执行选择，不改变 Session 存储归属或 Long Agent 配置。默认工作 Agent 继续使用 Long Agent 冻结定义，业务 Workflow 使用自己的阶段角色并继承可信 owner/本轮冻结项目，记忆 writer 不改写工作 Agent 配置。字段和恢复规则见 [模块合同](../architecture/chat-module-contracts.md#三类会话的统一执行与导航2026-09-26)。
+2026-09-26 单聊统一：Long Agent/Topic 消息可选 `workflow`（默认 chat-direct）；这是下一轮执行选择，不改变 Session 存储归属或 Long Agent 配置。默认工作 Agent 继续使用 Long Agent 冻结定义，业务 Workflow 使用自己的阶段角色并继承可信 owner/本轮冻结项目，记忆 writer 不改写工作 Agent 配置。字段和恢复规则见 [模块合同](../architecture/chat-module-contracts.md#三类会话的统一执行与导航2026-09-26)。
 
 
 ### 模型选择的能力展示（2026-09-27）

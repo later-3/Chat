@@ -24,7 +24,7 @@
       "id": "execute",
       "name": "执行",
       "description": "当前 Long Agent根据用户请求和已批准的版本化任务书完成任务。",
-      "agentId": "pi-coding-agent"
+      "agentId": "executor"
     }
   ],
   "agents": [
@@ -33,8 +33,8 @@
       "config": "./agents/planner/agent.json"
     },
     {
-      "id": "pi-coding-agent",
-      "config": "./agents/pi-coding-agent/agent.json"
+      "id": "executor",
+      "config": "./agents/executor/agent.json"
     }
   ]
 }

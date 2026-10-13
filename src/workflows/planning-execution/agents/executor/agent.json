@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "pi-coding-agent",
-  "name": "Pi Coding Agent",
+  "id": "executor",
+  "name": "执行 Agent",
   "description": "读取用户原始请求和Planner输出，并实际完成任务。",
   "systemPrompt": {
     "mode": "pi-default"

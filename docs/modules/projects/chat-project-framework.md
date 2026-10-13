@@ -305,9 +305,9 @@ Project配置示例：
 ```json
 {
   "schemaVersion": 1,
-  "defaultWorkflowId": "minimal-pi-coding-agent",
+  "defaultWorkflowId": "chat-direct",
   "workflows": {
-    "minimal-pi-coding-agent": {
+    "chat-direct": {
       "agents": {
         "pi-coding-agent": {
           "resources": {
@@ -411,7 +411,7 @@ Run请求增加稳定身份：
 {
   "projectId": "example-project",
   "cwd": "/workspace/example-project",
-  "workflow": "minimal-pi-coding-agent",
+  "workflow": "chat-direct",
   "prompt": "继续维护示例项目"
 }
 ```

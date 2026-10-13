@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PLANNER_AGENT } from "../../../../src/workflows/planning-execution/agents/planner/index.ts";
-import { PLANNING_EXECUTION_AGENT } from "../../../../src/workflows/planning-execution/agents/pi-coding-agent/index.ts";
+import { PLANNING_EXECUTION_AGENT } from "../../../../src/workflows/planning-execution/agents/executor/index.ts";
 import { buildPlanningExecutionTaskBrief } from "../../../../src/workflows/planning-execution/context.ts";
 
 test("planner has the context capabilities and policy needed to produce an executable review", () => {

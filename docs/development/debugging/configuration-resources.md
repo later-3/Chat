@@ -36,8 +36,8 @@
 打开Debug Lab，并在单节点回合的 Agent 上选择资源inherit。先在资源目录查到debug-trace，再打开Agent检查结果。检查API是：
 
 ```text
-GET  /api/workflows/minimal-pi-coding-agent/agents/pi-coding-agent/catalog
-POST /api/workflows/minimal-pi-coding-agent/agents/pi-coding-agent/resolve
+GET  /api/workflows/chat-direct/agents/pi-coding-agent/catalog
+POST /api/workflows/chat-direct/agents/pi-coding-agent/resolve
 ```
 
 resolve请求包含`projectId: "debug-lab"`，需要复现本轮选择时同时传入页面实际的selection；检查默认值并不能替代检查本轮选择。请求通过浏览器现有客户端构造，精确结构见[resolve路由](../../../src/routes/api/workflows/%5BworkflowId%5D/agents/%5BagentId%5D/resolve.post.ts)。

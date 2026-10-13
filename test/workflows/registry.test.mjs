@@ -36,8 +36,8 @@ test("Workflow registry is the single backend source for available Workflows", (
     true,
   ]);
   assert.deepEqual(workflows.map((workflow) => workflow.agents.map((agent) => agent.id)), [
-    ["pi-coding-agent"],
-    ["planner", "pi-coding-agent"],
+    [],
+    ["planner", "executor"],
     ["planner", "coordinator"],
     ["memory-agent"],
     ["rule-curator-agent"],
@@ -48,8 +48,8 @@ test("Workflow registry is the single backend source for available Workflows", (
   assert.deepEqual(workflows.map((workflow) => workflow.nodes.map((node) => (
     node.kind === "agent" ? node.agentId : null
   ))), [
-    ["pi-coding-agent"],
-    ["planner", null, "pi-coding-agent"],
+    [undefined],
+    ["planner", null, "executor"],
     ["planner", null, "coordinator"],
     ["memory-agent"],
     ["rule-curator-agent"],

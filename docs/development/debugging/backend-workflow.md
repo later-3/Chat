@@ -8,8 +8,8 @@
 |---|---|---|
 | [runs.post](../../../src/routes/runs.post.ts) 解析后 | `input.projectId/cwd/sessionId/workflow` | 浏览器输入是否正确进入可信 Project |
 | [startChatWorkflow](../../../src/workflows/start-chat-workflow.ts) | 注册的 workflow、返回 runId | 启动成功不代表 Step 已执行 |
-| [单节点回合 Workflow](../../../src/workflows/minimal-pi-coding-agent/workflow.ts) | input | 特殊 Workflow Runtime 的入口 |
-| [runPiCodingAgentPromptStep](../../../src/workflows/minimal-pi-coding-agent/step.ts) | chatSession、prepared.agents | 有无真正进入 Node Step；本轮能力是否冻结 |
+| [单节点回合 Workflow](../../../src/workflows/chat-direct/workflow.ts) | input | 特殊 Workflow Runtime 的入口 |
+| [runPiCodingAgentPromptStep](../../../src/workflows/chat-direct/step.ts) | chatSession、prepared.agents | 有无真正进入 Node Step；本轮能力是否冻结 |
 | [createWorkflowAgentSession](../../../src/workflows/agent-definition.ts) | toolContext、agent | Workflow上下文包装，无第二套资源装配 |
 | [createChatPiAgentSession](../../../src/agents/pi-agent-session.ts) | resourceLoader、created.session | 实際模型、Tool、Skill与上下文 |
 | Step 的 `session.prompt()` 后 | observer、text | 模型完成与Step结果；空输出会报错 |
@@ -21,7 +21,7 @@
 
 ## 编译成功但 Step 断点不命中
 
-`src/workflows` 下的 TS 可以设置源码断点，但有两种执行形态：普通模块和 `"use step"` 通过 Node 加载；`"use workflow"` 函数在 Workflow VM 中执行。后者向调试器报告的脚本名来自 Workflow ID 中的模块路径，例如 `./src/workflows/minimal-pi-coding-agent/workflow`，没有 `.ts` 后缀，也不是磁盘上的 `.mjs`。根 F5 的两个 Backend 配置必须同时允许生成 bundle 和这个 VM 脚本路径的 source map；只允许 `.nitro-debug/**/*.mjs` 或只加 `src/workflows/**/*.ts` 都会漏掉 Workflow VM。更新配置后停止并重新 F5，已有调试会话不会重新读取 launch.json。
+`src/workflows` 下的 TS 可以设置源码断点，但有两种执行形态：普通模块和 `"use step"` 通过 Node 加载；`"use workflow"` 函数在 Workflow VM 中执行。后者向调试器报告的脚本名来自 Workflow ID 中的模块路径，例如 `./src/workflows/chat-direct/workflow`，没有 `.ts` 后缀，也不是磁盘上的 `.mjs`。根 F5 的两个 Backend 配置必须同时允许生成 bundle 和这个 VM 脚本路径的 source map；只允许 `.nitro-debug/**/*.mjs` 或只加 `src/workflows/**/*.ts` 都会漏掉 Workflow VM。更新配置后停止并重新 F5，已有调试会话不会重新读取 launch.json。
 
 先在单节点回合 Workflow 的 `step.ts` 函数体内（例如 `const stepStartedAt = Date.now()`）下断点，再从普通 Workflow 会话选择单节点回合并发送消息。类型声明、import 和 `"use workflow"`/`"use step"` 指令行不适合作为执行断点；Long Agent 的默认单节点回合也进入这个 Step，先按 `longAgentTurn` 和 `runId` 区分入口。只用 `pnpm debug:start` 启动并不自动连接 VS Code 调试器，要用 F5 或显式附着。
 

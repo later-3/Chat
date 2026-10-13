@@ -29,7 +29,7 @@ test("Workflow declaration catalog is the single target-discovery source", () =>
         id: "planning-execution",
         name: "规划执行",
         description: "Planner先补齐任务理解；阻塞信息在审核Task中澄清，完整计划批准后由当前 Long Agent按任务书执行。",
-        agentIds: ["planner", "pi-coding-agent"],
+        agentIds: ["planner", "executor"],
       },
       {
         id: "planner-orchestrator",

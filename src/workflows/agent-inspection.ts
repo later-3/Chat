@@ -12,7 +12,7 @@ import {
 import { resolveWorkflowAgentDefinition } from "./agent-config-loader.js";
 import type { PrepareChatWorkflowAgentSession } from "./registry.js";
 import { describeResourceVersion, qualifiedResourceAddress } from "../resources/version.js";
-import { readAgentDurableConfig } from "./agent-model-config.js";
+import { readAgentDurableConfig, readLongAgentCapabilityConfig } from "./agent-model-config.js";
 import { longAgentConfigRoot, readLongAgentRegistry } from "../long-agents/storage.js";
 import { prepareLongAgentAssembly } from "../long-agents/assembly.js";
 import { summarizePromptRegions } from "../long-agents/prompt-regions.js";
@@ -130,13 +130,14 @@ export async function inspectWorkflowAgent(options: AgentInspectionOptions) {
   const resourceProject = prepared === undefined ? projectContext : collaboration;
   const cwd = prepared?.invocation.ownWorkspace === undefined ? projectContext?.cwd ?? options.cwd : collaboration?.cwd ?? prepared.invocation.ownWorkspace;
   const agent = { ...resolved, ...(prepared?.agent ?? {}) };
-  const durableConfig = projectContext === undefined || workflowIdForConfig === undefined
-    ? undefined
-    : await readAgentDurableConfig(
-        projectContext.projectDataDir,
-        workflowIdForConfig,
-        resolved.id,
-      );
+  // P3-U2：能力配置的**唯一来源**是 Long Agent 单键（旧的工作流+角色键已迁移）。
+  // 只有真正在某个工作流里编排多 Agent 的场景才回到旧键（当前无此类运行）。
+  const durableConfig = projectContext === undefined || longAgentId === undefined
+    ? (projectContext === undefined || workflowIdForConfig === undefined ? undefined
+        : await readAgentDurableConfig(projectContext.projectDataDir, workflowIdForConfig, resolved.id))
+    : await readLongAgentCapabilityConfig(projectContext.chatHome, longAgentId, {
+        workflowId: "chat-direct", agentId: "pi-coding-agent",
+      });
   const sessionManager = SessionManager.inMemory(cwd);
   const workflowId = workflowIdForConfig ?? "agent-inspection";
   const agentId = resolved.id;

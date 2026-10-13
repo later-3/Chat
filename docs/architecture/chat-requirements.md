@@ -16,7 +16,7 @@ Project目标结构另见[Chat Project架构设计](../modules/projects/chat-pro
 
 1. Pi Web只作为Chat浏览器前端；Chat后端拥有Session、文件、认证、Workflow和Pi运行时。
 2. Chat的核心是“同一会话中，用户每一轮可以选择一个Workflow执行”，不是选择Workflow就创建新Session。
-3. Direct Workflow必须保持Pi Coding Agent原有会话语义：历史恢复、工具循环、压缩和持续交互不能退化成一次性问答。
+3. Direct Workflow必须保持执行 Agent原有会话语义：历史恢复、工具循环、压缩和持续交互不能退化成一次性问答。
 4. Workflow可以包含多个Agent Stage；Stage之间的输入关系由Workflow定义。
 5. 用户需要在实时界面和完整历史中看到`Workflow → Stage · Agent → 消息/Thinking/工具`，但观察数据不能破坏Pi Session上下文。
 6. 不同Workflow中的Agent可能需要不同System Prompt、模型、Thinking、工具、Skill和Extension能力。

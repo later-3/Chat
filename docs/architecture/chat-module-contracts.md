@@ -147,7 +147,7 @@ P3 已在现有 Long Agent 状态中实现耐久接受信封、顺序 Worker、�
 | `GET /api/long-agents/:id/capabilities` | schema 1、longAgentId、images/manualCompaction/followUp；图片由有效模型解析，接受时再次校验 |
 | `GET/POST/DELETE /api/sessions/:sessionId/maintenance` | [原生维护合同](../modules/sessions/chat-session-maintenance.md)：只读统计、带 requestId/expectedLeafId 的压缩或历史继续、显式取消；群及 Topic 归属限制仍在服务端执行 |
 
-执行引用新增可选 `workflow:{id,invocationId,runId?}`；新接受默认 `minimal-pi-coding-agent`，同 requestId 不得改变 Workflow。绑定前 runId 缺省，客户端读取同一回执直到绑定，不重新 POST。旧记录无此字段仍按旧合同读取。
+执行引用新增可选 `workflow:{id,invocationId,runId?}`；新接受默认 `chat-direct`，同 requestId 不得改变 Workflow。绑定前 runId 缺省，客户端读取同一回执直到绑定，不重新 POST。旧记录无此字段仍按旧合同读取。
 
 执行引用为 schema 1：kind=friend、id、longAgentId、存储 projectId、sessionId、本轮冻结的 contextProjectId、status、error、acceptedAt、capabilities。Session 详情通过可选 friendExecution 提供同一结构。原 `/messages` 同步 API 保留兼容，当前 Web 不再使用。
 

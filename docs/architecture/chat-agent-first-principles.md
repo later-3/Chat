@@ -29,7 +29,7 @@ Agent
   + Agent循环及运行策略
 ```
 
-Pi Agent Core拥有模型消息、工具调用和Agent循环。Pi Coding Agent在它之上组合Coding场景需要的Prompt、文件工具、Session、资源加载、压缩和重试。Chat不复制这些能力；Chat通过Pi公开接口配置和运行Agent。
+Pi Agent Core拥有模型消息、工具调用和Agent循环。执行 Agent在它之上组合Coding场景需要的Prompt、文件工具、Session、资源加载、压缩和重试。Chat不复制这些能力；Chat通过Pi公开接口配置和运行Agent。
 
 对Chat而言，一个Agent需要管理的内容可以归为三类：
 

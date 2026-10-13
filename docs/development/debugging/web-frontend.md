@@ -1,11 +1,11 @@
 # Chat Web 与 Frontend 场景调试
 
-前置：按[环境章节](./environment.md)启动 `Debug Chat`，使用 F5 打开的独立 Chrome，直接打开 `.data/debug/chat-home/workspaces/debug-lab`。初始使用 `debug-local/debug-model`，Workflow 选“单节点回合”对应的 `minimal-pi-coding-agent`。
+前置：按[环境章节](./environment.md)启动 `Debug Chat`，使用 F5 打开的独立 Chrome，直接打开 `.data/debug/chat-home/workspaces/debug-lab`。初始使用 `debug-local/debug-model`，Workflow 选“单节点回合”对应的 `chat-direct`。
 
 ## WEB-01：从点击发送到最终回复
 
 1. 在 [useAgentSession](../../../frontend/hooks/useAgentSession.ts) 的 `runChatWorkflowPrompt()` 调用处打断点；在 [chat-workflow-browser](../../../frontend/lib/chat-workflow-browser.ts) 的同名函数打断点。
-2. 输入 `DEBUG_HELLO`，点击发送。观察 `session.owner` 是否 ordinary、projectId 是否 debug-lab、workflow 是否 minimal-pi-coding-agent，以及是否带了旧 Session/Agent 配置。
+2. 输入 `DEBUG_HELLO`，点击发送。观察 `session.owner` 是否 ordinary、projectId 是否 debug-lab、workflow 是否 chat-direct，以及是否带了旧 Session/Agent 配置。
 3. Chrome DevTools → Network → Fetch/XHR，找到 `POST /runs`。请求应访问 `35145`，由 Vite 转发到 `45112`；页面不直接请求模型端口。
 4. 在 Backend [runs.post.ts](../../../src/routes/runs.post.ts) 的 `parseChatWorkflowHttpInput()` 后和 `startChatWorkflow()` 前暂停。对比请求与解析后的 `input`，特别是 projectId、cwd、sessionId 和 agentConfigs。
 5. 放行 Backend，记录返回的 runId、workflowInvocationId、sessionId。再按[Backend章节](./backend-workflow.md)进入 Step/Pi。

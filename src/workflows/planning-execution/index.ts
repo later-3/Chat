@@ -1,7 +1,7 @@
 import { PLANNING_EXECUTION_WORKFLOW_MANIFEST } from "../catalog.js";
 import { defineChatWorkflow } from "../framework.js";
 import { PLANNER_AGENT } from "./agents/planner/index.js";
-import { PLANNING_EXECUTION_AGENT } from "./agents/pi-coding-agent/index.js";
+import { PLANNING_EXECUTION_AGENT } from "./agents/executor/index.js";
 import { planningExecutionWorkflow } from "./workflow.js";
 
 /** Complete definition exposed to Chat's Workflow registry. */

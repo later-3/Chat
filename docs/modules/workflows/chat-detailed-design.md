@@ -44,7 +44,7 @@ src/workflows/
   ├── agent-inspection.ts
   ├── start-chat-workflow.ts
   ├── types.ts
-  ├── minimal-pi-coding-agent/
+  ├── chat-direct/
   │     ├── index.ts
   │     ├── workflow.ts
   │     ├── step.ts

@@ -1,4 +1,5 @@
 import { mutateAgentDurableConfig, readAgentDurableConfig } from "../workflows/agent-model-config.js";
+import { DEFAULT_CHAT_WORKFLOW_ID } from "../workflows/ids.js";
 import { withFileLock } from "../persistence/versioned-file.js";
 import { randomUUID } from "node:crypto";
 import { link, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
@@ -88,12 +89,6 @@ function longAgentMigrationDir(root: string): string {
 }
 
 const executionFields = ["model", "thinkingLevel", "tools", "resources"] as const;
-const migratedWorkflow = "minimal-pi-coding-agent";
-const migratedRole = "pi-coding-agent";
-function identityDefinition(definition: WorkflowAgentDefinition) {
-  const { model: _model, thinkingLevel: _thinking, tools: _tools, resources: _resources, ...identity } = definition;
-  return identity;
-}
 function executionDefinition(definition: WorkflowAgentDefinition, base: string) {
   const resources = definition.resources.mode === "inherit" ? definition.resources : {
     ...definition.resources,
@@ -103,25 +98,28 @@ function executionDefinition(definition: WorkflowAgentDefinition, base: string) 
   };
   return { schemaVersion: 1 as const, model: definition.model, thinkingLevel: definition.thinkingLevel, tools: definition.tools, resources };
 }
-/** Idempotent transfer into the existing Workflow store. The backup is a migration record, never read as live config. */
-async function migrateExecutionDefinition(root: string, agent: LongAgentConfig, raw: unknown) {
-  const base = longAgentConfigRoot(root, agent.id);
+function identityDefinition(definition: WorkflowAgentDefinition) {
+  const { model: _model, thinkingLevel: _thinking, tools: _tools, resources: _resources, ...identity } = definition;
+  return identity;
+}
+/**
+ * 读取 Long Agent 的执行定义：**身份**（definition.json）+ **能力**（`capability-config.json` 单键）合并。
+ * P3-U2：旧的"内联执行字段 → 工作流+角色键"迁移已删除（旧形态读时惰性迁移由单键层负责）。
+ */
+async function readExecutionDefinition(root: string, agent: LongAgentConfig, raw: unknown): Promise<WorkflowAgentDefinition> {
   const path = longAgentDefinitionPath(root, agent.id);
   return withFileLock(path, async () => {
     const current = await optionalJson(path) ?? raw;
     const definition = parseWorkflowAgentDefinition(isRecord(current) ? { tools: { mode: "pi-default" }, ...current } : current);
-    if (isRecord(current) && executionFields.some(field => Object.hasOwn(current, field))) {
-      const migration = resolve(root, "runtime/migrations/long-agent-workflow-config", agent.id);
-      await writeJsonOnce(resolve(migration, "definition.json"), current);
-      const legacy = executionDefinition(definition, base);
-      await mutateAgentDurableConfig(base, migratedWorkflow, migratedRole, existing => ({ ...legacy, ...existing }));
-      await atomicWriteJson(path, identityDefinition(definition));
-      await atomicWriteJson(resolve(migration, "done.json"), { schemaVersion: 1, workflowId: migratedWorkflow, agentId: migratedRole });
-    }
-    const durable = await readAgentDurableConfig(base, migratedWorkflow, migratedRole);
-    return parseWorkflowAgentDefinition({ tools: { mode: "pi-default" }, ...identityDefinition(definition), ...(durable === undefined ? {} : {
-      model: durable.model, thinkingLevel: durable.thinkingLevel, tools: durable.tools ?? { mode: "pi-default" }, resources: durable.resources,
-    }) });
+    const durable = await readAgentDurableConfig(longAgentConfigRoot(root, agent.id), DEFAULT_CHAT_WORKFLOW_ID, agent.id);
+    // 身份来自 definition.json；**能力**来自单键配置（缺省回退到身份里的值），合成"执行定义"。
+    return parseWorkflowAgentDefinition({
+      ...identityDefinition(definition),
+      tools: durable?.tools ?? definition.tools ?? { mode: "pi-default" },
+      ...(durable?.model === undefined ? (definition.model === undefined ? {} : { model: definition.model }) : { model: durable.model }),
+      ...(durable?.thinkingLevel === undefined ? (definition.thinkingLevel === undefined ? {} : { thinkingLevel: definition.thinkingLevel }) : { thinkingLevel: durable.thinkingLevel }),
+      resources: durable?.resources ?? definition.resources,
+    });
   });
 }
 
@@ -144,7 +142,7 @@ async function readLongAgentDefinitionFile(
   if (definition.id !== agent.id || definition.name !== agent.name || definition.description !== expectedDescription) {
     throw new Error(`Long Agent ${agent.id} 的definition.json与登记身份不一致: ${path}`);
   }
-  return migrateExecutionDefinition(root, agent, raw);
+  return readExecutionDefinition(root, agent, raw);
 }
 
 /**
@@ -189,7 +187,8 @@ async function writeRegistrySplit(root: string, registry: LongAgentRegistry, pre
     await mkdir(base, { recursive: true, mode: 0o700 });
     const next = executionDefinition(agent.definition, base);
     const changed = executionFields.filter(field => old === undefined || JSON.stringify(old[field]) !== JSON.stringify(agent.definition[field]));
-    if (changed.length) await mutateAgentDurableConfig(base, migratedWorkflow, migratedRole, current => {
+    // P3-U2：执行能力写 **Long Agent 单键**（默认工作流在路径层解析为 capability-config.json）。
+    if (changed.length) await mutateAgentDurableConfig(base, DEFAULT_CHAT_WORKFLOW_ID, agent.id, current => {
       const merged: Record<string, unknown> = { ...current, schemaVersion: 1 };
       for (const field of changed) {
         const effectiveCurrent = current?.[field] ?? (field === "tools" ? { mode: "pi-default" } : field === "resources" ? { mode: "inherit" } : undefined);

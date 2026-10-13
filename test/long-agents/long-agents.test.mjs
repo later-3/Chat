@@ -410,7 +410,8 @@ test("LongAgent inspection resolves effective Skills through the execution path 
   const response = await router.fetch(new Request("http://chat.test/api/long-agents/nexus/inspection"));
   assert.equal(response.status, 200);
   const inspection = await response.json();
-  assert.equal(inspection.agent.id, "pi-coding-agent");
+  // P3：默认工作流不定义 Agent——检查到的就是 Long Agent 本身。
+  assert.equal(inspection.agent.id, "nexus");
   const personalSkill = inspection.skills.find((skill) => skill.name === "personal-note");
   assert.equal(personalSkill?.owner, "personal");
   // S4：自有目录的 Skill 默认生效并按 agent 归属分类。

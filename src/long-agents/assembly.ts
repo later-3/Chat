@@ -104,7 +104,9 @@ export async function prepareLongAgentAssembly(input: {
       systemPrompt: execution.systemPrompt, tools: execution.tools, resources: execution.resources,
       customInstructions: [
         ...execution.customInstructions,
-        ...(execution === agent.definition ? [] : identityInstructions),
+        // P3-U2：按 **id** 判断执行主体是否就是该 Long Agent 本身（引用比较会让检查与执行分叉：
+        // 检查传入的是同 id 的另一对象，会多注入一次 identity，导致'检查≠执行'）。
+        ...(execution.id === agent.definition.id ? [] : identityInstructions),
         { text: identityInstruction },
         ...(memoryInstruction === undefined ? [] : [{ text: memoryInstruction }]),
         ...(includeHandoff ? [{ text: DAILY_ARCHIVE_INSTRUCTIONS }] : []),
