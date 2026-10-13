@@ -11,7 +11,11 @@ export interface ChatWorkflowAgentNodeDefinition {
   readonly id: string;
   readonly name: string;
   readonly description: string;
-  readonly agentId: string;
+  /**
+   * 缺省 = **由本轮 Long Agent 本身执行**（默认工作流的形态）。
+   * 只有确实要在工作流内编排**多个** Agent 时才声明（该能力属后续阶段）。
+   */
+  readonly agentId?: string;
 }
 
 export interface ChatWorkflowTaskNodeDefinition {
@@ -137,7 +141,8 @@ export function parseChatWorkflowManifest<Id extends string>(
         id: readString(node.id, `Workflow ${id} nodes[${index}].id`),
         name: readString(node.name, `Workflow ${id} nodes[${index}].name`),
         description: typeof node.description === "string" ? node.description : "",
-        agentId: readString(node.agentId, `Workflow ${id} nodes[${index}].agentId`),
+        // 缺省不写 agentId：由本轮 Long Agent 执行（"工作流不再定义 Agent"）。
+        ...(node.agentId === undefined ? {} : { agentId: readString(node.agentId, `Workflow ${id} nodes[${index}].agentId`) }),
       };
     }
     if (node.kind === "task") {
@@ -219,10 +224,13 @@ export function defineChatWorkflow<Id extends string>(
     if (nodeIds.has(node.id)) throw new Error(`Workflow ${manifest.id}包含重复Node: ${node.id}`);
     nodeIds.add(node.id);
     if (node.kind === "agent") {
-      if (!agentsById.has(node.agentId)) {
-        throw new Error(`Workflow ${manifest.id} Node ${node.id}引用不存在的Agent: ${node.agentId}`);
+      // 声明了 agentId 必须存在；**不声明 = 由本轮 Long Agent 执行**（默认工作流形态，允许工作流不定义 Agent）。
+      if (node.agentId !== undefined) {
+        if (!agentsById.has(node.agentId)) {
+          throw new Error(`Workflow ${manifest.id} Node ${node.id}引用不存在的Agent: ${node.agentId}`);
+        }
+        referencedAgentIds.add(node.agentId);
       }
-      referencedAgentIds.add(node.agentId);
     } else if (node.kind !== "task") {
       throw new Error(`Workflow ${manifest.id}包含无效Node类型`);
     }

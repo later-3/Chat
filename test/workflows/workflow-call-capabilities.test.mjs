@@ -69,7 +69,7 @@ test("a parent Agent discovers names and Backend resolves only its selected chil
     projectId: project.projectId,
     chatHome,
     cwd: workspace,
-    targetWorkflowId: "minimal-pi-coding-agent",
+    targetWorkflowId: "chat-direct",
   };
   const description = await describeChatWorkflowCapabilities(input);
   const child = description.agents[0];

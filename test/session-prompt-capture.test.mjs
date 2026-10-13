@@ -36,7 +36,7 @@ test("openai-completions payloads decompose into managed regions", () => {
     model: "debug-model",
     messages: [
       { role: "system", content: "Pi base rules\n\n<chat_current_project>\n项目上下文\n</chat_current_project>\n\n<chat_agent_custom_instructions>\n规则正文\n</chat_agent_custom_instructions>" },
-      { role: "user", content: "当前Workflow=minimal-pi-coding-agent，本轮Invocation=i-1。" },
+      { role: "user", content: "当前Workflow=chat-direct，本轮Invocation=i-1。" },
       { role: "user", content: "帮我看看这个项目" },
       { role: "assistant", content: "上一轮回答" },
       { role: "tool", content: "工具输出" },
@@ -105,7 +105,7 @@ test("records round-trip through the gzip sidecar and index, and purge removes e
     sessionDir,
     storageProjectId: "chat",
     sessionId,
-    turn: { source: "workflow", workflowId: "minimal-pi-coding-agent", workflowInvocationId: "inv-1", stageId: "execute", turnKey: "inv-1:execute" },
+    turn: { source: "workflow", workflowId: "chat-direct", workflowInvocationId: "inv-1", stageId: "execute", turnKey: "inv-1:execute" },
     agent: { agentId: "pi-coding-agent", agentName: "Pi Coding Agent" },
   });
   recorder.pushNeutralContext([
@@ -124,7 +124,7 @@ test("records round-trip through the gzip sidecar and index, and purge removes e
   const records = await readPromptCaptureIndex(sessionDir, sessionId);
   assert.equal(records.length, 2);
   assert.equal(records[0].kind, "agent");
-  assert.equal(records[0].turn.workflowId, "minimal-pi-coding-agent");
+  assert.equal(records[0].turn.workflowId, "chat-direct");
   assert.equal(records[0].agent.agentId, "pi-coding-agent");
   assert.equal(records[0].model.provider, "debug-local");
   assert.equal(records[0].regions.messages.length, 2);

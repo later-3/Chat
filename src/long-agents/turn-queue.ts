@@ -136,7 +136,7 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
       : [...v1Candidates, v2, payloadHashV3];
     const payloadHash = payloadHashV3;
     if (prior !== undefined) {
-      if ((prior.workflow?.id ?? "minimal-pi-coding-agent") !== (input.workflow ?? prior.workflow?.id ?? "minimal-pi-coding-agent"))
+      if ((prior.workflow?.id ?? "chat-direct") !== (input.workflow ?? prior.workflow?.id ?? "chat-direct"))
         throw new LongAgentRequestConflict("同一requestId不能改变Workflow");
       if (prior.workId !== undefined && prior.sessionId !== input.sessionId) throw new LongAgentRequestConflict("后台工作请求不能改投其他会话");
       // The round KIND is part of the request identity: a node round and an ordinary round are not

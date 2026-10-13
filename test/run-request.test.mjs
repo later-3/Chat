@@ -88,7 +88,7 @@ test("Agent configuration files are scoped to Agents in the selected Workflow", 
   );
   assert.throws(
     () => parseChatWorkflowHttpInput({
-      workflow: "minimal-pi-coding-agent",
+      workflow: "chat-direct",
       agentConfigs: { planner: { primary: "/configs/planner.json" } },
     }, defaults),
     /不存在Agent: planner/,

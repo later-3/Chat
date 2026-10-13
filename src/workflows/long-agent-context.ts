@@ -25,7 +25,7 @@ export async function executeLongAgentWorkflowStep(input: ChatWorkflowInput): Pr
   const chatSession = await openChatSession(input);
   appendChatWorkflowStage(chatSession.manager, { invocationId: input.workflowInvocationId,
     // P3-U3：默认工作流（= 连续会话）的阶段归属**真实 Long Agent**。
-    workflowId: "minimal-pi-coding-agent", stageId: "execute", agentId: turn.longAgentId });
+    workflowId: "chat-direct", stageId: "execute", agentId: turn.longAgentId });
   chatSession.manager.flush();
   const { executeAcceptedLongAgentTurn } = await import("../long-agents/runtime.js");
   const result = await executeAcceptedLongAgentTurn({
@@ -33,7 +33,7 @@ export async function executeLongAgentWorkflowStep(input: ChatWorkflowInput): Pr
     sessionId: turn.sessionId, text: turn.text, ...(turn.images === undefined ? {} : { images: turn.images }), turnId: turn.turnId,
     source: turn.source, channelType: turn.channelType, contextProjectId: turn.contextProjectId,
     ...(turn.inboundEventId === null ? {} : { inboundEventId: turn.inboundEventId }), summaryDraft: turn.summaryDraft,
-    workflowExecution: { invocationId: input.workflowInvocationId, workflowId: "minimal-pi-coding-agent" },
+    workflowExecution: { invocationId: input.workflowInvocationId, workflowId: "chat-direct" },
   }, turn);
   const sessionFile = chatSession.manager.getSessionFile();
   if (sessionFile === undefined) throw new Error("受理Session缺少原生文件");

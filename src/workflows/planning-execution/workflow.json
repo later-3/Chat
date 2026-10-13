@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "planning-execution",
   "name": "规划执行",
-  "description": "Planner先补齐任务理解；阻塞信息在审核Task中澄清，完整计划批准后由Pi Coding Agent按任务书执行。",
+  "description": "Planner先补齐任务理解；阻塞信息在审核Task中澄清，完整计划批准后由当前 Long Agent按任务书执行。",
   "agentCallable": true,
   "planReview": true,
   "nodes": [
@@ -23,7 +23,7 @@
       "kind": "agent",
       "id": "execute",
       "name": "执行",
-      "description": "Pi Coding Agent根据用户请求和已批准的版本化任务书完成任务。",
+      "description": "当前 Long Agent根据用户请求和已批准的版本化任务书完成任务。",
       "agentId": "pi-coding-agent"
     }
   ],

@@ -402,7 +402,7 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
           .map((decision) => [decision.entryId, decision])
       );
       const chatWorkflowLabels = {
-        "minimal-pi-coding-agent": "Minimal Pi Coding Agent Workflow",
+        "chat-direct": "直接执行",
         "planning-execution": "Planning Execution Workflow"
       };
       const chatStageLabels = { plan: "Plan", review: "Review", execute: "Execute" };

@@ -33,7 +33,7 @@ test("Workflow Call state keeps relationship IDs but not duplicated task or resu
     },
     child: {
       sessionId: "child-session",
-      workflowId: "minimal-pi-coding-agent",
+      workflowId: "chat-direct",
       workflowInvocationId: "child-invocation",
     },
     status: "starting",
@@ -143,7 +143,7 @@ test("legacy Child Sessions recover delegation authorship from Pi lineage and ca
     toolCallId: "legacy-tool-call",
     parent: {
       sessionId: parent.getSessionId(),
-      workflowId: "minimal-pi-coding-agent",
+      workflowId: "chat-direct",
       workflowInvocationId: "parent-invocation",
       stageId: "execute",
       agentId: "pi-coding-agent",
@@ -167,7 +167,7 @@ test("legacy Child Sessions recover delegation authorship from Pi lineage and ca
     callId: "legacy-call",
     source: {
       sessionId: parent.getSessionId(),
-      workflowId: "minimal-pi-coding-agent",
+      workflowId: "chat-direct",
       workflowInvocationId: "parent-invocation",
       stageId: "execute",
       agentId: "pi-coding-agent",
@@ -203,7 +203,7 @@ test("legacy Child Sessions recover from Chat relation when Pi lineage is absent
     toolCallId: "relation-only-tool-call",
     parent: {
       sessionId: parent.getSessionId(),
-      workflowId: "minimal-pi-coding-agent",
+      workflowId: "chat-direct",
       workflowInvocationId: "parent-invocation",
       stageId: "execute",
       agentId: "pi-coding-agent",
@@ -223,7 +223,7 @@ test("legacy Child Sessions recover from Chat relation when Pi lineage is absent
 
   const [origin] = await resolveChatWorkflowDelegationOrigins(child);
   assert.equal(origin?.callId, "relation-only-call");
-  assert.equal(origin?.source.workflowId, "minimal-pi-coding-agent");
+  assert.equal(origin?.source.workflowId, "chat-direct");
   assert.equal(origin?.source.agentId, "pi-coding-agent");
   assert.equal(origin?.target.workflowInvocationId, "child-invocation");
 });

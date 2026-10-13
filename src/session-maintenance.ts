@@ -187,7 +187,7 @@ export async function startSessionMaintenance(sessionId: string, input: SessionM
           options = await prepareLongAgentAssembly({ agent, chatHome: project.chatHome, projectId: snapshot?.projectId ?? null, turnId: `compact:${input.requestId}` });
         } else {
           const stage = collectChatWorkflowStageMarkers(branch).findLast(item => item.nodeKind === "agent" && item.stageId !== "remember" && item.workflowId !== "session-memory");
-          const workflow = getChatWorkflowDefinition(stage?.workflowId ?? "minimal-pi-coding-agent");
+          const workflow = getChatWorkflowDefinition(stage?.workflowId ?? "chat-direct");
           const definition = workflow?.agents.find(item => item.id === stage?.agentId) ?? workflow?.agents[0];
           if (!definition || !workflow) throw new Error("Session agent is unavailable");
           const selection = collectLatestChatWorkflowConfigurations(branch)[workflow.id]?.[definition.id];

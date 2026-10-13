@@ -19,14 +19,14 @@ function appendCall(session, index, status) {
     toolCallId: `tool-${String(index)}`,
     parent: {
       sessionId: session.getSessionId(),
-      workflowId: "minimal-pi-coding-agent",
+      workflowId: "chat-direct",
       workflowInvocationId: "parent-invocation",
       stageId: "execute",
       agentId: "pi-coding-agent",
     },
     child: {
       sessionId: `child-${String(index)}`,
-      workflowId: "minimal-pi-coding-agent",
+      workflowId: "chat-direct",
       workflowInvocationId: `child-invocation-${String(index)}`,
       runId: `run-${String(index)}`,
     },

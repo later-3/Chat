@@ -4,7 +4,7 @@ import {
   type ChatWorkflowHttpInput,
 } from "../run-request.js";
 import { getStoredAgentConfigs, resolveChatConfig } from "../chat-config.js";
-import { MINIMAL_PI_CODING_AGENT_PROMPT } from "../workflows/minimal-pi-coding-agent/index.js";
+import { CHAT_DIRECT_PROMPT } from "../workflows/chat-direct/index.js";
 import { resolveRequestProject } from "../projects/request.js";
 import { localTimestamp } from "../runtime-log.js";
 import { startChatWorkflow } from "../workflows/start-chat-workflow.js";
@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
       projectId: project.projectId,
       chatHome: project.chatHome,
       cwd: project.cwd,
-      prompt: MINIMAL_PI_CODING_AGENT_PROMPT,
+      prompt: CHAT_DIRECT_PROMPT,
       workflow: config.defaultWorkflowId,
       ...(storedAgentConfigs === undefined ? {} : { defaultAgentConfigs: storedAgentConfigs }),
     });

@@ -54,20 +54,20 @@ test("workflow_call is a parallel Pi Tool and forwards exact parent provenance",
   }));
   const result = await tool.execute("tool-call-1", {
     action: "start",
-    workflowId: "minimal-pi-coding-agent",
+    workflowId: "chat-direct",
     prompt: "independent work package",
     agents: [{ agentId: "pi-coding-agent", tools: [], skills: [] }],
   }, undefined, (update) => updates.push(update));
 
   assert.equal(tool.executionMode, "parallel");
-  assert.match(tool.description, /`minimal-pi-coding-agent` \(直接执行\)/);
+  assert.match(tool.description, /`chat-direct` \(直接执行\)/);
   assert.match(tool.description, /`planning-execution` \(规划执行\)/);
   assert.match(tool.description, /`planner-orchestrator` \(规划协调\)/);
   assert.match(tool.description, /`memory` \(长期记忆\)/);
   assert.equal(tool.parameters.type, "object", "model APIs require an object root even for action unions");
   assert.equal(tool.parameters.anyOf, undefined, "Kimi rejects a union at the tool root");
   await assert.rejects(tool.execute("invalid-start", { action: "start" }), /workflowId|prompt|agents/);
-  assert.match(JSON.stringify(tool.parameters), /minimal-pi-coding-agent/);
+  assert.match(JSON.stringify(tool.parameters), /chat-direct/);
   assert.match(JSON.stringify(tool.parameters), /memory/);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].parentSessionManager, toolContext.sessionManager);
@@ -83,7 +83,7 @@ test("workflow_call is a parallel Pi Tool and forwards exact parent provenance",
     parentStageId: "delegate",
     parentAgentId: "coordinator",
     toolCallId: "tool-call-1",
-    targetWorkflowId: "minimal-pi-coding-agent",
+    targetWorkflowId: "chat-direct",
     prompt: "independent work package",
     agents: [{ agentId: "pi-coding-agent", tools: [], skills: [] }],
   });
@@ -129,7 +129,7 @@ test("workflow_call projects execution progress through Pi onUpdate", async () =
 
   await tool.execute("tool-call-2", {
     action: "start",
-    workflowId: "minimal-pi-coding-agent",
+    workflowId: "chat-direct",
     prompt: "run tests",
     agents: [{ agentId: "pi-coding-agent", tools: [], skills: [] }],
   }, undefined, (update) => updates.push(update));
@@ -143,7 +143,7 @@ test("workflow_call projects execution progress through Pi onUpdate", async () =
 test("workflow_call exposes every eligible Workflow target, including its own definition", () => {
   const directContext = {
     ...context("inspection"),
-    workflowId: "minimal-pi-coding-agent",
+    workflowId: "chat-direct",
     stageId: "execute",
     agentId: "pi-coding-agent",
   };
@@ -152,7 +152,7 @@ test("workflow_call exposes every eligible Workflow target, including its own de
 
   assert.match(modelVisibleDefinition, /`memory` \(长期记忆\)/);
   assert.match(modelVisibleDefinition, /由Memory Agent按用户的明确指令管理长期记忆/);
-  assert.match(modelVisibleDefinition, /`minimal-pi-coding-agent` \(直接执行\)/);
+  assert.match(modelVisibleDefinition, /`chat-direct` \(直接执行\)/);
   assert.match(modelVisibleDefinition, /`planning-execution` \(规划执行\)/);
   assert.match(modelVisibleDefinition, /`planner-orchestrator` \(规划协调\)/);
   assert.match(modelVisibleDefinition, /describe|start|wait|cancel/);
@@ -182,7 +182,7 @@ test("workflow_call returns a resumable handle and dispatches wait and cancel by
       return {
         status: "running",
         callId: input.callId,
-        workflowId: "minimal-pi-coding-agent",
+        workflowId: "chat-direct",
         runId: "run-running",
         workflowInvocationId: "invocation-running",
         sessionId: "session-running",
@@ -197,7 +197,7 @@ test("workflow_call returns a resumable handle and dispatches wait and cancel by
       return {
         status: "cancelled",
         callId: input.callId,
-        workflowId: "minimal-pi-coding-agent",
+        workflowId: "chat-direct",
         runId: "run-running",
         workflowInvocationId: "invocation-running",
         sessionId: "session-running",
@@ -210,7 +210,7 @@ test("workflow_call returns a resumable handle and dispatches wait and cancel by
 
   const started = await tool.execute("tool-start", {
     action: "start",
-    workflowId: "minimal-pi-coding-agent",
+    workflowId: "chat-direct",
     prompt: "long task",
     agents: [{ agentId: "pi-coding-agent", tools: [], skills: [] }],
     waitTimeoutMs: 10,
@@ -240,7 +240,7 @@ test("workflow_call cannot execute from Agent inspection", async () => {
   await assert.rejects(
     tool.execute("tool-call-1", {
       action: "start",
-      workflowId: "minimal-pi-coding-agent",
+      workflowId: "chat-direct",
       prompt: "work",
       agents: [{ agentId: "pi-coding-agent", tools: [], skills: [] }],
     }),
@@ -267,7 +267,7 @@ test("workflow_call describe exposes exact selectable capability names", async (
 
   const result = await tool.execute("tool-describe", {
     action: "describe",
-    workflowId: "minimal-pi-coding-agent",
+    workflowId: "chat-direct",
   });
 
   assert.match(result.content[0].text, /Agent pi-coding-agent/);
@@ -279,7 +279,7 @@ test("workflow_call describe exposes exact selectable capability names", async (
 test("Friend workflow_call separates collaboration target from parent storage and rejects absent target", async () => {
   let captured;
   const adapter = runtime({ start: async (input) => { captured = input; throw new Error("captured target"); } });
-  const input = { action: "start", workflowId: "minimal-pi-coding-agent", prompt: "work in collaboration project",
+  const input = { action: "start", workflowId: "chat-direct", prompt: "work in collaboration project",
     agents: [{ agentId: "pi-coding-agent", tools: [], skills: [] }] };
   const tool = createWorkflowCallTool({ ...context(), contextProjectId: "work-project" }, adapter);
   await assert.rejects(tool.execute("work", input), /captured target/);

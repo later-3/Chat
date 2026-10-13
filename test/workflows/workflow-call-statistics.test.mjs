@@ -11,14 +11,14 @@ function call(callId, parentSessionId, childSessionId, status, durationMs) {
     toolCallId: `tool-${callId}`,
     parent: {
       sessionId: parentSessionId,
-      workflowId: "minimal-pi-coding-agent",
+      workflowId: "chat-direct",
       workflowInvocationId: `parent-${callId}`,
       stageId: "execute",
       agentId: "pi-coding-agent",
     },
     child: {
       sessionId: childSessionId,
-      workflowId: "minimal-pi-coding-agent",
+      workflowId: "chat-direct",
       workflowInvocationId: `child-${callId}`,
       runId: `run-${callId}`,
     },

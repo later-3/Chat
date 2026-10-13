@@ -109,8 +109,8 @@ test("a Session with a finished child call still opens without scanning the dire
   const root = SessionManager.open(rootPath, project.sessionDir);
   root.appendCustomEntry("chat.workflow_call", {
     schemaVersion: 1, callId: "call-done", toolCallId: "tool-call-done",
-    parent: { sessionId: targetSessionId, workflowId: "minimal-pi-coding-agent", workflowInvocationId: "parent-inv", stageId: "execute", agentId: "pi-coding-agent" },
-    child: { sessionId: child.getSessionId(), workflowId: "minimal-pi-coding-agent", workflowInvocationId: "child-inv", runId: "run-child" },
+    parent: { sessionId: targetSessionId, workflowId: "chat-direct", workflowInvocationId: "parent-inv", stageId: "execute", agentId: "pi-coding-agent" },
+    child: { sessionId: child.getSessionId(), workflowId: "chat-direct", workflowInvocationId: "child-inv", runId: "run-child" },
     status: "completed", startedAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:01.000Z",
     finishedAt: "2026-09-26T00:00:01.000Z", durationMs: 1_000,
   });

@@ -7,7 +7,7 @@ import {
 
 test("Workflow declaration catalog is the single target-discovery source", () => {
   assert.deepEqual(CHAT_WORKFLOW_MANIFESTS.map((workflow) => workflow.id), [
-    "minimal-pi-coding-agent",
+    "chat-direct",
     "planning-execution",
     "planner-orchestrator",
     "memory",
@@ -20,15 +20,15 @@ test("Workflow declaration catalog is the single target-discovery source", () =>
     listAgentCallableWorkflowTargets(),
     [
       {
-        id: "minimal-pi-coding-agent",
+        id: "chat-direct",
         name: "直接执行",
-        description: "使用一个Pi Coding Agent直接处理当前用户请求。",
-        agentIds: ["pi-coding-agent"],
+        description: "直接处理当前用户请求（由当前 Long Agent 执行）。",
+        agentIds: [],
       },
       {
         id: "planning-execution",
         name: "规划执行",
-        description: "Planner先补齐任务理解；阻塞信息在审核Task中澄清，完整计划批准后由Pi Coding Agent按任务书执行。",
+        description: "Planner先补齐任务理解；阻塞信息在审核Task中澄清，完整计划批准后由当前 Long Agent按任务书执行。",
         agentIds: ["planner", "pi-coding-agent"],
       },
       {

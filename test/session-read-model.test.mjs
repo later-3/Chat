@@ -95,7 +95,7 @@ function assistantEntry(id, parentId, content) {
 
 test("a Friend Workflow stage and its identity coexist across the lifecycle boundary", () => {
   const manager = SessionManager.inMemory("/workspace");
-  const stage = { invocationId: "invocation", workflowId: "minimal-pi-coding-agent", stageId: "execute", agentId: "pi-coding-agent" };
+  const stage = { invocationId: "invocation", workflowId: "chat-direct", stageId: "execute", agentId: "pi-coding-agent" };
   appendChatWorkflowStage(manager, stage);
   manager.appendCustomEntry("chat.long_agent_turn", {
     schemaVersion: 1, turnId: "turn", longAgentId: "friend", bindingId: "binding", source: "chat-web",
@@ -810,7 +810,7 @@ test("session reads restore Workflow Agent configuration and pending Prompt prop
   const manager = SessionManager.create(workspace, project.sessionDir);
   manager.appendMessage({ role: "user", content: "configure rules", timestamp: Date.now() });
   setChatWorkflowAgentPromptResources(manager, {
-    workflowId: "minimal-pi-coding-agent",
+    workflowId: "chat-direct",
     agentId: "pi-coding-agent",
     promptResources: [{ id: "resource-1", target: { type: "personal" }, selectedBy: "user" }],
     actorAgentId: "rule-curator-agent",
@@ -839,7 +839,7 @@ test("session reads restore Workflow Agent configuration and pending Prompt prop
     chatHome,
   );
   assert.deepEqual(session.workflowConfigurations, {
-    "minimal-pi-coding-agent": {
+    "chat-direct": {
       "pi-coding-agent": {
         promptResources: [{ id: "resource-1", target: { type: "personal" }, selectedBy: "user" }],
       },

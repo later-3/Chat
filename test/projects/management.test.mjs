@@ -198,7 +198,7 @@ test("invalid references, overlapping paths and prototype pollution do not modif
     [{ op: "set", path: ["defaultWorkflowId"], value: "not-real" }],
     [{ op: "set", path: ["__proto__", "polluted"], value: true }],
     [{ op: "set", path: ["sessions"], value: {} }, { op: "set", path: ["sessions", "removedRetentionDays"], value: 30 }],
-    [{ op: "set", path: ["workflows", "minimal-pi-coding-agent", "agents", "pi-coding-agent", "resources"], value: { mode: "explicit", skillPaths: ["missing"] } }],
+    [{ op: "set", path: ["workflows", "chat-direct", "agents", "pi-coding-agent", "resources"], value: { mode: "explicit", skillPaths: ["missing"] } }],
   ]) assert.equal((await call("project_configure", { target: { kind: "project" }, expectedRevision: revision, operations })).isError, true);
   assert.equal(await fileRevision(project.projectConfigPath), revision);
   assert.equal({}.polluted, undefined);
@@ -206,7 +206,7 @@ test("invalid references, overlapping paths and prototype pollution do not modif
 
 test("Workflow Agent durable settings use their own revision and remove empty overrides", async (t) => {
   const { ok, call, project } = await fixture(t);
-  const workflowId = "minimal-pi-coding-agent", agentId = "pi-coding-agent";
+  const workflowId = "chat-direct", agentId = "pi-coding-agent";
   const read = await ok("project_read", { view: "configuration", workflowId, agentId });
   assert.equal(read.agent.revision, "absent");
   const target = { kind: "workflow-agent", workflowId, agentId };
@@ -239,28 +239,28 @@ test("inspection cannot execute tools and unselected system tools cannot be gran
   const inspected = resolveChatSystemTools(["system:tool/project_create"], { ...context, purpose: "inspection" })[0].definition;
   await assert.rejects(inspected.execute("inspect", { name: "forbidden", requestId: "x" }), /INSPECTION_ONLY/);
   const configure = resolveChatSystemTools(["system:tool/project_configure"], { ...context, authorizedToolAddresses: [] })[0].definition;
-  const read = await ok("project_read", { view: "configuration", workflowId: "minimal-pi-coding-agent", agentId: "pi-coding-agent" });
-  await assert.rejects(configure.execute("grant", { target: { kind: "workflow-agent", workflowId: "minimal-pi-coding-agent", agentId: "pi-coding-agent" }, expectedRevision: read.agent.revision, operations: [{ op: "set", path: ["tools"], value: { mode: "explicit", names: ["read"], addresses: ["system:tool/project_update"] } }] }), /PATH_NOT_ALLOWED/);
+  const read = await ok("project_read", { view: "configuration", workflowId: "chat-direct", agentId: "pi-coding-agent" });
+  await assert.rejects(configure.execute("grant", { target: { kind: "workflow-agent", workflowId: "chat-direct", agentId: "pi-coding-agent" }, expectedRevision: read.agent.revision, operations: [{ op: "set", path: ["tools"], value: { mode: "explicit", names: ["read"], addresses: ["system:tool/project_update"] } }] }), /PATH_NOT_ALLOWED/);
 });
 
 test("unset removes empty ancestors so Personal defaults really become effective", async (t) => {
   const { ok, context } = await fixture(t);
   const { writeChatRootConfig } = await import("../../src/chat-config.ts");
   await writeChatRootConfig({ schemaVersion: 1, defaultWorkflowId: "memory", workflows: {
-    "minimal-pi-coding-agent": { agents: { "pi-coding-agent": { tools: { mode: "none" } } } },
+    "chat-direct": { agents: { "pi-coding-agent": { tools: { mode: "none" } } } },
   }, sessions: { removedRetentionDays: 42 } }, context.chatHome);
   await writeProjectChatConfig("longagentshare", { schemaVersion: 1, workflows: {
-    "minimal-pi-coding-agent": { agents: { "pi-coding-agent": { tools: { mode: "none" } } } },
+    "chat-direct": { agents: { "pi-coding-agent": { tools: { mode: "none" } } } },
   }, sessions: { removedRetentionDays: 7 } }, context.chatHome);
   const read = await ok("project_read", { view: "configuration" });
   const result = await ok("project_configure", { target: { kind: "project" }, expectedRevision: read.configuration.revision, operations: [
-    { op: "unset", path: ["workflows", "minimal-pi-coding-agent", "agents", "pi-coding-agent", "tools"] },
+    { op: "unset", path: ["workflows", "chat-direct", "agents", "pi-coding-agent", "tools"] },
     { op: "unset", path: ["sessions", "removedRetentionDays"] },
   ] });
   assert.deepEqual(result.configuration, { schemaVersion: 1 });
   const effective = (await resolveChatConfig("longagentshare", context.chatHome)).effective;
   assert.equal(effective.sessions.removedRetentionDays, 42);
-  assert.equal(effective.workflows["minimal-pi-coding-agent"].agents["pi-coding-agent"].tools.mode, "none");
+  assert.equal(effective.workflows["chat-direct"].agents["pi-coding-agent"].tools.mode, "none");
 });
 
 test("committed configuration with audit failure reports applied instead of claiming rollback", async (t) => {
@@ -283,8 +283,8 @@ test("existing full-document writers can repair malformed files while patches re
   await writeProjectChatConfig("longagentshare", { schemaVersion: 1, defaultWorkflowId: "memory" }, context.chatHome);
   assert.equal((await resolveChatConfig("longagentshare", context.chatHome)).project.defaultWorkflowId, "memory");
   const { agentModelConfigPath, writeAgentDurableConfig, readAgentDurableConfig } = await import("../../src/workflows/agent-model-config.ts");
-  const file = agentModelConfigPath(project.projectDataDir, "minimal-pi-coding-agent", "pi-coding-agent");
+  const file = agentModelConfigPath(project.projectDataDir, "chat-direct", "pi-coding-agent");
   fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, "broken");
-  await writeAgentDurableConfig(project.projectDataDir, "minimal-pi-coding-agent", "pi-coding-agent", { schemaVersion: 1, thinkingLevel: "high" });
-  assert.equal((await readAgentDurableConfig(project.projectDataDir, "minimal-pi-coding-agent", "pi-coding-agent")).thinkingLevel, "high");
+  await writeAgentDurableConfig(project.projectDataDir, "chat-direct", "pi-coding-agent", { schemaVersion: 1, thinkingLevel: "high" });
+  assert.equal((await readAgentDurableConfig(project.projectDataDir, "chat-direct", "pi-coding-agent")).thinkingLevel, "high");
 });

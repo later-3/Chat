@@ -57,7 +57,7 @@ test("Fork publishes a new Web-visible Pi Session, preserves source and replays 
 test("Fork before the first user input creates a durable empty child and honors busy/project boundaries", async (t) => {
   const { project, chatHome, manager, first, second, base } = await fixture(t);
   const input = { projectId: project.projectId, entryId: first, requestId: randomUUID() };
-  beginSessionExecution(manager.getSessionId(), "minimal-pi-coding-agent", "busy");
+  beginSessionExecution(manager.getSessionId(), "chat-direct", "busy");
   await assert.rejects(forkChatSession(manager.getSessionId(), input, chatHome), /正在运行/);
   endSessionExecution(manager.getSessionId(), "busy");
   const fork = await forkChatSession(manager.getSessionId(), input, chatHome);

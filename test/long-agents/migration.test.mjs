@@ -192,7 +192,7 @@ test('P5 ordinary Workflow cannot take over a historical Friend even through the
   const f = await fixture(t); await migrateAgentHomeNormalization(f.home);
   const { startChatWorkflow } = await import('../../src/workflows/start-chat-workflow.ts');
   const { renameChatSession } = await import('../../src/session-name.ts');
-  await assert.rejects(startChatWorkflow({ chatHome: f.home, projectId: 'business', sessionId: f.business.getSessionId(), cwd: f.projects.business.cwd, prompt: 'take over', workflow: 'minimal-pi-coding-agent' }), /Friend会话不能/);
+  await assert.rejects(startChatWorkflow({ chatHome: f.home, projectId: 'business', sessionId: f.business.getSessionId(), cwd: f.projects.business.cwd, prompt: 'take over', workflow: 'chat-direct' }), /Friend会话不能/);
   await assert.rejects(renameChatSession('business', f.business.getSessionId(), 'replace history', f.home), /历史会话只读/);
 });
 

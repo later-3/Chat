@@ -70,7 +70,7 @@ test("Project config is isolated and applied directly for the explicitly opened 
   });
   await writeChatRootConfig({
     schemaVersion: 1,
-    defaultWorkflowId: "minimal-pi-coding-agent",
+    defaultWorkflowId: "chat-direct",
     workflows: {},
   }, chatHome);
 

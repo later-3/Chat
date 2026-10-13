@@ -25,7 +25,7 @@ test("轮内请求级聚合：retryOf 链归组 + tokenOut/failures 后端汇总
   assert.deepEqual([requests[0].attempts, requests[1].attempts, requests[2].attempts], [3, 1, 1]);
   assert.deepEqual([requests[0].failures, requests[1].failures], [2, 0]);
   assert.deepEqual(summary, { requestCount: 3, attempts: 5, failures: 2, tokenOut: 650,
-    promptChars: 50, model: "p/m", hasOutcome: true });
+    promptChars: 50, model: "p/m", hasOutcome: true, excluded: 0 });
   assert.equal(requests[0].requestId, "r1");
   assert.equal(requests[0].lastOutcome.status, "success");
 });

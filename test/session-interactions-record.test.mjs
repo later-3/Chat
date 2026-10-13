@@ -132,11 +132,11 @@ test("payload=1 附带 messageRegions 标注且不含重复 text（D2）", async
 
 test("workflow 轮携带 turn/stage 标识", async (t) => {
   const dir = tmp(t);
-  const turn = { source: "workflow", workflowId: "minimal-pi-coding-agent", workflowInvocationId: "inv", stageId: "execute", turnKey: "turn-1", stage: { id: "execute", nodeKind: "agent" } };
+  const turn = { source: "workflow", workflowId: "chat-direct", workflowInvocationId: "inv", stageId: "execute", turnKey: "turn-1", stage: { id: "execute", nodeKind: "agent" } };
   const recorder = createInteractionRecorder({ sessionDir: dir, storageProjectId: "p", sessionId: "s1", turn, agent: { agentId: "pi-coding-agent", longAgentId: "coder-muse" }, enabled: false });
   await recorder.record(bigPayload("w"), model);
   const row = (await readInteractionPage(dir, "s1")).rows[0];
-  assert.equal(row.turn.workflowId, "minimal-pi-coding-agent");
+  assert.equal(row.turn.workflowId, "chat-direct");
   assert.equal(row.turn.turnKey, "turn-1");
   assert.equal(row.turn.stage.id, "execute");
 });

@@ -1,5 +1,5 @@
 import memoryManifestJson from "./memory/workflow.json" with { type: "json" };
-import minimalPiCodingAgentManifestJson from "./minimal-pi-coding-agent/workflow.json" with { type: "json" };
+import chatDirectManifestJson from "./chat-direct/workflow.json" with { type: "json" };
 import plannerOrchestratorManifestJson from "./planner-orchestrator/workflow.json" with { type: "json" };
 import planningExecutionManifestJson from "./planning-execution/workflow.json" with { type: "json" };
 import ruleManagementManifestJson from "./rule-management/workflow.json" with { type: "json" };
@@ -8,9 +8,9 @@ import problemDiagnosisManifestJson from "./problem-diagnosis/workflow.json" wit
 import topicSessionCreateManifestJson from "./topic-session-create/workflow.json" with { type: "json" };
 import { parseChatWorkflowManifest } from "./framework.js";
 
-export const MINIMAL_PI_CODING_AGENT_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
-  minimalPiCodingAgentManifestJson,
-  "minimal-pi-coding-agent",
+export const CHAT_DIRECT_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
+  chatDirectManifestJson,
+  "chat-direct",
 );
 export const PLANNING_EXECUTION_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
   planningExecutionManifestJson,
@@ -43,7 +43,7 @@ export const TOPIC_SESSION_CREATE_WORKFLOW_MANIFEST = parseChatWorkflowManifest(
 
 /** Declarative Workflow facts that can be consumed without loading executable Workflow modules. */
 export const CHAT_WORKFLOW_MANIFESTS = [
-  MINIMAL_PI_CODING_AGENT_WORKFLOW_MANIFEST,
+  CHAT_DIRECT_WORKFLOW_MANIFEST,
   PLANNING_EXECUTION_WORKFLOW_MANIFEST,
   PLANNER_ORCHESTRATOR_WORKFLOW_MANIFEST,
   MEMORY_WORKFLOW_MANIFEST,

@@ -1,6 +1,6 @@
 import {
-  minimalPiCodingAgentWorkflowDefinition,
-} from "./minimal-pi-coding-agent/index.js";
+  chatDirectWorkflowDefinition,
+} from "./chat-direct/index.js";
 import { memoryWorkflowDefinition } from "./memory/index.js";
 import {
   planningExecutionWorkflowDefinition,
@@ -21,7 +21,7 @@ export type {
 } from "./framework.js";
 
 export const CHAT_WORKFLOW_DEFINITIONS = [
-  minimalPiCodingAgentWorkflowDefinition,
+  chatDirectWorkflowDefinition,
   planningExecutionWorkflowDefinition,
   plannerOrchestratorWorkflowDefinition,
   memoryWorkflowDefinition,
@@ -37,7 +37,7 @@ export const CHAT_WORKFLOW_IDS = CHAT_WORKFLOW_DEFINITIONS.map(
   (definition) => definition.id,
 ) as readonly ChatWorkflowId[];
 
-export const DEFAULT_CHAT_WORKFLOW_ID: ChatWorkflowId = "minimal-pi-coding-agent";
+export const DEFAULT_CHAT_WORKFLOW_ID: ChatWorkflowId = "chat-direct";
 
 export function getChatWorkflowDefinition(id: string): ChatWorkflowDefinition | undefined {
   return CHAT_WORKFLOW_DEFINITIONS.find((definition) => definition.id === id);

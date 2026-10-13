@@ -19,8 +19,8 @@ import {
 } from "../../src/prompt-resources/builtins.ts";
 import { openProject } from "../../src/projects/registry.ts";
 import { collectChatToolExecutions } from "../../src/tools/execution-record.ts";
-import { runPiCodingAgentPromptStep } from "../../src/workflows/minimal-pi-coding-agent/step.ts";
-import { PI_CODING_AGENT } from "../../src/workflows/minimal-pi-coding-agent/agents/pi-coding-agent/index.ts";
+import { runPiCodingAgentPromptStep } from "../../src/workflows/chat-direct/step.ts";
+import { PI_CODING_AGENT } from "../../src/workflows/chat-direct/agents/pi-coding-agent/index.ts";
 import { inspectWorkflowAgent } from "../../src/workflows/agent-inspection.ts";
 import {
   runPlanningExecutionStep,
@@ -244,7 +244,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     {
       schemaVersion: 2,
       invocationId: "direct-invocation-1",
-      workflowId: "minimal-pi-coding-agent",
+      workflowId: "chat-direct",
       stageId: "execute",
       nodeKind: "agent",
       agentId: "pi-coding-agent",
@@ -276,7 +276,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     {
       schemaVersion: 2,
       invocationId: "direct-invocation-2",
-      workflowId: "minimal-pi-coding-agent",
+      workflowId: "chat-direct",
       stageId: "execute",
       nodeKind: "agent",
       agentId: "pi-coding-agent",
@@ -350,7 +350,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
       .map(messageText).filter((text) => !text.startsWith("当前Workflow=")),
     ["first request", "planned request", "add rollback details", "final request"],
   );
-  assert.match(messageText(calls[4].messages.at(-2)), /当前Workflow=minimal-pi-coding-agent，本轮Invocation=direct-invocation-2/);
+  assert.match(messageText(calls[4].messages.at(-2)), /当前Workflow=chat-direct，本轮Invocation=direct-invocation-2/);
   assert.equal(
     calls[4].messages.some((message) => message.role === "user" && messageText(message).includes("plan one")),
     false,
@@ -704,7 +704,7 @@ test("Agent inspection uses the same resolved Prompt, resources and tools as exe
     chatHome,
     cwd: workspace,
     defaultAgent: PI_CODING_AGENT,
-    workflowId: "minimal-pi-coding-agent",
+    workflowId: "chat-direct",
     agentId: PI_CODING_AGENT.id,
     stageId: "execute",
     selection: {
