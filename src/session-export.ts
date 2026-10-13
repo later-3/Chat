@@ -407,8 +407,7 @@ const CHAT_WORKFLOW_HISTORY_RUNTIME = `
       };
       const chatStageLabels = { plan: "Plan", review: "Review", execute: "Execute" };
       const chatAgentLabels = {
-        planner: "Planner Agent",
-        "pi-coding-agent": "Pi Coding Agent"
+        planner: "Planner Agent"
       };
 
       function chatHistoryLabel(labels, id) {
