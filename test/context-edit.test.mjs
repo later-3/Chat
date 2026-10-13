@@ -6,8 +6,10 @@ import {
   entryBlockId,
   isContextEditEmpty,
   readContextEditFromEntries,
+  splitSubEntries,
   splitSystemSegments,
   tagBlockId,
+  tagSubEntryBlockId,
   toolBlockId,
 } from "../src/context-edit.ts";
 
@@ -123,4 +125,31 @@ test("readContextEditFromEntries：非法数据被丢弃（严格归一化）", 
   assert.deepEqual(layer.excluded, []);
   assert.deepEqual(layer.modified, {});
   assert.deepEqual(layer.added, {});
+});
+
+test("splitSubEntries：harness 按四类文件条目切、记忆按一级小节切、identity 不切", () => {
+  const harness = "前言\n## 纯规则 · protocol/a.md\n\n规则A\n\n---\n\n## 通用规范 · 需求规范.md\n\n规范B\n";
+  const subs = splitSubEntries("chat_interaction_harness", harness);
+  assert.deepEqual(subs.map((entry) => entry.id), ["protocol/a.md", "需求规范.md"]);
+  assert.equal(subs[0].raw, "## 纯规则 · protocol/a.md\n\n规则A\n\n---\n");
+  assert.equal(subs[0].title, "protocol/a.md");
+  const memory = "## Core Memory\n事实\n## Open Knowledge Format\n格式\n";
+  assert.deepEqual(splitSubEntries("chat_long_term_memory", memory).map((entry) => entry.id), ["Core Memory", "Open Knowledge Format"]);
+  assert.deepEqual(splitSubEntries("chat_identity", "没有小节"), []);
+});
+
+test("applyContextEdit：子条目级排除只删该条目，块与其他条目逐字保留（用户场景③）", () => {
+  const systemText = '<chat_interaction_harness revision="1">前言\n## 纯规则 · protocol/a.md\n\n规则A\n\n---\n\n## 通用规范 · 需求规范.md\n\n规范B\n</chat_interaction_harness><chat_identity source="chat">身份</chat_identity>';
+  const payload = { messages: [{ role: "system", content: systemText }] };
+  const layer = { ...EMPTY_CONTEXT_EDIT, excluded: [tagSubEntryBlockId("chat_interaction_harness", "protocol/a.md")], revision: 1 };
+  const result = applyContextEdit(payload, "openai-completions", layer);
+  const out = result.payload.messages[0].content;
+  assert.equal(out.includes("规则A"), false, "被排除条目内容消失");
+  assert.equal(out.includes("规范B"), true, "其他条目保留");
+  assert.equal(out.includes("<chat_interaction_harness"), true, "块本身保留");
+  assert.equal(out.includes('<chat_identity source="chat">身份</chat_identity>'), true, "其他块逐字保留");
+  assert.equal(out.includes("前言"), true, "块前言保留");
+  assert.equal(result.excludedCount, 1);
+  assert.equal(result.excludedIds[0], "tag:chat_interaction_harness#protocol/a.md");
+  assert.equal(payload.messages[0].content, systemText, "原 payload 不改写");
 });

@@ -207,7 +207,7 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
   await page.evaluate("document.querySelector('[data-context-preview-open]').click()");
   await page.waitFor("document.querySelector('[data-context-preview]') !== null", { label: "发送前编辑面板", timeoutMs: 30_000 });
   await page.waitFor("document.querySelector('[data-context-preview] [data-context-edit-toggle]') !== null", { label: "块勾选框", timeoutMs: 30_000 });
-  const previewSummary = await page.evaluate("document.querySelector('[data-context-preview-summary]')?.textContent ?? ''");
+  const previewSummary = await page.evaluate("document.querySelector('[data-context-edit-summary]')?.textContent ?? ''");
   assert.ok(/\d/.test(previewSummary), `发送统计应显示数字：${previewSummary}`);
   console.log("PREVIEW_SUMMARY", previewSummary.trim());
   const previewToggles = await page.evaluate("[...document.querySelectorAll('[data-context-preview] [data-context-edit-toggle]')].map(n => n.getAttribute('data-context-edit-toggle'))");
@@ -230,6 +230,23 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
   await pause(600);
   const afterUiRestore = await api.readEdit(sessionId);
   assert.equal(afterUiRestore.excluded.includes("tag:chat_identity"), false, `UI 恢复写入后端：${JSON.stringify(afterUiRestore)}`);
+
+  // ⑤b 子条目（用户 2026-10-13）：面板里若存在块内条目，勾掉一个 → 后端写入 `tag:<tag>#<条目>`
+  //     （fixture 的区块内容很短、可能没有 `## ` 小节——存在才验证，切分规则本身由后端单测锁定）。
+  const subEntryIds = await page.evaluate("[...document.querySelectorAll('[data-context-preview] [data-sub-entry]')].map(n => n.getAttribute('data-sub-entry'))");
+  console.log("SUB_ENTRIES", JSON.stringify(subEntryIds.slice(0, 6)));
+  if (subEntryIds.length > 0) {
+    const subToggle = await page.evaluate("[...document.querySelectorAll('[data-context-preview] [data-context-edit-toggle]')].map(n => n.getAttribute('data-context-edit-toggle')).find(id => id.includes('#'))");
+    assert.ok(subToggle?.includes("#"), `子条目勾选框应有 tag#sub 形态：${subToggle}`);
+    await page.evaluate(`document.querySelector('[data-context-preview] [data-context-edit-toggle="${subToggle}"]').click()`);
+    await pause(600);
+    const afterSub = await api.readEdit(sessionId);
+    assert.equal(afterSub.excluded.includes(subToggle), true, `子条目勾选写入后端：${JSON.stringify(afterSub.excluded)}`);
+    await page.evaluate(`document.querySelector('[data-context-preview] [data-context-excluded] [data-context-edit-toggle="${subToggle}"]').click()`);
+    await pause(600);
+    const restoredSub = await api.readEdit(sessionId);
+    assert.equal(restoredSub.excluded.includes(subToggle), false, `子条目恢复：${JSON.stringify(restoredSub.excluded)}`);
+  }
 
   // ⑥ 边界（用户 2026-10-13）：完整历史是事后回看 → 只读，不出现编辑勾选框。
   await page.evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1)?.querySelector('header button[aria-label=Close]')?.click()");

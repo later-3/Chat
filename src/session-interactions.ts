@@ -15,7 +15,7 @@
  * 旧数据：prompt-captures（schema1）只读，adaptLegacyPromptCaptures 提供纯读转换（不写回）。
  */
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -214,11 +214,14 @@ export function createInteractionRecorder(input: InteractionRecorderInput): Inte
       }
       await enqueueWrite(directory, async () => {
         await mkdir(directory, { recursive: true });
+        const gz = gzipSync(Buffer.from(JSON.stringify(payload), "utf8"));
         if (input.enabled) {
           await mkdir(join(directory, "requests"), { recursive: true });
-          const gz = gzipSync(Buffer.from(JSON.stringify(payload), "utf8"));
           await appendFile(join(directory, "requests", `${requestId}.json.gz`), gz);
         }
+        // B5：**无条件**保存最近一次的完整请求体（覆盖式）——发送前编辑入口要展开区块看条目与内容，
+        // 必须有全文；“完整记录”开关仍然只控制逐请求归档（requests/<id>.json.gz）。
+        await writeFile(join(directory, "latest-payload.json.gz"), gz);
         await appendFile(join(directory, "index.jsonl"), line, "utf8");
       }).catch(() => undefined); // 失败已由 enqueueWrite 记日志+计数；不抛给调用方，不阻断会话
       pending.push({ requestId, tsMs: timestamp.getTime() });
@@ -704,4 +707,45 @@ export async function purgeInteractions(sessionDir: string, sessionId: string): 
 export async function readRecordingBySessionFile(sessionFile: string): Promise<{ readonly enabled: boolean; readonly revision: number }> {
   const manager = SessionManager.open(sessionFile, dirname(sessionFile));
   return readRecordingFromEntries(manager.getEntries()) ?? { enabled: false, revision: 0 };
+}
+
+// ---------------------------------------------------------------------------
+// B5：发送前的上下文预览（最近一次请求的完整请求体）
+// ---------------------------------------------------------------------------
+
+const LATEST_PAYLOAD_FILE = "latest-payload.json.gz";
+
+/**
+ * 读"最近一次发送的完整请求体"——发送前编辑入口用它展开区块看条目与内容。
+ * 原文由记录器**无条件**写入（不看"完整记录"开关）；原文与索引行同批写入，故取最后一行为其行记录。
+ */
+export async function readLatestContextPreview(sessionDir: string, sessionId: string): Promise<{
+  readonly row: (InteractionRequestRow & { readonly outcome?: InteractionOutcomeRecord["outcome"] }) | undefined;
+  readonly payload?: string;
+  readonly messageRegions?: readonly InteractionMessageRegionMark[];
+  readonly payloadPresent: boolean;
+}> {
+  let payloadText: string;
+  try {
+    payloadText = gunzipSync(await readFile(join(interactionDirectory(sessionDir, sessionId), LATEST_PAYLOAD_FILE))).toString("utf8");
+  } catch {
+    return { row: undefined, payloadPresent: false };
+  }
+  const page = await readInteractionPage(sessionDir, sessionId, { limit: 10_000 });
+  const rows = [...page.rows].sort((a, b) => a.seq - b.seq);
+  const row = rows.at(-1);
+  const parsed = parseProviderPayloadRegions(safeJsonParse(payloadText), row?.model.api, undefined);
+  const messageRegions = parsed.messages?.map((message) => ({
+    index: message.index,
+    role: message.role,
+    region: message.region,
+    ...(message.customType === undefined ? {} : { customType: message.customType }),
+    ...(message.timestamp === undefined ? {} : { timestamp: message.timestamp }),
+  }));
+  return {
+    row,
+    payload: payloadText,
+    ...(messageRegions === undefined ? {} : { messageRegions }),
+    payloadPresent: true,
+  };
 }

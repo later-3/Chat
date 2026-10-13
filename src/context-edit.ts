@@ -191,6 +191,64 @@ export function splitSystemSegments(systemContent: string): readonly SystemSegme
 }
 
 // ---------------------------------------------------------------------------
+// 块内子条目（用户 2026-10-13：区块要能展开看条目与内容，条目可单独勾选）
+// ---------------------------------------------------------------------------
+
+export interface SubEntry {
+  /** 子条目标识（放在 blockId 的 `#` 之后；同一区块内唯一）。 */
+  readonly id: string;
+  /** 展示标题（条目行原文去掉 `## `）。 */
+  readonly title: string;
+  /** 原文片段（条目行到下一条目行之前），重组用。 */
+  readonly raw: string;
+  /** 内容（去掉条目行本身）。 */
+  readonly text: string;
+}
+
+/** harness 四类文件条目：`## 纯规则 · <path>` / `## 通用规范 · <name>` / `## 通用资产 · <name>` / `## 本项目专属规范 · <name>`。 */
+const HARNESS_ENTRY = /^##\s+(纯规则|通用规范|通用资产|本项目专属规范)\s*·\s*(\S.*)$/;
+/** 其他区块的一级小节条目。 */
+const SECTION_ENTRY = /^##\s+(\S.*)$/;
+
+function normalizeSubId(value: string): string {
+  return value.trim().replace(/\s+/g, " ").replace(/#/g, "_");
+}
+
+/**
+ * 把一个区块的内容切成子条目（前后端必须用同一规则；前端 `splitBlockSubEntries` 是它的镜像）。
+ * 第一个条目之前的内容（前言）不成条目——它跟随区块本身，只能整块排除。
+ */
+export function splitSubEntries(tag: string, text: string): readonly SubEntry[] {
+  const pattern = tag === "chat_interaction_harness" ? HARNESS_ENTRY : SECTION_ENTRY;
+  const lines = text.split("\n");
+  const entries: SubEntry[] = [];
+  let current: { id: string; title: string; lines: string[] } | null = null;
+  const push = () => {
+    if (current === null) return;
+    const raw = current.lines.join("\n");
+    const bodyLines = current.lines.slice(1);
+    entries.push({ id: current.id, title: current.title, raw,
+      text: bodyLines.join("\n").replace(/^\n+/, "") });
+    current = null;
+  };
+  for (const line of lines) {
+    const match = pattern.exec(line);
+    if (match !== null) {
+      push();
+      const id = tag === "chat_interaction_harness" ? normalizeSubId(match[2] as string) : normalizeSubId(match[1] as string);
+      current = { id, title: (tag === "chat_interaction_harness" ? (match[2] as string) : (match[1] as string)).trim(), lines: [line] };
+      continue;
+    }
+    if (current !== null) current.lines.push(line);
+  }
+  push();
+  return entries;
+}
+
+/** 子条目 blockId：`tag:<tag>#<子条目标识>`。 */
+export function tagSubEntryBlockId(tag: string, subId: string): string { return `${tagBlockId(tag)}#${subId}`; }
+
+// ---------------------------------------------------------------------------
 // 应用（gate 处；一期：excluded 的 system 区块与工具）
 // ---------------------------------------------------------------------------
 
@@ -219,18 +277,30 @@ export function applyContextEdit(payload: unknown, api: string | undefined, laye
         kept.push(segment.raw);
         continue;
       }
-      const blockId = tagBlockId(segment.tag);
+      const tag = segment.tag;
+      const blockId = tagBlockId(tag);
       if (excluded.has(blockId)) {
         hit.push(blockId);
         continue;
       }
+      const openTag = segment.raw.slice(0, segment.raw.length - segment.text.length - `</${tag}>`.length);
+      let body = segment.text;
       const modified = layer.modified[blockId];
       if (modified !== undefined) {
-        const open = segment.raw.slice(0, segment.raw.length - segment.text.length - `</${segment.tag}>`.length);
-        kept.push(`${open}${modified}</${segment.tag}>`);
-        continue;
+        body = modified;
+      } else {
+        // 子条目级排除（用户 2026-10-13）：块没被整体勾掉时，逐条剔掉被勾掉的条目（前后端同一规则）。
+        const excludedSubs = splitSubEntries(tag, segment.text)
+          .filter((entry) => excluded.has(tagSubEntryBlockId(tag, entry.id)));
+        if (excludedSubs.length > 0) {
+          for (const entry of excludedSubs) {
+            body = body.replace(entry.raw, "");
+            hit.push(tagSubEntryBlockId(tag, entry.id));
+          }
+          body = body.replace(/\n{3,}/g, "\n\n");
+        }
       }
-      kept.push(segment.raw);
+      kept.push(`${openTag}${body}</${tag}>`);
     }
     return kept.join("");
   };
