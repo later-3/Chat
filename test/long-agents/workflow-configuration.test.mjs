@@ -25,8 +25,10 @@ test("Web, IM and schedule use Workflow configuration; admission freezes the rol
     agentConfigs: { "pi-coding-agent": { tools: { mode: "none" } } } }));
   for (const turn of accepted) {
     const { snapshot } = acceptedSnapshot(turn);
-    assert.equal(snapshot.agent.id, "pi-coding-agent");
-    assert.equal(snapshot.agent.tools.mode, "none");
+    // P3-U3（用户 2026-10-13 定界）：默认工作流下**执行主体 = Long Agent 本身**，
+    // 不再是 workflow 内置的 `pi-coding-agent` 假角色。
+    // 注：`agentConfigs` 的键（本轮调整）目前仍按 workflow agent 索引——统一到 Long Agent 是 P3-U2/U4。
+    assert.equal(snapshot.agent.id, "friend");
     assert.deepEqual(snapshot.agent.model, { provider: "p3-local", modelId: "daily-model" });
     assert.match(JSON.stringify(snapshot.agent.customInstructions), /Stable Friend/);
   }
