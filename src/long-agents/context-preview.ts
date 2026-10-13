@@ -19,6 +19,7 @@ import { readLongAgentRegistry } from "./storage.js";
 import { longAgentWorkflowConfiguration } from "./workflow-configuration.js";
 import { applyContextEdit, applyMessageEdits, readContextEditFromEntries } from "../context-edit.js";
 import { parseProviderPayloadRegions } from "../session-prompt-capture.js";
+import { PROMPT_REGION_REGISTRY } from "./prompt-region-registry.js";
 
 export interface SendPreviewTool {
   readonly name: string;
@@ -35,6 +36,8 @@ export interface SendPreview {
     readonly tools: readonly { readonly type: "function"; readonly function: { readonly name: string; readonly description?: string; readonly parameters?: unknown } }[];
   };
   readonly excludedCount: number;
+  /** tag → 中文名（registry 唯一事实源）。 */
+  readonly blockLabels: Readonly<Record<string, string>>;
   /** 消息区域分类（与真实详情同一解析器）。 */
   readonly messageRegions?: readonly { readonly index: number; readonly role: string; readonly region: string; readonly customType?: string; readonly timestamp?: number }[];
   readonly systemPrompt: string;
@@ -167,7 +170,11 @@ export async function buildSendPreview(input: {
     ...(message.customType === undefined ? {} : { customType: message.customType }),
     ...(message.timestamp === undefined ? {} : { timestamp: message.timestamp }),
   }));
+  // 区块中文名（唯一事实源：registry）——前端展示"长期记忆/交互规范/自定义指令（含规则）"等，不必自造。
+  const blockLabels: Record<string, string> = {};
+  for (const region of PROMPT_REGION_REGISTRY) if (region.tag !== "") blockLabels[region.tag] = region.label;
   return {
+    blockLabels,
     payload: edited,
     excludedCount: applied.excludedCount,
     ...(messageRegions === undefined ? {} : { messageRegions }),

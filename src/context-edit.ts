@@ -294,8 +294,9 @@ export function applyContextEdit(payload: unknown, api: string | undefined, laye
   }
   const excluded = new Set(layer.excluded);
   const hit: string[] = [];
-  // modified 不产生"命中条目"，但要记入"改过"标志——否则末尾的快路径会把修改整个丢掉（F-67）。
+  // modified / added 不产生"命中条目"，但要记入"改过"标志——否则末尾的快路径会把修改整个丢掉（F-67）。
   let modifiedAny = false;
+  let addedAny = false;
   const root = payload as Record<string, unknown>;
   const next: Record<string, unknown> = { ...root };
 
@@ -330,6 +331,12 @@ export function applyContextEdit(payload: unknown, api: string | undefined, laye
           }
           body = body.replace(/\n{3,}/g, "\n\n");
         }
+      }
+      // 手写新增（用户 2026-10-13）：在所属区块内容末尾追加自定义条目。
+      const addedItems = layer.added[tag];
+      if (addedItems !== undefined && addedItems.length > 0) {
+        body = `${body}\n\n${addedItems.join("\n\n")}`;
+        addedAny = true;
       }
       kept.push(`${openTag}${body}</${tag}>`);
     }
@@ -388,7 +395,7 @@ export function applyContextEdit(payload: unknown, api: string | undefined, laye
 
   // 消息条目的排除发生在上下文层（gate 处已看不到它们）——按声明计数，保持 excluded.count 语义完整。
   const declaredEntries = layer.excluded.filter((id) => id.startsWith(ENTRY_PREFIX)).length;
-  const untouched = hit.length === 0 && declaredEntries === 0 && !modifiedAny;
+  const untouched = hit.length === 0 && declaredEntries === 0 && !modifiedAny && !addedAny;
   return { payload: untouched ? payload : next, excludedCount: hit.length + declaredEntries, excludedIds: hit };
 }
 

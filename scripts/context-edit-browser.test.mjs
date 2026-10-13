@@ -141,10 +141,10 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
     readEdit: async (sessionId) => (await fetch(
       `${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/context-edit?projectId=friend`,
     )).json(),
-    writeEdit: async (sessionId, excluded, expectedRevision, modified = {}) => {
+    writeEdit: async (sessionId, excluded, expectedRevision, modified = {}, added = {}) => {
       const response = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/context-edit?projectId=friend`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ excluded, modified, added: {}, expectedRevision }),
+        body: JSON.stringify({ excluded, modified, added, expectedRevision }),
       });
       return { status: response.status, body: await response.json() };
     },
@@ -302,6 +302,25 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
     console.log("MESSAGE_MODIFY", JSON.stringify({ entryId, inPreview: true, inSentPayload: true }));
     const restoredModify = await api.writeEdit(sessionId, [], putModify.body.revision, {});
     assert.equal(restoredModify.status, 200, JSON.stringify(restoredModify));
+  }
+
+  // ⑤e 手写新增（用户 2026-10-13：三类操作的最后一块）：在区块里加一条 → 发一轮 → 真实 payload 里含新增文字。
+  {
+    await page.evaluate("[...document.querySelectorAll('[role=dialog]')].forEach((dialog) => dialog.querySelector('header button[aria-label=Close]')?.click())");
+    await pause(1200);
+    const addText = "E2E_ADDED_手写新增条目";
+    const current = await api.readEdit(sessionId);
+    const putAdd = await api.writeEdit(sessionId, [], current.revision, {}, { chat_agent_custom_instructions: [addText] });
+    assert.equal(putAdd.status, 200, JSON.stringify(putAdd));
+    const previewUrl = `${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/context-preview?projectId=friend&longAgentId=friend&draft=x`;
+    const preview = await (await fetch(previewUrl)).json();
+    assert.equal(JSON.stringify(preview.payload ?? {}).includes(addText), true, "预览里应含新增条目（所见即所发）");
+    const addedRound = await send("b5-added");
+    const sentAdd = await api.lastRequest(addedRound.sessionId);
+    assert.equal(JSON.stringify(sentAdd.detail.payload ?? {}).includes(addText), true, "真实发给模型的请求体里应含新增条目");
+    console.log("MESSAGE_ADD", JSON.stringify({ inPreview: true, inSentPayload: true }));
+    const cleared = await api.writeEdit(sessionId, [], putAdd.body.revision, {}, {});
+    assert.equal(cleared.status, 200, JSON.stringify(cleared));
   }
 
   // ⑥ 边界（用户 2026-10-13）：完整历史是事后回看 → 只读，不出现编辑勾选框。
