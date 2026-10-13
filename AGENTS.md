@@ -81,6 +81,8 @@ IM → NanoClaw Channel → Backend → LongAgent适配 ────────
 
 ## 验证
 
+UI/前端改动完成后，按 `.agents/skills/frontend-verify/SKILL.md` 走自验证闭环（typecheck → 起栈 → 布局体检 → 双视口截图 + console 采集 → 读图自评 → 修复循环），证据（体检输出、capture JSON 摘要、截图路径）写进汇报；写之前的 UI 质量门禁仍先读 `frontend/.agents/skills/web-design-guidelines`。
+
 后端或前端代码修改完成后运行：
 
 ```bash
