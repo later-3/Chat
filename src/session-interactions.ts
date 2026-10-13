@@ -725,15 +725,27 @@ export async function readLatestContextPreview(sessionDir: string, sessionId: st
   readonly messageRegions?: readonly InteractionMessageRegionMark[];
   readonly payloadPresent: boolean;
 }> {
-  let payloadText: string;
-  try {
-    payloadText = gunzipSync(await readFile(join(interactionDirectory(sessionDir, sessionId), LATEST_PAYLOAD_FILE))).toString("utf8");
-  } catch {
-    return { row: undefined, payloadPresent: false };
-  }
+  const directory = interactionDirectory(sessionDir, sessionId);
   const page = await readInteractionPage(sessionDir, sessionId, { limit: 10_000 });
   const rows = [...page.rows].sort((a, b) => a.seq - b.seq);
-  const row = rows.at(-1);
+  let payloadText: string | undefined;
+  let row = rows.at(-1);
+  // ① 优先：无条件保存的最近一次完整请求体（新代码写入）。
+  try {
+    payloadText = gunzipSync(await readFile(join(directory, LATEST_PAYLOAD_FILE))).toString("utf8");
+  } catch { /* 旧会话没有 latest——走回退 */ }
+  // ② 回退：最新一条带归档原文的行（“完整记录”开关打开过）；没开过开关的旧会话确实无原文。
+  if (payloadText === undefined) {
+    const withFile = [...rows].reverse().find((candidate) => candidate.payload.file !== undefined);
+    const file = withFile?.payload.file;
+    if (withFile !== undefined && file !== undefined) {
+      try {
+        payloadText = gunzipSync(await readFile(join(directory, "requests", file))).toString("utf8");
+        row = withFile;
+      } catch { /* 归档缺失——无原文 */ }
+    }
+  }
+  if (payloadText === undefined) return { row, payloadPresent: false };
   const parsed = parseProviderPayloadRegions(safeJsonParse(payloadText), row?.model.api, undefined);
   const messageRegions = parsed.messages?.map((message) => ({
     index: message.index,
