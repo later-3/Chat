@@ -202,3 +202,106 @@ export async function clearAgentToolConfig(
   await updateAgentDurableConfig(projectDataDir, workflowId, agentId, { tools: null });
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// P3-U2：Long Agent 能力配置（**单键**，无 workflow / 内置角色维度）
+//
+// 用户 2026-10-13 定界 + 判断方法（不背包袱）：
+//   新键：<ChatHome>/long-agents/<longAgentId>/capability-config.json
+//   旧键：<ChatHome>/long-agents/<id>/workflows/<workflowId>/agents/<agentId>.json（历史形态）
+//   迁移：读时惰性 —— 写新键 + **删旧键** + 写迁移标记；回退 = 删新键与标记（旧键已删，但从迁移标记可追溯来源）。
+// ---------------------------------------------------------------------------
+
+/** Long Agent 能力配置的唯一路径（单键）。 */
+export function longAgentCapabilityConfigPath(chatHome: string, longAgentId: string): string {
+  if (!/^[A-Za-z0-9._-]+$/.test(longAgentId)) throw new Error(`longAgentId格式无效: ${longAgentId}`);
+  return resolve(chatHome, "long-agents", longAgentId, "capability-config.json");
+}
+
+/** 历史形态：默认工作流下按内置角色命名的能力配置（迁移源，迁移后删除）。 */
+export function legacyWorkflowAgentConfigPath(chatHome: string, longAgentId: string, workflowId: string, agentId: string): string {
+  assertEntityId(workflowId, "workflowId");
+  assertEntityId(agentId, "agentId");
+  return resolve(chatHome, "long-agents", longAgentId, "workflows", workflowId, "agents", `${agentId}.json`);
+}
+
+export interface CapabilityMigrationSource {
+  readonly workflowId: string;
+  readonly agentId: string;
+}
+
+async function readConfigFileIfPresent(path: string): Promise<ChatAgentDurableConfig | undefined> {
+  let content: string;
+  try {
+    content = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(content);
+  } catch (error) {
+    throw new Error(`Agent模型配置不是有效JSON: ${path}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return parseDurableConfig(value, path);
+}
+
+/**
+ * 读 Long Agent 能力配置。新键没有、且给了旧键来源时，执行**一次性惰性迁移**：
+ * 新键 ← 旧键内容；**删除旧键文件与空目录**；写迁移标记（`runtime/migrations/long-agent-capability-unify/done.json`）。
+ * 迁移幂等（新键已存在即直接返回），失败可重试。
+ */
+export async function readLongAgentCapabilityConfig(
+  chatHome: string,
+  longAgentId: string,
+  legacy?: CapabilityMigrationSource,
+): Promise<ChatAgentDurableConfig | undefined> {
+  const path = longAgentCapabilityConfigPath(chatHome, longAgentId);
+  const existing = await readConfigFileIfPresent(path);
+  if (existing !== undefined || legacy === undefined) return existing;
+  const legacyPath = legacyWorkflowAgentConfigPath(chatHome, longAgentId, legacy.workflowId, legacy.agentId);
+  const legacyValue = await readConfigFileIfPresent(legacyPath);
+  if (legacyValue === undefined) return undefined;
+  return withFileLock(path, async () => {
+    await atomicWriteJson(path, legacyValue);
+    // 回退依据：把旧键原样备份到**有归属**的迁移目录（不留无归属备份文件）。
+    const backupPath = resolve(chatHome, "long-agents", longAgentId, "runtime", "migrations", "long-agent-capability-unify", "legacy-config.json");
+    await atomicWriteJson(backupPath, legacyValue);
+    await rm(legacyPath).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    });
+    await rm(resolve(chatHome, "long-agents", longAgentId, "workflows", legacy.workflowId, "agents"), { recursive: true, force: true }).catch(() => undefined);
+    await rm(resolve(chatHome, "long-agents", longAgentId, "workflows", legacy.workflowId), { recursive: true, force: true }).catch(() => undefined);
+    await rm(resolve(chatHome, "long-agents", longAgentId, "workflows"), { recursive: true, force: true }).catch(() => undefined);
+    await atomicWriteJson(
+      resolve(chatHome, "long-agents", longAgentId, "runtime", "migrations", "long-agent-capability-unify", "done.json"),
+      { schemaVersion: 1, from: legacyPath, to: path, backup: backupPath, at: new Date().toISOString() },
+    );
+    return legacyValue;
+  });
+}
+
+/** 改 Long Agent 能力配置（单键）。语义与 `mutateAgentDurableConfig` 一致（revision 乐观并发、可校验不写）。 */
+export async function mutateLongAgentCapabilityConfig(
+  chatHome: string,
+  longAgentId: string,
+  transform: (current: ChatAgentDurableConfig | undefined) => unknown | Promise<unknown>,
+  options: { readonly expectedRevision?: string; readonly validateOnly?: boolean; readonly legacy?: CapabilityMigrationSource } = {},
+): Promise<ChatAgentDurableConfig | undefined> {
+  const path = longAgentCapabilityConfigPath(chatHome, longAgentId);
+  await readLongAgentCapabilityConfig(chatHome, longAgentId, options.legacy);
+  return withFileLock(path, async () => {
+    await assertFileWithin(path, chatHome);
+    if (options.expectedRevision !== undefined) await expectRevision(path, options.expectedRevision);
+    const value = await transform(await readConfigFileIfPresent(path));
+    const config = value === undefined ? undefined : parseDurableConfig(value, path);
+    if (options.validateOnly === true) return config;
+    if (config === undefined) {
+      await rm(path).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      });
+    } else await atomicWriteJson(path, config);
+    return config;
+  });
+}
