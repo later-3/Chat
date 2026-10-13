@@ -43,6 +43,8 @@ export interface SendPreview {
     readonly contextWindowTokens: number;
     readonly totalTokens: number;
     readonly blocks: readonly { readonly tag: string; readonly tokens: number }[];
+    readonly messages: readonly { readonly index: number; readonly tokens: number }[];
+    readonly tools: readonly { readonly name: string; readonly tokens: number }[];
   };
   /** 消息区域分类（与真实详情同一解析器）。 */
   readonly messageRegions?: readonly { readonly index: number; readonly role: string; readonly region: string; readonly customType?: string; readonly timestamp?: number }[];
@@ -195,7 +197,17 @@ export async function buildSendPreview(input: {
     (sum, tool) => sum + estimateTokens({ role: "user", content: JSON.stringify(tool) } as never),
     0,
   );
-  const usage = { contextWindowTokens, totalTokens, blocks: blockUsage };
+  // 每条消息 / 每个工具各自的占比（用户 2026-10-13：不只是大区块，assistant/toolResult 也要看占多少）。
+  const messageUsage = editedMessages.map((message, index) => ({
+    index,
+    tokens: estimateTokens({ role: "user", content: textOf((message as { content?: unknown }).content) } as never),
+  }));
+  const toolUsage = ((edited.tools ?? []) as Record<string, unknown>[]).map((tool) => {
+    const fn = tool.function as { name?: unknown } | undefined;
+    const name = typeof fn?.name === "string" ? fn.name : (typeof tool.name === "string" ? tool.name : "?");
+    return { name, tokens: estimateTokens({ role: "user", content: JSON.stringify(tool) } as never) };
+  });
+  const usage = { contextWindowTokens, totalTokens, blocks: blockUsage, messages: messageUsage, tools: toolUsage };
   return {
     blockLabels,
     usage,
