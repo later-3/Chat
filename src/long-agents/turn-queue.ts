@@ -1,5 +1,6 @@
 import { resolvePromptCapture } from "../session-interactions.js";
 import { longAgentWorkflowConfiguration } from "./workflow-configuration.js";
+import { DEFAULT_CHAT_WORKFLOW_ID } from "../workflows/registry.js";
 import { prepareChatWorkflowTurnConfiguration } from "../workflows/workflow-configuration.js";
 import { agentDate } from "./calendar.js";
 import { settleConsumedSteering } from "./turn-controls.js";
@@ -191,12 +192,18 @@ export async function acceptLongAgentTurn(input: ExecuteLongAgentTurnInput, pend
     // The temporary Session is solely an assembly preview; only its custom snapshots are retained.
     const turnId = `${source}:${agent.id}:${requestId}`;
     const group = await readLongAgentAgentGroup(agent.id, home);
-    const prepared = await prepareLongAgentAssembly({ agent, chatHome: home, projectId: contextProjectId, turnId, executionAgent, groupContext: group, today: agentDate(calendar.timeZone, acceptedAt) });
+    // P3-U3（用户 2026-10-13 定界）：**默认工作流（= 连续会话）的执行主体就是 Long Agent 本身**，
+    // 不再传工作流内置的 executionAgent（那是 `pi-coding-agent` 假角色的来源，会写进装配快照并回灌给执行）。
+    // 其他工作流（多 Agent 交互）留待后续阶段，仍可显式传 executionAgent。
+    const defaultWorkflow = configured.workflow.id === DEFAULT_CHAT_WORKFLOW_ID;
+    const prepared = await prepareLongAgentAssembly({ agent, chatHome: home, projectId: contextProjectId, turnId,
+      ...(defaultWorkflow ? {} : { executionAgent }), groupContext: group, today: agentDate(calendar.timeZone, acceptedAt) });
     memory.appendCustomEntry("chat.agent-assembly-identity.v1", { turnId, instructions: prepared.identityInstructions });
     const created = await createChatPiAgentSession({ chatSession, sessionManager: memory, ...prepared,
       ...(input.summaryDraft ? { agent: { ...prepared.agent, tools: { mode: "none" as const }, resources: { mode: "explicit" as const, skillPaths: [], extensionPaths: [], pluginSources: [] } } } : {}),
-      toolContext: { purpose: "execution", agentId: executionAgent.id, longAgentId: agent.id, longAgentTurnId: turnId,
-        workflowId: configured.workflow.id, workflowInvocationId, stageId: configured.workflow.nodes.find(node => node.kind === "agent" && node.agentId === executionAgent.id)?.id ?? executionAgent.id } });
+      toolContext: { purpose: "execution", agentId: defaultWorkflow ? agent.id : executionAgent.id, longAgentId: agent.id, longAgentTurnId: turnId,
+        workflowId: configured.workflow.id, workflowInvocationId,
+        stageId: defaultWorkflow ? "execute" : (configured.workflow.nodes.find(node => node.kind === "agent" && node.agentId === executionAgent.id)?.id ?? executionAgent.id) } });
     try {
       if (source === "chat-web") assertModelSupportsImages(created.session.model, input.images);
       const snapshot = readAssemblySnapshot(memory, turnId);

@@ -165,6 +165,17 @@ test("B5 编辑层：勾掉的区块/工具真的没发给模型，恢复后真�
   const recording = await api.recording(sessionId, true, 0);
   assert.equal(recording.enabled, true, JSON.stringify(recording));
 
+  // ①b P3-U3：会话阶段归属**真实 Long Agent**（不能再有 `pi-coding-agent` 假角色）。
+  {
+    const index = await (await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/interactions?projectId=friend&limit=20`)).json();
+    console.log("AGENT_DUMP", JSON.stringify((index.rows ?? []).slice(0, 3).map((row) => ({ seq: row.seq, agent: row.agent, longAgentId: row.longAgentId, turn: row.turn }))));
+    const agents = [...new Set((index.rows ?? []).map((row) => row.agent?.agentId))];
+    // P3-U3：落盘归属**真实 Long Agent**（假角色 `pi-coding-agent` 必须消失）。
+    assert.equal(agents.includes("pi-coding-agent"), false, `落盘不应再有假角色：${JSON.stringify(agents)}`);
+    assert.equal(agents.includes("friend"), true, `阶段应归属真实 Long Agent：${JSON.stringify(agents)}`);
+    console.log("STAGE_AGENT", JSON.stringify(agents));
+  }
+
   // ② 写入编辑层：排除身份区块与 read 工具（下一轮生效）。
   const written = await api.writeEdit(sessionId, ["tag:chat_identity", "tools:read"], 0);
   assert.equal(written.status, 200, JSON.stringify(written));
