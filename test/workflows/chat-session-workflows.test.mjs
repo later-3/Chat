@@ -19,8 +19,7 @@ import {
 } from "../../src/prompt-resources/builtins.ts";
 import { openProject } from "../../src/projects/registry.ts";
 import { collectChatToolExecutions } from "../../src/tools/execution-record.ts";
-import { runPiCodingAgentPromptStep } from "../../src/workflows/chat-direct/step.ts";
-import { PI_CODING_AGENT } from "../../src/workflows/chat-direct/agents/pi-coding-agent/index.ts";
+import { runChatDirectStep } from "../../src/workflows/chat-direct/step.ts";
 import { inspectWorkflowAgent } from "../../src/workflows/agent-inspection.ts";
 import {
   runPlanningExecutionStep,
@@ -173,7 +172,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     },
   ]);
 
-  const first = await runPiCodingAgentPromptStep({
+  const first = await runChatDirectStep({
     projectId: project.projectId,
     chatHome,
     cwd: workspace,
@@ -220,7 +219,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
     inputEntryIds: [planning.userEntryId, feedbackEntryId, revised.planEntryId],
     agent: planning.executionAgent,
   });
-  const last = await runPiCodingAgentPromptStep({
+  const last = await runChatDirectStep({
     projectId: project.projectId,
     chatHome,
     cwd: workspace,
@@ -247,7 +246,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
       workflowId: "chat-direct",
       stageId: "execute",
       nodeKind: "agent",
-      agentId: "pi-coding-agent",
+      agentId: "friend",
     },
     {
       schemaVersion: 2,
@@ -271,7 +270,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
       workflowId: "planning-execution",
       stageId: "execute",
       nodeKind: "agent",
-      agentId: "pi-coding-agent",
+      agentId: "friend",
     },
     {
       schemaVersion: 2,
@@ -279,7 +278,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
       workflowId: "chat-direct",
       stageId: "execute",
       nodeKind: "agent",
-      agentId: "pi-coding-agent",
+      agentId: "friend",
     },
   ]);
   const workflowAgentInputs = collectChatWorkflowAgentInputs(manager.getEntries());
@@ -306,7 +305,7 @@ test("Workflow selection appends every Agent phase to one Chat Session", { concu
       invocationId: "planning-invocation-1",
       workflowId: "planning-execution",
       stageId: "execute",
-      agentId: "pi-coding-agent",
+      agentId: "friend",
       inputEntryIds: [planning.userEntryId, feedbackEntryId, revised.planEntryId],
     },
   ]);
@@ -576,7 +575,7 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
   const configPath = path.join(workspace, "configured-agent.json");
   fs.writeFileSync(configPath, JSON.stringify({
     schemaVersion: 1,
-    id: "pi-coding-agent",
+    id: "friend",
     name: "Configured Pi Coding Agent",
     description: "Integration test Agent",
     model: { provider: model.provider, modelId: model.id },
@@ -620,14 +619,14 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
     recordCall(calls, context);
     return fauxAssistantMessage("configured response");
   }]);
-  const result = await runPiCodingAgentPromptStep({
+  const result = await runChatDirectStep({
     projectId: project.projectId,
     chatHome: process.env.CHAT_HOME,
     cwd: workspace,
     prompt: "configured request",
     workflowInvocationId: "configured-invocation",
     agentConfigs: {
-      "pi-coding-agent": {
+      "friend": {
         primary: configPath,
         promptResources: [
           { id: rule.id, target: { type: "personal" }, selectedBy: "user" },
@@ -661,7 +660,7 @@ test("Direct Workflow applies the selected Pi Coding Agent configuration", { con
   const manager = SessionManager.open(result.sessionFile, project.sessionDir);
   const snapshot = collectChatWorkflowTurnConfigurations(manager.getEntries())[0];
   assert.deepEqual(
-    snapshot.agentConfigs["pi-coding-agent"].promptResources.map((resource) => resource.revision),
+    snapshot.agentConfigs["friend"].promptResources.map((resource) => resource.revision),
     [rule.revision, experience.revision, agentDesignRule.revision],
   );
 });
@@ -703,9 +702,10 @@ test("Agent inspection uses the same resolved Prompt, resources and tools as exe
     projectId: project.projectId,
     chatHome,
     cwd: workspace,
-    defaultAgent: PI_CODING_AGENT,
+    defaultAgent: { schemaVersion: 1, id: "friend", name: "Friend", description: "Stable",
+      systemPrompt: { mode: "pi-default" }, tools: { mode: "pi-default" }, resources: { mode: "inherit" }, customInstructions: [] },
     workflowId: "chat-direct",
-    agentId: PI_CODING_AGENT.id,
+    agentId: "friend",
     stageId: "execute",
     selection: {
       append: [],
@@ -841,7 +841,7 @@ test("Pi auto-compaction remains part of the same Chat Session", { concurrency: 
     },
   ]);
 
-  const first = await runPiCodingAgentPromptStep({
+  const first = await runChatDirectStep({
     projectId: project.projectId,
     chatHome,
     cwd: workspace,
@@ -855,7 +855,7 @@ test("Pi auto-compaction remains part of the same Chat Session", { concurrency: 
   assert.equal(managerAfterFirst.buildSessionContext().messages[0]?.role, "compactionSummary");
 
   writeFauxConfiguration(agentDir, faux, { compaction: { enabled: false } });
-  const second = await runPiCodingAgentPromptStep({
+  const second = await runChatDirectStep({
     projectId: project.projectId,
     chatHome,
     cwd: workspace,

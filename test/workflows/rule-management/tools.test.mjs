@@ -101,9 +101,9 @@ test("Rule Agent reads native Pi Entry IDs and persists only active-branch conve
   const manager = SessionManager.inMemory(project.projectRoot);
   appendChatWorkflowStage(manager, {
     invocationId: "discussion-1",
-    workflowId: "chat-direct",
+    workflowId: "rule-management",
     stageId: "execute",
-    agentId: "pi-coding-agent",
+    agentId: "rule-curator-agent",
   });
   const userEntryId = manager.appendMessage({
     role: "user",
@@ -230,8 +230,8 @@ test("Rule Agent proposal preserves manual choices and replaces prior Agent choi
   const oldAgent = await createResource(store, "Old Agent rule");
   const recommended = await createResource(store, "Recommended rule");
   setChatWorkflowAgentPromptResources(manager, {
-    workflowId: "chat-direct",
-    agentId: "pi-coding-agent",
+    workflowId: "rule-management",
+    agentId: "rule-curator-agent",
     promptResources: [
       { id: manual.id, target, selectedBy: "user" },
       { id: oldAgent.id, target, selectedBy: "agent", reason: "old recommendation" },
@@ -241,7 +241,7 @@ test("Rule Agent proposal preserves manual choices and replaces prior Agent choi
 
   const proposalTools = ruleTools(project, manager, "提出建议", "invocation-2");
   const proposed = resultJson(await execute(proposalTools, "prompt_resource_propose_for_agent", {
-    targetWorkflowId: "chat-direct",
+    targetWorkflowId: "rule-management",
     targetAgentId: "pi-coding-agent",
     resources: [{ target, resourceId: recommended.id, reason: "matches the next coding task" }],
     summary: "Use the recommended coding rule.",
@@ -249,7 +249,7 @@ test("Rule Agent proposal preserves manual choices and replaces prior Agent choi
   assert.equal(proposed.status, "pending");
   assert.equal(collectChatPromptResourceProposals(manager.getEntries())[0].resolution, undefined);
   assert.equal(collectLatestChatWorkflowConfigurations(manager.getEntries())
-    ["chat-direct"]["pi-coding-agent"].promptResources[1].id, oldAgent.id);
+    ["rule-management"]["pi-coding-agent"].promptResources[1].id, oldAgent.id);
 
   const applyTools = ruleTools(
     project,
@@ -263,7 +263,7 @@ test("Rule Agent proposal preserves manual choices and replaces prior Agent choi
   }));
   assert.equal(applied.status, "applied");
   const selected = collectLatestChatWorkflowConfigurations(manager.getEntries())
-    ["chat-direct"]["pi-coding-agent"].promptResources;
+    ["rule-management"]["pi-coding-agent"].promptResources;
   assert.deepEqual(selected, [
     { id: manual.id, target, selectedBy: "user" },
     { id: recommended.id, target, selectedBy: "agent", reason: "matches the next coding task" },
@@ -281,7 +281,7 @@ test("Rule Agent dismisses a rejected proposal without changing Agent configurat
   const resource = await createResource(store, "Rejected rule");
   const proposalTools = ruleTools(project, manager, "提出建议", "invocation-3");
   const proposed = resultJson(await execute(proposalTools, "prompt_resource_propose_for_agent", {
-    targetWorkflowId: "chat-direct",
+    targetWorkflowId: "rule-management",
     targetAgentId: "pi-coding-agent",
     resources: [{ target, resourceId: resource.id, reason: "candidate" }],
     summary: "Candidate rule.",

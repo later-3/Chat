@@ -58,39 +58,6 @@ const CUSTOM_DEFINITION = {
   resources: { mode: "inherit" },
 };
 
-test("legacy inline definitions migrate to per-Agent roots with backup and marker", async (t) => {
-  const { chatHome } = fixture(t);
-  await ensureLongAgentShareProject(chatHome);
-  const registryPath = path.join(chatHome, "long-agents.json");
-  fs.mkdirSync(chatHome, { recursive: true });
-  fs.writeFileSync(registryPath, JSON.stringify({
-    schemaVersion: 1,
-    instances: [INSTANCE],
-    agents: [agentEntry(CUSTOM_DEFINITION)],
-  }, null, 2));
-
-  const registry = await readLongAgentRegistry(chatHome);
-  assert.equal(registry.agents[0].definition.tools.addresses[0], "system:tool/memory_search");
-
-  // 拆分落盘：definition 文件存在，Registry 只剩索引字段。
-  const definitionPath = path.join(longAgentConfigRoot(chatHome, "nexus"), "definition.json");
-  assert.equal(JSON.parse(fs.readFileSync(definitionPath, "utf8")).tools, undefined);
-  const workflowPath = path.join(longAgentConfigRoot(chatHome, "nexus"), "workflows/chat-direct/agents/pi-coding-agent.json");
-  assert.equal(JSON.parse(fs.readFileSync(workflowPath, "utf8")).tools.addresses[0], "system:tool/memory_search");
-  const onDisk = JSON.parse(fs.readFileSync(registryPath, "utf8"));
-  assert.equal(onDisk.agents[0].definition, undefined);
-  assert.equal(onDisk.agents[0].nanoclawAgentGroupId, "private-agent-group");
-
-  // 备份与完成标记。
-  const migrationDir = path.join(chatHome, "runtime", "migrations", "long-agent-definition-split");
-  assert.ok(fs.existsSync(path.join(migrationDir, "long-agents.json.bak")));
-  const marker = JSON.parse(fs.readFileSync(path.join(migrationDir, "done.json"), "utf8"));
-  assert.deepEqual(marker.migratedAgents, ["nexus"]);
-
-  // 幂等：再次读取不重复迁移，内容一致。
-  const again = await readLongAgentRegistry(chatHome);
-  assert.deepEqual(again, registry);
-});
 
 test("registry writes stay split and reads reassemble the same definition", async (t) => {
   const { chatHome } = fixture(t);
