@@ -8,7 +8,7 @@
  * **不调用模型、不落盘**（装配与工具快照写在 in-memory Session 里，同 turn-queue 既有做法）。
  */
 import { randomUUID } from "node:crypto";
-import { convertToLlm, sessionEntryToContextMessages, SessionManager } from "@earendil-works/pi-coding-agent";
+import { convertToLlm, estimateTokens, sessionEntryToContextMessages, SessionManager } from "@earendil-works/pi-coding-agent";
 import { openChatSession } from "../chat-session.js";
 import { resolveChatHome } from "../chat-home.js";
 import { createChatPiAgentSession } from "../agents/pi-agent-session.js";
@@ -17,7 +17,7 @@ import { prepareLongAgentAssembly } from "./assembly.js";
 import { readLongAgentAgentGroup } from "./agent-group-service.js";
 import { readLongAgentRegistry } from "./storage.js";
 import { longAgentWorkflowConfiguration } from "./workflow-configuration.js";
-import { applyContextEdit, applyMessageEdits, readContextEditFromEntries } from "../context-edit.js";
+import { applyContextEdit, applyMessageEdits, readContextEditFromEntries, splitSystemSegments } from "../context-edit.js";
 import { parseProviderPayloadRegions } from "../session-prompt-capture.js";
 import { PROMPT_REGION_REGISTRY } from "./prompt-region-registry.js";
 
@@ -38,6 +38,12 @@ export interface SendPreview {
   readonly excludedCount: number;
   /** tag → 中文名（registry 唯一事实源）。 */
   readonly blockLabels: Readonly<Record<string, string>>;
+  /** 上下文窗口占比：整轮 tokens + 每个区块 tokens（与 Pi 同一估算函数 estimateTokens）。 */
+  readonly usage: {
+    readonly contextWindowTokens: number;
+    readonly totalTokens: number;
+    readonly blocks: readonly { readonly tag: string; readonly tokens: number }[];
+  };
   /** 消息区域分类（与真实详情同一解析器）。 */
   readonly messageRegions?: readonly { readonly index: number; readonly role: string; readonly region: string; readonly customType?: string; readonly timestamp?: number }[];
   readonly systemPrompt: string;
@@ -173,8 +179,26 @@ export async function buildSendPreview(input: {
   // 区块中文名（唯一事实源：registry）——前端展示"长期记忆/交互规范/自定义指令（含规则）"等，不必自造。
   const blockLabels: Record<string, string> = {};
   for (const region of PROMPT_REGION_REGISTRY) if (region.tag !== "") blockLabels[region.tag] = region.label;
+  // 上下文窗口占比（用户 2026-10-13）：整轮占多少 + 每个区块占多少（tokens 估算，与 Pi 同一函数）。
+  const contextWindowTokens = typeof model?.contextWindow === "number" ? model.contextWindow : 0;
+  const editedMessages = edited.messages as Record<string, unknown>[];
+  const systemTextAfterEdit = typeof editedMessages[0]?.content === "string" ? editedMessages[0].content : "";
+  const blockUsage = splitSystemSegments(systemTextAfterEdit)
+    .filter((segment) => segment.kind === "block" && segment.tag !== undefined)
+    .map((segment) => ({ tag: segment.tag as string, tokens: estimateTokens({ role: "user", content: segment.raw } as never) }));
+  // 统一口径：各部分都按其**文本**估算（estimateTokens 对字符串 content 的比例稳定），保证"整轮 vs 区块"可比。
+  const textOf = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value ?? ""));
+  const totalTokens = editedMessages.reduce<number>(
+    (sum, message) => sum + estimateTokens({ role: "user", content: textOf((message as { content?: unknown }).content) } as never),
+    0,
+  ) + ((edited.tools ?? []) as unknown[]).reduce<number>(
+    (sum, tool) => sum + estimateTokens({ role: "user", content: JSON.stringify(tool) } as never),
+    0,
+  );
+  const usage = { contextWindowTokens, totalTokens, blocks: blockUsage };
   return {
     blockLabels,
+    usage,
     payload: edited,
     excludedCount: applied.excludedCount,
     ...(messageRegions === undefined ? {} : { messageRegions }),
