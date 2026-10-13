@@ -86,26 +86,29 @@ export async function buildSendPreview(input: {
     projectDataDir: configured.project.projectDataDir,
     ...(configured.defaults === undefined ? {} : { defaults: configured.defaults }),
   });
+  // P3-U2：默认工作流（chat-direct）不定义 Agent——执行主体 = Long Agent 本身。
   const primary = configured.workflow.agents[0];
-  if (primary === undefined) throw new Error("Workflow缺少执行Agent");
-  const executionAgent = workflowAgents.agents[primary.id];
-  if (executionAgent === undefined) throw new Error("Workflow缺少冻结执行Agent");
+  const executionAgent = primary === undefined ? undefined : workflowAgents.agents[primary.id];
+  if (primary !== undefined && executionAgent === undefined) throw new Error("Workflow缺少冻结执行Agent");
   const turnId = `preview:${agent.id}:${randomUUID()}`;
   const group = await readLongAgentAgentGroup(agent.id, home);
   const prepared = await prepareLongAgentAssembly({
-    agent, chatHome: home, projectId: input.contextProjectId ?? null, turnId, executionAgent, groupContext: group,
+    agent, chatHome: home, projectId: input.contextProjectId ?? null, turnId, groupContext: group,
+    ...(executionAgent === undefined ? {} : { executionAgent }),
   });
   memory.appendCustomEntry("chat.agent-assembly-identity.v1", { turnId, instructions: prepared.identityInstructions });
   const created = await createChatPiAgentSession({
     chatSession, sessionManager: memory, ...prepared,
     toolContext: {
       purpose: "execution",
-      agentId: executionAgent.id,
+      agentId: executionAgent === undefined ? agent.id : executionAgent.id,
       longAgentId: agent.id,
       longAgentTurnId: turnId,
       workflowId: configured.workflow.id,
       workflowInvocationId,
-      stageId: configured.workflow.nodes.find((node) => node.kind === "agent" && node.agentId === executionAgent.id)?.id ?? executionAgent.id,
+      stageId: executionAgent === undefined
+        ? "execute"
+        : (configured.workflow.nodes.find((node) => node.kind === "agent" && node.agentId === executionAgent.id)?.id ?? executionAgent.id),
     },
   });
   const session = created.session;
